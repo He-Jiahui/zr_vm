@@ -1,0 +1,21 @@
+var system = %import("zr.system");
+
+emitArguments(label: string): int {
+    var count = 0;
+    for (var item in system.process.arguments) {
+        if (count == 0) {
+            system.console.printLine(label + "_arg0=" + item);
+        } else if (count == 1) {
+            system.console.printLine(label + "_arg1=" + item);
+        } else if (count == 2) {
+            system.console.printLine(label + "_arg2=" + item);
+        } else if (count == 3) {
+            system.console.printLine(label + "_arg3=" + item);
+        }
+        count = count + 1;
+    }
+    return count;
+}
+
+system.console.printLine("CLI_ARGS_MAIN");
+return 100 + emitArguments("main");

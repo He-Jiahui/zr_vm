@@ -4,6 +4,8 @@
 
 #include "semantic_analyzer_internal.h"
 
+SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
+
 static SZrInferredType *allocate_object_type_info(SZrState *state) {
     SZrInferredType *typeInfo;
 
@@ -154,6 +156,17 @@ static SZrInferredType *create_type_info_from_type_node(SZrState *state,
         analyzer->compilerState != ZR_NULL &&
         ZrParser_AstTypeToInferredType_Convert(analyzer->compilerState, typeNode, typeInfo)) {
         return typeInfo;
+    }
+
+    if (typeNode != ZR_NULL && analyzer != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(state,
+                                                                         analyzer,
+                                                                         typeNode->name != ZR_NULL
+                                                                                 ? typeNode->name->location
+                                                                                 : ZrParser_FileRange_Create(
+                                                                                           ZrParser_FilePosition_Create(0, 0, 0),
+                                                                                           ZrParser_FilePosition_Create(0, 0, 0),
+                                                                                           ZR_NULL));
     }
 
     if (typeNode != ZR_NULL) {
@@ -551,6 +564,144 @@ static void register_variable_type_binding_in_env(SZrState *state,
     ZrParser_TypeEnvironment_RegisterVariable(state, typeEnv, name, typeInfo);
 }
 
+static SZrTypeMemberInfo *find_type_member_info_by_name(SZrTypePrototypeInfo *prototype,
+                                                        SZrString *memberName) {
+    if (prototype == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < prototype->members.length; index++) {
+        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&prototype->members, index);
+        if (memberInfo != ZR_NULL &&
+            memberInfo->name != ZR_NULL &&
+            ZrCore_String_Equal(memberInfo->name, memberName)) {
+            return memberInfo;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void report_duplicate_type_name_diagnostic(SZrState *state,
+                                                  SZrSemanticAnalyzer *analyzer,
+                                                  SZrString *name,
+                                                  SZrFileRange location) {
+    TZrChar message[ZR_LSP_TEXT_BUFFER_LENGTH];
+    const TZrChar *nameText;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || name == ZR_NULL) {
+        return;
+    }
+
+    nameText = semantic_string_native(name);
+    if (nameText != ZR_NULL) {
+        snprintf(message, sizeof(message), "Type name '%s' is already declared in this context", nameText);
+    } else {
+        snprintf(message, sizeof(message), "Type name is already declared in this context");
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
+                                                    analyzer,
+                                                    ZR_DIAGNOSTIC_ERROR,
+                                                    location,
+                                                    message,
+                                                    "duplicate_type");
+}
+
+static TZrBool register_type_name_binding_in_env(SZrState *state,
+                                                 SZrSemanticAnalyzer *analyzer,
+                                                 SZrString *name,
+                                                 SZrFileRange location) {
+    SZrTypeEnvironment *typeEnv;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typeEnv = analyzer->compilerState->typeEnv;
+    if (typeEnv == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrParser_TypeEnvironment_LookupType(typeEnv, name)) {
+        report_duplicate_type_name_diagnostic(state, analyzer, name, location);
+        return ZR_FALSE;
+    }
+
+    if (!ZrParser_TypeEnvironment_RegisterType(state, typeEnv, name)) {
+        report_duplicate_type_name_diagnostic(state, analyzer, name, location);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static void register_imported_destructured_type_aliases(SZrState *state,
+                                                        SZrSemanticAnalyzer *analyzer,
+                                                        SZrVariableDeclaration *varDecl) {
+    SZrInferredType importedModuleType;
+    SZrString *moduleName;
+    SZrDestructuringObject *destructuring;
+    SZrTypePrototypeInfo *modulePrototype;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || varDecl == ZR_NULL ||
+        varDecl->pattern == ZR_NULL || varDecl->pattern->type != ZR_AST_DESTRUCTURING_OBJECT ||
+        varDecl->value == ZR_NULL || varDecl->value->type != ZR_AST_IMPORT_EXPRESSION ||
+        varDecl->value->data.importExpression.modulePath == ZR_NULL ||
+        varDecl->value->data.importExpression.modulePath->type != ZR_AST_STRING_LITERAL ||
+        varDecl->value->data.importExpression.modulePath->data.stringLiteral.value == ZR_NULL) {
+        return;
+    }
+
+    moduleName = varDecl->value->data.importExpression.modulePath->data.stringLiteral.value;
+    ZrParser_InferredType_Init(state, &importedModuleType, ZR_VALUE_TYPE_OBJECT);
+    if (moduleName == ZR_NULL ||
+        !ZrParser_ExpressionType_Infer(analyzer->compilerState, varDecl->value, &importedModuleType)) {
+        ZrParser_InferredType_Free(state, &importedModuleType);
+        ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(state,
+                                                                         analyzer,
+                                                                         varDecl->pattern != ZR_NULL
+                                                                                 ? varDecl->pattern->location
+                                                                                 : ZrParser_FileRange_Create(
+                                                                                           ZrParser_FilePosition_Create(0, 0, 0),
+                                                                                           ZrParser_FilePosition_Create(0, 0, 0),
+                                                                                           ZR_NULL));
+        return;
+    }
+    ZrParser_InferredType_Free(state, &importedModuleType);
+
+    modulePrototype = find_compiler_type_prototype_inference(analyzer->compilerState, moduleName);
+    if (modulePrototype == ZR_NULL || modulePrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
+        return;
+    }
+
+    destructuring = &varDecl->pattern->data.destructuringObject;
+    if (destructuring->keys == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < destructuring->keys->count; index++) {
+        SZrAstNode *keyNode = destructuring->keys->nodes[index];
+        SZrString *keyName;
+        SZrTypeMemberInfo *memberInfo;
+
+        if (keyNode == ZR_NULL || keyNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+            keyNode->data.identifier.name == ZR_NULL) {
+            continue;
+        }
+
+        keyName = keyNode->data.identifier.name;
+        memberInfo = find_type_member_info_by_name(modulePrototype, keyName);
+        if (memberInfo == ZR_NULL || memberInfo->fieldTypeName == ZR_NULL ||
+            !ZrCore_String_Equal(memberInfo->fieldTypeName, keyName) ||
+            find_compiler_type_prototype_inference(analyzer->compilerState, keyName) == ZR_NULL) {
+            continue;
+        }
+
+        register_type_name_binding_in_env(state, analyzer, keyName, keyNode->location);
+    }
+}
+
 static SZrTypeEnvironment *push_runtime_type_binding_scope(SZrState *state,
                                                            SZrSemanticAnalyzer *analyzer) {
     SZrTypeEnvironment *savedEnv;
@@ -912,6 +1063,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;
             SZrSymbol *symbol = ZR_NULL;
             // pattern 可能是 Identifier, DestructuringPattern, 或 DestructuringArrayPattern
+            register_imported_destructured_type_aliases(state, analyzer, varDecl);
             SZrString *name = ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(state, varDecl->pattern);
             if (name != ZR_NULL) {
                 SZrInferredType *typeInfo = create_type_info_for_variable(state, analyzer, varDecl);
@@ -1192,15 +1344,14 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrString *name = classDecl->name != ZR_NULL ? classDecl->name->name : ZR_NULL;
             TZrLifetimeRegionId ownerRegionId = 0;
             if (name != ZR_NULL) {
+                if (!register_type_name_binding_in_env(state, analyzer, name, node->location)) {
+                    return;
+                }
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state, analyzer->symbolTable,
                                          ZR_SYMBOL_CLASS, name,
                                          node->location, ZR_NULL,
                                          classDecl->accessModifier, node,
                                          &symbol);
-                if (analyzer->compilerState != ZR_NULL &&
-                    analyzer->compilerState->typeEnv != ZR_NULL) {
-                    ZrParser_TypeEnvironment_RegisterType(state, analyzer->compilerState->typeEnv, name);
-                }
                 ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
                                           symbol,
                                           ZR_SEMANTIC_SYMBOL_KIND_TYPE,
@@ -1442,15 +1593,14 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrString *name = structDecl->name != ZR_NULL ? structDecl->name->name : ZR_NULL;
             TZrLifetimeRegionId ownerRegionId = 0;
             if (name != ZR_NULL) {
+                if (!register_type_name_binding_in_env(state, analyzer, name, node->location)) {
+                    return;
+                }
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state, analyzer->symbolTable,
                                          ZR_SYMBOL_STRUCT, name,
                                          node->location, ZR_NULL,
                                          structDecl->accessModifier, node,
                                          &symbol);
-                if (analyzer->compilerState != ZR_NULL &&
-                    analyzer->compilerState->typeEnv != ZR_NULL) {
-                    ZrParser_TypeEnvironment_RegisterType(state, analyzer->compilerState->typeEnv, name);
-                }
                 ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
                                           symbol,
                                           ZR_SEMANTIC_SYMBOL_KIND_TYPE,
@@ -1559,6 +1709,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrSymbol *symbol = ZR_NULL;
 
             if (name != ZR_NULL) {
+                if (!register_type_name_binding_in_env(state, analyzer, name, node->location)) {
+                    return;
+                }
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state,
                                                          analyzer->symbolTable,
                                                          ZR_SYMBOL_ENUM,
@@ -1568,10 +1721,6 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                          enumDecl->accessModifier,
                                                          node,
                                                          &symbol);
-                if (analyzer->compilerState != ZR_NULL &&
-                    analyzer->compilerState->typeEnv != ZR_NULL) {
-                    ZrParser_TypeEnvironment_RegisterType(state, analyzer->compilerState->typeEnv, name);
-                }
                 ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
                                                                           symbol,
                                                                           ZR_SEMANTIC_SYMBOL_KIND_TYPE,
@@ -1619,6 +1768,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrString *name = interfaceDecl->name != ZR_NULL ? interfaceDecl->name->name : ZR_NULL;
 
             if (name != ZR_NULL) {
+                if (!register_type_name_binding_in_env(state, analyzer, name, node->location)) {
+                    return;
+                }
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state,
                                                          analyzer->symbolTable,
                                                          ZR_SYMBOL_INTERFACE,
@@ -1628,10 +1780,6 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                          interfaceDecl->accessModifier,
                                                          node,
                                                          &symbol);
-                if (analyzer->compilerState != ZR_NULL &&
-                    analyzer->compilerState->typeEnv != ZR_NULL) {
-                    ZrParser_TypeEnvironment_RegisterType(state, analyzer->compilerState->typeEnv, name);
-                }
                 ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
                                                                           symbol,
                                                                           ZR_SEMANTIC_SYMBOL_KIND_TYPE,

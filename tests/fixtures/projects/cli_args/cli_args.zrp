@@ -1,0 +1,6 @@
+{
+  "name": "cli_args",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

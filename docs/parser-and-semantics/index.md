@@ -67,13 +67,15 @@ doc_type: category-index
   - script wrapper / top-level function declaration 共用同一套 final assembly 逻辑
   - `CREATE_CLOSURE -> childFunctions` child graph 不变量在装配期统一校验
 - `field-scoped-using.md`
-  - `class`/`struct` 字段级 `using var` 语法
-  - `static using` 非法诊断
+  - `class`/`struct` 字段级 `%using var` 语法
+  - `static %using` 非法诊断
   - cleanup plan 与 prototype metadata 的传播路径
 - `lsp-semantic-resolution-and-native-imports.md`
   - `this` / `super` / `%compileTime` / `%test` / lambda 的局部符号命中规则
   - reference tracker 的“最窄范围优先”策略
   - `%import("zr.math")` 如何在语义分析阶段预热 native metadata，支撑 `$math.Vector3(...).y`
+  - imported type 只允许 `module.Type` 或 `var {Type} = %import(...)` 两种显式绑定路径
+  - nested native module lookup 与 compile-only imported stub 如何避免递归和 runtime prototype 污染
 
 ## 阅读顺序
 

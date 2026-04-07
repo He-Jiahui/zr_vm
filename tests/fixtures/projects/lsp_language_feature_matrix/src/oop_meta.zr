@@ -1,0 +1,57 @@
+%module "oop_meta";
+
+traceClass(target: %type Class): void {
+    target.metadata.traceClass = true;
+}
+
+#traceClass#
+pub class SignalBox {
+    pri var raw: int = 0;
+    pub static var created: int = 0;
+
+    pub @constructor(start: int) {
+        this.raw = start;
+        SignalBox.created = SignalBox.created + 1;
+    }
+
+    pub get value: int {
+        return this.raw + 1;
+    }
+
+    pub set value(next: int) {
+        this.raw = next;
+    }
+
+    pub bump(delta: int): int {
+        return this.value + delta;
+    }
+
+    pub static identity(value: int): int {
+        return value;
+    }
+
+    pub @call(delta: int): int {
+        return this.bump(delta);
+    }
+}
+
+pub struct Vector2 {
+    pub var x: int;
+    pub var y: int;
+
+    pub @constructor(x: int, y: int) {
+        this.x = x;
+        this.y = y;
+    }
+
+    pub static @add(left: Vector2, right: Vector2): Vector2 {
+        return $Vector2(left.x + right.x, left.y + right.y);
+    }
+}
+
+pub combineVectors(): int {
+    var left = $Vector2(1, 2);
+    var right = $Vector2(3, 4);
+    var sum = left + right;
+    return SignalBox.identity(sum.x + sum.y);
+}

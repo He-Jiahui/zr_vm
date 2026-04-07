@@ -26,12 +26,18 @@ enum EZrDiagnosticSeverity {
 
 typedef enum EZrDiagnosticSeverity EZrDiagnosticSeverity;
 
+typedef struct SZrDiagnosticRelatedInformation {
+    SZrFileRange location;
+    SZrString *message;
+} SZrDiagnosticRelatedInformation;
+
 // 诊断信息
 typedef struct SZrDiagnostic {
     EZrDiagnosticSeverity severity;
     SZrFileRange location;
     SZrString *message;
     SZrString *code;                   // 错误代码（可选）
+    SZrArray relatedInformation;       // SZrDiagnosticRelatedInformation
 } SZrDiagnostic;
 
 // 代码补全项
@@ -135,6 +141,11 @@ ZR_LANGUAGE_SERVER_API SZrDiagnostic *ZrLanguageServer_Diagnostic_New(SZrState *
                                                         SZrFileRange location,
                                                         const TZrChar *message,
                                                         const TZrChar *code);
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Diagnostic_AddRelatedInformation(
+    SZrState *state,
+    SZrDiagnostic *diagnostic,
+    SZrFileRange location,
+    const TZrChar *message);
 
 // 释放诊断
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Diagnostic_Free(SZrState *state, SZrDiagnostic *diagnostic);

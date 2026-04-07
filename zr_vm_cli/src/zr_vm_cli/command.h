@@ -7,9 +7,12 @@ struct SZrState;
 
 typedef enum EZrCliMode {
     ZR_CLI_MODE_HELP = 0,
-    ZR_CLI_MODE_REPL = 1,
-    ZR_CLI_MODE_RUN_PROJECT = 2,
-    ZR_CLI_MODE_COMPILE_PROJECT = 3
+    ZR_CLI_MODE_VERSION = 1,
+    ZR_CLI_MODE_REPL = 2,
+    ZR_CLI_MODE_RUN_PROJECT = 3,
+    ZR_CLI_MODE_COMPILE_PROJECT = 4,
+    ZR_CLI_MODE_RUN_INLINE = 5,
+    ZR_CLI_MODE_RUN_PROJECT_MODULE = 6
 } EZrCliMode;
 
 typedef enum EZrCliExecutionMode {
@@ -23,8 +26,14 @@ typedef struct SZrCliCommand {
     EZrCliMode mode;
     EZrCliExecutionMode executionMode;
     const TZrChar *projectPath;
+    const TZrChar *inlineCode;
+    const TZrChar *inlineModeAlias;
+    const TZrChar *moduleName;
+    const TZrChar *const *programArgs;
+    TZrSize programArgCount;
     const TZrChar *debugAddress;
     TZrBool runAfterCompile;
+    TZrBool interactiveAfterRun;
     TZrBool emitIntermediate;
     TZrBool incremental;
     TZrBool emitAotC;
@@ -43,5 +52,6 @@ TZrBool ZrCli_Command_Parse(int argc,
                             TZrSize errorBufferSize);
 
 void ZrCli_Command_LogHelp(struct SZrState *state, TZrBool writeToStdErr, const TZrChar *programName);
+void ZrCli_Command_LogVersion(struct SZrState *state, TZrBool writeToStdErr);
 
 #endif

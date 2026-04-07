@@ -4,6 +4,9 @@
 
 #include "compiler_internal.h"
 
+static const TZrChar *kCompilerEnumRuntimeValueTypeFieldName = "__zr_enumValueTypeName";
+static const TZrChar *kCompilerEnumRuntimeMembersFieldName = "__zr_enumMembers";
+
 TZrBool extern_compiler_has_registered_type(SZrCompilerState *cs, SZrString *typeName) {
     if (cs == ZR_NULL || typeName == ZR_NULL) {
         return ZR_FALSE;
@@ -17,6 +20,254 @@ TZrBool extern_compiler_has_registered_type(SZrCompilerState *cs, SZrString *typ
     }
 
     return ZR_FALSE;
+}
+
+static SZrString *compiler_enum_resolve_underlying_type_name(SZrCompilerState *cs,
+                                                             const SZrEnumDeclaration *enumDecl) {
+    SZrString *underlyingName = ZR_NULL;
+
+    if (cs == ZR_NULL || enumDecl == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (enumDecl->baseType != ZR_NULL) {
+        underlyingName = extract_type_name_string(cs, enumDecl->baseType);
+    }
+    if (underlyingName == ZR_NULL) {
+        underlyingName = extern_compiler_decorators_get_string_arg(enumDecl->decorators, "underlying");
+    }
+    if (underlyingName == ZR_NULL) {
+        underlyingName = ZrCore_String_CreateFromNative(cs->state, "int");
+    }
+
+    return underlyingName;
+}
+
+static TZrBool compiler_enum_underlying_supports_auto_increment(SZrString *underlyingName) {
+    if (underlyingName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    return extern_compiler_string_equals(underlyingName, "int") ||
+           extern_compiler_string_equals(underlyingName, "i8") ||
+           extern_compiler_string_equals(underlyingName, "u8") ||
+           extern_compiler_string_equals(underlyingName, "i16") ||
+           extern_compiler_string_equals(underlyingName, "u16") ||
+           extern_compiler_string_equals(underlyingName, "i32") ||
+           extern_compiler_string_equals(underlyingName, "u32") ||
+           extern_compiler_string_equals(underlyingName, "i64") ||
+           extern_compiler_string_equals(underlyingName, "u64");
+}
+
+static TZrBool compiler_enum_init_member_runtime_value(SZrCompilerState *cs,
+                                                       SZrAstNode *memberNode,
+                                                       SZrString *underlyingName,
+                                                       TZrInt64 *nextAutoValue,
+                                                       SZrTypeValue *outValue) {
+    SZrAstNode *valueNode;
+    TZrInt64 explicitIntValue = 0;
+
+    if (cs == ZR_NULL || memberNode == ZR_NULL || nextAutoValue == ZR_NULL || outValue == ZR_NULL ||
+        memberNode->type != ZR_AST_ENUM_MEMBER) {
+        return ZR_FALSE;
+    }
+
+    valueNode = memberNode->data.enumMember.value;
+    if (valueNode == ZR_NULL &&
+        extern_compiler_decorators_get_int_arg(memberNode->data.enumMember.decorators, "value", &explicitIntValue)) {
+        ZrCore_Value_InitAsInt(cs->state, outValue, explicitIntValue);
+        *nextAutoValue = explicitIntValue + 1;
+        return ZR_TRUE;
+    }
+
+    if (valueNode == ZR_NULL) {
+        if (!compiler_enum_underlying_supports_auto_increment(underlyingName)) {
+            ZrParser_Compiler_Error(cs,
+                                    "Enum auto values currently require an integer underlying type",
+                                    memberNode->location);
+            return ZR_FALSE;
+        }
+
+        ZrCore_Value_InitAsInt(cs->state, outValue, *nextAutoValue);
+        (*nextAutoValue)++;
+        return ZR_TRUE;
+    }
+
+    switch (valueNode->type) {
+        case ZR_AST_INTEGER_LITERAL:
+            explicitIntValue = valueNode->data.integerLiteral.value;
+            ZrCore_Value_InitAsInt(cs->state, outValue, explicitIntValue);
+            *nextAutoValue = explicitIntValue + 1;
+            return ZR_TRUE;
+        case ZR_AST_FLOAT_LITERAL:
+            ZrCore_Value_InitAsFloat(cs->state, outValue, valueNode->data.floatLiteral.value);
+            return ZR_TRUE;
+        case ZR_AST_BOOLEAN_LITERAL:
+            outValue->type = ZR_VALUE_TYPE_BOOL;
+            outValue->value.nativeObject.nativeBool = valueNode->data.booleanLiteral.value ? ZR_TRUE : ZR_FALSE;
+            outValue->isGarbageCollectable = ZR_FALSE;
+            outValue->isNative = ZR_TRUE;
+            outValue->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+            outValue->ownershipControl = ZR_NULL;
+            outValue->ownershipWeakRef = ZR_NULL;
+            return ZR_TRUE;
+        case ZR_AST_STRING_LITERAL:
+            if (valueNode->data.stringLiteral.value == ZR_NULL) {
+                break;
+            }
+            ZrCore_Value_InitAsRawObject(cs->state,
+                                         outValue,
+                                         ZR_CAST_RAW_OBJECT_AS_SUPER(valueNode->data.stringLiteral.value));
+            outValue->type = ZR_VALUE_TYPE_STRING;
+            return ZR_TRUE;
+        case ZR_AST_CHAR_LITERAL:
+            ZrCore_Value_InitAsInt(cs->state, outValue, (TZrInt64)valueNode->data.charLiteral.value);
+            return ZR_TRUE;
+        default:
+            break;
+    }
+
+    ZrParser_Compiler_Error(cs,
+                            "Enum member values currently require literal constants or integer decorator overrides",
+                            memberNode->location);
+    return ZR_FALSE;
+}
+
+static TZrBool compiler_enum_fill_prototype_info(SZrCompilerState *cs,
+                                                 SZrAstNode *declarationNode,
+                                                 SZrTypePrototypeInfo *info) {
+    SZrEnumDeclaration *enumDecl;
+    SZrString *underlyingName;
+    SZrObject *metadataObject;
+    SZrObject *membersObject;
+    SZrTypeValue metadataValue;
+    SZrTypeValue membersValue;
+    SZrTypeValue underlyingValue;
+    TZrInt64 nextAutoValue = 0;
+    ZrExternCompilerTempRoot metadataRoot = {0};
+    ZrExternCompilerTempRoot membersRoot = {0};
+
+    if (cs == ZR_NULL || declarationNode == ZR_NULL || info == ZR_NULL ||
+        declarationNode->type != ZR_AST_ENUM_DECLARATION || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    enumDecl = &declarationNode->data.enumDeclaration;
+    if (enumDecl->name == ZR_NULL || enumDecl->name->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(info, 0, sizeof(*info));
+    info->name = enumDecl->name->name;
+    info->type = ZR_OBJECT_PROTOTYPE_TYPE_ENUM;
+    info->accessModifier = enumDecl->accessModifier;
+    info->isImportedNative = ZR_FALSE;
+    info->allowValueConstruction = ZR_TRUE;
+    info->allowBoxedConstruction = ZR_TRUE;
+    ZrCore_Array_Init(cs->state, &info->inherits, sizeof(SZrString *), 1);
+    ZrCore_Array_Init(cs->state, &info->implements, sizeof(SZrString *), 1);
+    ZrCore_Array_Init(cs->state, &info->decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(cs->state, &info->members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
+
+    underlyingName = compiler_enum_resolve_underlying_type_name(cs, enumDecl);
+    if (underlyingName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    info->enumValueTypeName = underlyingName;
+
+    if (!extern_compiler_temp_root_begin(cs, &metadataRoot) ||
+        !extern_compiler_temp_root_begin(cs, &membersRoot)) {
+        if (metadataRoot.active) {
+            extern_compiler_temp_root_end(&metadataRoot);
+        }
+        if (membersRoot.active) {
+            extern_compiler_temp_root_end(&membersRoot);
+        }
+        return ZR_FALSE;
+    }
+
+    metadataObject = extern_compiler_new_object_constant(cs);
+    membersObject = extern_compiler_new_object_constant(cs);
+    if (metadataObject == ZR_NULL || membersObject == ZR_NULL) {
+        extern_compiler_temp_root_end(&membersRoot);
+        extern_compiler_temp_root_end(&metadataRoot);
+        return ZR_FALSE;
+    }
+    extern_compiler_temp_root_set_object(&metadataRoot, metadataObject, ZR_VALUE_TYPE_OBJECT);
+    extern_compiler_temp_root_set_object(&membersRoot, membersObject, ZR_VALUE_TYPE_OBJECT);
+
+    ZrCore_Value_InitAsRawObject(cs->state, &underlyingValue, ZR_CAST_RAW_OBJECT_AS_SUPER(underlyingName));
+    underlyingValue.type = ZR_VALUE_TYPE_STRING;
+    if (!extern_compiler_set_object_field(cs,
+                                          metadataObject,
+                                          kCompilerEnumRuntimeValueTypeFieldName,
+                                          &underlyingValue)) {
+        extern_compiler_temp_root_end(&membersRoot);
+        extern_compiler_temp_root_end(&metadataRoot);
+        return ZR_FALSE;
+    }
+
+    if (enumDecl->members != ZR_NULL) {
+        for (TZrSize index = 0; index < enumDecl->members->count; index++) {
+            SZrAstNode *memberNode = enumDecl->members->nodes[index];
+            SZrTypeMemberInfo memberInfo;
+            SZrTypeValue memberValue;
+            const TZrChar *memberNameText;
+
+            if (memberNode == ZR_NULL || memberNode->type != ZR_AST_ENUM_MEMBER ||
+                memberNode->data.enumMember.name == ZR_NULL || memberNode->data.enumMember.name->name == ZR_NULL) {
+                continue;
+            }
+
+            memset(&memberInfo, 0, sizeof(memberInfo));
+            memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
+            memberInfo.memberType = ZR_AST_CLASS_FIELD;
+            memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
+            memberInfo.isStatic = ZR_TRUE;
+            memberInfo.isConst = ZR_TRUE;
+            memberInfo.name = memberNode->data.enumMember.name->name;
+            memberInfo.fieldTypeName = info->name;
+            ZrCore_Array_Push(cs->state, &info->members, &memberInfo);
+
+            if (!compiler_enum_init_member_runtime_value(cs,
+                                                         memberNode,
+                                                         underlyingName,
+                                                         &nextAutoValue,
+                                                         &memberValue)) {
+                extern_compiler_temp_root_end(&membersRoot);
+                extern_compiler_temp_root_end(&metadataRoot);
+                return ZR_FALSE;
+            }
+
+            memberNameText = ZrCore_String_GetNativeString(memberNode->data.enumMember.name->name);
+            if (memberNameText == ZR_NULL ||
+                !extern_compiler_set_object_field(cs, membersObject, memberNameText, &memberValue)) {
+                extern_compiler_temp_root_end(&membersRoot);
+                extern_compiler_temp_root_end(&metadataRoot);
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &membersValue, ZR_CAST_RAW_OBJECT_AS_SUPER(membersObject));
+    membersValue.type = ZR_VALUE_TYPE_OBJECT;
+    if (!extern_compiler_set_object_field(cs,
+                                          metadataObject,
+                                          kCompilerEnumRuntimeMembersFieldName,
+                                          &membersValue)) {
+        extern_compiler_temp_root_end(&membersRoot);
+        extern_compiler_temp_root_end(&metadataRoot);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &metadataValue, ZR_CAST_RAW_OBJECT_AS_SUPER(metadataObject));
+    metadataValue.type = ZR_VALUE_TYPE_OBJECT;
+    info->decoratorMetadataValue = metadataValue;
+    info->hasDecoratorMetadata = ZR_TRUE;
+
+    extern_compiler_temp_root_end(&membersRoot);
+    extern_compiler_temp_root_end(&metadataRoot);
+    return ZR_TRUE;
 }
 
 void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode *declarationNode) {
@@ -94,9 +345,8 @@ void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode 
 }
 
 void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *declarationNode) {
-    SZrEnumDeclaration *enumDecl;
     SZrTypePrototypeInfo info;
-    SZrString *underlyingName = ZR_NULL;
+    SZrEnumDeclaration *enumDecl;
 
     if (cs == ZR_NULL || declarationNode == ZR_NULL || declarationNode->type != ZR_AST_ENUM_DECLARATION || cs->hasError) {
         return;
@@ -108,48 +358,39 @@ void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *d
         return;
     }
 
-    memset(&info, 0, sizeof(info));
-    info.name = enumDecl->name->name;
-    info.type = ZR_OBJECT_PROTOTYPE_TYPE_ENUM;
-    info.accessModifier = enumDecl->accessModifier;
-    info.isImportedNative = ZR_FALSE;
-    info.allowValueConstruction = ZR_TRUE;
-    info.allowBoxedConstruction = ZR_TRUE;
-    ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), 1);
-    ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 1);
-    ZrCore_Array_Init(cs->state, &info.decorators, sizeof(SZrTypeDecoratorInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
-    ZrCore_Array_Init(cs->state, &info.members, sizeof(SZrTypeMemberInfo), ZR_PARSER_INITIAL_CAPACITY_TINY);
-
-    if (enumDecl->baseType != ZR_NULL) {
-        underlyingName = extract_type_name_string(cs, enumDecl->baseType);
+    if (!compiler_enum_fill_prototype_info(cs, declarationNode, &info)) {
+        return;
     }
-    if (underlyingName == ZR_NULL) {
-        underlyingName = extern_compiler_decorators_get_string_arg(enumDecl->decorators, "underlying");
+
+    ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);
+    if (cs->typeEnv != ZR_NULL) {
+        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, info.name);
     }
-    if (underlyingName == ZR_NULL) {
-        underlyingName = ZrCore_String_CreateFromNative(cs->state, "i32");
+    if (cs->compileTimeTypeEnv != ZR_NULL) {
+        ZrParser_TypeEnvironment_RegisterType(cs->state, cs->compileTimeTypeEnv, info.name);
     }
-    info.enumValueTypeName = underlyingName;
+}
 
-    if (enumDecl->members != ZR_NULL) {
-        for (TZrSize index = 0; index < enumDecl->members->count; index++) {
-            SZrAstNode *memberNode = enumDecl->members->nodes[index];
-            SZrTypeMemberInfo memberInfo;
+void compile_enum_declaration(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrEnumDeclaration *enumDecl;
+    SZrTypePrototypeInfo info;
 
-            if (memberNode == ZR_NULL || memberNode->type != ZR_AST_ENUM_MEMBER ||
-                memberNode->data.enumMember.name == ZR_NULL || memberNode->data.enumMember.name->name == ZR_NULL) {
-                continue;
-            }
+    if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_ENUM_DECLARATION || cs->hasError) {
+        return;
+    }
 
-            memset(&memberInfo, 0, sizeof(memberInfo));
-            memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
-            memberInfo.memberType = ZR_AST_CLASS_FIELD;
-            memberInfo.accessModifier = ZR_ACCESS_PUBLIC;
-            memberInfo.isStatic = ZR_TRUE;
-            memberInfo.name = memberNode->data.enumMember.name->name;
-            memberInfo.fieldTypeName = info.name;
-            ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
-        }
+    enumDecl = &node->data.enumDeclaration;
+    if (enumDecl->name == ZR_NULL || enumDecl->name->name == ZR_NULL ||
+        extern_compiler_has_registered_type(cs, enumDecl->name->name)) {
+        return;
+    }
+
+    if (!compiler_enum_fill_prototype_info(cs, node, &info)) {
+        return;
+    }
+
+    if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(cs, node, enumDecl->decorators, &info)) {
+        return;
     }
 
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &info);

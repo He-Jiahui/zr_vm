@@ -15,6 +15,21 @@ struct SZrGlobalState;
 
 #define ZR_NATIVE_MODULE_INFO_EXPORT_NAME "__zr_native_module_info"
 
+typedef enum EZrModuleInitializationState {
+    ZR_MODULE_INIT_STATE_UNINITIALIZED = 0,
+    ZR_MODULE_INIT_STATE_INITIALIZING = 1,
+    ZR_MODULE_INIT_STATE_READY = 2,
+    ZR_MODULE_INIT_STATE_FAILED = 3
+} EZrModuleInitializationState;
+
+typedef struct SZrModuleExportDescriptor {
+    SZrString *name;
+    TZrUInt8 accessModifier;
+    TZrUInt8 exportKind;
+    TZrUInt8 readiness;
+    TZrUInt8 isReady;
+} SZrModuleExportDescriptor;
+
 struct ZR_STRUCT_ALIGN SZrObjectModule {
     SZrObject super; // 继承自 SZrObject，pub 变量存储在 super.nodeMap
 
@@ -27,6 +42,11 @@ struct ZR_STRUCT_ALIGN SZrObjectModule {
     // pub 变量存储在 super.nodeMap 中
     // pro 变量存储在单独的 proNodeMap 中（包含所有 pub）
     SZrHashSet proNodeMap; // protected 变量（包含所有 pub）
+    TZrUInt8 initState;
+    TZrUInt8 reserved0;
+    TZrUInt16 reserved1;
+    SZrModuleExportDescriptor *exportDescriptors;
+    TZrUInt32 exportDescriptorLength;
 };
 
 typedef struct SZrObjectModule SZrObjectModule;
@@ -61,6 +81,18 @@ ZR_CORE_API TZrUInt64 ZrCore_Module_CalculatePathHash(struct SZrState *state, st
 ZR_CORE_API struct SZrObjectModule *ZrCore_Module_GetFromCache(struct SZrState *state, struct SZrString *path);
 ZR_CORE_API void ZrCore_Module_AddToCache(struct SZrState *state, struct SZrString *path, struct SZrObjectModule *module);
 ZR_CORE_API void ZrCore_Module_RemoveFromCache(struct SZrState *state, struct SZrString *path);
+ZR_CORE_API const SZrModuleExportDescriptor *ZrCore_Module_FindExportDescriptor(struct SZrObjectModule *module,
+                                                                                struct SZrString *name);
+ZR_CORE_API SZrModuleExportDescriptor *ZrCore_Module_FindExportDescriptorMutable(struct SZrObjectModule *module,
+                                                                                 struct SZrString *name);
+ZR_CORE_API TZrBool ZrCore_Module_RegisterExportDescriptor(struct SZrState *state,
+                                                           struct SZrObjectModule *module,
+                                                           const SZrModuleExportDescriptor *descriptor);
+ZR_CORE_API void ZrCore_Module_SetExportDescriptorReady(struct SZrObjectModule *module,
+                                                        struct SZrString *name,
+                                                        TZrBool isReady);
+ZR_CORE_API void ZrCore_Module_SetInitializationState(struct SZrObjectModule *module,
+                                                      EZrModuleInitializationState state);
 
 // 内部模块导入 helper
 ZR_CORE_API struct SZrObjectModule *ZrCore_Module_ImportByPath(struct SZrState *state, struct SZrString *path);

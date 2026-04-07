@@ -73,6 +73,11 @@ TZrBool ZrLanguageServer_LspProject_AppendMatchingImportTargetLocations(SZrState
                                                                         SZrArray *bindings,
                                                                         SZrString *moduleName,
                                                                         SZrArray *result);
+TZrBool ZrLanguageServer_LspProject_CollectImportDiagnostics(SZrState *state,
+                                                             SZrLspContext *context,
+                                                             SZrLspProjectIndex *projectIndex,
+                                                             SZrString *uri,
+                                                             SZrArray *result);
 TZrBool ZrLanguageServer_LspProject_DeriveBinaryModuleNameFromPath(SZrLspProjectIndex *projectIndex,
                                                                    const TZrChar *path,
                                                                    TZrChar *buffer,

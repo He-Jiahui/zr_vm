@@ -7,6 +7,7 @@
 #include "compile_time_binding_metadata.h"
 #include "compile_time_executor_internal.h"
 #include "compile_statement_internal.h"
+#include "type_inference_internal.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/type_inference.h"
@@ -22,6 +23,171 @@
 
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node);
+static TZrNativeString compile_statement_get_native_string(SZrString *value);
+SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeName);
+SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName);
+SZrTypeMemberInfo *find_compiler_type_member(SZrCompilerState *cs,
+                                             SZrString *typeName,
+                                             SZrString *memberName);
+
+static void compile_statement_register_type_value_alias(SZrCompilerState *cs,
+                                                        SZrString *name,
+                                                        SZrAstNode *valueNode) {
+    SZrInferredType aliasType;
+
+    if (cs == ZR_NULL || name == ZR_NULL || valueNode == ZR_NULL ||
+        valueNode->type != ZR_AST_TYPE_LITERAL_EXPRESSION ||
+        valueNode->data.typeLiteralExpression.typeInfo == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &aliasType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_AstTypeToInferredType_Convert(cs, valueNode->data.typeLiteralExpression.typeInfo, &aliasType)) {
+        ZrParser_InferredType_Free(cs->state, &aliasType);
+        return;
+    }
+
+    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
+        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
+        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
+            ZrParser_InferredType_Free(cs->state, &binding->type);
+            ZrParser_InferredType_Copy(cs->state, &binding->type, &aliasType);
+            ZrParser_InferredType_Free(cs->state, &aliasType);
+            return;
+        }
+    }
+
+    {
+        SZrTypeBinding binding;
+        binding.name = name;
+        ZrParser_InferredType_Init(cs->state, &binding.type, ZR_VALUE_TYPE_OBJECT);
+        ZrParser_InferredType_Copy(cs->state, &binding.type, &aliasType);
+        ZrCore_Array_Push(cs->state, &cs->typeValueAliases, &binding);
+    }
+
+    ZrParser_InferredType_Free(cs->state, &aliasType);
+}
+
+static TZrBool compile_statement_has_type_value_alias(SZrCompilerState *cs, SZrString *name) {
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
+        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
+        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool compile_statement_report_duplicate_type_name(SZrCompilerState *cs,
+                                                            SZrString *name,
+                                                            SZrFileRange location) {
+    TZrNativeString nameText;
+    TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
+
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nameText = compile_statement_get_native_string(name);
+    if (nameText != ZR_NULL) {
+        snprintf(errorMessage,
+                 sizeof(errorMessage),
+                 "Type name '%s' is already declared in this context",
+                 nameText);
+    } else {
+        snprintf(errorMessage, sizeof(errorMessage), "Type name is already declared in this context");
+    }
+
+    ZrParser_Compiler_Error(cs, errorMessage, location);
+    return ZR_FALSE;
+}
+
+static TZrBool compile_statement_register_explicit_type_name(SZrCompilerState *cs,
+                                                             SZrString *name,
+                                                             SZrFileRange location) {
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (compile_statement_has_type_value_alias(cs, name) ||
+        (cs->typeEnv != ZR_NULL && ZrParser_TypeEnvironment_LookupType(cs->typeEnv, name)) ||
+        find_type_declaration(cs, name) != ZR_NULL) {
+        return compile_statement_report_duplicate_type_name(cs, name, location);
+    }
+
+    if (cs->typeEnv != ZR_NULL && !ZrParser_TypeEnvironment_RegisterType(cs->state, cs->typeEnv, name)) {
+        ZrParser_Compiler_Error(cs, "Failed to register explicit imported type binding", location);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool compile_statement_try_register_imported_destructured_type_aliases(SZrCompilerState *cs,
+                                                                                 SZrAstNode *node) {
+    SZrVariableDeclaration *decl;
+    SZrString *moduleName;
+    SZrTypePrototypeInfo *modulePrototype;
+    SZrDestructuringObject *destructuring;
+
+    if (cs == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
+        return ZR_TRUE;
+    }
+
+    decl = &node->data.variableDeclaration;
+    if (decl->pattern == ZR_NULL || decl->pattern->type != ZR_AST_DESTRUCTURING_OBJECT ||
+        decl->value == ZR_NULL || decl->value->type != ZR_AST_IMPORT_EXPRESSION ||
+        decl->value->data.importExpression.modulePath == ZR_NULL ||
+        decl->value->data.importExpression.modulePath->type != ZR_AST_STRING_LITERAL ||
+        decl->value->data.importExpression.modulePath->data.stringLiteral.value == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    moduleName = decl->value->data.importExpression.modulePath->data.stringLiteral.value;
+    if (moduleName == ZR_NULL || !ensure_import_module_compile_info(cs, moduleName)) {
+        return ZR_TRUE;
+    }
+
+    modulePrototype = find_compiler_type_prototype(cs, moduleName);
+    if (modulePrototype == ZR_NULL || modulePrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
+        return ZR_TRUE;
+    }
+
+    destructuring = &decl->pattern->data.destructuringObject;
+    if (destructuring->keys == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < destructuring->keys->count; index++) {
+        SZrAstNode *keyNode = destructuring->keys->nodes[index];
+        SZrString *keyName;
+        SZrTypeMemberInfo *memberInfo;
+
+        if (keyNode == ZR_NULL || keyNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+            keyNode->data.identifier.name == ZR_NULL) {
+            continue;
+        }
+
+        keyName = keyNode->data.identifier.name;
+        memberInfo = find_compiler_type_member(cs, moduleName, keyName);
+        if (memberInfo == ZR_NULL || memberInfo->fieldTypeName == ZR_NULL ||
+            !ZrCore_String_Equal(memberInfo->fieldTypeName, keyName) ||
+            find_compiler_type_prototype(cs, keyName) == ZR_NULL) {
+            continue;
+        }
+
+        if (!compile_statement_register_explicit_type_name(cs, keyName, keyNode->location)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
 
 static TZrBool compile_statement_refill_io_chunk(SZrIo *io) {
     SZrState *state;
@@ -1625,6 +1791,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
 
         if (decl->value != ZR_NULL) {
             compiler_register_callable_value_binding(cs, varName, decl->value);
+            compile_statement_register_type_value_alias(cs, varName, decl->value);
         }
 
         if (!compile_statement_try_register_imported_compile_time_module_alias(cs, node) ||
@@ -1649,6 +1816,9 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             exportedVar.name = varName;
             exportedVar.stackSlot = varIndex;
             exportedVar.accessModifier = decl->accessModifier;
+            exportedVar.exportKind = ZR_MODULE_EXPORT_KIND_VALUE;
+            exportedVar.readiness = ZR_MODULE_EXPORT_READY_ENTRY;
+            exportedVar.callableChildIndex = ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE;
 
             if (decl->accessModifier == ZR_ACCESS_PUBLIC) {
                 ZrCore_Array_Push(cs->state, &cs->pubVariables, &exportedVar);
@@ -1666,7 +1836,13 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         }
     } else if (decl->pattern->type == ZR_AST_DESTRUCTURING_OBJECT) {
         // 处理解构对象赋值：var {key1, key2, ...} = value;
+        if (!compile_statement_try_register_imported_destructured_type_aliases(cs, node)) {
+            return;
+        }
         compile_destructuring_object(cs, decl->pattern, decl->value);
+        if (cs->hasError) {
+            return;
+        }
     } else if (decl->pattern->type == ZR_AST_DESTRUCTURING_ARRAY) {
         // 处理解构数组赋值：var [elem1, elem2, ...] = value;
         compile_destructuring_array(cs, decl->pattern, decl->value);

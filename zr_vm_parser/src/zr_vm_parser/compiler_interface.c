@@ -24,8 +24,21 @@ static void compiler_interface_append_parameter_type(SZrCompilerState *cs,
 
 static void compiler_interface_collect_parameter_types(SZrCompilerState *cs,
                                                        SZrArray *parameterTypes,
-                                                       SZrAstNodeArray *params) {
-    if (cs == ZR_NULL || parameterTypes == ZR_NULL || params == ZR_NULL || params->count == 0) {
+                                                       SZrAstNodeArray *params,
+                                                       SZrAstNode *functionNode) {
+    SZrAstNode *previousFunctionNode;
+
+    if (cs == ZR_NULL || parameterTypes == ZR_NULL) {
+        return;
+    }
+
+    previousFunctionNode = cs->currentFunctionNode;
+    if (functionNode != ZR_NULL) {
+        cs->currentFunctionNode = functionNode;
+    }
+
+    if (params == ZR_NULL || params->count == 0) {
+        cs->currentFunctionNode = previousFunctionNode;
         return;
     }
 
@@ -38,6 +51,8 @@ static void compiler_interface_collect_parameter_types(SZrCompilerState *cs,
 
         compiler_interface_append_parameter_type(cs, parameterTypes, paramNode->data.parameter.typeInfo);
     }
+
+    cs->currentFunctionNode = previousFunctionNode;
 }
 
 static void compiler_interface_init_member_defaults(SZrTypeMemberInfo *memberInfo) {
@@ -48,8 +63,14 @@ static void compiler_interface_init_member_defaults(SZrTypeMemberInfo *memberInf
     memset(memberInfo, 0, sizeof(*memberInfo));
     memberInfo->minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
     memberInfo->accessModifier = ZR_ACCESS_PRIVATE;
+    memberInfo->modifierFlags = ZR_DECLARATION_MODIFIER_ABSTRACT | ZR_DECLARATION_MODIFIER_VIRTUAL;
     memberInfo->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     memberInfo->receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    memberInfo->metaType = ZR_META_ENUM_MAX;
+    memberInfo->virtualSlotIndex = (TZrUInt32)-1;
+    memberInfo->interfaceContractSlot = (TZrUInt32)-1;
+    memberInfo->propertyIdentity = (TZrUInt32)-1;
+    memberInfo->accessorRole = 0;
     ZrCore_Array_Construct(&memberInfo->parameterTypes);
     ZrCore_Array_Construct(&memberInfo->parameterNames);
     ZrCore_Array_Construct(&memberInfo->parameterHasDefaultValues);
@@ -92,9 +113,12 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.name = typeName;
     info.type = ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE;
     info.accessModifier = interfaceDecl->accessModifier;
+    info.modifierFlags = ZR_DECLARATION_MODIFIER_ABSTRACT;
     info.isImportedNative = ZR_FALSE;
     info.allowValueConstruction = ZR_FALSE;
     info.allowBoxedConstruction = ZR_FALSE;
+    info.nextVirtualSlotIndex = 0;
+    info.nextPropertyIdentity = 0;
 
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 1);
@@ -146,6 +170,9 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.accessModifier = field->access;
                     memberInfo.isConst = field->isConst;
                     memberInfo.name = field->name != ZR_NULL ? field->name->name : ZR_NULL;
+                    memberInfo.ownerTypeName = typeName;
+                    memberInfo.baseDefinitionOwnerTypeName = typeName;
+                    memberInfo.baseDefinitionName = memberInfo.name;
                     memberInfo.fieldType = field->typeInfo;
                     memberInfo.fieldTypeName = field->typeInfo != ZR_NULL
                                                        ? extract_type_name_string(cs, field->typeInfo)
@@ -162,12 +189,19 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 case ZR_AST_INTERFACE_METHOD_SIGNATURE: {
                     SZrInterfaceMethodSignature *method = &member->data.interfaceMethodSignature;
                     SZrTypeMemberInfo memberInfo;
+                    SZrAstNode *previousFunctionNode = cs->currentFunctionNode;
 
                     compiler_interface_init_member_defaults(&memberInfo);
                     memberInfo.memberType = ZR_AST_CLASS_METHOD;
                     memberInfo.declarationNode = member;
                     memberInfo.accessModifier = method->access;
                     memberInfo.name = method->name != ZR_NULL ? method->name->name : ZR_NULL;
+                    memberInfo.ownerTypeName = typeName;
+                    memberInfo.baseDefinitionOwnerTypeName = typeName;
+                    memberInfo.baseDefinitionName = memberInfo.name;
+                    memberInfo.virtualSlotIndex = info.nextVirtualSlotIndex++;
+                    memberInfo.interfaceContractSlot = memberInfo.virtualSlotIndex;
+                    cs->currentFunctionNode = member;
                     memberInfo.returnTypeName =
                             method->returnType != ZR_NULL ? extract_type_name_string(cs, method->returnType) : ZR_NULL;
                     ZrCore_Array_Init(cs->state,
@@ -177,11 +211,12 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                               ? method->generic->params->count
                                               : 1);
                     compiler_collect_generic_parameter_info(cs, &memberInfo.genericParameters, method->generic);
-                    compiler_interface_collect_parameter_types(cs, &memberInfo.parameterTypes, method->params);
+                    compiler_interface_collect_parameter_types(cs, &memberInfo.parameterTypes, method->params, member);
                     compiler_collect_parameter_passing_modes(cs->state,
                                                              &memberInfo.parameterPassingModes,
                                                              method->params);
                     memberInfo.parameterCount = (TZrUInt32)memberInfo.parameterTypes.length;
+                    cs->currentFunctionNode = previousFunctionNode;
                     if (memberInfo.name != ZR_NULL) {
                         ZrCore_Array_Push(cs->state, &info.members, &memberInfo);
                     }
@@ -201,6 +236,13 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         getterInfo.accessModifier = property->access;
                         getterInfo.name =
                                 compiler_create_hidden_property_accessor_name(cs, property->name->name, ZR_FALSE);
+                        getterInfo.ownerTypeName = typeName;
+                        getterInfo.baseDefinitionOwnerTypeName = typeName;
+                        getterInfo.baseDefinitionName = getterInfo.name;
+                        getterInfo.propertyIdentity = info.nextPropertyIdentity;
+                        getterInfo.accessorRole = 1;
+                        getterInfo.virtualSlotIndex = info.nextVirtualSlotIndex++;
+                        getterInfo.interfaceContractSlot = getterInfo.virtualSlotIndex;
                         getterInfo.returnTypeName =
                                 property->typeInfo != ZR_NULL ? extract_type_name_string(cs, property->typeInfo)
                                                               : ZrCore_String_CreateFromNative(cs->state, "object");
@@ -217,6 +259,13 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         setterInfo.accessModifier = property->access;
                         setterInfo.name =
                                 compiler_create_hidden_property_accessor_name(cs, property->name->name, ZR_TRUE);
+                        setterInfo.ownerTypeName = typeName;
+                        setterInfo.baseDefinitionOwnerTypeName = typeName;
+                        setterInfo.baseDefinitionName = setterInfo.name;
+                        setterInfo.propertyIdentity = info.nextPropertyIdentity;
+                        setterInfo.accessorRole = 2;
+                        setterInfo.virtualSlotIndex = info.nextVirtualSlotIndex++;
+                        setterInfo.interfaceContractSlot = setterInfo.virtualSlotIndex;
                         ZrCore_Array_Init(cs->state, &setterInfo.parameterTypes, sizeof(SZrInferredType), 1);
                         compiler_interface_append_parameter_type(cs, &setterInfo.parameterTypes, property->typeInfo);
                         {
@@ -232,6 +281,9 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                             ZrCore_Array_Push(cs->state, &info.members, &setterInfo);
                         }
                     }
+                    if (property->hasGet || property->hasSet) {
+                        info.nextPropertyIdentity++;
+                    }
                     break;
                 }
                 case ZR_AST_INTERFACE_META_SIGNATURE: {
@@ -243,12 +295,19 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.declarationNode = member;
                     memberInfo.accessModifier = metaSignature->access;
                     memberInfo.name = metaSignature->meta != ZR_NULL ? metaSignature->meta->name : ZR_NULL;
+                    memberInfo.ownerTypeName = typeName;
+                    memberInfo.baseDefinitionOwnerTypeName = typeName;
+                    memberInfo.baseDefinitionName = memberInfo.name;
                     memberInfo.metaType = compiler_resolve_meta_type_name(memberInfo.name);
                     memberInfo.isMetaMethod = memberInfo.metaType != ZR_META_ENUM_MAX;
+                    memberInfo.virtualSlotIndex = memberInfo.metaType == ZR_META_CONSTRUCTOR
+                                                          ? (TZrUInt32)-1
+                                                          : info.nextVirtualSlotIndex++;
+                    memberInfo.interfaceContractSlot = memberInfo.virtualSlotIndex;
                     memberInfo.returnTypeName = metaSignature->returnType != ZR_NULL
                                                         ? extract_type_name_string(cs, metaSignature->returnType)
                                                         : ZR_NULL;
-                    compiler_interface_collect_parameter_types(cs, &memberInfo.parameterTypes, metaSignature->params);
+                    compiler_interface_collect_parameter_types(cs, &memberInfo.parameterTypes, metaSignature->params, member);
                     compiler_collect_parameter_passing_modes(cs->state,
                                                              &memberInfo.parameterPassingModes,
                                                              metaSignature->params);

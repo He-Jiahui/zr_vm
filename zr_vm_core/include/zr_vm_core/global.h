@@ -41,6 +41,8 @@ typedef struct SZrObjectModule *(*FZrAotModuleLoader)(struct SZrState *state,
                                                       struct SZrString *moduleName,
                                                       TZrPtr userData);
 
+typedef void (*FZrGlobalOpaqueStateCleanup)(struct SZrGlobalState *global, TZrPtr state);
+
 struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Memory
     FZrAllocator allocator;
@@ -92,6 +94,8 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     struct SZrFunction *(*compileSource)(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName);
     TZrBool emitCompileTimeRuntimeSupport;
     SZrArray importCompileInfoStack;
+    TZrPtr parserModuleInitState;
+    FZrGlobalOpaqueStateCleanup parserModuleInitStateCleanup;
 
 
     // exceptions

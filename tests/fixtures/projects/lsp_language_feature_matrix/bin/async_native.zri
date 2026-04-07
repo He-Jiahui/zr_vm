@@ -1,0 +1,441 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 44
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 10
+
+CONSTANTS (14):
+  [0] null
+  [1] native closure
+  [2] string: "zr.math"
+  [3] native closure
+  [4] string: "zr.system"
+  [5] native closure
+  [6] string: "zr.network"
+  [7] native closure
+  [8] string: "zr.ffi"
+  [9] native closure
+  [10] string: "zr.container"
+  [11] function
+  [12] function
+  [13] string: "Holder"
+
+LOCAL_VARIABLES (7):
+  [0] makeEscapingCallback: offset_activate=0, offset_dead=26
+  [1] nativeScore: offset_activate=1, offset_dead=26
+  [2] math: offset_activate=6, offset_dead=26
+  [3] system: offset_activate=10, offset_dead=26
+  [4] network: offset_activate=14, offset_dead=26
+  [5] ffi: offset_activate=18, offset_dead=26
+  [6] container: offset_activate=22, offset_dead=26
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (7):
+    [0] makeEscapingCallback: function
+    [1] nativeScore: function
+    [2] math: zr.math
+    [3] system: zr.system
+    [4] network: zr.network
+    [5] ffi: zr.ffi
+    [6] container: zr.container
+  EXPORTED_SYMBOLS (2):
+    fn makeEscapingCallback(int): object
+    fn nativeScore(): int
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+PROTOTYPES (1):
+// ========== PROTOTYPES FROM DATA (count: 1) ==========
+// --- Prototype 1 ---
+class Holder {
+  access: private (1),
+  members: [
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (28):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=0)
+  [2] GET_CONSTANT (extra=2, operand=1)
+  [3] GET_CONSTANT (extra=3, operand=2)
+  [4] FUNCTION_CALL (extra=2, operand1=2, operand2=1)
+  [5] GET_CONSTANT (extra=3, operand=0)
+  [6] GET_CONSTANT (extra=3, operand=3)
+  [7] GET_CONSTANT (extra=4, operand=4)
+  [8] FUNCTION_CALL (extra=3, operand1=3, operand2=1)
+  [9] GET_CONSTANT (extra=4, operand=0)
+  [10] GET_CONSTANT (extra=4, operand=5)
+  [11] GET_CONSTANT (extra=5, operand=6)
+  [12] FUNCTION_CALL (extra=4, operand1=4, operand2=1)
+  [13] GET_CONSTANT (extra=5, operand=0)
+  [14] GET_CONSTANT (extra=5, operand=7)
+  [15] GET_CONSTANT (extra=6, operand=8)
+  [16] FUNCTION_CALL (extra=5, operand1=5, operand2=1)
+  [17] GET_CONSTANT (extra=6, operand=0)
+  [18] GET_CONSTANT (extra=6, operand=9)
+  [19] GET_CONSTANT (extra=7, operand=10)
+  [20] FUNCTION_CALL (extra=6, operand1=6, operand2=1)
+  [21] GET_CONSTANT (extra=7, operand=0)
+  [22] CREATE_CLOSURE (extra=7)
+  [23] SET_STACK (extra=0, operand=7)
+  [24] CREATE_CLOSURE (extra=8)
+  [25] SET_STACK (extra=1, operand=8)
+  [26] GET_CONSTANT (extra=9, operand=0)
+  [27] FUNCTION_RETURN (extra=1, operand1=9, operand2=0)
+
+CHILD_FUNCTIONS (2):
+  [0] FUNCTION:
+    NAME: makeEscapingCallback
+    START_LINE: 12
+    END_LINE: 17
+    PARAMETERS: 1
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 4
+
+    CONSTANTS (1):
+      [0] function
+
+    LOCAL_VARIABLES (2):
+      [0] offset: offset_activate=0, offset_dead=3
+      [1] callback: offset_activate=1, offset_dead=3
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (2):
+        [0] offset: int
+        [1] callback: %func(int)->int
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (3):
+      [0] OPCODE_80 (extra=1)
+      [1] GET_STACK (extra=2, operand=1)
+      [2] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
+
+    CHILD_FUNCTIONS (1):
+      [0] FUNCTION:
+        NAME: <anonymous>
+        START_LINE: 13
+        END_LINE: 16
+        PARAMETERS: 1
+        HAS_VAR_ARGS: false
+        STACK_SIZE: 4
+
+        CONSTANTS (0):
+
+        LOCAL_VARIABLES (1):
+          [0] value: offset_activate=0, offset_dead=4
+
+        CLOSURE_VARIABLES (1):
+          [0] offset: in_stack=true, index=0, type=NULL
+
+        TYPE_METADATA:
+          LOCAL_BINDINGS (1):
+            [0] value: int
+          EXPORTED_SYMBOLS (0):
+          COMPILE_TIME_VARIABLES (0):
+          COMPILE_TIME_FUNCTIONS (0):
+          TESTS (0):
+
+        TYPE_TABLE (0):
+
+        OWNERSHIP_TABLE (0):
+
+        EFFECT_TABLE (0):
+
+        BLOCK_GRAPH (0):
+
+        SEMIR (0):
+
+        DEOPT_MAP (0):
+
+        CALLSITE_CACHE_TABLE (0):
+
+        EH_TABLE (0):
+
+        INSTRUCTIONS (4):
+          [0] GET_STACK (extra=1, operand=0)
+          [1] OPCODE_6 (extra=2)
+          [2] ADD_INT (extra=3, operand1=1, operand2=2)
+          [3] FUNCTION_RETURN (extra=1, operand1=3, operand2=0)
+
+
+  [1] FUNCTION:
+    NAME: nativeScore
+    START_LINE: 19
+    END_LINE: 43
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 35
+
+    CONSTANTS (13):
+      [0] string: "Vector3"
+      [1] float: 1.000000
+      [2] float: 2.000000
+      [3] float: 3.000000
+      [4] null
+      [5] int: 8
+      [6] string: "LinkedList<int>"
+      [7] string: "Holder"
+      [8] int: 5
+      [9] string: "matrix"
+      [10] int: 1000
+      [11] int: 2
+      [12] int: 1
+
+    LOCAL_VARIABLES (11):
+      [0] vector: offset_activate=14, offset_dead=123
+      [1] handle: offset_activate=20, offset_dead=123
+      [2] tcp: offset_activate=22, offset_dead=123
+      [3] list: offset_activate=29, offset_dead=123
+      [4] owner: offset_activate=34, offset_dead=123
+      [5] shared: offset_activate=42, offset_dead=123
+      [6] weak: offset_activate=47, offset_dead=123
+      [7] upgraded: offset_activate=52, offset_dead=123
+      [8] releasedShared: offset_activate=53, offset_dead=123
+      [9] releasedUpgrade: offset_activate=54, offset_dead=123
+      [10] escaped: offset_activate=58, offset_dead=123
+
+    CLOSURE_VARIABLES (6):
+      [0] math: in_stack=true, index=2, type=NULL
+      [1] ffi: in_stack=true, index=5, type=NULL
+      [2] network: in_stack=true, index=4, type=NULL
+      [3] container: in_stack=true, index=6, type=NULL
+      [4] makeEscapingCallback: in_stack=true, index=0, type=NULL
+      [5] system: in_stack=true, index=3, type=NULL
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (11):
+        [0] vector: Vector3
+        [1] handle: BufferHandle
+        [2] tcp: zr.network.tcp
+        [3] list: LinkedList<int>
+        [4] owner: Holder
+        [5] shared: Holder
+        [6] weak: Holder
+        [7] upgraded: Holder
+        [8] releasedShared: null
+        [9] releasedUpgrade: null
+        [10] escaped: object
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (10):
+      [0] object
+      [1] Vector3
+      [2] BufferHandle
+      [3] zr.network.tcp
+      [4] LinkedList<int>
+      [5] Holder
+      [6] Holder
+      [7] Holder
+      [8] Holder
+      [9] null
+
+    OWNERSHIP_TABLE (4):
+      [0] PlainGc
+      [1] Unique
+      [2] Shared
+      [3] Weak
+
+    EFFECT_TABLE (7):
+      [0] OWNERSHIP_TRANSITION inst=0 from=0 to=1
+      [1] OWNERSHIP_TRANSITION inst=1 from=1 to=2
+      [2] OWNERSHIP_TRANSITION inst=2 from=2 to=3
+      [3] OWNERSHIP_TRANSITION inst=3 from=3 to=2
+      [4] OWNERSHIP_TRANSITION inst=4 from=2 to=0
+      [5] OWNERSHIP_TRANSITION inst=5 from=2 to=0
+      [6] DYNAMIC_RUNTIME inst=6 from=0 to=0
+
+    BLOCK_GRAPH (1):
+      [0] block=0 first=0 count=7
+
+    SEMIR (7):
+      [0] OWN_USING exec=32 type=5 effect=0 dst=4 op0=5 op1=0 deopt=0
+      [1] OWN_SHARE exec=37 type=6 effect=1 dst=5 op0=6 op1=0 deopt=0
+      [2] OWN_WEAK exec=45 type=7 effect=2 dst=6 op0=7 op1=0 deopt=0
+      [3] OWN_UPGRADE exec=50 type=8 effect=3 dst=7 op0=8 op1=0 deopt=0
+      [4] OWN_RELEASE exec=52 type=9 effect=4 dst=8 op0=5 op1=0 deopt=0
+      [5] OWN_RELEASE exec=53 type=9 effect=5 dst=9 op0=7 op1=0 deopt=0
+      [6] DYN_CALL exec=114 type=0 effect=6 dst=31 op0=31 op1=1 deopt=1
+
+    DEOPT_MAP (1):
+      [0] deopt=1 exec=114
+
+    CALLSITE_CACHE_TABLE (1):
+      [0] kind=DYN_CALL inst=114 member=4294967295 deopt=1 args=1 hits=0 misses=0
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (123):
+      [0] CREATE_OBJECT (extra=0)
+      [1] OPCODE_20 (extra=0)
+      [2] OPCODE_8 (extra=1, operand1=0, operand2=0)
+      [3] SET_STACK (extra=2, operand=0)
+      [4] GET_CONSTANT (extra=3, operand=1)
+      [5] GET_CONSTANT (extra=4, operand=2)
+      [6] GET_CONSTANT (extra=5, operand=3)
+      [7] OPCODE_73 (extra=1, operand1=1, operand2=4)
+      [8] SET_STACK (extra=0, operand=2)
+      [9] GET_CONSTANT (extra=1, operand=4)
+      [10] GET_CONSTANT (extra=2, operand=4)
+      [11] GET_CONSTANT (extra=3, operand=4)
+      [12] GET_CONSTANT (extra=4, operand=4)
+      [13] GET_CONSTANT (extra=5, operand=4)
+      [14] OPCODE_6 (extra=1, operand2=1, operand1=1, operand1_1=0)
+      [15] OPCODE_8 (extra=1, operand1=1, operand2=1)
+      [16] OPCODE_8 (extra=1, operand1=1, operand2=2)
+      [17] GET_CONSTANT (extra=2, operand=5)
+      [18] OPCODE_73 (extra=1, operand1=1, operand2=1)
+      [19] GET_CONSTANT (extra=2, operand=4)
+      [20] OPCODE_6 (extra=2, operand2=2, operand1=2, operand1_1=0)
+      [21] OPCODE_8 (extra=2, operand1=2, operand2=3)
+      [22] CREATE_OBJECT (extra=3)
+      [23] OPCODE_21 (extra=3, operand2=393219, operand1=3, operand1_1=6)
+      [24] OPCODE_8 (extra=4, operand1=3, operand2=0)
+      [25] SET_STACK (extra=5, operand=3)
+      [26] OPCODE_73 (extra=4, operand1=4, operand2=1)
+      [27] GET_CONSTANT (extra=4, operand=4)
+      [28] GET_CONSTANT (extra=5, operand=4)
+      [29] CREATE_OBJECT (extra=4)
+      [30] OPCODE_21 (extra=4, operand2=458756, operand1=4, operand1_1=7)
+      [31] SET_STACK (extra=5, operand=4)
+      [32] OWN_USING (extra=4, operand1=5, operand2=0)
+      [33] GET_CONSTANT (extra=5, operand=4)
+      [34] GET_STACK (extra=7, operand=4)
+      [35] SET_STACK (extra=6, operand=7)
+      [36] GET_CONSTANT (extra=7, operand=4)
+      [37] OWN_SHARE (extra=5, operand1=6, operand2=0)
+      [38] GET_CONSTANT (extra=6, operand=4)
+      [39] GET_CONSTANT (extra=6, operand=4)
+      [40] SET_STACK (extra=4, operand=6)
+      [41] GET_CONSTANT (extra=6, operand=4)
+      [42] GET_STACK (extra=8, operand=5)
+      [43] SET_STACK (extra=7, operand=8)
+      [44] GET_CONSTANT (extra=8, operand=4)
+      [45] OWN_WEAK (extra=6, operand1=7, operand2=0)
+      [46] GET_CONSTANT (extra=7, operand=4)
+      [47] GET_STACK (extra=9, operand=6)
+      [48] SET_STACK (extra=8, operand=9)
+      [49] GET_CONSTANT (extra=9, operand=4)
+      [50] OWN_UPGRADE (extra=7, operand1=8, operand2=0)
+      [51] GET_CONSTANT (extra=8, operand=4)
+      [52] OWN_RELEASE (extra=8, operand1=5, operand2=0)
+      [53] OWN_RELEASE (extra=9, operand1=7, operand2=0)
+      [54] OPCODE_6 (extra=10, operand2=4, operand1=4, operand1_1=0)
+      [55] GET_CONSTANT (extra=11, operand=8)
+      [56] OPCODE_73 (extra=10, operand1=10, operand2=1)
+      [57] GET_CONSTANT (extra=11, operand=4)
+      [58] GET_STACK (extra=11, operand=3)
+      [59] SET_STACK (extra=12, operand=11)
+      [60] OPCODE_8 (extra=11, operand1=11, operand2=4)
+      [61] GET_STACK (extra=13, operand=0)
+      [62] OPCODE_8 (extra=13, operand1=13, operand2=5)
+      [63] OPCODE_16 (extra=14, operand2=13, operand1=13, operand1_1=0)
+      [64] SET_STACK (extra=13, operand=14)
+      [65] GET_CONSTANT (extra=14, operand=4)
+      [66] OPCODE_73 (extra=11, operand1=11, operand2=2)
+      [67] GET_CONSTANT (extra=12, operand=4)
+      [68] GET_CONSTANT (extra=13, operand=4)
+      [69] GET_CONSTANT (extra=11, operand=4)
+      [70] OPCODE_6 (extra=11, operand2=5, operand1=5, operand1_1=0)
+      [71] OPCODE_8 (extra=11, operand1=11, operand2=6)
+      [72] OPCODE_8 (extra=11, operand1=11, operand2=7)
+      [73] GET_CONSTANT (extra=12, operand=9)
+      [74] OPCODE_73 (extra=11, operand1=11, operand2=1)
+      [75] GET_CONSTANT (extra=12, operand=4)
+      [76] GET_CONSTANT (extra=11, operand=4)
+      [77] GET_STACK (extra=11, operand=1)
+      [78] GET_CONSTANT (extra=12, operand=4)
+      [79] OPCODE_59 (extra=13, operand1=11, operand2=12)
+      [80] SET_STACK (extra=14, operand=13)
+      [81] OPCODE_79 (extra=13, operand=4)
+      [82] GET_STACK (extra=15, operand=2)
+      [83] GET_CONSTANT (extra=16, operand=4)
+      [84] OPCODE_59 (extra=17, operand1=15, operand2=16)
+      [85] SET_STACK (extra=14, operand=17)
+      [86] OPCODE_79 (extra=17, operand=5)
+      [87] GET_CONSTANT (extra=19, operand=10)
+      [88] OPCODE_33 (extra=18, operand2=19, operand1=19, operand1_1=0)
+      [89] GET_CONSTANT (extra=19, operand=4)
+      [90] FUNCTION_RETURN (extra=1, operand1=18, operand2=0)
+      [91] OPCODE_78 (extra=0, operand=0)
+      [92] GET_STACK (extra=19, operand=4)
+      [93] GET_CONSTANT (extra=20, operand=4)
+      [94] OPCODE_59 (extra=21, operand1=19, operand2=20)
+      [95] SET_STACK (extra=22, operand=21)
+      [96] OPCODE_79 (extra=21, operand=5)
+      [97] GET_STACK (extra=23, operand=8)
+      [98] GET_CONSTANT (extra=24, operand=4)
+      [99] OPCODE_59 (extra=25, operand1=23, operand2=24)
+      [100] SET_STACK (extra=22, operand=25)
+      [101] OPCODE_78 (extra=0, operand=0)
+      [102] SET_STACK (extra=26, operand=25)
+      [103] OPCODE_79 (extra=25, operand=5)
+      [104] GET_STACK (extra=27, operand=9)
+      [105] GET_CONSTANT (extra=28, operand=4)
+      [106] OPCODE_59 (extra=29, operand1=27, operand2=28)
+      [107] SET_STACK (extra=26, operand=29)
+      [108] OPCODE_78 (extra=0, operand=0)
+      [109] OPCODE_79 (extra=29, operand=9)
+      [110] GET_STACK (extra=30, operand=3)
+      [111] OPCODE_8 (extra=30, operand1=30, operand2=8)
+      [112] GET_STACK (extra=31, operand=10)
+      [113] GET_CONSTANT (extra=32, operand=11)
+      [114] SUPER_DYN_CALL_CACHED (extra=31, operand1=31, operand2=0)
+      [115] GET_CONSTANT (extra=32, operand=4)
+      [116] OPCODE_22 (extra=32, operand2=2031646, operand1=30, operand1_1=31)
+      [117] FUNCTION_RETURN (extra=1, operand1=32, operand2=0)
+      [118] OPCODE_78 (extra=0, operand=0)
+      [119] GET_CONSTANT (extra=34, operand=12)
+      [120] OPCODE_33 (extra=33, operand2=34, operand1=34, operand1_1=0)
+      [121] GET_CONSTANT (extra=34, operand=4)
+      [122] FUNCTION_RETURN (extra=1, operand1=33, operand2=0)
+
+

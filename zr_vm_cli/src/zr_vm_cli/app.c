@@ -9,6 +9,14 @@
 
 #include <stdio.h>
 
+static int zr_cli_app_maybe_run_interactive_tail(const SZrCliCommand *command, int result) {
+    if (result != 0 || command == ZR_NULL || !command->interactiveAfterRun) {
+        return result;
+    }
+
+    return ZrCli_Repl_Run();
+}
+
 int ZrCli_App_Run(int argc, char **argv) {
     SZrCliCommand command;
     TZrChar error[ZR_CLI_ERROR_BUFFER_LENGTH];
@@ -24,11 +32,19 @@ int ZrCli_App_Run(int argc, char **argv) {
             ZrCli_Command_LogHelp(ZR_NULL, ZR_FALSE, argc > 0 ? argv[0] : "zr_vm_cli");
             return 0;
 
+        case ZR_CLI_MODE_VERSION:
+            ZrCli_Command_LogVersion(ZR_NULL, ZR_FALSE);
+            return 0;
+
         case ZR_CLI_MODE_REPL:
             return ZrCli_Repl_Run();
 
         case ZR_CLI_MODE_RUN_PROJECT:
-            return ZrCli_Runtime_RunProject(&command);
+        case ZR_CLI_MODE_RUN_PROJECT_MODULE:
+            return zr_cli_app_maybe_run_interactive_tail(&command, ZrCli_Runtime_RunProject(&command));
+
+        case ZR_CLI_MODE_RUN_INLINE:
+            return zr_cli_app_maybe_run_interactive_tail(&command, ZrCli_Runtime_RunInline(&command));
 
         case ZR_CLI_MODE_COMPILE_PROJECT: {
             int compileResult = ZrCli_Compiler_CompileProject(&command);
@@ -36,7 +52,7 @@ int ZrCli_App_Run(int argc, char **argv) {
                 return compileResult;
             }
             if (command.runAfterCompile) {
-                return ZrCli_Runtime_RunProject(&command);
+                return zr_cli_app_maybe_run_interactive_tail(&command, ZrCli_Runtime_RunProject(&command));
             }
             return 0;
         }

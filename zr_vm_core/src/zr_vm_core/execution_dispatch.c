@@ -108,6 +108,73 @@ static TZrBool execution_is_truthy(SZrState *state, const SZrTypeValue *value) {
     return ZR_TRUE;
 }
 
+static TZrBool execution_try_reuse_preinstalled_top_level_closure(SZrState *state,
+                                                                  SZrClosure *ownerClosure,
+                                                                  SZrFunction *function,
+                                                                  TZrStackValuePointer base,
+                                                                  SZrTypeValue *destination) {
+    TZrUInt32 index;
+
+    if (state == ZR_NULL || ownerClosure == ZR_NULL || ownerClosure->function == ZR_NULL || function == ZR_NULL ||
+        base == ZR_NULL || destination == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < ownerClosure->function->exportedVariableLength; ++index) {
+        const SZrFunctionExportedVariable *binding = &ownerClosure->function->exportedVariables[index];
+        SZrTypeValue *existingValue;
+        SZrFunction *existingFunction;
+
+        if (binding->exportKind != ZR_MODULE_EXPORT_KIND_FUNCTION ||
+            binding->readiness != ZR_MODULE_EXPORT_READY_DECLARATION ||
+            binding->callableChildIndex >= ownerClosure->function->childFunctionLength ||
+            &ownerClosure->function->childFunctionList[binding->callableChildIndex] != function ||
+            binding->stackSlot >= ownerClosure->function->stackSize) {
+            continue;
+        }
+
+        existingValue = ZrCore_Stack_GetValue(base + binding->stackSlot);
+        if (existingValue == ZR_NULL) {
+            continue;
+        }
+
+        existingFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, existingValue);
+        if (existingFunction != function) {
+            continue;
+        }
+
+        ZrCore_Value_Copy(state, destination, existingValue);
+        return ZR_TRUE;
+    }
+
+    for (index = 0; index < ownerClosure->function->topLevelCallableBindingLength; ++index) {
+        const SZrFunctionTopLevelCallableBinding *binding = &ownerClosure->function->topLevelCallableBindings[index];
+        SZrTypeValue *existingValue;
+        SZrFunction *existingFunction;
+
+        if (binding->callableChildIndex >= ownerClosure->function->childFunctionLength ||
+            &ownerClosure->function->childFunctionList[binding->callableChildIndex] != function ||
+            binding->stackSlot >= ownerClosure->function->stackSize) {
+            continue;
+        }
+
+        existingValue = ZrCore_Stack_GetValue(base + binding->stackSlot);
+        if (existingValue == ZR_NULL) {
+            continue;
+        }
+
+        existingFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, existingValue);
+        if (existingFunction != function) {
+            continue;
+        }
+
+        ZrCore_Value_Copy(state, destination, existingValue);
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     SZrClosure *closure;
     SZrTypeValue *constants;
@@ -1057,37 +1124,66 @@ LZrReturning: {
             ZR_INSTRUCTION_LABEL(MOD) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_MOD);
-                if (meta != ZR_NULL && meta->function != ZR_NULL) {
-                    // 调用元方法
-                    TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-                    SZrCallInfo *savedCallInfo = state->callInfoList;
-                    PROTECT_E(state, callInfo, {
-                        TZrStackValuePointer metaBase = ZR_NULL;
-                        TZrStackValuePointer restoredStackTop = savedStackTop;
-                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
-                                                                              savedCallInfo,
-                                                                              savedStackTop,
-                                                                              savedStackTop,
-                                                                              meta,
-                                                                              opA,
-                                                                              opB,
-                                                                              ZR_META_CALL_MAX_ARGUMENTS,
-                                                                              &metaBase,
-                                                                              &restoredStackTop);
-                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                        if (metaCallSucceeded) {
-                            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
-                            ZrCore_Value_Copy(state, destination, returnValue);
+                if ((ZR_VALUE_IS_TYPE_NUMBER(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opA->type)) &&
+                    (ZR_VALUE_IS_TYPE_NUMBER(opB->type) || ZR_VALUE_IS_TYPE_BOOL(opB->type))) {
+                    if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                        if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) &&
+                            ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {
+                            SAVE_STATE(state, callInfo); // error: modulo by zero
+                            if (ZR_UNLIKELY(opB->value.nativeObject.nativeUInt64 == 0)) {
+                                ZrCore_Debug_RunError(state, "modulo by zero");
+                            }
+                            ALGORITHM_2(nativeUInt64, %, ZR_VALUE_TYPE_UINT64);
                         } else {
-                            ZrCore_Value_ResetAsNull(destination);
+                            TZrInt64 divisor;
+
+                            SAVE_STATE(state, callInfo); // error: modulo by zero
+                            divisor = value_to_int64(opB);
+                            if (ZR_UNLIKELY(divisor == 0)) {
+                                ZrCore_Debug_RunError(state, "modulo by zero");
+                            }
+                            if (ZR_UNLIKELY(divisor < 0)) {
+                                divisor = -divisor;
+                            }
+                            ZrCore_Value_InitAsInt(state, destination, value_to_int64(opA) % divisor);
                         }
-                        state->stackTop.valuePointer = restoredStackTop;
-                        state->callInfoList = savedCallInfo;
-                    });
+                    } else {
+                        execution_try_binary_numeric_float_fallback_or_raise(
+                                state, ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB, "MOD");
+                    }
                 } else {
-                    // 无元方法，返回 null
-                    ZrCore_Value_ResetAsNull(destination);
+                    SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_MOD);
+                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                    // 调用元方法
+                        TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+                        SZrCallInfo *savedCallInfo = state->callInfoList;
+                        PROTECT_E(state, callInfo, {
+                            TZrStackValuePointer metaBase = ZR_NULL;
+                            TZrStackValuePointer restoredStackTop = savedStackTop;
+                            TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                                  savedCallInfo,
+                                                                                  savedStackTop,
+                                                                                  savedStackTop,
+                                                                                  meta,
+                                                                                  opA,
+                                                                                  opB,
+                                                                                  ZR_META_CALL_MAX_ARGUMENTS,
+                                                                                  &metaBase,
+                                                                                  &restoredStackTop);
+                            RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                            if (metaCallSucceeded) {
+                                SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
+                                ZrCore_Value_Copy(state, destination, returnValue);
+                            } else {
+                                ZrCore_Value_ResetAsNull(destination);
+                            }
+                            state->stackTop.valuePointer = restoredStackTop;
+                            state->callInfoList = savedCallInfo;
+                        });
+                    } else {
+                        // 无元方法，返回 null
+                        ZrCore_Value_ResetAsNull(destination);
+                    }
                 }
             }
             DONE(1);
@@ -2370,10 +2466,16 @@ LZrReturning: {
                 if (function != ZR_NULL) {
                     SZrClosureValue **parentClosureValues =
                             closure != ZR_NULL ? closure->closureValuesExtend : ZR_NULL;
-                    ZrCore_Closure_PushToStack(state, function, parentClosureValues, base, BASE(E(instruction)));
-                    destination->type = ZR_VALUE_TYPE_CLOSURE;
-                    destination->isGarbageCollectable = ZR_TRUE;
-                    destination->isNative = ZR_FALSE;
+                    if (!execution_try_reuse_preinstalled_top_level_closure(state,
+                                                                            closure,
+                                                                            function,
+                                                                            base,
+                                                                            destination)) {
+                        ZrCore_Closure_PushToStack(state, function, parentClosureValues, base, BASE(E(instruction)));
+                        destination->type = ZR_VALUE_TYPE_CLOSURE;
+                        destination->isGarbageCollectable = ZR_TRUE;
+                        destination->isNative = ZR_FALSE;
+                    }
                 } else {
                     // 类型错误或函数为NULL
                     ZrCore_Value_ResetAsNull(destination);

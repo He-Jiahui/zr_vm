@@ -16,6 +16,10 @@
 #endif
 
 static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suffix);
+static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
+                                                  SZrSymbolScope *scope,
+                                                  SZrSymbol *symbol,
+                                                  SZrString *uri);
 
 static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suffix) {
     TZrNativeString text;
@@ -41,6 +45,34 @@ static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suff
     suffixLength = strlen(suffix);
     return text != ZR_NULL && length >= suffixLength &&
            memcmp(text + length - suffixLength, suffix, suffixLength) == 0;
+}
+
+static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
+                                                  SZrSymbolScope *scope,
+                                                  SZrSymbol *symbol,
+                                                  SZrString *uri) {
+    if (table == ZR_NULL || scope == ZR_NULL || symbol == ZR_NULL || symbol->location.source == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_StringsEqual(symbol->location.source, uri)) {
+        return ZR_FALSE;
+    }
+
+    if (scope == table->globalScope) {
+        return symbol->type != ZR_SYMBOL_PARAMETER;
+    }
+
+    switch (symbol->type) {
+        case ZR_SYMBOL_CLASS:
+        case ZR_SYMBOL_STRUCT:
+        case ZR_SYMBOL_INTERFACE:
+        case ZR_SYMBOL_ENUM:
+        case ZR_SYMBOL_ENUM_MEMBER:
+        case ZR_SYMBOL_FIELD:
+        case ZR_SYMBOL_METHOD:
+        case ZR_SYMBOL_PROPERTY:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
 }
 
 static SZrString *lsp_append_markdown_section(SZrState *state, SZrString *base, SZrString *appendix) {
@@ -307,6 +339,7 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
         SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
         SZrSemanticAnalyzer *analyzer;
         SZrAstNode *ast;
+        SZrLspProjectIndex *projectIndex = ZR_NULL;
 
         if (fileVersion == ZR_NULL) {
             return ZR_FALSE;
@@ -323,7 +356,18 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
             return ZR_FALSE;
         }
 
-        analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
+        if (allowProjectRefresh) {
+            projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
+            if (projectIndex != ZR_NULL) {
+                return ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
+                                                                             context,
+                                                                             uri,
+                                                                             content,
+                                                                             contentLength);
+            }
+        }
+
+        analyzeSuccess = ZrLanguageServer_Lsp_ProjectAnalyzeDocument(state, context, uri, analyzer, ast);
         if (!analyzeSuccess) {
             return ZR_FALSE;
         }
@@ -349,7 +393,9 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
                           SZrArray *result) {
     SZrFileVersion *fileVersion;
     SZrSemanticAnalyzer *analyzer;
+    SZrLspProjectIndex *projectIndex;
     SZrArray diagnostics;
+    SZrArray importDiagnostics;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -364,6 +410,8 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
     if (fileVersion == ZR_NULL) {
         return ZR_FALSE;
     }
+
+    projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
 
     for (TZrSize i = 0; i < fileVersion->parserDiagnostics.length; i++) {
         SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&fileVersion->parserDiagnostics, i);
@@ -391,6 +439,36 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
     }
 
     ZrCore_Array_Free(state, &diagnostics);
+
+    ZrCore_Array_Construct(&importDiagnostics);
+    if (!ZrLanguageServer_LspProject_CollectImportDiagnostics(state,
+                                                              context,
+                                                              projectIndex,
+                                                              uri,
+                                                              &importDiagnostics)) {
+        if (importDiagnostics.isValid) {
+            for (TZrSize i = 0; i < importDiagnostics.length; i++) {
+                SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&importDiagnostics, i);
+                if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
+                    ZrLanguageServer_Diagnostic_Free(state, *diagPtr);
+                }
+            }
+            ZrCore_Array_Free(state, &importDiagnostics);
+        }
+        return ZR_FALSE;
+    }
+
+    if (importDiagnostics.isValid) {
+        for (TZrSize i = 0; i < importDiagnostics.length; i++) {
+            SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&importDiagnostics, i);
+            if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
+                ZrLanguageServer_Lsp_AppendDiagnostic(state, result, *diagPtr);
+                ZrLanguageServer_Diagnostic_Free(state, *diagPtr);
+            }
+        }
+        ZrCore_Array_Free(state, &importDiagnostics);
+    }
+
     return ZR_TRUE;
 }
 
@@ -712,8 +790,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentSymbols(SZrState *state,
                               SZrString *uri,
                               SZrArray *result) {
     SZrSemanticAnalyzer *analyzer;
-    SZrSymbolScope *globalScope;
-    TZrSize i;
+    TZrSize scopeIndex;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -728,16 +805,23 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentSymbols(SZrState *state,
         return ZR_FALSE;
     }
 
-    globalScope = analyzer->symbolTable->globalScope;
-    if (globalScope == ZR_NULL) {
+    if (analyzer->symbolTable->globalScope == ZR_NULL) {
         return ZR_TRUE;
     }
 
-    for (i = 0; i < globalScope->symbols.length; i++) {
-        SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&globalScope->symbols, i);
-        if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
-            SZrSymbol *symbol = *symbolPtr;
-            if (symbol->location.source != ZR_NULL && ZrLanguageServer_Lsp_StringsEqual(symbol->location.source, uri)) {
+    for (scopeIndex = 0; scopeIndex < analyzer->symbolTable->allScopes.length; scopeIndex++) {
+        SZrSymbolScope **scopePtr =
+            (SZrSymbolScope **)ZrCore_Array_Get(&analyzer->symbolTable->allScopes, scopeIndex);
+        if (scopePtr == ZR_NULL || *scopePtr == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrSize symbolIndex = 0; symbolIndex < (*scopePtr)->symbols.length; symbolIndex++) {
+            SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&(*scopePtr)->symbols, symbolIndex);
+            if (symbolPtr != ZR_NULL &&
+                *symbolPtr != ZR_NULL &&
+                lsp_should_include_document_symbol(analyzer->symbolTable, *scopePtr, *symbolPtr, uri)) {
+                SZrSymbol *symbol = *symbolPtr;
                 SZrLspSymbolInformation *info = ZrLanguageServer_Lsp_CreateSymbolInformation(state, symbol);
                 if (info != ZR_NULL) {
                     ZrCore_Array_Push(state, result, &info);

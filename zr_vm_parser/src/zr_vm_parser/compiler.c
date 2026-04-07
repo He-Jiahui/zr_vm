@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "module_init_analysis.h"
 
 EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) {
     if (node == ZR_NULL) {
@@ -205,6 +206,18 @@ static TZrUInt32 compiler_resolve_serialized_member_function_constant_index(SZrC
     return add_constant(cs, &functionValue);
 }
 
+static TZrUInt32 compiler_add_serialized_string_constant(SZrCompilerState *cs, SZrString *value) {
+    SZrTypeValue stringValue;
+
+    if (cs == ZR_NULL || value == ZR_NULL) {
+        return 0;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state, &stringValue, ZR_CAST_RAW_OBJECT_AS_SUPER(value));
+    stringValue.type = ZR_VALUE_TYPE_STRING;
+    return add_constant(cs, &stringValue);
+}
+
 static void compiler_log_failure_summary(SZrCompilerState *cs) {
     const TZrChar *reason = "Unknown error";
 
@@ -233,10 +246,7 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     
     // 1. 使用C原生结构收集数据，避免创建VM对象
     // 先将所有字符串添加到常量池，获取索引（临时方案，后续改为内部字符串表）
-    SZrTypeValue nameValue;
-    ZrCore_Value_InitAsRawObject(cs->state, &nameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(info->name));
-    nameValue.type = ZR_VALUE_TYPE_STRING;
-    TZrUInt32 nameStringIndex = add_constant(cs, &nameValue);
+    TZrUInt32 nameStringIndex = compiler_add_serialized_string_constant(cs, info->name);
     
     // 2. 添加继承类型名称字符串到常量池
     TZrUInt32 *inheritStringIndices = ZR_NULL;
@@ -320,6 +330,9 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     protoInfo->decoratorMetadataConstantIndex =
             info->hasDecoratorMetadata ? add_constant(cs, &info->decoratorMetadataValue) : 0;
     protoInfo->decoratorsCount = decoratorsCount;
+    protoInfo->modifierFlags = info->modifierFlags;
+    protoInfo->nextVirtualSlotIndex = info->nextVirtualSlotIndex;
+    protoInfo->nextPropertyIdentity = info->nextPropertyIdentity;
     
     // 复制继承类型索引数组到序列化数据中（紧跟在结构体后面）
     TZrUInt32 *embeddedInheritIndices = (TZrUInt32 *)(serializedData + sizeof(SZrCompiledPrototypeInfo));
@@ -362,6 +375,17 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
                 memberInfo->hasDecoratorMetadata ? add_constant(cs, &memberInfo->decoratorMetadataValue) : 0;
         compiledMember->hasDecoratorNames = memberInfo->decorators.length > 0 ? ZR_TRUE : ZR_FALSE;
         compiledMember->decoratorNamesConstantIndex = 0;
+        compiledMember->modifierFlags = memberInfo->modifierFlags;
+        compiledMember->ownerTypeNameStringIndex =
+                compiler_add_serialized_string_constant(cs, memberInfo->ownerTypeName);
+        compiledMember->baseDefinitionOwnerTypeNameStringIndex =
+                compiler_add_serialized_string_constant(cs, memberInfo->baseDefinitionOwnerTypeName);
+        compiledMember->baseDefinitionNameStringIndex =
+                compiler_add_serialized_string_constant(cs, memberInfo->baseDefinitionName);
+        compiledMember->virtualSlotIndex = memberInfo->virtualSlotIndex;
+        compiledMember->interfaceContractSlot = memberInfo->interfaceContractSlot;
+        compiledMember->propertyIdentity = memberInfo->propertyIdentity;
+        compiledMember->accessorRole = memberInfo->accessorRole;
         if (compiledMember->hasDecoratorNames &&
             !compiler_add_decorator_name_array_constant(cs,
                                                         &memberInfo->decorators,
@@ -371,25 +395,12 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
         }
 
         // 添加成员名称字符串到常量池（临时方案）
-        if (memberInfo->name != ZR_NULL) {
-            SZrTypeValue memberNameValue;
-            ZrCore_Value_InitAsRawObject(cs->state, &memberNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->name));
-            memberNameValue.type = ZR_VALUE_TYPE_STRING;
-            compiledMember->nameStringIndex = add_constant(cs, &memberNameValue);
-        } else {
-            compiledMember->nameStringIndex = 0;
-        }
+        compiledMember->nameStringIndex = compiler_add_serialized_string_constant(cs, memberInfo->name);
         
         // 字段特定信息
         if (memberInfo->memberType == ZR_AST_STRUCT_FIELD || memberInfo->memberType == ZR_AST_CLASS_FIELD) {
-            if (memberInfo->fieldTypeName != ZR_NULL) {
-                SZrTypeValue fieldTypeNameValue;
-                ZrCore_Value_InitAsRawObject(cs->state, &fieldTypeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->fieldTypeName));
-                fieldTypeNameValue.type = ZR_VALUE_TYPE_STRING;
-                compiledMember->fieldTypeNameStringIndex = add_constant(cs, &fieldTypeNameValue);
-            } else {
-                compiledMember->fieldTypeNameStringIndex = 0;
-            }
+            compiledMember->fieldTypeNameStringIndex =
+                    compiler_add_serialized_string_constant(cs, memberInfo->fieldTypeName);
             compiledMember->fieldOffset = memberInfo->fieldOffset;
             compiledMember->fieldSize = memberInfo->fieldSize;
             // 方法字段清零
@@ -415,14 +426,8 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
             }
             compiledMember->parameterCount = memberInfo->parameterCount;
             // 处理返回类型名称
-            if (memberInfo->returnTypeName != ZR_NULL) {
-                SZrTypeValue returnTypeNameValue;
-                ZrCore_Value_InitAsRawObject(cs->state, &returnTypeNameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->returnTypeName));
-                returnTypeNameValue.type = ZR_VALUE_TYPE_STRING;
-                compiledMember->returnTypeNameStringIndex = add_constant(cs, &returnTypeNameValue);
-            } else {
-                compiledMember->returnTypeNameStringIndex = 0; // 无返回类型（void）
-            }
+            compiledMember->returnTypeNameStringIndex =
+                    compiler_add_serialized_string_constant(cs, memberInfo->returnTypeName);
             // 字段字段清零
             compiledMember->fieldTypeNameStringIndex = 0;
             compiledMember->fieldOffset = 0;
@@ -597,9 +602,7 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                         compile_interface_declaration(cs, stmt);
                         break;
                     case ZR_AST_ENUM_DECLARATION:
-                        // 处理enum声明
-                        // TODO: enum可以编译为常量或对象，这里暂时跳过
-                        // 后续可以实现enum的编译
+                        compile_enum_declaration(cs, stmt);
                         break;
                     default:
                         // 其他顶层声明类型（intermediate等）
@@ -806,6 +809,8 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
 
     SZrCompilerState cs;
     ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+    cs.currentAst = ast;
 
     if (!compiler_validate_task_effects(&cs, ast)) {
         ZrParser_CompilerState_Free(&cs);
@@ -857,6 +862,12 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
     }
 
     if (!compiler_quicken_execbc_function(state, func)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
+    if (!ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(&cs, ZR_NULL, func)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
@@ -976,6 +987,12 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
         return ZR_FALSE;
     }
 
+    if (!ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(&cs, ZR_NULL, func)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_FALSE;
+    }
+
     for (TZrSize i = 0; i < result->testFunctionCount; i++) {
         if (!compiler_quicken_execbc_function(state, result->testFunctions[i])) {
             ZrCore_Function_Free(state, func);
@@ -1018,11 +1035,18 @@ struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrCha
     if (ast == ZR_NULL) {
         return ZR_NULL;
     }
+
+    if (!ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(state, sourceName, ast)) {
+        ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
+        ZrParser_Ast_Free(state, ast);
+        return ZR_NULL;
+    }
     
     // 编译AST为函数
     SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
     
     // 释放AST
+    ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
     ZrParser_Ast_Free(state, ast);
     
     return func;

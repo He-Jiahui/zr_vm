@@ -59,6 +59,39 @@ static TZrBool parser_function_declaration_starts_here(SZrParserState *ps) {
     return isFunction;
 }
 
+static TZrBool parser_class_declaration_starts_here(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrBool isClass = ZR_FALSE;
+    SZrAstNodeArray *decorators = ZR_NULL;
+
+    if (ps == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    save_parser_cursor(ps, &cursor);
+
+    if (ps->lexer->t.token == ZR_TK_SHARP) {
+        decorators = parse_leading_decorators(ps);
+        if (decorators == ZR_NULL) {
+            restore_parser_cursor(ps, &cursor);
+            return ZR_FALSE;
+        }
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI || ps->lexer->t.token == ZR_TK_PRO) {
+        parse_access_modifier(ps);
+    }
+
+    parse_declaration_modifier_flags(ps,
+                                     ZR_DECLARATION_MODIFIER_ABSTRACT |
+                                             ZR_DECLARATION_MODIFIER_FINAL);
+    isClass = ps->lexer->t.token == ZR_TK_CLASS;
+
+    restore_parser_cursor(ps, &cursor);
+    return isClass;
+}
+
 static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
@@ -635,15 +668,11 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
     return node;
 }
 
-SZrAstNode *parse_using_statement(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
+static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange startLoc) {
     SZrAstNode *resource = ZR_NULL;
     SZrAstNode *body = ZR_NULL;
     TZrBool isBlockScoped = ZR_FALSE;
     SZrAstNode *node;
-
-    expect_token(ps, ZR_TK_USING);
-    ZrParser_Lexer_Next(ps->lexer);
 
     if (consume_token(ps, ZR_TK_LPAREN)) {
         resource = parse_expression(ps);
@@ -684,6 +713,63 @@ SZrAstNode *parse_using_statement(SZrParserState *ps) {
     return node;
 }
 
+static TZrBool is_percent_using_statement(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrInt32 depth = 0;
+    TZrBool result = ZR_FALSE;
+
+    if (ps == ZR_NULL || !current_percent_directive_equals(ps, "using")) {
+        return ZR_FALSE;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    if (!consume_percent_keyword_token(ps, ZR_TK_USING)) {
+        restore_parser_cursor(ps, &cursor);
+        return ZR_FALSE;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_NEW) {
+        restore_parser_cursor(ps, &cursor);
+        return ZR_FALSE;
+    }
+
+    if (ps->lexer->t.token != ZR_TK_LPAREN) {
+        restore_parser_cursor(ps, &cursor);
+        return ZR_TRUE;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    depth = 1;
+    while (depth > 0 && ps->lexer->t.token != ZR_TK_EOS) {
+        if (ps->lexer->t.token == ZR_TK_LPAREN) {
+            depth++;
+        } else if (ps->lexer->t.token == ZR_TK_RPAREN) {
+            depth--;
+        }
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    result = depth == 0 && ps->lexer->t.token == ZR_TK_LBRACE;
+    restore_parser_cursor(ps, &cursor);
+    return result;
+}
+
+SZrAstNode *parse_using_statement(SZrParserState *ps) {
+    SZrFileRange startLoc = get_current_location(ps);
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
+        return parse_using_statement_body(ps, startLoc);
+    }
+
+    expect_token(ps, ZR_TK_USING);
+    ZrParser_Lexer_Next(ps->lexer);
+    return parse_using_statement_body(ps, startLoc);
+}
+
 // 解析语句（入口函数）
 
 SZrAstNode *parse_statement(SZrParserState *ps) {
@@ -699,11 +785,15 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
         case ZR_TK_VAR:
             return parse_variable_declaration(ps);
 
-        case ZR_TK_USING:
-            if (is_expression_level_using_new(ps)) {
-                return parse_expression_statement(ps);
+        case ZR_TK_USING: {
+            SZrAstNode *legacyUsing;
+            report_error(ps, "Legacy bare using syntax is not supported; use '%using'");
+            legacyUsing = parse_using_statement(ps);
+            if (legacyUsing != ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, legacyUsing);
             }
-            return parse_using_statement(ps);
+            return ZR_NULL;
+        }
 
         case ZR_TK_IF:
             return parse_if_expression(ps);
@@ -804,6 +894,12 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
             return parse_try_catch_finally_statement(ps);
 
         case ZR_TK_PERCENT:
+            if (current_percent_directive_equals(ps, "using")) {
+                if (is_percent_using_statement(ps)) {
+                    return parse_using_statement(ps);
+                }
+                return parse_expression_statement(ps);
+            }
             if (current_percent_directive_equals(ps, "module")) {
                 return parse_module_declaration(ps);
             }
@@ -995,6 +1091,10 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             return parse_function_declaration(ps);
         }
 
+        if (parser_class_declaration_starts_here(ps)) {
+            return parse_class_declaration(ps);
+        }
+
         // 根据下一个 token 调用相应的解析函数（它们会自己解析可见性修饰符）
         switch (nextToken) {
             case ZR_TK_VAR:
@@ -1023,11 +1123,25 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
         case ZR_TK_VAR:
             return parse_variable_declaration(ps);
 
-        case ZR_TK_USING:
-            return parse_using_statement(ps);
+        case ZR_TK_USING: {
+            SZrAstNode *legacyUsing;
+            report_error(ps, "Legacy bare using syntax is not supported; use '%using'");
+            legacyUsing = parse_using_statement(ps);
+            if (legacyUsing != ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, legacyUsing);
+            }
+            return ZR_NULL;
+        }
 
         case ZR_TK_STRUCT:
             return parse_struct_declaration(ps);
+
+        case ZR_TK_ABSTRACT:
+        case ZR_TK_FINAL:
+            if (parser_class_declaration_starts_here(ps)) {
+                return parse_class_declaration(ps);
+            }
+            return parse_expression_statement(ps);
 
         case ZR_TK_CLASS:
             return parse_class_declaration(ps);
@@ -1039,6 +1153,12 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
             return parse_enum_declaration(ps);
 
         case ZR_TK_PERCENT:
+            if (current_percent_directive_equals(ps, "using")) {
+                if (is_percent_using_statement(ps)) {
+                    return parse_using_statement(ps);
+                }
+                return parse_expression_statement(ps);
+            }
             if (current_percent_directive_equals(ps, "module")) {
                 return parse_module_declaration(ps);
             }
@@ -1211,12 +1331,13 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 ZrParser_AstNodeArray_Free(ps->state, decorators);
                 restore_parser_cursor(ps, &cursor);
 
-                if (nextToken == ZR_TK_CLASS) {
+                if (nextToken == ZR_TK_CLASS || nextToken == ZR_TK_ABSTRACT || nextToken == ZR_TK_FINAL) {
                     return parse_class_declaration(ps);
                 } else if (nextToken == ZR_TK_STRUCT) {
                     return parse_struct_declaration(ps);
                 } else if (nextToken == ZR_TK_PUB || nextToken == ZR_TK_PRI || nextToken == ZR_TK_PRO) {
-                    if (declarationToken == ZR_TK_CLASS) {
+                    if (declarationToken == ZR_TK_CLASS || declarationToken == ZR_TK_ABSTRACT ||
+                        declarationToken == ZR_TK_FINAL) {
                         return parse_class_declaration(ps);
                     } else if (declarationToken == ZR_TK_STRUCT) {
                         return parse_struct_declaration(ps);

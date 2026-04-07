@@ -4,6 +4,7 @@
 
 #include "compiler_internal.h"
 #include "compile_expression_internal.h"
+#include "type_inference_internal.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/runtime_decorator.h"
 
@@ -260,6 +261,46 @@ static void compiler_merge_callable_return_type(SZrCompilerState *cs,
     ZrParser_InferredType_Free(cs->state, &mergedType);
 }
 
+static void compiler_register_function_like_local_variable_type(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrVariableDeclaration *declaration;
+    SZrInferredType bindingType;
+    TZrBool hasBindingType = ZR_FALSE;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || node == ZR_NULL ||
+        node->type != ZR_AST_VARIABLE_DECLARATION) {
+        return;
+    }
+
+    declaration = &node->data.variableDeclaration;
+    if (declaration->pattern == ZR_NULL || declaration->pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
+        declaration->pattern->data.identifier.name == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &bindingType, ZR_VALUE_TYPE_OBJECT);
+    if (declaration->typeInfo != ZR_NULL) {
+        hasBindingType = ZrParser_AstTypeToInferredType_Convert(cs, declaration->typeInfo, &bindingType);
+    } else if (declaration->value != ZR_NULL) {
+        hasBindingType = ZrParser_ExpressionType_Infer(cs, declaration->value, &bindingType);
+    }
+
+    if (cs->hasError) {
+        ZrParser_InferredType_Free(cs->state, &bindingType);
+        return;
+    }
+
+    if (!hasBindingType) {
+        ZrParser_InferredType_Free(cs->state, &bindingType);
+        ZrParser_InferredType_Init(cs->state, &bindingType, ZR_VALUE_TYPE_OBJECT);
+    }
+
+    ZrParser_TypeEnvironment_RegisterVariable(cs->state,
+                                              cs->typeEnv,
+                                              declaration->pattern->data.identifier.name,
+                                              &bindingType);
+    ZrParser_InferredType_Free(cs->state, &bindingType);
+}
+
 static void compiler_collect_function_like_return_type(SZrCompilerState *cs,
                                                        SZrAstNode *node,
                                                        TZrBool *hasReturnType,
@@ -302,6 +343,10 @@ static void compiler_collect_function_like_return_type(SZrCompilerState *cs,
             ZrParser_InferredType_Free(cs->state, &candidateType);
             return;
         }
+
+        case ZR_AST_VARIABLE_DECLARATION:
+            compiler_register_function_like_local_variable_type(cs, node);
+            return;
 
         case ZR_AST_IF_EXPRESSION: {
             SZrIfExpression *ifExpression = &node->data.ifExpression;
@@ -683,6 +728,87 @@ TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name)
     return ZR_PARSER_SLOT_NONE;
 }
 
+static void compiler_predeclare_visible_module_alias_binding(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrVariableDeclaration *decl;
+    SZrString *aliasName;
+    SZrString *moduleName;
+    SZrInferredType moduleType;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || node == ZR_NULL ||
+        node->type != ZR_AST_VARIABLE_DECLARATION) {
+        return;
+    }
+
+    decl = &node->data.variableDeclaration;
+    if (decl->pattern == ZR_NULL || decl->pattern->type != ZR_AST_IDENTIFIER_LITERAL || decl->value == ZR_NULL ||
+        decl->value->type != ZR_AST_IMPORT_EXPRESSION ||
+        decl->value->data.importExpression.modulePath == ZR_NULL ||
+        decl->value->data.importExpression.modulePath->type != ZR_AST_STRING_LITERAL ||
+        decl->value->data.importExpression.modulePath->data.stringLiteral.value == ZR_NULL) {
+        return;
+    }
+
+    aliasName = decl->pattern->data.identifier.name;
+    moduleName = decl->value->data.importExpression.modulePath->data.stringLiteral.value;
+    if (aliasName == ZR_NULL || moduleName == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_InitFull(cs->state, &moduleType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, moduleName);
+    ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, aliasName, &moduleType);
+    ZrParser_InferredType_Free(cs->state, &moduleType);
+}
+
+static void compiler_predeclare_visible_type_value_alias_binding(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrVariableDeclaration *decl;
+    SZrString *aliasName;
+    SZrInferredType aliasType;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_VARIABLE_DECLARATION) {
+        return;
+    }
+
+    decl = &node->data.variableDeclaration;
+    if (decl->pattern == ZR_NULL || decl->pattern->type != ZR_AST_IDENTIFIER_LITERAL || decl->value == ZR_NULL ||
+        decl->value->type != ZR_AST_TYPE_LITERAL_EXPRESSION ||
+        decl->value->data.typeLiteralExpression.typeInfo == ZR_NULL) {
+        return;
+    }
+
+    aliasName = decl->pattern->data.identifier.name;
+    if (aliasName == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &aliasType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_AstTypeToInferredType_Convert(cs,
+                                                decl->value->data.typeLiteralExpression.typeInfo,
+                                                &aliasType)) {
+        ZrParser_InferredType_Free(cs->state, &aliasType);
+        return;
+    }
+
+    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
+        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
+        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, aliasName)) {
+            ZrParser_InferredType_Free(cs->state, &binding->type);
+            ZrParser_InferredType_Copy(cs->state, &binding->type, &aliasType);
+            ZrParser_InferredType_Free(cs->state, &aliasType);
+            return;
+        }
+    }
+
+    {
+        SZrTypeBinding binding;
+        binding.name = aliasName;
+        ZrParser_InferredType_Init(cs->state, &binding.type, ZR_VALUE_TYPE_OBJECT);
+        ZrParser_InferredType_Copy(cs->state, &binding.type, &aliasType);
+        ZrCore_Array_Push(cs->state, &cs->typeValueAliases, &binding);
+    }
+
+    ZrParser_InferredType_Free(cs->state, &aliasType);
+}
+
 void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) {
     if (cs == ZR_NULL || statements == ZR_NULL || cs->hasError) {
         return;
@@ -694,7 +820,24 @@ void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNo
         TZrUInt32 slot;
         SZrTypeValue nullValue;
 
-        if (stmt == ZR_NULL || stmt->type != ZR_AST_FUNCTION_DECLARATION) {
+        if (stmt == ZR_NULL) {
+            continue;
+        }
+
+        if (stmt->type == ZR_AST_VARIABLE_DECLARATION) {
+            compiler_predeclare_visible_module_alias_binding(cs, stmt);
+            if (cs->hasError) {
+                return;
+            }
+
+            compiler_predeclare_visible_type_value_alias_binding(cs, stmt);
+            if (cs->hasError) {
+                return;
+            }
+            continue;
+        }
+
+        if (stmt->type != ZR_AST_FUNCTION_DECLARATION) {
             continue;
         }
 
@@ -703,7 +846,12 @@ void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNo
             continue;
         }
 
-        compiler_register_function_type_binding(cs, funcDecl);
+        {
+            SZrAstNode *previousFunctionNode = cs->currentFunctionNode;
+            cs->currentFunctionNode = stmt;
+            compiler_register_function_type_binding(cs, funcDecl);
+            cs->currentFunctionNode = previousFunctionNode;
+        }
         if (cs->hasError) {
             return;
         }

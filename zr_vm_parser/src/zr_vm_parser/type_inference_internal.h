@@ -21,8 +21,10 @@ ZR_PARSER_API SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCo
 SZrTypeMemberInfo *find_compiler_type_member_inference(SZrCompilerState *cs,
                                                        SZrString *typeName,
                                                        SZrString *memberName);
-TZrBool type_name_is_module_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
+ZR_PARSER_API TZrBool type_name_is_module_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 ZR_PARSER_API TZrBool inferred_type_from_type_name(SZrCompilerState *cs, SZrString *typeName, SZrInferredType *result);
+ZR_PARSER_API TZrBool type_name_is_explicitly_available_in_context_inference(SZrCompilerState *cs,
+                                                                              SZrString *typeName);
 TZrBool inferred_type_try_map_primitive_name(const TZrNativeString nameStr,
                                              TZrSize nameLen,
                                              EZrValueType *outBaseType);
@@ -81,16 +83,22 @@ ZR_PARSER_API TZrBool resolve_best_function_overload(SZrCompilerState *cs,
 TZrBool inferred_type_can_use_named_constraint_fallback(SZrCompilerState *cs,
                                                         const SZrInferredType *actualType,
                                                         const SZrInferredType *expectedType);
-TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
-                                           SZrAstNode *node,
-                                           SZrTypePrototypeInfo **outPrototype,
-                                           SZrString **outTypeName);
+ZR_PARSER_API TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
+                                                         SZrAstNode *node,
+                                                         SZrTypePrototypeInfo **outPrototype,
+                                                         SZrString **outTypeName);
+ZR_PARSER_API TZrBool resolve_source_type_declaration_target_inference(SZrCompilerState *cs,
+                                                                       SZrAstNode *node,
+                                                                       SZrString **outTypeName,
+                                                                       EZrObjectPrototypeType *outPrototypeType,
+                                                                       TZrBool *outAllowValueConstruction,
+                                                                       TZrBool *outAllowBoxedConstruction);
 TZrBool infer_prototype_reference_type(SZrCompilerState *cs,
                                        SZrAstNode *node,
                                        SZrInferredType *result);
-TZrBool infer_construct_expression_type(SZrCompilerState *cs,
-                                        SZrAstNode *node,
-                                        SZrInferredType *result);
+ZR_PARSER_API TZrBool infer_construct_expression_type(SZrCompilerState *cs,
+                                                      SZrAstNode *node,
+                                                      SZrInferredType *result);
 TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
                                                          const SZrInferredType *iterableType,
                                                          SZrInferredType *outType);
@@ -98,6 +106,7 @@ const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQuali
 SZrString *extract_imported_module_name(SZrFunctionCall *call);
 TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);
 TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *moduleName);
+ZR_PARSER_API void ensure_builtin_reflection_compile_type(SZrCompilerState *cs, SZrString *typeName);
 TZrBool infer_import_expression_type(SZrCompilerState *cs,
                                      SZrAstNode *node,
                                      SZrInferredType *result);

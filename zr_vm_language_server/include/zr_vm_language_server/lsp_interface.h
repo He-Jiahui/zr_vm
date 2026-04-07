@@ -31,13 +31,18 @@ typedef struct SZrLspLocation {
     SZrLspRange range;                // 范围
 } SZrLspLocation;
 
+typedef struct SZrLspDiagnosticRelatedInformation {
+    SZrLspLocation location;
+    SZrString *message;
+} SZrLspDiagnosticRelatedInformation;
+
 // LSP 诊断
 typedef struct SZrLspDiagnostic {
     SZrLspRange range;                // 范围
     TZrInt32 severity;                  // 严重程度（1=Error, 2=Warning, 3=Info, 4=Hint）
     SZrString *code;                  // 错误代码（可选）
     SZrString *message;               // 消息
-    SZrArray relatedInformation;      // 相关信息（可选）
+    SZrArray relatedInformation;      // SZrLspDiagnosticRelatedInformation
 } SZrLspDiagnostic;
 
 // LSP 补全项

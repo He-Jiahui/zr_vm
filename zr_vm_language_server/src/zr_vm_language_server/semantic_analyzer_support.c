@@ -471,6 +471,36 @@ void ZrLanguageServer_SemanticAnalyzer_RecordUsingCleanupStep(SZrSemanticAnalyze
     ZrParser_Semantic_AppendCleanupStep(analyzer->semanticContext, &step);
 }
 
+void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *state,
+                                                                      SZrSemanticAnalyzer *analyzer,
+                                                                      SZrFileRange fallbackLocation) {
+    SZrCompilerState *compilerState;
+    SZrFileRange location;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL) {
+        return;
+    }
+
+    compilerState = analyzer->compilerState;
+    if (compilerState == ZR_NULL || !compilerState->hasError || compilerState->errorMessage == ZR_NULL) {
+        return;
+    }
+
+    location = compilerState->errorLocation;
+    if (location.start.line == 0 && location.start.column == 0 &&
+        location.end.line == 0 && location.end.column == 0) {
+        location = fallbackLocation;
+    }
+
+    ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
+                                                    analyzer,
+                                                    ZR_DIAGNOSTIC_ERROR,
+                                                    location,
+                                                    compilerState->errorMessage,
+                                                    "compiler_error");
+    compilerState->hasError = ZR_FALSE;
+}
+
 static SZrInferredType *create_field_symbol_type(SZrState *state,
                                                  SZrSemanticAnalyzer *analyzer,
                                                  const SZrType *fieldType) {
@@ -592,7 +622,7 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *stat
                                         analyzer,
                                         ZR_DIAGNOSTIC_ERROR,
                                         fieldNode->location,
-                                        "Field-scoped `using` only supports instance fields",
+                                        "Field-scoped `%using` only supports instance fields",
                                         "static_using_field");
         return;
     }

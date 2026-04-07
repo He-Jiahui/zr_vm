@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_field_access_kernel",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

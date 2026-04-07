@@ -61,9 +61,21 @@ static SZrType *zr_task_wrap_return_type_async(SZrParserState *ps, SZrType *retu
     SZrAstNode *genericNameNode;
     SZrAstNode *asyncIdentifierNode;
     SZrType *wrappedType;
+    const TZrChar *typeName;
 
     if (ps == ZR_NULL || returnType == ZR_NULL) {
         return returnType;
+    }
+
+    if (returnType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE && returnType->subType == ZR_NULL &&
+        returnType->dimensions == 0 && !returnType->hasArraySizeConstraint && returnType->name != ZR_NULL &&
+        returnType->name->type == ZR_AST_GENERIC_TYPE && returnType->name->data.genericType.name != ZR_NULL &&
+        returnType->name->data.genericType.name->name != ZR_NULL) {
+        typeName = ZrCore_String_GetNativeString(returnType->name->data.genericType.name->name);
+        if (typeName != ZR_NULL &&
+            (strcmp(typeName, "TaskRunner") == 0 || strcmp(typeName, "zr.task.TaskRunner") == 0)) {
+            return returnType;
+        }
     }
 
     typeArgumentNode = zr_task_create_type_node_from_info(ps, returnType, location);
@@ -78,7 +90,7 @@ static SZrType *zr_task_wrap_return_type_async(SZrParserState *ps, SZrType *retu
     }
     ZrParser_AstNodeArray_Add(ps->state, genericArguments, typeArgumentNode);
 
-    asyncIdentifierNode = zr_task_create_identifier(ps, "TaskRunner", location);
+    asyncIdentifierNode = zr_task_create_identifier(ps, "zr.task.TaskRunner", location);
     if (asyncIdentifierNode == ZR_NULL) {
         ZrParser_AstNodeArray_Free(ps->state, genericArguments);
         return ZR_NULL;
@@ -105,6 +117,8 @@ static SZrType *zr_task_wrap_return_type_async(SZrParserState *ps, SZrType *retu
     wrappedType->subType = ZR_NULL;
     wrappedType->dimensions = 0;
     wrappedType->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    wrappedType->isDecoratorPseudoType = ZR_FALSE;
+    wrappedType->isImplicitBuiltinType = ZR_TRUE;
     wrappedType->arrayFixedSize = 0;
     wrappedType->arrayMinSize = 0;
     wrappedType->arrayMaxSize = 0;

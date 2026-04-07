@@ -2397,7 +2397,7 @@ static void test_execute_using_statement_passthrough(void) {
               "Testing that using syntax passes through the frontend and preserves normal control flow");
 
     {
-        const char *source = "var resource = \"x\"; using (resource) { var inner = 1; } return 7;";
+        const char *source = "var resource = \"x\"; %using (resource) { var inner = 1; } return 7;";
         SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *function;
@@ -2456,7 +2456,7 @@ static void test_execute_using_statement_invokes_close_meta(void) {
         attach_close_meta_to_string_prototype(state);
 
         {
-            const char *source = "using (\"x\") { var inner = 1; } return 7;";
+            const char *source = "%using (\"x\") { var inner = 1; } return 7;";
             SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
             SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
             SZrFunction *function;
@@ -2531,7 +2531,7 @@ static void test_execute_using_declaration_invokes_close_meta(void) {
         attach_close_meta_to_string_prototype(state);
 
         {
-            const char *source = "var resource = \"x\"; using resource; return 7;";
+            const char *source = "var resource = \"x\"; %using resource; return 7;";
             SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
             SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
             SZrFunction *function;
@@ -2592,7 +2592,7 @@ static void test_execute_nested_using_return_invokes_all_close_meta(void) {
     attach_close_meta_to_string_prototype(state);
 
     {
-        const char *source = "using (\"outer\") { using (\"inner\") { return 9; } } return 0;";
+        const char *source = "%using (\"outer\") { %using (\"inner\") { return 9; } } return 0;";
         SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *function = ZR_NULL;

@@ -12,6 +12,8 @@ related_code:
   - zr_vm_library/src/zr_vm_library/native_binding_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_symbols.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
@@ -26,7 +28,13 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler_bindings.c
   - zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference_import_metadata.c
+  - tests/language_server/test_lsp_language_feature_matrix.c
+  - tests/parser/test_compiler_regressions.c
+  - tests/container/test_container_type_inference.c
+  - tests/container/test_container_runtime.c
   - tests/language_server/test_semantic_analyzer.c
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_project_features.c
@@ -44,6 +52,8 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/native_binding_internal.h
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
   - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_symbols.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
@@ -58,11 +68,18 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler_bindings.c
   - zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference.c
   - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference_import_metadata.c
 plan_sources:
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
   - user: 2026-04-05 继续把 plugin/native/binary metadata 统一链推进到更细粒度 completion/definition/references/watched refresh 覆盖
+  - user: 2026-04-06 继续清理 runtime 残留，并把 imported Pair 显式绑定规则补成 LSP 断言
 tests:
+  - tests/language_server/test_lsp_language_feature_matrix.c
+  - tests/parser/test_compiler_regressions.c
+  - tests/container/test_container_type_inference.c
+  - tests/container/test_container_runtime.c
   - tests/language_server/test_semantic_analyzer.c
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_project_features.c
@@ -275,6 +292,67 @@ var math = %import("zr.math");
 - `$math.Vector3(...).` completion 可以列出 `x/y/z`
 - `$math.Vector3(...).y` hover 可以展示 `field y: float` 和 `Receiver: Vector3`
 - 这条能力直接复用 parser/type inference/native descriptor 的结构化元信息，不再靠 LSP 特判库名
+
+## Imported Type Bindings 与嵌套 Native Module Lookup
+
+这一轮又把 `%import("zr.container")` 的显式类型绑定规则补到了 parser 和 LSP 两侧，重点覆盖两条之前会相互干扰的链：
+
+1. imported type 不再回到“裸全局类型空间”
+2. nested native module prototype 在 compile-time lookup 时不能再自递归
+
+### 显式绑定规则
+
+当前规则固定为：
+
+```zr
+var container = %import("zr.container");
+var pair1: container.Pair<int, float> = $container.Pair<int, float>(1, 2.0);
+
+var {Pair} = %import("zr.container");
+var pair2: Pair<int, float> = $Pair<int, float>(1, 2.0);
+```
+
+允许：
+
+- 模块限定名 `container.Pair`
+- destructuring import 显式引入后的裸名 `Pair`
+
+不允许：
+
+- 没有 qualifier 或 destructuring import 的裸 `Pair`
+- 在 `var {Pair} = %import("zr.container")` 之后再声明第二个 `Pair`
+
+这条规则现在由三层共同维持：
+
+- parser/type inference 继续把 “type name 是否在当前上下文显式可见” 当成硬约束
+- `semantic_analyzer_symbols.c` 会在 `var {Pair} = %import("zr.container")` 时把 destructured type alias 注册进 type environment，并把重复声明立即转成 LSP diagnostic
+- `semantic_analyzer_typecheck.c` 对复杂 initializer 不再一律回退成 `object`，而是回到 `ZrParser_ExpressionType_Infer(...)`，这样 `$container.Pair(...)` / `$Pair(...)` 的真实泛型实例类型会进入 LSP initializer compatibility 检查
+
+结果是：
+
+- hover / completion / diagnostics 对 `container.Pair` 与 destructured `Pair` 现在保持一致
+- bare `Pair` 的显式绑定错误会直接出现在 LSP diagnostics，而不是只在 parser 单测里可见
+- destructured alias 再声明本地 `Pair` 时，LSP 会和编译器一样给出 duplicate-type 诊断
+
+### Imported Stub 与 nested module lookup
+
+这次 runtime 残留清理同时暴露出一个更底层的 compile-time lookup 问题：
+
+- imported source/native/binary module prototype 现在都会被标记为 compile-only stub
+- `find_compiler_type_prototype_inference_exact(...)` 如果在处理 `zr.system` / `zr.system.console` 这类 dotted module name 时继续盲目走 `module.member -> fieldTypeName` 回查，就会把模块自己重新解析回自己
+- 结果是 nested native module lookup 在 LSP document analysis 里能堆栈自旋，Windows 上表现为 `0xC00000FD`
+
+当前行为改成：
+
+- exact prototype 一旦已经命中，就优先返回 exact match
+- 若 module member 的 `fieldTypeName` 与当前查询名完全相同，lookup 会在这一层短路，不再递归回自己
+- imported source module 的 runtime type stub 仍然保持 compile-only，不会再被序列化进 entry function `prototypeData`
+
+这三条一起保证：
+
+- `zr` / `zr.system` / `zr.system.console` 这种 nested native module preheat 可以安全完成
+- project source import 只参与 compile-time type analysis，不再污染 runtime prototype materialization
+- language server 可以在同一份 compile-time metadata 上稳定跑 imported type hover/completion/navigation，而不会为了修 LSP 又把 runtime shadowing 问题重新引回来
 
 ## Project-Local Descriptor Plugin 优先级
 

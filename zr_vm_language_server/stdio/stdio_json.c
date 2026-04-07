@@ -46,6 +46,35 @@ cJSON *serialize_location(const SZrLspLocation *location) {
     return json;
 }
 
+static cJSON *serialize_diagnostic_related_information(
+    const SZrLspDiagnosticRelatedInformation *relatedInformation) {
+    cJSON *json;
+    char *messageText;
+
+    if (relatedInformation == NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    if (json == NULL) {
+        return NULL;
+    }
+
+    cJSON_AddItemToObject(json,
+                          ZR_LSP_FIELD_LOCATION,
+                          serialize_location(&relatedInformation->location));
+
+    messageText = zr_string_to_c_string(relatedInformation->message);
+    if (messageText != NULL) {
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_MESSAGE, messageText);
+        free(messageText);
+    } else {
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_MESSAGE, "");
+    }
+
+    return json;
+}
+
 cJSON *serialize_symbol_information(const SZrLspSymbolInformation *info) {
     cJSON *json;
     char *nameText;
@@ -81,6 +110,7 @@ cJSON *serialize_symbol_information(const SZrLspSymbolInformation *info) {
 
 cJSON *serialize_diagnostic(const SZrLspDiagnostic *diagnostic) {
     cJSON *json;
+    cJSON *relatedArray;
     char *messageText;
     char *codeText;
 
@@ -108,6 +138,22 @@ cJSON *serialize_diagnostic(const SZrLspDiagnostic *diagnostic) {
         if (codeText != NULL) {
             cJSON_AddStringToObject(json, ZR_LSP_FIELD_CODE, codeText);
             free(codeText);
+        }
+    }
+
+    if (diagnostic->relatedInformation.length > 0) {
+        relatedArray = cJSON_CreateArray();
+        if (relatedArray != NULL) {
+            for (TZrSize index = 0; index < diagnostic->relatedInformation.length; index++) {
+                SZrLspDiagnosticRelatedInformation *relatedInformation =
+                    (SZrLspDiagnosticRelatedInformation *)ZrCore_Array_Get((SZrArray *)&diagnostic->relatedInformation,
+                                                                           index);
+                if (relatedInformation != NULL) {
+                    cJSON_AddItemToArray(relatedArray,
+                                         serialize_diagnostic_related_information(relatedInformation));
+                }
+            }
+            cJSON_AddItemToObject(json, ZR_LSP_FIELD_RELATED_INFORMATION, relatedArray);
         }
     }
 

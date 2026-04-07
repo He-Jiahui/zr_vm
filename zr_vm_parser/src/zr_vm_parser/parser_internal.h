@@ -34,6 +34,8 @@ TZrBool consume_token(SZrParserState *ps, EZrToken token);
 
 EZrToken peek_token(SZrParserState *ps);
 
+TZrBool consume_percent_keyword_token(SZrParserState *ps, EZrToken token);
+
 void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor);
 
 void restore_parser_cursor(SZrParserState *ps, const SZrParserCursor *cursor);
@@ -43,6 +45,14 @@ TZrBool current_identifier_equals(SZrParserState *ps, const TZrChar *text);
 TZrBool current_percent_directive_equals(SZrParserState *ps, const TZrChar *text);
 
 TZrBool is_module_path_segment_token(EZrToken token);
+
+TZrBool is_type_modifier_token(EZrToken token);
+
+TZrBool is_member_modifier_token(EZrToken token);
+
+TZrUInt32 token_to_declaration_modifier_flag(EZrToken token);
+
+TZrUInt32 parse_declaration_modifier_flags(SZrParserState *ps, TZrUInt32 allowedFlags);
 
 void skip_balanced_after_open_paren(SZrParserState *ps);
 

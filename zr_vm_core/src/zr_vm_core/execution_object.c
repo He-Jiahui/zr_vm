@@ -17,18 +17,8 @@ static SZrFunction *execution_function_from_constant_value(SZrState *state, cons
         return ZR_NULL;
     }
 
-    if (value->type == ZR_VALUE_TYPE_FUNCTION &&
-        value->value.object->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
-        return ZR_CAST_FUNCTION(state, value->value.object);
-    }
-
-    if (value->type == ZR_VALUE_TYPE_CLOSURE &&
-        !value->isNative &&
-        value->value.object->type == ZR_RAW_OBJECT_TYPE_CLOSURE) {
-        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, value->value.object);
-        if (closure != ZR_NULL) {
-            return closure->function;
-        }
+    if (value->type == ZR_VALUE_TYPE_FUNCTION || value->type == ZR_VALUE_TYPE_CLOSURE) {
+        return ZrCore_Closure_GetMetadataFunctionFromValue(state, value);
     }
 
     return ZR_NULL;
@@ -74,18 +64,16 @@ static SZrFunction *execution_find_entry_function(SZrState *state,
         if (ZR_CALL_INFO_IS_VM(currentCallInfo) &&
             currentCallInfo->functionBase.valuePointer >= state->stackBase.valuePointer &&
             currentCallInfo->functionBase.valuePointer < state->stackTop.valuePointer) {
-            SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValue(currentCallInfo->functionBase.valuePointer);
-            if (functionBaseValue != ZR_NULL && functionBaseValue->type == ZR_VALUE_TYPE_CLOSURE) {
-                SZrClosure *stackClosure = ZR_CAST_VM_CLOSURE(state, functionBaseValue->value.object);
-                if (stackClosure != ZR_NULL &&
-                    stackClosure->function != ZR_NULL &&
-                    stackClosure->function->prototypeData != ZR_NULL &&
-                    stackClosure->function->prototypeCount > 0) {
-                    return stackClosure->function;
+            SZrFunction *stackFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, currentCallInfo);
+            if (stackFunction != ZR_NULL) {
+                if (stackFunction->prototypeData != ZR_NULL &&
+                    stackFunction->prototypeCount > 0) {
+                    return stackFunction;
                 }
-                if (stackClosure != ZR_NULL && stackClosure->function != ZR_NULL) {
+
+                {
                     SZrFunction *constantContextFunction =
-                            execution_find_entry_function_in_constants(state, stackClosure->function);
+                            execution_find_entry_function_in_constants(state, stackFunction);
                     if (constantContextFunction != ZR_NULL) {
                         return constantContextFunction;
                     }
@@ -141,6 +129,8 @@ TZrBool execution_try_materialize_global_prototypes(SZrState *state,
 // 返回找到的原型对象，如果未找到返回 ZR_NULL
 static SZrObjectPrototype *find_prototype_in_module(SZrState *state, struct SZrObjectModule *module, 
                                                      SZrString *typeName, EZrObjectPrototypeType expectedType) {
+    SZrObjectPrototype *matchedPrototype;
+
     if (state == ZR_NULL || module == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
     }
@@ -169,10 +159,11 @@ static SZrObjectPrototype *find_prototype_in_module(SZrState *state, struct SZrO
     SZrObjectPrototype *prototype = (SZrObjectPrototype *)typeObject;
     
     // 检查原型类型是否匹配
-    if (prototype_type_matches(expectedType, prototype->type)) {
-        return prototype;
+    matchedPrototype = prototype_type_matches(expectedType, prototype->type) ? prototype : ZR_NULL;
+    if (matchedPrototype != ZR_NULL) {
+        return matchedPrototype;
     }
-    
+
     return ZR_NULL;
 }
 
@@ -298,6 +289,91 @@ static SZrObjectPrototype *find_prototype_in_loaded_modules_registry(SZrState *s
     return ZR_NULL;
 }
 
+static struct SZrObjectModule *execution_find_module_for_function(SZrState *state, SZrFunction *function) {
+    SZrObject *registry;
+
+    if (state == ZR_NULL || function == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (function->sourceCodeList != ZR_NULL) {
+        struct SZrObjectModule *module = ZrCore_Module_GetFromCache(state, function->sourceCodeList);
+        if (module != ZR_NULL) {
+            return module;
+        }
+    }
+
+    if (state->global == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(&state->global->loadedModulesRegistry) ||
+        state->global->loadedModulesRegistry.type != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_NULL;
+    }
+
+    registry = ZR_CAST_OBJECT(state, state->global->loadedModulesRegistry.value.object);
+    if (registry == ZR_NULL || !registry->nodeMap.isValid || registry->nodeMap.buckets == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize bucketIndex = 0; bucketIndex < registry->nodeMap.capacity; bucketIndex++) {
+        for (SZrHashKeyValuePair *modulePair = registry->nodeMap.buckets[bucketIndex];
+             modulePair != ZR_NULL;
+             modulePair = modulePair->next) {
+            SZrObject *cachedObject;
+            struct SZrObjectModule *module;
+
+            if (modulePair->value.type != ZR_VALUE_TYPE_OBJECT) {
+                continue;
+            }
+
+            cachedObject = ZR_CAST_OBJECT(state, modulePair->value.value.object);
+            if (cachedObject == ZR_NULL || cachedObject->internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+                continue;
+            }
+
+            module = (struct SZrObjectModule *)cachedObject;
+            if (!module->super.nodeMap.isValid || module->super.nodeMap.buckets == ZR_NULL) {
+                continue;
+            }
+
+            for (TZrSize exportBucketIndex = 0; exportBucketIndex < module->super.nodeMap.capacity; exportBucketIndex++) {
+                for (SZrHashKeyValuePair *exportPair = module->super.nodeMap.buckets[exportBucketIndex];
+                     exportPair != ZR_NULL;
+                     exportPair = exportPair->next) {
+                    SZrFunction *exportedFunction = execution_function_from_constant_value(state, &exportPair->value);
+                    if (exportedFunction == function) {
+                        return module;
+                    }
+                }
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static struct SZrObjectModule *execution_find_lookup_module(SZrState *state) {
+    SZrCallInfo *callInfo;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    callInfo = state->callInfoList;
+    while (callInfo != ZR_NULL) {
+        if (ZR_CALL_INFO_IS_VM(callInfo) &&
+            callInfo->functionBase.valuePointer >= state->stackBase.valuePointer &&
+            callInfo->functionBase.valuePointer < state->stackTop.valuePointer) {
+            SZrFunction *function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+            struct SZrObjectModule *module = execution_find_module_for_function(state, function);
+            if (module != ZR_NULL) {
+                return module;
+            }
+        }
+        callInfo = callInfo->previous;
+    }
+
+    return execution_find_module_for_function(state, execution_find_entry_function(state, ZR_NULL, state->callInfoList));
+}
+
 static SZrObjectPrototype *find_prototype_in_global_zr_object(SZrState *state,
                                                               SZrString *typeName,
                                                               EZrObjectPrototypeType expectedType) {
@@ -333,9 +409,8 @@ static SZrObjectPrototype *find_prototype_in_global_zr_object(SZrState *state,
     return prototype_type_matches(expectedType, prototype->type) ? prototype : ZR_NULL;
 }
 
-static TZrBool materialize_entry_function_prototypes_for_lookup(SZrState *state, SZrString *moduleName) {
+static TZrBool materialize_entry_function_prototypes_for_lookup(SZrState *state, struct SZrObjectModule *module) {
     SZrFunction *entryFunction;
-    struct SZrObjectModule *module = ZR_NULL;
 
     if (state == ZR_NULL) {
         return ZR_FALSE;
@@ -349,10 +424,6 @@ static TZrBool materialize_entry_function_prototypes_for_lookup(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (moduleName != ZR_NULL) {
-        module = ZrCore_Module_GetFromCache(state, moduleName);
-    }
-
     ZrCore_Module_CreatePrototypesFromData(state, module, entryFunction);
     return ZR_TRUE;
 }
@@ -361,6 +432,8 @@ static TZrBool materialize_entry_function_prototypes_for_lookup(SZrState *state,
 SZrObjectPrototype *find_type_prototype(SZrState *state,
                                         SZrString *typeName,
                                         EZrObjectPrototypeType expectedType) {
+    struct SZrObjectModule *module;
+
     if (state == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
     }
@@ -382,64 +455,38 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
     // 如果指定了模块名，从该模块中查找
     if (moduleName != ZR_NULL) {
         // 从模块注册表中获取模块
-        struct SZrObjectModule *module = ZrCore_Module_GetFromCache(state, moduleName);
+        module = ZrCore_Module_GetFromCache(state, moduleName);
         if (module != ZR_NULL) {
             SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
-            return prototype;
-        }
-    } else {
-        // 没有指定模块名，尝试从当前调用栈的闭包中查找模块
-        // 如果函数有模块信息，从模块中查找类型
-        // 通过查找调用栈中的entry function，然后查找对应的模块
-        if (state->callInfoList != ZR_NULL) {
-            // 查找当前调用栈中的entry function（包含prototypeData的函数）
-            SZrCallInfo *callInfo = state->callInfoList;
-            while (callInfo != ZR_NULL) {
-                if (callInfo->functionBase.valuePointer >= state->stackBase.valuePointer &&
-                    callInfo->functionBase.valuePointer < state->stackTop.valuePointer) {
-                    struct SZrFunction *func = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
-                    if (func != ZR_NULL && func->prototypeData != ZR_NULL && func->prototypeCount > 0) {
-                        // 查找对应的模块
-                        // TODO: 注意：这里需要遍历模块注册表查找，简化实现：遍历所有模块
-                        if (state->global != ZR_NULL) {
-                            SZrGlobalState *registryGlobal = state->global;
-                            if (ZrCore_Value_IsGarbageCollectable(&registryGlobal->loadedModulesRegistry) &&
-                                registryGlobal->loadedModulesRegistry.type == ZR_VALUE_TYPE_OBJECT) {
-                                SZrObject *registry =
-                                        ZR_CAST_OBJECT(state, registryGlobal->loadedModulesRegistry.value.object);
-                                if (registry != ZR_NULL && registry->nodeMap.isValid && registry->nodeMap.buckets != ZR_NULL) {
-                                    // 遍历模块注册表，查找包含该entry function的模块
-                                    for (TZrSize i = 0; i < registry->nodeMap.capacity; i++) {
-                                        SZrHashKeyValuePair *pair = registry->nodeMap.buckets[i];
-                                        while (pair != ZR_NULL) {
-                                            if (pair->value.type == ZR_VALUE_TYPE_OBJECT) {
-                                                SZrObject *cachedObject = ZR_CAST_OBJECT(state, pair->value.value.object);
-                                                if (cachedObject != ZR_NULL &&
-                                                    cachedObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
-                                                    struct SZrObjectModule *module = (struct SZrObjectModule *)cachedObject;
-                                                    // 检查模块的导出中是否有该类型
-                                                    SZrObjectPrototype *prototype =
-                                                            find_prototype_in_module(state, module, actualTypeName, expectedType);
-                                                    if (prototype != ZR_NULL) {
-                                                        return prototype;
-                                                    }
-                                                }
-                                            }
-                                            pair = pair->next;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        break;  // 找到entry function后，不再继续查找
-                    }
-                }
-                callInfo = callInfo->previous;
+            if (prototype != ZR_NULL) {
+                return prototype;
             }
         }
-        
-        // 从全局模块注册表中查找（遍历所有已加载的模块）
-        // 如果上面的查找失败，遍历所有模块查找类型
+    } else {
+        module = execution_find_lookup_module(state);
+        if (module != ZR_NULL) {
+            SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
+            if (prototype != ZR_NULL) {
+                return prototype;
+            }
+        }
+
+        if (materialize_entry_function_prototypes_for_lookup(state, module)) {
+            if (module != ZR_NULL) {
+                SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
+                if (prototype != ZR_NULL) {
+                    return prototype;
+                }
+            }
+
+            {
+                SZrObjectPrototype *prototype = find_prototype_in_global_zr_object(state, actualTypeName, expectedType);
+                if (prototype != ZR_NULL) {
+                    return prototype;
+                }
+            }
+        }
+
         {
             SZrObjectPrototype *prototype =
                     find_prototype_in_loaded_modules_registry(state, actualTypeName, expectedType);
@@ -453,31 +500,6 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
         SZrObjectPrototype *prototype = find_prototype_in_global_zr_object(state, actualTypeName, expectedType);
         if (prototype != ZR_NULL) {
             return prototype;
-        }
-    }
-
-    if (materialize_entry_function_prototypes_for_lookup(state, moduleName)) {
-        if (moduleName != ZR_NULL) {
-            struct SZrObjectModule *module = ZrCore_Module_GetFromCache(state, moduleName);
-            if (module != ZR_NULL) {
-                SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
-                if (prototype != ZR_NULL) {
-                    return prototype;
-                }
-            }
-        } else {
-            SZrObjectPrototype *prototype =
-                    find_prototype_in_loaded_modules_registry(state, actualTypeName, expectedType);
-            if (prototype != ZR_NULL) {
-                return prototype;
-            }
-        }
-
-        {
-            SZrObjectPrototype *prototype = find_prototype_in_global_zr_object(state, actualTypeName, expectedType);
-            if (prototype != ZR_NULL) {
-                return prototype;
-            }
         }
     }
 

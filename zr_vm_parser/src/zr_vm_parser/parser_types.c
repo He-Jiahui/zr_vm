@@ -46,6 +46,7 @@ static TZrBool parse_decorator_pseudo_type_annotation(SZrParserState *ps, SZrTyp
         return ZR_FALSE;
     }
 
+    innerType->isDecoratorPseudoType = ZR_TRUE;
     *outType = innerType;
     return ZR_TRUE;
 }
@@ -64,6 +65,8 @@ static SZrType *allocate_empty_type_info(SZrParserState *ps) {
     type->name = ZR_NULL;
     type->subType = ZR_NULL;
     type->ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    type->isDecoratorPseudoType = ZR_FALSE;
+    type->isImplicitBuiltinType = ZR_FALSE;
     type->arrayFixedSize = 0;
     type->arrayMinSize = 0;
     type->arrayMaxSize = 0;
@@ -138,6 +141,7 @@ static SZrType *wrap_type_in_task_generic(SZrParserState *ps,
     }
 
     wrappedType->name = genericNode;
+    wrappedType->isImplicitBuiltinType = ZR_TRUE;
     return wrappedType;
 }
 
@@ -163,6 +167,7 @@ static SZrType *wrap_type_in_task_identifier(SZrParserState *ps,
     }
 
     wrappedType->name = nameNode;
+    wrappedType->isImplicitBuiltinType = ZR_TRUE;
     return wrappedType;
 }
 
@@ -195,21 +200,307 @@ static const TZrChar *classify_atomic_wrapper_name(SZrType *type) {
     return ZR_NULL;
 }
 
+static TZrBool token_can_start_type_expression(EZrToken token) {
+    return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST || token == ZR_TK_LBRACKET ||
+           token == ZR_TK_LPAREN || token == ZR_TK_PERCENT;
+}
+
+static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noGeneric) {
+    SZrFileRange startLoc;
+    EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+    TZrBool isVariadic = ZR_FALSE;
+    TZrBool isConst = ZR_FALSE;
+    SZrAstNode *nameNode = ZR_NULL;
+    SZrType *typeInfo = ZR_NULL;
+    SZrAstNode *defaultValue = ZR_NULL;
+    SZrParserCursor cursor;
+    SZrAstNode *node;
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    startLoc = get_current_location(ps);
+
+    if (ps->lexer->t.token == ZR_TK_PARAMS) {
+        isVariadic = ZR_TRUE;
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        ZrParser_Lexer_Next(ps->lexer);
+        if (ps->lexer->t.token == ZR_TK_IN) {
+            passingMode = ZR_PARAMETER_PASSING_MODE_IN;
+            ZrParser_Lexer_Next(ps->lexer);
+        } else if (ps->lexer->t.token == ZR_TK_OUT) {
+            passingMode = ZR_PARAMETER_PASSING_MODE_OUT;
+            ZrParser_Lexer_Next(ps->lexer);
+        } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "ref")) {
+            passingMode = ZR_PARAMETER_PASSING_MODE_REF;
+            ZrParser_Lexer_Next(ps->lexer);
+        } else {
+            report_error(ps, "Expected 'in', 'out' or 'ref' after '%' in function type parameter");
+            return ZR_NULL;
+        }
+    }
+
+    if (ps->lexer->t.token == ZR_TK_CONST) {
+        isConst = ZR_TRUE;
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && peek_token(ps) == ZR_TK_COLON) {
+        nameNode = parse_identifier(ps);
+        if (nameNode == ZR_NULL || !consume_token(ps, ZR_TK_COLON)) {
+            ZrParser_Ast_Free(ps->state, nameNode);
+            return ZR_NULL;
+        }
+    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER && !noGeneric) {
+        save_parser_cursor(ps, &cursor);
+        nameNode = parse_identifier(ps);
+        if (nameNode != ZR_NULL && consume_token(ps, ZR_TK_COLON)) {
+            /* name:type */
+        } else {
+            if (nameNode != ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, nameNode);
+                nameNode = ZR_NULL;
+            }
+            restore_parser_cursor(ps, &cursor);
+        }
+    }
+
+    typeInfo = noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
+    if (typeInfo == ZR_NULL) {
+        if (nameNode != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, nameNode);
+        }
+        return ZR_NULL;
+    }
+
+    if (!isVariadic && consume_token(ps, ZR_TK_EQUALS)) {
+        defaultValue = parse_expression(ps);
+    }
+
+    node = create_ast_node(ps, ZR_AST_PARAMETER, startLoc);
+    if (node == ZR_NULL) {
+        if (nameNode != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, nameNode);
+        }
+        free_owned_type(ps->state, typeInfo);
+        if (defaultValue != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, defaultValue);
+        }
+        return ZR_NULL;
+    }
+
+    node->data.parameter.name = nameNode != ZR_NULL ? &nameNode->data.identifier : ZR_NULL;
+    node->data.parameter.typeInfo = typeInfo;
+    node->data.parameter.defaultValue = defaultValue;
+    node->data.parameter.isConst = isConst;
+    node->data.parameter.decorators = ZR_NULL;
+    node->data.parameter.passingMode = passingMode;
+    node->data.parameter.genericKind = ZR_GENERIC_PARAMETER_TYPE;
+    node->data.parameter.variance = ZR_GENERIC_VARIANCE_NONE;
+    node->data.parameter.genericTypeConstraints = ZR_NULL;
+    node->data.parameter.genericRequiresClass = ZR_FALSE;
+    node->data.parameter.genericRequiresStruct = ZR_FALSE;
+    node->data.parameter.genericRequiresNew = ZR_FALSE;
+    return node;
+}
+
+static SZrAstNodeArray *parse_function_type_parameter_list(SZrParserState *ps, TZrBool noGeneric) {
+    SZrAstNodeArray *params;
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    params = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    if (params == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_RPAREN) {
+        return params;
+    }
+
+    while (ZR_TRUE) {
+        SZrAstNode *param = parse_function_type_parameter(ps, noGeneric);
+        if (param == ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+            return ZR_NULL;
+        }
+
+        ZrParser_AstNodeArray_Add(ps->state, params, param);
+        if (!consume_token(ps, ZR_TK_COMMA)) {
+            break;
+        }
+        if (ps->lexer->t.token == ZR_TK_RPAREN) {
+            break;
+        }
+    }
+
+    return params;
+}
+
+static SZrType *parse_function_type(SZrParserState *ps, TZrBool noGeneric, SZrFileRange startLoc) {
+    SZrGenericDeclaration *generic = ZR_NULL;
+    SZrAstNodeArray *params = ZR_NULL;
+    SZrParameter *args = ZR_NULL;
+    SZrAstNode *argsNode = ZR_NULL;
+    SZrType *returnType = ZR_NULL;
+    SZrAstNode *functionTypeNode = ZR_NULL;
+    SZrType *type = ZR_NULL;
+    SZrFileRange fullLoc;
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (!noGeneric && ps->lexer->t.token == ZR_TK_LESS_THAN) {
+        generic = parse_generic_declaration(ps, ZR_FALSE);
+        if (generic == ZR_NULL) {
+            return ZR_NULL;
+        }
+        if (!parse_optional_where_clauses(ps, generic)) {
+            free_generic_declaration(ps->state, generic);
+            return ZR_NULL;
+        }
+    }
+
+    expect_token(ps, ZR_TK_LPAREN);
+    if (!consume_token(ps, ZR_TK_LPAREN)) {
+        free_generic_declaration(ps->state, generic);
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_PARAMS) {
+        params = ZrParser_AstNodeArray_New(ps->state, 0);
+        if (params == ZR_NULL) {
+            free_generic_declaration(ps->state, generic);
+            return ZR_NULL;
+        }
+        argsNode = parse_function_type_parameter(ps, noGeneric);
+        if (argsNode == ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+            free_generic_declaration(ps->state, generic);
+            return ZR_NULL;
+        }
+        args = &argsNode->data.parameter;
+    } else {
+        params = parse_function_type_parameter_list(ps, noGeneric);
+        if (params == ZR_NULL) {
+            free_generic_declaration(ps->state, generic);
+            return ZR_NULL;
+        }
+        if (consume_token(ps, ZR_TK_COMMA) && ps->lexer->t.token == ZR_TK_PARAMS) {
+            argsNode = parse_function_type_parameter(ps, noGeneric);
+            if (argsNode == ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, params);
+                free_generic_declaration(ps->state, generic);
+                return ZR_NULL;
+            }
+            args = &argsNode->data.parameter;
+        }
+    }
+
+    expect_token(ps, ZR_TK_RPAREN);
+    if (!consume_token(ps, ZR_TK_RPAREN)) {
+        if (argsNode != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, argsNode);
+        }
+        if (params != ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, params);
+        }
+        free_generic_declaration(ps->state, generic);
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token != ZR_TK_RIGHT_ARROW) {
+        report_error(ps, "Expected '->' after %func parameter list");
+        if (argsNode != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, argsNode);
+        }
+        if (params != ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, params);
+        }
+        free_generic_declaration(ps->state, generic);
+        return ZR_NULL;
+    }
+    ZrParser_Lexer_Next(ps->lexer);
+
+    returnType = noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
+    if (returnType == ZR_NULL) {
+        if (argsNode != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, argsNode);
+        }
+        if (params != ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, params);
+        }
+        free_generic_declaration(ps->state, generic);
+        return ZR_NULL;
+    }
+
+    fullLoc = ZrParser_FileRange_Merge(startLoc, get_current_location(ps));
+    functionTypeNode = create_ast_node(ps, ZR_AST_FUNCTION_TYPE, fullLoc);
+    if (functionTypeNode == ZR_NULL) {
+        if (argsNode != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, argsNode);
+        }
+        if (params != ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, params);
+        }
+        free_generic_declaration(ps->state, generic);
+        free_owned_type(ps->state, returnType);
+        return ZR_NULL;
+    }
+
+    functionTypeNode->data.functionType.generic = generic;
+    functionTypeNode->data.functionType.params = params;
+    functionTypeNode->data.functionType.args = args;
+    functionTypeNode->data.functionType.returnType = returnType;
+
+    type = allocate_empty_type_info(ps);
+    if (type == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, functionTypeNode);
+        return ZR_NULL;
+    }
+
+    type->name = functionTypeNode;
+    return type;
+}
+
 static SZrType *parse_percent_prefixed_type(SZrParserState *ps, TZrBool noGeneric) {
     EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     SZrType *innerType;
     SZrType *type;
+    SZrFileRange location;
 
     if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT) {
         return ZR_NULL;
     }
 
+    location = get_current_location(ps);
     ZrParser_Lexer_Next(ps->lexer);
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "type")) {
         if (parse_decorator_pseudo_type_annotation(ps, &innerType, noGeneric)) {
             return innerType;
         }
         return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "async")) {
+        ZrParser_Lexer_Next(ps->lexer);
+        innerType = parse_task_inner_type(ps, noGeneric);
+        if (innerType == ZR_NULL) {
+            return ZR_NULL;
+        }
+        return wrap_type_in_task_generic(ps, innerType, "zr.task.TaskRunner", location);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
+        ZrParser_Lexer_Next(ps->lexer);
+        return parse_function_type(ps, noGeneric, location);
     }
 
     if (ps->lexer->t.token != ZR_TK_IDENTIFIER ||
@@ -237,7 +528,7 @@ static SZrType *parse_percent_prefixed_type(SZrParserState *ps, TZrBool noGeneri
 }
 
 static TZrBool token_can_start_type_argument(EZrToken token) {
-    return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST || token == ZR_TK_LBRACKET || token == ZR_TK_PERCENT;
+    return token_can_start_type_expression(token);
 }
 
 static TZrBool is_generic_argument_terminator(EZrToken token) {
@@ -405,83 +696,92 @@ SZrAstNode *parse_tuple_type(SZrParserState *ps) {
     return node;
 }
 
-// 解析类型
-
-SZrType *parse_type(SZrParserState *ps) {
+static SZrType *parse_type_internal(SZrParserState *ps, TZrBool noGeneric) {
     SZrType *type;
     EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        return parse_percent_prefixed_type(ps, ZR_FALSE);
+        return parse_percent_prefixed_type(ps, noGeneric);
     }
 
-    type = allocate_empty_type_info(ps);
-    if (type == ZR_NULL) {
-        return ZR_NULL;
-    }
+    if (ps->lexer->t.token == ZR_TK_LPAREN) {
+        ZrParser_Lexer_Next(ps->lexer);
+        type = noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
+        if (type == ZR_NULL) {
+            return ZR_NULL;
+        }
+        expect_token(ps, ZR_TK_RPAREN);
+        if (!consume_token(ps, ZR_TK_RPAREN)) {
+            free_owned_type(ps->state, type);
+            return ZR_NULL;
+        }
+    } else {
+        type = allocate_empty_type_info(ps);
+        if (type == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
-        try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier) &&
-        peek_token(ps) == ZR_TK_LESS_THAN) {
-        report_error(ps, "Legacy ownership type syntax is removed; use '%unique Type', '%shared Type', '%weak Type' or '%borrowed Type'");
-        ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-        return ZR_NULL;
-    }
-
-    // 解析类型名称（可能是标识符、泛型类型或元组类型）
-    if (ps->lexer->t.token == ZR_TK_LBRACKET) {
-        // 元组类型
-        SZrAstNode *tupleNode = parse_tuple_type(ps);
-        if (tupleNode != ZR_NULL) {
-            type->name = tupleNode;
-        } else {
+        if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
+            try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier) &&
+            peek_token(ps) == ZR_TK_LESS_THAN) {
+            report_error(ps, "Legacy ownership type syntax is removed; use '%unique Type', '%shared Type', '%weak Type' or '%borrowed Type'");
             ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
             return ZR_NULL;
         }
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-        // 检查是否是泛型类型
-        EZrToken lookahead = peek_token(ps);
-        if (lookahead == ZR_TK_LESS_THAN) {
-            SZrAstNode *genericNode = parse_generic_type(ps);
-            if (genericNode != ZR_NULL) {
-                type->name = genericNode;
+
+        if (ps->lexer->t.token == ZR_TK_LBRACKET) {
+            SZrAstNode *tupleNode = parse_tuple_type(ps);
+            if (tupleNode != ZR_NULL) {
+                type->name = tupleNode;
             } else {
                 ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
                 return ZR_NULL;
+            }
+        } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
+            EZrToken lookahead = peek_token(ps);
+            if (!noGeneric && lookahead == ZR_TK_LESS_THAN) {
+                SZrAstNode *genericNode = parse_generic_type(ps);
+                if (genericNode != ZR_NULL) {
+                    type->name = genericNode;
+                } else {
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                    return ZR_NULL;
+                }
+            } else {
+                SZrAstNode *idNode = parse_identifier(ps);
+                if (idNode != ZR_NULL) {
+                    type->name = idNode;
+                } else {
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                    return ZR_NULL;
+                }
             }
         } else {
-            // 普通标识符类型
-            SZrAstNode *idNode = parse_identifier(ps);
-            if (idNode != ZR_NULL) {
-                type->name = idNode;
-            } else {
-                ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                return ZR_NULL;
-            }
+            report_error(ps, "Expected type name");
+            ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            return ZR_NULL;
         }
-    } else {
-        report_error(ps, "Expected type name");
-        ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-        return ZR_NULL;
     }
 
-    // 解析子类型（可选，如 A.B）
     if (consume_token(ps, ZR_TK_DOT)) {
-        type->subType = parse_type(ps);
+        type->subType = noGeneric ? parse_type_no_generic(ps) : parse_type(ps);
     }
 
-    // 解析数组维度和大小约束
     while (consume_token(ps, ZR_TK_LBRACKET)) {
         if (consume_token(ps, ZR_TK_RBRACKET)) {
-            // 普通数组维度（无大小约束）
             type->dimensions++;
         } else {
             if (!parse_array_size_constraint(ps, type)) {
-                ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                free_owned_type(ps->state, type);
                 return ZR_NULL;
             }
             if (!consume_token(ps, ZR_TK_RBRACKET)) {
                 report_error(ps, "Expected ] after array size constraint");
-                ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                free_owned_type(ps->state, type);
                 return ZR_NULL;
             }
             type->dimensions++;
@@ -491,78 +791,16 @@ SZrType *parse_type(SZrParserState *ps) {
     return type;
 }
 
+// 解析类型
+
+SZrType *parse_type(SZrParserState *ps) {
+    return parse_type_internal(ps, ZR_FALSE);
+}
+
 // 解析类型（不解析泛型类型，用于 intermediate 声明的返回类型）
 
 SZrType *parse_type_no_generic(SZrParserState *ps) {
-    SZrType *type;
-    EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
-    if (ps->lexer->t.token == ZR_TK_PERCENT) {
-        return parse_percent_prefixed_type(ps, ZR_TRUE);
-    }
-
-    type = allocate_empty_type_info(ps);
-    if (type == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
-        try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier) &&
-        peek_token(ps) == ZR_TK_LESS_THAN) {
-        report_error(ps, "Legacy ownership type syntax is removed; use '%unique Type', '%shared Type', '%weak Type' or '%borrowed Type'");
-        ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-        return ZR_NULL;
-    }
-
-    // 解析类型名称（可能是标识符或元组类型，但不解析泛型类型）
-    if (ps->lexer->t.token == ZR_TK_LBRACKET) {
-        // 元组类型
-        SZrAstNode *tupleNode = parse_tuple_type(ps);
-        if (tupleNode != ZR_NULL) {
-            type->name = tupleNode;
-        } else {
-            ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-            return ZR_NULL;
-        }
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-        // 普通标识符类型（不解析泛型类型，即使后面有 <）
-        SZrAstNode *idNode = parse_identifier(ps);
-        if (idNode != ZR_NULL) {
-            type->name = idNode;
-        } else {
-            ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-            return ZR_NULL;
-        }
-    } else {
-        report_error(ps, "Expected type name");
-        ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-        return ZR_NULL;
-    }
-
-    // 解析子类型（可选，如 A.B）
-    if (consume_token(ps, ZR_TK_DOT)) {
-        type->subType = parse_type_no_generic(ps);
-    }
-
-    // 解析数组维度和大小约束
-    while (consume_token(ps, ZR_TK_LBRACKET)) {
-        if (consume_token(ps, ZR_TK_RBRACKET)) {
-            // 普通数组维度（无大小约束）
-            type->dimensions++;
-        } else {
-            if (!parse_array_size_constraint(ps, type)) {
-                ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                return ZR_NULL;
-            }
-            if (!consume_token(ps, ZR_TK_RBRACKET)) {
-                report_error(ps, "Expected ] after array size constraint");
-                ZrCore_Memory_RawFreeWithType(ps->state->global, type, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
-                return ZR_NULL;
-            }
-            type->dimensions++;
-        }
-    }
-
-    return type;
+    return parse_type_internal(ps, ZR_TRUE);
 }
 
 // 解析数组大小约束

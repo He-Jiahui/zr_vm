@@ -410,6 +410,13 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             break;
         }
+        case ZR_AST_TYPE_LITERAL_EXPRESSION: {
+            SZrTypeLiteralExpression *typeLiteral = &node->data.typeLiteralExpression;
+            if (typeLiteral->typeInfo != ZR_NULL) {
+                free_owned_type(state, typeLiteral->typeInfo);
+            }
+            break;
+        }
         case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION: {
             SZrPrototypeReferenceExpression *prototypeRef = &node->data.prototypeReferenceExpression;
             if (prototypeRef->target != ZR_NULL) {
@@ -555,6 +562,23 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
         }
         case ZR_AST_TYPE: {
             free_type_info(state, &node->data.type);
+            break;
+        }
+        case ZR_AST_FUNCTION_TYPE: {
+            SZrFunctionType *funcType = &node->data.functionType;
+            if (funcType->generic != ZR_NULL) {
+                free_generic_declaration(state, funcType->generic);
+            }
+            if (funcType->params != ZR_NULL) {
+                for (TZrSize i = 0; i < funcType->params->count; i++) {
+                    ZrParser_Ast_Free(state, funcType->params->nodes[i]);
+                }
+                ZrParser_AstNodeArray_Free(state, funcType->params);
+            }
+            free_parameter_node_from_ptr(state, funcType->args);
+            if (funcType->returnType != ZR_NULL) {
+                free_owned_type(state, funcType->returnType);
+            }
             break;
         }
         case ZR_AST_GENERIC_TYPE: {

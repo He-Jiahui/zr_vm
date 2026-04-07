@@ -9,6 +9,7 @@
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/runtime_decorator.h"
@@ -28,6 +29,12 @@ static const TZrChar *kReflectionOwnerModuleFieldName = "__zr_reflection_module"
 static const TZrChar *kReflectionEntryFunctionFieldName = "__zr_reflection_entry_function";
 static const TZrChar *kReflectionCollectionOrderFieldName = "__zr_reflection_order";
 
+#define ZR_RUNTIME_DECLARATION_MODIFIER_ABSTRACT ((TZrUInt32)(1u << 0))
+#define ZR_RUNTIME_DECLARATION_MODIFIER_VIRTUAL ((TZrUInt32)(1u << 1))
+#define ZR_RUNTIME_DECLARATION_MODIFIER_OVERRIDE ((TZrUInt32)(1u << 2))
+#define ZR_RUNTIME_DECLARATION_MODIFIER_FINAL ((TZrUInt32)(1u << 3))
+#define ZR_RUNTIME_DECLARATION_MODIFIER_SHADOW ((TZrUInt32)(1u << 4))
+
 static SZrObject *reflection_build_module_reflection(SZrState *state, SZrObjectModule *module);
 static SZrObject *reflection_build_type_reflection(SZrState *state,
                                                    SZrObjectPrototype *prototype,
@@ -39,6 +46,10 @@ static void reflection_init_object_value(SZrState *state,
                                          SZrTypeValue *value,
                                          SZrRawObject *objectValue,
                                          EZrValueType valueType);
+static TZrBool reflection_pin_raw_object(SZrState *state, SZrRawObject *object, TZrBool *addedByCaller);
+static void reflection_unpin_raw_object(SZrGlobalState *global, SZrRawObject *object, TZrBool addedByCaller);
+static TZrBool reflection_pin_value_object(SZrState *state, const SZrTypeValue *value, TZrBool *addedByCaller);
+static void reflection_unpin_value_object(SZrGlobalState *global, const SZrTypeValue *value, TZrBool addedByCaller);
 static void reflection_set_field_value(SZrState *state,
                                        SZrObject *object,
                                        const TZrChar *fieldName,
@@ -80,6 +91,23 @@ static void reflection_populate_compiled_member_decorator_metadata(SZrState *sta
                                                                    SZrObject *memberReflection,
                                                                    SZrFunction *entryFunction,
                                                                    const SZrCompiledMemberInfo *member);
+static SZrObject *reflection_build_type_literal_object_internal(SZrState *state, const TZrChar *typeName);
+static const TZrChar *reflection_string_from_constant(SZrState *state,
+                                                      SZrFunction *entryFunction,
+                                                      TZrUInt32 constantIndex,
+                                                      const TZrChar *fallback);
+static TZrInt64 reflection_optional_slot_to_int(TZrUInt32 value);
+static TZrBool reflection_modifier_flag_enabled(TZrUInt32 modifierFlags, TZrUInt32 modifierFlag);
+static void reflection_apply_modifier_flags(SZrState *state,
+                                            SZrObject *reflectionObject,
+                                            TZrUInt32 modifierFlags);
+static void reflection_populate_type_oop_metadata(SZrState *state,
+                                                  SZrObject *typeReflection,
+                                                  const SZrCompiledPrototypeInfo *prototypeInfo);
+static void reflection_populate_compiled_member_oop_metadata(SZrState *state,
+                                                             SZrObject *memberReflection,
+                                                             SZrFunction *entryFunction,
+                                                             const SZrCompiledMemberInfo *member);
 
 static SZrObject *reflection_new_object(SZrState *state) {
     SZrObject *object;
@@ -164,12 +192,66 @@ static void reflection_init_object_value(SZrState *state,
     value->type = valueType;
 }
 
+static TZrBool reflection_pin_raw_object(SZrState *state, SZrRawObject *object, TZrBool *addedByCaller) {
+    if (addedByCaller != ZR_NULL) {
+        *addedByCaller = ZR_FALSE;
+    }
+
+    if (state == ZR_NULL || state->global == ZR_NULL || object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrCore_GarbageCollector_IsObjectIgnored(state->global, object)) {
+        return ZR_TRUE;
+    }
+
+    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
+        return ZR_FALSE;
+    }
+
+    if (addedByCaller != ZR_NULL) {
+        *addedByCaller = ZR_TRUE;
+    }
+    return ZR_TRUE;
+}
+
+static void reflection_unpin_raw_object(SZrGlobalState *global, SZrRawObject *object, TZrBool addedByCaller) {
+    if (!addedByCaller || global == ZR_NULL || object == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_GarbageCollector_UnignoreObject(global, object);
+}
+
+static TZrBool reflection_pin_value_object(SZrState *state, const SZrTypeValue *value, TZrBool *addedByCaller) {
+    if (addedByCaller != ZR_NULL) {
+        *addedByCaller = ZR_FALSE;
+    }
+
+    if (state == ZR_NULL || value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
+        return ZR_TRUE;
+    }
+
+    return reflection_pin_raw_object(state, ZrCore_Value_GetRawObject(value), addedByCaller);
+}
+
+static void reflection_unpin_value_object(SZrGlobalState *global, const SZrTypeValue *value, TZrBool addedByCaller) {
+    if (!addedByCaller || global == ZR_NULL || value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
+        return;
+    }
+
+    reflection_unpin_raw_object(global, ZrCore_Value_GetRawObject(value), ZR_TRUE);
+}
+
 static void reflection_set_field_value(SZrState *state,
                                        SZrObject *object,
                                        const TZrChar *fieldName,
                                        const SZrTypeValue *value) {
     SZrString *fieldString;
     SZrTypeValue key;
+    TZrBool objectPinned = ZR_FALSE;
+    TZrBool keyPinned = ZR_FALSE;
+    TZrBool valuePinned = ZR_FALSE;
 
     if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL) {
         return;
@@ -181,7 +263,19 @@ static void reflection_set_field_value(SZrState *state,
     }
 
     reflection_init_string_key(state, &key, fieldString);
+    if (!reflection_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &objectPinned) ||
+        !reflection_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), &keyPinned) ||
+        !reflection_pin_value_object(state, value, &valuePinned)) {
+        reflection_unpin_value_object(state->global, value, valuePinned);
+        reflection_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), keyPinned);
+        reflection_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
+        return;
+    }
+
     ZrCore_Object_SetValue(state, object, &key, value);
+    reflection_unpin_value_object(state->global, value, valuePinned);
+    reflection_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString), keyPinned);
+    reflection_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
 }
 
 static void reflection_set_field_string(SZrState *state,
@@ -283,6 +377,108 @@ static void reflection_set_field_object(SZrState *state,
     reflection_set_field_value(state, object, fieldName, &fieldValue);
 }
 
+static TZrInt64 reflection_optional_slot_to_int(TZrUInt32 value) {
+    return value == (TZrUInt32)-1 ? (TZrInt64)-1 : (TZrInt64)value;
+}
+
+static TZrBool reflection_modifier_flag_enabled(TZrUInt32 modifierFlags, TZrUInt32 modifierFlag) {
+    return (modifierFlags & modifierFlag) != 0 ? ZR_TRUE : ZR_FALSE;
+}
+
+static void reflection_apply_modifier_flags(SZrState *state,
+                                            SZrObject *reflectionObject,
+                                            TZrUInt32 modifierFlags) {
+    if (state == ZR_NULL || reflectionObject == ZR_NULL) {
+        return;
+    }
+
+    reflection_set_field_int(state, reflectionObject, "modifierFlags", modifierFlags);
+    reflection_set_field_bool(state,
+                              reflectionObject,
+                              "isAbstract",
+                              reflection_modifier_flag_enabled(modifierFlags,
+                                                               ZR_RUNTIME_DECLARATION_MODIFIER_ABSTRACT));
+    reflection_set_field_bool(state,
+                              reflectionObject,
+                              "isVirtual",
+                              reflection_modifier_flag_enabled(modifierFlags,
+                                                               ZR_RUNTIME_DECLARATION_MODIFIER_VIRTUAL));
+    reflection_set_field_bool(state,
+                              reflectionObject,
+                              "isOverride",
+                              reflection_modifier_flag_enabled(modifierFlags,
+                                                               ZR_RUNTIME_DECLARATION_MODIFIER_OVERRIDE));
+    reflection_set_field_bool(state,
+                              reflectionObject,
+                              "isFinal",
+                              reflection_modifier_flag_enabled(modifierFlags,
+                                                               ZR_RUNTIME_DECLARATION_MODIFIER_FINAL));
+    reflection_set_field_bool(state,
+                              reflectionObject,
+                              "isShadow",
+                              reflection_modifier_flag_enabled(modifierFlags,
+                                                               ZR_RUNTIME_DECLARATION_MODIFIER_SHADOW));
+}
+
+static void reflection_populate_type_oop_metadata(SZrState *state,
+                                                  SZrObject *typeReflection,
+                                                  const SZrCompiledPrototypeInfo *prototypeInfo) {
+    if (state == ZR_NULL || typeReflection == ZR_NULL || prototypeInfo == ZR_NULL) {
+        return;
+    }
+
+    reflection_apply_modifier_flags(state, typeReflection, prototypeInfo->modifierFlags);
+    reflection_set_field_int(state, typeReflection, "nextVirtualSlotIndex", prototypeInfo->nextVirtualSlotIndex);
+    reflection_set_field_int(state, typeReflection, "nextPropertyIdentity", prototypeInfo->nextPropertyIdentity);
+}
+
+static void reflection_populate_compiled_member_oop_metadata(SZrState *state,
+                                                             SZrObject *memberReflection,
+                                                             SZrFunction *entryFunction,
+                                                             const SZrCompiledMemberInfo *member) {
+    const TZrChar *ownerTypeName;
+    const TZrChar *baseDefinitionOwnerTypeName;
+    const TZrChar *baseDefinitionName;
+
+    if (state == ZR_NULL || memberReflection == ZR_NULL || entryFunction == ZR_NULL || member == ZR_NULL) {
+        return;
+    }
+
+    ownerTypeName =
+            reflection_string_from_constant(state, entryFunction, member->ownerTypeNameStringIndex, "");
+    baseDefinitionOwnerTypeName =
+            reflection_string_from_constant(state,
+                                            entryFunction,
+                                            member->baseDefinitionOwnerTypeNameStringIndex,
+                                            "");
+    baseDefinitionName =
+            reflection_string_from_constant(state, entryFunction, member->baseDefinitionNameStringIndex, "");
+
+    reflection_apply_modifier_flags(state, memberReflection, member->modifierFlags);
+    reflection_set_field_string(state, memberReflection, "ownerTypeName", ownerTypeName != ZR_NULL ? ownerTypeName : "");
+    reflection_set_field_string(state,
+                                memberReflection,
+                                "baseDefinitionOwnerTypeName",
+                                baseDefinitionOwnerTypeName != ZR_NULL ? baseDefinitionOwnerTypeName : "");
+    reflection_set_field_string(state,
+                                memberReflection,
+                                "baseDefinitionName",
+                                baseDefinitionName != ZR_NULL ? baseDefinitionName : "");
+    reflection_set_field_int(state,
+                             memberReflection,
+                             "virtualSlotIndex",
+                             reflection_optional_slot_to_int(member->virtualSlotIndex));
+    reflection_set_field_int(state,
+                             memberReflection,
+                             "interfaceContractSlot",
+                             reflection_optional_slot_to_int(member->interfaceContractSlot));
+    reflection_set_field_int(state,
+                             memberReflection,
+                             "propertyIdentity",
+                             reflection_optional_slot_to_int(member->propertyIdentity));
+    reflection_set_field_int(state, memberReflection, "accessorRole", member->accessorRole);
+}
+
 static const SZrTypeValue *reflection_get_field_value(SZrState *state,
                                                       SZrObject *object,
                                                       const TZrChar *fieldName) {
@@ -365,13 +561,23 @@ static const SZrTypeValue *reflection_array_get(SZrState *state, SZrObject *arra
 
 static TZrBool reflection_array_push(SZrState *state, SZrObject *array, const SZrTypeValue *value) {
     SZrTypeValue key;
+    TZrBool arrayPinned = ZR_FALSE;
+    TZrBool valuePinned = ZR_FALSE;
 
     if (state == ZR_NULL || array == ZR_NULL || value == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         return ZR_FALSE;
     }
 
     ZrCore_Value_InitAsInt(state, &key, (TZrInt64)reflection_array_length(array));
+    if (!reflection_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(array), &arrayPinned) ||
+        !reflection_pin_value_object(state, value, &valuePinned)) {
+        reflection_unpin_value_object(state->global, value, valuePinned);
+        reflection_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(array), arrayPinned);
+        return ZR_FALSE;
+    }
     ZrCore_Object_SetValue(state, array, &key, value);
+    reflection_unpin_value_object(state->global, value, valuePinned);
+    reflection_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(array), arrayPinned);
     return ZR_TRUE;
 }
 
@@ -550,6 +756,21 @@ static void reflection_init_default_sections(SZrState *state, SZrObject *reflect
     reflection_set_field_object(state, reflectionObject, "nativeOrigin", nativeOriginObject, ZR_VALUE_TYPE_OBJECT);
     reflection_set_field_bool(state, reflectionObject, "mutable", ZR_TRUE);
     reflection_set_field_string(state, reflectionObject, "phase", "runtime");
+    reflection_set_field_int(state, reflectionObject, "modifierFlags", 0);
+    reflection_set_field_bool(state, reflectionObject, "isAbstract", ZR_FALSE);
+    reflection_set_field_bool(state, reflectionObject, "isVirtual", ZR_FALSE);
+    reflection_set_field_bool(state, reflectionObject, "isOverride", ZR_FALSE);
+    reflection_set_field_bool(state, reflectionObject, "isFinal", ZR_FALSE);
+    reflection_set_field_bool(state, reflectionObject, "isShadow", ZR_FALSE);
+    reflection_set_field_null(state, reflectionObject, "ownerTypeName");
+    reflection_set_field_null(state, reflectionObject, "baseDefinitionOwnerTypeName");
+    reflection_set_field_null(state, reflectionObject, "baseDefinitionName");
+    reflection_set_field_int(state, reflectionObject, "virtualSlotIndex", -1);
+    reflection_set_field_int(state, reflectionObject, "interfaceContractSlot", -1);
+    reflection_set_field_int(state, reflectionObject, "propertyIdentity", -1);
+    reflection_set_field_int(state, reflectionObject, "accessorRole", 0);
+    reflection_set_field_int(state, reflectionObject, "nextVirtualSlotIndex", 0);
+    reflection_set_field_int(state, reflectionObject, "nextPropertyIdentity", 0);
 
     reflection_set_field_int(state, sourceObject, "startLine", 0);
     reflection_set_field_int(state, sourceObject, "endLine", 0);
@@ -729,6 +950,8 @@ static SZrObject *reflection_build_parameter_info(SZrState *state,
     reflection_assign_owner_links(state, parameterReflection, ownerReflection, moduleReflection);
     reflection_set_field_string(state, parameterReflection, "typeName", typeName != ZR_NULL ? typeName : "any");
     reflection_set_field_int(state, parameterReflection, "position", position);
+    reflection_set_field_string(state, parameterReflection, "passingMode", "value");
+    reflection_set_field_null(state, parameterReflection, "type");
     return parameterReflection;
 }
 
@@ -765,6 +988,23 @@ static void reflection_array_push_object(SZrState *state, SZrObject *array, SZrO
     }
 
     reflection_init_object_value(state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(object), valueType);
+    reflection_array_push(state, array, &value);
+}
+
+static void reflection_array_push_string_value(SZrState *state, SZrObject *array, const TZrChar *text) {
+    SZrString *stringValue;
+    SZrTypeValue value;
+
+    if (state == ZR_NULL || array == ZR_NULL || text == ZR_NULL) {
+        return;
+    }
+
+    stringValue = reflection_make_string(state, text);
+    if (stringValue == ZR_NULL) {
+        return;
+    }
+
+    reflection_init_object_value(state, &value, ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue), ZR_VALUE_TYPE_STRING);
     reflection_array_push(state, array, &value);
 }
 
@@ -1913,6 +2153,7 @@ static void reflection_record_property_member(SZrState *state,
         }
 
         reflection_assign_owner_links(state, propertyReflection, typeReflection, moduleReflection);
+        reflection_populate_compiled_member_oop_metadata(state, propertyReflection, entryFunction, member);
         reflection_set_field_bool(state, propertyReflection, "isStatic", member->isStatic ? ZR_TRUE : ZR_FALSE);
         reflection_set_field_bool(state, propertyReflection, "isConst", ZR_FALSE);
         reflection_add_named_entry(state, membersObject, propertyName, propertyReflection);
@@ -2118,6 +2359,7 @@ ZR_CORE_API SZrObject *ZrCore_Reflection_BuildDecoratorTargetMemberReflection(SZ
         }
 
         reflection_assign_owner_links(state, memberReflection, typeReflection, moduleReflection);
+        reflection_populate_compiled_member_oop_metadata(state, memberReflection, entryFunction, member);
         reflection_set_field_bool(state, memberReflection, "isStatic", member->isStatic ? ZR_TRUE : ZR_FALSE);
         reflection_set_field_bool(state, memberReflection, "isConst", member->isConst ? ZR_TRUE : ZR_FALSE);
         reflection_set_field_int(state, memberReflection, "parameterCount", member->parameterCount);
@@ -2286,6 +2528,7 @@ static void reflection_populate_script_members(SZrState *state,
     }
 
     reflection_populate_type_decorator_metadata(state, typeReflection, entryFunction, prototypeInfo);
+    reflection_populate_type_oop_metadata(state, typeReflection, prototypeInfo);
     ZrCore_RuntimeDecorator_OverlayTypeReflection(state, typeReflection, prototype);
 
     membersObject = reflection_get_field_object(state, typeReflection, "members", ZR_VALUE_TYPE_OBJECT);
@@ -2341,6 +2584,7 @@ static void reflection_populate_script_members(SZrState *state,
         }
 
         reflection_assign_owner_links(state, memberReflection, typeReflection, moduleReflection);
+        reflection_populate_compiled_member_oop_metadata(state, memberReflection, entryFunction, member);
         reflection_set_field_bool(state, memberReflection, "isStatic", member->isStatic ? ZR_TRUE : ZR_FALSE);
         reflection_set_field_bool(state, memberReflection, "isConst", member->isConst ? ZR_TRUE : ZR_FALSE);
         reflection_set_field_int(state, memberReflection, "parameterCount", member->parameterCount);
@@ -2636,7 +2880,167 @@ static SZrObject *reflection_build_callable_reflection(SZrState *state,
                                 returnTypeName != ZR_NULL ? returnTypeName : "void");
     reflection_set_field_int(state, callableReflection, "parameterCount", parameterCount);
     reflection_set_field_bool(state, callableReflection, "isStatic", isStatic);
+    reflection_set_field_bool(state, callableReflection, "isVariadic", ZR_FALSE);
+    reflection_set_field_null(state, callableReflection, "returnType");
     reflection_set_field_object(state, callableReflection, "parameters", reflection_new_array(state), ZR_VALUE_TYPE_ARRAY);
+    reflection_set_field_object(state, callableReflection, "parameterModes", reflection_new_array(state), ZR_VALUE_TYPE_ARRAY);
+    return callableReflection;
+}
+
+static SZrObject *reflection_build_type_literal_object_internal(SZrState *state, const TZrChar *typeName) {
+    SZrObject *reflectionObject;
+    const TZrChar *normalizedName = typeName != ZR_NULL && typeName[0] != '\0' ? typeName : "type";
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    reflectionObject = reflection_new_object(state);
+    if (reflectionObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    reflection_init_common_fields(state,
+                                  reflectionObject,
+                                  normalizedName,
+                                  normalizedName,
+                                  "type",
+                                  XXH3_64bits(normalizedName, strlen(normalizedName)));
+    return reflectionObject;
+}
+
+ZR_CORE_API SZrObject *ZrCore_Reflection_BuildTypeLiteralObject(SZrState *state, SZrString *typeName) {
+    const TZrChar *nativeTypeName = typeName != ZR_NULL ? ZrCore_String_GetNativeString(typeName) : ZR_NULL;
+    return reflection_build_type_literal_object_internal(state, nativeTypeName);
+}
+
+ZR_CORE_API SZrObject *ZrCore_Reflection_BuildCallableTypeLiteralObject(
+        SZrState *state,
+        SZrString *callableName,
+        SZrString *returnTypeName,
+        SZrString *const *parameterNames,
+        SZrString *const *parameterTypeNames,
+        SZrString *const *parameterModeNames,
+        TZrUInt32 parameterCount,
+        SZrString *const *genericParameterNames,
+        TZrUInt32 genericParameterCount,
+        TZrBool isVariadic) {
+    const TZrChar *nativeCallableName;
+    const TZrChar *nativeReturnTypeName;
+    SZrObject *callableReflection;
+    SZrObject *returnTypeObject;
+    SZrObject *parameterModesArray;
+    SZrObject *genericParametersArray;
+    TZrUInt64 ownerHash;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    nativeCallableName = callableName != ZR_NULL ? ZrCore_String_GetNativeString(callableName) : ZR_NULL;
+    nativeReturnTypeName = returnTypeName != ZR_NULL ? ZrCore_String_GetNativeString(returnTypeName) : "void";
+    callableReflection = reflection_build_callable_reflection(state,
+                                                              nativeCallableName != ZR_NULL ? nativeCallableName : "callable",
+                                                              nativeCallableName != ZR_NULL ? nativeCallableName : "callable",
+                                                              nativeReturnTypeName,
+                                                              parameterCount,
+                                                              ZR_FALSE,
+                                                              ZR_NULL,
+                                                              ZR_NULL,
+                                                              XXH3_64bits(nativeCallableName != ZR_NULL
+                                                                                  ? nativeCallableName
+                                                                                  : "callable",
+                                                                          strlen(nativeCallableName != ZR_NULL
+                                                                                         ? nativeCallableName
+                                                                                         : "callable")));
+    if (callableReflection == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    reflection_set_field_bool(state, callableReflection, "isVariadic", isVariadic ? ZR_TRUE : ZR_FALSE);
+
+    returnTypeObject = reflection_build_type_literal_object_internal(state, nativeReturnTypeName);
+    if (returnTypeObject != ZR_NULL) {
+        reflection_set_field_object(state, callableReflection, "returnType", returnTypeObject, ZR_VALUE_TYPE_OBJECT);
+    }
+
+    parameterModesArray = reflection_get_field_object(state, callableReflection, "parameterModes", ZR_VALUE_TYPE_ARRAY);
+    genericParametersArray =
+            reflection_get_field_object(state, callableReflection, "genericParameters", ZR_VALUE_TYPE_ARRAY);
+    ownerHash = XXH3_64bits(nativeCallableName != ZR_NULL ? nativeCallableName : "callable",
+                            strlen(nativeCallableName != ZR_NULL ? nativeCallableName : "callable"));
+
+    if (parameterCount > 0) {
+        SZrObject *parametersArray = reflection_get_field_object(state, callableReflection, "parameters", ZR_VALUE_TYPE_ARRAY);
+        for (TZrUInt32 index = 0; index < parameterCount; index++) {
+            const TZrChar *nativeParameterName =
+                    parameterNames != ZR_NULL && parameterNames[index] != ZR_NULL
+                            ? ZrCore_String_GetNativeString(parameterNames[index])
+                            : ZR_NULL;
+            const TZrChar *nativeParameterTypeName =
+                    parameterTypeNames != ZR_NULL && parameterTypeNames[index] != ZR_NULL
+                            ? ZrCore_String_GetNativeString(parameterTypeNames[index])
+                            : "any";
+            const TZrChar *nativeParameterMode =
+                    parameterModeNames != ZR_NULL && parameterModeNames[index] != ZR_NULL
+                            ? ZrCore_String_GetNativeString(parameterModeNames[index])
+                            : "value";
+            TZrChar fallbackName[ZR_RUNTIME_MEMBER_NAME_BUFFER_LENGTH];
+            SZrObject *parameterReflection;
+            SZrObject *parameterTypeObject;
+
+            snprintf(fallbackName, sizeof(fallbackName), "arg%u", (unsigned int)index);
+            parameterReflection = reflection_build_parameter_info(state,
+                                                                  nativeParameterName != ZR_NULL &&
+                                                                                  nativeParameterName[0] != '\0'
+                                                                          ? nativeParameterName
+                                                                          : fallbackName,
+                                                                  nativeParameterTypeName,
+                                                                  index,
+                                                                  callableReflection,
+                                                                  ZR_NULL,
+                                                                  ownerHash ^
+                                                                          ((TZrUInt64)index +
+                                                                           ZR_RUNTIME_REFLECTION_MEMBER_HASH_BASE));
+            if (parameterReflection == ZR_NULL) {
+                continue;
+            }
+
+            reflection_set_field_string(state,
+                                        parameterReflection,
+                                        "passingMode",
+                                        nativeParameterMode != ZR_NULL ? nativeParameterMode : "value");
+            parameterTypeObject =
+                    reflection_build_type_literal_object_internal(state, nativeParameterTypeName != ZR_NULL
+                                                                              ? nativeParameterTypeName
+                                                                              : "any");
+            if (parameterTypeObject != ZR_NULL) {
+                reflection_set_field_object(state, parameterReflection, "type", parameterTypeObject, ZR_VALUE_TYPE_OBJECT);
+            }
+
+            if (parametersArray != ZR_NULL) {
+                reflection_array_push_object(state, parametersArray, parameterReflection, ZR_VALUE_TYPE_OBJECT);
+            }
+            if (parameterModesArray != ZR_NULL) {
+                reflection_array_push_string_value(state,
+                                                  parameterModesArray,
+                                                  nativeParameterMode != ZR_NULL ? nativeParameterMode : "value");
+            }
+        }
+    }
+
+    if (genericParametersArray != ZR_NULL && genericParameterCount > 0) {
+        for (TZrUInt32 index = 0; index < genericParameterCount; index++) {
+            const TZrChar *nativeGenericName =
+                    genericParameterNames != ZR_NULL && genericParameterNames[index] != ZR_NULL
+                            ? ZrCore_String_GetNativeString(genericParameterNames[index])
+                            : ZR_NULL;
+            if (nativeGenericName != ZR_NULL && nativeGenericName[0] != '\0') {
+                reflection_array_push_string_value(state, genericParametersArray, nativeGenericName);
+            }
+        }
+    }
+
     return callableReflection;
 }
 
@@ -3418,7 +3822,9 @@ static TZrBool reflection_build_type_of_value(SZrState *state,
 
     if (targetValue->type == ZR_VALUE_TYPE_OBJECT && targetValue->value.object != ZR_NULL) {
         SZrObject *targetObject = ZR_CAST_OBJECT(state, targetValue->value.object);
-        if (targetObject != ZR_NULL && targetObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+        if (targetObject != ZR_NULL && ZrCore_Reflection_IsReflectionObject(state, targetObject)) {
+            reflectionObject = targetObject;
+        } else if (targetObject != ZR_NULL && targetObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
             reflectionObject = reflection_build_module_reflection(state, (SZrObjectModule *)targetObject);
         } else if (targetObject != ZR_NULL && targetObject->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
             reflectionObject = reflection_build_type_reflection(state,

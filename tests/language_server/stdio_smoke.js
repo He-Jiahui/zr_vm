@@ -93,6 +93,41 @@ function createWatchedBinaryMetadataFixture() {
     };
 }
 
+function createImportDiagnosticsFixture() {
+    const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-import-diag-'));
+    const sourcePath = path.join(rootPath, 'src');
+    const projectPath = path.join(rootPath, 'import_diagnostics.zrp');
+    const mainPath = path.join(sourcePath, 'main.zr');
+    const modulePath = path.join(sourcePath, 'greet.zr');
+
+    fs.mkdirSync(sourcePath, { recursive: true });
+    fs.writeFileSync(projectPath, JSON.stringify({
+        name: 'import_diagnostics',
+        source: 'src',
+        binary: 'bin',
+        entry: 'main',
+    }, null, 2));
+    fs.writeFileSync(mainPath, [
+        'var greet = %import("greet");',
+        'var answer = greet.missing;',
+        '',
+    ].join('\n'));
+    fs.writeFileSync(modulePath, [
+        'pub var present = 1;',
+        '',
+    ].join('\n'));
+
+    return {
+        rootPath,
+        projectPath,
+        mainPath,
+        modulePath,
+        projectUri: pathToFileURL(projectPath).toString(),
+        mainUri: pathToFileURL(mainPath).toString(),
+        moduleUri: pathToFileURL(modulePath).toString(),
+    };
+}
+
 function cleanupPath(targetPath) {
     if (!targetPath) {
         return;
@@ -103,6 +138,7 @@ function cleanupPath(targetPath) {
 
 let watchedFixtureRootToCleanup = null;
 let watchedBinaryFixtureRootToCleanup = null;
+let importDiagnosticsFixtureRootToCleanup = null;
 
 class LspClient {
     constructor(serverPath) {
@@ -330,8 +366,10 @@ async function main() {
     assert(serverPath, 'Expected server executable path as argv[2]');
     const watchedFixture = createWatchedProjectFixture();
     const watchedBinaryFixture = createWatchedBinaryMetadataFixture();
+    const importDiagnosticsFixture = createImportDiagnosticsFixture();
     watchedFixtureRootToCleanup = watchedFixture.rootPath;
     watchedBinaryFixtureRootToCleanup = watchedBinaryFixture.rootPath;
+    importDiagnosticsFixtureRootToCleanup = importDiagnosticsFixture.rootPath;
 
     const client = new LspClient(serverPath);
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
@@ -543,6 +581,38 @@ async function main() {
     assert(typeof bonusCompletion.documentation.value === 'string' &&
         bonusCompletion.documentation.value.includes('Shared bonus exposed through get/set.'),
         'completion documentation should include the leading property comment');
+
+    const importDiagnosticsText = fs.readFileSync(importDiagnosticsFixture.mainPath, 'utf8');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: importDiagnosticsFixture.mainUri,
+            languageId: 'zr',
+            version: 1,
+            text: importDiagnosticsText,
+        },
+    });
+
+    const importDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(importDiagnostics.uri === importDiagnosticsFixture.mainUri,
+        'import diagnostics uri mismatch');
+    assert(Array.isArray(importDiagnostics.diagnostics) && importDiagnostics.diagnostics.length > 0,
+        'import diagnostics fixture should publish at least one diagnostic');
+    const missingImportDiagnostic = importDiagnostics.diagnostics.find((diagnostic) =>
+        diagnostic &&
+        typeof diagnostic.message === 'string' &&
+        diagnostic.message.includes("Import member 'greet.missing' could not be resolved"));
+    assert(missingImportDiagnostic,
+        'import diagnostics fixture should publish the missing imported member diagnostic');
+    assert(Array.isArray(missingImportDiagnostic.relatedInformation) &&
+        missingImportDiagnostic.relatedInformation.some((item) =>
+            item &&
+            item.location &&
+            item.location.uri === importDiagnosticsFixture.mainUri) &&
+        missingImportDiagnostic.relatedInformation.some((item) =>
+            item &&
+            item.location &&
+            item.location.uri === importDiagnosticsFixture.moduleUri),
+    'import diagnostics should serialize cross-file relatedInformation trace locations');
 
     client.notify('textDocument/didOpen', {
         textDocument: {
@@ -838,6 +908,7 @@ async function main() {
         watchedBinaryFixture.mainUri,
         documentUri,
         docsUri,
+        importDiagnosticsFixture.mainUri,
     ]);
     let clearedCloseCount = 0;
     while (clearedCloseCount < expectedClosedUris.size) {
@@ -858,15 +929,19 @@ async function main() {
     assert(exitCode === 0, `server exited with ${exitCode}. stderr=${client.stderr()}`);
     cleanupPath(watchedFixtureRootToCleanup);
     cleanupPath(watchedBinaryFixtureRootToCleanup);
+    cleanupPath(importDiagnosticsFixtureRootToCleanup);
     watchedFixtureRootToCleanup = null;
     watchedBinaryFixtureRootToCleanup = null;
+    importDiagnosticsFixtureRootToCleanup = null;
 }
 
 main().catch((error) => {
     cleanupPath(watchedFixtureRootToCleanup);
     cleanupPath(watchedBinaryFixtureRootToCleanup);
+    cleanupPath(importDiagnosticsFixtureRootToCleanup);
     watchedFixtureRootToCleanup = null;
     watchedBinaryFixtureRootToCleanup = null;
+    importDiagnosticsFixtureRootToCleanup = null;
     console.error(error.stack || String(error));
     process.exit(1);
 });

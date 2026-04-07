@@ -1,5 +1,7 @@
 #include "debug_internal.h"
 
+#include <ctype.h>
+
 void zr_debug_copy_text(TZrChar *buffer, TZrSize bufferSize, const TZrChar *text) {
     if (buffer == ZR_NULL || bufferSize == 0) {
         return;
@@ -151,6 +153,48 @@ TZrUInt32 zr_debug_scope_id(TZrUInt32 frameId, EZrDebugScopeKind kind) {
     return frameId * 10u + (TZrUInt32)kind;
 }
 
+static void zr_debug_normalize_path_for_compare(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
+    TZrSize writeIndex = 0;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (path == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; path[index] != '\0' && writeIndex + 1 < bufferSize; index++) {
+        TZrChar current = path[index];
+        if (current == '\\') {
+            current = '/';
+        }
+#ifdef ZR_VM_PLATFORM_IS_WIN
+        current = (TZrChar)tolower((unsigned char)current);
+#endif
+        buffer[writeIndex++] = current;
+    }
+
+    while (writeIndex > 1 && buffer[writeIndex - 1] == '/') {
+        writeIndex--;
+    }
+    buffer[writeIndex] = '\0';
+}
+
+static TZrBool zr_debug_source_paths_equal(const TZrChar *left, const TZrChar *right) {
+    TZrChar normalizedLeft[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar normalizedRight[ZR_DEBUG_TEXT_CAPACITY];
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    zr_debug_normalize_path_for_compare(left, normalizedLeft, sizeof(normalizedLeft));
+    zr_debug_normalize_path_for_compare(right, normalizedRight, sizeof(normalizedRight));
+    return strcmp(normalizedLeft, normalizedRight) == 0;
+}
+
 static TZrBool zr_debug_breakpoint_matches_module(const ZrDebugAgent *agent, const ZrDebugBreakpoint *breakpoint) {
     if (agent == ZR_NULL || breakpoint == ZR_NULL || breakpoint->module_name[0] == '\0') {
         return ZR_TRUE;
@@ -165,7 +209,7 @@ static TZrBool zr_debug_breakpoint_matches_function(const ZrDebugBreakpoint *bre
     }
 
     if (breakpoint->source_file[0] != '\0' &&
-        strcmp(zr_debug_function_source(function), breakpoint->source_file) != 0) {
+        !zr_debug_source_paths_equal(zr_debug_function_source(function), breakpoint->source_file)) {
         return ZR_FALSE;
     }
 

@@ -519,7 +519,7 @@ static void test_system_fs_source_runtime_supports_stream_modes_using_and_handle
             "}\n"
             "func readWithUsing(target: fs.File): string {\n"
             "  var usingStream = target.open(\"r\");\n"
-            "  using usingStream;\n"
+            "  %using usingStream;\n"
             "  return usingStream.readText(-1);\n"
             "}\n"
             "var file = new fs.File(\"%s\");\n"

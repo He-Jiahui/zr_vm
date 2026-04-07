@@ -288,6 +288,293 @@ void compile_type_query_expression(SZrCompilerState *cs, SZrAstNode *node) {
     }
 }
 
+static SZrString *compile_type_literal_mode_name(SZrCompilerState *cs, EZrParameterPassingMode passingMode) {
+    const TZrChar *modeName = "value";
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (passingMode) {
+        case ZR_PARAMETER_PASSING_MODE_IN:
+            modeName = "%in";
+            break;
+        case ZR_PARAMETER_PASSING_MODE_OUT:
+            modeName = "%out";
+            break;
+        case ZR_PARAMETER_PASSING_MODE_REF:
+            modeName = "%ref";
+            break;
+        case ZR_PARAMETER_PASSING_MODE_VALUE:
+        default:
+            modeName = "value";
+            break;
+    }
+
+    return ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)modeName);
+}
+
+static SZrString *compile_type_literal_resolve_type_name(SZrCompilerState *cs,
+                                                         SZrType *typeInfo,
+                                                         const TZrChar *fallbackName) {
+    SZrInferredType inferredType;
+    TZrChar typeNameBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    SZrString *typeName = ZR_NULL;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    if (typeInfo != ZR_NULL && ZrParser_AstTypeToInferredType_Convert(cs, typeInfo, &inferredType)) {
+        const TZrChar *displayName =
+                ZrParser_TypeNameString_Get(cs->state, &inferredType, typeNameBuffer, sizeof(typeNameBuffer));
+        if (displayName != ZR_NULL && displayName[0] != '\0') {
+            typeName = ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)displayName);
+        }
+        if (typeName == ZR_NULL) {
+            typeName = get_type_name_from_inferred_type(cs, &inferredType);
+        }
+    }
+    ZrParser_InferredType_Free(cs->state, &inferredType);
+
+    if (typeName != ZR_NULL) {
+        return typeName;
+    }
+
+    return ZrCore_String_CreateFromNative(cs->state,
+                                          (TZrNativeString)(fallbackName != ZR_NULL ? fallbackName : "any"));
+}
+
+static TZrBool compile_type_literal_collect_callable_metadata(SZrCompilerState *cs,
+                                                              SZrType *typeInfo,
+                                                              SZrFunctionType *functionType,
+                                                              SZrString **outCallableName,
+                                                              SZrString **outReturnTypeName,
+                                                              SZrArray *parameterNames,
+                                                              SZrArray *parameterTypeNames,
+                                                              SZrArray *parameterModeNames,
+                                                              SZrArray *genericParameterNames,
+                                                              TZrBool *outIsVariadic) {
+    TZrSize parameterCapacity = 0;
+    SZrInferredType callableType;
+
+    if (cs == ZR_NULL || typeInfo == ZR_NULL || functionType == ZR_NULL || outCallableName == ZR_NULL ||
+        outReturnTypeName == ZR_NULL || parameterNames == ZR_NULL || parameterTypeNames == ZR_NULL ||
+        parameterModeNames == ZR_NULL || genericParameterNames == ZR_NULL || outIsVariadic == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outCallableName = ZR_NULL;
+    *outReturnTypeName = ZR_NULL;
+    *outIsVariadic = ZR_FALSE;
+
+    parameterCapacity = (functionType->params != ZR_NULL ? functionType->params->count : 0) +
+                        (functionType->args != ZR_NULL ? 1 : 0);
+    ZrCore_Array_Init(cs->state,
+                      parameterNames,
+                      sizeof(SZrString *),
+                      parameterCapacity > 0 ? parameterCapacity : 1);
+    ZrCore_Array_Init(cs->state,
+                      parameterTypeNames,
+                      sizeof(SZrString *),
+                      parameterCapacity > 0 ? parameterCapacity : 1);
+    ZrCore_Array_Init(cs->state,
+                      parameterModeNames,
+                      sizeof(SZrString *),
+                      parameterCapacity > 0 ? parameterCapacity : 1);
+    ZrCore_Array_Init(cs->state,
+                      genericParameterNames,
+                      sizeof(SZrString *),
+                      functionType->generic != ZR_NULL && functionType->generic->params != ZR_NULL &&
+                                      functionType->generic->params->count > 0
+                              ? functionType->generic->params->count
+                              : 1);
+
+    ZrParser_InferredType_Init(cs->state, &callableType, ZR_VALUE_TYPE_OBJECT);
+    if (!ZrParser_AstTypeToInferredType_Convert(cs, typeInfo, &callableType)) {
+        ZrParser_InferredType_Free(cs->state, &callableType);
+        return ZR_FALSE;
+    }
+
+    *outCallableName = get_type_name_from_inferred_type(cs, &callableType);
+    ZrParser_InferredType_Free(cs->state, &callableType);
+    *outReturnTypeName = compile_type_literal_resolve_type_name(cs, functionType->returnType, "void");
+    *outIsVariadic = functionType->args != ZR_NULL ? ZR_TRUE : ZR_FALSE;
+
+    if (*outCallableName == ZR_NULL || *outReturnTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (functionType->generic != ZR_NULL && functionType->generic->params != ZR_NULL) {
+        for (TZrSize genericIndex = 0; genericIndex < functionType->generic->params->count; genericIndex++) {
+            SZrAstNode *genericNode = functionType->generic->params->nodes[genericIndex];
+            SZrString *genericName = ZR_NULL;
+
+            if (genericNode != ZR_NULL && genericNode->type == ZR_AST_PARAMETER &&
+                genericNode->data.parameter.name != ZR_NULL) {
+                genericName = genericNode->data.parameter.name->name;
+            }
+            if (genericName != ZR_NULL) {
+                ZrCore_Array_Push(cs->state, genericParameterNames, &genericName);
+            }
+        }
+    }
+
+    if (functionType->params != ZR_NULL) {
+        for (TZrSize paramIndex = 0; paramIndex < functionType->params->count; paramIndex++) {
+            SZrAstNode *paramNode = functionType->params->nodes[paramIndex];
+            SZrString *parameterName = ZR_NULL;
+            SZrString *parameterTypeName = ZR_NULL;
+            SZrString *parameterModeName = ZR_NULL;
+
+            if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+                continue;
+            }
+
+            if (paramNode->data.parameter.name != ZR_NULL) {
+                parameterName = paramNode->data.parameter.name->name;
+            }
+            parameterTypeName =
+                    compile_type_literal_resolve_type_name(cs, paramNode->data.parameter.typeInfo, "any");
+            parameterModeName =
+                    compile_type_literal_mode_name(cs, paramNode->data.parameter.passingMode);
+            ZrCore_Array_Push(cs->state, parameterNames, &parameterName);
+            ZrCore_Array_Push(cs->state, parameterTypeNames, &parameterTypeName);
+            ZrCore_Array_Push(cs->state, parameterModeNames, &parameterModeName);
+        }
+    }
+
+    if (functionType->args != ZR_NULL) {
+        SZrString *parameterName = ZR_NULL;
+        SZrString *parameterTypeName =
+                compile_type_literal_resolve_type_name(cs, functionType->args->typeInfo, "any");
+        SZrString *parameterModeName =
+                compile_type_literal_mode_name(cs, functionType->args->passingMode);
+
+        if (functionType->args->name != ZR_NULL) {
+            parameterName = functionType->args->name->name;
+        }
+
+        ZrCore_Array_Push(cs->state, parameterNames, &parameterName);
+        ZrCore_Array_Push(cs->state, parameterTypeNames, &parameterTypeName);
+        ZrCore_Array_Push(cs->state, parameterModeNames, &parameterModeName);
+    }
+
+    return ZR_TRUE;
+}
+
+void compile_type_literal_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrTypeValue literalValue;
+    SZrObject *reflectionObject = ZR_NULL;
+    TZrUInt32 slot;
+    SZrType *typeInfo;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (node->type != ZR_AST_TYPE_LITERAL_EXPRESSION) {
+        ZrParser_Compiler_Error(cs, "Expected type literal expression", node->location);
+        return;
+    }
+
+    typeInfo = node->data.typeLiteralExpression.typeInfo;
+    if (typeInfo == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Type literal expression requires type info", node->location);
+        return;
+    }
+
+    if (typeInfo->name != ZR_NULL && typeInfo->name->type == ZR_AST_FUNCTION_TYPE) {
+        SZrString *callableName = ZR_NULL;
+        SZrString *returnTypeName = ZR_NULL;
+        SZrArray parameterNames;
+        SZrArray parameterTypeNames;
+        SZrArray parameterModeNames;
+        SZrArray genericParameterNames;
+        TZrBool isVariadic = ZR_FALSE;
+
+        ZrCore_Array_Construct(&parameterNames);
+        ZrCore_Array_Construct(&parameterTypeNames);
+        ZrCore_Array_Construct(&parameterModeNames);
+        ZrCore_Array_Construct(&genericParameterNames);
+
+        if (!compile_type_literal_collect_callable_metadata(cs,
+                                                            typeInfo,
+                                                            &typeInfo->name->data.functionType,
+                                                            &callableName,
+                                                            &returnTypeName,
+                                                            &parameterNames,
+                                                            &parameterTypeNames,
+                                                            &parameterModeNames,
+                                                            &genericParameterNames,
+                                                            &isVariadic)) {
+            if (parameterNames.isValid) {
+                ZrCore_Array_Free(cs->state, &parameterNames);
+            }
+            if (parameterTypeNames.isValid) {
+                ZrCore_Array_Free(cs->state, &parameterTypeNames);
+            }
+            if (parameterModeNames.isValid) {
+                ZrCore_Array_Free(cs->state, &parameterModeNames);
+            }
+            if (genericParameterNames.isValid) {
+                ZrCore_Array_Free(cs->state, &genericParameterNames);
+            }
+            ZrParser_Compiler_Error(cs, "Failed to resolve callable type literal metadata", node->location);
+            return;
+        }
+
+        reflectionObject = ZrCore_Reflection_BuildCallableTypeLiteralObject(
+                cs->state,
+                callableName,
+                returnTypeName,
+                (SZrString *const *)parameterNames.head,
+                (SZrString *const *)parameterTypeNames.head,
+                (SZrString *const *)parameterModeNames.head,
+                (TZrUInt32)parameterNames.length,
+                (SZrString *const *)genericParameterNames.head,
+                (TZrUInt32)genericParameterNames.length,
+                isVariadic);
+
+        if (parameterNames.isValid) {
+            ZrCore_Array_Free(cs->state, &parameterNames);
+        }
+        if (parameterTypeNames.isValid) {
+            ZrCore_Array_Free(cs->state, &parameterTypeNames);
+        }
+        if (parameterModeNames.isValid) {
+            ZrCore_Array_Free(cs->state, &parameterModeNames);
+        }
+        if (genericParameterNames.isValid) {
+            ZrCore_Array_Free(cs->state, &genericParameterNames);
+        }
+    } else {
+        SZrInferredType inferredType;
+        SZrString *typeName = ZR_NULL;
+
+        ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_AstTypeToInferredType_Convert(cs, typeInfo, &inferredType)) {
+            ZrParser_InferredType_Free(cs->state, &inferredType);
+            ZrParser_Compiler_Error(cs, "Failed to resolve type literal metadata", node->location);
+            return;
+        }
+        typeName = get_type_name_from_inferred_type(cs, &inferredType);
+        reflectionObject = ZrCore_Reflection_BuildTypeLiteralObject(cs->state, typeName);
+        ZrParser_InferredType_Free(cs->state, &inferredType);
+    }
+
+    if (reflectionObject == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Failed to materialize type literal reflection object", node->location);
+        return;
+    }
+
+    slot = allocate_stack_slot(cs);
+    ZrCore_Value_InitAsRawObject(cs->state, &literalValue, ZR_CAST_RAW_OBJECT_AS_SUPER(reflectionObject));
+    literalValue.type = ZR_VALUE_TYPE_OBJECT;
+    emit_constant_to_slot(cs, slot, &literalValue);
+}
+
 // 编译主表达式（属性访问链和函数调用链）
 void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -309,26 +596,52 @@ void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrBool rootIsTypeReference = ZR_FALSE;
     EZrOwnershipQualifier rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
     TZrSize memberStartIndex = 0;
+    TZrBool rootUsesSuperLookup = ZR_FALSE;
+    TZrUInt32 superReceiverSlot = ZR_PARSER_SLOT_NONE;
 
     // 1. 编译基础属性（标识符或表达式）
     if (primary->property != ZR_NULL) {
-        compile_expression_non_tail(cs, primary->property);
-        if (cs->hasError) {
-            return;
+        if (compiler_is_super_identifier_node(primary->property)) {
+            if (primary->members == ZR_NULL || primary->members->count == 0) {
+                ZrParser_Compiler_Error(cs, "super must be followed by a member access", node->location);
+                return;
+            }
+            if (!compiler_resolve_super_member_context(cs,
+                                                       primary->property->location,
+                                                       &rootTypeName,
+                                                       &superReceiverSlot,
+                                                       &rootOwnershipQualifier)) {
+                return;
+            }
+            currentSlot = emit_load_global_identifier(cs, rootTypeName);
+            if (currentSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
+                ZrParser_Compiler_Error(cs, "Failed to resolve direct base prototype for super.member", node->location);
+                return;
+            }
+            rootIsTypeReference = ZR_FALSE;
+            rootUsesSuperLookup = ZR_TRUE;
+        } else {
+            compile_expression_non_tail(cs, primary->property);
+            if (cs->hasError) {
+                return;
+            }
         }
     } else {
         ZrParser_Compiler_Error(cs, "Primary expression property is null", node->location);
         return;
     }
 
-    currentSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
-    resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
-    rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
-    if (cs->hasError) {
-        return;
+    if (!rootUsesSuperLookup) {
+        currentSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+        resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
+        rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
+        if (cs->hasError) {
+            return;
+        }
     }
     compile_primary_member_chain(cs, primary->property, primary->members, memberStartIndex, &currentSlot,
-                                 &rootTypeName, &rootIsTypeReference, &rootOwnershipQualifier);
+                                 &rootTypeName, &rootIsTypeReference, &rootOwnershipQualifier,
+                                 rootUsesSuperLookup, superReceiverSlot);
 }
 
 void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *node) {

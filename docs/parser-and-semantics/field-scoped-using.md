@@ -41,15 +41,15 @@ tests:
 doc_type: module-detail
 ---
 
-# Field-Scoped `using`
+# Field-Scoped `%using`
 
 ## 目标
 
-字段级 `using` 让 `class` 和 `struct` 可以显式声明“这个字段属于实例生命周期管理范围”，而不是把所有 owning field 都自动升级为 cleanup 目标。
+字段级 `%using` 让 `class` 和 `struct` 可以显式声明“这个字段属于实例生命周期管理范围”，而不是把所有 owning field 都自动升级为 cleanup 目标。
 
 本轮已经打通的链路是：
 
-1. parser 接受 `using var field: Type;`
+1. parser 接受 `%using var field: Type;`
 2. semantic analyzer 为字段建立符号并登记 cleanup 元数据
 3. compiler 把 managed-field 信息写入 prototypeData
 4. module loader / runtime prototype 恢复 managed-field 表
@@ -60,29 +60,29 @@ doc_type: module-detail
 
 ```zr
 struct HandleBox {
-    using var handle: unique<Resource>;
+    %using var handle: %unique Resource;
 }
 
 class Holder {
-    using var resource: shared<Resource>;
+    %using var resource: %shared Resource;
 }
 ```
 
 约束：
 
-- `using` 只对显式标记字段生效
-- `using` 只允许实例字段
-- `static using var ...` 会在 semantic analyzer 和 compiler 两层都报错
-- 语句级 `using expr;` / `using (expr) { ... }` 继续保留原有 block-scope 语义，不与字段节点复用
+- `%using` 只对显式标记字段生效
+- `%using` 只允许实例字段
+- `static %using var ...` 会在 semantic analyzer 和 compiler 两层都报错
+- 语句级 `%using expr;` / `%using (expr) { ... }` 继续保留原有 block-scope 语义，不与字段节点复用
 
 ## AST 与语义层
 
 `SZrStructField` 和 `SZrClassField` 都新增 `isUsingManaged` 标记，用来区分普通 field 和显式托管 field。
 
-语义层的 deterministic cleanup plan 现在不再只覆盖语句级 `using`，还会记录字段生命周期来源：
+语义层的 deterministic cleanup plan 现在不再只覆盖语句级 `%using`，还会记录字段生命周期来源：
 
 - `ZR_DETERMINISTIC_CLEANUP_KIND_BLOCK_SCOPE`
-  - 原有语句级 `using`
+  - 原有语句级 `%using`
 - `ZR_DETERMINISTIC_CLEANUP_KIND_INSTANCE_FIELD`
   - `class` 实例字段 cleanup
 - `ZR_DETERMINISTIC_CLEANUP_KIND_STRUCT_VALUE_FIELD`
@@ -110,7 +110,7 @@ class Holder {
 - `SZrTypeMemberInfo`
 - `SZrCompiledMemberInfo`
 
-因此模块写出和读取 prototypeData 时，可以无歧义地区分普通字段和 field-scoped `using` 字段。
+因此模块写出和读取 prototypeData 时，可以无歧义地区分普通字段和 field-scoped `%using` 字段。
 
 ## 运行时原型恢复
 
@@ -129,11 +129,11 @@ class Holder {
 
 ## Move-Only Struct Consequence
 
-field-scoped `using` 不只是 runtime cleanup 标记，它也直接改变 struct 的复制语义。
+field-scoped `%using` 不只是 runtime cleanup 标记，它也直接改变 struct 的复制语义。
 
 当前类型系统把下列 struct 视为 move-only：
 
-- 含 `using var field: ...`
+- 含 `%using var field: ...`
 - 或字段本身带不可复制 ownership 语义（例如 unique-owned field）
 
 对应约束是：
@@ -148,16 +148,16 @@ field-scoped `using` 不只是 runtime cleanup 标记，它也直接改变 struc
 已补的回归点：
 
 - parser
-  - `using var` 字段在 `struct` / `class` 中可解析
+  - `%using var` 字段在 `struct` / `class` 中可解析
 - semantic
   - 字段符号进入 semantic table
   - cleanup plan 能区分 instance field 和 struct value field
-  - `static using` 产出 `static_using_field` 诊断
+  - `static %using` 产出 `static_using_field` 诊断
 - compiler
   - prototypeData 持久化 managed-field 元数据
-  - `static using` 在编译阶段被拒绝
+  - `static %using` 在编译阶段被拒绝
 - type inference / ownership
-  - 含 `using` 字段的 struct 被视为 move-only
+  - 含 `%using` 字段的 struct 被视为 move-only
   - move-only struct 的 assignment / by-value argument copy 在编译期被拒绝
   - 可复制 struct 的普通赋值会深拷贝 boxed struct storage，而不是共享同一对象
 - module/runtime metadata

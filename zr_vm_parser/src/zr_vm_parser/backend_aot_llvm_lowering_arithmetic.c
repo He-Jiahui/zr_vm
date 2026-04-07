@@ -53,18 +53,36 @@ static const TZrChar *backend_aot_llvm_binary_value_helper_name(TZrUInt32 opcode
             return "ZrLibrary_AotRuntime_LogicalEqual";
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
             return "ZrLibrary_AotRuntime_LogicalNotEqual";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED):
+            return "ZrLibrary_AotRuntime_LogicalGreaterSigned";
         case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED):
             return "ZrLibrary_AotRuntime_LogicalLessSigned";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED):
+            return "ZrLibrary_AotRuntime_LogicalGreaterEqualSigned";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED):
+            return "ZrLibrary_AotRuntime_LogicalLessEqualSigned";
         case ZR_INSTRUCTION_ENUM(ADD):
+        case ZR_INSTRUCTION_ENUM(ADD_STRING):
             return "ZrLibrary_AotRuntime_Add";
+        case ZR_INSTRUCTION_ENUM(SUB):
+            return "ZrLibrary_AotRuntime_Sub";
+        case ZR_INSTRUCTION_ENUM(MUL):
+            return "ZrLibrary_AotRuntime_Mul";
         case ZR_INSTRUCTION_ENUM(ADD_INT):
             return "ZrLibrary_AotRuntime_AddInt";
         case ZR_INSTRUCTION_ENUM(SUB_INT):
             return "ZrLibrary_AotRuntime_SubInt";
+        case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
+            return "ZrLibrary_AotRuntime_BitwiseXor";
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
             return "ZrLibrary_AotRuntime_MulSigned";
+        case ZR_INSTRUCTION_ENUM(DIV):
+            return "ZrLibrary_AotRuntime_Div";
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
             return "ZrLibrary_AotRuntime_DivSigned";
+        case ZR_INSTRUCTION_ENUM(MOD):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
+            return "ZrLibrary_AotRuntime_Mod";
         default:
             return ZR_NULL;
     }
@@ -76,6 +94,8 @@ static const TZrChar *backend_aot_llvm_unary_value_helper_name(TZrUInt32 opcode)
             return "ZrLibrary_AotRuntime_Neg";
         case ZR_INSTRUCTION_ENUM(TO_INT):
             return "ZrLibrary_AotRuntime_ToInt";
+        case ZR_INSTRUCTION_ENUM(TO_STRING):
+            return "ZrLibrary_AotRuntime_ToString";
         default:
             return ZR_NULL;
     }

@@ -1,26 +1,37 @@
 class BaseCounter {
     pub var baseValue: int;
 
-    pub @constructor(seed: int) {
-        this.baseValue = seed;
+    pub virtual bump(): int {
+        return this.baseValue + 1;
     }
 
-    pub getBaseValue(): int {
-        return this.baseValue;
+    pub virtual get score: int {
+        return this.baseValue + 10;
+    }
+
+    pub virtual @call(): int {
+        return this.baseValue + 20;
     }
 }
 
 class DerivedCounter: BaseCounter {
-    pub var delta: int;
+    pub override bump(): int {
+        return super.bump() + 1;
+    }
 
-    pub @constructor(seed: int, delta: int) super(seed) {
-        this.delta = delta;
+    pub override get score: int {
+        return super.score + 2;
+    }
+
+    pub override @call(): int {
+        return super.call() + 5;
     }
 
     pub total(): int {
-        return this.getBaseValue() + this.delta;
+        return this.bump() + this.score + this();
     }
 }
 
-var counter = new DerivedCounter(40, 2);
+var counter = new DerivedCounter();
+counter.baseValue = 1;
 return counter.total();

@@ -64,6 +64,14 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->typedLocalBindingLength = 0;
     function->typedExportedSymbols = ZR_NULL;
     function->typedExportedSymbolLength = 0;
+    function->staticImports = ZR_NULL;
+    function->staticImportLength = 0;
+    function->moduleEntryEffects = ZR_NULL;
+    function->moduleEntryEffectLength = 0;
+    function->exportedCallableSummaries = ZR_NULL;
+    function->exportedCallableSummaryLength = 0;
+    function->topLevelCallableBindings = ZR_NULL;
+    function->topLevelCallableBindingLength = 0;
     function->parameterMetadata = ZR_NULL;
     function->parameterMetadataCount = 0;
     function->compileTimeVariableInfos = ZR_NULL;
@@ -559,6 +567,39 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
                                       sizeof(SZrFunctionTypedLocalBinding) * function->typedLocalBindingLength,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
+    if (function->staticImports != ZR_NULL && function->staticImportLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->staticImports,
+                                      sizeof(SZrString *) * function->staticImportLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->moduleEntryEffects != ZR_NULL && function->moduleEntryEffectLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->moduleEntryEffects,
+                                      sizeof(SZrFunctionModuleEffect) * function->moduleEntryEffectLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->exportedCallableSummaries != ZR_NULL && function->exportedCallableSummaryLength > 0) {
+        for (TZrUInt32 i = 0; i < function->exportedCallableSummaryLength; i++) {
+            SZrFunctionCallableSummary *summary = &function->exportedCallableSummaries[i];
+            if (summary->effects != ZR_NULL && summary->effectCount > 0) {
+                ZrCore_Memory_RawFreeWithType(global,
+                                              summary->effects,
+                                              sizeof(SZrFunctionModuleEffect) * summary->effectCount,
+                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
+        }
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->exportedCallableSummaries,
+                                      sizeof(SZrFunctionCallableSummary) * function->exportedCallableSummaryLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->topLevelCallableBindings != ZR_NULL && function->topLevelCallableBindingLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->topLevelCallableBindings,
+                                      sizeof(SZrFunctionTopLevelCallableBinding) * function->topLevelCallableBindingLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
     ZR_FUNCTION_FREE_METADATA_PARAMETERS(function->parameterMetadata, function->parameterMetadataCount);
     if (function->compileTimeFunctionInfos != ZR_NULL && function->compileTimeFunctionInfoLength > 0) {
         for (TZrUInt32 i = 0; i < function->compileTimeFunctionInfoLength; i++) {
@@ -987,6 +1028,19 @@ static ZR_FORCE_INLINE TZrSize function_pre_call_native(struct SZrState *state,
     callInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
     if (hasReturnDestinationAnchor) {
         callInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
+    }
+    if (state->threadStatus == ZR_THREAD_STATUS_FINE && callInfo->functionBase.valuePointer != ZR_NULL) {
+        TZrStackValuePointer returnTop = state->stackTop.valuePointer;
+        if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
+            state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+        }
+        // Native thunks can synthesize VM-like closures that capture stack slots.
+        // Close any remaining open upvalues here before PostCall recycles the frame.
+        ZrCore_Closure_CloseClosure(state,
+                                    callInfo->functionBase.valuePointer + 1,
+                                    ZR_THREAD_STATUS_INVALID,
+                                    ZR_FALSE);
+        state->stackTop.valuePointer = returnTop;
     }
     ZR_STACK_CHECK_CALL_INFO_STACK_COUNT(state, returnCount);
     ZrCore_Function_PostCall(state, callInfo, returnCount);

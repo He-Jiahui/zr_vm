@@ -2264,6 +2264,7 @@ SZrDiagnostic *ZrLanguageServer_Diagnostic_New(SZrState *state,
     diagnostic->location = location;
     diagnostic->message = ZrCore_String_Create(state, (TZrNativeString)message, strlen(message));
     diagnostic->code = code != ZR_NULL ? ZrCore_String_Create(state, (TZrNativeString)code, strlen(code)) : ZR_NULL;
+    ZrCore_Array_Construct(&diagnostic->relatedInformation);
     
     if (diagnostic->message == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, diagnostic, sizeof(SZrDiagnostic));
@@ -2271,6 +2272,34 @@ SZrDiagnostic *ZrLanguageServer_Diagnostic_New(SZrState *state,
     }
     
     return diagnostic;
+}
+
+TZrBool ZrLanguageServer_Diagnostic_AddRelatedInformation(SZrState *state,
+                                                          SZrDiagnostic *diagnostic,
+                                                          SZrFileRange location,
+                                                          const TZrChar *message) {
+    SZrDiagnosticRelatedInformation related;
+
+    if (state == ZR_NULL || diagnostic == ZR_NULL || message == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!diagnostic->relatedInformation.isValid) {
+        ZrCore_Array_Init(state,
+                          &diagnostic->relatedInformation,
+                          sizeof(SZrDiagnosticRelatedInformation),
+                          ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    }
+
+    memset(&related, 0, sizeof(related));
+    related.location = location;
+    related.message = ZrCore_String_Create(state, (TZrNativeString)message, strlen(message));
+    if (related.message == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Push(state, &diagnostic->relatedInformation, &related);
+    return ZR_TRUE;
 }
 
 // 释放诊断
@@ -2284,6 +2313,9 @@ void ZrLanguageServer_Diagnostic_Free(SZrState *state, SZrDiagnostic *diagnostic
     }
     if (diagnostic->code != ZR_NULL) {
         // SZrString 由 GC 管理，不需要手动释放
+    }
+    if (diagnostic->relatedInformation.isValid) {
+        ZrCore_Array_Free(state, &diagnostic->relatedInformation);
     }
     ZrCore_Memory_RawFree(state->global, diagnostic, sizeof(SZrDiagnostic));
 }

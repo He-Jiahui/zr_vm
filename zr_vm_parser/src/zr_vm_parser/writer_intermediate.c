@@ -150,6 +150,49 @@ static void writer_intermediate_write_metadata_parameters(FILE *file,
     }
 }
 
+static const TZrChar *writer_intermediate_module_export_kind_name(TZrUInt8 exportKind) {
+    switch ((EZrModuleExportKind)exportKind) {
+        case ZR_MODULE_EXPORT_KIND_VALUE:
+            return "value";
+        case ZR_MODULE_EXPORT_KIND_FUNCTION:
+            return "function";
+        case ZR_MODULE_EXPORT_KIND_TYPE:
+            return "type";
+        default:
+            return "unknown";
+    }
+}
+
+static const TZrChar *writer_intermediate_module_export_readiness_name(TZrUInt8 readiness) {
+    switch ((EZrModuleExportReadiness)readiness) {
+        case ZR_MODULE_EXPORT_READY_DECLARATION:
+            return "declaration";
+        case ZR_MODULE_EXPORT_READY_ENTRY:
+            return "entry";
+        default:
+            return "unknown";
+    }
+}
+
+static const TZrChar *writer_intermediate_module_effect_kind_name(TZrUInt8 kind) {
+    switch ((EZrModuleEntryEffectKind)kind) {
+        case ZR_MODULE_ENTRY_EFFECT_IMPORT_REF:
+            return "IMPORT_REF";
+        case ZR_MODULE_ENTRY_EFFECT_IMPORT_READ:
+            return "IMPORT_READ";
+        case ZR_MODULE_ENTRY_EFFECT_IMPORT_CALL:
+            return "IMPORT_CALL";
+        case ZR_MODULE_ENTRY_EFFECT_LOCAL_CALL:
+            return "LOCAL_CALL";
+        case ZR_MODULE_ENTRY_EFFECT_LOCAL_ENTRY_BINDING_READ:
+            return "LOCAL_ENTRY_BINDING_READ";
+        case ZR_MODULE_ENTRY_EFFECT_DYNAMIC_UNKNOWN:
+            return "DYNAMIC_UNKNOWN";
+        default:
+            return "UNKNOWN";
+    }
+}
+
 static void writer_intermediate_write_type_metadata(FILE *file,
                                                     SZrState *state,
                                                     SZrFunction *function,
@@ -193,11 +236,93 @@ static void writer_intermediate_write_type_metadata(FILE *file,
                                                     sizeof(paramBuffer));
                 fprintf(file, "%s", paramBuffer);
             }
-            fprintf(file, "): %s\n", valueTypeBuffer);
+            fprintf(file,
+                    "): %s [kind=%s readiness=%s child=%u]\n",
+                    valueTypeBuffer,
+                    writer_intermediate_module_export_kind_name(symbol->exportKind),
+                    writer_intermediate_module_export_readiness_name(symbol->readiness),
+                    symbol->callableChildIndex);
         } else {
             writer_intermediate_write_indent(file, indentLevel);
-            fprintf(file, "    var %s: %s\n", name != ZR_NULL ? name : "<unnamed>", valueTypeBuffer);
+            fprintf(file,
+                    "    var %s: %s [kind=%s readiness=%s child=%u]\n",
+                    name != ZR_NULL ? name : "<unnamed>",
+                    valueTypeBuffer,
+                    writer_intermediate_module_export_kind_name(symbol->exportKind),
+                    writer_intermediate_module_export_readiness_name(symbol->readiness),
+                    symbol->callableChildIndex);
         }
+    }
+
+    writer_intermediate_write_indent(file, indentLevel);
+    fprintf(file, "  STATIC_IMPORTS (%u):\n", function->staticImportLength);
+    for (TZrUInt32 index = 0; index < function->staticImportLength; index++) {
+        TZrNativeString importName =
+                function->staticImports[index] != ZR_NULL ? ZrCore_String_GetNativeString(function->staticImports[index]) : "<unnamed>";
+        writer_intermediate_write_indent(file, indentLevel);
+        fprintf(file, "    import %s\n", importName != ZR_NULL ? importName : "<unnamed>");
+    }
+
+    writer_intermediate_write_indent(file, indentLevel);
+    fprintf(file, "  MODULE_ENTRY_EFFECTS (%u):\n", function->moduleEntryEffectLength);
+    for (TZrUInt32 index = 0; index < function->moduleEntryEffectLength; index++) {
+        SZrFunctionModuleEffect *effect = &function->moduleEntryEffects[index];
+        TZrNativeString moduleName =
+                effect->moduleName != ZR_NULL ? ZrCore_String_GetNativeString(effect->moduleName) : "<unnamed>";
+        TZrNativeString symbolName =
+                effect->symbolName != ZR_NULL ? ZrCore_String_GetNativeString(effect->symbolName) : "<unnamed>";
+        writer_intermediate_write_indent(file, indentLevel);
+        fprintf(file,
+                "    %s %s.%s [kind=%s readiness=%s]\n",
+                writer_intermediate_module_effect_kind_name(effect->kind),
+                moduleName != ZR_NULL ? moduleName : "<unnamed>",
+                symbolName != ZR_NULL ? symbolName : "<unnamed>",
+                writer_intermediate_module_export_kind_name(effect->exportKind),
+                writer_intermediate_module_export_readiness_name(effect->readiness));
+    }
+
+    writer_intermediate_write_indent(file, indentLevel);
+    fprintf(file, "  EXPORTED_CALLABLE_SUMMARIES (%u):\n", function->exportedCallableSummaryLength);
+    for (TZrUInt32 index = 0; index < function->exportedCallableSummaryLength; index++) {
+        SZrFunctionCallableSummary *summary = &function->exportedCallableSummaries[index];
+        TZrNativeString name = summary->name != ZR_NULL ? ZrCore_String_GetNativeString(summary->name) : "<unnamed>";
+        writer_intermediate_write_indent(file, indentLevel);
+        fprintf(file,
+                "    fn %s [child=%u effects=%u]\n",
+                name != ZR_NULL ? name : "<unnamed>",
+                summary->callableChildIndex,
+                summary->effectCount);
+        for (TZrUInt32 effectIndex = 0; effectIndex < summary->effectCount; effectIndex++) {
+            SZrFunctionModuleEffect *effect = &summary->effects[effectIndex];
+            TZrNativeString moduleName =
+                    effect->moduleName != ZR_NULL ? ZrCore_String_GetNativeString(effect->moduleName) : "<unnamed>";
+            TZrNativeString symbolName =
+                    effect->symbolName != ZR_NULL ? ZrCore_String_GetNativeString(effect->symbolName) : "<unnamed>";
+            writer_intermediate_write_indent(file, indentLevel);
+            fprintf(file,
+                    "      %s %s.%s [kind=%s readiness=%s]\n",
+                    writer_intermediate_module_effect_kind_name(effect->kind),
+                    moduleName != ZR_NULL ? moduleName : "<unnamed>",
+                    symbolName != ZR_NULL ? symbolName : "<unnamed>",
+                    writer_intermediate_module_export_kind_name(effect->exportKind),
+                    writer_intermediate_module_export_readiness_name(effect->readiness));
+        }
+    }
+
+    writer_intermediate_write_indent(file, indentLevel);
+    fprintf(file, "  TOP_LEVEL_CALLABLE_BINDINGS (%u):\n", function->topLevelCallableBindingLength);
+    for (TZrUInt32 index = 0; index < function->topLevelCallableBindingLength; index++) {
+        SZrFunctionTopLevelCallableBinding *binding = &function->topLevelCallableBindings[index];
+        TZrNativeString name = binding->name != ZR_NULL ? ZrCore_String_GetNativeString(binding->name) : "<unnamed>";
+        writer_intermediate_write_indent(file, indentLevel);
+        fprintf(file,
+                "    fn %s [slot=%u child=%u kind=%s readiness=%s access=%u]\n",
+                name != ZR_NULL ? name : "<unnamed>",
+                binding->stackSlot,
+                binding->callableChildIndex,
+                writer_intermediate_module_export_kind_name(binding->exportKind),
+                writer_intermediate_module_export_readiness_name(binding->readiness),
+                binding->accessModifier);
     }
 
     writer_intermediate_write_indent(file, indentLevel);

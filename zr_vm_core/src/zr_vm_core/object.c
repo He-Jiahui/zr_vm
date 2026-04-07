@@ -5,17 +5,96 @@
 
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/conversion.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/module.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_common/zr_ast_constants.h"
+#include <stdio.h>
 #include <string.h>
+
+#define ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS ((TZrUInt8)1)
 
 static TZrBool object_node_map_is_ready(const SZrObject *object) {
     return object != ZR_NULL && object->nodeMap.isValid && object->nodeMap.buckets != ZR_NULL &&
            object->nodeMap.capacity > 0;
+}
+
+static const TZrChar *object_module_name_string(SZrState *state, const SZrObjectModule *module) {
+    if (state == ZR_NULL || module == ZR_NULL) {
+        return "<module>";
+    }
+
+    if (module->moduleName != ZR_NULL) {
+        const TZrChar *name = ZrCore_String_GetNativeString(module->moduleName);
+        if (name != ZR_NULL) {
+            return name;
+        }
+    }
+
+    if (module->fullPath != ZR_NULL) {
+        const TZrChar *name = ZrCore_String_GetNativeString(module->fullPath);
+        if (name != ZR_NULL) {
+            return name;
+        }
+    }
+
+    return "<module>";
+}
+
+static TZrBool object_module_guard_pending_export(SZrState *state,
+                                                  SZrObject *object,
+                                                  SZrString *memberName) {
+    const SZrModuleExportDescriptor *descriptor;
+    SZrObjectModule *module;
+    const TZrChar *moduleNameText;
+    const TZrChar *memberNameText;
+    TZrBool blocked = ZR_FALSE;
+
+    if (state == ZR_NULL || object == ZR_NULL || memberName == ZR_NULL ||
+        object->internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+        return ZR_FALSE;
+    }
+
+    module = (SZrObjectModule *)object;
+    descriptor = ZrCore_Module_FindExportDescriptor(module, memberName);
+    if (descriptor != ZR_NULL && descriptor->accessModifier != ZR_ACCESS_CONSTANT_PUBLIC) {
+        descriptor = ZR_NULL;
+    }
+
+    moduleNameText = object_module_name_string(state, module);
+    memberNameText = ZrCore_String_GetNativeString(memberName);
+    if (memberNameText == ZR_NULL) {
+        memberNameText = "<export>";
+    }
+
+    if (module->initState == ZR_MODULE_INIT_STATE_FAILED) {
+        ZrCore_Debug_RunError(state,
+                              "module initialization failed: export '%s.%s' is unavailable because module '%s' failed during __entry__",
+                              moduleNameText,
+                              memberNameText,
+                              moduleNameText);
+        blocked = ZR_TRUE;
+    }
+
+    if (descriptor != ZR_NULL &&
+        descriptor->readiness == ZR_MODULE_EXPORT_READY_ENTRY &&
+        !descriptor->isReady &&
+        (module->initState == ZR_MODULE_INIT_STATE_INITIALIZING ||
+         (module->reserved0 & ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS) != 0)) {
+        ZrCore_Debug_RunError(state,
+                              "circular import initialization: export '%s.%s' is not ready because module '%s' is still executing __entry__",
+                              moduleNameText,
+                              memberNameText,
+                              moduleNameText);
+        blocked = ZR_TRUE;
+    }
+
+    return blocked;
 }
 
 static TZrBool ensure_managed_field_capacity(SZrState *state, SZrObjectPrototype *prototype, TZrUInt32 minimumCapacity) {
@@ -189,6 +268,63 @@ static void object_unpin_value_object(SZrGlobalState *global, const SZrTypeValue
     }
 }
 
+static TZrBool object_value_is_struct_instance(SZrState *state, const SZrTypeValue *value) {
+    SZrObject *object;
+
+    if (state == ZR_NULL || value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT || value->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object = ZR_CAST_OBJECT(state, value->value.object);
+    return object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_STRUCT;
+}
+
+static TZrBool object_sync_struct_receiver_value(SZrState *state,
+                                                 SZrTypeValue *receiverTarget,
+                                                 const SZrTypeValue *stackReceiver) {
+    SZrObject *targetObject;
+    SZrObject *sourceObject;
+
+    if (state == ZR_NULL || receiverTarget == ZR_NULL || stackReceiver == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!object_value_is_struct_instance(state, receiverTarget) ||
+        !object_value_is_struct_instance(state, stackReceiver)) {
+        ZrCore_Value_Copy(state, receiverTarget, stackReceiver);
+        return state->threadStatus == ZR_THREAD_STATUS_FINE;
+    }
+
+    targetObject = ZR_CAST_OBJECT(state, receiverTarget->value.object);
+    sourceObject = ZR_CAST_OBJECT(state, stackReceiver->value.object);
+    if (targetObject == ZR_NULL || sourceObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (targetObject == sourceObject) {
+        return ZR_TRUE;
+    }
+
+    targetObject->prototype = sourceObject->prototype;
+    targetObject->internalType = sourceObject->internalType;
+    if (object_node_map_is_ready(sourceObject)) {
+        for (TZrSize bucketIndex = 0; bucketIndex < sourceObject->nodeMap.capacity; bucketIndex++) {
+            for (SZrHashKeyValuePair *pair = sourceObject->nodeMap.buckets[bucketIndex]; pair != ZR_NULL; pair = pair->next) {
+                ZrCore_Object_SetValue(state, targetObject, &pair->key, &pair->value);
+                if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                    return ZR_FALSE;
+                }
+            }
+        }
+    }
+
+    receiverTarget->type = stackReceiver->type;
+    receiverTarget->value.object = ZR_CAST_RAW_OBJECT_AS_SUPER(targetObject);
+    receiverTarget->isGarbageCollectable = stackReceiver->isGarbageCollectable;
+    receiverTarget->isNative = stackReceiver->isNative;
+    return ZR_TRUE;
+}
+
 static TZrBool object_call_value(SZrState *state,
                                  const SZrTypeValue *callable,
                                  const SZrTypeValue *receiver,
@@ -218,8 +354,11 @@ static TZrBool object_call_value(SZrState *state,
     SZrFunctionStackAnchor callInfoBaseAnchor;
     SZrFunctionStackAnchor callInfoTopAnchor;
     SZrFunctionStackAnchor callInfoReturnAnchor;
+    SZrFunctionStackAnchor receiverAnchor;
     SZrFunctionStackAnchor resultAnchor;
+    TZrBool syncStructReceiver = ZR_FALSE;
     TZrBool hasAnchoredReturnDestination = ZR_FALSE;
+    TZrBool hasReceiverAnchor = ZR_FALSE;
     TZrBool hasResultAnchor = ZR_FALSE;
     TZrSize index;
 
@@ -334,10 +473,19 @@ static TZrBool object_call_value(SZrState *state,
     scratchSlots = 1 + totalArguments;
     base = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
     resultStackSlot = ZR_CAST(TZrStackValuePointer, result);
+    syncStructReceiver = object_value_is_struct_instance(state, receiver);
 
     if (resultStackSlot >= state->stackBase.valuePointer && resultStackSlot < state->stackTail.valuePointer) {
         ZrCore_Function_StackAnchorInit(state, resultStackSlot, &resultAnchor);
         hasResultAnchor = ZR_TRUE;
+    }
+
+    if (syncStructReceiver) {
+        TZrStackValuePointer receiverStackSlot = ZR_CAST(TZrStackValuePointer, receiver);
+        if (receiverStackSlot >= state->stackBase.valuePointer && receiverStackSlot < state->stackTail.valuePointer) {
+            ZrCore_Function_StackAnchorInit(state, receiverStackSlot, &receiverAnchor);
+            hasReceiverAnchor = ZR_TRUE;
+        }
     }
 
     ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
@@ -423,6 +571,24 @@ static TZrBool object_call_value(SZrState *state,
     }
 
     if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+        if (syncStructReceiver) {
+            SZrTypeValue *stackReceiver = ZrCore_Stack_GetValue(base + 1);
+            SZrTypeValue *receiverTarget = ZR_NULL;
+
+            if (hasReceiverAnchor) {
+                receiverTarget = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
+            } else if (receiver != ZR_NULL) {
+                receiverTarget = ZR_CAST(SZrTypeValue *, receiver);
+            }
+
+            if (receiverTarget != ZR_NULL &&
+                stackReceiver != ZR_NULL &&
+                !object_sync_struct_receiver_value(state, receiverTarget, stackReceiver) &&
+                state->threadStatus == ZR_THREAD_STATUS_FINE) {
+                state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
+            }
+        }
+
         SZrTypeValue *stackResult = ZrCore_Stack_GetValue(base);
         ZrCore_Value_Copy(state, result, stackResult);
         state->stackTop.valuePointer = savedStackTop;
@@ -783,6 +949,9 @@ SZrObjectPrototype *ZrCore_ObjectPrototype_New(SZrState *state, SZrString *name,
     prototype->dynamicMemberCapable = ZR_FALSE;
     prototype->reserved0 = 0;
     prototype->reserved1 = 0;
+    prototype->modifierFlags = 0;
+    prototype->nextVirtualSlotIndex = 0;
+    prototype->nextPropertyIdentity = 0;
     prototype->managedFields = ZR_NULL;
     prototype->managedFieldCount = 0;
     prototype->managedFieldCapacity = 0;
@@ -827,6 +996,9 @@ SZrStructPrototype *ZrCore_StructPrototype_New(SZrState *state, SZrString *name)
     prototype->super.dynamicMemberCapable = ZR_FALSE;
     prototype->super.reserved0 = 0;
     prototype->super.reserved1 = 0;
+    prototype->super.modifierFlags = 0;
+    prototype->super.nextVirtualSlotIndex = 0;
+    prototype->super.nextPropertyIdentity = 0;
     prototype->super.managedFields = ZR_NULL;
     prototype->super.managedFieldCount = 0;
     prototype->super.managedFieldCapacity = 0;
@@ -1036,8 +1208,16 @@ TZrBool ZrCore_Object_GetMember(struct SZrState *state,
 
     resolvedValue = object != ZR_NULL ? object_get_own_value(state, object, &key) : ZR_NULL;
     if (resolvedValue != ZR_NULL) {
+        if (object != ZR_NULL && object_module_guard_pending_export(state, object, memberName)) {
+            ZrCore_Value_ResetAsNull(result);
+            return state->threadStatus != ZR_THREAD_STATUS_FINE ? ZR_TRUE : ZR_FALSE;
+        }
         ZrCore_Value_Copy(state, result, resolvedValue);
         return ZR_TRUE;
+    }
+
+    if (object != ZR_NULL) {
+        (void)object_module_guard_pending_export(state, object, memberName);
     }
 
     prototype = (object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE)
@@ -1341,8 +1521,17 @@ TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
 
     resolvedValue = object_get_own_value(state, object, key);
     if (resolvedValue == ZR_NULL) {
+        if (key->type == ZR_VALUE_TYPE_STRING && key->value.object != ZR_NULL) {
+            if (object_module_guard_pending_export(state, object, ZR_CAST_STRING(state, key->value.object))) {
+                return state->threadStatus != ZR_THREAD_STATUS_FINE ? ZR_TRUE : ZR_FALSE;
+            }
+        }
         ZrCore_Value_ResetAsNull(result);
     } else {
+        if (key->type == ZR_VALUE_TYPE_STRING && key->value.object != ZR_NULL &&
+            object_module_guard_pending_export(state, object, ZR_CAST_STRING(state, key->value.object))) {
+            return state->threadStatus != ZR_THREAD_STATUS_FINE ? ZR_TRUE : ZR_FALSE;
+        }
         ZrCore_Value_Copy(state, result, resolvedValue);
     }
     return ZR_TRUE;

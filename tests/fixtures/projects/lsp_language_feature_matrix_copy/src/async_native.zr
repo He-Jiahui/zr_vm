@@ -1,0 +1,43 @@
+%module "async_native";
+
+var math = %import("zr.math");
+var system = %import("zr.system");
+var network = %import("zr.network");
+var ffi = %import("zr.ffi");
+var container = %import("zr.container");
+
+class Holder {
+}
+
+makeEscapingCallback(offset: int) {
+    var callback = (value: int) -> {
+        return value + offset;
+    };
+    return callback;
+}
+
+pub nativeScore(): int {
+    var vector = $math.Vector3(1.0, 2.0, 3.0);
+    var handle = ffi.BufferHandle.allocate(8);
+    var tcp = network.tcp;
+    var list = new container.LinkedList<int>();
+    var owner = %using new Holder();
+    var shared = %shared(owner);
+    var weak = %weak(shared);
+    var upgraded = %upgrade(weak);
+    var releasedShared = %release(shared);
+    var releasedUpgrade = %release(upgraded);
+    var escaped = makeEscapingCallback(5);
+
+    list.addLast(<int> vector.x);
+    system.console.printLine("matrix");
+
+    if (handle == null || tcp == null) {
+        return -1000;
+    }
+    if (owner == null && releasedShared == null && releasedUpgrade == null) {
+        return list.count + escaped(2);
+    }
+
+    return -1;
+}

@@ -33,6 +33,7 @@ void compile_function_call(SZrCompilerState *cs, SZrAstNode *node);
 void compile_member_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_import_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_type_query_expression(SZrCompilerState *cs, SZrAstNode *node);
+void compile_type_literal_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node);
@@ -51,6 +52,23 @@ TZrBool wrap_constructed_result_with_ownership_builtin(SZrCompilerState *cs,
                                                        SZrConstructExpression *constructExpr,
                                                        SZrFileRange location);
 EZrOwnershipQualifier infer_expression_ownership_qualifier_local(SZrCompilerState *cs, SZrAstNode *node);
+TZrBool compiler_is_super_identifier_node(SZrAstNode *node);
+TZrBool compiler_resolve_super_member_context(SZrCompilerState *cs,
+                                              SZrFileRange location,
+                                              SZrString **outSuperTypeName,
+                                              TZrUInt32 *outReceiverSlot,
+                                              EZrOwnershipQualifier *outReceiverOwnershipQualifier);
+TZrBool emit_member_function_constant_to_slot(SZrCompilerState *cs,
+                                              TZrUInt32 targetSlot,
+                                              const SZrTypeMemberInfo *memberInfo,
+                                              SZrFileRange location);
+TZrBool emit_super_accessor_call_from_prototype(SZrCompilerState *cs,
+                                                TZrUInt32 prototypeSlot,
+                                                TZrUInt32 receiverSlot,
+                                                SZrString *accessorName,
+                                                const TZrUInt32 *argumentSlots,
+                                                TZrUInt32 argumentCount,
+                                                SZrFileRange location);
 TZrBool emit_null_reset_to_identifier_binding_local(SZrCompilerState *cs,
                                                     SZrString *name,
                                                     SZrFileRange location);
@@ -138,7 +156,9 @@ void compile_primary_member_chain(SZrCompilerState *cs,
                                   TZrUInt32 *ioCurrentSlot,
                                   SZrString **ioRootTypeName,
                                   TZrBool *ioRootIsTypeReference,
-                                  EZrOwnershipQualifier *ioRootOwnershipQualifier);
+                                  EZrOwnershipQualifier *ioRootOwnershipQualifier,
+                                  TZrBool rootUsesSuperLookup,
+                                  TZrUInt32 superReceiverSlot);
 
 SZrAstNode *find_function_declaration(SZrCompilerState *cs, SZrString *funcName);
 SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs,

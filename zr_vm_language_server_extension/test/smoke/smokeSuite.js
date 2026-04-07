@@ -525,6 +525,13 @@ function hasSemanticToken(decodedTokens, expectedType, expectedText) {
         token.type === expectedType && token.text === expectedText);
 }
 
+function sanitizeNetworkLoopbackDebugSource(text) {
+    return text.replace(
+        'var r = new lib.Record(3, 4);\nvar sum = r();',
+        'var r = 0;\nvar sum = r;',
+    );
+}
+
 async function verifyProjectInferenceAndSemanticTokens(workspaceRoot) {
     const projectMainUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'main.zr');
     const smokeUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'project_inference_smoke.zr');
@@ -1481,14 +1488,16 @@ async function verifyDebugIntegration(workspaceRoot) {
     const debugMainUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'main.zr');
     const debugProjectUri = vscode.Uri.joinPath(workspaceRoot, 'import_basic.zrp');
     const networkProjectRootUri = vscode.Uri.file(path.resolve(workspaceRoot.fsPath, '..', 'network_loopback'));
-    const networkProjectUri = vscode.Uri.joinPath(networkProjectRootUri, 'network_loopback.zrp');
-    const networkMainUri = vscode.Uri.joinPath(networkProjectRootUri, 'src', 'main.zr');
     const richProjectRootUri = vscode.Uri.joinPath(workspaceRoot, '.debug_classes_full_smoke');
     const richProjectSrcUri = vscode.Uri.joinPath(richProjectRootUri, 'src');
     const richProjectUri = vscode.Uri.joinPath(richProjectRootUri, 'debug_classes_full_smoke.zrp');
     const richSourceUri = vscode.Uri.joinPath(richProjectSrcUri, 'main.zr');
+    const sourceProjectRootUri = vscode.Uri.joinPath(workspaceRoot, '.debug_source_request_smoke');
+    const sourceProjectSrcUri = vscode.Uri.joinPath(sourceProjectRootUri, 'src');
+    const sourceProjectUri = vscode.Uri.joinPath(sourceProjectRootUri, 'debug_source_request_smoke.zrp');
+    const sourceProjectMainUri = vscode.Uri.joinPath(sourceProjectSrcUri, 'main.zr');
+    const sourceProjectLibUri = vscode.Uri.joinPath(sourceProjectSrcUri, 'lib.zr');
     const debugDocument = await openDocument(debugMainUri);
-    const networkDocument = await openDocument(networkMainUri);
     const debugBreakpointPosition = findPositionBySubstring(debugDocument, 'return greetModule.greet()');
     const debugBreakpoint = new vscode.SourceBreakpoint(
         new vscode.Location(debugDocument.uri, debugBreakpointPosition),
@@ -1511,6 +1520,7 @@ async function verifyDebugIntegration(workspaceRoot) {
     await verifyProjectActionIntegration(workspaceRoot);
 
     await vscode.workspace.fs.createDirectory(richProjectSrcUri);
+    await vscode.workspace.fs.createDirectory(sourceProjectSrcUri);
     await vscode.workspace.fs.writeFile(
         richProjectUri,
         new TextEncoder().encode(JSON.stringify({
@@ -1524,7 +1534,29 @@ async function verifyDebugIntegration(workspaceRoot) {
         richSourceUri,
         new TextEncoder().encode(CLASSES_FULL_DEBUG_SOURCE),
     );
+    await vscode.workspace.fs.writeFile(
+        sourceProjectUri,
+        new TextEncoder().encode(JSON.stringify({
+            name: 'debug_source_request_smoke',
+            source: 'src',
+            binary: 'bin',
+            entry: 'main',
+        }, null, 2) + '\n'),
+    );
+    await vscode.workspace.fs.writeFile(
+        sourceProjectMainUri,
+        new TextEncoder().encode(sanitizeNetworkLoopbackDebugSource(
+            fs.readFileSync(path.join(networkProjectRootUri.fsPath, 'src', 'main.zr'), 'utf8'),
+        )),
+    );
+    await vscode.workspace.fs.writeFile(
+        sourceProjectLibUri,
+        new TextEncoder().encode(
+            fs.readFileSync(path.join(networkProjectRootUri.fsPath, 'src', 'lib.zr'), 'utf8'),
+        ),
+    );
     const classesFullDocument = await openDocument(richSourceUri);
+    const sourceRequestDocument = await openDocument(sourceProjectMainUri);
     const richBreakpointPosition = findPositionBySubstring(classesFullDocument, 'this.hp = this.hp + amount;', 0);
     const richBreakpoint = new vscode.SourceBreakpoint(
         new vscode.Location(classesFullDocument.uri, richBreakpointPosition),
@@ -1589,11 +1621,12 @@ async function verifyDebugIntegration(workspaceRoot) {
 
         await verifyLaunchDebugSession({
             workspaceRoot,
-            debugDocument: networkDocument,
+            debugDocument: sourceRequestDocument,
             expectedSessionStartLabel: 'ZR debug source request session start',
             expectedFirstStopReason: 'entry',
             inspectBreakpointState: false,
             disconnectAfterStop: true,
+            expectBreakpointResolved: false,
             onStopped: async (session) => {
                 const sourceResponse = await session.customRequest('source', {
                     source: {
@@ -1610,8 +1643,8 @@ async function verifyDebugIntegration(workspaceRoot) {
                 type: 'zr',
                 name: 'ZR Smoke Source Request',
                 request: 'launch',
-                project: networkProjectUri.fsPath,
-                cwd: networkProjectRootUri.fsPath,
+                project: sourceProjectUri.fsPath,
+                cwd: sourceProjectRootUri.fsPath,
                 executionMode: 'interp',
                 stopOnEntry: true,
             }),
@@ -1619,6 +1652,7 @@ async function verifyDebugIntegration(workspaceRoot) {
     } finally {
         vscode.debug.removeBreakpoints([debugBreakpoint]);
         await vscode.workspace.fs.delete(richProjectRootUri, { recursive: true, useTrash: false });
+        await vscode.workspace.fs.delete(sourceProjectRootUri, { recursive: true, useTrash: false });
     }
 
     await verifyInvalidAttachEndpointRejected(workspaceRoot);

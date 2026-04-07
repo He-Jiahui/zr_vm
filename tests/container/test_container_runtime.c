@@ -257,6 +257,7 @@ static void test_container_array_runtime_supports_capacity_growth_and_structural
     TZrInt64 result = 0;
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {Pair} = %import(\"zr.container\");\n"
             "var xs = new container.Array<Pair<int, string>>(1);\n"
             "xs.add(new container.Pair<int, string>(2, \"b\"));\n"
             "xs.insert(0, new container.Pair<int, string>(1, \"a\"));\n"
@@ -443,6 +444,7 @@ static void test_container_map_runtime_supports_pair_keys_and_value_overwrite(vo
     TZrInt64 result = 0;
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {Pair} = %import(\"zr.container\");\n"
             "var map = new container.Map<Pair<int, string>, int>();\n"
             "var first = new container.Pair<int, string>(3, \"red\");\n"
             "var same = new container.Pair<int, string>(3, \"red\");\n"
@@ -552,6 +554,7 @@ static void test_container_set_runtime_enforces_pair_uniqueness(void) {
     TZrInt64 result = 0;
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {Pair} = %import(\"zr.container\");\n"
             "var values = new container.Set<Pair<int, string>>();\n"
             "var score = 0;\n"
             "if (values.add(new container.Pair<int, string>(1, \"a\"))) { score = score + 10; }\n"
@@ -701,12 +704,15 @@ static void test_container_linked_list_runtime_remove_first_preserves_pair_value
     TZrInt64 result = 0;
     const char *source =
             "var container = %import(\"zr.container\");\n"
-            "buildQueue(): LinkedList<Pair<string, int>> {\n"
-            "    var queue = new container.LinkedList<Pair<string, int>>();\n"
-            "    queue.addLast(new container.Pair<string, int>(\"odd_hi\", 3));\n"
-            "    return queue;\n"
+            "var {Pair} = %import(\"zr.container\");\n"
+            "labelThrough(value) {\n"
+            "    return value;\n"
             "}\n"
-            "var queue: LinkedList<Pair<string, int>> = buildQueue();\n"
+            "numberThrough(value) {\n"
+            "    return value;\n"
+            "}\n"
+            "var queue = new container.LinkedList<Pair<string, int>>();\n"
+            "queue.addLast(new container.Pair<string, int>(labelThrough(\"odd_hi\"), numberThrough(3)));\n"
             "if (queue.count != 1) { return -10; }\n"
             "if (queue.first == null) { return -20; }\n"
             "if (queue.first.value == null) { return -30; }\n"
@@ -743,6 +749,7 @@ static void test_container_set_to_map_runtime_preserves_bucket_values_in_fresh_s
     TZrInt64 result = 0;
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {Array, Pair} = %import(\"zr.container\");\n"
             "var seen = new container.Set<Pair<int, string>>();\n"
             "seen.add(new container.Pair<int, string>(3, \"odd_hi\"));\n"
             "seen.add(new container.Pair<int, string>(1, \"odd_lo\"));\n"
@@ -807,6 +814,7 @@ static void test_container_linked_set_map_runtime_preserves_native_call_argument
     TZrInt64 result = 0;
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {Array, Pair} = %import(\"zr.container\");\n"
             "labelFor(value: int) {\n"
             "    if (value % 2 == 0) {\n"
             "        return \"even\";\n"

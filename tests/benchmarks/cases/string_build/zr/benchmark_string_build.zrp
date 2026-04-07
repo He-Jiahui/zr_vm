@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_string_build",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

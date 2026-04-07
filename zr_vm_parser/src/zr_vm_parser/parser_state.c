@@ -24,6 +24,17 @@ TZrBool consume_token(SZrParserState *ps, EZrToken token) {
 
 EZrToken peek_token(SZrParserState *ps) { return ZrParser_Lexer_Lookahead(ps->lexer); }
 
+TZrBool consume_percent_keyword_token(SZrParserState *ps, EZrToken token) {
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL || ps->lexer->t.token != ZR_TK_PERCENT ||
+        peek_token(ps) != token) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    ZrParser_Lexer_Next(ps->lexer);
+    return ZR_TRUE;
+}
+
 void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor) {
     if (ps == ZR_NULL || ps->lexer == ZR_NULL || cursor == ZR_NULL) {
         return;
@@ -114,6 +125,8 @@ TZrBool current_percent_directive_equals(SZrParserState *ps, const TZrChar *text
         result = strcmp(text, "module") == 0;
     } else if (ps->lexer->t.token == ZR_TK_TEST) {
         result = strcmp(text, "test") == 0;
+    } else if (ps->lexer->t.token == ZR_TK_USING) {
+        result = strcmp(text, "using") == 0;
     }
 
     ps->lexer->currentPos = savedPos;
@@ -130,6 +143,56 @@ TZrBool current_percent_directive_equals(SZrParserState *ps, const TZrChar *text
 }
 
 TZrBool is_module_path_segment_token(EZrToken token) { return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST; }
+
+TZrBool is_type_modifier_token(EZrToken token) {
+    return token == ZR_TK_ABSTRACT || token == ZR_TK_FINAL;
+}
+
+TZrBool is_member_modifier_token(EZrToken token) {
+    return token == ZR_TK_ABSTRACT || token == ZR_TK_VIRTUAL || token == ZR_TK_OVERRIDE ||
+           token == ZR_TK_FINAL || token == ZR_TK_SHADOW;
+}
+
+TZrUInt32 token_to_declaration_modifier_flag(EZrToken token) {
+    switch (token) {
+        case ZR_TK_ABSTRACT:
+            return ZR_DECLARATION_MODIFIER_ABSTRACT;
+        case ZR_TK_VIRTUAL:
+            return ZR_DECLARATION_MODIFIER_VIRTUAL;
+        case ZR_TK_OVERRIDE:
+            return ZR_DECLARATION_MODIFIER_OVERRIDE;
+        case ZR_TK_FINAL:
+            return ZR_DECLARATION_MODIFIER_FINAL;
+        case ZR_TK_SHADOW:
+            return ZR_DECLARATION_MODIFIER_SHADOW;
+        default:
+            return ZR_DECLARATION_MODIFIER_NONE;
+    }
+}
+
+TZrUInt32 parse_declaration_modifier_flags(SZrParserState *ps, TZrUInt32 allowedFlags) {
+    TZrUInt32 flags = ZR_DECLARATION_MODIFIER_NONE;
+
+    if (ps == ZR_NULL) {
+        return ZR_DECLARATION_MODIFIER_NONE;
+    }
+
+    while (ps->lexer != ZR_NULL) {
+        TZrUInt32 flag = token_to_declaration_modifier_flag(ps->lexer->t.token);
+        if (flag == ZR_DECLARATION_MODIFIER_NONE || (allowedFlags & flag) == 0) {
+            break;
+        }
+
+        if ((flags & flag) != 0) {
+            report_error(ps, "Duplicate declaration modifier");
+        }
+
+        flags |= flag;
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    return flags;
+}
 
 void skip_balanced_after_open_paren(SZrParserState *ps) {
     TZrInt32 depth = 1;

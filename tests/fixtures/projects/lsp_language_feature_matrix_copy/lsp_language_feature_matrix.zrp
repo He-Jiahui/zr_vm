@@ -1,0 +1,8 @@
+{
+  "name": "lsp_language_feature_matrix",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main",
+  "supportMultithread": true,
+  "autoCoroutine": true
+}

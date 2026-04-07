@@ -5,6 +5,9 @@
 #include "compiler_internal.h"
 #include "compile_time_executor_internal.h"
 
+SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName);
+TZrBool type_name_is_explicitly_available_in_context_inference(SZrCompilerState *cs, SZrString *typeName);
+
 static void compiler_struct_append_parameter_type(SZrCompilerState *cs,
                                                   SZrArray *parameterTypes,
                                                   SZrType *typeInfo) {
@@ -25,8 +28,21 @@ static void compiler_struct_append_parameter_type(SZrCompilerState *cs,
 
 static void compiler_struct_collect_parameter_types(SZrCompilerState *cs,
                                                     SZrArray *parameterTypes,
-                                                    SZrAstNodeArray *params) {
-    if (cs == ZR_NULL || parameterTypes == ZR_NULL || params == ZR_NULL || params->count == 0) {
+                                                    SZrAstNodeArray *params,
+                                                    SZrAstNode *functionNode) {
+    SZrAstNode *previousFunctionNode;
+
+    if (cs == ZR_NULL || parameterTypes == ZR_NULL) {
+        return;
+    }
+
+    previousFunctionNode = cs->currentFunctionNode;
+    if (functionNode != ZR_NULL) {
+        cs->currentFunctionNode = functionNode;
+    }
+
+    if (params == ZR_NULL || params->count == 0) {
+        cs->currentFunctionNode = previousFunctionNode;
         return;
     }
 
@@ -39,6 +55,8 @@ static void compiler_struct_collect_parameter_types(SZrCompilerState *cs,
 
         compiler_struct_append_parameter_type(cs, parameterTypes, paramNode->data.parameter.typeInfo);
     }
+
+    cs->currentFunctionNode = previousFunctionNode;
 }
 
 void compiler_collect_parameter_passing_modes(SZrState *state,
@@ -187,12 +205,124 @@ static TZrBool compiler_append_ast_node_display_text(SZrCompilerState *cs,
     }
 }
 
+static SZrString *compiler_extract_unqualified_type_head_name(const SZrType *typeInfo) {
+    if (typeInfo == ZR_NULL || typeInfo->name == ZR_NULL || typeInfo->subType != ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (typeInfo->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return typeInfo->name->data.identifier.name;
+    }
+
+    if (typeInfo->name->type == ZR_AST_GENERIC_TYPE &&
+        typeInfo->name->data.genericType.name != ZR_NULL) {
+        return typeInfo->name->data.genericType.name->name;
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool compiler_report_missing_explicit_type_binding(SZrCompilerState *cs,
+                                                             SZrString *typeName,
+                                                             SZrFileRange location) {
+    TZrNativeString typeNameText = ZR_NULL;
+    TZrChar errorBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
+
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        typeNameText = ZrCore_String_GetNativeStringShort(typeName);
+    } else {
+        typeNameText = ZrCore_String_GetNativeString(typeName);
+    }
+
+    if (typeNameText != ZR_NULL) {
+        snprintf(errorBuffer,
+                 sizeof(errorBuffer),
+                 "Unqualified type name '%s' requires an explicit module qualifier or destructuring import",
+                 typeNameText);
+    } else {
+        snprintf(errorBuffer,
+                 sizeof(errorBuffer),
+                 "Unqualified type name requires an explicit module qualifier or destructuring import");
+    }
+
+    ZrParser_Compiler_Error(cs, errorBuffer, location);
+    return ZR_FALSE;
+}
+
+static TZrBool compiler_type_requires_explicit_binding(SZrCompilerState *cs,
+                                                       const SZrType *typeInfo,
+                                                       SZrFileRange location) {
+    SZrString *headTypeName;
+    SZrTypePrototypeInfo *prototype;
+
+    if (cs == ZR_NULL || typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeInfo->isImplicitBuiltinType) {
+        return ZR_FALSE;
+    }
+
+    headTypeName = compiler_extract_unqualified_type_head_name(typeInfo);
+    if (headTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    prototype = find_compiler_type_prototype(cs, headTypeName);
+    if (prototype == ZR_NULL || prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
+        return ZR_FALSE;
+    }
+
+    if (type_name_is_explicitly_available_in_context_inference(cs, headTypeName)) {
+        return ZR_FALSE;
+    }
+
+    compiler_report_missing_explicit_type_binding(cs, headTypeName, location);
+    return ZR_TRUE;
+}
+
 SZrString *extract_generic_argument_name_string(SZrCompilerState *cs, SZrAstNode *node) {
     char buffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
     TZrSize offset = 0;
+    SZrInferredType inferredType;
 
     if (cs == ZR_NULL || node == ZR_NULL) {
         return ZR_NULL;
+    }
+
+    if (node->type == ZR_AST_TYPE) {
+        if (compiler_type_requires_explicit_binding(cs, &node->data.type, node->location)) {
+            return ZR_NULL;
+        }
+
+        if (node->data.type.name != ZR_NULL &&
+            (node->data.type.name->type == ZR_AST_IDENTIFIER_LITERAL ||
+             node->data.type.name->type == ZR_AST_GENERIC_TYPE ||
+             node->data.type.name->type == ZR_AST_TUPLE_TYPE)) {
+            SZrString *displayTypeName = extract_type_name_string(cs, &node->data.type);
+            if (displayTypeName != ZR_NULL) {
+                return displayTypeName;
+            }
+        }
+
+        ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_AstTypeToInferredType_Convert(cs, &node->data.type, &inferredType)) {
+            ZrParser_InferredType_Free(cs->state, &inferredType);
+            return ZR_NULL;
+        }
+
+        if (inferredType.typeName != ZR_NULL) {
+            SZrString *result = inferredType.typeName;
+            inferredType.typeName = ZR_NULL;
+            ZrParser_InferredType_Free(cs->state, &inferredType);
+            return result;
+        }
+
+        ZrParser_InferredType_Free(cs->state, &inferredType);
     }
 
     if (node->type != ZR_AST_TYPE) {
@@ -665,7 +795,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     if (field->isStatic && field->isUsingManaged) {
                         ZrParser_CompileTime_Error(cs,
                                            ZR_COMPILE_TIME_ERROR_ERROR,
-                                           "static using fields are not supported",
+                                           "static %using fields are not supported",
                                            member->location);
                         cs->currentTypeName = oldTypeName;
                         cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
@@ -730,12 +860,15 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 case ZR_AST_STRUCT_METHOD: {
                     SZrStructMethod *method = &member->data.structMethod;
                     TZrUInt32 compiledParameterCount = 0;
+                    SZrString *inferredReturnTypeName = ZR_NULL;
+                    SZrAstNode *previousFunctionNode = cs->currentFunctionNode;
                     memberInfo.accessModifier = method->access;
                     memberInfo.isStatic = method->isStatic;
                     memberInfo.receiverQualifier = method->receiverQualifier;
                     if (method->name != ZR_NULL) {
                         memberInfo.name = method->name->name;
                     }
+                    cs->currentFunctionNode = member;
                     // 处理返回类型信息
                     if (method->returnType != ZR_NULL) {
                         memberInfo.returnTypeName = extract_type_name_string(cs, method->returnType);
@@ -755,15 +888,22 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     // 实际的函数编译和引用索引设置需要在方法编译完成后进行
                     if (method->params != ZR_NULL) {
                         memberInfo.parameterCount = (TZrUInt32)method->params->count;
-                        compiler_struct_collect_parameter_types(cs, &memberInfo.parameterTypes, method->params);
+                        compiler_struct_collect_parameter_types(cs, &memberInfo.parameterTypes, method->params, member);
                         compiler_collect_parameter_passing_modes(cs->state,
                                                                  &memberInfo.parameterPassingModes,
                                                                  method->params);
                     }
+                    cs->currentFunctionNode = previousFunctionNode;
                     memberInfo.isMetaMethod = ZR_FALSE;
                     {
                         SZrFunction *compiledMethod =
-                                compile_class_member_function(cs, member, ZR_NULL, !method->isStatic, &compiledParameterCount);
+                                compile_class_member_function(cs,
+                                                              member,
+                                                              ZR_NULL,
+                                                              !method->isStatic,
+                                                              &compiledParameterCount,
+                                                              method->returnType == ZR_NULL ? &inferredReturnTypeName
+                                                                                            : ZR_NULL);
                         if (compiledMethod == ZR_NULL) {
                             cs->currentTypeName = oldTypeName;
                             cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
@@ -778,11 +918,16 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         memberInfo.compiledFunction = compiledMethod;
                         memberInfo.functionConstantIndex = add_constant(cs, &functionValue);
                     }
+                    if (memberInfo.returnTypeName == ZR_NULL && inferredReturnTypeName != ZR_NULL) {
+                        memberInfo.returnTypeName = inferredReturnTypeName;
+                    }
                     break;
                 }
                 case ZR_AST_STRUCT_META_FUNCTION: {
                     SZrStructMetaFunction *metaFunc = &member->data.structMetaFunction;
                     TZrUInt32 compiledParameterCount = 0;
+                    SZrString *inferredReturnTypeName = ZR_NULL;
+                    SZrAstNode *previousFunctionNode = cs->currentFunctionNode;
                     memberInfo.accessModifier = metaFunc->access;
                     memberInfo.isStatic = metaFunc->isStatic;
                     if (metaFunc->meta != ZR_NULL) {
@@ -790,6 +935,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         memberInfo.metaType = compiler_resolve_meta_type_name(metaFunc->meta->name);
                         memberInfo.isMetaMethod = memberInfo.metaType != ZR_META_ENUM_MAX;
                     }
+                    cs->currentFunctionNode = member;
                     // 处理返回类型信息
                     if (metaFunc->returnType != ZR_NULL) {
                         memberInfo.returnTypeName = extract_type_name_string(cs, metaFunc->returnType);
@@ -800,14 +946,23 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     // TODO: 需要将元方法编译为函数并存储函数引用索引
                     if (metaFunc->params != ZR_NULL) {
                         memberInfo.parameterCount = (TZrUInt32)metaFunc->params->count;
-                        compiler_struct_collect_parameter_types(cs, &memberInfo.parameterTypes, metaFunc->params);
+                        compiler_struct_collect_parameter_types(cs, &memberInfo.parameterTypes, metaFunc->params, member);
                         compiler_collect_parameter_passing_modes(cs->state,
                                                                  &memberInfo.parameterPassingModes,
                                                                  metaFunc->params);
                     }
+                    cs->currentFunctionNode = previousFunctionNode;
                     if (memberInfo.isMetaMethod) {
                         SZrFunction *compiledMeta =
-                                compile_class_member_function(cs, member, ZR_NULL, !metaFunc->isStatic, &compiledParameterCount);
+                                compile_class_member_function(cs,
+                                                              member,
+                                                              ZR_NULL,
+                                                              !metaFunc->isStatic,
+                                                              &compiledParameterCount,
+                                                              (metaFunc->returnType == ZR_NULL &&
+                                                               memberInfo.metaType != ZR_META_CONSTRUCTOR)
+                                                                      ? &inferredReturnTypeName
+                                                                      : ZR_NULL);
                         if (compiledMeta == ZR_NULL) {
                             cs->currentTypeName = oldTypeName;
                             cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
@@ -821,6 +976,9 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                                                      ZR_CAST_RAW_OBJECT_AS_SUPER(compiledMeta));
                         memberInfo.compiledFunction = compiledMeta;
                         memberInfo.functionConstantIndex = add_constant(cs, &functionValue);
+                    }
+                    if (memberInfo.returnTypeName == ZR_NULL && inferredReturnTypeName != ZR_NULL) {
+                        memberInfo.returnTypeName = inferredReturnTypeName;
                     }
                     break;
                 }

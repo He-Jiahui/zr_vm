@@ -629,11 +629,6 @@ SZrAstNode *parse_percent_ownership_expression(SZrParserState *ps) {
         builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_USING;
         ZrParser_Lexer_Next(ps->lexer);
     } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
-               zr_string_equals_literal(ps->lexer->t.seminfo.stringValue, "using")) {
-        isUsing = ZR_TRUE;
-        builtinKind = ZR_OWNERSHIP_BUILTIN_KIND_USING;
-        ZrParser_Lexer_Next(ps->lexer);
-    } else if (ps->lexer->t.token == ZR_TK_IDENTIFIER &&
                try_get_ownership_qualifier(ps->lexer->t.seminfo.stringValue, &ownershipQualifier)) {
         if (ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
             report_error(ps, "'%borrowed' is only valid in type and method-receiver positions");
@@ -734,6 +729,70 @@ SZrAstNode *parse_reserved_import_expression(SZrParserState *ps) {
     return node;
 }
 
+static TZrBool type_literal_probe_can_start(EZrToken token) {
+    return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST || token == ZR_TK_LBRACKET ||
+           token == ZR_TK_LPAREN || token == ZR_TK_PERCENT;
+}
+
+static TZrBool type_literal_probe_has_unambiguous_marker(const SZrType *typeInfo) {
+    if (typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE ||
+        typeInfo->dimensions > 0 ||
+        typeInfo->hasArraySizeConstraint) {
+        return ZR_TRUE;
+    }
+
+    if (typeInfo->name != ZR_NULL && typeInfo->name->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_TRUE;
+    }
+
+    return typeInfo->subType != ZR_NULL ? type_literal_probe_has_unambiguous_marker(typeInfo->subType) : ZR_FALSE;
+}
+
+static TZrBool type_literal_probe_is_terminator(EZrToken token) {
+    return token == ZR_TK_SEMICOLON || token == ZR_TK_COMMA || token == ZR_TK_RPAREN ||
+           token == ZR_TK_RBRACE || token == ZR_TK_RBRACKET || token == ZR_TK_EOS;
+}
+
+static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    SZrType *typeInfo;
+    SZrAstNode *node;
+    SZrFileRange startLoc;
+
+    if (ps == ZR_NULL || !type_literal_probe_can_start(ps->lexer->t.token)) {
+        return ZR_NULL;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    startLoc = get_current_location(ps);
+    typeInfo = parse_type(ps);
+    if (typeInfo == ZR_NULL ||
+        !type_literal_probe_has_unambiguous_marker(typeInfo) ||
+        !type_literal_probe_is_terminator(ps->lexer->t.token)) {
+        if (typeInfo != ZR_NULL) {
+            free_owned_type(ps->state, typeInfo);
+        }
+        restore_parser_cursor(ps, &cursor);
+        return ZR_NULL;
+    }
+
+    node = create_ast_node(ps,
+                           ZR_AST_TYPE_LITERAL_EXPRESSION,
+                           ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    if (node == ZR_NULL) {
+        free_owned_type(ps->state, typeInfo);
+        restore_parser_cursor(ps, &cursor);
+        return ZR_NULL;
+    }
+
+    node->data.typeLiteralExpression.typeInfo = typeInfo;
+    return node;
+}
+
 SZrAstNode *parse_reserved_type_expression(SZrParserState *ps) {
     SZrFileRange startLoc;
     SZrAstNode *operand;
@@ -756,9 +815,41 @@ SZrAstNode *parse_reserved_type_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    operand = parse_expression(ps);
+    operand = ZR_NULL;
+    if (type_literal_probe_can_start(ps->lexer->t.token)) {
+        operand = try_parse_unambiguous_type_literal_expression(ps);
+    }
+
+    if (operand == ZR_NULL &&
+        (ps->lexer->t.token == ZR_TK_PERCENT || ps->lexer->t.token == ZR_TK_LBRACKET ||
+         ps->lexer->t.token == ZR_TK_LPAREN)) {
+        SZrParserCursor cursor;
+        SZrType *parsedType = ZR_NULL;
+
+        save_parser_cursor(ps, &cursor);
+        parsedType = parse_type(ps);
+        if (parsedType != ZR_NULL && ps->lexer->t.token == ZR_TK_RPAREN) {
+            operand = create_ast_node(ps,
+                                      ZR_AST_TYPE_LITERAL_EXPRESSION,
+                                      ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+            if (operand == ZR_NULL) {
+                free_owned_type(ps->state, parsedType);
+                return ZR_NULL;
+            }
+            operand->data.typeLiteralExpression.typeInfo = parsedType;
+        } else {
+            if (parsedType != ZR_NULL) {
+                free_owned_type(ps->state, parsedType);
+            }
+            restore_parser_cursor(ps, &cursor);
+        }
+    }
+
     if (operand == ZR_NULL) {
-        return ZR_NULL;
+        operand = parse_expression(ps);
+        if (operand == ZR_NULL) {
+            return ZR_NULL;
+        }
     }
 
     expect_token(ps, ZR_TK_RPAREN);
@@ -1063,6 +1154,13 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
     SZrAstNode *base = ZR_NULL;
 
+    if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
+        base = try_parse_unambiguous_type_literal_expression(ps);
+        if (base != ZR_NULL) {
+            return parse_member_access(ps, base);
+        }
+    }
+
     // 字面量
     if (token == ZR_TK_BOOLEAN || token == ZR_TK_INTEGER || token == ZR_TK_FLOAT || token == ZR_TK_STRING ||
         token == ZR_TK_TEMPLATE_STRING || token == ZR_TK_CHAR || token == ZR_TK_NULL || token == ZR_TK_INFINITY ||
@@ -1074,6 +1172,17 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
         base = parse_identifier(ps);
         // 标识符解析后，需要继续解析可能的成员访问和函数调用
         // 这将在函数末尾统一处理
+    }
+    // super 关键字在表达式上下文中作为一个显式基类接收器使用
+    else if (token == ZR_TK_SUPER) {
+        SZrFileRange superLoc = get_current_token_location(ps);
+        SZrString *superName = ZrCore_String_Create(ps->state, "super", 5);
+        if (superName == ZR_NULL) {
+            report_error(ps, "Failed to allocate 'super' identifier");
+            return ZR_NULL;
+        }
+        base = create_identifier_node_with_location(ps, superName, superLoc);
+        ZrParser_Lexer_Next(ps->lexer);
     }
     // 数组字面量
     else if (token == ZR_TK_LBRACKET) {

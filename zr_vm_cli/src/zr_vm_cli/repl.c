@@ -6,6 +6,7 @@
 
 #include "zr_vm_cli/conf.h"
 #include "zr_vm_cli/project.h"
+#include "zr_vm_cli/runtime.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
@@ -16,6 +17,18 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/native_registry.h"
 #include "zr_vm_parser/compiler.h"
+
+static void zr_cli_repl_prepare_stdio(void) {
+    static TZrBool prepared = ZR_FALSE;
+
+    if (prepared) {
+        return;
+    }
+
+    (void)setvbuf(stdout, ZR_NULL, _IONBF, 0);
+    (void)setvbuf(stderr, ZR_NULL, _IONBF, 0);
+    prepared = ZR_TRUE;
+}
 
 static void zr_cli_repl_write_help(void) {
     ZrCore_Log_Helpf(ZR_NULL,
@@ -110,6 +123,9 @@ static int zr_cli_repl_submit(const TZrChar *code) {
     SZrTypeValue *closureValue;
     SZrTypeValue result;
     SZrString *resultString;
+    TZrBool ignoredFunction = ZR_FALSE;
+    TZrBool ignoredClosure = ZR_FALSE;
+    int exitCode = 1;
 
     if (code == ZR_NULL || code[0] == '\0') {
         return 0;
@@ -128,6 +144,12 @@ static int zr_cli_repl_submit(const TZrChar *code) {
     }
 
     state = global->mainThreadState;
+    if (!ZrCli_Runtime_InjectProcessArguments(state, "<repl>", ZR_NULL, 0)) {
+        ZrCore_Log_Error(state, "failed to initialize REPL process arguments\n");
+        zr_cli_repl_free_global(global);
+        return 1;
+    }
+
     sourceName = ZrCore_String_CreateFromNative(state, "<repl>");
     function = ZrParser_Source_Compile(state, code, strlen(code), sourceName);
     if (function == ZR_NULL) {
@@ -137,11 +159,12 @@ static int zr_cli_repl_submit(const TZrChar *code) {
 
     closure = ZrCore_Closure_New(state, 0);
     if (closure == ZR_NULL) {
-        ZrCore_Function_Free(state, function);
         zr_cli_repl_free_global(global);
         return 1;
     }
 
+    ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    ignoredClosure = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closure->function = function;
     ZrCore_Closure_InitValue(state, closure);
 
@@ -154,9 +177,7 @@ static int zr_cli_repl_submit(const TZrChar *code) {
     closureValue->isNative = ZR_FALSE;
     state->stackTop.valuePointer = callBase + 1;
     if (!zr_cli_repl_execute(state, callBase, &result)) {
-        ZrCore_Function_Free(state, function);
-        zr_cli_repl_free_global(global);
-        return 1;
+        goto zr_cli_repl_cleanup;
     }
 
     resultString = ZrCore_Value_ConvertToString(state, &result);
@@ -166,9 +187,20 @@ static int zr_cli_repl_submit(const TZrChar *code) {
         ZrCore_Log_Error(state, "failed to stringify REPL result\n");
     }
 
-    ZrCore_Function_Free(state, function);
+    exitCode = 0;
+
+zr_cli_repl_cleanup:
+    if (closure != ZR_NULL) {
+        closure->function = ZR_NULL;
+    }
+    if (ignoredClosure) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    }
+    if (ignoredFunction) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    }
     zr_cli_repl_free_global(global);
-    return 0;
+    return exitCode;
 }
 
 int ZrCli_Repl_Run(void) {
@@ -177,13 +209,21 @@ int ZrCli_Repl_Run(void) {
     TZrSize bufferLength = 0;
     TZrSize bufferCapacity = 0;
 
+    zr_cli_repl_prepare_stdio();
     ZrCore_Log_Helpf(ZR_NULL,
                      "ZR VM REPL\n"
                      "Enter code, then submit with an empty line. Type :help for commands.\n");
+    ZrCore_Log_FlushDefaultSinks();
 
-    while (fgets(line, sizeof(line), stdin) != ZR_NULL) {
-        TZrSize lineLength = strlen(line);
+    for (;;) {
+        TZrSize lineLength;
 
+        ZrCore_Log_FlushDefaultSinks();
+        if (fgets(line, sizeof(line), stdin) == ZR_NULL) {
+            break;
+        }
+
+        lineLength = strlen(line);
         while (lineLength > 0 && (line[lineLength - 1] == '\n' || line[lineLength - 1] == '\r')) {
             line[--lineLength] = '\0';
         }
@@ -192,6 +232,7 @@ int ZrCli_Repl_Run(void) {
             if (strcmp(line, ":help") == 0) {
                 zr_cli_repl_write_help();
             } else if (strcmp(line, ":quit") == 0) {
+                ZrCore_Log_FlushDefaultSinks();
                 free(buffer);
                 return 0;
             } else if (strcmp(line, ":reset") == 0) {
@@ -202,6 +243,7 @@ int ZrCli_Repl_Run(void) {
             } else {
                 ZrCore_Log_Error(ZR_NULL, "unknown REPL command: %s\n", line);
             }
+            ZrCore_Log_FlushDefaultSinks();
             continue;
         }
 
@@ -212,6 +254,7 @@ int ZrCli_Repl_Run(void) {
                 if (buffer != ZR_NULL) {
                     buffer[0] = '\0';
                 }
+                ZrCore_Log_FlushDefaultSinks();
             }
             continue;
         }
@@ -242,6 +285,7 @@ int ZrCli_Repl_Run(void) {
         buffer[bufferLength] = '\0';
     }
 
+    ZrCore_Log_FlushDefaultSinks();
     free(buffer);
     return 0;
 }

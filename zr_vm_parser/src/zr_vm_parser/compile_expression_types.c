@@ -5,6 +5,28 @@
 #include "compile_expression_internal.h"
 #include "type_inference_internal.h"
 
+static SZrTypePrototypeInfo *find_registered_type_prototype_exact_only(SZrCompilerState *cs,
+                                                                       SZrString *typeName) {
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
+        SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
+        if (info != ZR_NULL && info->name != ZR_NULL && ZrCore_String_Equal(info->name, typeName)) {
+            return info;
+        }
+    }
+
+    if (cs->currentTypePrototypeInfo != ZR_NULL &&
+        cs->currentTypePrototypeInfo->name != ZR_NULL &&
+        ZrCore_String_Equal(cs->currentTypePrototypeInfo->name, typeName)) {
+        return cs->currentTypePrototypeInfo;
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool compile_inferred_type_is_task_handle(const SZrInferredType *type) {
     const TZrChar *typeName;
 
@@ -22,7 +44,10 @@ static TZrBool compile_inferred_type_is_task_handle(const SZrInferredType *type)
         return ZR_FALSE;
     }
 
-    return strcmp(typeName, "Task") == 0 || strncmp(typeName, "Task<", 5) == 0;
+    return strcmp(typeName, "Task") == 0 ||
+           strncmp(typeName, "Task<", 5) == 0 ||
+           strcmp(typeName, "zr.task.Task") == 0 ||
+           strncmp(typeName, "zr.task.Task<", 13) == 0;
 }
 
 static void compile_expression_ensure_imported_module_runtime_metadata(SZrCompilerState *cs, SZrString *moduleName) {
@@ -30,58 +55,98 @@ static void compile_expression_ensure_imported_module_runtime_metadata(SZrCompil
         return;
     }
 
-    if (find_compiler_type_prototype(cs, moduleName) == ZR_NULL) {
+    ensure_builtin_reflection_compile_type(cs, moduleName);
+    if (find_registered_type_prototype_exact_only(cs, moduleName) == ZR_NULL) {
         ensure_import_module_compile_info(cs, moduleName);
     }
 }
 
+static SZrAstNode *find_type_declaration_in_array(SZrAstNodeArray *declarations, SZrString *typeName) {
+    if (declarations == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < declarations->count; index++) {
+        SZrAstNode *declaration = declarations->nodes[index];
+
+        if (declaration == ZR_NULL) {
+            continue;
+        }
+
+        switch (declaration->type) {
+            case ZR_AST_STRUCT_DECLARATION:
+                if (declaration->data.structDeclaration.name != ZR_NULL &&
+                    declaration->data.structDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.structDeclaration.name->name, typeName)) {
+                    return declaration;
+                }
+                break;
+
+            case ZR_AST_CLASS_DECLARATION:
+                if (declaration->data.classDeclaration.name != ZR_NULL &&
+                    declaration->data.classDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.classDeclaration.name->name, typeName)) {
+                    return declaration;
+                }
+                break;
+
+            case ZR_AST_INTERFACE_DECLARATION:
+                if (declaration->data.interfaceDeclaration.name != ZR_NULL &&
+                    declaration->data.interfaceDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.interfaceDeclaration.name->name, typeName)) {
+                    return declaration;
+                }
+                break;
+
+            case ZR_AST_ENUM_DECLARATION:
+                if (declaration->data.enumDeclaration.name != ZR_NULL &&
+                    declaration->data.enumDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.enumDeclaration.name->name, typeName)) {
+                    return declaration;
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeName) {
+    SZrAstNode *match;
+
     if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
     }
-    
+
     if (cs->scriptAst->type != ZR_AST_SCRIPT) {
         return ZR_NULL;
     }
-    
+
     SZrScript *script = &cs->scriptAst->data.script;
     if (script->statements == ZR_NULL) {
         return ZR_NULL;
     }
-    
-    // 遍历顶层语句，查找 struct / class / interface 声明
-    for (TZrSize i = 0; i < script->statements->count; i++) {
-        SZrAstNode *stmt = script->statements->nodes[i];
-        if (stmt == ZR_NULL) {
+
+    match = find_type_declaration_in_array(script->statements, typeName);
+    if (match != ZR_NULL) {
+        return match;
+    }
+
+    for (TZrSize index = 0; index < script->statements->count; index++) {
+        SZrAstNode *statement = script->statements->nodes[index];
+
+        if (statement == ZR_NULL) {
             continue;
         }
-        
-        // 检查是否是 struct 声明
-        if (stmt->type == ZR_AST_STRUCT_DECLARATION) {
-            SZrIdentifier *structName = stmt->data.structDeclaration.name;
-            if (structName != ZR_NULL && structName->name != ZR_NULL) {
-                if (ZrCore_String_Equal(structName->name, typeName)) {
-                    return stmt;
-                }
-            }
-        }
-        
-        // 检查是否是 class 声明
-        if (stmt->type == ZR_AST_CLASS_DECLARATION) {
-            SZrIdentifier *className = stmt->data.classDeclaration.name;
-            if (className != ZR_NULL && className->name != ZR_NULL) {
-                if (ZrCore_String_Equal(className->name, typeName)) {
-                    return stmt;
-                }
-            }
-        }
 
-        if (stmt->type == ZR_AST_INTERFACE_DECLARATION) {
-            SZrIdentifier *interfaceName = stmt->data.interfaceDeclaration.name;
-            if (interfaceName != ZR_NULL && interfaceName->name != ZR_NULL) {
-                if (ZrCore_String_Equal(interfaceName->name, typeName)) {
-                    return stmt;
-                }
+        if (statement->type == ZR_AST_EXTERN_BLOCK &&
+            statement->data.externBlock.declarations != ZR_NULL) {
+            match = find_type_declaration_in_array(statement->data.externBlock.declarations, typeName);
+            if (match != ZR_NULL) {
+                return match;
             }
         }
     }
@@ -178,6 +243,8 @@ TZrBool find_type_member_is_const(SZrCompilerState *cs, SZrString *typeName, SZr
 
 SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName) {
     SZrTypePrototypeInfo *info;
+    const TZrChar *typeNameText;
+    const TZrChar *lastDot;
 
     if (cs == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
@@ -202,6 +269,52 @@ SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrStri
             info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, i);
             if (info != ZR_NULL && info->name != ZR_NULL && ZrCore_String_Equal(info->name, typeName)) {
                 return info;
+            }
+        }
+    }
+
+    typeNameText = ZrCore_String_GetNativeString(typeName);
+    lastDot = typeNameText != ZR_NULL ? strrchr(typeNameText, '.') : ZR_NULL;
+    if (lastDot != ZR_NULL && lastDot > typeNameText && lastDot[1] != '\0') {
+        SZrString *moduleName =
+                ZrCore_String_Create(cs->state, (TZrNativeString)typeNameText, (TZrSize)(lastDot - typeNameText));
+        SZrString *memberName = ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)(lastDot + 1));
+        SZrTypePrototypeInfo *moduleInfo = ZR_NULL;
+
+        if (moduleName != ZR_NULL && memberName != ZR_NULL) {
+            for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
+                info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, i);
+                if (info != ZR_NULL && info->name != ZR_NULL && ZrCore_String_Equal(info->name, moduleName)) {
+                    moduleInfo = info;
+                    break;
+                }
+            }
+            if (moduleInfo == ZR_NULL && ensure_import_module_compile_info(cs, moduleName)) {
+                for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
+                    info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, i);
+                    if (info != ZR_NULL && info->name != ZR_NULL && ZrCore_String_Equal(info->name, moduleName)) {
+                        moduleInfo = info;
+                        break;
+                    }
+                }
+            }
+            if (moduleInfo == ZR_NULL &&
+                cs->currentTypePrototypeInfo != ZR_NULL &&
+                cs->currentTypePrototypeInfo->name != ZR_NULL &&
+                ZrCore_String_Equal(cs->currentTypePrototypeInfo->name, moduleName)) {
+                moduleInfo = cs->currentTypePrototypeInfo;
+            }
+        }
+
+        if (moduleInfo != ZR_NULL && moduleInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
+            for (TZrSize memberIndex = 0; memberIndex < moduleInfo->members.length; memberIndex++) {
+                SZrTypeMemberInfo *memberInfo =
+                        (SZrTypeMemberInfo *)ZrCore_Array_Get(&moduleInfo->members, memberIndex);
+                if (memberInfo != ZR_NULL && memberInfo->name != ZR_NULL &&
+                    memberInfo->fieldTypeName != ZR_NULL &&
+                    ZrCore_String_Equal(memberInfo->name, memberName)) {
+                    return find_compiler_type_prototype(cs, memberInfo->fieldTypeName);
+                }
             }
         }
     }
@@ -383,7 +496,6 @@ static TZrBool resolve_member_segment_names(SZrCompilerState *cs,
 
     if (propertyNode->type == ZR_AST_TYPE) {
         SZrType *propertyType = &propertyNode->data.type;
-        SZrInferredType inferredType;
 
         if (propertyType->name == ZR_NULL) {
             return ZR_FALSE;
@@ -400,14 +512,7 @@ static TZrBool resolve_member_segment_names(SZrCompilerState *cs,
             return ZR_FALSE;
         }
 
-        ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-        if (!ZrParser_AstTypeToInferredType_Convert(cs, propertyType, &inferredType)) {
-            ZrParser_InferredType_Free(cs->state, &inferredType);
-            return ZR_FALSE;
-        }
-
-        *outResolvedTypeName = inferredType.typeName;
-        ZrParser_InferredType_Free(cs->state, &inferredType);
+        *outResolvedTypeName = extract_type_name_string(cs, propertyType);
         return *outResolvedTypeName != ZR_NULL;
     }
 
@@ -754,7 +859,9 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
         }
         allowValueConstruction = prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INVALID &&
                                  prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE &&
-                                 prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
+                                 prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_MODULE &&
+                                 (typeDecl == ZR_NULL || typeDecl->type != ZR_AST_CLASS_DECLARATION ||
+                                  (typeDecl->data.classDeclaration.modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) == 0);
         allowBoxedConstruction = allowValueConstruction;
     }
 
@@ -771,7 +878,15 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
     }
 
     if (strcmp(op, "new") == 0 && !allowBoxedConstruction) {
-        ZrParser_Compiler_Error(cs, "Prototype does not allow boxed construction", location);
+        if (prototypeInfo != ZR_NULL &&
+            (prototypeInfo->modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) != 0) {
+            ZrParser_Compiler_Error(cs, "Abstract classes cannot be constructed", location);
+        } else if (typeDecl != ZR_NULL && typeDecl->type == ZR_AST_CLASS_DECLARATION &&
+                   (typeDecl->data.classDeclaration.modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) != 0) {
+            ZrParser_Compiler_Error(cs, "Abstract classes cannot be constructed", location);
+        } else {
+            ZrParser_Compiler_Error(cs, "Prototype does not allow boxed construction", location);
+        }
         return ZR_PARSER_SLOT_NONE;
     }
 
@@ -843,6 +958,15 @@ static TZrBool member_call_requires_bound_receiver(const SZrTypeMemberInfo *memb
     }
 
     return memberInfo->memberType == ZR_AST_STRUCT_METHOD || memberInfo->memberType == ZR_AST_CLASS_METHOD;
+}
+
+static TZrUInt32 primary_member_chain_direct_local_slot(SZrCompilerState *cs, SZrAstNode *propertyNode) {
+    if (cs == ZR_NULL || propertyNode == ZR_NULL || propertyNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+        propertyNode->data.identifier.name == ZR_NULL) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    return find_local_var(cs, propertyNode->data.identifier.name);
 }
 
 static TZrBool emit_argument_conversion_if_needed(SZrCompilerState *cs,
@@ -1353,15 +1477,19 @@ static TZrBool compile_arguments_against_function_resolved_signature(SZrCompiler
 void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode, SZrAstNodeArray *members,
                                          TZrSize memberStartIndex, TZrUInt32 *ioCurrentSlot,
                                          SZrString **ioRootTypeName, TZrBool *ioRootIsTypeReference,
-                                         EZrOwnershipQualifier *ioRootOwnershipQualifier) {
+                                         EZrOwnershipQualifier *ioRootOwnershipQualifier,
+                                         TZrBool rootUsesSuperLookup,
+                                         TZrUInt32 superReceiverSlot) {
     TZrUInt32 currentSlot;
     TZrUInt32 pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
     SZrString *pendingCallResultTypeName = ZR_NULL;
     const SZrTypeMemberInfo *pendingCallMemberInfo = ZR_NULL;
     SZrString *rootTypeName = ioRootTypeName != ZR_NULL ? *ioRootTypeName : ZR_NULL;
     TZrBool rootIsTypeReference = ioRootIsTypeReference != ZR_NULL ? *ioRootIsTypeReference : ZR_FALSE;
     EZrOwnershipQualifier rootOwnershipQualifier =
             ioRootOwnershipQualifier != ZR_NULL ? *ioRootOwnershipQualifier : ZR_OWNERSHIP_QUALIFIER_NONE;
+    TZrBool superLookupActive = rootUsesSuperLookup ? ZR_TRUE : ZR_FALSE;
 
     if (cs == ZR_NULL || ioCurrentSlot == ZR_NULL || members == ZR_NULL || cs->hasError) {
         return;
@@ -1385,6 +1513,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     (i + 1 < members->count &&
                      members->nodes[i + 1] != ZR_NULL &&
                      members->nodes[i + 1]->type == ZR_AST_FUNCTION_CALL);
+            TZrBool memberUsesSuperLookup = superLookupActive && i == memberStartIndex;
 
             if (!memberExpr->computed && memberExpr->property != ZR_NULL &&
                 memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
@@ -1397,6 +1526,12 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     isStaticMember = ZR_TRUE;
                 }
                 bindReceiverForCall = member_call_requires_bound_receiver(typeMember);
+                if (memberUsesSuperLookup &&
+                    typeMember != ZR_NULL &&
+                    typeMember->isMetaMethod &&
+                    typeMember->metaType != ZR_META_CONSTRUCTOR) {
+                    bindReceiverForCall = ZR_TRUE;
+                }
                 pendingCallResultTypeName =
                         nextIsFunctionCall && typeMember != ZR_NULL ? typeMember->returnTypeName : ZR_NULL;
                 pendingCallMemberInfo = nextIsFunctionCall ? typeMember : ZR_NULL;
@@ -1409,16 +1544,30 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
 
             if (memberExpr->property != ZR_NULL) {
                 if (getterAccessor != ZR_NULL && memberName != ZR_NULL && !memberExpr->computed) {
-                    if (!emit_property_getter_call(cs, currentSlot, memberName, getterAccessor->isStatic,
-                                                   member->location)) {
-                        return;
+                    if (memberUsesSuperLookup) {
+                        if (!emit_super_accessor_call_from_prototype(cs,
+                                                                     currentSlot,
+                                                                     superReceiverSlot,
+                                                                     getterAccessor->name,
+                                                                     ZR_NULL,
+                                                                     0,
+                                                                     member->location)) {
+                            return;
+                        }
+                    } else {
+                        if (!emit_property_getter_call(cs, currentSlot, memberName, getterAccessor->isStatic,
+                                                       member->location)) {
+                            return;
+                        }
                     }
                     pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
+                    pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
                     rootTypeName = getterAccessor->returnTypeName;
                     rootIsTypeReference = getterAccessor->isStatic &&
                                           rootTypeName != ZR_NULL &&
                                           type_name_is_registered_prototype(cs, rootTypeName);
                     rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                    superLookupActive = ZR_FALSE;
                 } else {
                     if (nextIsFunctionCall && typeMember != ZR_NULL && !typeMember->isStatic &&
                         !receiver_ownership_can_call_member_local(rootOwnershipQualifier,
@@ -1430,28 +1579,67 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     }
 
                     if (nextIsFunctionCall && bindReceiverForCall) {
+                        TZrUInt32 receiverSourceSlot = currentSlot;
                         pendingReceiverSlot = allocate_stack_slot(cs);
+
+                        pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
+                        if (memberUsesSuperLookup) {
+                            receiverSourceSlot = superReceiverSlot;
+                        } else if (typeMember != ZR_NULL &&
+                            typeMember->memberType == ZR_AST_STRUCT_METHOD &&
+                            i == memberStartIndex) {
+                            TZrUInt32 directLocalSlot = primary_member_chain_direct_local_slot(cs, propertyNode);
+                            if (directLocalSlot != ZR_PARSER_SLOT_NONE) {
+                                receiverSourceSlot = directLocalSlot;
+                                pendingReceiverWritebackSlot = directLocalSlot;
+                            }
+                        }
+
                         emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                                                   (TZrUInt16)pendingReceiverSlot,
-                                                                  (TZrInt32)currentSlot));
+                                                                  (TZrInt32)receiverSourceSlot));
                     } else {
                         pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
+                        pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
                     }
 
                     if (!memberExpr->computed) {
                         SZrString *memberSymbol = resolve_member_expression_symbol(cs, memberExpr);
-                        TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, memberSymbol);
-                        if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
-                            ZrParser_Compiler_Error(cs, "Failed to register member access symbol", member->location);
+                        if (memberUsesSuperLookup &&
+                            typeMember != ZR_NULL &&
+                            typeMember->isMetaMethod &&
+                            typeMember->metaType != ZR_META_CONSTRUCTOR) {
+                            if (!nextIsFunctionCall) {
+                                ZrParser_Compiler_Error(cs,
+                                                        "super meta members must be invoked as calls",
+                                                        member->location);
+                                return;
+                            }
+                            if (!emit_member_function_constant_to_slot(cs, currentSlot, typeMember, member->location)) {
+                                return;
+                            }
+                        } else {
+                            TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, memberSymbol);
+                            if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
+                                ZrParser_Compiler_Error(cs,
+                                                        "Failed to register member access symbol",
+                                                        member->location);
+                                return;
+                            }
+
+                            emit_instruction(cs,
+                                             create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                                                                  (TZrUInt16)currentSlot,
+                                                                  (TZrUInt16)currentSlot,
+                                                                  (TZrUInt16)memberId));
+                        }
+                    } else {
+                        if (memberUsesSuperLookup) {
+                            ZrParser_Compiler_Error(cs,
+                                                    "super only supports direct member names, not computed member access",
+                                                    member->location);
                             return;
                         }
-
-                        emit_instruction(cs,
-                                         create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
-                                                              (TZrUInt16)currentSlot,
-                                                              (TZrUInt16)currentSlot,
-                                                              (TZrUInt16)memberId));
-                    } else {
                         TZrUInt32 keyTargetSlot =
                                 (pendingReceiverSlot != ZR_PARSER_SLOT_NONE) ? currentSlot + 2 : currentSlot + 1;
                         TZrUInt32 keySlot = compile_member_key_into_slot(cs, memberExpr, keyTargetSlot);
@@ -1486,6 +1674,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
                         rootIsTypeReference = ZR_FALSE;
                     }
+                    superLookupActive = ZR_FALSE;
                 }
             }
         } else if (member->type == ZR_AST_FUNCTION_CALL) {
@@ -1689,8 +1878,16 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                       (TZrUInt16)currentSlot,
                                                       (TZrUInt16)argCount));
             }
+            if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
+                pendingReceiverWritebackSlot != ZR_PARSER_SLOT_NONE) {
+                emit_instruction(cs,
+                                 create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                                      (TZrUInt16)pendingReceiverWritebackSlot,
+                                                      (TZrInt32)pendingReceiverSlot));
+            }
             collapse_stack_to_slot(cs, currentSlot);
             pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
+            pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
             if (hasResolvedMemberSignature) {
                 rootTypeName = get_type_name_from_inferred_type(cs, &resolvedMemberSignature.returnType);
             } else if (hasResolvedFunctionSignature) {

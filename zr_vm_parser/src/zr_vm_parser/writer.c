@@ -842,6 +842,10 @@ static void write_function_typed_export_symbols(FILE *file, SZrState *state, SZr
         fwrite(&symbol->stackSlot, sizeof(TZrUInt32), 1, file);
         fwrite(&symbol->accessModifier, sizeof(TZrUInt8), 1, file);
         fwrite(&symbol->symbolKind, sizeof(TZrUInt8), 1, file);
+        fwrite(&symbol->exportKind, sizeof(TZrUInt8), 1, file);
+        fwrite(&symbol->readiness, sizeof(TZrUInt8), 1, file);
+        fwrite(&symbol->reserved0, sizeof(TZrUInt16), 1, file);
+        fwrite(&symbol->callableChildIndex, sizeof(TZrUInt32), 1, file);
         write_function_typed_type_ref(file, state, &symbol->valueType);
         fwrite(&parameterCount, sizeof(TZrUInt64), 1, file);
         for (TZrUInt64 paramIndex = 0; paramIndex < parameterCount; paramIndex++) {
@@ -853,6 +857,93 @@ static void write_function_typed_export_symbols(FILE *file, SZrState *state, SZr
         fwrite(&symbol->columnInSourceStart, sizeof(TZrUInt32), 1, file);
         fwrite(&symbol->lineInSourceEnd, sizeof(TZrUInt32), 1, file);
         fwrite(&symbol->columnInSourceEnd, sizeof(TZrUInt32), 1, file);
+    }
+}
+
+static void write_function_module_effect(FILE *file, SZrState *state, const SZrFunctionModuleEffect *effect) {
+    TZrUInt8 kind = 0;
+    TZrUInt8 exportKind = 0;
+    TZrUInt8 readiness = 0;
+    TZrUInt8 reserved0 = 0;
+    TZrUInt32 lineInSourceStart = 0;
+    TZrUInt32 columnInSourceStart = 0;
+    TZrUInt32 lineInSourceEnd = 0;
+    TZrUInt32 columnInSourceEnd = 0;
+
+    if (effect != ZR_NULL) {
+        kind = effect->kind;
+        exportKind = effect->exportKind;
+        readiness = effect->readiness;
+        reserved0 = effect->reserved0;
+        lineInSourceStart = effect->lineInSourceStart;
+        columnInSourceStart = effect->columnInSourceStart;
+        lineInSourceEnd = effect->lineInSourceEnd;
+        columnInSourceEnd = effect->columnInSourceEnd;
+    }
+
+    fwrite(&kind, sizeof(TZrUInt8), 1, file);
+    fwrite(&exportKind, sizeof(TZrUInt8), 1, file);
+    fwrite(&readiness, sizeof(TZrUInt8), 1, file);
+    fwrite(&reserved0, sizeof(TZrUInt8), 1, file);
+    write_string_with_length(state, file, effect != ZR_NULL ? effect->moduleName : ZR_NULL);
+    write_string_with_length(state, file, effect != ZR_NULL ? effect->symbolName : ZR_NULL);
+    fwrite(&lineInSourceStart, sizeof(TZrUInt32), 1, file);
+    fwrite(&columnInSourceStart, sizeof(TZrUInt32), 1, file);
+    fwrite(&lineInSourceEnd, sizeof(TZrUInt32), 1, file);
+    fwrite(&columnInSourceEnd, sizeof(TZrUInt32), 1, file);
+}
+
+static void write_function_static_imports(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 importCount = function != ZR_NULL ? function->staticImportLength : 0;
+
+    fwrite(&importCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < importCount; index++) {
+        write_string_with_length(state, file, function->staticImports[index]);
+    }
+}
+
+static void write_function_module_entry_effects(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 effectCount = function != ZR_NULL ? function->moduleEntryEffectLength : 0;
+
+    fwrite(&effectCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < effectCount; index++) {
+        write_function_module_effect(file, state, &function->moduleEntryEffects[index]);
+    }
+}
+
+static void write_function_exported_callable_summaries(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 summaryCount = function != ZR_NULL ? function->exportedCallableSummaryLength : 0;
+
+    fwrite(&summaryCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < summaryCount; index++) {
+        const SZrFunctionCallableSummary *summary = &function->exportedCallableSummaries[index];
+        TZrUInt64 effectCount = summary->effectCount;
+
+        write_string_with_length(state, file, summary->name);
+        fwrite(&summary->callableChildIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&effectCount, sizeof(TZrUInt64), 1, file);
+        for (TZrUInt64 effectIndex = 0; effectIndex < effectCount; effectIndex++) {
+            const SZrFunctionModuleEffect *effect =
+                    summary->effects != ZR_NULL ? &summary->effects[effectIndex] : ZR_NULL;
+            write_function_module_effect(file, state, effect);
+        }
+    }
+}
+
+static void write_function_top_level_callable_bindings(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 bindingCount = function != ZR_NULL ? function->topLevelCallableBindingLength : 0;
+
+    fwrite(&bindingCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < bindingCount; index++) {
+        const SZrFunctionTopLevelCallableBinding *binding = &function->topLevelCallableBindings[index];
+
+        write_string_with_length(state, file, binding->name);
+        fwrite(&binding->stackSlot, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->callableChildIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->accessModifier, sizeof(TZrUInt8), 1, file);
+        fwrite(&binding->exportKind, sizeof(TZrUInt8), 1, file);
+        fwrite(&binding->readiness, sizeof(TZrUInt8), 1, file);
+        fwrite(&binding->reserved0, sizeof(TZrUInt8), 1, file);
     }
 }
 
@@ -1243,11 +1334,19 @@ static TZrBool write_io_function_internal(SZrState *state,
             write_string_with_length(state, file, exported->name);
             fwrite(&exported->stackSlot, sizeof(TZrUInt32), 1, file);
             fwrite(&exported->accessModifier, sizeof(TZrUInt8), 1, file);
+            fwrite(&exported->exportKind, sizeof(TZrUInt8), 1, file);
+            fwrite(&exported->readiness, sizeof(TZrUInt8), 1, file);
+            fwrite(&exported->reserved0, sizeof(TZrUInt8), 1, file);
+            fwrite(&exported->callableChildIndex, sizeof(TZrUInt32), 1, file);
         }
     }
 
     write_function_typed_local_bindings(file, state, function);
     write_function_typed_export_symbols(file, state, function);
+    write_function_static_imports(file, state, function);
+    write_function_module_entry_effects(file, state, function);
+    write_function_exported_callable_summaries(file, state, function);
+    write_function_top_level_callable_bindings(file, state, function);
     if (!write_function_parameter_metadata(file, state, function)) {
         return ZR_FALSE;
     }

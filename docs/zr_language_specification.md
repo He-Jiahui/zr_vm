@@ -111,7 +111,8 @@
 #### 其他操作符
 - `?` - 三元运算符
 - `:` - 类型注解、三元运算符
-- `=>` - 箭头函数
+- `->` - 规范 callable 箭头（lambda / `%func` / 返回类型展示）
+- `=>` - 兼容箭头输入（语义等同于 `->`）
 - `...` - 可变参数、展开操作符
 - `.` - 成员访问
 - `@` - 元函数标识符
@@ -210,6 +211,11 @@ functionName(param1: Type, param2: Type): ReturnType {
     // body
 }
 
+// func 关键字可选兼容
+func functionName(param1: Type, param2: Type): ReturnType {
+    // body
+}
+
 // const 参数（函数内部不会修改该参数）
 functionName(const param: Type) {
     // body
@@ -226,19 +232,35 @@ functionName(param1: Type, ...args: Type[]) {
 }
 
 // Lambda 表达式
-var func = (param1, param2) => {
+var func = (param1, param2)->{
     // body
 };
 
-var func = (param1: Type, param2: Type): ReturnType => {
+var func = (param1: Type, param2: Type): ReturnType -> {
     // body
 };
+
+// 兼容写法，parser 也接受 =>
+var compat = (param1: Type, param2: Type): ReturnType => {
+    // body
+};
+
+// %async 返回类型两种写法都兼容，规范展示优先 %async T
+%async addOne(value: int): %async int {
+    return value + 1;
+}
+
+%async run(): int {
+    return %await addOne(4);
+}
 ```
 
 **说明**:
 - 支持函数重载
 - 支持可变参数（`...args`）
 - Lambda 表达式支持类型推断
+- `func` 关键字保持兼容，但不是强制关键字
+- `->` 是正式箭头；`=>` 只作为兼容输入
 
 ### 2.4 结构体 (struct)
 
@@ -726,6 +748,8 @@ class MyClass {
 ### 2.16 类型注解
 
 ```zr
+// v2 统一语法：前缀修饰 + 主类型 + 后缀修饰
+
 // 基本类型
 var name: Type;
 
@@ -749,7 +773,32 @@ var name: Generic<Type>;
 
 // 嵌套类型
 var name: Outer<Inner<Type>>;
+
+// async 类型糖，规范展示优先 %async T
+var runner: %async int;
+
+// 显式函数类型
+var mapper: %func(int)->int;
+var compatMapper: %func(int)=>int;
+
+// 组合类型
+var callbacks: %shared (%func(int)->string)[];
+
+// 类型对象化和 %type
+var callableType = %type(%func(int)->int);
+
+// 类型值别名复用普通绑定模型
+var F = %func(int)->int;
+var callback: F = (x: int)->{
+    return x;
+};
 ```
+
+**说明**:
+- 类型位统一按“前缀 `%` 保留字修饰 + 主类型 + 后缀修饰”解析。
+- `%func(...) -> ReturnType` 是正式函数类型写法；`=>` 仅作兼容输入。
+- 任意编译期可折叠且冻结的 `Type` 值都可进入类型位置，因此 `var F = %func(int)->int; var c: F = ...;` 合法。
+- `%type(...)` 同时接受 `TypeExpr` 与普通表达式；`%type(%func(int)->int)` 返回 callable reflection。
 
 ---
 
@@ -951,13 +1000,13 @@ class Matrix<T, const N: int> {
     pub rows: Array<T>[N];
 }
 
-func map<TIn, TOut>(source: Array<TIn>, f: Func<TIn, TOut>): Array<TOut> {
+map<TIn, TOut>(source: Array<TIn>, f: %func(TIn)->TOut): Array<TOut> {
     return source;
 }
 ```
 
 **说明**:
-- 泛型声明支持 `class`、`struct`、`interface`、`func`、实例方法。
+- 泛型声明支持 `class`、`struct`、`interface`、函数、实例方法。
 - 使用处支持显式实参 `foo<int>(...)`、`obj.method<string>(...)`，也支持从接收者和调用参数做类型推断。
 - 嵌套泛型会保留规范化后的闭型名称，例如 `Map<string, Array<List<int>>>`。
 - 整数 const 泛型的身份以编译期归约值为准，因此 `Matrix<int, 2 + 2>` 与 `Matrix<int, 4>` 视为同一闭型。

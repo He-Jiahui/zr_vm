@@ -226,6 +226,7 @@ static void test_container_type_inference_native_generic_constraints_accept_pair
     SZrAstNode *errorAst;
     const char *okSource =
             "var container = %import(\"zr.container\");\n"
+            "var {Pair} = %import(\"zr.container\");\n"
             "new container.Map<Pair<int, string>, int>();\n"
             "new container.Set<Pair<int, string>>();\n";
     const char *errorSource =
@@ -250,12 +251,14 @@ static void test_container_type_inference_native_generic_constraints_accept_pair
 
     ZrContainerTests_CompileTopLevelStatement(cs, okAst->data.script.statements->nodes[0]);
     TEST_ASSERT_FALSE(cs->hasError);
+    ZrContainerTests_CompileTopLevelStatement(cs, okAst->data.script.statements->nodes[1]);
+    TEST_ASSERT_FALSE(cs->hasError);
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, okAst->data.script.statements->nodes[1]->data.expressionStatement.expr, &result));
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, okAst->data.script.statements->nodes[2]->data.expressionStatement.expr, &result));
     TEST_ASSERT_EQUAL_STRING("Map<Pair<int, string>, int>", ZrCore_String_GetNativeString(result.typeName));
     ZrParser_InferredType_Free(state, &result);
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, okAst->data.script.statements->nodes[2]->data.expressionStatement.expr, &result));
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, okAst->data.script.statements->nodes[3]->data.expressionStatement.expr, &result));
     TEST_ASSERT_EQUAL_STRING("Set<Pair<int, string>>", ZrCore_String_GetNativeString(result.typeName));
     ZrParser_InferredType_Free(state, &result);
     ZrCore_Function_Free(state, cs->currentFunction);
@@ -298,6 +301,7 @@ static void test_container_type_inference_computed_access_and_native_method_sign
     SZrAstNode *ast;
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {Array, Map, LinkedList} = %import(\"zr.container\");\n"
             "var xs: Array<int> = new container.Array<int>();\n"
             "var map: Map<string, int> = new container.Map<string, int>();\n"
             "var list: LinkedList<int> = new container.LinkedList<int>();\n"
@@ -322,34 +326,34 @@ static void test_container_type_inference_computed_access_and_native_method_sign
     cs->currentFunction = ZrCore_Function_New(state);
     TEST_ASSERT_NOT_NULL(cs->currentFunction);
 
-    for (TZrSize index = 0; index < 4; index++) {
+    for (TZrSize index = 0; index < 5; index++) {
         ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[index]);
         TEST_ASSERT_FALSE(cs->hasError);
     }
 
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, ast->data.script.statements->nodes[4]->data.expressionStatement.expr, &result));
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, ast->data.script.statements->nodes[5]->data.expressionStatement.expr, &result));
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, result.baseType);
     ZrParser_InferredType_Free(state, &result);
 
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, ast->data.script.statements->nodes[5]->data.expressionStatement.expr, &result));
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, ast->data.script.statements->nodes[6]->data.expressionStatement.expr, &result));
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, result.baseType);
     ZrParser_InferredType_Free(state, &result);
 
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, ast->data.script.statements->nodes[6]->data.expressionStatement.expr, &result));
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, ast->data.script.statements->nodes[7]->data.expressionStatement.expr, &result));
     TEST_ASSERT_NOT_NULL(result.typeName);
     TEST_ASSERT_EQUAL_STRING("LinkedNode<int>", ZrCore_String_GetNativeString(result.typeName));
     ZrParser_InferredType_Free(state, &result);
 
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, ast->data.script.statements->nodes[7]->data.expressionStatement.expr, &result));
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, ast->data.script.statements->nodes[8]->data.expressionStatement.expr, &result));
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
     ZrParser_InferredType_Free(state, &result);
 
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, ast->data.script.statements->nodes[8]->data.expressionStatement.expr, &result));
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, ast->data.script.statements->nodes[9]->data.expressionStatement.expr, &result));
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
     ZrParser_InferredType_Free(state, &result);
 
@@ -372,6 +376,7 @@ static void test_container_type_inference_typed_function_returns_preserve_native
     SZrAstNode *ast;
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {LinkedList} = %import(\"zr.container\");\n"
             "buildList(): LinkedList<int> {\n"
             "    var list: LinkedList<int> = new container.LinkedList<int>();\n"
             "    return list;\n"
@@ -395,14 +400,14 @@ static void test_container_type_inference_typed_function_returns_preserve_native
     cs->currentFunction = ZrCore_Function_New(state);
     TEST_ASSERT_NOT_NULL(cs->currentFunction);
 
-    for (TZrSize index = 0; index < 3; index++) {
+    for (TZrSize index = 0; index < 4; index++) {
         ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[index]);
         TEST_ASSERT_FALSE(cs->hasError);
     }
 
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs,
-                                                   ast->data.script.statements->nodes[3]->data.expressionStatement.expr,
+                                                   ast->data.script.statements->nodes[4]->data.expressionStatement.expr,
                                                    &result));
     TEST_ASSERT_NOT_NULL(result.typeName);
     TEST_ASSERT_EQUAL_STRING("LinkedNode<int>", ZrCore_String_GetNativeString(result.typeName));
@@ -410,7 +415,101 @@ static void test_container_type_inference_typed_function_returns_preserve_native
 
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs,
-                                                   ast->data.script.statements->nodes[4]->data.expressionStatement.expr,
+                                                   ast->data.script.statements->nodes[5]->data.expressionStatement.expr,
+                                                   &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+    ZrParser_InferredType_Free(state, &result);
+
+    ZrCore_Function_Free(state, cs->currentFunction);
+    cs->currentFunction = ZR_NULL;
+    ZrParser_Ast_Free(state, ast);
+    ZrContainerTests_DestroyCompilerState(cs);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_type_inference_requires_explicit_binding_for_imported_type_names(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Type Inference - Imported Type Names Require Explicit Binding";
+    SZrState *state;
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var xs: Array<int> = new container.Array<int>();\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+    cs = ZrContainerTests_CreateCompilerState(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    ast = parse_test_ast(state, "container_explicit_type_binding_error_test.zr", source);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    cs->scriptAst = ast;
+    cs->currentFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+    ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[0]);
+    TEST_ASSERT_FALSE(cs->hasError);
+    ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[1]);
+    TEST_ASSERT_TRUE(cs->hasError);
+    TEST_ASSERT_NOT_NULL(cs->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Unqualified type name 'Array' requires an explicit module qualifier or destructuring import"));
+
+    ZrCore_Function_Free(state, cs->currentFunction);
+    cs->currentFunction = ZR_NULL;
+    ZrParser_Ast_Free(state, ast);
+    ZrContainerTests_DestroyCompilerState(cs);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_type_inference_accepts_qualified_and_destructured_imported_type_names(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Type Inference - Qualified And Destructured Imported Type Names";
+    SZrState *state;
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var xs: container.Array<int> = new container.Array<int>();\n"
+            "var {Map, Set} = %import(\"zr.container\");\n"
+            "var map: Map<string, int> = new container.Map<string, int>();\n"
+            "var values: Set<int> = new container.Set<int>();\n"
+            "xs[0];\n";
+    SZrInferredType result;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+    cs = ZrContainerTests_CreateCompilerState(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    ast = parse_test_ast(state, "container_explicit_type_binding_ok_test.zr", source);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    cs->scriptAst = ast;
+    cs->currentFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+    for (TZrSize index = 0; index < 5; index++) {
+        ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[index]);
+        TEST_ASSERT_FALSE(cs->hasError);
+    }
+
+    ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs,
+                                                   ast->data.script.statements->nodes[5]->data.expressionStatement.expr,
                                                    &result));
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
     ZrParser_InferredType_Free(state, &result);
@@ -436,10 +535,12 @@ static void test_container_type_inference_rejects_invalid_computed_access_on_set
     SZrInferredType result;
     const char *setSource =
             "var container = %import(\"zr.container\");\n"
+            "var {Set} = %import(\"zr.container\");\n"
             "var values: Set<int> = new container.Set<int>();\n"
             "values[0];\n";
     const char *listSource =
             "var container = %import(\"zr.container\");\n"
+            "var {LinkedList} = %import(\"zr.container\");\n"
             "var values: LinkedList<int> = new container.LinkedList<int>();\n"
             "values[0];\n";
 
@@ -460,9 +561,11 @@ static void test_container_type_inference_rejects_invalid_computed_access_on_set
     TEST_ASSERT_FALSE(cs->hasError);
     ZrContainerTests_CompileTopLevelStatement(cs, setAst->data.script.statements->nodes[1]);
     TEST_ASSERT_FALSE(cs->hasError);
+    ZrContainerTests_CompileTopLevelStatement(cs, setAst->data.script.statements->nodes[2]);
+    TEST_ASSERT_FALSE(cs->hasError);
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
     TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs,
-                                                    setAst->data.script.statements->nodes[2]->data.expressionStatement.expr,
+                                                    setAst->data.script.statements->nodes[3]->data.expressionStatement.expr,
                                                     &result));
     TEST_ASSERT_TRUE(cs->hasError);
     ZrParser_InferredType_Free(state, &result);
@@ -482,9 +585,11 @@ static void test_container_type_inference_rejects_invalid_computed_access_on_set
     TEST_ASSERT_FALSE(cs->hasError);
     ZrContainerTests_CompileTopLevelStatement(cs, listAst->data.script.statements->nodes[1]);
     TEST_ASSERT_FALSE(cs->hasError);
+    ZrContainerTests_CompileTopLevelStatement(cs, listAst->data.script.statements->nodes[2]);
+    TEST_ASSERT_FALSE(cs->hasError);
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
     TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs,
-                                                    listAst->data.script.statements->nodes[2]->data.expressionStatement.expr,
+                                                    listAst->data.script.statements->nodes[3]->data.expressionStatement.expr,
                                                     &result));
     TEST_ASSERT_TRUE(cs->hasError);
     ZrParser_InferredType_Free(state, &result);
@@ -584,6 +689,8 @@ int main(void) {
     RUN_TEST(test_container_type_inference_native_generic_constraints_accept_pair_and_reject_plain_source_type);
     RUN_TEST(test_container_type_inference_computed_access_and_native_method_signatures_flow_types);
     RUN_TEST(test_container_type_inference_typed_function_returns_preserve_native_container_method_types);
+    RUN_TEST(test_container_type_inference_requires_explicit_binding_for_imported_type_names);
+    RUN_TEST(test_container_type_inference_accepts_qualified_and_destructured_imported_type_names);
     RUN_TEST(test_container_type_inference_rejects_invalid_computed_access_on_set_and_linked_list);
     RUN_TEST(test_reference_protocols_arraylike_indexable_fixture_binds_protocols_and_index_types);
     return UNITY_END();

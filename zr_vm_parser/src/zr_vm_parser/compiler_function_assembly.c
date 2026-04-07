@@ -223,6 +223,10 @@ static TZrBool compiler_copy_function_exports(SZrCompilerState *cs, SZrFunction 
             function->exportedVariables[index].name = sourceVariable->name;
             function->exportedVariables[index].stackSlot = sourceVariable->stackSlot;
             function->exportedVariables[index].accessModifier = (TZrUInt8) sourceVariable->accessModifier;
+            function->exportedVariables[index].exportKind = (TZrUInt8)sourceVariable->exportKind;
+            function->exportedVariables[index].readiness = (TZrUInt8)sourceVariable->readiness;
+            function->exportedVariables[index].reserved0 = 0;
+            function->exportedVariables[index].callableChildIndex = sourceVariable->callableChildIndex;
         }
     }
 

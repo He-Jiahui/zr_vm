@@ -36,6 +36,9 @@ typedef struct SZrCompiledPrototypeInfo {
     TZrUInt32 hasDecoratorMetadata;         // 是否存在 decorator metadata
     TZrUInt32 decoratorMetadataConstantIndex; // metadata 常量索引（hasDecoratorMetadata=1 时有效）
     TZrUInt32 decoratorsCount;              // decorator 名称记录数量
+    TZrUInt32 modifierFlags;                // abstract/final 等类型修饰符
+    TZrUInt32 nextVirtualSlotIndex;         // 当前类型累计 virtual slot 数
+    TZrUInt32 nextPropertyIdentity;         // 当前类型累计 property identity 数
     // 注意：inheritStringIndices数组紧跟在结构体后面（不是指针）
     // 运行时通过 inheritsCount 和固定偏移量访问：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo)
     // decorator 名称数组紧跟在继承数组后面：
@@ -72,6 +75,14 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 decoratorMetadataConstantIndex; // metadata 常量索引（hasDecoratorMetadata=1 时有效）
     TZrUInt32 hasDecoratorNames;            // 是否存在成员级 decorator 名称数组
     TZrUInt32 decoratorNamesConstantIndex;  // decorator 名称数组常量索引（hasDecoratorNames=1 时有效）
+    TZrUInt32 modifierFlags;                // abstract/virtual/override/final/shadow
+    TZrUInt32 ownerTypeNameStringIndex;     // 当前成员所属类型
+    TZrUInt32 baseDefinitionOwnerTypeNameStringIndex; // 覆写链根定义所属类型
+    TZrUInt32 baseDefinitionNameStringIndex; // 覆写链根定义名称
+    TZrUInt32 virtualSlotIndex;             // virtual slot；无效时为 UINT32_MAX
+    TZrUInt32 interfaceContractSlot;        // interface contract slot；无效时为 UINT32_MAX
+    TZrUInt32 propertyIdentity;             // property identity；无效时为 UINT32_MAX
+    TZrUInt32 accessorRole;                 // 0 none, 1 getter, 2 setter
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 

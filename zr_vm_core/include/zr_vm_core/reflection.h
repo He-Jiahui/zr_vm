@@ -25,6 +25,21 @@ ZR_CORE_API TZrBool ZrCore_Reflection_IsReflectionObject(struct SZrState *state,
 
 ZR_CORE_API struct SZrString *ZrCore_Reflection_FormatObject(struct SZrState *state, struct SZrObject *object);
 
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildTypeLiteralObject(struct SZrState *state,
+                                                                       struct SZrString *typeName);
+
+ZR_CORE_API struct SZrObject *ZrCore_Reflection_BuildCallableTypeLiteralObject(
+        struct SZrState *state,
+        struct SZrString *callableName,
+        struct SZrString *returnTypeName,
+        struct SZrString *const *parameterNames,
+        struct SZrString *const *parameterTypeNames,
+        struct SZrString *const *parameterModeNames,
+        TZrUInt32 parameterCount,
+        struct SZrString *const *genericParameterNames,
+        TZrUInt32 genericParameterCount,
+        TZrBool isVariadic);
+
 ZR_CORE_API void ZrCore_Reflection_AttachModuleRuntimeMetadata(struct SZrState *state,
                                                                struct SZrObjectModule *module,
                                                                struct SZrFunction *entryFunction);

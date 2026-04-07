@@ -466,18 +466,25 @@ static SZrString *create_test_string(SZrState *state, const char *value) {
     return ZrCore_String_CreateFromNative(state, (TZrNativeString)value);
 }
 
-typedef struct SZrImportTestFixture {
+typedef struct SZrImportTestFixtureSource {
     const TZrChar *moduleName;
     const TZrByte *bytes;
     TZrSize length;
     TZrBool isBinary;
-    TZrBool consumed;
-} SZrImportTestFixture;
+} SZrImportTestFixtureSource;
 
-static SZrImportTestFixture g_import_test_fixture = {0};
+typedef struct SZrImportTestFixtureReader {
+    const TZrByte *bytes;
+    TZrSize length;
+    TZrBool consumed;
+} SZrImportTestFixtureReader;
+
+static SZrImportTestFixtureSource g_single_import_test_fixture = {0};
+static const SZrImportTestFixtureSource *g_import_test_fixtures = ZR_NULL;
+static TZrSize g_import_test_fixture_count = 0;
 
 static TZrBytePtr import_test_fixture_read(SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size) {
-    SZrImportTestFixture *fixture = (SZrImportTestFixture *)customData;
+    SZrImportTestFixtureReader *fixture = (SZrImportTestFixtureReader *)customData;
     ZR_UNUSED_PARAMETER(state);
 
     if (size == ZR_NULL || fixture == ZR_NULL || fixture->consumed || fixture->bytes == ZR_NULL || fixture->length == 0) {
@@ -494,28 +501,61 @@ static TZrBytePtr import_test_fixture_read(SZrState *state, TZrPtr customData, Z
 
 static void import_test_fixture_close(SZrState *state, TZrPtr customData) {
     ZR_UNUSED_PARAMETER(state);
-    ZR_UNUSED_PARAMETER(customData);
+
+    if (customData != ZR_NULL) {
+        free(customData);
+    }
 }
 
 static TZrBool import_test_fixture_source_loader(SZrState *state,
                                                  TZrNativeString sourcePath,
                                                  TZrNativeString md5,
                                                  SZrIo *io) {
+    TZrSize index;
+
     ZR_UNUSED_PARAMETER(md5);
 
-    if (state == ZR_NULL || sourcePath == ZR_NULL || io == ZR_NULL || g_import_test_fixture.moduleName == ZR_NULL ||
-        strcmp(sourcePath, g_import_test_fixture.moduleName) != 0) {
+    if (state == ZR_NULL || sourcePath == ZR_NULL || io == ZR_NULL || g_import_test_fixtures == ZR_NULL ||
+        g_import_test_fixture_count == 0) {
         return ZR_FALSE;
     }
 
-    g_import_test_fixture.consumed = ZR_FALSE;
-    ZrCore_Io_Init(state,
-                   io,
-                   import_test_fixture_read,
-                   import_test_fixture_close,
-                   &g_import_test_fixture);
-    io->isBinary = g_import_test_fixture.isBinary;
-    return ZR_TRUE;
+    for (index = 0; index < g_import_test_fixture_count; ++index) {
+        const SZrImportTestFixtureSource *fixture = &g_import_test_fixtures[index];
+        SZrImportTestFixtureReader *reader;
+
+        if (fixture->moduleName == ZR_NULL || strcmp(sourcePath, fixture->moduleName) != 0) {
+            continue;
+        }
+
+        reader = (SZrImportTestFixtureReader *)malloc(sizeof(*reader));
+        if (reader == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        reader->bytes = fixture->bytes;
+        reader->length = fixture->length;
+        reader->consumed = ZR_FALSE;
+        ZrCore_Io_Init(state, io, import_test_fixture_read, import_test_fixture_close, reader);
+        io->isBinary = fixture->isBinary;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static void install_import_test_fixtures(SZrState *state,
+                                         const SZrImportTestFixtureSource *fixtures,
+                                         TZrSize fixtureCount) {
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(fixtures);
+    TEST_ASSERT_TRUE(fixtureCount > 0);
+
+    ZrParser_ToGlobalState_Register(state);
+    g_import_test_fixtures = fixtures;
+    g_import_test_fixture_count = fixtureCount;
+    state->global->sourceLoader = import_test_fixture_source_loader;
 }
 
 static void install_import_test_fixture(SZrState *state,
@@ -529,13 +569,11 @@ static void install_import_test_fixture(SZrState *state,
     TEST_ASSERT_NOT_NULL(bytes);
     TEST_ASSERT_TRUE(length > 0);
 
-    ZrParser_ToGlobalState_Register(state);
-    g_import_test_fixture.moduleName = moduleName;
-    g_import_test_fixture.bytes = bytes;
-    g_import_test_fixture.length = length;
-    g_import_test_fixture.isBinary = isBinary;
-    g_import_test_fixture.consumed = ZR_FALSE;
-    state->global->sourceLoader = import_test_fixture_source_loader;
+    g_single_import_test_fixture.moduleName = moduleName;
+    g_single_import_test_fixture.bytes = bytes;
+    g_single_import_test_fixture.length = length;
+    g_single_import_test_fixture.isBinary = isBinary;
+    install_import_test_fixtures(state, &g_single_import_test_fixture, 1);
 }
 
 static TZrByte *read_test_file_bytes(const TZrChar *path, TZrSize *outLength) {
@@ -1961,8 +1999,9 @@ static void test_using_statement_compilation_records_cleanup_plan(void) {
               "Testing that compiling a using statement appends deterministic cleanup metadata");
 
     {
-        const char *source = "using resource;";
-        SZrString *sourceName = ZrCore_String_Create(state, "using_cleanup_test.zr", 21);
+        const char *source = "%using resource;";
+        SZrString *sourceName =
+                ZrCore_String_Create(state, "using_cleanup_test.zr", strlen("using_cleanup_test.zr"));
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *usingStmt;
         const SZrDeterministicCleanupStep *step;
@@ -2357,6 +2396,218 @@ static void test_type_inference_type_query_returns_reflection_type(void) {
     TEST_DIVIDER();
 }
 
+static void test_convert_function_ast_type_to_callable_inferred_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Convert %func AST Type To Callable";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source = "var f: %func(int)->int = null;";
+        SZrString *sourceName = ZrCore_String_Create(state, "function_type_convert_test.zr", 29);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *decl;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        decl = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(decl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, decl->type);
+        TEST_ASSERT_NOT_NULL(decl->data.variableDeclaration.typeInfo);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(
+                ZrParser_AstTypeToInferredType_Convert(cs, decl->data.variableDeclaration.typeInfo, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("%func(int)->int", ZrCore_String_GetNativeString(result.typeName));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_function_type_annotation_accepts_lambda_assignment(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - %func Annotation Accepts Lambda Assignment";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source = "var f: %func(int)->int = (x:int)->{ return x; };";
+        SZrString *sourceName = ZrCore_String_Create(state, "function_type_lambda_assign_test.zr", 35);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_type_query_function_type_returns_callable_reflection_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - %type(%func(...)) Returns Callable Reflection Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source = "var reflection = %type(%func(%ref value:int)->%async int);";
+        SZrString *sourceName = ZrCore_String_Create(state, "callable_type_query_test.zr", 27);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        expr = ast->data.script.statements->nodes[0]->data.variableDeclaration.value;
+        TEST_ASSERT_NOT_NULL(expr);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_QUERY_EXPRESSION, expr->type);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("zr.system.reflect.CallableType", ZrCore_String_GetNativeString(result.typeName));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_type_value_alias_can_be_used_in_type_position(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Type Value Alias Can Be Used In Type Position";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var f = %func(int)->int;\n"
+                "var c:f = (x:int)->{ return x; };";
+        SZrString *sourceName = ZrCore_String_Create(state, "type_value_alias_inference_test.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_array_type_value_alias_can_be_used_in_type_position(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Array Type Value Alias Can Be Used In Type Position";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var cubeType = int[][][];\n"
+                "var value:cubeType = null;\n"
+                "var container = %import(\"zr.container\");\n"
+                "var jaggedType = container.Array<int[]>[];\n"
+                "var jagged:jaggedType = null;";
+        SZrString *sourceName = ZrCore_String_Create(state, "array_type_value_alias_inference_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[3]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[4]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_native_prototype_construction_returns_native_type(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Native Prototype Construction Returns Native Type";
@@ -2684,7 +2935,7 @@ static void test_type_inference_native_interface_members_flow_through_implements
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = %import(\"probe.native_shapes\");"
+                "var {NativeDevice} = %import(\"probe.native_shapes\");"
                 "var device: NativeDevice = null;"
                 "device.read();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_interface_chain_type_test.zr", 36);
@@ -2911,7 +3162,7 @@ static void test_type_inference_native_generic_boxed_new_returns_closed_register
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = %import(\"probe.native_shapes\");"
+                "var {NativeBox} = %import(\"probe.native_shapes\");"
                 "new NativeBox<int>();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_generic_box_new_type_test.zr", 35);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -2969,7 +3220,7 @@ static void test_type_inference_native_generic_constraint_mismatch_is_rejected(v
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
-                "var probe = %import(\"probe.native_shapes\");"
+                "var {NativeLookup, NativeMode} = %import(\"probe.native_shapes\");"
                 "new NativeLookup<NativeMode, int>();";
         SZrString *sourceName = ZrCore_String_Create(state, "native_generic_constraint_type_test.zr", 39);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
@@ -3260,6 +3511,7 @@ static void test_type_inference_source_const_generic_boxed_new_returns_closed_re
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
+                "var {Array} = %import(\"zr.container\");\n"
                 "class Matrix<T, const N: int> { var rows: Array<T>[N]; }\n"
                 "new Matrix<int, 2 + 2>();";
         SZrString *sourceName = ZrCore_String_Create(state, "source_const_generic_matrix_new_type_test.zr", 45);
@@ -3275,7 +3527,7 @@ static void test_type_inference_source_const_generic_boxed_new_returns_closed_re
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
 
         cs->scriptAst = ast;
         cs->currentFunction = ZrCore_Function_New(state);
@@ -3283,12 +3535,14 @@ static void test_type_inference_source_const_generic_boxed_new_returns_closed_re
 
         compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
         TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
 
         openPrototype = find_test_type_prototype(cs, "Matrix");
         TEST_ASSERT_NOT_NULL(openPrototype);
         TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)openPrototype->genericParameters.length);
 
-        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        expr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
         TEST_ASSERT_NOT_NULL(expr);
 
         ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
@@ -3331,6 +3585,7 @@ static void test_type_inference_source_const_generic_boxed_new_succeeds_without_
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
+                "var {Array} = %import(\"zr.container\");\n"
                 "class Matrix<T, const N: int> { var rows: Array<T>[N]; }\n"
                 "new Matrix<int, 2 + 2>();";
         SZrString *sourceName =
@@ -3346,13 +3601,16 @@ static void test_type_inference_source_const_generic_boxed_new_succeeds_without_
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
 
         cs->scriptAst = ast;
         cs->currentFunction = ZrCore_Function_New(state);
         TEST_ASSERT_NOT_NULL(cs->currentFunction);
 
-        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
         TEST_ASSERT_NOT_NULL(expr);
 
         ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
@@ -4646,6 +4904,301 @@ static void test_type_inference_source_import_member_chain_uses_returned_prototy
     TEST_DIVIDER();
 }
 
+static void test_type_inference_destructured_native_type_import_allows_unqualified_generic_usage(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Destructured Native Type Import Allows Unqualified Generic Usage";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var {Pair} = %import(\"zr.container\");"
+                "var pair: Pair<int,float> = $Pair<int,float>(1, 2.0);"
+                "pair.first;";
+        SZrString *sourceName = ZrCore_String_Create(state, "destructured_native_pair_import_type_test.zr", 45);
+        SZrString *leftName = create_test_string(state, "first");
+        SZrString *pairName = create_test_string(state, "pair");
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrTypePrototypeInfo *pairPrototype = ZR_NULL;
+        SZrTypeMemberInfo *leftMember = ZR_NULL;
+        SZrInferredType pairType;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_NOT_NULL(leftName);
+        TEST_ASSERT_NOT_NULL(pairName);
+        cs->scriptAst = ast;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        ZrParser_InferredType_Init(state, &pairType, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_LookupVariable(state, cs->typeEnv, pairName, &pairType));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, pairType.baseType);
+        TEST_ASSERT_NOT_NULL(pairType.typeName);
+        TEST_ASSERT_EQUAL_STRING("Pair<int, float>", ZrCore_String_GetNativeString(pairType.typeName));
+        TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)pairType.elementTypes.length);
+
+        pairPrototype = find_compiler_type_prototype_inference(cs, pairType.typeName);
+        TEST_ASSERT_NOT_NULL(pairPrototype);
+
+        for (TZrSize memberIndex = 0; memberIndex < pairPrototype->members.length; memberIndex++) {
+            SZrTypeMemberInfo *candidate =
+                    (SZrTypeMemberInfo *)ZrCore_Array_Get(&pairPrototype->members, memberIndex);
+            if (candidate != ZR_NULL &&
+                candidate->name != ZR_NULL &&
+                ZrCore_String_Equal(candidate->name, leftName)) {
+                leftMember = candidate;
+                break;
+            }
+        }
+        TEST_ASSERT_NOT_NULL(leftMember);
+        TEST_ASSERT_NOT_NULL(leftMember->fieldTypeName);
+        TEST_ASSERT_EQUAL_STRING("int", ZrCore_String_GetNativeString(leftMember->fieldTypeName));
+
+        ZrParser_InferredType_Free(state, &pairType);
+
+        expr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_destructured_native_type_import_registers_closed_variable_type(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Destructured Native Type Import Registers Closed Variable Type";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var {Pair} = %import(\"zr.container\");"
+                "var pair: Pair<int,float> = $Pair<int,float>(1, 2.0);";
+        SZrString *sourceName = ZrCore_String_Create(state, "destructured_native_pair_import_variable_type_test.zr", 54);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrString *pairName = create_test_string(state, "pair");
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_NOT_NULL(pairName);
+        cs->scriptAst = ast;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_LookupVariable(state, cs->typeEnv, pairName, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.baseType);
+        TEST_ASSERT_NOT_NULL(result.typeName);
+        TEST_ASSERT_EQUAL_STRING("Pair<int, float>", ZrCore_String_GetNativeString(result.typeName));
+        TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)result.elementTypes.length);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_native_import_requires_explicit_binding_for_unqualified_generic_type_annotation(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Native Import Requires Explicit Binding For Unqualified Generic Type Annotation";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var container = %import(\"zr.container\");"
+                "var pair: Pair<int,float> = $Pair<int,float>(1, 2.0);";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_pair_requires_explicit_binding_type_test.zr", 51);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        cs->scriptAst = ast;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "explicit"));
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_native_import_requires_explicit_binding_for_unqualified_generic_construct_target(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Native Import Requires Explicit Binding For Unqualified Generic Construct Target";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var container = %import(\"zr.container\");"
+                "$Pair<int,float>(1, 2.0);";
+        SZrString *sourceName =
+                ZrCore_String_Create(state, "native_pair_requires_explicit_binding_construct_test.zr", 56);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        cs->scriptAst = ast;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "explicit"));
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_destructured_native_type_import_rejects_second_pair_declaration(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Destructured Native Type Import Rejects Second Pair Declaration";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var {Pair} = %import(\"zr.container\");"
+                "struct Pair { var left: int; var right: int; }";
+        SZrString *sourceName = ZrCore_String_Create(state, "destructured_native_pair_collision_test.zr", 41);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        cs->scriptAst = ast;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        if (!cs->hasError) {
+            compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        }
+
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Pair"));
+        TEST_ASSERT_TRUE(strstr(cs->errorMessage, "already") != ZR_NULL ||
+                         strstr(cs->errorMessage, "duplicate") != ZR_NULL);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_source_import_array_assignment_rejects_incompatible_value(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Import Array Assignment Rejects Incompatible Value";
@@ -5251,6 +5804,7 @@ static void test_type_inference_container_computed_access_uses_registered_meta_t
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "var container = %import(\"zr.container\");"
+                "var {Array, Map} = %import(\"zr.container\");"
                 "var xs: Array<int> = new container.Array<int>();"
                 "var map: Map<string,int> = new container.Map<string,int>();"
                 "xs[0];"
@@ -5266,7 +5820,7 @@ static void test_type_inference_container_computed_access_uses_registered_meta_t
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(5, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(6, (int)ast->data.script.statements->count);
 
         cs->currentFunction = ZrCore_Function_New(state);
         TEST_ASSERT_NOT_NULL(cs->currentFunction);
@@ -5276,9 +5830,11 @@ static void test_type_inference_container_computed_access_uses_registered_meta_t
         TEST_ASSERT_FALSE(cs->hasError);
         ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[2]);
         TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[3]);
+        TEST_ASSERT_FALSE(cs->hasError);
 
-        arrayExpr = ast->data.script.statements->nodes[3]->data.expressionStatement.expr;
-        mapExpr = ast->data.script.statements->nodes[4]->data.expressionStatement.expr;
+        arrayExpr = ast->data.script.statements->nodes[4]->data.expressionStatement.expr;
+        mapExpr = ast->data.script.statements->nodes[5]->data.expressionStatement.expr;
         TEST_ASSERT_NOT_NULL(arrayExpr);
         TEST_ASSERT_NOT_NULL(mapExpr);
 
@@ -5616,6 +6172,7 @@ static void test_type_inference_foreach_binds_iterated_element_type(void) {
         SZrCompilerState *cs = create_test_compiler_state(state);
         const char *source =
                 "var container = %import(\"zr.container\");"
+                "var {Array} = %import(\"zr.container\");"
                 "var dynamic: Array<int> = new container.Array<int>();"
                 "var fixed = [1, 2, 3];"
                 "var sum: int = 0;"
@@ -5629,7 +6186,7 @@ static void test_type_inference_foreach_binds_iterated_element_type(void) {
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
         TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(6, (int)ast->data.script.statements->count);
+        TEST_ASSERT_EQUAL_INT(7, (int)ast->data.script.statements->count);
 
         cs->currentFunction = ZrCore_Function_New(state);
         TEST_ASSERT_NOT_NULL(cs->currentFunction);
@@ -5643,6 +6200,167 @@ static void test_type_inference_foreach_binds_iterated_element_type(void) {
         cs->currentFunction = ZR_NULL;
         ZrParser_Ast_Free(state, ast);
         destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_cyclic_import_entry_value_read_rejects_same_scc(void) {
+    static const SZrImportTestFixtureSource kFixtures[] = {
+            {
+                    "a",
+                    (const TZrByte *)
+                            "var b = %import(\"b\");\n"
+                            "pub var a1 = b.b1;\n",
+                    sizeof("var b = %import(\"b\");\n"
+                           "pub var a1 = b.b1;\n") - 1,
+                    ZR_FALSE,
+            },
+            {
+                    "b",
+                    (const TZrByte *)
+                            "var a = %import(\"a\");\n"
+                            "pub var b1 = a.a1;\n",
+                    sizeof("var a = %import(\"a\");\n"
+                           "pub var b1 = a.a1;\n") - 1,
+                    ZR_FALSE,
+            },
+    };
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Cyclic Import Entry Value Read Rejects Same SCC";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source = "var a = %import(\"a\");\nreturn 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "cyclic_import_entry_value_read_reject.zr", 40);
+        SZrFunction *entryFunction = ZR_NULL;
+
+        TEST_ASSERT_NOT_NULL(state);
+        install_import_test_fixtures(state, kFixtures, ZR_ARRAY_COUNT(kFixtures));
+
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NULL(entryFunction);
+
+        state->global->sourceLoader = ZR_NULL;
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_cyclic_import_unsafe_imported_call_rejects_same_scc(void) {
+    static const SZrImportTestFixtureSource kFixtures[] = {
+            {
+                    "a",
+                    (const TZrByte *)
+                            "var b = %import(\"b\");\n"
+                            "pub var a1 = 7;\n"
+                            "pub var value = b.readA();\n",
+                    sizeof("var b = %import(\"b\");\n"
+                           "pub var a1 = 7;\n"
+                           "pub var value = b.readA();\n") - 1,
+                    ZR_FALSE,
+            },
+            {
+                    "b",
+                    (const TZrByte *)
+                            "var a = %import(\"a\");\n"
+                            "pub readA(): int {\n"
+                            "    return a.a1;\n"
+                            "}\n",
+                    sizeof("var a = %import(\"a\");\n"
+                           "pub readA(): int {\n"
+                           "    return a.a1;\n"
+                           "}\n") - 1,
+                    ZR_FALSE,
+            },
+    };
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Cyclic Import Unsafe Imported Call Rejects Same SCC";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source = "var a = %import(\"a\");\nreturn 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "cyclic_import_unsafe_call_reject.zr", 34);
+        SZrFunction *entryFunction = ZR_NULL;
+
+        TEST_ASSERT_NOT_NULL(state);
+        install_import_test_fixtures(state, kFixtures, ZR_ARRAY_COUNT(kFixtures));
+
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NULL(entryFunction);
+
+        state->global->sourceLoader = ZR_NULL;
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_cyclic_import_local_import_outside_entry_path_passes(void) {
+    static const SZrImportTestFixtureSource kFixtures[] = {
+            {
+                    "a",
+                    (const TZrByte *)
+                            "pub later(): int {\n"
+                            "    var b = %import(\"b\");\n"
+                            "    return b.value;\n"
+                            "}\n"
+                            "pub seed(): int {\n"
+                            "    return 5;\n"
+                            "}\n",
+                    sizeof("pub later(): int {\n"
+                           "    var b = %import(\"b\");\n"
+                           "    return b.value;\n"
+                           "}\n"
+                           "pub seed(): int {\n"
+                           "    return 5;\n"
+                           "}\n") - 1,
+                    ZR_FALSE,
+            },
+            {
+                    "b",
+                    (const TZrByte *)
+                            "var a = %import(\"a\");\n"
+                            "pub var value = 9;\n",
+                    sizeof("var a = %import(\"a\");\n"
+                           "pub var value = 9;\n") - 1,
+                    ZR_FALSE,
+            },
+    };
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Cyclic Import Local Import Outside Entry Path Passes";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source = "var a = %import(\"a\");\nreturn a.seed();\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "cyclic_import_local_deferred_pass.zr", 35);
+        SZrFunction *entryFunction = ZR_NULL;
+
+        TEST_ASSERT_NOT_NULL(state);
+        install_import_test_fixtures(state, kFixtures, ZR_ARRAY_COUNT(kFixtures));
+
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        ZrCore_Function_Free(state, entryFunction);
+
+        state->global->sourceLoader = ZR_NULL;
         destroy_test_state(state);
     }
 
@@ -5687,6 +6405,11 @@ int main(void) {
     RUN_TEST(test_type_inference_template_string_literal_is_string);
     RUN_TEST(test_type_inference_import_native_module_keeps_module_name);
     RUN_TEST(test_type_inference_type_query_returns_reflection_type);
+    RUN_TEST(test_convert_function_ast_type_to_callable_inferred_type);
+    RUN_TEST(test_type_inference_function_type_annotation_accepts_lambda_assignment);
+    RUN_TEST(test_type_inference_type_query_function_type_returns_callable_reflection_type);
+    RUN_TEST(test_type_inference_type_value_alias_can_be_used_in_type_position);
+    RUN_TEST(test_type_inference_array_type_value_alias_can_be_used_in_type_position);
     RUN_TEST(test_type_inference_native_prototype_construction_returns_native_type);
     RUN_TEST(test_type_inference_rejects_ordinary_prototype_call);
     RUN_TEST(test_type_inference_native_boxed_new_returns_registered_type);
@@ -5732,6 +6455,14 @@ int main(void) {
     RUN_TEST(test_type_inference_source_import_function_call_uses_exported_signature);
     RUN_TEST(test_type_inference_source_import_function_call_rejects_argument_mismatch);
     RUN_TEST(test_type_inference_source_import_member_chain_uses_returned_prototype_type);
+    RUN_TEST(test_type_inference_cyclic_import_entry_value_read_rejects_same_scc);
+    RUN_TEST(test_type_inference_cyclic_import_unsafe_imported_call_rejects_same_scc);
+    RUN_TEST(test_type_inference_cyclic_import_local_import_outside_entry_path_passes);
+    RUN_TEST(test_type_inference_destructured_native_type_import_allows_unqualified_generic_usage);
+    RUN_TEST(test_type_inference_destructured_native_type_import_registers_closed_variable_type);
+    RUN_TEST(test_type_inference_native_import_requires_explicit_binding_for_unqualified_generic_type_annotation);
+    RUN_TEST(test_type_inference_native_import_requires_explicit_binding_for_unqualified_generic_construct_target);
+    RUN_TEST(test_type_inference_destructured_native_type_import_rejects_second_pair_declaration);
     RUN_TEST(test_type_inference_source_import_array_assignment_rejects_incompatible_value);
     RUN_TEST(test_type_inference_binary_import_function_call_uses_exported_signature);
     RUN_TEST(test_type_inference_binary_import_function_call_rejects_argument_mismatch);

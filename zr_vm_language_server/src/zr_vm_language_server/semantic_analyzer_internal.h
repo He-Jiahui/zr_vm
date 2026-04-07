@@ -59,6 +59,10 @@ void ZrLanguageServer_SemanticAnalyzer_RecordTemplateStringSegments(SZrSemanticA
 void ZrLanguageServer_SemanticAnalyzer_RecordUsingCleanupStep(SZrSemanticAnalyzer *analyzer,
                                                               SZrAstNode *resource);
 
+void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *state,
+                                                                      SZrSemanticAnalyzer *analyzer,
+                                                                      SZrFileRange fallbackLocation);
+
 void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *state,
                                                                   SZrSemanticAnalyzer *analyzer,
                                                                   SZrAstNode *fieldNode,

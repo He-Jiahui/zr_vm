@@ -1,0 +1,75 @@
+var benchConfig = %import("bench_config");
+var container = %import("zr.container");
+var {Array, Map, Set, LinkedList} = %import("zr.container");
+
+labelIndexForSeed(seed: int): int {
+    if (seed % 2 == 0) {
+        return 0;
+    }
+    if (seed > 128) {
+        return 1;
+    }
+    return 2;
+}
+
+var scale = benchConfig.scale();
+var total = 1024 * scale;
+var queue = new container.LinkedList<int>();
+var seen = new container.Set<int>();
+var buckets = new container.Map<string, Array<int>>();
+var evenBucket = new container.Array<int>();
+var oddHiBucket = new container.Array<int>();
+var oddLoBucket = new container.Array<int>();
+var seed = 41;
+var index = 0;
+var evenSum = 0;
+var oddHiSum = 0;
+var oddLoSum = 0;
+var uniqueCount = 0;
+
+while (index <= total - 1) {
+    seed = (seed * 29 + 17 + index) % 257;
+    var labelIndex = labelIndexForSeed(seed);
+    var value = seed * scale + index % 13;
+    queue.addLast(labelIndex * 10000 + value);
+    index = index + 1;
+}
+
+while (queue.count > 0) {
+    var head = queue.first;
+    var task = head.value;
+    var next = head.next;
+    if (next != null) {
+        next.previous = null;
+        queue.first = next;
+    } else {
+        queue.first = null;
+        queue.last = null;
+    }
+    head.next = null;
+    head.previous = null;
+    queue.count = queue.count - 1;
+    seen.add(<int> task);
+}
+
+for (var encoded in seen) {
+    var labelIndex = encoded / 10000;
+    var value = encoded % 10000;
+    if (labelIndex == 0) {
+        evenBucket.add(value);
+        buckets["even"] = evenBucket;
+        evenSum = evenSum + value;
+    } else if (labelIndex == 1) {
+        oddHiBucket.add(value);
+        buckets["odd_hi"] = oddHiBucket;
+        oddHiSum = oddHiSum + value;
+    } else {
+        oddLoBucket.add(value);
+        buckets["odd_lo"] = oddLoBucket;
+        oddLoSum = oddLoSum + value;
+    }
+    uniqueCount = uniqueCount + 1;
+}
+
+var checksum = (evenSum * 100000 + oddHiSum * 100 + oddLoSum + uniqueCount) % 1000000007;
+return "BENCH_CONTAINER_PIPELINE_PASS\n" + <string> checksum;

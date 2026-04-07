@@ -1670,6 +1670,107 @@ static void test_debug_agent_supports_caught_exception_breakpoints(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_debug_agent_matches_source_breakpoints_across_separator_variants(void) {
+    const char *runtimeSourcePath = "virtual\\debug\\separator_fixture.zr";
+    const char *requestSourcePath = "virtual/debug/separator_fixture.zr";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    ZrDebugAgentConfig config;
+    ZrDebugAgent *agent = ZR_NULL;
+    SZrNetworkStream client;
+    ZrDebugExecutionThread thread;
+    TZrChar error[256];
+    cJSON *message;
+    cJSON *params;
+
+    TEST_ASSERT_NOT_NULL(state);
+    function = compile_debug_agent_fixture(state, runtimeSourcePath);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&config, 0, sizeof(config));
+    config.address = "127.0.0.1:0";
+    config.suspend_on_start = ZR_TRUE;
+    config.auth_token = "secret";
+    config.stop_on_uncaught_exception = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrDebug_AgentStart(state,
+                                        function,
+                                        "tests.debug.separator_variants",
+                                        &config,
+                                        &agent,
+                                        error,
+                                        sizeof(error)));
+    memset(&client, 0, sizeof(client));
+    debug_client_connect(agent, &client);
+
+    memset(&thread, 0, sizeof(thread));
+    thread.state = state;
+    thread.function = function;
+    TEST_ASSERT_TRUE(debug_execution_thread_start(&thread));
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "authToken", "secret");
+    debug_client_send_request(&client, 1, "initialize", params);
+
+    message = debug_client_expect_response(&client, 1);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "initialized");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "moduleLoaded");
+    TEST_ASSERT_EQUAL_STRING(runtimeSourcePath,
+                             debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile"));
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("entry", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "moduleName", "tests.debug.separator_variants");
+    cJSON_AddStringToObject(params, "sourceFile", requestSourcePath);
+    cJSON_AddItemToObject(params, "lines", cJSON_CreateIntArray((const int[]){2}, 1));
+    debug_client_send_request(&client, 2, "setBreakpoints", params);
+
+    message = debug_client_expect_event(&client, "breakpointResolved");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
+    TEST_ASSERT_EQUAL_INT(2, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    cJSON_Delete(message);
+    message = debug_client_expect_response(&client, 2);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 3, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 3);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("breakpoint", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    TEST_ASSERT_EQUAL_STRING("addOne", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
+    TEST_ASSERT_EQUAL_INT(2, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 4, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 4);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    debug_execution_thread_join(&thread);
+    TEST_ASSERT_TRUE(thread.success);
+    TEST_ASSERT_EQUAL_INT64(7, thread.result);
+    ZrDebug_NotifyTerminated(agent, thread.success);
+
+    message = debug_client_expect_event(&client, "terminated");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "success") != 0);
+    cJSON_Delete(message);
+
+    ZrNetwork_StreamClose(&client);
+    ZrDebug_AgentStop(agent);
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_debug_agent_step_in_and_out_cross_call_boundaries(void) {
     const char *sourcePath = "debug_agent_step_boundaries_fixture.zr";
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -2194,6 +2295,7 @@ int main(void) {
     RUN_TEST(test_debug_agent_reports_richer_stack_scopes_and_safe_evaluate);
     RUN_TEST(test_debug_agent_supports_function_hit_condition_and_log_breakpoints);
     RUN_TEST(test_debug_agent_supports_caught_exception_breakpoints);
+    RUN_TEST(test_debug_agent_matches_source_breakpoints_across_separator_variants);
     RUN_TEST(test_debug_agent_step_in_and_out_cross_call_boundaries);
     RUN_TEST(test_debug_agent_pause_stops_at_next_safepoint_and_preserves_stack);
     RUN_TEST(test_debug_agent_reports_uncaught_exception_from_runtime_without_cli_bridge);

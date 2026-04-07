@@ -405,6 +405,8 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     // 封装了从源代码解析到编译的全流程
     global->compileSource = ZR_NULL;
     global->emitCompileTimeRuntimeSupport = ZR_FALSE;
+    global->parserModuleInitState = ZR_NULL;
+    global->parserModuleInitStateCleanup = ZR_NULL;
 
     // reset basic type object prototype
     for (TZrUInt64 i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
@@ -557,6 +559,12 @@ void ZrCore_GlobalState_SetAotModuleLoader(SZrGlobalState *global,
 
 void ZrCore_GlobalState_Free(SZrGlobalState *global) {
     FZrAllocator allocator = global->allocator;
+
+    if (global->parserModuleInitStateCleanup != ZR_NULL && global->parserModuleInitState != ZR_NULL) {
+        global->parserModuleInitStateCleanup(global, global->parserModuleInitState);
+        global->parserModuleInitState = ZR_NULL;
+        global->parserModuleInitStateCleanup = ZR_NULL;
+    }
 
     if (global->importCompileInfoStack.isValid &&
         global->importCompileInfoStack.head != ZR_NULL &&

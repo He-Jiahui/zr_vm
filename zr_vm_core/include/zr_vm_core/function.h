@@ -65,10 +65,36 @@ struct ZR_STRUCT_ALIGN SZrFunctionExecutionLocationInfo {
 
 typedef struct SZrFunctionExecutionLocationInfo SZrFunctionExecutionLocationInfo;
 
+typedef enum EZrModuleExportKind {
+    ZR_MODULE_EXPORT_KIND_VALUE = 0,
+    ZR_MODULE_EXPORT_KIND_FUNCTION = 1,
+    ZR_MODULE_EXPORT_KIND_TYPE = 2
+} EZrModuleExportKind;
+
+typedef enum EZrModuleExportReadiness {
+    ZR_MODULE_EXPORT_READY_DECLARATION = 0,
+    ZR_MODULE_EXPORT_READY_ENTRY = 1
+} EZrModuleExportReadiness;
+
+typedef enum EZrModuleEntryEffectKind {
+    ZR_MODULE_ENTRY_EFFECT_IMPORT_REF = 0,
+    ZR_MODULE_ENTRY_EFFECT_IMPORT_READ = 1,
+    ZR_MODULE_ENTRY_EFFECT_IMPORT_CALL = 2,
+    ZR_MODULE_ENTRY_EFFECT_LOCAL_CALL = 3,
+    ZR_MODULE_ENTRY_EFFECT_LOCAL_ENTRY_BINDING_READ = 4,
+    ZR_MODULE_ENTRY_EFFECT_DYNAMIC_UNKNOWN = 5
+} EZrModuleEntryEffectKind;
+
+#define ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE ((TZrUInt32)0xFFFFFFFFu)
+
 typedef struct SZrFunctionExportedVariable {
     struct SZrString *name;
     TZrUInt32 stackSlot;
     TZrUInt8 accessModifier;
+    TZrUInt8 exportKind;
+    TZrUInt8 readiness;
+    TZrUInt8 reserved0;
+    TZrUInt32 callableChildIndex;
 } SZrFunctionExportedVariable;
 
 struct ZR_STRUCT_ALIGN SZrFunctionCatchClauseInfo {
@@ -115,6 +141,10 @@ typedef struct SZrFunctionTypedExportSymbol {
     TZrUInt32 stackSlot;
     TZrUInt8 accessModifier;
     TZrUInt8 symbolKind;
+    TZrUInt8 exportKind;
+    TZrUInt8 readiness;
+    TZrUInt16 reserved0;
+    TZrUInt32 callableChildIndex;
     SZrFunctionTypedTypeRef valueType;
     TZrUInt32 parameterCount;
     SZrFunctionTypedTypeRef *parameterTypes;
@@ -123,6 +153,36 @@ typedef struct SZrFunctionTypedExportSymbol {
     TZrUInt32 lineInSourceEnd;
     TZrUInt32 columnInSourceEnd;
 } SZrFunctionTypedExportSymbol;
+
+typedef struct SZrFunctionModuleEffect {
+    TZrUInt8 kind;
+    TZrUInt8 exportKind;
+    TZrUInt8 readiness;
+    TZrUInt8 reserved0;
+    struct SZrString *moduleName;
+    struct SZrString *symbolName;
+    TZrUInt32 lineInSourceStart;
+    TZrUInt32 columnInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+    TZrUInt32 columnInSourceEnd;
+} SZrFunctionModuleEffect;
+
+typedef struct SZrFunctionCallableSummary {
+    struct SZrString *name;
+    TZrUInt32 callableChildIndex;
+    TZrUInt32 effectCount;
+    SZrFunctionModuleEffect *effects;
+} SZrFunctionCallableSummary;
+
+typedef struct SZrFunctionTopLevelCallableBinding {
+    struct SZrString *name;
+    TZrUInt32 stackSlot;
+    TZrUInt32 callableChildIndex;
+    TZrUInt8 accessModifier;
+    TZrUInt8 exportKind;
+    TZrUInt8 readiness;
+    TZrUInt8 reserved0;
+} SZrFunctionTopLevelCallableBinding;
 
 typedef struct SZrFunctionMetadataParameter {
     struct SZrString *name;
@@ -325,6 +385,14 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 typedLocalBindingLength;
     SZrFunctionTypedExportSymbol *typedExportedSymbols;
     TZrUInt32 typedExportedSymbolLength;
+    struct SZrString **staticImports;
+    TZrUInt32 staticImportLength;
+    SZrFunctionModuleEffect *moduleEntryEffects;
+    TZrUInt32 moduleEntryEffectLength;
+    SZrFunctionCallableSummary *exportedCallableSummaries;
+    TZrUInt32 exportedCallableSummaryLength;
+    SZrFunctionTopLevelCallableBinding *topLevelCallableBindings;
+    TZrUInt32 topLevelCallableBindingLength;
     SZrFunctionMetadataParameter *parameterMetadata;
     TZrUInt32 parameterMetadataCount;
     SZrFunctionCompileTimeVariableInfo *compileTimeVariableInfos;

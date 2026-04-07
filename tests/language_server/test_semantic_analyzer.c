@@ -135,6 +135,36 @@ static TZrBool cleanup_plan_targets_symbol(const SZrSemanticContext *context,
     return ZR_FALSE;
 }
 
+static SZrSymbol *lookup_symbol_any_scope_by_type(SZrState *state,
+                                                  SZrSymbolTable *table,
+                                                  SZrString *name,
+                                                  EZrSymbolType expectedType) {
+    if (state == ZR_NULL || table == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize scopeIndex = 0; scopeIndex < table->allScopes.length; scopeIndex++) {
+        SZrSymbolScope **scopePtr =
+            (SZrSymbolScope **)ZrCore_Array_Get(&table->allScopes, scopeIndex);
+        if (scopePtr == ZR_NULL || *scopePtr == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrSize symbolIndex = 0; symbolIndex < (*scopePtr)->symbols.length; symbolIndex++) {
+            SZrSymbol **symbolPtr =
+                (SZrSymbol **)ZrCore_Array_Get(&(*scopePtr)->symbols, symbolIndex);
+            if (symbolPtr != ZR_NULL &&
+                *symbolPtr != ZR_NULL &&
+                (*symbolPtr)->type == expectedType &&
+                ZrCore_String_Equal((*symbolPtr)->name, name)) {
+                return *symbolPtr;
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool has_diagnostic_code(SZrSemanticAnalyzer *analyzer, const char *code) {
     TZrSize i;
 
@@ -678,8 +708,8 @@ static void test_semantic_analyzer_records_using_cleanup_and_template_segments(S
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
             "var resource = 1; "
-            "using resource; "
-            "using (resource) { var message = `hello ${resource}`; }";
+            "%using resource; "
+            "%using (resource) { var message = `hello ${resource}`; }";
         SZrString *sourceName = ZrCore_String_Create(state, "using_template_test.zr", 22);
         SZrAstNode *ast;
         SZrString *resourceName;
@@ -770,13 +800,13 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
     TEST_START("Semantic Analyzer Records Field-Scoped Using Cleanup Metadata");
 
     TEST_INFO("Field-scoped using semantic metadata",
-              "Analyzing `using var` fields should register field symbols and distinguish struct-value cleanup from instance-field cleanup");
+              "Analyzing `%using var` fields should register field symbols and distinguish struct-value cleanup from instance-field cleanup");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "struct HandleBox { using var handle: %unique Resource; }\n"
-            "class Holder { using var resource: %unique Resource; }";
+            "struct HandleBox { %using var handle: %unique Resource; }\n"
+            "class Holder { %using var resource: %unique Resource; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_using_semantic_test.zr", 28);
         SZrAstNode *ast;
         SZrString *handleName;
@@ -823,8 +853,8 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
 
         handleName = ZrCore_String_Create(state, "handle", 6);
         resourceName = ZrCore_String_Create(state, "resource", 8);
-        handleSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, handleName, ZR_NULL);
-        resourceSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, resourceName, ZR_NULL);
+        handleSymbol = lookup_symbol_any_scope_by_type(state, analyzer->symbolTable, handleName, ZR_SYMBOL_FIELD);
+        resourceSymbol = lookup_symbol_any_scope_by_type(state, analyzer->symbolTable, resourceName, ZR_SYMBOL_FIELD);
         if (handleSymbol == ZR_NULL || resourceSymbol == ZR_NULL ||
             handleSymbol->type != ZR_SYMBOL_FIELD ||
             resourceSymbol->type != ZR_SYMBOL_FIELD ||
@@ -891,11 +921,11 @@ static void test_semantic_analyzer_rejects_static_using_field(SZrState *state) {
     TEST_START("Semantic Analyzer Rejects Static Using Field");
 
     TEST_INFO("Static using diagnostic",
-              "Analyzing `static using var` should emit a compile-time diagnostic instead of silently accepting lifecycle-managed static fields");
+              "Analyzing `static %using var` should emit a compile-time diagnostic instead of silently accepting lifecycle-managed static fields");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
-        const TZrChar *testCode = "class Holder { static using var resource: %unique Resource; }";
+        const TZrChar *testCode = "class Holder { static %using var resource: %unique Resource; }";
         SZrString *sourceName = ZrCore_String_Create(state, "static_using_field_test.zr", 26);
         SZrAstNode *ast;
 

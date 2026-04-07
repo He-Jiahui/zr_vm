@@ -1,0 +1,386 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 58
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 9
+
+CONSTANTS (27):
+  [0] null
+  [1] function
+  [2] function
+  [3] function
+  [4] function
+  [5] function
+  [6] function
+  [7] function
+  [8] native closure
+  [9] int: 0
+  [10] function
+  [11] function
+  [12] function
+  [13] string: "SignalBox"
+  [14] string: "raw"
+  [15] string: "int"
+  [16] string: "created"
+  [17] string: "constructor"
+  [18] string: "__get_value"
+  [19] string: "__set_value"
+  [20] string: "bump"
+  [21] string: "identity"
+  [22] string: "call"
+  [23] string: "Vector2"
+  [24] string: "x"
+  [25] string: "y"
+  [26] string: "add"
+
+LOCAL_VARIABLES (3):
+  [0] traceClass: offset_activate=0, offset_dead=22
+  [1] combineVectors: offset_activate=1, offset_dead=22
+  [2] __zr_definition_runtime_decorator_6_0: offset_activate=6, offset_dead=22
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (3):
+    [0] traceClass: function
+    [1] combineVectors: function
+    [4] __zr_definition_runtime_decorator_6_0: object
+  EXPORTED_SYMBOLS (2):
+    fn traceClass(Class): null
+    fn combineVectors(): int
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+PROTOTYPES (2):
+// ========== PROTOTYPES FROM DATA (count: 2) ==========
+// --- Prototype 1 ---
+class SignalBox {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "raw",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "created",
+      access: public (0),
+      static: true,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 2,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__get_value",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 3,
+      parameterCount: 0,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__set_value",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 4,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "bump",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 5,
+      parameterCount: 1,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "identity",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 6,
+      parameterCount: 1,
+      returnType: "int"
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "call",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CALL (15),
+      functionConstantIndex: 7,
+      parameterCount: 1,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+struct Vector2 {
+  access: public (0),
+  members: [
+    {
+      type: STRUCT_FIELD (14),
+      name: "x",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: STRUCT_FIELD (14),
+      name: "y",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 8,
+      fieldSize: 8
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 10,
+      parameterCount: 2,
+      returnType: "<void>"
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "add",
+      access: public (0),
+      static: true,
+      isMetaMethod: true,
+      metaType: ADD (2),
+      functionConstantIndex: 11,
+      parameterCount: 2,
+      returnType: "Vector2"
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (24):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=0)
+  [2] CREATE_CLOSURE (extra=2)
+  [3] SET_STACK (extra=0, operand=2)
+  [4] GET_GLOBAL (extra=3)
+  [5] GET_MEMBER (extra=3, operand1=3, operand2=0)
+  [6] GET_STACK (extra=5, operand=0)
+  [7] SET_STACK (extra=4, operand=5)
+  [8] GET_CONSTANT (extra=5, operand=0)
+  [9] GET_CONSTANT (extra=5, operand=8)
+  [10] GET_STACK (extra=6, operand=3)
+  [11] GET_STACK (extra=7, operand=4)
+  [12] FUNCTION_CALL (extra=5, operand1=5, operand2=2)
+  [13] GET_CONSTANT (extra=5, operand=0)
+  [14] GET_CONSTANT (extra=6, operand=0)
+  [15] GET_CONSTANT (extra=7, operand=0)
+  [16] GET_GLOBAL (extra=5)
+  [17] GET_MEMBER (extra=5, operand1=5, operand2=0)
+  [18] GET_CONSTANT (extra=6, operand=9)
+  [19] SET_MEMBER (extra=6, operand1=5, operand2=1)
+  [20] CREATE_CLOSURE (extra=7)
+  [21] SET_STACK (extra=1, operand=7)
+  [22] GET_CONSTANT (extra=8, operand=0)
+  [23] FUNCTION_RETURN (extra=1, operand1=8, operand2=0)
+
+CHILD_FUNCTIONS (2):
+  [0] FUNCTION:
+    NAME: traceClass
+    START_LINE: 3
+    END_LINE: 5
+    PARAMETERS: 1
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 4
+
+    CONSTANTS (3):
+      [0] bool: true
+      [1] string: "traceClass"
+      [2] null
+
+    LOCAL_VARIABLES (1):
+      [0] target: offset_activate=0, offset_dead=10
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (1):
+        [0] target: Class
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (10):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] GET_STACK (extra=2, operand=0)
+      [2] OPCODE_8 (extra=2, operand1=2, operand2=0)
+      [3] GET_CONSTANT (extra=3, operand=1)
+      [4] OPCODE_11 (extra=1, operand1=2, operand2=3)
+      [5] GET_CONSTANT (extra=3, operand=2)
+      [6] GET_CONSTANT (extra=2, operand=2)
+      [7] GET_CONSTANT (extra=1, operand=2)
+      [8] GET_CONSTANT (extra=1, operand=2)
+      [9] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+
+  [1] FUNCTION:
+    NAME: combineVectors
+    START_LINE: 52
+    END_LINE: 57
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 9
+
+    CONSTANTS (6):
+      [0] string: "Vector2"
+      [1] int: 1
+      [2] int: 2
+      [3] null
+      [4] int: 3
+      [5] int: 4
+
+    LOCAL_VARIABLES (3):
+      [0] left: offset_activate=12, offset_dead=41
+      [1] right: offset_activate=24, offset_dead=41
+      [2] sum: offset_activate=27, offset_dead=41
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (3):
+        [0] left: Vector2
+        [1] right: Vector2
+        [4] sum: Vector2
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (41):
+      [0] CREATE_OBJECT (extra=0)
+      [1] OPCODE_20 (extra=0)
+      [2] OPCODE_8 (extra=1, operand1=0, operand2=0)
+      [3] SET_STACK (extra=2, operand=0)
+      [4] GET_CONSTANT (extra=3, operand=1)
+      [5] GET_CONSTANT (extra=4, operand=2)
+      [6] OPCODE_73 (extra=1, operand1=1, operand2=3)
+      [7] SET_STACK (extra=0, operand=2)
+      [8] GET_CONSTANT (extra=1, operand=3)
+      [9] GET_CONSTANT (extra=2, operand=3)
+      [10] GET_CONSTANT (extra=3, operand=3)
+      [11] GET_CONSTANT (extra=4, operand=3)
+      [12] CREATE_OBJECT (extra=1)
+      [13] OPCODE_20 (extra=1, operand2=1, operand1=1, operand1_1=0)
+      [14] OPCODE_8 (extra=2, operand1=1, operand2=0)
+      [15] SET_STACK (extra=3, operand=1)
+      [16] GET_CONSTANT (extra=4, operand=4)
+      [17] GET_CONSTANT (extra=5, operand=5)
+      [18] OPCODE_73 (extra=2, operand1=2, operand2=3)
+      [19] SET_STACK (extra=1, operand=3)
+      [20] GET_CONSTANT (extra=2, operand=3)
+      [21] GET_CONSTANT (extra=3, operand=3)
+      [22] GET_CONSTANT (extra=4, operand=3)
+      [23] GET_CONSTANT (extra=5, operand=3)
+      [24] GET_STACK (extra=2, operand=0)
+      [25] GET_STACK (extra=3, operand=1)
+      [26] OPCODE_22 (extra=4, operand2=196610, operand1=2, operand1_1=3)
+      [27] OPCODE_76 (extra=5, operand=0)
+      [28] OPCODE_8 (extra=5, operand1=5, operand2=1)
+      [29] OPCODE_8 (extra=5, operand1=5, operand2=2)
+      [30] GET_STACK (extra=6, operand=4)
+      [31] OPCODE_8 (extra=6, operand1=6, operand2=3)
+      [32] GET_STACK (extra=7, operand=4)
+      [33] OPCODE_8 (extra=7, operand1=7, operand2=4)
+      [34] OPCODE_22 (extra=8, operand2=458758, operand1=6, operand1_1=7)
+      [35] SET_STACK (extra=6, operand=8)
+      [36] GET_CONSTANT (extra=7, operand=3)
+      [37] GET_CONSTANT (extra=8, operand=3)
+      [38] OPCODE_74 (extra=5, operand1=5, operand2=1)
+      [39] GET_CONSTANT (extra=6, operand=3)
+      [40] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+
+

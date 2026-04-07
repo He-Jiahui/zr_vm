@@ -770,9 +770,130 @@ static SZrObject *runtime_decorator_build_member_reflection(SZrState *state,
             (TZrUInt32)targetKind);
 }
 
+static TZrBool runtime_decorator_restore_apply_frame(SZrState *state,
+                                                     const SZrFunctionStackAnchor *functionBaseAnchor,
+                                                     TZrStackValuePointer *outFunctionBase,
+                                                     TZrStackValuePointer *outArgBase,
+                                                     SZrTypeValue **outResult,
+                                                     SZrTypeValue **outTargetValue,
+                                                     SZrTypeValue **outDecoratorValue) {
+    TZrStackValuePointer functionBase;
+    TZrStackValuePointer argBase;
+
+    if (outFunctionBase != ZR_NULL) {
+        *outFunctionBase = ZR_NULL;
+    }
+    if (outArgBase != ZR_NULL) {
+        *outArgBase = ZR_NULL;
+    }
+    if (outResult != ZR_NULL) {
+        *outResult = ZR_NULL;
+    }
+    if (outTargetValue != ZR_NULL) {
+        *outTargetValue = ZR_NULL;
+    }
+    if (outDecoratorValue != ZR_NULL) {
+        *outDecoratorValue = ZR_NULL;
+    }
+    if (state == ZR_NULL || functionBaseAnchor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    functionBase = ZrCore_Function_StackAnchorRestore(state, functionBaseAnchor);
+    if (functionBase == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    argBase = functionBase + 1;
+    if (outFunctionBase != ZR_NULL) {
+        *outFunctionBase = functionBase;
+    }
+    if (outArgBase != ZR_NULL) {
+        *outArgBase = argBase;
+    }
+    if (outResult != ZR_NULL) {
+        *outResult = ZrCore_Stack_GetValue(functionBase);
+    }
+    if (outTargetValue != ZR_NULL) {
+        *outTargetValue = ZrCore_Stack_GetValue(argBase);
+    }
+    if (outDecoratorValue != ZR_NULL) {
+        *outDecoratorValue = ZrCore_Stack_GetValue(argBase + 1);
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool runtime_decorator_restore_apply_member_frame(SZrState *state,
+                                                            const SZrFunctionStackAnchor *functionBaseAnchor,
+                                                            TZrStackValuePointer *outFunctionBase,
+                                                            TZrStackValuePointer *outArgBase,
+                                                            SZrTypeValue **outResult,
+                                                            SZrTypeValue **outPrototypeValue,
+                                                            SZrTypeValue **outMemberNameValue,
+                                                            SZrTypeValue **outKindValue,
+                                                            SZrTypeValue **outDecoratorValue) {
+    TZrStackValuePointer functionBase;
+    TZrStackValuePointer argBase;
+
+    if (outFunctionBase != ZR_NULL) {
+        *outFunctionBase = ZR_NULL;
+    }
+    if (outArgBase != ZR_NULL) {
+        *outArgBase = ZR_NULL;
+    }
+    if (outResult != ZR_NULL) {
+        *outResult = ZR_NULL;
+    }
+    if (outPrototypeValue != ZR_NULL) {
+        *outPrototypeValue = ZR_NULL;
+    }
+    if (outMemberNameValue != ZR_NULL) {
+        *outMemberNameValue = ZR_NULL;
+    }
+    if (outKindValue != ZR_NULL) {
+        *outKindValue = ZR_NULL;
+    }
+    if (outDecoratorValue != ZR_NULL) {
+        *outDecoratorValue = ZR_NULL;
+    }
+    if (state == ZR_NULL || functionBaseAnchor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    functionBase = ZrCore_Function_StackAnchorRestore(state, functionBaseAnchor);
+    if (functionBase == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    argBase = functionBase + 1;
+    if (outFunctionBase != ZR_NULL) {
+        *outFunctionBase = functionBase;
+    }
+    if (outArgBase != ZR_NULL) {
+        *outArgBase = argBase;
+    }
+    if (outResult != ZR_NULL) {
+        *outResult = ZrCore_Stack_GetValue(functionBase);
+    }
+    if (outPrototypeValue != ZR_NULL) {
+        *outPrototypeValue = ZrCore_Stack_GetValue(argBase);
+    }
+    if (outMemberNameValue != ZR_NULL) {
+        *outMemberNameValue = ZrCore_Stack_GetValue(argBase + 1);
+    }
+    if (outKindValue != ZR_NULL) {
+        *outKindValue = ZrCore_Stack_GetValue(argBase + 2);
+    }
+    if (outDecoratorValue != ZR_NULL) {
+        *outDecoratorValue = ZrCore_Stack_GetValue(argBase + 3);
+    }
+    return ZR_TRUE;
+}
+
 ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argBase;
+    SZrFunctionStackAnchor functionBaseAnchor;
     SZrTypeValue *result;
     SZrTypeValue *targetValue;
     SZrTypeValue *decoratorValue;
@@ -787,10 +908,16 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
     }
 
     functionBase = state->callInfoList->functionBase.valuePointer;
-    argBase = functionBase + 1;
-    result = ZrCore_Stack_GetValue(functionBase);
-    targetValue = ZrCore_Stack_GetValue(argBase);
-    decoratorValue = ZrCore_Stack_GetValue(argBase + 1);
+    ZrCore_Function_StackAnchorInit(state, functionBase, &functionBaseAnchor);
+    if (!runtime_decorator_restore_apply_frame(state,
+                                               &functionBaseAnchor,
+                                               &functionBase,
+                                               &argBase,
+                                               &result,
+                                               &targetValue,
+                                               &decoratorValue)) {
+        return 0;
+    }
 
     if (result != ZR_NULL && targetValue != ZR_NULL) {
         ZrCore_Value_Copy(state, result, targetValue);
@@ -805,12 +932,30 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
 
     if (!ZrCore_Reflection_TypeOfValue(state, targetValue, &reflectionValue) ||
         reflectionValue.type != ZR_VALUE_TYPE_OBJECT || reflectionValue.value.object == ZR_NULL) {
+        if (!runtime_decorator_restore_apply_frame(state,
+                                                   &functionBaseAnchor,
+                                                   &functionBase,
+                                                   &argBase,
+                                                   &result,
+                                                   &targetValue,
+                                                   &decoratorValue)) {
+            return 0;
+        }
         state->stackTop.valuePointer = functionBase + 1;
         return 1;
     }
 
     reflectionObject = ZR_CAST_OBJECT(state, reflectionValue.value.object);
     runtime_decorator_append_record(state, reflectionObject, decoratorValue);
+    if (!runtime_decorator_restore_apply_frame(state,
+                                               &functionBaseAnchor,
+                                               &functionBase,
+                                               &argBase,
+                                               &result,
+                                               &targetValue,
+                                               &decoratorValue)) {
+        return 0;
+    }
 
     if (decoratorValue->type == ZR_VALUE_TYPE_FUNCTION ||
         decoratorValue->type == ZR_VALUE_TYPE_CLOSURE ||
@@ -832,6 +977,15 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
         return 1;
     }
 
+    if (!runtime_decorator_restore_apply_frame(state,
+                                               &functionBaseAnchor,
+                                               &functionBase,
+                                               &argBase,
+                                               &result,
+                                               &targetValue,
+                                               &decoratorValue)) {
+        return 0;
+    }
     metadataObject = runtime_decorator_get_object_field_as_object(state, reflectionObject, "metadata", ZR_VALUE_TYPE_OBJECT);
     decoratorsArray = runtime_decorator_get_object_field_as_object(state, reflectionObject, "decorators", ZR_VALUE_TYPE_ARRAY);
 
@@ -850,6 +1004,15 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
         runtime_decorator_commit_function_overlay(state, targetFunction, metadataObject, decoratorsArray);
     }
 
+    if (!runtime_decorator_restore_apply_frame(state,
+                                               &functionBaseAnchor,
+                                               &functionBase,
+                                               &argBase,
+                                               &result,
+                                               &targetValue,
+                                               &decoratorValue)) {
+        return 0;
+    }
     state->stackTop.valuePointer = functionBase + 1;
     return 1;
 }
@@ -857,6 +1020,7 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
 ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyMemberNativeEntry(SZrState *state) {
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argBase;
+    SZrFunctionStackAnchor functionBaseAnchor;
     SZrTypeValue *result;
     SZrTypeValue *prototypeValue;
     SZrTypeValue *memberNameValue;
@@ -874,12 +1038,18 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyMemberNativeEntry(SZrState *st
     }
 
     functionBase = state->callInfoList->functionBase.valuePointer;
-    argBase = functionBase + 1;
-    result = ZrCore_Stack_GetValue(functionBase);
-    prototypeValue = ZrCore_Stack_GetValue(argBase);
-    memberNameValue = ZrCore_Stack_GetValue(argBase + 1);
-    kindValue = ZrCore_Stack_GetValue(argBase + 2);
-    decoratorValue = ZrCore_Stack_GetValue(argBase + 3);
+    ZrCore_Function_StackAnchorInit(state, functionBase, &functionBaseAnchor);
+    if (!runtime_decorator_restore_apply_member_frame(state,
+                                                      &functionBaseAnchor,
+                                                      &functionBase,
+                                                      &argBase,
+                                                      &result,
+                                                      &prototypeValue,
+                                                      &memberNameValue,
+                                                      &kindValue,
+                                                      &decoratorValue)) {
+        return 0;
+    }
 
     if (result != ZR_NULL && prototypeValue != ZR_NULL) {
         ZrCore_Value_Copy(state, result, prototypeValue);
@@ -892,11 +1062,22 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyMemberNativeEntry(SZrState *st
         kindValue == ZR_NULL ||
         decoratorValue == ZR_NULL ||
         prototypeValue->type != ZR_VALUE_TYPE_OBJECT ||
-        prototypeValue->value.object == ZR_NULL ||
-        ZR_CAST_OBJECT(state, prototypeValue->value.object)->internalType != ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE ||
-        memberNameValue->type != ZR_VALUE_TYPE_STRING ||
-        memberNameValue->value.object == ZR_NULL ||
-        !ZR_VALUE_IS_TYPE_INT(kindValue->type)) {
+         prototypeValue->value.object == ZR_NULL ||
+         ZR_CAST_OBJECT(state, prototypeValue->value.object)->internalType != ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE ||
+         memberNameValue->type != ZR_VALUE_TYPE_STRING ||
+         memberNameValue->value.object == ZR_NULL ||
+         !ZR_VALUE_IS_TYPE_INT(kindValue->type)) {
+        if (!runtime_decorator_restore_apply_member_frame(state,
+                                                          &functionBaseAnchor,
+                                                          &functionBase,
+                                                          &argBase,
+                                                          &result,
+                                                          &prototypeValue,
+                                                          &memberNameValue,
+                                                          &kindValue,
+                                                          &decoratorValue)) {
+            return 0;
+        }
         state->stackTop.valuePointer = functionBase + 1;
         return 1;
     }
@@ -906,11 +1087,33 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyMemberNativeEntry(SZrState *st
     targetKind = (EZrRuntimeDecoratorTargetKind)kindValue->value.nativeObject.nativeInt64;
     reflectionObject = runtime_decorator_build_member_reflection(state, prototypeValue, memberName, targetKind);
     if (reflectionObject == ZR_NULL) {
+        if (!runtime_decorator_restore_apply_member_frame(state,
+                                                          &functionBaseAnchor,
+                                                          &functionBase,
+                                                          &argBase,
+                                                          &result,
+                                                          &prototypeValue,
+                                                          &memberNameValue,
+                                                          &kindValue,
+                                                          &decoratorValue)) {
+            return 0;
+        }
         state->stackTop.valuePointer = functionBase + 1;
         return 1;
     }
 
     runtime_decorator_append_record(state, reflectionObject, decoratorValue);
+    if (!runtime_decorator_restore_apply_member_frame(state,
+                                                      &functionBaseAnchor,
+                                                      &functionBase,
+                                                      &argBase,
+                                                      &result,
+                                                      &prototypeValue,
+                                                      &memberNameValue,
+                                                      &kindValue,
+                                                      &decoratorValue)) {
+        return 0;
+    }
 
     {
         SZrTypeValue reflectionValue;
@@ -942,6 +1145,17 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyMemberNativeEntry(SZrState *st
     decoratorsArray = runtime_decorator_get_object_field_as_object(state, reflectionObject, "decorators", ZR_VALUE_TYPE_ARRAY);
     runtime_decorator_commit_member_overlay(state, prototype, memberName, targetKind, metadataObject, decoratorsArray);
 
+    if (!runtime_decorator_restore_apply_member_frame(state,
+                                                      &functionBaseAnchor,
+                                                      &functionBase,
+                                                      &argBase,
+                                                      &result,
+                                                      &prototypeValue,
+                                                      &memberNameValue,
+                                                      &kindValue,
+                                                      &decoratorValue)) {
+        return 0;
+    }
     state->stackTop.valuePointer = functionBase + 1;
     return 1;
 }

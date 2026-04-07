@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_sort_kernel",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

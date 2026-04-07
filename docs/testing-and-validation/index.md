@@ -1,5 +1,7 @@
 ---
 related_code:
+  - tests/benchmarks/README.md
+  - tests/benchmarks/registry.cmake
   - tests/CMakeLists.txt
   - tests/cmake/run_performance_suite.cmake
   - tests/performance/perf_runner.c
@@ -11,6 +13,8 @@ related_code:
   - docs/zr_language_specification.md
   - docs/zr_language_test_requirements.md
 implementation_files:
+  - tests/benchmarks/README.md
+  - tests/benchmarks/registry.cmake
   - tests/CMakeLists.txt
   - tests/cmake/run_performance_suite.cmake
   - tests/performance/perf_runner.c
@@ -25,11 +29,10 @@ plan_sources:
   - docs/zr_language_specification.md
   - docs/zr_language_test_requirements.md
 tests:
+  - tests/benchmarks/test_benchmark_registry.c
+  - tests/benchmarks/registry.cmake
   - tests/cmake/run_performance_suite.cmake
   - tests/performance/perf_runner.c
-  - tests/fixtures/projects/benchmark_numeric_loops/benchmark_numeric_loops.zrp
-  - tests/fixtures/projects/benchmark_dispatch_loops/benchmark_dispatch_loops.zrp
-  - tests/fixtures/projects/benchmark_container_pipeline/benchmark_container_pipeline.zrp
   - tests/parser/test_char_and_type_cast.c
   - tests/function/test_named_arguments.c
   - tests/module/test_module_system.c
@@ -54,8 +57,8 @@ doc_type: category-index
   - 现有三个测试入口如何消费这些资产
   - 为什么当前切片先落“外部证据清单 + 最小可运行基线”
 - `ctest-performance-reporting.md`
-  - `performance_report` suite 的构成与默认 tier 策略
-  - benchmark fixture、binary 模式预编译校验、Markdown/JSON 报告路径
+  - `tests/benchmarks` 如何作为 benchmark 的单一事实来源
+  - `case x implementation` 报告结构、`relative_to_c` 规则与 `SKIP` 语义
   - `ZR_VM_PERF_WARMUP` / `ZR_VM_PERF_ITERATIONS` 环境变量
   - Windows/MSVC 与 WSL 下的验证命令
 - `../reference-alignment/full-stack-test-matrix.md`

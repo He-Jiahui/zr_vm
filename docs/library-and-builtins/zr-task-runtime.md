@@ -55,14 +55,14 @@ doc_type: module-detail
 源代码：
 
 ```zr
-%async func f(): int {
+%async f(): %async int {
     return 1;
 }
 ```
 
 当前会 lower 成：
 
-- 返回类型从 `int` 包成 `TaskRunner<int>`
+- 表面返回类型推荐写成 `%async int`，底层仍会包成 `TaskRunner<int>`
 - 函数体返回 `zr.task.__createTaskRunner(...)`
 
 也就是说，调用 `%async` 函数只会得到冷的 runner，不会立即排队执行。

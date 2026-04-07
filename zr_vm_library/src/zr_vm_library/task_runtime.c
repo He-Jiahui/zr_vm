@@ -903,16 +903,26 @@ static TZrBool task_runtime_scheduler_get_auto_method(ZrLibCallContext *context,
 }
 
 static TZrBool task_runtime_coroutine_start_function(ZrLibCallContext *context, SZrTypeValue *result) {
+    const SZrTypeValue *schedulerExport;
     SZrObject *runner;
+    SZrObject *scheduler = ZR_NULL;
 
     if (context == ZR_NULL || result == ZR_NULL || !ZrLib_CallContext_ReadObject(context, 0, &runner)) {
         return ZR_FALSE;
     }
 
-    return task_runtime_start_runner_on_scheduler(context->state,
-                                                  task_runtime_ensure_coroutine_scheduler(context->state),
-                                                  runner,
-                                                  result);
+    schedulerExport = task_runtime_get_module_export(context->state, kCoroutineModuleName, "coroutineScheduler");
+    if (schedulerExport != ZR_NULL &&
+        (schedulerExport->type == ZR_VALUE_TYPE_OBJECT || schedulerExport->type == ZR_VALUE_TYPE_ARRAY) &&
+        schedulerExport->value.object != ZR_NULL) {
+        scheduler = ZR_CAST_OBJECT(context->state, schedulerExport->value.object);
+    }
+
+    if (scheduler == ZR_NULL) {
+        scheduler = task_runtime_ensure_coroutine_scheduler(context->state);
+    }
+
+    return task_runtime_start_runner_on_scheduler(context->state, scheduler, runner, result);
 }
 
 static TZrBool task_runtime_task_module_materialize(SZrState *state,
@@ -969,7 +979,7 @@ static const ZrLibGenericParameterDescriptor g_task_single_generic_parameter[] =
 };
 
 static const ZrLibParameterDescriptor g_scheduler_start_parameters[] = {
-        {"runner", "TaskRunner<T>", "The cold runner to schedule."},
+        {"runner", "zr.task.TaskRunner<T>", "The cold runner to schedule."},
 };
 
 static const ZrLibParameterDescriptor g_create_runner_parameters[] = {
@@ -977,7 +987,7 @@ static const ZrLibParameterDescriptor g_create_runner_parameters[] = {
 };
 
 static const ZrLibParameterDescriptor g_await_parameters[] = {
-        {"task", "Task<T>", "The started task to await."},
+        {"task", "zr.task.Task<T>", "The started task to await."},
 };
 
 static const ZrLibParameterDescriptor g_scheduler_set_auto_parameters[] = {
@@ -985,7 +995,7 @@ static const ZrLibParameterDescriptor g_scheduler_set_auto_parameters[] = {
 };
 
 static const ZrLibMethodDescriptor g_runner_methods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("start", 0, 0, task_runtime_runner_start, "Task<T>",
+        ZR_LIB_METHOD_DESCRIPTOR_INIT("start", 0, 0, task_runtime_runner_start, "zr.task.Task<T>",
                                       "Start this cold task runner on zr.task.defaultScheduler.", ZR_FALSE, ZR_NULL, 0),
 };
 
@@ -997,7 +1007,7 @@ static const ZrLibMethodDescriptor g_task_methods[] = {
 };
 
 static const ZrLibMethodDescriptor g_scheduler_methods[] = {
-        {"start", 1, 1, task_runtime_scheduler_start_method, "Task<T>",
+        {"start", 1, 1, task_runtime_scheduler_start_method, "zr.task.Task<T>",
          "Queue a TaskRunner on this scheduler.", ZR_FALSE, g_scheduler_start_parameters,
          ZR_ARRAY_COUNT(g_scheduler_start_parameters), 0U, g_task_single_generic_parameter,
          ZR_ARRAY_COUNT(g_task_single_generic_parameter)},
@@ -1016,7 +1026,7 @@ static const ZrLibMethodDescriptor g_scheduler_methods[] = {
 static const TZrChar *g_scheduler_implements[] = {"IScheduler"};
 
 static const ZrLibFunctionDescriptor g_task_functions[] = {
-        {"__createTaskRunner", 1, 1, task_runtime_create_runner, "TaskRunner<T>",
+        {"__createTaskRunner", 1, 1, task_runtime_create_runner, "zr.task.TaskRunner<T>",
          "Internal helper used by %async lowering.", g_create_runner_parameters,
          ZR_ARRAY_COUNT(g_create_runner_parameters), g_task_single_generic_parameter,
          ZR_ARRAY_COUNT(g_task_single_generic_parameter)},
@@ -1026,7 +1036,7 @@ static const ZrLibFunctionDescriptor g_task_functions[] = {
 };
 
 static const ZrLibFunctionDescriptor g_coroutine_functions[] = {
-        {"start", 1, 1, task_runtime_coroutine_start_function, "Task<T>",
+        {"start", 1, 1, task_runtime_coroutine_start_function, "zr.task.Task<T>",
          "Queue a TaskRunner on the coroutine scheduler.", g_scheduler_start_parameters,
          ZR_ARRAY_COUNT(g_scheduler_start_parameters), g_task_single_generic_parameter,
          ZR_ARRAY_COUNT(g_task_single_generic_parameter)},

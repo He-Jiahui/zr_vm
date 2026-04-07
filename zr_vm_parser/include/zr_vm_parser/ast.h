@@ -68,6 +68,7 @@ enum EZrAstNodeType {
     ZR_AST_PRIMARY_EXPRESSION,
     ZR_AST_IMPORT_EXPRESSION,
     ZR_AST_TYPE_QUERY_EXPRESSION,
+    ZR_AST_TYPE_LITERAL_EXPRESSION,
     ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION,
     ZR_AST_CONSTRUCT_EXPRESSION,
 
@@ -111,6 +112,7 @@ enum EZrAstNodeType {
 
     // 类型相关
     ZR_AST_TYPE,
+    ZR_AST_FUNCTION_TYPE,
     ZR_AST_GENERIC_TYPE,
     ZR_AST_TUPLE_TYPE,
     ZR_AST_GENERIC_DECLARATION,
@@ -147,6 +149,10 @@ typedef enum EZrAstNodeType EZrAstNodeType;
 
 // 前向声明
 typedef struct SZrAstNode SZrAstNode;
+typedef struct SZrType SZrType;
+typedef struct SZrParameter SZrParameter;
+typedef struct SZrGenericDeclaration SZrGenericDeclaration;
+typedef struct SZrFunctionType SZrFunctionType;
 
 // AST 节点数组
 typedef struct SZrAstNodeArray {
@@ -210,6 +216,17 @@ enum EZrParameterPassingMode {
 
 typedef enum EZrParameterPassingMode EZrParameterPassingMode;
 
+enum EZrDeclarationModifierFlag {
+    ZR_DECLARATION_MODIFIER_NONE = 0,
+    ZR_DECLARATION_MODIFIER_ABSTRACT = 1 << 0,
+    ZR_DECLARATION_MODIFIER_VIRTUAL = 1 << 1,
+    ZR_DECLARATION_MODIFIER_OVERRIDE = 1 << 2,
+    ZR_DECLARATION_MODIFIER_FINAL = 1 << 3,
+    ZR_DECLARATION_MODIFIER_SHADOW = 1 << 4,
+};
+
+typedef enum EZrDeclarationModifierFlag EZrDeclarationModifierFlag;
+
 // 赋值操作符
 typedef struct SZrAssignmentOperator {
     const TZrChar *op; // "=", "+=", "-=", "*=", "/=", "%="
@@ -236,6 +253,8 @@ typedef struct SZrType {
     struct SZrType *subType; // 子类型（可选）
     TZrInt32 dimensions; // 数组维度
     EZrOwnershipQualifier ownershipQualifier; // 特殊所有权限定
+    TZrBool isDecoratorPseudoType; // 是否来自 %type 反射伪类型注解
+    TZrBool isImplicitBuiltinType; // 是否由 parser 内部糖语法生成，可绕过显式导入检查
     
     // 数组大小约束
     TZrSize arrayFixedSize;          // 数组固定大小（0表示未固定）
@@ -255,6 +274,13 @@ typedef struct SZrGenericType {
 typedef struct SZrTupleType {
     SZrAstNodeArray *elements; // Type 数组
 } SZrTupleType;
+
+typedef struct SZrFunctionType {
+    struct SZrGenericDeclaration *generic; // 可选
+    SZrAstNodeArray *params; // Parameter 数组
+    SZrParameter *args; // 可变参数（可选）
+    struct SZrType *returnType; // 必选
+} SZrFunctionType;
 
 // 泛型声明
 typedef struct SZrGenericDeclaration {
@@ -408,6 +434,10 @@ typedef struct SZrImportExpression {
 typedef struct SZrTypeQueryExpression {
     SZrAstNode *operand;
 } SZrTypeQueryExpression;
+
+typedef struct SZrTypeLiteralExpression {
+    SZrType *typeInfo;
+} SZrTypeLiteralExpression;
 
 typedef struct SZrPrototypeReferenceExpression {
     SZrAstNode *target;
@@ -605,6 +635,7 @@ typedef struct SZrClassDeclaration {
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
     EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
     TZrBool isOwned;
+    TZrUInt32 modifierFlags;
 } SZrClassDeclaration;
 
 // 类字段
@@ -625,6 +656,7 @@ typedef struct SZrClassMethod {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TZrBool isStatic;
+    TZrUInt32 modifierFlags;
     EZrOwnershipQualifier receiverQualifier;
     SZrIdentifier *name;
     SZrFileRange nameLocation;
@@ -640,6 +672,7 @@ typedef struct SZrClassProperty {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TZrBool isStatic;
+    TZrUInt32 modifierFlags;
     SZrAstNode *modifier; // PropertyGet 或 PropertySet 节点
 } SZrClassProperty;
 
@@ -647,6 +680,7 @@ typedef struct SZrClassProperty {
 typedef struct SZrClassMetaFunction {
     EZrAccessModifier access;
     TZrBool isStatic;
+    TZrUInt32 modifierFlags;
     SZrIdentifier *meta; // MetaIdentifier
     SZrAstNodeArray *params; // Parameter 数组
     SZrParameter *args; // 可变参数（可选）
@@ -658,6 +692,7 @@ typedef struct SZrClassMetaFunction {
 
 // 属性 Getter
 typedef struct SZrPropertyGet {
+    TZrUInt32 modifierFlags;
     SZrIdentifier *name;
     SZrFileRange nameLocation;
     SZrType *targetType; // 可选
@@ -666,6 +701,7 @@ typedef struct SZrPropertyGet {
 
 // 属性 Setter
 typedef struct SZrPropertySet {
+    TZrUInt32 modifierFlags;
     SZrIdentifier *name;
     SZrFileRange nameLocation;
     SZrIdentifier *param;
@@ -885,6 +921,7 @@ typedef struct SZrAstNode {
         SZrPrimaryExpression primaryExpression;
         SZrImportExpression importExpression;
         SZrTypeQueryExpression typeQueryExpression;
+        SZrTypeLiteralExpression typeLiteralExpression;
         SZrPrototypeReferenceExpression prototypeReferenceExpression;
         SZrConstructExpression constructExpression;
 
@@ -931,6 +968,7 @@ typedef struct SZrAstNode {
 
         // 类型
         SZrType type;
+        SZrFunctionType functionType;
         SZrGenericType genericType;
         SZrTupleType tupleType;
         SZrGenericDeclaration genericDeclaration;

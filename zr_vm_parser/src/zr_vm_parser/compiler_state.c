@@ -155,6 +155,10 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
                       &cs->importedCompileTimeModuleAliases,
                       sizeof(SZrImportedCompileTimeModuleAlias),
                       ZR_PARSER_INITIAL_CAPACITY_TINY);
+    ZrCore_Array_Init(state,
+                      &cs->typeValueAliases,
+                      sizeof(SZrTypeBinding),
+                      ZR_PARSER_INITIAL_CAPACITY_TINY);
     cs->isInCompileTimeContext = ZR_FALSE;
     cs->isCompilingCompileTimeRuntimeSupport = ZR_FALSE;
     
@@ -444,6 +448,17 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
             }
         }
         ZrCore_Array_Free(state, &cs->compileTimeVariables);
+    }
+
+    if (cs->typeValueAliases.isValid && cs->typeValueAliases.head != ZR_NULL &&
+        cs->typeValueAliases.capacity > 0 && cs->typeValueAliases.elementSize > 0) {
+        for (TZrSize i = 0; i < cs->typeValueAliases.length; i++) {
+            SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, i);
+            if (binding != ZR_NULL) {
+                ZrParser_InferredType_Free(state, &binding->type);
+            }
+        }
+        ZrCore_Array_Free(state, &cs->typeValueAliases);
     }
     // 释放 const 变量跟踪数组
     if (cs->constLocalVars.isValid && cs->constLocalVars.head != ZR_NULL && 

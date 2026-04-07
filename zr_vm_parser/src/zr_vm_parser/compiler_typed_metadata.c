@@ -663,6 +663,10 @@ static TZrBool build_function_like_export_symbol(SZrCompilerState *cs,
     outSymbol->stackSlot = exportedVar->stackSlot;
     outSymbol->accessModifier = (TZrUInt8)exportedVar->accessModifier;
     outSymbol->symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
+    outSymbol->exportKind = (TZrUInt8)exportedVar->exportKind;
+    outSymbol->readiness = (TZrUInt8)exportedVar->readiness;
+    outSymbol->reserved0 = 0;
+    outSymbol->callableChildIndex = exportedVar->callableChildIndex;
     functionInfo = find_callable_binding_info(cs, exportedVar->name);
 
     if (returnType != ZR_NULL) {
@@ -766,6 +770,10 @@ static void build_variable_export_symbol(SZrCompilerState *cs,
     outSymbol->stackSlot = exportedVar->stackSlot;
     outSymbol->accessModifier = (TZrUInt8)exportedVar->accessModifier;
     outSymbol->symbolKind = ZR_FUNCTION_TYPED_SYMBOL_VARIABLE;
+    outSymbol->exportKind = (TZrUInt8)exportedVar->exportKind;
+    outSymbol->readiness = (TZrUInt8)exportedVar->readiness;
+    outSymbol->reserved0 = 0;
+    outSymbol->callableChildIndex = exportedVar->callableChildIndex;
 
     ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
     if (exportedVar->name != ZR_NULL &&

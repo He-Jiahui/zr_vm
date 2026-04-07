@@ -1,0 +1,8 @@
+var local = %import("local_pair");
+var native = %import("native_imports");
+
+run(): int {
+    return native.touch() + local.score();
+}
+
+return run();

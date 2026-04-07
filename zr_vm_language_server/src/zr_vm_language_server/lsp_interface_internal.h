@@ -47,11 +47,22 @@ SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
 TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
                                                             SZrLspProjectIndex *projectIndex,
                                                             SZrSemanticAnalyzer *analyzer,
+                                                            SZrString *uri,
                                                             SZrAstNode *ast,
                                                             const TZrChar *content,
                                                             TZrSize contentLength,
                                                             TZrSize cursorOffset,
                                                             SZrLspResolvedMetadataMember *outResolved);
+TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
+                                                             SZrLspContext *context,
+                                                             SZrLspProjectIndex *projectIndex,
+                                                             SZrSemanticAnalyzer *analyzer,
+                                                             SZrString *uri,
+                                                             SZrAstNode *ast,
+                                                             const TZrChar *content,
+                                                             TZrSize contentLength,
+                                                             TZrSize cursorOffset,
+                                                             SZrLspResolvedMetadataMember *outResolved);
 void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag);
 SZrLspSymbolInformation *ZrLanguageServer_Lsp_CreateSymbolInformation(SZrState *state,
                                                                       SZrSymbol *symbol);
@@ -136,6 +147,11 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
                                                               SZrString *uri,
                                                               const TZrChar *content,
                                                               TZrSize contentLength);
+TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
+                                                    SZrLspContext *context,
+                                                    SZrString *uri,
+                                                    SZrSemanticAnalyzer *analyzer,
+                                                    SZrAstNode *ast);
 SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(SZrState *state,
                                                                     SZrLspContext *context,
                                                                     SZrString *uri);
@@ -176,6 +192,9 @@ TZrBool ZrLanguageServer_LspProject_AppendExternalMetadataDeclarationHighlights(
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_ProjectContainsUri(SZrState *state,
                                                                        SZrLspContext *context,
                                                                        SZrString *uri);
+SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext *context, SZrString *uri);
+SZrLspProjectFileRecord *ZrLanguageServer_LspProject_FindRecordByModuleName(SZrLspProjectIndex *projectIndex,
+                                                                            SZrString *moduleName);
 TZrBool ZrLanguageServer_Lsp_ProjectAppendWorkspaceSymbols(SZrState *state,
                                                            SZrLspContext *context,
                                                            SZrString *query,

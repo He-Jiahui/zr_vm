@@ -44,6 +44,14 @@ typedef struct SZrMemberDescriptor {
     struct SZrFunction *getterFunction;
     struct SZrFunction *setterFunction;
     TZrUInt32 contractRole;
+    TZrUInt32 modifierFlags;
+    struct SZrString *ownerTypeName;
+    struct SZrString *baseDefinitionOwnerTypeName;
+    struct SZrString *baseDefinitionName;
+    TZrUInt32 virtualSlotIndex;
+    TZrUInt32 interfaceContractSlot;
+    TZrUInt32 propertyIdentity;
+    TZrUInt32 accessorRole;
 } SZrMemberDescriptor;
 
 typedef struct SZrIndexContract {
@@ -117,6 +125,9 @@ struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     TZrBool dynamicMemberCapable;
     TZrUInt8 reserved0;
     TZrUInt16 reserved1;
+    TZrUInt32 modifierFlags;
+    TZrUInt32 nextVirtualSlotIndex;
+    TZrUInt32 nextPropertyIdentity;
     SZrManagedFieldInfo *managedFields;
     TZrUInt32 managedFieldCount;
     TZrUInt32 managedFieldCapacity;

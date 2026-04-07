@@ -9,6 +9,17 @@
 #include "lsp_semantic_import_chain.h"
 
 #include "zr_vm_parser/type_inference.h"
+#include "../../../zr_vm_parser/src/zr_vm_parser/type_inference_internal.h"
+
+static TZrBool symbol_name_matches(SZrSymbol *symbol, SZrString *name);
+static TZrInt32 completion_metadata_symbol_priority(SZrSymbol *symbol);
+static TZrBool completion_metadata_symbol_is_better(SZrSymbol *candidate, SZrSymbol *best);
+static SZrSymbol *find_symbol_for_completion_metadata(SZrSymbolTable *table, SZrString *name);
+static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyzer *analyzer,
+                                                               const TZrChar *typeName);
+static TZrBool extract_base_type_name(const TZrChar *typeName,
+                                      TZrChar *buffer,
+                                      TZrSize bufferSize);
 
 static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
     if (text == ZR_NULL || length == ZR_NULL) {
@@ -577,7 +588,7 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(SZrState *state,
         return;
     }
 
-    symbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, item->label, ZR_NULL);
+    symbol = find_symbol_for_completion_metadata(analyzer->symbolTable, item->label);
     if (symbol != ZR_NULL && item->detail == ZR_NULL) {
         const TZrChar *kindText = symbol_type_to_display_name(symbol->type);
         item->detail = ZrCore_String_Create(state, (TZrNativeString)kindText, strlen(kindText));
@@ -646,7 +657,25 @@ void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZ
     lspDiag->severity = (TZrInt32)diag->severity + 1;
     lspDiag->code = diag->code;
     lspDiag->message = diag->message;
-    ZrCore_Array_Init(state, &lspDiag->relatedInformation, sizeof(SZrLspLocation), 0);
+    ZrCore_Array_Init(state,
+                      &lspDiag->relatedInformation,
+                      sizeof(SZrLspDiagnosticRelatedInformation),
+                      diag->relatedInformation.length > 0 ? (TZrSize)diag->relatedInformation.length : 0);
+    for (TZrSize index = 0; index < diag->relatedInformation.length; index++) {
+        SZrDiagnosticRelatedInformation *related =
+            (SZrDiagnosticRelatedInformation *)ZrCore_Array_Get(&diag->relatedInformation, index);
+        SZrLspDiagnosticRelatedInformation lspRelated;
+
+        if (related == ZR_NULL) {
+            continue;
+        }
+
+        memset(&lspRelated, 0, sizeof(lspRelated));
+        lspRelated.location.uri = related->location.source;
+        lspRelated.location.range = ZrLanguageServer_LspRange_FromFileRange(related->location);
+        lspRelated.message = related->message;
+        ZrCore_Array_Push(state, &lspDiag->relatedInformation, &lspRelated);
+    }
     ZrCore_Array_Push(state, result, &lspDiag);
 }
 
@@ -743,6 +772,49 @@ static SZrString *extract_construct_target_type_name_from_node(SZrAstNode *node)
     }
 }
 
+static const SZrTypePrototypeInfo *resolve_construct_target_prototype_from_node(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *node,
+        TZrChar *buffer,
+        TZrSize bufferSize) {
+    SZrTypePrototypeInfo *prototype = ZR_NULL;
+    SZrString *resolvedTypeName = ZR_NULL;
+    EZrObjectPrototypeType prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
+    TZrBool allowValueConstruction = ZR_FALSE;
+    TZrBool allowBoxedConstruction = ZR_FALSE;
+
+    if (buffer != ZR_NULL && bufferSize > 0) {
+        buffer[0] = '\0';
+    }
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (!resolve_prototype_target_inference(analyzer->compilerState, node, &prototype, &resolvedTypeName) &&
+        !resolve_source_type_declaration_target_inference(analyzer->compilerState,
+                                                          node,
+                                                          &resolvedTypeName,
+                                                          &prototypeType,
+                                                          &allowValueConstruction,
+                                                          &allowBoxedConstruction)) {
+        return ZR_NULL;
+    }
+
+    if (resolvedTypeName != ZR_NULL && buffer != ZR_NULL && bufferSize > 0) {
+        snprintf(buffer, bufferSize, "%s", ZrCore_String_GetNativeString(resolvedTypeName));
+    }
+
+    if (prototype != ZR_NULL) {
+        return prototype;
+    }
+
+    if (resolvedTypeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return find_type_prototype_by_text(analyzer, ZrCore_String_GetNativeString(resolvedTypeName));
+}
+
 static SZrString *get_class_property_name(SZrAstNode *memberNode) {
     if (memberNode == ZR_NULL || memberNode->type != ZR_AST_CLASS_PROPERTY ||
         memberNode->data.classProperty.modifier == ZR_NULL) {
@@ -777,6 +849,74 @@ static TZrBool completion_items_contains_label(SZrArray *items, SZrString *label
     }
 
     return ZR_FALSE;
+}
+
+static TZrBool symbol_name_matches(SZrSymbol *symbol, SZrString *name) {
+    return symbol != ZR_NULL &&
+           symbol->name != ZR_NULL &&
+           name != ZR_NULL &&
+           ZrLanguageServer_Lsp_StringsEqual(symbol->name, name);
+}
+
+static TZrInt32 completion_metadata_symbol_priority(SZrSymbol *symbol) {
+    if (symbol == ZR_NULL) {
+        return -1;
+    }
+
+    switch (symbol->type) {
+        case ZR_SYMBOL_PROPERTY:
+            return 4;
+        case ZR_SYMBOL_METHOD:
+            return 3;
+        case ZR_SYMBOL_FIELD:
+            return 2;
+        default:
+            return 1;
+    }
+}
+
+static TZrBool completion_metadata_symbol_is_better(SZrSymbol *candidate, SZrSymbol *best) {
+    if (candidate == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (best == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    return completion_metadata_symbol_priority(candidate) > completion_metadata_symbol_priority(best);
+}
+
+static SZrSymbol *find_symbol_for_completion_metadata(SZrSymbolTable *table, SZrString *name) {
+    SZrSymbol *best = ZR_NULL;
+
+    if (table == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    best = ZrLanguageServer_SymbolTable_Lookup(table, name, ZR_NULL);
+    if (best != ZR_NULL) {
+        return best;
+    }
+
+    for (TZrSize scopeIndex = 0; scopeIndex < table->allScopes.length; scopeIndex++) {
+        SZrSymbolScope **scopePtr = (SZrSymbolScope **)ZrCore_Array_Get(&table->allScopes, scopeIndex);
+        if (scopePtr == ZR_NULL || *scopePtr == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrSize symbolIndex = 0; symbolIndex < (*scopePtr)->symbols.length; symbolIndex++) {
+            SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&(*scopePtr)->symbols, symbolIndex);
+            if (symbolPtr == ZR_NULL || *symbolPtr == ZR_NULL || !symbol_name_matches(*symbolPtr, name)) {
+                continue;
+            }
+
+            if (completion_metadata_symbol_is_better(*symbolPtr, best)) {
+                best = *symbolPtr;
+            }
+        }
+    }
+
+    return best;
 }
 
 static void append_completion_item_for_symbol_name(SZrState *state,
@@ -817,6 +957,49 @@ static void append_completion_item_for_native_name(SZrState *state,
     if (label != ZR_NULL) {
         append_completion_item_for_symbol_name(state, result, label, kind);
     }
+}
+
+static SZrString *completion_type_member_display_name(SZrState *state,
+                                                      const SZrTypeMemberInfo *member,
+                                                      const TZrChar **outKind) {
+    const TZrChar *memberName;
+    const TZrChar *propertyPrefix = ZR_NULL;
+    TZrSize propertyPrefixLength = 0;
+
+    if (outKind != ZR_NULL) {
+        *outKind = ZR_NULL;
+    }
+
+    if (state == ZR_NULL || member == ZR_NULL || member->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    memberName = ZrCore_String_GetNativeStringShort(member->name);
+    if (memberName == ZR_NULL) {
+        memberName = ZrCore_String_GetNativeString(member->name);
+    }
+    if (memberName == ZR_NULL) {
+        return member->name;
+    }
+
+    if (strncmp(memberName, "__get_", 6) == 0) {
+        propertyPrefix = "__get_";
+        propertyPrefixLength = 6;
+    } else if (strncmp(memberName, "__set_", 6) == 0) {
+        propertyPrefix = "__set_";
+        propertyPrefixLength = 6;
+    }
+
+    if (propertyPrefix != ZR_NULL && memberName[propertyPrefixLength] != '\0') {
+        if (outKind != ZR_NULL) {
+            *outKind = "property";
+        }
+        return ZrCore_String_Create(state,
+                                    (TZrNativeString)(memberName + propertyPrefixLength),
+                                    strlen(memberName + propertyPrefixLength));
+    }
+
+    return member->name;
 }
 
 static void append_class_member_completions_recursive(SZrState *state,
@@ -890,23 +1073,179 @@ static void append_class_member_completions_recursive(SZrState *state,
     }
 }
 
+static void append_struct_member_completions_recursive(SZrState *state,
+                                                       SZrSemanticAnalyzer *analyzer,
+                                                       SZrSymbol *structSymbol,
+                                                       TZrBool wantStatic,
+                                                       TZrSize depth,
+                                                       SZrArray *result) {
+    SZrStructDeclaration *structDecl;
+    TZrSize memberIndex;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || structSymbol == ZR_NULL || result == ZR_NULL ||
+        depth > ZR_LSP_MEMBER_RECURSION_MAX_DEPTH || structSymbol->type != ZR_SYMBOL_STRUCT ||
+        structSymbol->astNode == ZR_NULL ||
+        structSymbol->astNode->type != ZR_AST_STRUCT_DECLARATION) {
+        return;
+    }
+
+    structDecl = &structSymbol->astNode->data.structDeclaration;
+    if (structDecl->members != ZR_NULL && structDecl->members->nodes != ZR_NULL) {
+        for (memberIndex = 0; memberIndex < structDecl->members->count; memberIndex++) {
+            SZrAstNode *memberNode = structDecl->members->nodes[memberIndex];
+            if (memberNode == ZR_NULL) {
+                continue;
+            }
+
+            if (memberNode->type == ZR_AST_STRUCT_FIELD &&
+                memberNode->data.structField.isStatic == wantStatic &&
+                memberNode->data.structField.name != ZR_NULL) {
+                append_completion_item_for_symbol_name(state,
+                                                       result,
+                                                       memberNode->data.structField.name->name,
+                                                       "field");
+            } else if (memberNode->type == ZR_AST_STRUCT_METHOD &&
+                       memberNode->data.structMethod.isStatic == wantStatic &&
+                       memberNode->data.structMethod.name != ZR_NULL) {
+                append_completion_item_for_symbol_name(state,
+                                                       result,
+                                                       memberNode->data.structMethod.name->name,
+                                                       "method");
+            }
+        }
+    }
+
+    if (structDecl->inherits != ZR_NULL && structDecl->inherits->nodes != ZR_NULL) {
+        for (memberIndex = 0; memberIndex < structDecl->inherits->count; memberIndex++) {
+            SZrAstNode *inheritNode = structDecl->inherits->nodes[memberIndex];
+            if (inheritNode != ZR_NULL && inheritNode->type == ZR_AST_TYPE &&
+                inheritNode->data.type.name != ZR_NULL &&
+                inheritNode->data.type.name->type == ZR_AST_IDENTIFIER_LITERAL) {
+                SZrString *baseName = inheritNode->data.type.name->data.identifier.name;
+                SZrSymbol *baseStruct = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable,
+                                                                            baseName,
+                                                                            ZR_NULL);
+                if (baseStruct != ZR_NULL && baseStruct != structSymbol) {
+                    append_struct_member_completions_recursive(state,
+                                                               analyzer,
+                                                               baseStruct,
+                                                               wantStatic,
+                                                               depth + 1,
+                                                               result);
+                }
+            }
+        }
+    }
+}
+
+static TZrBool append_type_symbol_member_completions_by_name(SZrState *state,
+                                                             SZrSemanticAnalyzer *analyzer,
+                                                             const TZrChar *typeText,
+                                                             TZrBool wantStatic,
+                                                             SZrArray *result) {
+    TZrChar baseTypeName[ZR_LSP_TYPE_BUFFER_LENGTH];
+    SZrString *typeName;
+    SZrSymbol *typeSymbol;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL ||
+        typeText == ZR_NULL || typeText[0] == '\0' || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!extract_base_type_name(typeText, baseTypeName, sizeof(baseTypeName))) {
+        return ZR_FALSE;
+    }
+
+    typeName = ZrCore_String_Create(state, (TZrNativeString)baseTypeName, strlen(baseTypeName));
+    if (typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typeSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, typeName, ZR_NULL);
+    if (typeSymbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeSymbol->type == ZR_SYMBOL_CLASS) {
+        append_class_member_completions_recursive(state, analyzer, typeSymbol, wantStatic, 0, result);
+    } else if (typeSymbol->type == ZR_SYMBOL_STRUCT) {
+        append_struct_member_completions_recursive(state, analyzer, typeSymbol, wantStatic, 0, result);
+    }
+
+    return result->length > 0;
+}
+
 static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyzer *analyzer,
                                                                const TZrChar *typeName) {
+    SZrCompilerState *compilerState;
+    const SZrTypePrototypeInfo *bestMatch = ZR_NULL;
+    SZrString *typeNameString;
+
     if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    for (TZrSize index = 0; index < analyzer->compilerState->typePrototypes.length; index++) {
+    compilerState = analyzer->compilerState;
+    for (TZrSize index = 0; index < compilerState->typePrototypes.length; index++) {
         const SZrTypePrototypeInfo *prototype =
-            (const SZrTypePrototypeInfo *)ZrCore_Array_Get(&analyzer->compilerState->typePrototypes, index);
+            (const SZrTypePrototypeInfo *)ZrCore_Array_Get(&compilerState->typePrototypes, index);
         if (prototype != ZR_NULL &&
             prototype->name != ZR_NULL &&
             strcmp(ZrCore_String_GetNativeString(prototype->name), typeName) == 0) {
-            return prototype;
+            if (bestMatch == ZR_NULL || (bestMatch->isImportedNative && !prototype->isImportedNative)) {
+                bestMatch = prototype;
+                if (!prototype->isImportedNative) {
+                    return prototype;
+                }
+            }
         }
     }
 
-    return ZR_NULL;
+    if (compilerState->currentTypePrototypeInfo != ZR_NULL &&
+        compilerState->currentTypePrototypeInfo->name != ZR_NULL &&
+        strcmp(ZrCore_String_GetNativeString(compilerState->currentTypePrototypeInfo->name), typeName) == 0 &&
+        (bestMatch == ZR_NULL ||
+         (bestMatch->isImportedNative && !compilerState->currentTypePrototypeInfo->isImportedNative))) {
+        bestMatch = compilerState->currentTypePrototypeInfo;
+        if (!bestMatch->isImportedNative) {
+            return bestMatch;
+        }
+    }
+
+    if (bestMatch != ZR_NULL) {
+        return bestMatch;
+    }
+
+    typeNameString = compilerState->state != ZR_NULL
+                             ? ZrCore_String_Create(compilerState->state, (TZrNativeString)typeName, strlen(typeName))
+                             : ZR_NULL;
+    if (typeNameString == ZR_NULL || !find_compiler_type_prototype_inference(compilerState, typeNameString)) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < compilerState->typePrototypes.length; index++) {
+        const SZrTypePrototypeInfo *prototype =
+            (const SZrTypePrototypeInfo *)ZrCore_Array_Get(&compilerState->typePrototypes, index);
+        if (prototype != ZR_NULL &&
+            prototype->name != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeString(prototype->name), typeName) == 0 &&
+            (bestMatch == ZR_NULL || (bestMatch->isImportedNative && !prototype->isImportedNative))) {
+            bestMatch = prototype;
+            if (!prototype->isImportedNative) {
+                return prototype;
+            }
+        }
+    }
+
+    if (compilerState->currentTypePrototypeInfo != ZR_NULL &&
+        compilerState->currentTypePrototypeInfo->name != ZR_NULL &&
+        strcmp(ZrCore_String_GetNativeString(compilerState->currentTypePrototypeInfo->name), typeName) == 0 &&
+        (bestMatch == ZR_NULL ||
+         (bestMatch->isImportedNative && !compilerState->currentTypePrototypeInfo->isImportedNative))) {
+        bestMatch = compilerState->currentTypePrototypeInfo;
+    }
+
+    return bestMatch;
 }
 
 static TZrBool extract_base_type_name(const TZrChar *typeName,
@@ -1225,9 +1564,33 @@ static TZrBool copy_type_text_from_type_env(SZrState *state,
     return typeText != ZR_NULL && typeText[0] != '\0';
 }
 
+static SZrSymbol *lookup_receiver_symbol_at_offset(SZrSemanticAnalyzer *analyzer,
+                                                   SZrString *uri,
+                                                   const TZrChar *content,
+                                                   TZrSize contentLength,
+                                                   TZrSize cursorOffset,
+                                                   SZrString *receiverName) {
+    SZrFilePosition filePosition;
+    SZrFileRange fileRange;
+
+    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL || receiverName == ZR_NULL ||
+        uri == ZR_NULL || content == ZR_NULL || cursorOffset > contentLength) {
+        return analyzer != ZR_NULL
+                   ? ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, receiverName, ZR_NULL)
+                   : ZR_NULL;
+    }
+
+    filePosition = lsp_interface_support_file_position_from_offset(content, contentLength, cursorOffset);
+    fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+    return ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, receiverName, fileRange);
+}
+
 static TZrBool resolve_receiver_type_text(SZrState *state,
                                           SZrSemanticAnalyzer *analyzer,
+                                          SZrString *uri,
                                           SZrAstNode *ast,
+                                          const TZrChar *content,
+                                          TZrSize contentLength,
                                           SZrString *receiverName,
                                           const TZrChar *receiverText,
                                           TZrSize receiverLength,
@@ -1244,7 +1607,12 @@ static TZrBool resolve_receiver_type_text(SZrState *state,
     }
 
     buffer[0] = '\0';
-    receiverSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, receiverName, ZR_NULL);
+    receiverSymbol = lookup_receiver_symbol_at_offset(analyzer,
+                                                      uri,
+                                                      content,
+                                                      contentLength,
+                                                      cursorOffset,
+                                                      receiverName);
     if (copy_type_text_from_symbol(state, receiverSymbol, buffer, bufferSize) ||
         copy_type_text_from_type_env(state, analyzer, receiverName, buffer, bufferSize)) {
         if (receiver_type_text_is_specific(buffer)) {
@@ -1273,6 +1641,146 @@ static TZrBool resolve_receiver_type_text(SZrState *state,
     }
 
     return ZR_FALSE;
+}
+
+static SZrFileRange receiver_project_member_lookup_range(SZrAstNode *declarationNode) {
+    if (declarationNode == ZR_NULL) {
+        return ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 0, 0),
+                                         ZrParser_FilePosition_Create(0, 0, 0),
+                                         ZR_NULL);
+    }
+
+    switch (declarationNode->type) {
+        case ZR_AST_CLASS_FIELD:
+            return declarationNode->data.classField.nameLocation;
+        case ZR_AST_CLASS_METHOD:
+            return declarationNode->data.classMethod.nameLocation;
+        case ZR_AST_CLASS_PROPERTY:
+            if (declarationNode->data.classProperty.modifier != ZR_NULL) {
+                return receiver_project_member_lookup_range(declarationNode->data.classProperty.modifier);
+            }
+            break;
+        case ZR_AST_PROPERTY_GET:
+            return declarationNode->data.propertyGet.nameLocation;
+        case ZR_AST_PROPERTY_SET:
+            return declarationNode->data.propertySet.nameLocation;
+        default:
+            break;
+    }
+
+    return declarationNode->location;
+}
+
+static EZrLspMetadataMemberKind receiver_project_member_kind(const SZrTypeMemberInfo *memberInfo) {
+    if (memberInfo == ZR_NULL) {
+        return ZR_LSP_METADATA_MEMBER_NONE;
+    }
+
+    switch (memberInfo->memberType) {
+        case ZR_AST_CLASS_FIELD:
+        case ZR_AST_STRUCT_FIELD:
+        case ZR_AST_CLASS_PROPERTY:
+            return ZR_LSP_METADATA_MEMBER_FIELD;
+        case ZR_AST_CLASS_METHOD:
+        case ZR_AST_STRUCT_METHOD:
+            return ZR_LSP_METADATA_MEMBER_METHOD;
+        default:
+            return ZR_LSP_METADATA_MEMBER_NONE;
+    }
+}
+
+static const SZrTypeMemberInfo *find_receiver_project_member_recursive(SZrCompilerState *compilerState,
+                                                                       SZrTypePrototypeInfo *prototype,
+                                                                       SZrString *memberName,
+                                                                       TZrUInt32 depth) {
+    if (compilerState == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL ||
+        depth > ZR_LSP_MEMBER_RECURSION_MAX_DEPTH) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < prototype->members.length; index++) {
+        const SZrTypeMemberInfo *memberInfo =
+            (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&prototype->members, index);
+        if (memberInfo == ZR_NULL || memberInfo->name == ZR_NULL ||
+            memberInfo->isMetaMethod ||
+            receiver_project_member_kind(memberInfo) == ZR_LSP_METADATA_MEMBER_NONE) {
+            continue;
+        }
+
+        if (ZrLanguageServer_Lsp_StringsEqual(memberInfo->name, memberName)) {
+            return memberInfo;
+        }
+    }
+
+    if (prototype->extendsTypeName != ZR_NULL) {
+        SZrTypePrototypeInfo *basePrototype =
+            find_compiler_type_prototype_inference(compilerState, prototype->extendsTypeName);
+        const SZrTypeMemberInfo *memberInfo;
+
+        if (basePrototype != ZR_NULL && basePrototype != prototype) {
+            memberInfo = find_receiver_project_member_recursive(compilerState,
+                                                                basePrototype,
+                                                                memberName,
+                                                                depth + 1);
+            if (memberInfo != ZR_NULL) {
+                return memberInfo;
+            }
+        }
+    }
+
+    for (TZrSize index = 0; index < prototype->inherits.length; index++) {
+        SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&prototype->inherits, index);
+        SZrTypePrototypeInfo *inheritPrototype;
+        const SZrTypeMemberInfo *memberInfo;
+
+        if (inheritTypeNamePtr == ZR_NULL || *inheritTypeNamePtr == ZR_NULL) {
+            continue;
+        }
+
+        inheritPrototype = find_compiler_type_prototype_inference(compilerState, *inheritTypeNamePtr);
+        if (inheritPrototype == ZR_NULL || inheritPrototype == prototype) {
+            continue;
+        }
+
+        memberInfo = find_receiver_project_member_recursive(compilerState,
+                                                            inheritPrototype,
+                                                            memberName,
+                                                            depth + 1);
+        if (memberInfo != ZR_NULL) {
+            return memberInfo;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void receiver_project_member_set_type_text(SZrState *state,
+                                                  const SZrTypeMemberInfo *memberInfo,
+                                                  SZrLspResolvedMetadataMember *outResolved) {
+    const TZrChar *typeText = ZR_NULL;
+
+    if (state == ZR_NULL || memberInfo == ZR_NULL || outResolved == ZR_NULL) {
+        return;
+    }
+
+    switch (receiver_project_member_kind(memberInfo)) {
+        case ZR_LSP_METADATA_MEMBER_FIELD:
+            typeText = memberInfo->fieldTypeName != ZR_NULL
+                           ? ZrCore_String_GetNativeString(memberInfo->fieldTypeName)
+                           : ZR_NULL;
+            break;
+        case ZR_LSP_METADATA_MEMBER_METHOD:
+            typeText = memberInfo->returnTypeName != ZR_NULL
+                           ? ZrCore_String_GetNativeString(memberInfo->returnTypeName)
+                           : ZR_NULL;
+            break;
+        default:
+            break;
+    }
+
+    if (typeText != ZR_NULL && typeText[0] != '\0') {
+        outResolved->resolvedTypeText = ZrCore_String_Create(state, (TZrNativeString)typeText, strlen(typeText));
+    }
 }
 
 static TZrBool type_text_parse_generic_arguments(const TZrChar *typeText,
@@ -1887,6 +2395,7 @@ static TZrBool try_infer_receiver_type_text_from_ast(SZrState *state,
 TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
                                                             SZrLspProjectIndex *projectIndex,
                                                             SZrSemanticAnalyzer *analyzer,
+                                                            SZrString *uri,
                                                             SZrAstNode *ast,
                                                             const TZrChar *content,
                                                             TZrSize contentLength,
@@ -1966,7 +2475,10 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
         if (receiverName == ZR_NULL ||
             !resolve_receiver_type_text(state,
                                         analyzer,
+                                        uri,
                                         ast,
+                                        content,
+                                        contentLength,
                                         receiverName,
                                         receiverNameText,
                                         strlen(receiverNameText),
@@ -2045,6 +2557,163 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(SZrState *state,
     return ZR_FALSE;
 }
 
+TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
+                                                             SZrLspContext *context,
+                                                             SZrLspProjectIndex *projectIndex,
+                                                             SZrSemanticAnalyzer *analyzer,
+                                                             SZrString *uri,
+                                                             SZrAstNode *ast,
+                                                             const TZrChar *content,
+                                                             TZrSize contentLength,
+                                                             TZrSize cursorOffset,
+                                                             SZrLspResolvedMetadataMember *outResolved) {
+    TZrSize memberStart;
+    TZrSize memberEnd;
+    TZrSize receiverStart;
+    TZrSize receiverEnd;
+    TZrChar receiverTypeText[ZR_LSP_TEXT_BUFFER_LENGTH];
+    TZrChar receiverNameText[ZR_LSP_TYPE_BUFFER_LENGTH];
+    SZrString *receiverName = ZR_NULL;
+    SZrString *typeName = ZR_NULL;
+    SZrString *memberName = ZR_NULL;
+    SZrTypePrototypeInfo *prototype = ZR_NULL;
+    const SZrTypeMemberInfo *memberInfo = ZR_NULL;
+    SZrFileRange declarationRange;
+    SZrString *declarationUri;
+    SZrLspProjectFileRecord *sourceRecord = ZR_NULL;
+    SZrLspMetadataProvider provider;
+
+    if (outResolved != ZR_NULL) {
+        memset(outResolved, 0, sizeof(*outResolved));
+    }
+    if (state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL ||
+        uri == ZR_NULL || content == ZR_NULL || cursorOffset >= contentLength || outResolved == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memberStart = cursorOffset;
+    while (memberStart > 0 && native_hover_is_identifier_char(content[memberStart - 1])) {
+        memberStart--;
+    }
+    memberEnd = cursorOffset;
+    while (memberEnd < contentLength && native_hover_is_identifier_char(content[memberEnd])) {
+        memberEnd++;
+    }
+    if (memberEnd <= memberStart || memberStart == 0 || content[memberStart - 1] != '.') {
+        return ZR_FALSE;
+    }
+
+    receiverEnd = memberStart - 1;
+    receiverStart = receiverEnd;
+    while (receiverStart > 0 && native_hover_is_identifier_char(content[receiverStart - 1])) {
+        receiverStart--;
+    }
+
+    receiverTypeText[0] = '\0';
+    if (!try_infer_receiver_type_text_from_ast(state,
+                                               analyzer,
+                                               ast,
+                                               cursorOffset,
+                                               receiverTypeText,
+                                               sizeof(receiverTypeText)) &&
+        (receiverEnd <= receiverStart ||
+         receiverEnd - receiverStart >= sizeof(receiverNameText))) {
+        return ZR_FALSE;
+    }
+    if (!receiver_type_text_is_specific(receiverTypeText)) {
+        receiverTypeText[0] = '\0';
+    }
+
+    if (receiverTypeText[0] == '\0') {
+        memcpy(receiverNameText, content + receiverStart, receiverEnd - receiverStart);
+        receiverNameText[receiverEnd - receiverStart] = '\0';
+        receiverName = ZrCore_String_Create(state,
+                                            (TZrNativeString)receiverNameText,
+                                            strlen(receiverNameText));
+        if (receiverName == ZR_NULL ||
+            !resolve_receiver_type_text(state,
+                                        analyzer,
+                                        uri,
+                                        ast,
+                                        content,
+                                        contentLength,
+                                        receiverName,
+                                        receiverNameText,
+                                        strlen(receiverNameText),
+                                        cursorOffset,
+                                        receiverTypeText,
+                                        sizeof(receiverTypeText)) ||
+            !receiver_type_text_is_specific(receiverTypeText)) {
+            return ZR_FALSE;
+        }
+    }
+
+    typeName = ZrCore_String_Create(state, (TZrNativeString)receiverTypeText, strlen(receiverTypeText));
+    memberName = ZrCore_String_Create(state,
+                                      (TZrNativeString)(content + memberStart),
+                                      memberEnd - memberStart);
+    if (typeName == ZR_NULL || memberName == ZR_NULL || analyzer->compilerState == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    prototype = find_compiler_type_prototype_inference(analyzer->compilerState, typeName);
+    if (prototype != ZR_NULL && prototype->name != ZR_NULL && !prototype->isImportedNative &&
+        prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE &&
+        prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
+        memberInfo = find_receiver_project_member_recursive(analyzer->compilerState, prototype, memberName, 0);
+    }
+
+    if (memberInfo != ZR_NULL &&
+        receiver_project_member_kind(memberInfo) != ZR_LSP_METADATA_MEMBER_NONE) {
+        outResolved->memberName = memberName;
+        outResolved->memberKind = receiver_project_member_kind(memberInfo);
+        outResolved->ownerTypeName = prototype != ZR_NULL ? prototype->name : typeName;
+        receiver_project_member_set_type_text(state, memberInfo, outResolved);
+
+        if (memberInfo->declarationNode != ZR_NULL) {
+            declarationRange = receiver_project_member_lookup_range(memberInfo->declarationNode);
+            declarationUri = declarationRange.source;
+            if (declarationUri != ZR_NULL && !ZrLanguageServer_Lsp_StringsEqual(declarationUri, uri)) {
+                if (projectIndex != ZR_NULL) {
+                    sourceRecord = ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, declarationUri);
+                    outResolved->module.projectIndex = projectIndex;
+                    outResolved->module.sourceRecord = sourceRecord;
+                    outResolved->module.sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
+                    if (sourceRecord != ZR_NULL) {
+                        outResolved->module.moduleName = sourceRecord->moduleName;
+                    }
+                }
+                if (outResolved->module.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED) {
+                    outResolved->module.sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
+                }
+                outResolved->declarationUri = declarationUri;
+                outResolved->declarationRange = declarationRange;
+                outResolved->hasDeclaration = ZR_TRUE;
+            }
+        }
+    }
+
+    if (!outResolved->hasDeclaration &&
+        context != ZR_NULL &&
+        projectIndex != ZR_NULL) {
+        ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
+        ZrLanguageServer_LspMetadataProvider_ResolveProjectTypeMemberDeclaration(&provider,
+                                                                                 projectIndex,
+                                                                                 typeName,
+                                                                                 memberName,
+                                                                                 outResolved);
+    }
+
+    if (outResolved->ownerTypeName == ZR_NULL && receiverTypeText[0] != '\0') {
+        outResolved->ownerTypeName = ZrCore_String_Create(state,
+                                                          (TZrNativeString)receiverTypeText,
+                                                          strlen(receiverTypeText));
+    }
+
+    return outResolved->memberName != ZR_NULL &&
+           outResolved->memberKind != ZR_LSP_METADATA_MEMBER_NONE;
+}
+
 static void append_type_prototype_member_completions(SZrState *state,
                                                      SZrSemanticAnalyzer *analyzer,
                                                      const SZrTypePrototypeInfo *prototype,
@@ -2060,11 +2729,13 @@ static void append_type_prototype_member_completions(SZrState *state,
         const SZrTypeMemberInfo *member =
             (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&prototype->members, index);
         const TZrChar *kind = ZR_NULL;
+        SZrString *displayName = ZR_NULL;
 
         if (member == ZR_NULL || member->name == ZR_NULL || member->isMetaMethod || member->isStatic != wantStatic) {
             continue;
         }
 
+        displayName = completion_type_member_display_name(state, member, &kind);
         switch (member->memberType) {
             case ZR_AST_CLASS_FIELD:
             case ZR_AST_STRUCT_FIELD:
@@ -2075,14 +2746,16 @@ static void append_type_prototype_member_completions(SZrState *state,
                 break;
             case ZR_AST_CLASS_METHOD:
             case ZR_AST_STRUCT_METHOD:
-                kind = "method";
+                if (kind == ZR_NULL) {
+                    kind = "method";
+                }
                 break;
             default:
                 break;
         }
 
-        if (kind != ZR_NULL) {
-            append_completion_item_for_symbol_name(state, result, member->name, kind);
+        if (kind != ZR_NULL && displayName != ZR_NULL) {
+            append_completion_item_for_symbol_name(state, result, displayName, kind);
         }
     }
 
@@ -2146,6 +2819,10 @@ static TZrBool append_receiver_symbol_type_completions(SZrState *state,
         return result->length > 0;
     }
 
+    if (append_type_symbol_member_completions_by_name(state, analyzer, typeText, wantStatic, result)) {
+        return ZR_TRUE;
+    }
+
     return append_receiver_native_type_completions(state,
                                                    projectIndex,
                                                    analyzer,
@@ -2194,6 +2871,11 @@ static TZrBool append_receiver_name_type_env_completions(SZrState *state,
         append_type_prototype_member_completions(state, analyzer, prototype, wantStatic, 0, result);
         ZrParser_InferredType_Free(state, &inferredType);
         return result->length > 0;
+    }
+
+    if (append_type_symbol_member_completions_by_name(state, analyzer, typeText, wantStatic, result)) {
+        ZrParser_InferredType_Free(state, &inferredType);
+        return ZR_TRUE;
     }
 
     append_receiver_native_type_completions(state,
@@ -2277,6 +2959,14 @@ static TZrBool append_imported_type_receiver_completions(SZrState *state,
                                                      ZR_TRUE,
                                                      0,
                                                      result);
+            appended = result->length > 0;
+        } else {
+            append_struct_member_completions_recursive(state,
+                                                       hit.resolvedMember.declarationAnalyzer,
+                                                       hit.resolvedMember.declarationSymbol,
+                                                       ZR_TRUE,
+                                                       0,
+                                                       result);
             appended = result->length > 0;
         }
     }
@@ -2521,7 +3211,6 @@ static void find_receiver_variable_prototype_recursive(SZrState *state,
         case ZR_AST_VARIABLE_DECLARATION: {
             SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;
             SZrString *patternName = extract_identifier_name_from_node(varDecl->pattern);
-            SZrString *constructTargetTypeName = ZR_NULL;
             TZrNativeString patternText;
             TZrSize patternLength;
             SZrInferredType inferredType;
@@ -2545,6 +3234,17 @@ static void find_receiver_variable_prototype_recursive(SZrState *state,
                 hasType = ZrParser_AstTypeToInferredType_Convert(analyzer->compilerState,
                                                                  varDecl->typeInfo,
                                                                  &inferredType);
+            } else if (varDecl->value != ZR_NULL && varDecl->value->type == ZR_AST_CONSTRUCT_EXPRESSION) {
+                prototype = resolve_construct_target_prototype_from_node(
+                        analyzer,
+                        varDecl->value->data.constructExpression.target,
+                        typeBuffer,
+                        sizeof(typeBuffer));
+                if (prototype != ZR_NULL) {
+                    typeText = prototype->name != ZR_NULL ? ZrCore_String_GetNativeString(prototype->name) : typeBuffer;
+                } else if (typeBuffer[0] != '\0') {
+                    typeText = typeBuffer;
+                }
             } else if (varDecl->value != ZR_NULL) {
                 hasType = ZrParser_ExpressionType_Infer(analyzer->compilerState,
                                                         varDecl->value,
@@ -2553,10 +3253,16 @@ static void find_receiver_variable_prototype_recursive(SZrState *state,
 
             if (!hasType) {
                 if (varDecl->value != ZR_NULL && varDecl->value->type == ZR_AST_CONSTRUCT_EXPRESSION) {
-                    constructTargetTypeName =
-                        extract_construct_target_type_name_from_node(varDecl->value->data.constructExpression.target);
-                    if (constructTargetTypeName != ZR_NULL) {
-                        typeText = ZrCore_String_GetNativeString(constructTargetTypeName);
+                    prototype = resolve_construct_target_prototype_from_node(
+                            analyzer,
+                            varDecl->value->data.constructExpression.target,
+                            typeBuffer,
+                            sizeof(typeBuffer));
+                    if (prototype != ZR_NULL) {
+                        typeText =
+                                prototype->name != ZR_NULL ? ZrCore_String_GetNativeString(prototype->name) : typeBuffer;
+                    } else if (typeBuffer[0] != '\0') {
+                        typeText = typeBuffer;
                     }
                 }
                 if (typeText == ZR_NULL || typeText[0] == '\0') {
@@ -2570,10 +3276,14 @@ static void find_receiver_variable_prototype_recursive(SZrState *state,
             if ((typeText == ZR_NULL || typeText[0] == '\0' ||
                  find_type_prototype_by_text(analyzer, typeText) == ZR_NULL) &&
                 varDecl->value != ZR_NULL && varDecl->value->type == ZR_AST_CONSTRUCT_EXPRESSION) {
-                constructTargetTypeName =
-                    extract_construct_target_type_name_from_node(varDecl->value->data.constructExpression.target);
-                if (constructTargetTypeName != ZR_NULL) {
-                    typeText = ZrCore_String_GetNativeString(constructTargetTypeName);
+                prototype = resolve_construct_target_prototype_from_node(analyzer,
+                                                                         varDecl->value->data.constructExpression.target,
+                                                                         typeBuffer,
+                                                                         sizeof(typeBuffer));
+                if (prototype != ZR_NULL) {
+                    typeText = prototype->name != ZR_NULL ? ZrCore_String_GetNativeString(prototype->name) : typeBuffer;
+                } else if (typeBuffer[0] != '\0') {
+                    typeText = typeBuffer;
                 }
             }
 
@@ -2769,11 +3479,96 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
         return ZR_FALSE;
     }
 
-    receiverSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, receiverName, ZR_NULL);
+    receiverSymbol = lookup_receiver_symbol_at_offset(analyzer,
+                                                      uri,
+                                                      content,
+                                                      contentLength,
+                                                      cursorOffset,
+                                                      receiverName);
     if (receiverSymbol != ZR_NULL && receiverSymbol->type == ZR_SYMBOL_CLASS) {
         classSymbol = receiverSymbol;
         wantStatic = ZR_TRUE;
-    } else if (append_receiver_symbol_type_completions(state,
+    }
+
+    if (!wantStatic) {
+        find_receiver_variable_prototype_recursive(state,
+                                                  analyzer,
+                                                  ast,
+                                                  content + receiverStart,
+                                                  receiverLength,
+                                                  cursorOffset,
+                                                  &receiverPrototype,
+                                                  receiverTypeName,
+                                                  sizeof(receiverTypeName),
+                                                  &bestOffset);
+        if (receiverPrototype != ZR_NULL) {
+            append_type_prototype_member_completions(state,
+                                                     analyzer,
+                                                     receiverPrototype,
+                                                     ZR_FALSE,
+                                                     0,
+                                                     result);
+            if (result->length > 0) {
+                return ZR_TRUE;
+            }
+        }
+        if (receiverTypeName[0] != '\0' &&
+            append_type_symbol_member_completions_by_name(state,
+                                                          analyzer,
+                                                          receiverTypeName,
+                                                          ZR_FALSE,
+                                                          result)) {
+            return ZR_TRUE;
+        }
+        if (receiverTypeName[0] != '\0' &&
+            append_receiver_native_type_completions(state,
+                                                    projectIndex,
+                                                    analyzer,
+                                                    ast,
+                                                    receiverTypeName,
+                                                    ZR_FALSE,
+                                                    result)) {
+            return ZR_TRUE;
+        }
+        if (try_infer_receiver_type_text_from_ast(state,
+                                                  analyzer,
+                                                  ast,
+                                                  cursorOffset,
+                                                  receiverTypeName,
+                                                  sizeof(receiverTypeName))) {
+            receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
+            if (receiverPrototype != ZR_NULL) {
+                append_type_prototype_member_completions(state,
+                                                         analyzer,
+                                                         receiverPrototype,
+                                                         ZR_FALSE,
+                                                         0,
+                                                         result);
+                if (result->length > 0) {
+                    return ZR_TRUE;
+                }
+            }
+            if (receiverTypeName[0] != '\0' &&
+                append_type_symbol_member_completions_by_name(state,
+                                                              analyzer,
+                                                              receiverTypeName,
+                                                              ZR_FALSE,
+                                                              result)) {
+                return ZR_TRUE;
+            }
+            if (append_receiver_native_type_completions(state,
+                                                        projectIndex,
+                                                        analyzer,
+                                                        ast,
+                                                        receiverTypeName,
+                                                        ZR_FALSE,
+                                                        result)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    if (append_receiver_symbol_type_completions(state,
                                                        projectIndex,
                                                        analyzer,
                                                        ast,
@@ -2810,6 +3605,14 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
             return result->length > 0;
         }
         if (receiverTypeName[0] != '\0' &&
+            append_type_symbol_member_completions_by_name(state,
+                                                          analyzer,
+                                                          receiverTypeName,
+                                                          ZR_FALSE,
+                                                          result)) {
+            return ZR_TRUE;
+        }
+        if (receiverTypeName[0] != '\0' &&
             append_receiver_native_type_completions(state,
                                                     projectIndex,
                                                     analyzer,
@@ -2836,6 +3639,14 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                 if (result->length > 0) {
                     return ZR_TRUE;
                 }
+            }
+            if (receiverTypeName[0] != '\0' &&
+                append_type_symbol_member_completions_by_name(state,
+                                                              analyzer,
+                                                              receiverTypeName,
+                                                              ZR_FALSE,
+                                                              result)) {
+                return ZR_TRUE;
             }
             if (append_receiver_native_type_completions(state,
                                                         projectIndex,

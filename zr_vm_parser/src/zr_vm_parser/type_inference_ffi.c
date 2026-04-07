@@ -270,6 +270,16 @@ static TZrBool ffi_descriptor_infer_from_node(SZrCompilerState *cs,
         return ffi_descriptor_infer_from_type_name(cs, resolvedTypeName, result, outIsPointer);
     }
 
+    if (resolve_source_type_declaration_target_inference(cs,
+                                                         node,
+                                                         &resolvedTypeName,
+                                                         ZR_NULL,
+                                                         ZR_NULL,
+                                                         ZR_NULL) &&
+        resolvedTypeName != ZR_NULL) {
+        return ffi_descriptor_infer_from_type_name(cs, resolvedTypeName, result, outIsPointer);
+    }
+
     return ZR_FALSE;
 }
 

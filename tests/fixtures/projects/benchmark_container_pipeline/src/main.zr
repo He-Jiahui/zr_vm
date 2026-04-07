@@ -1,5 +1,6 @@
 var system = %import("zr.system");
 var container = %import("zr.container");
+var {Array, Map, Set, LinkedList, Pair} = %import("zr.container");
 
 labelFor(value: int) {
     if (value % 2 == 0) {

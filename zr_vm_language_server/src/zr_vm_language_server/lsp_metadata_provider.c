@@ -1,4 +1,5 @@
 #include "lsp_metadata_provider.h"
+#include "lsp_interface_internal.h"
 
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
@@ -57,6 +58,279 @@ static SZrString *metadata_provider_create_markdown_text(SZrState *state, const 
     return state != ZR_NULL && text != ZR_NULL
                ? ZrCore_String_Create(state, (TZrNativeString)text, strlen(text))
                : ZR_NULL;
+}
+
+static SZrFilePosition metadata_provider_file_position_from_offset(const TZrChar *content,
+                                                                   TZrSize contentLength,
+                                                                   TZrSize offset) {
+    TZrInt32 line = 1;
+    TZrInt32 column = 1;
+
+    if (content == ZR_NULL) {
+        return ZrParser_FilePosition_Create(offset, 1, 1);
+    }
+
+    if (offset > contentLength) {
+        offset = contentLength;
+    }
+
+    for (TZrSize index = 0; index < offset; index++) {
+        if (content[index] == '\n') {
+            line++;
+            column = 1;
+        } else {
+            column++;
+        }
+    }
+
+    return ZrParser_FilePosition_Create(offset, line, column);
+}
+
+static TZrBool metadata_provider_identifier_boundary(const TZrChar *content, TZrSize contentLength, TZrSize offset) {
+    if (content == ZR_NULL || offset >= contentLength) {
+        return ZR_TRUE;
+    }
+
+    return !(isalnum((unsigned char)content[offset]) || content[offset] == '_');
+}
+
+static TZrBool metadata_provider_try_member_name_range(SZrLspMetadataProvider *provider,
+                                                       SZrString *uri,
+                                                       SZrAstNode *declarationNode,
+                                                       SZrString *memberName,
+                                                       SZrFileRange *outRange) {
+    SZrFileVersion *fileVersion;
+    const TZrChar *content;
+    TZrSize contentLength;
+    const TZrChar *memberText;
+    TZrSize memberLength;
+    TZrSize searchStart;
+    TZrSize searchEnd;
+
+    if (provider == ZR_NULL || provider->context == ZR_NULL || uri == ZR_NULL || declarationNode == ZR_NULL ||
+        memberName == ZR_NULL || outRange == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(provider->context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    content = fileVersion->content;
+    contentLength = fileVersion->contentLength;
+    memberText = metadata_provider_string_text(memberName);
+    if (memberText == ZR_NULL || memberText[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    memberLength = strlen(memberText);
+    searchStart = declarationNode->location.start.offset <= contentLength
+                      ? declarationNode->location.start.offset
+                      : contentLength;
+    searchEnd = declarationNode->location.end.offset > searchStart && declarationNode->location.end.offset <= contentLength
+                    ? declarationNode->location.end.offset
+                    : searchStart;
+
+    while (searchStart > 0 && content[searchStart - 1] != '\n' && content[searchStart - 1] != '\r') {
+        searchStart--;
+    }
+    while (searchEnd < contentLength && content[searchEnd] != '\n' && content[searchEnd] != '\r') {
+        searchEnd++;
+    }
+
+    for (TZrSize index = searchStart; index + memberLength <= searchEnd; index++) {
+        if (memcmp(content + index, memberText, memberLength) != 0) {
+            continue;
+        }
+
+        if (!metadata_provider_identifier_boundary(content, contentLength, index == 0 ? contentLength : index - 1) ||
+            !metadata_provider_identifier_boundary(content, contentLength, index + memberLength)) {
+            continue;
+        }
+
+        *outRange = ZrParser_FileRange_Create(metadata_provider_file_position_from_offset(content, contentLength, index),
+                                              metadata_provider_file_position_from_offset(content,
+                                                                                         contentLength,
+                                                                                         index + memberLength),
+                                              uri);
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrFileRange metadata_provider_type_member_declaration_range(SZrLspMetadataProvider *provider,
+                                                                    SZrString *uri,
+                                                                    SZrAstNode *declarationNode,
+                                                                    SZrString *memberName) {
+    if (declarationNode == ZR_NULL) {
+        return ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 0, 0),
+                                         ZrParser_FilePosition_Create(0, 0, 0),
+                                         ZR_NULL);
+    }
+
+    switch (declarationNode->type) {
+        case ZR_AST_CLASS_FIELD:
+            return declarationNode->data.classField.nameLocation;
+        case ZR_AST_STRUCT_FIELD:
+            return declarationNode->location;
+        case ZR_AST_CLASS_METHOD:
+            return declarationNode->data.classMethod.nameLocation;
+        case ZR_AST_STRUCT_METHOD:
+            return declarationNode->location;
+        case ZR_AST_CLASS_PROPERTY:
+            if (declarationNode->data.classProperty.modifier != ZR_NULL) {
+                return metadata_provider_type_member_declaration_range(provider,
+                                                                      uri,
+                                                                      declarationNode->data.classProperty.modifier,
+                                                                      memberName);
+            }
+            break;
+        case ZR_AST_PROPERTY_GET:
+            return declarationNode->data.propertyGet.nameLocation;
+        case ZR_AST_PROPERTY_SET:
+            return declarationNode->data.propertySet.nameLocation;
+        case ZR_AST_ENUM_MEMBER: {
+            SZrFileRange range;
+            if (metadata_provider_try_member_name_range(provider, uri, declarationNode, memberName, &range)) {
+                return range;
+            }
+            break;
+        }
+        default:
+            break;
+    }
+
+    return declarationNode->location;
+}
+
+static SZrAstNode *metadata_provider_find_type_declaration(SZrAstNode *ast, SZrString *typeName) {
+    SZrScript *script;
+
+    if (ast == ZR_NULL || ast->type != ZR_AST_SCRIPT || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    script = &ast->data.script;
+    if (script->statements == ZR_NULL || script->statements->nodes == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < script->statements->count; index++) {
+        SZrAstNode *statement = script->statements->nodes[index];
+
+        if (statement == ZR_NULL) {
+            continue;
+        }
+
+        if (statement->type == ZR_AST_CLASS_DECLARATION &&
+            statement->data.classDeclaration.name != ZR_NULL &&
+            statement->data.classDeclaration.name->name != ZR_NULL &&
+            ZrLanguageServer_Lsp_StringsEqual(statement->data.classDeclaration.name->name, typeName)) {
+            return statement;
+        }
+
+        if (statement->type == ZR_AST_STRUCT_DECLARATION &&
+            statement->data.structDeclaration.name != ZR_NULL &&
+            statement->data.structDeclaration.name->name != ZR_NULL &&
+            ZrLanguageServer_Lsp_StringsEqual(statement->data.structDeclaration.name->name, typeName)) {
+            return statement;
+        }
+
+        if (statement->type == ZR_AST_ENUM_DECLARATION &&
+            statement->data.enumDeclaration.name != ZR_NULL &&
+            statement->data.enumDeclaration.name->name != ZR_NULL &&
+            ZrLanguageServer_Lsp_StringsEqual(statement->data.enumDeclaration.name->name, typeName)) {
+            return statement;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrAstNode *metadata_provider_find_type_member_declaration(SZrAstNode *typeDeclaration,
+                                                                  SZrString *memberName,
+                                                                  EZrLspMetadataMemberKind *outKind) {
+    SZrAstNodeArray *members = ZR_NULL;
+
+    if (outKind != ZR_NULL) {
+        *outKind = ZR_LSP_METADATA_MEMBER_NONE;
+    }
+    if (typeDeclaration == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (typeDeclaration->type == ZR_AST_CLASS_DECLARATION) {
+        members = typeDeclaration->data.classDeclaration.members;
+    } else if (typeDeclaration->type == ZR_AST_STRUCT_DECLARATION) {
+        members = typeDeclaration->data.structDeclaration.members;
+    } else if (typeDeclaration->type == ZR_AST_ENUM_DECLARATION) {
+        members = typeDeclaration->data.enumDeclaration.members;
+    } else {
+        return ZR_NULL;
+    }
+
+    if (members == ZR_NULL || members->nodes == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < members->count; index++) {
+        SZrAstNode *member = members->nodes[index];
+        SZrString *name = ZR_NULL;
+        EZrLspMetadataMemberKind kind = ZR_LSP_METADATA_MEMBER_NONE;
+
+        if (member == ZR_NULL) {
+            continue;
+        }
+
+        switch (member->type) {
+            case ZR_AST_CLASS_FIELD:
+                name = member->data.classField.name != ZR_NULL ? member->data.classField.name->name : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_FIELD;
+                break;
+            case ZR_AST_STRUCT_FIELD:
+                name = member->data.structField.name != ZR_NULL ? member->data.structField.name->name : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_FIELD;
+                break;
+            case ZR_AST_CLASS_METHOD:
+                name = member->data.classMethod.name != ZR_NULL ? member->data.classMethod.name->name : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_METHOD;
+                break;
+            case ZR_AST_STRUCT_METHOD:
+                name = member->data.structMethod.name != ZR_NULL ? member->data.structMethod.name->name : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_METHOD;
+                break;
+            case ZR_AST_CLASS_PROPERTY:
+                if (member->data.classProperty.modifier != ZR_NULL) {
+                    if (member->data.classProperty.modifier->type == ZR_AST_PROPERTY_GET &&
+                        member->data.classProperty.modifier->data.propertyGet.name != ZR_NULL) {
+                        name = member->data.classProperty.modifier->data.propertyGet.name->name;
+                        kind = ZR_LSP_METADATA_MEMBER_FIELD;
+                    } else if (member->data.classProperty.modifier->type == ZR_AST_PROPERTY_SET &&
+                               member->data.classProperty.modifier->data.propertySet.name != ZR_NULL) {
+                        name = member->data.classProperty.modifier->data.propertySet.name->name;
+                        kind = ZR_LSP_METADATA_MEMBER_FIELD;
+                    }
+                }
+                break;
+            case ZR_AST_ENUM_MEMBER:
+                name = member->data.enumMember.name != ZR_NULL ? member->data.enumMember.name->name : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_CONSTANT;
+                break;
+            default:
+                break;
+        }
+
+        if (name != ZR_NULL && ZrLanguageServer_Lsp_StringsEqual(name, memberName)) {
+            if (outKind != ZR_NULL) {
+                *outKind = kind;
+            }
+            return member;
+        }
+    }
+
+    return ZR_NULL;
 }
 
 static SZrString *metadata_provider_append_markdown_section(SZrState *state, SZrString *base, SZrString *appendix) {
@@ -1090,6 +1364,79 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(
         memberText);
     resolvedMember->hasDeclaration = ZR_TRUE;
     return ZR_TRUE;
+}
+
+TZrBool ZrLanguageServer_LspMetadataProvider_ResolveProjectTypeMemberDeclaration(
+    SZrLspMetadataProvider *provider,
+    SZrLspProjectIndex *projectIndex,
+    SZrString *ownerTypeName,
+    SZrString *memberName,
+    SZrLspResolvedMetadataMember *outResolved) {
+    if (provider == ZR_NULL || provider->state == ZR_NULL || provider->context == ZR_NULL ||
+        projectIndex == ZR_NULL || ownerTypeName == ZR_NULL || memberName == ZR_NULL ||
+        outResolved == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < projectIndex->files.length; index++) {
+        SZrLspProjectFileRecord **recordPtr =
+            (SZrLspProjectFileRecord **)ZrCore_Array_Get(&projectIndex->files, index);
+        SZrLspProjectFileRecord *record;
+        SZrSemanticAnalyzer *targetAnalyzer = ZR_NULL;
+        SZrAstNode *typeDeclaration;
+        SZrAstNode *memberDeclaration;
+        EZrLspMetadataMemberKind memberKind = ZR_LSP_METADATA_MEMBER_NONE;
+
+        if (recordPtr == ZR_NULL || *recordPtr == ZR_NULL) {
+            continue;
+        }
+
+        record = *recordPtr;
+        if (record->uri == ZR_NULL ||
+            !metadata_provider_try_get_analyzer_for_uri(provider->state,
+                                                        provider->context,
+                                                        record->uri,
+                                                        &targetAnalyzer) ||
+            targetAnalyzer == ZR_NULL ||
+            targetAnalyzer->ast == ZR_NULL) {
+            continue;
+        }
+
+        typeDeclaration = metadata_provider_find_type_declaration(targetAnalyzer->ast, ownerTypeName);
+        if (typeDeclaration == ZR_NULL) {
+            continue;
+        }
+
+        memberDeclaration = metadata_provider_find_type_member_declaration(typeDeclaration, memberName, &memberKind);
+        if (memberDeclaration == ZR_NULL || memberKind == ZR_LSP_METADATA_MEMBER_NONE) {
+            continue;
+        }
+
+        outResolved->module.projectIndex = projectIndex;
+        outResolved->module.sourceRecord = record;
+        outResolved->module.moduleName = record->moduleName;
+        outResolved->module.sourceKind = record->isFfiWrapperSource
+                                             ? ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER
+                                             : ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
+        outResolved->memberName = memberName;
+        outResolved->memberKind = memberKind;
+        outResolved->ownerTypeName = ownerTypeName;
+        outResolved->declarationAnalyzer = targetAnalyzer;
+        outResolved->declarationUri = record->uri;
+        outResolved->declarationRange =
+            metadata_provider_type_member_declaration_range(provider, record->uri, memberDeclaration, memberName);
+        outResolved->hasDeclaration = outResolved->declarationUri != ZR_NULL;
+        outResolved->declarationSymbol =
+            ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(targetAnalyzer, outResolved->declarationRange);
+        if (outResolved->resolvedTypeText == ZR_NULL && outResolved->declarationSymbol != ZR_NULL) {
+            metadata_provider_set_type_text_from_inferred(provider->state,
+                                                          outResolved,
+                                                          outResolved->declarationSymbol->typeInfo);
+        }
+        return outResolved->hasDeclaration;
+    }
+
+    return ZR_FALSE;
 }
 
 TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(

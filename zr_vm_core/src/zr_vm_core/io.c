@@ -191,7 +191,11 @@ static void io_read_value(SZrIo *io, EZrValueType type, TZrPureValue *value) {
             value->nativeObject.nativeUInt64 = io_read_u_int(io);
         } break;
         case ZR_VALUE_TYPE_STRING: {
-            value->object = ZR_CAST_RAW_OBJECT_AS_SUPER(io_read_string_with_length(io));
+            SZrString *stringValue = io_read_string_with_length(io);
+            if (stringValue == ZR_NULL) {
+                stringValue = ZrCore_String_Create(state, "", 0);
+            }
+            value->object = ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue);
         } break;
         case ZR_VALUE_TYPE_OBJECT: {
             TZrSize entryCount = 0;
@@ -345,9 +349,15 @@ static void io_read_function_constant_variables(SZrIo *io, SZrIoFunctionConstant
 static void io_read_function_exported_variables(SZrIo *io, SZrIoFunctionExportedVariable *variables, TZrSize count) {
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionExportedVariable *variable = &variables[i];
+        ZrCore_Memory_RawSet(variable, 0, sizeof(*variable));
+        variable->callableChildIndex = ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE;
         variable->name = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, variable->stackSlot, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, variable->accessModifier, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->exportKind, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->readiness, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->reserved0, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->callableChildIndex, TZrUInt32);
     }
 }
 
@@ -395,11 +405,17 @@ static void io_read_function_typed_export_symbols(SZrIo *io,
 
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionTypedExportSymbol *symbol = &symbols[i];
+        ZrCore_Memory_RawSet(symbol, 0, sizeof(*symbol));
+        symbol->callableChildIndex = ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE;
 
         symbol->name = io_read_string_with_length(io);
         ZR_IO_READ_NATIVE_TYPE(io, symbol->stackSlot, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, symbol->accessModifier, TZrUInt8);
         ZR_IO_READ_NATIVE_TYPE(io, symbol->symbolKind, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, symbol->exportKind, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, symbol->readiness, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, symbol->reserved0, TZrUInt16);
+        ZR_IO_READ_NATIVE_TYPE(io, symbol->callableChildIndex, TZrUInt32);
         io_read_function_typed_type_ref(io, &symbol->valueType);
         ZR_IO_READ_NATIVE_TYPE(io, symbol->parameterCount, TZrSize);
         if (symbol->parameterCount > 0) {
@@ -426,6 +442,66 @@ static void io_read_function_typed_export_symbols(SZrIo *io,
             symbol->lineInSourceEnd = 0;
             symbol->columnInSourceEnd = 0;
         }
+    }
+}
+
+static void io_read_function_module_effects(SZrIo *io,
+                                            SZrIoFunctionModuleEffect *effects,
+                                            TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        SZrIoFunctionModuleEffect *effect = &effects[index];
+
+        ZrCore_Memory_RawSet(effect, 0, sizeof(*effect));
+        ZR_IO_READ_NATIVE_TYPE(io, effect->kind, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, effect->exportKind, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, effect->readiness, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, effect->reserved0, TZrUInt8);
+        effect->moduleName = io_read_string_with_length(io);
+        effect->symbolName = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, effect->lineInSourceStart, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, effect->columnInSourceStart, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, effect->lineInSourceEnd, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, effect->columnInSourceEnd, TZrUInt32);
+    }
+}
+
+static void io_read_function_callable_summaries(SZrIo *io,
+                                                SZrIoFunctionCallableSummary *summaries,
+                                                TZrSize count) {
+    SZrGlobalState *global = io->state->global;
+
+    for (TZrSize index = 0; index < count; index++) {
+        SZrIoFunctionCallableSummary *summary = &summaries[index];
+
+        ZrCore_Memory_RawSet(summary, 0, sizeof(*summary));
+        summary->name = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, summary->callableChildIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, summary->effectCount, TZrSize);
+        if (summary->effectCount > 0) {
+            summary->effects = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                        sizeof(SZrIoFunctionModuleEffect) * summary->effectCount);
+            if (summary->effects != ZR_NULL) {
+                io_read_function_module_effects(io, summary->effects, summary->effectCount);
+            }
+        }
+    }
+}
+
+static void io_read_function_top_level_callable_bindings(SZrIo *io,
+                                                         SZrIoFunctionTopLevelCallableBinding *bindings,
+                                                         TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        SZrIoFunctionTopLevelCallableBinding *binding = &bindings[index];
+
+        ZrCore_Memory_RawSet(binding, 0, sizeof(*binding));
+        binding->callableChildIndex = ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE;
+        binding->name = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->stackSlot, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->callableChildIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->accessModifier, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->exportKind, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->readiness, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->reserved0, TZrUInt8);
     }
 }
 
@@ -930,6 +1006,57 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         } else {
             function->typedExportedSymbols = ZR_NULL;
         }
+        ZR_IO_READ_NATIVE_TYPE(io, function->staticImportsLength, TZrSize);
+        if (function->staticImportsLength > 0) {
+            function->staticImports = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                               sizeof(SZrString *) * function->staticImportsLength);
+            if (function->staticImports != ZR_NULL) {
+                for (TZrSize index = 0; index < function->staticImportsLength; index++) {
+                    function->staticImports[index] = io_read_string_with_length(io);
+                }
+            }
+        } else {
+            function->staticImports = ZR_NULL;
+        }
+        ZR_IO_READ_NATIVE_TYPE(io, function->moduleEntryEffectsLength, TZrSize);
+        if (function->moduleEntryEffectsLength > 0) {
+            function->moduleEntryEffects = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                                    sizeof(SZrIoFunctionModuleEffect) *
+                                                                            function->moduleEntryEffectsLength);
+            if (function->moduleEntryEffects != ZR_NULL) {
+                io_read_function_module_effects(io,
+                                                function->moduleEntryEffects,
+                                                function->moduleEntryEffectsLength);
+            }
+        } else {
+            function->moduleEntryEffects = ZR_NULL;
+        }
+        ZR_IO_READ_NATIVE_TYPE(io, function->exportedCallableSummariesLength, TZrSize);
+        if (function->exportedCallableSummariesLength > 0) {
+            function->exportedCallableSummaries = ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                                           sizeof(SZrIoFunctionCallableSummary) *
+                                                                                   function->exportedCallableSummariesLength);
+            if (function->exportedCallableSummaries != ZR_NULL) {
+                io_read_function_callable_summaries(io,
+                                                    function->exportedCallableSummaries,
+                                                    function->exportedCallableSummariesLength);
+            }
+        } else {
+            function->exportedCallableSummaries = ZR_NULL;
+        }
+        ZR_IO_READ_NATIVE_TYPE(io, function->topLevelCallableBindingsLength, TZrSize);
+        if (function->topLevelCallableBindingsLength > 0) {
+            function->topLevelCallableBindings = ZR_IO_MALLOC_NATIVE_DATA(
+                    global,
+                    sizeof(SZrIoFunctionTopLevelCallableBinding) * function->topLevelCallableBindingsLength);
+            if (function->topLevelCallableBindings != ZR_NULL) {
+                io_read_function_top_level_callable_bindings(io,
+                                                             function->topLevelCallableBindings,
+                                                             function->topLevelCallableBindingsLength);
+            }
+        } else {
+            function->topLevelCallableBindings = ZR_NULL;
+        }
         function->parameterMetadataLength = 0;
         function->parameterMetadata = ZR_NULL;
         function->compileTimeVariableInfosLength = 0;
@@ -1332,6 +1459,10 @@ SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
     ZR_IO_READ_NATIVE_TYPE(io, source->isBigEndian, TZrBool);
     ZR_IO_READ_NATIVE_TYPE(io, source->isDebug, TZrBool);
     ZrCore_Io_Read(io, (TZrBytePtr) source->optional, sizeof(source->optional));
+    if (source->versionPatch < ZR_IO_SOURCE_PATCH_HAS_MODULE_INIT_METADATA) {
+        ZrCore_Exception_Throw(io->state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+        return ZR_NULL;
+    }
     ZR_IO_READ_NATIVE_TYPE(io, source->modulesLength, TZrSize);
     source->modules = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoModule) * source->modulesLength);
     io_read_modules(io, source->modules, source->modulesLength);

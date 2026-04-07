@@ -1,0 +1,17 @@
+var core = %import("core_semantics");
+var meta = %import("oop_meta");
+var native = %import("async_native");
+
+runMatrix(): int {
+    var meter = new meta.SignalBox(4);
+    var getterValue = meter.value;
+    meter.value = getterValue + 1;
+    var bumped = meter.bump(3);
+    var callable = meter(2);
+    var lambdaScore = core.lambdaScore();
+    var builtinScore = native.nativeScore();
+    var vectorScore = meta.combineVectors();
+    return getterValue + bumped + callable + lambdaScore + builtinScore + vectorScore;
+}
+
+return runMatrix();

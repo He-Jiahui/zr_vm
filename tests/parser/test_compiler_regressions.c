@@ -11,8 +11,13 @@
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/task_runtime.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_lib_container/module.h"
+#include "zr_vm_lib_ffi/module.h"
+#include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_network/module.h"
+#include "zr_vm_lib_system/module.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
@@ -380,6 +385,98 @@ static void test_native_network_optional_argument_import_compiles_without_unknow
     ZR_TEST_DIVIDER();
 }
 
+static void test_reserved_type_query_targets_compile_without_explicit_imports(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Reserved %type Targets Compile Without Explicit Imports";
+    const char *source =
+            "markClass(target: %type Class): void { return; }\n"
+            "markStruct(target: %type Struct): void { return; }\n"
+            "markFunction(target: %type Function): void { return; }\n"
+            "markField(target: %type Field): void { return; }\n"
+            "markMethod(target: %type Method): void { return; }\n"
+            "markProperty(target: %type Property): void { return; }\n"
+            "markParameter(target: %type Parameter): void { return; }\n"
+            "markObject(target: %type Object): void { return; }\n"
+            "return 0;";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Reserved reflection target pseudo-types",
+                 "Testing that %type Class/Struct/Function/Field/Method/Property/Parameter/Object remain valid reserved targets without reopening imported type globals");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_CreateFromNative(state, "reserved_type_query_targets_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_qualified_container_types_compile_through_function_predeclaration_paths(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Qualified Container Types Compile Through Function Predeclaration Paths";
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "forward(value: container.Array<int>): container.Array<int> {\n"
+            "    var local: container.Array<int> = value;\n"
+            "    return local;\n"
+            "}\n"
+            "host(): int {\n"
+            "    var scoped = %import(\"zr.container\");\n"
+            "    nested(value: scoped.Array<int>): scoped.Array<int> {\n"
+            "        var local: scoped.Array<int> = value;\n"
+            "        return local;\n"
+            "    }\n"
+            "    var xs: scoped.Array<int> = new scoped.Array<int>();\n"
+            "    return nested(xs).length;\n"
+            "}\n"
+            "return host();";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Qualified container types through predeclaration",
+                 "Testing that module-qualified container types remain available when function signatures are predeclared before the normal statement compilation pass");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    TEST_ASSERT_TRUE(ZrVmLibContainer_Register(state->global));
+
+    sourceName = ZrCore_String_CreateFromNative(state, "qualified_container_predeclare_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
 static void test_native_network_loopback_runtime_returns_expected_payload(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Native Network Loopback Runtime Returns Expected Payload";
@@ -502,6 +599,155 @@ static void test_native_network_loopback_project_run_returns_expected_payload(vo
     ZR_TEST_DIVIDER();
 }
 
+static void test_imported_source_module_type_stubs_do_not_serialize_into_entry_prototype_data(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Imported Source Module Type Stubs Stay Out Of Entry Prototype Data";
+    char projectPath[512];
+    char sourcePath[512];
+    char *source = ZR_NULL;
+    SZrGlobalState *global = ZR_NULL;
+    SZrState *state = ZR_NULL;
+    SZrString *sourceName;
+    SZrFunction *function;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Compiler prototype serialization",
+                 "Testing that importing a source module for type analysis does not serialize the imported module's runtime type stubs into the current entry function");
+
+    snprintf(projectPath,
+             sizeof(projectPath),
+             "%s/fixtures/projects/network_loopback/network_loopback.zrp",
+             ZR_VM_TESTS_SOURCE_DIR);
+    snprintf(sourcePath,
+             sizeof(sourcePath),
+             "%s/fixtures/projects/network_loopback/src/main.zr",
+             ZR_VM_TESTS_SOURCE_DIR);
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+
+    source = read_text_file_owned(sourcePath);
+    TEST_ASSERT_NOT_NULL(source);
+
+    sourceName = ZrCore_String_CreateFromNative(state, sourcePath);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(0, function->prototypeCount);
+    TEST_ASSERT_TRUE(function->prototypeData == ZR_NULL || function->prototypeDataLength == 0);
+
+    free(source);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_project_local_struct_pair_shadows_native_pair_at_runtime(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Project Local Struct Pair Shadows Native Pair At Runtime";
+    char projectPath[512];
+    SZrGlobalState *global = ZR_NULL;
+    SZrState *state = ZR_NULL;
+    ZrProjectRunRequest request;
+    EZrThreadStatus outerStatus;
+    SZrTypeValue result;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Project type shadowing",
+                 "Testing that a project-local struct Pair keeps its constructor and field access even when another module imports zr.container's native Pair");
+
+    snprintf(projectPath,
+             sizeof(projectPath),
+             "%s/fixtures/projects/project_pair_shadowing/project_pair_shadowing.zrp",
+             ZR_VM_TESTS_SOURCE_DIR);
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibMath_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibContainer_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibNetwork_Register(global));
+
+    request.result = &result;
+    ZrCore_Value_ResetAsNull(request.result);
+    request.status = ZR_THREAD_STATUS_INVALID;
+    outerStatus = ZrCore_Exception_TryRun(state, run_project_body, &request);
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, outerStatus);
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, request.status);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, request.result->type);
+    TEST_ASSERT_EQUAL_INT64(3, request.result->value.nativeObject.nativeInt64);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_lsp_language_feature_matrix_runtime_returns_expected_total(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "LSP Language Feature Matrix Runtime Returns Expected Total";
+    char projectPath[512];
+    SZrGlobalState *global = ZR_NULL;
+    SZrState *state = ZR_NULL;
+    ZrProjectRunRequest request;
+    EZrThreadStatus outerStatus;
+    SZrTypeValue result;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Project runtime type resolution",
+                 "Testing that the language-feature matrix resolves bare in-module types against the current module before sibling or native modules with the same type name");
+
+    snprintf(projectPath,
+             sizeof(projectPath),
+             "%s/fixtures/projects/lsp_language_feature_matrix/lsp_language_feature_matrix.zrp",
+             ZR_VM_TESTS_SOURCE_DIR);
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibMath_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibContainer_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibNetwork_Register(global));
+    TEST_ASSERT_TRUE(ZrCore_TaskRuntime_RegisterBuiltins(global));
+
+    request.result = &result;
+    ZrCore_Value_ResetAsNull(request.result);
+    request.status = ZR_THREAD_STATUS_INVALID;
+    outerStatus = ZrCore_Exception_TryRun(state, run_project_body, &request);
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, outerStatus);
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, request.status);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, request.result->type);
+    TEST_ASSERT_EQUAL_INT64(64, request.result->value.nativeObject.nativeInt64);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    ZR_TEST_DIVIDER();
+}
+
 int main(void) {
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();
@@ -514,7 +760,12 @@ int main(void) {
     RUN_TEST(test_lambda_create_closure_targets_are_reachable_from_child_function_graph);
     RUN_TEST(test_classes_full_module_compiles_without_static_and_receiver_signature_regressions);
     RUN_TEST(test_native_network_optional_argument_import_compiles_without_unknown_parameter_blowup);
+    RUN_TEST(test_reserved_type_query_targets_compile_without_explicit_imports);
+    RUN_TEST(test_qualified_container_types_compile_through_function_predeclaration_paths);
     RUN_TEST(test_native_network_loopback_runtime_returns_expected_payload);
     RUN_TEST(test_native_network_loopback_project_run_returns_expected_payload);
+    RUN_TEST(test_imported_source_module_type_stubs_do_not_serialize_into_entry_prototype_data);
+    RUN_TEST(test_project_local_struct_pair_shadows_native_pair_at_runtime);
+    RUN_TEST(test_lsp_language_feature_matrix_runtime_returns_expected_total);
     return UNITY_END();
 }

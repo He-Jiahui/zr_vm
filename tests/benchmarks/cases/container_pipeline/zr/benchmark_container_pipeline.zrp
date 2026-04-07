@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_container_pipeline",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

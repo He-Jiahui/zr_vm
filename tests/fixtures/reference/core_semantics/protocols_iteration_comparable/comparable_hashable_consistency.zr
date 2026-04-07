@@ -1,4 +1,5 @@
 var container = %import("zr.container");
+var {Pair} = %import("zr.container");
 var left = new container.Pair<int, string>(1, "a");
 var same = new container.Pair<int, string>(1, "a");
 var right = new container.Pair<int, string>(2, "b");

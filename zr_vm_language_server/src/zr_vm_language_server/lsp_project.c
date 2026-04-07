@@ -1282,6 +1282,46 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
     return analyzeSuccess;
 }
 
+TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
+                                                    SZrLspContext *context,
+                                                    SZrString *uri,
+                                                    SZrSemanticAnalyzer *analyzer,
+                                                    SZrAstNode *ast) {
+    SZrLspProjectIndex *projectIndex;
+    FZrIoLoadSource previousSourceLoader = ZR_NULL;
+    TZrPtr previousUserData = ZR_NULL;
+    TZrPtr previousSourceLoaderUserData = ZR_NULL;
+    SZrLspProjectSourceLoaderContext sourceLoaderContext;
+    TZrBool analyzeSuccess;
+
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    projectIndex = uri != ZR_NULL ? ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri) : ZR_NULL;
+    if (projectIndex == ZR_NULL || state->global == ZR_NULL) {
+        return ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
+    }
+
+    project_preload_descriptor_plugin_imports(state, projectIndex, ast);
+    sourceLoaderContext.projectIndex = projectIndex;
+    sourceLoaderContext.fallbackSourceLoader = state->global->sourceLoader;
+    previousUserData = state->global->userData;
+    previousSourceLoaderUserData = state->global->sourceLoaderUserData;
+    sourceLoaderContext.fallbackUserData = previousUserData;
+    sourceLoaderContext.fallbackSourceLoaderUserData = previousSourceLoaderUserData;
+    previousSourceLoader = state->global->sourceLoader;
+    state->global->sourceLoaderUserData = &sourceLoaderContext;
+    state->global->sourceLoader = project_source_loader;
+
+    analyzeSuccess = ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
+
+    state->global->userData = previousUserData;
+    state->global->sourceLoaderUserData = previousSourceLoaderUserData;
+    state->global->sourceLoader = previousSourceLoader;
+    return analyzeSuccess;
+}
+
 static TZrBool project_collect_loaded_source_uris(SZrState *state,
                                                   SZrLspContext *context,
                                                   SZrLspProjectIndex *projectIndex,

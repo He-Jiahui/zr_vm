@@ -67,6 +67,36 @@ void backend_aot_write_c_direct_mul_signed(FILE *file,
             (unsigned)rightSlot);
 }
 
+void backend_aot_write_c_direct_mul(FILE *file,
+                                    TZrUInt32 destinationSlot,
+                                    TZrUInt32 leftSlot,
+                                    TZrUInt32 rightSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Mul(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot);
+}
+
+void backend_aot_write_c_direct_sub(FILE *file,
+                                    TZrUInt32 destinationSlot,
+                                    TZrUInt32 leftSlot,
+                                    TZrUInt32 rightSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Sub(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot);
+}
+
 void backend_aot_write_c_direct_sub_int(FILE *file,
                                         TZrUInt32 destinationSlot,
                                         TZrUInt32 leftSlot,
@@ -97,6 +127,46 @@ void backend_aot_write_c_direct_sub_int(FILE *file,
             "        }\n"
             "        if (zr_aot_use_runtime_sub) {\n"
             "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SubInt(state, &frame, %u, %u, %u));\n"
+            "        }\n"
+            "    }\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot,
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot);
+}
+
+void backend_aot_write_c_direct_bitwise_xor(FILE *file,
+                                            TZrUInt32 destinationSlot,
+                                            TZrUInt32 leftSlot,
+                                            TZrUInt32 rightSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_right = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        TZrBool zr_aot_use_runtime_xor = ZR_FALSE;\n"
+            "        if (ZR_VALUE_IS_TYPE_INT(zr_aot_left->type) && ZR_VALUE_IS_TYPE_INT(zr_aot_right->type)) {\n"
+            "            TZrInt64 zr_aot_left_int = ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)\n"
+            "                                              ? zr_aot_left->value.nativeObject.nativeInt64\n"
+            "                                              : (TZrInt64)zr_aot_left->value.nativeObject.nativeUInt64;\n"
+            "            TZrInt64 zr_aot_right_int = ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_right->type)\n"
+            "                                               ? zr_aot_right->value.nativeObject.nativeInt64\n"
+            "                                               : (TZrInt64)zr_aot_right->value.nativeObject.nativeUInt64;\n"
+            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
+            "                              nativeInt64,\n"
+            "                              zr_aot_left_int ^ zr_aot_right_int,\n"
+            "                              ZR_VALUE_TYPE_INT64);\n"
+            "        } else {\n"
+            "            zr_aot_use_runtime_xor = ZR_TRUE;\n"
+            "        }\n"
+            "        if (zr_aot_use_runtime_xor) {\n"
+            "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BitwiseXor(state, &frame, %u, %u, %u));\n"
             "        }\n"
             "    }\n",
             (unsigned)destinationSlot,
@@ -269,6 +339,81 @@ void backend_aot_write_c_direct_logical_less_signed(FILE *file,
             (unsigned)rightSlot);
 }
 
+void backend_aot_write_c_direct_logical_greater_signed(FILE *file,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 leftSlot,
+                                                       TZrUInt32 rightSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalGreaterSigned(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot);
+}
+
+void backend_aot_write_c_direct_logical_less_equal_signed(FILE *file,
+                                                          TZrUInt32 destinationSlot,
+                                                          TZrUInt32 leftSlot,
+                                                          TZrUInt32 rightSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalLessEqualSigned(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot);
+}
+
+void backend_aot_write_c_direct_logical_greater_equal_signed(FILE *file,
+                                                             TZrUInt32 destinationSlot,
+                                                             TZrUInt32 leftSlot,
+                                                             TZrUInt32 rightSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalGreaterEqualSigned(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot);
+}
+
+void backend_aot_write_c_direct_mod(FILE *file,
+                                    TZrUInt32 destinationSlot,
+                                    TZrUInt32 leftSlot,
+                                    TZrUInt32 rightSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Mod(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot);
+}
+
+void backend_aot_write_c_direct_div(FILE *file,
+                                    TZrUInt32 destinationSlot,
+                                    TZrUInt32 leftSlot,
+                                    TZrUInt32 rightSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Div(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot);
+}
+
 void backend_aot_write_c_direct_div_signed(FILE *file,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 leftSlot,
@@ -345,6 +490,17 @@ void backend_aot_write_c_direct_neg(FILE *file, TZrUInt32 destinationSlot, TZrUI
             "    }\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
+            (unsigned)destinationSlot,
+            (unsigned)sourceSlot);
+}
+
+void backend_aot_write_c_direct_to_string(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ToString(state, &frame, %u, %u));\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
 }

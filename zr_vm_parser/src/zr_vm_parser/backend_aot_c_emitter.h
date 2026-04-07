@@ -29,6 +29,10 @@ void backend_aot_write_c_direct_add(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
                                     TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_sub(FILE *file,
+                                    TZrUInt32 destinationSlot,
+                                    TZrUInt32 leftSlot,
+                                    TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_get_global(FILE *file, TZrUInt32 destinationSlot);
 void backend_aot_write_c_direct_create_object(FILE *file, TZrUInt32 destinationSlot);
 void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSlot);
@@ -59,10 +63,18 @@ void backend_aot_write_c_direct_mul_signed(FILE *file,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 leftSlot,
                                            TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_mul(FILE *file,
+                                    TZrUInt32 destinationSlot,
+                                    TZrUInt32 leftSlot,
+                                    TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_sub_int(FILE *file,
                                         TZrUInt32 destinationSlot,
                                         TZrUInt32 leftSlot,
                                         TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_bitwise_xor(FILE *file,
+                                            TZrUInt32 destinationSlot,
+                                            TZrUInt32 leftSlot,
+                                            TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_neg(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_meta_get(FILE *file,
                                          TZrUInt32 destinationSlot,
@@ -100,10 +112,31 @@ void backend_aot_write_c_direct_logical_less_signed(FILE *file,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 leftSlot,
                                                     TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_greater_signed(FILE *file,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 leftSlot,
+                                                       TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_less_equal_signed(FILE *file,
+                                                          TZrUInt32 destinationSlot,
+                                                          TZrUInt32 leftSlot,
+                                                          TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_greater_equal_signed(FILE *file,
+                                                             TZrUInt32 destinationSlot,
+                                                             TZrUInt32 leftSlot,
+                                                             TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_mod(FILE *file,
+                                    TZrUInt32 destinationSlot,
+                                    TZrUInt32 leftSlot,
+                                    TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_div(FILE *file,
+                                    TZrUInt32 destinationSlot,
+                                    TZrUInt32 leftSlot,
+                                    TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_div_signed(FILE *file,
                                            TZrUInt32 destinationSlot,
                                            TZrUInt32 leftSlot,
                                            TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_to_string(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_meta_call(FILE *file,
                                           TZrUInt32 destinationSlot,
                                           TZrUInt32 receiverSlot,

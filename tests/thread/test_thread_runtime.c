@@ -147,10 +147,10 @@ static void test_spawn_thread_requires_support_multithread(void) {
 static void test_thread_start_and_await_execute_runner_result(void) {
     static const char *source =
             "var thread = %import(\"zr.thread\");\n"
-            "%async func addOne(value: int): int {\n"
+            "%async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
-            "%async func run(): int {\n"
+            "%async run(): int {\n"
             "    var worker = thread.spawnThread();\n"
             "    var task = worker.start(addOne(4));\n"
             "    return %await task;\n"
@@ -172,10 +172,10 @@ static void test_thread_start_and_await_execute_runner_result(void) {
 static void test_async_runner_creation_still_works_with_thread_import_present(void) {
     static const char *source =
             "var thread = %import(\"zr.thread\");\n"
-            "%async func addOne(value: int): int {\n"
+            "%async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
-            "%async func run(): int {\n"
+            "%async run(): int {\n"
             "    var task = addOne(4).start();\n"
             "    return %await task;\n"
             "}\n"
@@ -196,10 +196,10 @@ static void test_async_runner_creation_still_works_with_thread_import_present(vo
 static void test_thread_start_with_precomputed_runner_execute_runner_result(void) {
     static const char *source =
             "var thread = %import(\"zr.thread\");\n"
-            "%async func addOne(value: int): int {\n"
+            "%async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
-            "%async func run(): int {\n"
+            "%async run(): int {\n"
             "    var worker = thread.spawnThread();\n"
             "    var runner = addOne(4);\n"
             "    var task = worker.start(runner);\n"
@@ -222,10 +222,10 @@ static void test_thread_start_with_precomputed_runner_execute_runner_result(void
 static void test_channel_transports_value_back_from_worker_isolate(void) {
     static const char *source =
             "var thread = %import(\"zr.thread\");\n"
-            "%async func run(): int {\n"
+            "%async run(): int {\n"
             "    var worker = thread.spawnThread();\n"
             "    var channel = new thread.Channel<int>();\n"
-            "    %async func sendBack(): int {\n"
+            "    %async sendBack(): int {\n"
             "        channel.send(41);\n"
             "        return 1;\n"
             "    }\n"
@@ -250,10 +250,10 @@ static void test_channel_transports_value_back_from_worker_isolate(void) {
 static void test_transfer_moves_value_into_worker_isolate_and_invalidates_source(void) {
     static const char *source =
             "var thread = %import(\"zr.thread\");\n"
-            "%async func run(): int {\n"
+            "%async run(): int {\n"
             "    var worker = thread.spawnThread();\n"
             "    var transfer = new thread.Transfer<int>(41);\n"
-            "    %async func consume(): int {\n"
+            "    %async consume(): int {\n"
             "        var moved = transfer.take();\n"
             "        if (transfer.isTaken() != true) { return 0; }\n"
             "        return moved + 1;\n"
@@ -281,10 +281,10 @@ static void test_transfer_moves_value_into_worker_isolate_and_invalidates_source
 static void test_shared_handle_capture_roundtrips_across_worker_isolate(void) {
     static const char *source =
             "var thread = %import(\"zr.thread\");\n"
-            "%async func run(): int {\n"
+            "%async run(): int {\n"
             "    var worker = thread.spawnThread();\n"
             "    var shared = new thread.Shared<int>(41);\n"
-            "    %async func bump(): int {\n"
+            "    %async bump(): int {\n"
             "        var current = shared.load();\n"
             "        shared.store(current + 1);\n"
             "        return current;\n"
@@ -310,11 +310,11 @@ static void test_shared_handle_capture_roundtrips_across_worker_isolate(void) {
 static void test_weak_shared_handle_capture_upgrades_across_worker_isolate(void) {
     static const char *source =
             "var thread = %import(\"zr.thread\");\n"
-            "%async func run(): int {\n"
+            "%async run(): int {\n"
             "    var worker = thread.spawnThread();\n"
             "    var shared = new thread.Shared<int>(7);\n"
             "    var weak = shared.downgrade();\n"
-            "    %async func readWeak(): int {\n"
+            "    %async readWeak(): int {\n"
             "        var upgraded = weak.upgrade();\n"
             "        if (upgraded == null) { return 0; }\n"
             "        return upgraded.load();\n"

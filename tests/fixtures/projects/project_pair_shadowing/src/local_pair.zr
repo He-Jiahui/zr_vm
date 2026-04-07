@@ -1,0 +1,16 @@
+%module "local_pair";
+
+pub struct Pair {
+    pub var left: int;
+    pub var right: int;
+
+    pub @constructor(left: int, right: int) {
+        this.left = left;
+        this.right = right;
+    }
+}
+
+pub score(): int {
+    var pair = $Pair(1, 2);
+    return pair.left + pair.right;
+}

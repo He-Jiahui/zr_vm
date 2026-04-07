@@ -1,0 +1,27 @@
+var benchConfig = %import("bench_config");
+
+var scale = benchConfig.scale();
+var limit = 5000 * scale;
+var checksum = 0;
+var count = 0;
+var candidate = 2;
+
+while (candidate <= limit) {
+    var divisor = 2;
+    var isPrime = true;
+    while (divisor * divisor <= candidate) {
+        if (candidate % divisor == 0) {
+            isPrime = false;
+            break;
+        }
+        divisor = divisor + 1;
+    }
+
+    if (isPrime) {
+        count = count + 1;
+        checksum = (checksum + candidate * ((count % 97) + 1)) % 1000000007;
+    }
+    candidate = candidate + 1;
+}
+
+return "BENCH_PRIME_TRIAL_DIVISION_PASS\n" + <string> checksum;

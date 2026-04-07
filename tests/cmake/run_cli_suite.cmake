@@ -41,6 +41,12 @@ function(cli_assert_contains case_name text_value expected)
     endif()
 endfunction()
 
+function(cli_assert_matches case_name text_value expected_regex)
+    if (NOT "${${text_value}}" MATCHES "${expected_regex}")
+        message(FATAL_ERROR "CLI case '${case_name}' did not match /${expected_regex}/.\nOutput:\n${${text_value}}")
+    endif()
+endfunction()
+
 function(cli_assert_file_contains case_name path expected)
     if (NOT EXISTS "${path}")
         message(FATAL_ERROR "CLI case '${case_name}' expected file '${path}' to exist.")
@@ -306,6 +312,48 @@ if (run_help)
     cli_assert_contains("help" help_stdout "--run")
 endif()
 
+cli_case_matches_tier("smoke;core;stress" run_help_alias)
+if (run_help_alias)
+    message("---- help_alias")
+    cli_run_split("help_alias" help_alias_stdout help_alias_stderr help_alias_result "${CLI_EXE}" "-h")
+    set(help_alias_output "${help_alias_stdout}${help_alias_stderr}")
+    cli_assert_success("help_alias" help_alias_result help_alias_output)
+    cli_assert_empty("help_alias" help_alias_stderr "stderr")
+    cli_assert_contains("help_alias" help_alias_stdout "--project <project.zrp> -m <module>")
+    cli_assert_contains("help_alias" help_alias_stdout "Use -- to stop CLI parsing")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_help_question_alias)
+if (run_help_question_alias)
+    message("---- help_question_alias")
+    cli_run_split("help_question_alias" help_question_stdout help_question_stderr help_question_result "${CLI_EXE}" "-?")
+    set(help_question_output "${help_question_stdout}${help_question_stderr}")
+    cli_assert_success("help_question_alias" help_question_result help_question_output)
+    cli_assert_empty("help_question_alias" help_question_stderr "stderr")
+    cli_assert_contains("help_question_alias" help_question_stdout "Main Modes:")
+    cli_assert_contains("help_question_alias" help_question_stdout "-V | --version")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_version)
+if (run_version)
+    message("---- version")
+    cli_run_split("version" version_stdout version_stderr version_result "${CLI_EXE}" "-V")
+    set(version_output "${version_stdout}${version_stderr}")
+    cli_assert_success("version" version_result version_output)
+    cli_assert_empty("version" version_stderr "stderr")
+    cli_assert_matches("version" version_stdout "^[0-9]+\\.[0-9]+\\.[0-9]+-[^\\r\\n]+")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_version_long)
+if (run_version_long)
+    message("---- version_long")
+    cli_run_split("version_long" version_long_stdout version_long_stderr version_long_result "${CLI_EXE}" "--version")
+    set(version_long_output "${version_long_stdout}${version_long_stderr}")
+    cli_assert_success("version_long" version_long_result version_long_output)
+    cli_assert_empty("version_long" version_long_stderr "stderr")
+    cli_assert_matches("version_long" version_long_stdout "^[0-9]+\\.[0-9]+\\.[0-9]+-[^\\r\\n]+")
+endif()
+
 cli_case_matches_tier("smoke;core;stress" run_missing_project)
 if (run_missing_project)
     message("---- run_missing_project")
@@ -325,6 +373,27 @@ if (run_positional)
     cli_run("positional_run" positional_output positional_result "${CLI_EXE}" "${hello_world_dir}/hello_world.zrp")
     cli_assert_success("positional_run" positional_result positional_output)
     cli_assert_contains("positional_run" positional_output "hello world")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_positional_args)
+if (run_positional_args)
+    message("---- positional_run_with_passthrough")
+    cli_copy_fixture("cli_args" cli_args_run_dir)
+    cli_run("positional_run_with_passthrough"
+            cli_args_run_output
+            cli_args_run_result
+            "${CLI_EXE}"
+            "${cli_args_run_dir}/cli_args.zrp"
+            "--"
+            "alpha"
+            "--debug")
+    cli_assert_success("positional_run_with_passthrough" cli_args_run_result cli_args_run_output)
+    cli_assert_contains("positional_run_with_passthrough" cli_args_run_output "CLI_ARGS_MAIN")
+    cli_assert_contains("positional_run_with_passthrough"
+                        cli_args_run_output
+                        "main_arg0=${cli_args_run_dir}/cli_args.zrp")
+    cli_assert_contains("positional_run_with_passthrough" cli_args_run_output "main_arg1=alpha")
+    cli_assert_contains("positional_run_with_passthrough" cli_args_run_output "main_arg2=--debug")
 endif()
 
 cli_case_matches_tier("smoke;core;stress" run_compile_hello)
@@ -352,6 +421,201 @@ if (run_compile_intermediate)
     if (NOT EXISTS "${compile_intermediate_dir}/bin/main.zri")
         message(FATAL_ERROR "compile_intermediate did not create main.zri")
     endif()
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_compile_run_args)
+if (run_compile_run_args)
+    message("---- compile_run_with_passthrough")
+    cli_copy_fixture("cli_args" cli_args_compile_run_dir)
+    file(REMOVE_RECURSE "${cli_args_compile_run_dir}/bin")
+    cli_run("compile_run_with_passthrough"
+            cli_args_compile_run_output
+            cli_args_compile_run_result
+            "${CLI_EXE}"
+            "--compile"
+            "${cli_args_compile_run_dir}/cli_args.zrp"
+            "--run"
+            "--"
+            "seed"
+            "42")
+    cli_assert_success("compile_run_with_passthrough" cli_args_compile_run_result cli_args_compile_run_output)
+    cli_assert_contains("compile_run_with_passthrough" cli_args_compile_run_output "CLI_ARGS_MAIN")
+    cli_assert_contains("compile_run_with_passthrough"
+                        cli_args_compile_run_output
+                        "main_arg0=${cli_args_compile_run_dir}/cli_args.zrp")
+    cli_assert_contains("compile_run_with_passthrough" cli_args_compile_run_output "main_arg1=seed")
+    cli_assert_contains("compile_run_with_passthrough" cli_args_compile_run_output "main_arg2=42")
+    if (NOT EXISTS "${cli_args_compile_run_dir}/bin/main.zro")
+        message(FATAL_ERROR "compile_run_with_passthrough did not create main.zro")
+    endif()
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_compile_run_default_binary)
+if (run_compile_run_default_binary)
+    message("---- compile_run_default_binary")
+    cli_copy_fixture("hello_world" compile_default_binary_dir)
+    file(REMOVE_RECURSE "${compile_default_binary_dir}/bin")
+    cli_run("compile_run_default_binary"
+            compile_default_binary_output
+            compile_default_binary_result
+            "${CLI_EXE}"
+            "--compile"
+            "${compile_default_binary_dir}/hello_world.zrp"
+            "--run"
+            "--emit-executed-via")
+    cli_assert_success("compile_run_default_binary" compile_default_binary_result compile_default_binary_output)
+    cli_assert_contains("compile_run_default_binary" compile_default_binary_output "hello world")
+    cli_assert_contains("compile_run_default_binary" compile_default_binary_output "executed_via=binary")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_project_module)
+if (run_project_module)
+    message("---- project_module_run")
+    cli_copy_fixture("cli_args" cli_args_module_dir)
+    cli_run("project_module_run"
+            cli_args_module_output
+            cli_args_module_result
+            "${CLI_EXE}"
+            "--project"
+            "${cli_args_module_dir}/cli_args.zrp"
+            "-m"
+            "tools.seed"
+            "--execution-mode"
+            "binary"
+            "--"
+            "foo"
+            "bar")
+    cli_assert_success("project_module_run" cli_args_module_result cli_args_module_output)
+    cli_assert_contains("project_module_run" cli_args_module_output "CLI_ARGS_MODULE")
+    cli_assert_contains("project_module_run" cli_args_module_output "module_arg0=tools.seed")
+    cli_assert_contains("project_module_run" cli_args_module_output "module_arg1=foo")
+    cli_assert_contains("project_module_run" cli_args_module_output "module_arg2=bar")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_project_module_interp)
+if (run_project_module_interp)
+    message("---- project_module_interp_run")
+    cli_copy_fixture("cli_args" cli_args_module_interp_dir)
+    cli_run("project_module_interp_run"
+            cli_args_module_interp_output
+            cli_args_module_interp_result
+            "${CLI_EXE}"
+            "--project"
+            "${cli_args_module_interp_dir}/cli_args.zrp"
+            "-m"
+            "tools.seed"
+            "--"
+            "interp")
+    cli_assert_success("project_module_interp_run" cli_args_module_interp_result cli_args_module_interp_output)
+    cli_assert_contains("project_module_interp_run" cli_args_module_interp_output "CLI_ARGS_MODULE")
+    cli_assert_contains("project_module_interp_run" cli_args_module_interp_output "module_arg0=tools.seed")
+    cli_assert_contains("project_module_interp_run" cli_args_module_interp_output "module_arg1=interp")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_project_module_aot_error)
+if (run_project_module_aot_error)
+    message("---- project_module_aot_error")
+    cli_copy_fixture("cli_args" cli_args_module_aot_dir)
+    cli_run_split("project_module_aot_error"
+                  cli_args_module_aot_stdout
+                  cli_args_module_aot_stderr
+                  cli_args_module_aot_result
+                  "${CLI_EXE}"
+                  "--project"
+                  "${cli_args_module_aot_dir}/cli_args.zrp"
+                  "-m"
+                  "tools.seed"
+                  "--execution-mode"
+                  "aot_c")
+    set(cli_args_module_aot_output "${cli_args_module_aot_stdout}${cli_args_module_aot_stderr}")
+    cli_assert_failure("project_module_aot_error" cli_args_module_aot_result cli_args_module_aot_output)
+    cli_assert_empty("project_module_aot_error" cli_args_module_aot_stdout "stdout")
+    cli_assert_contains("project_module_aot_error"
+                        cli_args_module_aot_stderr
+                        "only supports --execution-mode interp or binary in v1")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_inline_code)
+if (run_inline_code)
+    message("---- inline_code_run")
+    set(cli_inline_code [=[
+var system = %import("zr.system");
+var index = 0;
+for (var item in system.process.arguments) {
+    if (index == 0) {
+        system.console.printLine("inline_arg0=" + item);
+    } else if (index == 1) {
+        system.console.printLine("inline_arg1=" + item);
+    } else if (index == 2) {
+        system.console.printLine("inline_arg2=" + item);
+    }
+    index = index + 1;
+}
+return index;
+]=])
+    string(REPLACE ";" "\\;" cli_inline_code_escaped "${cli_inline_code}")
+    cli_run("inline_code_run"
+            cli_inline_output
+            cli_inline_result
+            "${CLI_EXE}"
+            "-c"
+            "${cli_inline_code_escaped}"
+            "--"
+            "foo"
+            "bar")
+    cli_assert_success("inline_code_run" cli_inline_result cli_inline_output)
+    cli_assert_contains("inline_code_run" cli_inline_output "inline_arg0=-c")
+    cli_assert_contains("inline_code_run" cli_inline_output "inline_arg1=foo")
+    cli_assert_contains("inline_code_run" cli_inline_output "inline_arg2=bar")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_inline_code_eval_alias)
+if (run_inline_code_eval_alias)
+    message("---- inline_code_eval_alias")
+    set(cli_inline_eval_code [=[
+var system = %import("zr.system");
+var index = 0;
+for (var item in system.process.arguments) {
+    if (index == 0) {
+        system.console.printLine("inline_eval_arg0=" + item);
+    } else if (index == 1) {
+        system.console.printLine("inline_eval_arg1=" + item);
+    }
+    index = index + 1;
+}
+return index;
+]=])
+    string(REPLACE ";" "\\;" cli_inline_eval_code_escaped "${cli_inline_eval_code}")
+    cli_run("inline_code_eval_alias"
+            cli_inline_eval_output
+            cli_inline_eval_result
+            "${CLI_EXE}"
+            "-e"
+            "${cli_inline_eval_code_escaped}"
+            "--"
+            "foo")
+    cli_assert_success("inline_code_eval_alias" cli_inline_eval_result cli_inline_eval_output)
+    cli_assert_contains("inline_code_eval_alias" cli_inline_eval_output "inline_eval_arg0=-e")
+    cli_assert_contains("inline_code_eval_alias" cli_inline_eval_output "inline_eval_arg1=foo")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_compile_passthrough_error)
+if (run_compile_passthrough_error)
+    message("---- compile_passthrough_error")
+    cli_copy_fixture("cli_args" cli_args_compile_only_dir)
+    cli_run_split("compile_passthrough_error"
+                  compile_passthrough_stdout
+                  compile_passthrough_stderr
+                  compile_passthrough_result
+                  "${CLI_EXE}"
+                  "--compile"
+                  "${cli_args_compile_only_dir}/cli_args.zrp"
+                  "--"
+                  "arg1")
+    set(compile_passthrough_output "${compile_passthrough_stdout}${compile_passthrough_stderr}")
+    cli_assert_failure("compile_passthrough_error" compile_passthrough_result compile_passthrough_output)
+    cli_assert_empty("compile_passthrough_error" compile_passthrough_stdout "stdout")
+    cli_assert_contains("compile_passthrough_error" compile_passthrough_stderr "active run path")
 endif()
 
 cli_case_matches_tier("smoke;core;stress" run_compile_aot_c)
@@ -1121,6 +1385,75 @@ if (run_repl)
     if (repl_value_index EQUAL -1)
         message(FATAL_ERROR "repl did not evaluate submitted code after :reset.\nOutput:\n${repl_output}")
     endif()
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_interactive_after_run)
+if (run_interactive_after_run)
+    message("---- interactive_after_run")
+    cli_copy_fixture("cli_args" cli_args_interactive_dir)
+    set(interactive_after_run_input_file "${CLI_SUITE_ROOT}/interactive_after_run_input.txt")
+    file(WRITE "${interactive_after_run_input_file}"
+        "var system = %import(\"zr.system\");\n"
+        "var first = \"\";\n"
+        "for (var item in system.process.arguments) {\n"
+        "    first = item;\n"
+        "}\n"
+        "return first;\n"
+        "\n"
+        ":quit\n")
+    execute_process(
+        COMMAND "${CLI_EXE}" "${cli_args_interactive_dir}/cli_args.zrp" "-i" "--" "tail"
+        INPUT_FILE "${interactive_after_run_input_file}"
+        RESULT_VARIABLE interactive_after_run_result
+        OUTPUT_VARIABLE interactive_after_run_stdout
+        ERROR_VARIABLE interactive_after_run_stderr
+    )
+    set(interactive_after_run_output "${interactive_after_run_stdout}${interactive_after_run_stderr}")
+    if (NOT interactive_after_run_result EQUAL 0)
+        message(FATAL_ERROR "interactive_after_run failed with exit code ${interactive_after_run_result}.\nOutput:\n${interactive_after_run_output}")
+    endif()
+    cli_assert_contains("interactive_after_run" interactive_after_run_output "CLI_ARGS_MAIN")
+    cli_assert_contains("interactive_after_run"
+                        interactive_after_run_output
+                        "main_arg0=${cli_args_interactive_dir}/cli_args.zrp")
+    cli_assert_contains("interactive_after_run" interactive_after_run_output "main_arg1=tail")
+    cli_assert_contains("interactive_after_run" interactive_after_run_output "ZR VM REPL")
+    cli_assert_contains("interactive_after_run" interactive_after_run_output "<repl>")
+endif()
+
+cli_case_matches_tier("smoke;core;stress" run_compile_interactive_after_run)
+if (run_compile_interactive_after_run)
+    message("---- compile_interactive_after_run")
+    cli_copy_fixture("cli_args" cli_args_compile_interactive_dir)
+    set(compile_interactive_after_run_input_file "${CLI_SUITE_ROOT}/compile_interactive_after_run_input.txt")
+    file(WRITE "${compile_interactive_after_run_input_file}"
+        "var system = %import(\"zr.system\");\n"
+        "var first = \"\";\n"
+        "for (var item in system.process.arguments) {\n"
+        "    first = item;\n"
+        "}\n"
+        "return first;\n"
+        "\n"
+        ":quit\n")
+    execute_process(
+        COMMAND "${CLI_EXE}" "--compile" "${cli_args_compile_interactive_dir}/cli_args.zrp" "--run" "--emit-executed-via" "-i" "--" "tail"
+        INPUT_FILE "${compile_interactive_after_run_input_file}"
+        RESULT_VARIABLE compile_interactive_after_run_result
+        OUTPUT_VARIABLE compile_interactive_after_run_stdout
+        ERROR_VARIABLE compile_interactive_after_run_stderr
+    )
+    set(compile_interactive_after_run_output "${compile_interactive_after_run_stdout}${compile_interactive_after_run_stderr}")
+    if (NOT compile_interactive_after_run_result EQUAL 0)
+        message(FATAL_ERROR "compile_interactive_after_run failed with exit code ${compile_interactive_after_run_result}.\nOutput:\n${compile_interactive_after_run_output}")
+    endif()
+    cli_assert_contains("compile_interactive_after_run" compile_interactive_after_run_output "CLI_ARGS_MAIN")
+    cli_assert_contains("compile_interactive_after_run"
+                        compile_interactive_after_run_output
+                        "main_arg0=${cli_args_compile_interactive_dir}/cli_args.zrp")
+    cli_assert_contains("compile_interactive_after_run" compile_interactive_after_run_output "main_arg1=tail")
+    cli_assert_contains("compile_interactive_after_run" compile_interactive_after_run_output "executed_via=binary")
+    cli_assert_contains("compile_interactive_after_run" compile_interactive_after_run_output "ZR VM REPL")
+    cli_assert_contains("compile_interactive_after_run" compile_interactive_after_run_output "<repl>")
 endif()
 
 cli_case_matches_tier("core;stress" run_repl_native_import)

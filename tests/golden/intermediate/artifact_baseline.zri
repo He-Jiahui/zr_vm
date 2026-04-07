@@ -20,8 +20,8 @@ CLOSURE_VARIABLES (0):
 
 TYPE_METADATA:
   LOCAL_BINDINGS (2):
-    [0] greet: function
-    [1] buildMessage: function
+    [0] greet: %func()->string
+    [1] buildMessage: %func()->string
   EXPORTED_SYMBOLS (1):
     fn greet(): string
   COMPILE_TIME_VARIABLES (0):

@@ -118,6 +118,7 @@ typedef struct SZrCompilerState {
     SZrArray compileTimeDecoratorClasses;     // 编译期装饰器类表（SZrCompileTimeDecoratorClass*）
     SZrArray importedCompileTimeModules;      // 跨文件导入模块的 compile-time 元数据（SZrImportedCompileTimeModule*）
     SZrArray importedCompileTimeModuleAliases; // 模块别名表（SZrImportedCompileTimeModuleAlias）
+    SZrArray typeValueAliases;                // 类型值别名表（SZrTypeBinding）
     TZrBool isInCompileTimeContext;             // 是否在编译期上下文中
     TZrBool isCompilingCompileTimeRuntimeSupport; // 是否正在为 binary import 生成 compile-time runtime support
     
@@ -240,6 +241,9 @@ typedef struct SZrExportedVariable {
     SZrString *name;                    // 变量名
     TZrUInt32 stackSlot;                  // 栈槽位
     EZrAccessModifier accessModifier;   // 可见性修饰符
+    EZrModuleExportKind exportKind;     // 导出种类
+    EZrModuleExportReadiness readiness; // 导出就绪阶段
+    TZrUInt32 callableChildIndex;       // 顶层导出函数对应的 childFunction 索引
 } SZrExportedVariable;
 
 // 函数名到子函数索引的映射（仅用于编译时查找，运行时不需要）
@@ -263,7 +267,8 @@ typedef struct SZrTypePrototypeInfo {
     SZrString *name;                    // 类型名称
     EZrObjectPrototypeType type;        // STRUCT 或 CLASS
     EZrAccessModifier accessModifier;   // 访问修饰符
-    TZrBool isImportedNative;           // 是否为仅用于编译期解析的原生导入类型
+    TZrUInt32 modifierFlags;            // abstract/final 等类型修饰符
+    TZrBool isImportedNative;           // 是否为仅用于编译期解析的导入类型 stub（native/source/binary）
     SZrArray inherits;                  // 继承的类型引用（SZrString* 数组，存储类型名称字符串）
     SZrString *extendsTypeName;         // 单继承目标（如有）
     SZrArray implements;                // 实现/扩展的接口引用（SZrString* 数组）
@@ -276,6 +281,8 @@ typedef struct SZrTypePrototypeInfo {
     TZrBool allowValueConstruction;     // 是否允许 $Type(...)
     TZrBool allowBoxedConstruction;     // 是否允许 new Type(...)
     SZrString *constructorSignature;    // 构造签名提示
+    TZrUInt32 nextVirtualSlotIndex;     // 当前类型分配到的下一个 virtual slot
+    TZrUInt32 nextPropertyIdentity;     // 当前类型分配到的下一个 property identity
 } SZrTypePrototypeInfo;
 
 #ifndef ZR_MEMBER_PARAMETER_COUNT_UNKNOWN
@@ -288,6 +295,7 @@ typedef struct SZrTypeMemberInfo {
     SZrString *name;                    // 成员名称
     EZrAccessModifier accessModifier;   // 访问修饰符
     TZrBool isStatic;                     // 是否为静态成员
+    TZrUInt32 modifierFlags;              // abstract/virtual/override/final/shadow 修饰符
     TZrBool isConst;                      // 是否为 const 字段
     TZrBool isUsingManaged;               // 是否显式使用 field-scoped using
     EZrOwnershipQualifier ownershipQualifier; // 字段所有权限定符
@@ -320,6 +328,15 @@ typedef struct SZrTypeMemberInfo {
     EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
     TZrBool isMetaMethod;                 // 是否为元方法
     SZrString *returnTypeName;          // 返回类型名称（字符串表示，用于运行时类型查找）
+    EZrModuleExportKind moduleExportKind; // module prototype member 对应的导出种类
+    EZrModuleExportReadiness moduleExportReadiness; // module prototype member 对应的导出就绪阶段
+    SZrString *ownerTypeName;             // 当前声明所在类型
+    SZrString *baseDefinitionOwnerTypeName; // 覆写链根定义所属类型
+    SZrString *baseDefinitionName;        // 覆写链根定义名称（属性访问器为隐藏名）
+    TZrUInt32 virtualSlotIndex;           // virtual slot；非虚成员为 UINT32_MAX
+    TZrUInt32 interfaceContractSlot;      // interface contract slot；当前未绑定为 UINT32_MAX
+    TZrUInt32 propertyIdentity;           // property identity；非属性访问器为 UINT32_MAX
+    TZrUInt32 accessorRole;               // 0 none, 1 getter, 2 setter
 } SZrTypeMemberInfo;
 
 // 编译结果结构体

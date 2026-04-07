@@ -202,6 +202,200 @@ static TZrBool zr_string_equals_cstr_local(SZrString *value, const TZrChar *lite
     return nativeValue != ZR_NULL && strcmp(nativeValue, literal) == 0;
 }
 
+TZrBool compiler_is_super_identifier_node(SZrAstNode *node) {
+    return node != ZR_NULL &&
+           node->type == ZR_AST_IDENTIFIER_LITERAL &&
+           zr_string_equals_cstr_local(node->data.identifier.name, "super");
+}
+
+TZrBool compiler_resolve_super_member_context(SZrCompilerState *cs,
+                                              SZrFileRange location,
+                                              SZrString **outSuperTypeName,
+                                              TZrUInt32 *outReceiverSlot,
+                                              EZrOwnershipQualifier *outReceiverOwnershipQualifier) {
+    SZrString *thisName;
+    TZrUInt32 receiverSlot = ZR_PARSER_SLOT_NONE;
+    EZrOwnershipQualifier receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+
+    if (outSuperTypeName != ZR_NULL) {
+        *outSuperTypeName = ZR_NULL;
+    }
+    if (outReceiverSlot != ZR_NULL) {
+        *outReceiverSlot = ZR_PARSER_SLOT_NONE;
+    }
+    if (outReceiverOwnershipQualifier != ZR_NULL) {
+        *outReceiverOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+
+    if (cs == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (cs->currentTypePrototypeInfo == ZR_NULL || cs->currentTypePrototypeInfo->extendsTypeName == ZR_NULL) {
+        ZrParser_Compiler_Error(cs,
+                                "super.member requires a direct base class",
+                                location);
+        return ZR_FALSE;
+    }
+
+    if (cs->currentFunctionNode == ZR_NULL) {
+        ZrParser_Compiler_Error(cs,
+                                "super.member is only valid inside instance methods, property accessors, or non-constructor meta methods",
+                                location);
+        return ZR_FALSE;
+    }
+
+    switch (cs->currentFunctionNode->type) {
+        case ZR_AST_CLASS_METHOD:
+            if (cs->currentFunctionNode->data.classMethod.isStatic) {
+                ZrParser_Compiler_Error(cs,
+                                        "super.member is not available inside static methods",
+                                        location);
+                return ZR_FALSE;
+            }
+            receiverQualifier =
+                    get_implicit_this_ownership_qualifier(get_member_receiver_qualifier(cs->currentFunctionNode));
+            break;
+
+        case ZR_AST_CLASS_PROPERTY:
+            if (cs->currentFunctionNode->data.classProperty.isStatic) {
+                ZrParser_Compiler_Error(cs,
+                                        "super.member is not available inside static property accessors",
+                                        location);
+                return ZR_FALSE;
+            }
+            break;
+
+        case ZR_AST_CLASS_META_FUNCTION:
+            if (cs->currentFunctionNode->data.classMetaFunction.isStatic) {
+                ZrParser_Compiler_Error(cs,
+                                        "super.member is not available inside static meta methods",
+                                        location);
+                return ZR_FALSE;
+            }
+            if (cs->currentFunctionNode->data.classMetaFunction.meta != ZR_NULL &&
+                zr_string_equals_cstr_local(cs->currentFunctionNode->data.classMetaFunction.meta->name,
+                                            "constructor")) {
+                ZrParser_Compiler_Error(cs,
+                                        "super.member is not available inside constructors; use super(...) for constructor chaining",
+                                        location);
+                return ZR_FALSE;
+            }
+            break;
+
+        default:
+            ZrParser_Compiler_Error(cs,
+                                    "super.member is only valid inside instance methods, property accessors, or non-constructor meta methods",
+                                    location);
+            return ZR_FALSE;
+    }
+
+    thisName = ZrCore_String_CreateFromNative(cs->state, "this");
+    if (thisName == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Failed to allocate implicit receiver binding for super.member", location);
+        return ZR_FALSE;
+    }
+
+    receiverSlot = find_local_var(cs, thisName);
+    if (receiverSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs,
+                                "super.member requires an implicit instance receiver",
+                                location);
+        return ZR_FALSE;
+    }
+
+    if (outSuperTypeName != ZR_NULL) {
+        *outSuperTypeName = cs->currentTypePrototypeInfo->extendsTypeName;
+    }
+    if (outReceiverSlot != ZR_NULL) {
+        *outReceiverSlot = receiverSlot;
+    }
+    if (outReceiverOwnershipQualifier != ZR_NULL) {
+        *outReceiverOwnershipQualifier = receiverQualifier;
+    }
+    return ZR_TRUE;
+}
+
+TZrBool emit_member_function_constant_to_slot(SZrCompilerState *cs,
+                                              TZrUInt32 targetSlot,
+                                              const SZrTypeMemberInfo *memberInfo,
+                                              SZrFileRange location) {
+    SZrTypeValue functionValue;
+    TZrUInt32 constantIndex;
+
+    if (cs == ZR_NULL || memberInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (memberInfo->compiledFunction == ZR_NULL) {
+        ZrParser_Compiler_Error(cs,
+                                "Failed to bind base meta member for super dispatch",
+                                location);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(cs->state,
+                                 &functionValue,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(memberInfo->compiledFunction));
+    constantIndex = add_constant(cs, &functionValue);
+    emit_instruction(cs,
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
+                                          (TZrUInt16)targetSlot,
+                                          (TZrInt32)constantIndex));
+    return !cs->hasError;
+}
+
+TZrBool emit_super_accessor_call_from_prototype(SZrCompilerState *cs,
+                                                TZrUInt32 prototypeSlot,
+                                                TZrUInt32 receiverSlot,
+                                                SZrString *accessorName,
+                                                const TZrUInt32 *argumentSlots,
+                                                TZrUInt32 argumentCount,
+                                                SZrFileRange location) {
+    TZrUInt32 memberId;
+    TZrUInt32 receiverArgSlot;
+
+    if (cs == ZR_NULL || accessorName == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    memberId = compiler_get_or_add_member_entry(cs, accessorName);
+    if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
+        ZrParser_Compiler_Error(cs,
+                                "Failed to register base accessor symbol for super dispatch",
+                                location);
+        return ZR_FALSE;
+    }
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                                          (TZrUInt16)prototypeSlot,
+                                          (TZrUInt16)prototypeSlot,
+                                          (TZrUInt16)memberId));
+
+    receiverArgSlot = allocate_stack_slot(cs);
+    emit_instruction(cs,
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                          (TZrUInt16)receiverArgSlot,
+                                          (TZrInt32)receiverSlot));
+
+    for (TZrUInt32 index = 0; index < argumentCount; index++) {
+        TZrUInt32 copiedArgSlot = allocate_stack_slot(cs);
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)copiedArgSlot,
+                                              (TZrInt32)argumentSlots[index]));
+    }
+
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                          (TZrUInt16)prototypeSlot,
+                                          (TZrUInt16)prototypeSlot,
+                                          (TZrUInt16)(argumentCount + 1)));
+    collapse_stack_to_slot(cs, prototypeSlot);
+    return !cs->hasError;
+}
+
 TZrBool receiver_ownership_can_call_member_local(EZrOwnershipQualifier receiverQualifier,
                                                         EZrOwnershipQualifier memberQualifier) {
     switch (receiverQualifier) {

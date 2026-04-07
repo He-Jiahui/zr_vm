@@ -1,0 +1,646 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 18
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 6
+
+CONSTANTS (42):
+  [0] null
+  [1] native closure
+  [2] string: "core_semantics"
+  [3] native closure
+  [4] string: "oop_meta"
+  [5] native closure
+  [6] string: "async_native"
+  [7] function
+  [8] string: "ScoreReadable"
+  [9] string: "read"
+  [10] string: "int"
+  [11] string: "Counter"
+  [12] string: "current"
+  [13] string: "constructor"
+  [14] string: "Pair"
+  [15] string: "left"
+  [16] string: "right"
+  [17] string: "Mode"
+  [18] unknown type: 18
+  [19] string: "Idle"
+  [20] string: "Hot"
+  [21] string: "makeEscaping"
+  [22] string: "object"
+  [23] string: "lambdaScore"
+  [24] string: "SignalBox"
+  [25] string: "raw"
+  [26] string: "created"
+  [27] string: "__get_value"
+  [28] string: "__set_value"
+  [29] string: "bump"
+  [30] string: "identity"
+  [31] string: "call"
+  [32] string: "Vector2"
+  [33] string: "x"
+  [34] string: "y"
+  [35] string: "add"
+  [36] string: "traceClass"
+  [37] string: "null"
+  [38] string: "combineVectors"
+  [39] string: "Holder"
+  [40] string: "makeEscapingCallback"
+  [41] string: "nativeScore"
+
+LOCAL_VARIABLES (4):
+  [0] runMatrix: offset_activate=0, offset_dead=18
+  [1] core: offset_activate=5, offset_dead=18
+  [2] meta: offset_activate=9, offset_dead=18
+  [3] native: offset_activate=13, offset_dead=18
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (4):
+    [0] runMatrix: function
+    [1] core: core_semantics
+    [2] meta: oop_meta
+    [3] native: async_native
+  EXPORTED_SYMBOLS (1):
+    fn runMatrix(): int
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+PROTOTYPES (10):
+// ========== PROTOTYPES FROM DATA (count: 10) ==========
+// --- Prototype 1 ---
+interface ScoreReadable {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "read",
+      access: private (1),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+class Counter : ScoreReadable {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "current",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 1,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "read",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 2,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
+struct Pair {
+  access: public (0),
+  members: [
+    {
+      type: STRUCT_FIELD (14),
+      name: "left",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: STRUCT_FIELD (14),
+      name: "right",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 8,
+      fieldSize: 8
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 3,
+      parameterCount: 2,
+      returnType: "<void>"
+    }
+  ]
+}
+
+// --- Prototype 4 ---
+enum Mode {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "Idle",
+      access: public (0),
+      static: true,
+      fieldType: "Mode",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "Hot",
+      access: public (0),
+      static: true,
+      fieldType: "Mode",
+      fieldOffset: 0,
+      fieldSize: 0
+    }
+  ]
+}
+
+// --- Prototype 5 ---
+module core_semantics {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "makeEscaping",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "lambdaScore",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "int"
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "ScoreReadable",
+      access: public (0),
+      static: true,
+      fieldType: "ScoreReadable",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "Counter",
+      access: public (0),
+      static: true,
+      fieldType: "Counter",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "Pair",
+      access: public (0),
+      static: true,
+      fieldType: "Pair",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "Mode",
+      access: public (0),
+      static: true,
+      fieldType: "Mode",
+      fieldOffset: 0,
+      fieldSize: 0
+    }
+  ]
+}
+
+// --- Prototype 6 ---
+class SignalBox {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "raw",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "created",
+      access: public (0),
+      static: true,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 2,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__get_value",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 3,
+      parameterCount: 0,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__set_value",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 4,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "bump",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 5,
+      parameterCount: 1,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "identity",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 6,
+      parameterCount: 1,
+      returnType: "int"
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "call",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CALL (15),
+      functionConstantIndex: 7,
+      parameterCount: 1,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 7 ---
+struct Vector2 {
+  access: public (0),
+  members: [
+    {
+      type: STRUCT_FIELD (14),
+      name: "x",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: STRUCT_FIELD (14),
+      name: "y",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 8,
+      fieldSize: 8
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 10,
+      parameterCount: 2,
+      returnType: "<void>"
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "add",
+      access: public (0),
+      static: true,
+      isMetaMethod: true,
+      metaType: ADD (2),
+      functionConstantIndex: 11,
+      parameterCount: 2,
+      returnType: "Vector2"
+    }
+  ]
+}
+
+// --- Prototype 8 ---
+module oop_meta {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "traceClass",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "null"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "combineVectors",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "int"
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "SignalBox",
+      access: public (0),
+      static: true,
+      fieldType: "SignalBox",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "Vector2",
+      access: public (0),
+      static: true,
+      fieldType: "Vector2",
+      fieldOffset: 0,
+      fieldSize: 0
+    }
+  ]
+}
+
+// --- Prototype 9 ---
+class Holder {
+  access: private (1),
+  members: [
+  ]
+}
+
+// --- Prototype 10 ---
+module async_native {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "makeEscapingCallback",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "object"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "nativeScore",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "int"
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "Holder",
+      access: public (0),
+      static: true,
+      fieldType: "Holder",
+      fieldOffset: 0,
+      fieldSize: 0
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (18):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=1)
+  [2] GET_CONSTANT (extra=2, operand=2)
+  [3] FUNCTION_CALL (extra=1, operand1=1, operand2=1)
+  [4] GET_CONSTANT (extra=2, operand=0)
+  [5] GET_CONSTANT (extra=2, operand=3)
+  [6] GET_CONSTANT (extra=3, operand=4)
+  [7] FUNCTION_CALL (extra=2, operand1=2, operand2=1)
+  [8] GET_CONSTANT (extra=3, operand=0)
+  [9] GET_CONSTANT (extra=3, operand=5)
+  [10] GET_CONSTANT (extra=4, operand=6)
+  [11] FUNCTION_CALL (extra=3, operand1=3, operand2=1)
+  [12] GET_CONSTANT (extra=4, operand=0)
+  [13] CREATE_CLOSURE (extra=4)
+  [14] SET_STACK (extra=0, operand=4)
+  [15] GET_STACK (extra=5, operand=0)
+  [16] SUPER_FUNCTION_TAIL_CALL_NO_ARGS (extra=5, operand1=5, operand2=0)
+  [17] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+
+CHILD_FUNCTIONS (1):
+  [0] FUNCTION:
+    NAME: runMatrix
+    START_LINE: 5
+    END_LINE: 15
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 18
+
+    CONSTANTS (6):
+      [0] string: "SignalBox"
+      [1] int: 4
+      [2] null
+      [3] int: 1
+      [4] int: 3
+      [5] int: 2
+
+    LOCAL_VARIABLES (7):
+      [0] meter: offset_activate=9, offset_dead=52
+      [1] getterValue: offset_activate=11, offset_dead=52
+      [2] bumped: offset_activate=27, offset_dead=52
+      [3] callable: offset_activate=31, offset_dead=52
+      [4] lambdaScore: offset_activate=34, offset_dead=52
+      [5] builtinScore: offset_activate=37, offset_dead=52
+      [6] vectorScore: offset_activate=40, offset_dead=52
+
+    CLOSURE_VARIABLES (3):
+      [0] meta: in_stack=true, index=2, type=NULL
+      [1] core: in_stack=true, index=1, type=NULL
+      [2] native: in_stack=true, index=3, type=NULL
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (7):
+        [0] meter: SignalBox
+        [1] getterValue: int
+        [2] bumped: int
+        [3] callable: int
+        [4] lambdaScore: int
+        [5] builtinScore: int
+        [6] vectorScore: int
+      EXPORTED_SYMBOLS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (3):
+      [0] object
+      [1] SignalBox
+      [2] int
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (3):
+      [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
+      [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
+      [2] DYNAMIC_RUNTIME inst=2 from=0 to=0
+
+    BLOCK_GRAPH (1):
+      [0] block=0 first=0 count=3
+
+    SEMIR (3):
+      [0] META_GET exec=10 type=2 effect=0 dst=1 op0=1 op1=1 deopt=1
+      [1] META_SET exec=15 type=2 effect=1 dst=5 op0=5 op1=2 deopt=2
+      [2] META_CALL exec=29 type=2 effect=2 dst=3 op0=3 op1=1 deopt=3
+
+    DEOPT_MAP (3):
+      [0] deopt=1 exec=10
+      [1] deopt=2 exec=15
+      [2] deopt=3 exec=29
+
+    CALLSITE_CACHE_TABLE (3):
+      [0] kind=META_GET inst=10 member=1 deopt=1 args=0 hits=0 misses=0
+      [1] kind=META_SET inst=15 member=2 deopt=2 args=0 hits=0 misses=0
+      [2] kind=META_CALL inst=29 member=4294967295 deopt=3 args=1 hits=0 misses=0
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (52):
+      [0] CREATE_OBJECT (extra=0)
+      [1] OPCODE_21 (extra=0)
+      [2] OPCODE_8 (extra=1, operand1=0, operand2=0)
+      [3] SET_STACK (extra=2, operand=0)
+      [4] GET_CONSTANT (extra=3, operand=1)
+      [5] OPCODE_73 (extra=1, operand1=1, operand2=2)
+      [6] GET_CONSTANT (extra=1, operand=2)
+      [7] GET_CONSTANT (extra=2, operand=2)
+      [8] GET_CONSTANT (extra=3, operand=2)
+      [9] GET_STACK (extra=1, operand=0)
+      [10] SUPER_META_GET_CACHED (extra=1, operand1=1, operand2=0)
+      [11] GET_STACK (extra=2, operand=1)
+      [12] GET_CONSTANT (extra=3, operand=3)
+      [13] ADD_INT (extra=4, operand1=2, operand2=3)
+      [14] GET_STACK (extra=5, operand=0)
+      [15] SUPER_META_SET_CACHED (extra=5, operand1=4, operand2=1)
+      [16] GET_CONSTANT (extra=2, operand=2)
+      [17] GET_CONSTANT (extra=3, operand=2)
+      [18] GET_CONSTANT (extra=4, operand=2)
+      [19] GET_CONSTANT (extra=5, operand=2)
+      [20] GET_STACK (extra=2, operand=0)
+      [21] SET_STACK (extra=3, operand=2)
+      [22] OPCODE_8 (extra=2, operand1=2, operand2=3)
+      [23] GET_CONSTANT (extra=4, operand=4)
+      [24] OPCODE_73 (extra=2, operand1=2, operand2=2)
+      [25] GET_CONSTANT (extra=3, operand=2)
+      [26] GET_CONSTANT (extra=4, operand=2)
+      [27] GET_STACK (extra=3, operand=0)
+      [28] GET_CONSTANT (extra=4, operand=5)
+      [29] SUPER_META_CALL_CACHED (extra=3, operand1=3, operand2=2)
+      [30] GET_CONSTANT (extra=4, operand=2)
+      [31] OPCODE_6 (extra=4, operand2=1, operand1=1, operand1_1=0)
+      [32] OPCODE_8 (extra=4, operand1=4, operand2=4)
+      [33] SUPER_FUNCTION_CALL_NO_ARGS (extra=4, operand1=4, operand2=0)
+      [34] OPCODE_6 (extra=5, operand2=2, operand1=2, operand1_1=0)
+      [35] OPCODE_8 (extra=5, operand1=5, operand2=5)
+      [36] SUPER_FUNCTION_CALL_NO_ARGS (extra=5, operand1=5, operand2=0)
+      [37] OPCODE_6 (extra=6)
+      [38] OPCODE_8 (extra=6, operand1=6, operand2=6)
+      [39] SUPER_FUNCTION_CALL_NO_ARGS (extra=6, operand1=6, operand2=0)
+      [40] GET_STACK (extra=7, operand=1)
+      [41] GET_STACK (extra=8, operand=2)
+      [42] ADD_INT (extra=9, operand1=7, operand2=8)
+      [43] GET_STACK (extra=10, operand=3)
+      [44] ADD_INT (extra=11, operand1=9, operand2=10)
+      [45] GET_STACK (extra=12, operand=4)
+      [46] ADD_INT (extra=13, operand1=11, operand2=12)
+      [47] GET_STACK (extra=14, operand=5)
+      [48] ADD_INT (extra=15, operand1=13, operand2=14)
+      [49] GET_STACK (extra=16, operand=6)
+      [50] ADD_INT (extra=17, operand1=15, operand2=16)
+      [51] FUNCTION_RETURN (extra=1, operand1=17, operand2=0)
+
+

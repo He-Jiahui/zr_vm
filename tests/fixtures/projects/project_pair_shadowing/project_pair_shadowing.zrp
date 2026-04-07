@@ -1,0 +1,6 @@
+{
+  "name": "project_pair_shadowing",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

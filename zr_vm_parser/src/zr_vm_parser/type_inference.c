@@ -502,13 +502,406 @@ TZrBool ZrParser_FunctionCallType_Infer(SZrCompilerState *cs, SZrAstNode *node, 
 }
 
 // 从Lambda表达式推断类型
+static SZrString *build_callable_type_name_from_signature(SZrState *state,
+                                                          const SZrInferredType *returnType,
+                                                          const SZrArray *paramTypes,
+                                                          const SZrArray *parameterPassingModes);
+static TZrBool infer_lambda_callable_signature(SZrCompilerState *cs,
+                                               const SZrLambdaExpression *lambda,
+                                               SZrArray *paramTypes,
+                                               SZrArray *parameterPassingModes,
+                                               SZrInferredType *returnType);
 TZrBool ZrParser_LambdaType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+    SZrArray paramTypes;
+    SZrArray parameterPassingModes;
+    SZrInferredType returnType;
+    SZrString *callableName;
+
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_LAMBDA_EXPRESSION) {
         return ZR_FALSE;
     }
-    
-    // Lambda表达式返回函数类型
-    ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_CLOSURE);
+
+    if (!infer_lambda_callable_signature(cs, &node->data.lambdaExpression, &paramTypes, &parameterPassingModes, &returnType)) {
+        return ZR_FALSE;
+    }
+
+    callableName = build_callable_type_name_from_signature(cs->state, &returnType, &paramTypes, &parameterPassingModes);
+    ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_CLOSURE, ZR_FALSE, callableName);
+
+    free_inferred_type_array(cs->state, &paramTypes);
+    if (parameterPassingModes.isValid) {
+        ZrCore_Array_Free(cs->state, &parameterPassingModes);
+    }
+    ZrParser_InferredType_Free(cs->state, &returnType);
+    return ZR_TRUE;
+}
+
+static const TZrChar *function_type_passing_mode_prefix(EZrParameterPassingMode passingMode) {
+    switch (passingMode) {
+        case ZR_PARAMETER_PASSING_MODE_IN: return "%in ";
+        case ZR_PARAMETER_PASSING_MODE_OUT: return "%out ";
+        case ZR_PARAMETER_PASSING_MODE_REF: return "%ref ";
+        case ZR_PARAMETER_PASSING_MODE_VALUE:
+        default:
+            return "";
+    }
+}
+
+static TZrBool function_type_name_append(TZrChar *buffer,
+                                         TZrSize bufferSize,
+                                         TZrSize *writeIndex,
+                                         const TZrChar *text) {
+    TZrSize length;
+
+    if (buffer == ZR_NULL || writeIndex == ZR_NULL || text == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    length = strlen(text);
+    if (*writeIndex + length >= bufferSize) {
+        return ZR_FALSE;
+    }
+
+    memcpy(buffer + *writeIndex, text, length);
+    *writeIndex += length;
+    buffer[*writeIndex] = '\0';
+    return ZR_TRUE;
+}
+
+static SZrString *build_callable_type_name_from_signature(SZrState *state,
+                                                          const SZrInferredType *returnType,
+                                                          const SZrArray *paramTypes,
+                                                          const SZrArray *parameterPassingModes) {
+    TZrChar buffer[ZR_PARSER_DETAIL_BUFFER_LENGTH];
+    TZrSize writeIndex = 0;
+    TZrChar nestedBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+
+    if (state == ZR_NULL || returnType == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    buffer[0] = '\0';
+    if (!function_type_name_append(buffer, sizeof(buffer), &writeIndex, "%func(")) {
+        return ZR_NULL;
+    }
+
+    if (paramTypes != ZR_NULL) {
+        for (TZrSize index = 0; index < paramTypes->length; index++) {
+            SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)paramTypes, index);
+            EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+            EZrParameterPassingMode *modePtr = parameterPassingModes != ZR_NULL
+                                                       ? (EZrParameterPassingMode *)ZrCore_Array_Get((SZrArray *)parameterPassingModes,
+                                                                                                     index)
+                                                       : ZR_NULL;
+            const TZrChar *paramText;
+
+            if (index > 0 && !function_type_name_append(buffer, sizeof(buffer), &writeIndex, ", ")) {
+                return ZR_NULL;
+            }
+
+            if (modePtr != ZR_NULL) {
+                passingMode = *modePtr;
+            }
+
+            if (!function_type_name_append(buffer,
+                                           sizeof(buffer),
+                                           &writeIndex,
+                                           function_type_passing_mode_prefix(passingMode))) {
+                return ZR_NULL;
+            }
+
+            paramText = ZrParser_TypeNameString_Get(state,
+                                                    paramType,
+                                                    nestedBuffer,
+                                                    sizeof(nestedBuffer));
+            if (!function_type_name_append(buffer,
+                                           sizeof(buffer),
+                                           &writeIndex,
+                                           paramText != ZR_NULL ? paramText : "unknown")) {
+                return ZR_NULL;
+            }
+        }
+    }
+
+    if (!function_type_name_append(buffer, sizeof(buffer), &writeIndex, ")->")) {
+        return ZR_NULL;
+    }
+
+    {
+        const TZrChar *returnText =
+                ZrParser_TypeNameString_Get(state, returnType, nestedBuffer, sizeof(nestedBuffer));
+        if (!function_type_name_append(buffer,
+                                       sizeof(buffer),
+                                       &writeIndex,
+                                       returnText != ZR_NULL ? returnText : "unknown")) {
+            return ZR_NULL;
+        }
+    }
+
+    return ZrCore_String_Create(state, buffer, writeIndex);
+}
+
+static TZrBool infer_function_type_node_signature(SZrCompilerState *cs,
+                                                  const SZrFunctionType *funcType,
+                                                  SZrArray *paramTypes,
+                                                  SZrArray *parameterPassingModes,
+                                                  SZrInferredType *returnType) {
+    if (cs == ZR_NULL || funcType == ZR_NULL || paramTypes == ZR_NULL ||
+        parameterPassingModes == ZR_NULL || returnType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Construct(paramTypes);
+    ZrCore_Array_Construct(parameterPassingModes);
+
+    ZrCore_Array_Init(cs->state,
+                      paramTypes,
+                      sizeof(SZrInferredType),
+                      funcType->params != ZR_NULL ? funcType->params->count : 0);
+    ZrCore_Array_Init(cs->state,
+                      parameterPassingModes,
+                      sizeof(EZrParameterPassingMode),
+                      funcType->params != ZR_NULL ? funcType->params->count : 0);
+
+    if (funcType->params != ZR_NULL) {
+        for (TZrSize index = 0; index < funcType->params->count; index++) {
+            SZrAstNode *paramNode = funcType->params->nodes[index];
+            SZrInferredType paramType;
+            EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+
+            ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+            if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
+                SZrParameter *param = &paramNode->data.parameter;
+                passingMode = param->passingMode;
+                if (param->typeInfo != ZR_NULL &&
+                    !ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
+                    ZrParser_InferredType_Free(cs->state, &paramType);
+                    free_inferred_type_array(cs->state, paramTypes);
+                    if (parameterPassingModes->isValid) {
+                        ZrCore_Array_Free(cs->state, parameterPassingModes);
+                    }
+                    ZrCore_Array_Construct(paramTypes);
+                    ZrCore_Array_Construct(parameterPassingModes);
+                    return ZR_FALSE;
+                }
+            }
+
+            ZrCore_Array_Push(cs->state, paramTypes, &paramType);
+            ZrCore_Array_Push(cs->state, parameterPassingModes, &passingMode);
+        }
+    }
+
+    ZrParser_InferredType_Init(cs->state, returnType, ZR_VALUE_TYPE_OBJECT);
+    if (funcType->returnType != ZR_NULL) {
+        return ZrParser_AstTypeToInferredType_Convert(cs, funcType->returnType, returnType);
+    }
+    return ZR_TRUE;
+}
+
+static void infer_lambda_return_type_register_variable_declaration(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrVariableDeclaration *declaration;
+    SZrInferredType bindingType;
+    TZrBool hasBindingType = ZR_FALSE;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->typeEnv == ZR_NULL || node == ZR_NULL ||
+        node->type != ZR_AST_VARIABLE_DECLARATION) {
+        return;
+    }
+
+    declaration = &node->data.variableDeclaration;
+    if (declaration->pattern == ZR_NULL || declaration->pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
+        declaration->pattern->data.identifier.name == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &bindingType, ZR_VALUE_TYPE_OBJECT);
+    if (declaration->typeInfo != ZR_NULL) {
+        hasBindingType = ZrParser_AstTypeToInferredType_Convert(cs, declaration->typeInfo, &bindingType);
+    } else if (declaration->value != ZR_NULL) {
+        hasBindingType = ZrParser_ExpressionType_Infer(cs, declaration->value, &bindingType);
+    }
+
+    if (cs->hasError) {
+        ZrParser_InferredType_Free(cs->state, &bindingType);
+        return;
+    }
+
+    if (!hasBindingType) {
+        ZrParser_InferredType_Free(cs->state, &bindingType);
+        ZrParser_InferredType_Init(cs->state, &bindingType, ZR_VALUE_TYPE_OBJECT);
+    }
+
+    ZrParser_TypeEnvironment_RegisterVariable(cs->state,
+                                              cs->typeEnv,
+                                              declaration->pattern->data.identifier.name,
+                                              &bindingType);
+    ZrParser_InferredType_Free(cs->state, &bindingType);
+}
+
+static void infer_lambda_return_type_from_node(SZrCompilerState *cs,
+                                               SZrAstNode *node,
+                                               TZrBool *foundReturn,
+                                               SZrInferredType *result) {
+    if (cs == ZR_NULL || node == ZR_NULL || foundReturn == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+
+    switch (node->type) {
+        case ZR_AST_BLOCK: {
+            SZrBlock *block = &node->data.block;
+            if (block->body == ZR_NULL) {
+                return;
+            }
+            for (TZrSize index = 0; index < block->body->count; index++) {
+                infer_lambda_return_type_from_node(cs, block->body->nodes[index], foundReturn, result);
+                if (*foundReturn) {
+                    return;
+                }
+            }
+            return;
+        }
+        case ZR_AST_RETURN_STATEMENT: {
+            SZrReturnStatement *returnStmt = &node->data.returnStatement;
+            if (returnStmt->expr != ZR_NULL) {
+                ZrParser_ExpressionType_Infer(cs, returnStmt->expr, result);
+            } else {
+                ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_NULL);
+            }
+            *foundReturn = ZR_TRUE;
+            return;
+        }
+        case ZR_AST_VARIABLE_DECLARATION:
+            infer_lambda_return_type_register_variable_declaration(cs, node);
+            return;
+        case ZR_AST_IF_EXPRESSION: {
+            infer_lambda_return_type_from_node(cs, node->data.ifExpression.thenExpr, foundReturn, result);
+            if (*foundReturn) {
+                return;
+            }
+            infer_lambda_return_type_from_node(cs, node->data.ifExpression.elseExpr, foundReturn, result);
+            return;
+        }
+        default:
+            return;
+    }
+}
+
+static TZrBool infer_lambda_callable_signature(SZrCompilerState *cs,
+                                               const SZrLambdaExpression *lambda,
+                                               SZrArray *paramTypes,
+                                               SZrArray *parameterPassingModes,
+                                               SZrInferredType *returnType) {
+    SZrTypeEnvironment *savedEnv;
+    SZrTypeEnvironment *lambdaEnv;
+
+    if (cs == ZR_NULL || lambda == ZR_NULL || paramTypes == ZR_NULL ||
+        parameterPassingModes == ZR_NULL || returnType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Construct(paramTypes);
+    ZrCore_Array_Construct(parameterPassingModes);
+    ZrCore_Array_Init(cs->state,
+                      paramTypes,
+                      sizeof(SZrInferredType),
+                      lambda->params != ZR_NULL ? lambda->params->count : 0);
+    ZrCore_Array_Init(cs->state,
+                      parameterPassingModes,
+                      sizeof(EZrParameterPassingMode),
+                      lambda->params != ZR_NULL ? lambda->params->count : 0);
+
+    if (lambda->params != ZR_NULL) {
+        for (TZrSize index = 0; index < lambda->params->count; index++) {
+            SZrAstNode *paramNode = lambda->params->nodes[index];
+            SZrInferredType paramType;
+            EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+
+            ZrParser_InferredType_Init(cs->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+            if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER) {
+                SZrParameter *param = &paramNode->data.parameter;
+                passingMode = param->passingMode;
+                if (param->typeInfo != ZR_NULL &&
+                    !ZrParser_AstTypeToInferredType_Convert(cs, param->typeInfo, &paramType)) {
+                    ZrParser_InferredType_Free(cs->state, &paramType);
+                    free_inferred_type_array(cs->state, paramTypes);
+                    if (parameterPassingModes->isValid) {
+                        ZrCore_Array_Free(cs->state, parameterPassingModes);
+                    }
+                    ZrCore_Array_Construct(paramTypes);
+                    ZrCore_Array_Construct(parameterPassingModes);
+                    return ZR_FALSE;
+                }
+            }
+
+            ZrCore_Array_Push(cs->state, paramTypes, &paramType);
+            ZrCore_Array_Push(cs->state, parameterPassingModes, &passingMode);
+        }
+    }
+
+    ZrParser_InferredType_Init(cs->state, returnType, ZR_VALUE_TYPE_OBJECT);
+    {
+        TZrBool foundReturn = ZR_FALSE;
+        savedEnv = cs->typeEnv;
+        lambdaEnv = ZrParser_TypeEnvironment_New(cs->state);
+        if (lambdaEnv != ZR_NULL) {
+            lambdaEnv->parent = savedEnv;
+            cs->typeEnv = lambdaEnv;
+            if (lambda->params != ZR_NULL) {
+                for (TZrSize index = 0; index < lambda->params->count; index++) {
+                    SZrAstNode *paramNode = lambda->params->nodes[index];
+                    SZrInferredType *paramType =
+                            (SZrInferredType *)ZrCore_Array_Get(paramTypes, index);
+                    if (paramNode != ZR_NULL && paramNode->type == ZR_AST_PARAMETER &&
+                        paramNode->data.parameter.name != ZR_NULL &&
+                        paramNode->data.parameter.name->name != ZR_NULL &&
+                        paramType != ZR_NULL) {
+                        ZrParser_TypeEnvironment_RegisterVariable(cs->state,
+                                                                  lambdaEnv,
+                                                                  paramNode->data.parameter.name->name,
+                                                                  paramType);
+                    }
+                }
+            }
+        }
+        infer_lambda_return_type_from_node(cs, lambda->block, &foundReturn, returnType);
+        cs->typeEnv = savedEnv;
+        if (lambdaEnv != ZR_NULL) {
+            ZrParser_TypeEnvironment_Free(cs->state, lambdaEnv);
+        }
+        if (!foundReturn) {
+            ZrParser_InferredType_Init(cs->state, returnType, ZR_VALUE_TYPE_NULL);
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool infer_type_literal_expression_type(SZrCompilerState *cs,
+                                                  SZrAstNode *node,
+                                                  SZrInferredType *result) {
+    SZrString *typeName;
+
+    if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
+        node->type != ZR_AST_TYPE_LITERAL_EXPRESSION ||
+        node->data.typeLiteralExpression.typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typeName = ZrCore_String_Create(cs->state,
+                                    node->data.typeLiteralExpression.typeInfo->name != ZR_NULL &&
+                                            node->data.typeLiteralExpression.typeInfo->name->type == ZR_AST_FUNCTION_TYPE
+                                            ? "zr.system.reflect.CallableType"
+                                            : "zr.system.reflect.Type",
+                                    node->data.typeLiteralExpression.typeInfo->name != ZR_NULL &&
+                                            node->data.typeLiteralExpression.typeInfo->name->type == ZR_AST_FUNCTION_TYPE
+                                            ? 30
+                                            : 22);
+    if (typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ensure_builtin_reflection_compile_type(cs, typeName);
+    ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, typeName);
     return ZR_TRUE;
 }
 
@@ -1001,6 +1394,9 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
 
         case ZR_AST_TYPE_QUERY_EXPRESSION:
             return infer_type_query_expression_type(cs, node, result);
+
+        case ZR_AST_TYPE_LITERAL_EXPRESSION:
+            return infer_type_literal_expression_type(cs, node, result);
         
         case ZR_AST_LAMBDA_EXPRESSION:
             return ZrParser_LambdaType_Infer(cs, node, result);
@@ -1139,11 +1535,105 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
 static TZrBool ast_type_should_preserve_primitive_alias(const TZrNativeString nameStr,
                                                         TZrSize nameLen);
 
+static TZrBool ast_type_is_reserved_decorator_pseudo_type_name(const TZrNativeString nameStr,
+                                                               TZrSize nameLen) {
+    if (nameStr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return (nameLen == 5 && strncmp(nameStr, "Class", 5) == 0) ||
+           (nameLen == 6 && strncmp(nameStr, "Struct", 6) == 0) ||
+           (nameLen == 8 && strncmp(nameStr, "Function", 8) == 0) ||
+           (nameLen == 5 && strncmp(nameStr, "Field", 5) == 0) ||
+           (nameLen == 6 && strncmp(nameStr, "Method", 6) == 0) ||
+           (nameLen == 8 && strncmp(nameStr, "Property", 8) == 0) ||
+           (nameLen == 9 && strncmp(nameStr, "Parameter", 9) == 0) ||
+           (nameLen == 6 && strncmp(nameStr, "Object", 6) == 0);
+}
+
+static TZrBool compiler_lookup_type_value_alias(SZrCompilerState *cs,
+                                                SZrString *name,
+                                                SZrInferredType *result) {
+    if (cs == ZR_NULL || name == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
+        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
+        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, name)) {
+            ZrParser_InferredType_Copy(cs->state, result, &binding->type);
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool ast_type_report_missing_explicit_binding(SZrCompilerState *cs,
+                                                        SZrString *typeName,
+                                                        SZrFileRange location) {
+    TZrNativeString typeNameText = ZR_NULL;
+    TZrChar errorBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
+
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        typeNameText = ZrCore_String_GetNativeStringShort(typeName);
+    } else {
+        typeNameText = ZrCore_String_GetNativeString(typeName);
+    }
+
+    if (typeNameText != ZR_NULL) {
+        snprintf(errorBuffer,
+                 sizeof(errorBuffer),
+                 "Unqualified type name '%s' requires an explicit module qualifier or destructuring import",
+                 typeNameText);
+    } else {
+        snprintf(errorBuffer,
+                 sizeof(errorBuffer),
+                 "Unqualified type name requires an explicit module qualifier or destructuring import");
+    }
+
+    ZrParser_Compiler_Error(cs, errorBuffer, location);
+    return ZR_FALSE;
+}
+
 static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                                                           const SZrType *astType,
                                                           SZrInferredType *result) {
     if (cs == ZR_NULL || astType == ZR_NULL || result == ZR_NULL || astType->name == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (astType->name->type == ZR_AST_FUNCTION_TYPE) {
+        SZrArray paramTypes;
+        SZrArray parameterPassingModes;
+        SZrInferredType returnType;
+        SZrString *callableName;
+
+        if (!infer_function_type_node_signature(cs,
+                                                &astType->name->data.functionType,
+                                                &paramTypes,
+                                                &parameterPassingModes,
+                                                &returnType)) {
+            return ZR_FALSE;
+        }
+
+        callableName = build_callable_type_name_from_signature(cs->state,
+                                                               &returnType,
+                                                               &paramTypes,
+                                                               &parameterPassingModes);
+        ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_CLOSURE, ZR_FALSE, callableName);
+        result->ownershipQualifier = astType->ownershipQualifier;
+
+        free_inferred_type_array(cs->state, &paramTypes);
+        if (parameterPassingModes.isValid) {
+            ZrCore_Array_Free(cs->state, &parameterPassingModes);
+        }
+        ZrParser_InferredType_Free(cs->state, &returnType);
+        return ZR_TRUE;
     }
 
     if (astType->name->type == ZR_AST_IDENTIFIER_LITERAL) {
@@ -1155,6 +1645,11 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
 
         if (typeName == ZR_NULL) {
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+            return ZR_TRUE;
+        }
+
+        if (compiler_lookup_type_value_alias(cs, typeName, result)) {
+            result->ownershipQualifier = astType->ownershipQualifier;
             return ZR_TRUE;
         }
 
@@ -1174,6 +1669,16 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
                 ZrParser_InferredType_Init(cs->state, result, baseType);
             }
         } else {
+            TZrBool allowReservedDecoratorPseudoType =
+                    astType->isDecoratorPseudoType &&
+                    ast_type_is_reserved_decorator_pseudo_type_name(nameStr, nameLen);
+            TZrBool allowImplicitBuiltinType = astType->isImplicitBuiltinType;
+
+            if (!allowReservedDecoratorPseudoType &&
+                !allowImplicitBuiltinType &&
+                !type_name_is_explicitly_available_in_context_inference(cs, typeName)) {
+                return ast_type_report_missing_explicit_binding(cs, typeName, astType->name->location);
+            }
             ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, typeName);
         }
 
@@ -1200,6 +1705,13 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
         if (genericType->name == ZR_NULL || genericType->name->name == ZR_NULL) {
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
             return ZR_TRUE;
+        }
+
+        if (!astType->isImplicitBuiltinType &&
+            !type_name_is_explicitly_available_in_context_inference(cs, genericType->name->name)) {
+            return ast_type_report_missing_explicit_binding(cs,
+                                                            genericType->name->name,
+                                                            astType->name->location);
         }
 
         ZrParser_InferredType_InitFull(cs->state,
@@ -1315,8 +1827,6 @@ static TZrBool ast_type_resolve_segment_type_names(SZrCompilerState *cs,
     }
 
     if (segmentType->name->type == ZR_AST_GENERIC_TYPE) {
-        SZrInferredType resolvedType;
-
         if (segmentType->name->data.genericType.name == ZR_NULL) {
             return ZR_FALSE;
         }
@@ -1326,13 +1836,7 @@ static TZrBool ast_type_resolve_segment_type_names(SZrCompilerState *cs,
             return ZR_FALSE;
         }
 
-        ZrParser_InferredType_Init(cs->state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
-        if (!ast_type_resolve_unqualified_inferred_type(cs, segmentType, &resolvedType)) {
-            ZrParser_InferredType_Free(cs->state, &resolvedType);
-            return ZR_FALSE;
-        }
-        *outResolvedTypeName = resolvedType.typeName;
-        ZrParser_InferredType_Free(cs->state, &resolvedType);
+        *outResolvedTypeName = extract_type_name_string(cs, (SZrType *)segmentType);
         return *outResolvedTypeName != ZR_NULL;
     }
 
@@ -1358,9 +1862,11 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
                                                 cs->typeEnv,
                                                 astType->name->data.identifier.name,
                                                 &currentType) &&
-        currentType.typeName != ZR_NULL &&
-        type_name_is_module_prototype_inference(cs, currentType.typeName)) {
-        resolvedRootFromModuleAlias = ZR_TRUE;
+        currentType.typeName != ZR_NULL) {
+        if (!type_name_is_module_prototype_inference(cs, currentType.typeName)) {
+            ensure_import_module_compile_info(cs, currentType.typeName);
+        }
+        resolvedRootFromModuleAlias = type_name_is_module_prototype_inference(cs, currentType.typeName);
     }
 
     if (!resolvedRootFromModuleAlias) {

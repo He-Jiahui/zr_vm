@@ -1,0 +1,31 @@
+var benchConfig = %import("bench_config");
+var system = %import("zr.system");
+
+var scale = benchConfig.scale();
+var outerLimit = 24 * scale;
+var innerLimit = 3000 * scale;
+var value = 17;
+var checksum = 0;
+var outer = 0;
+
+while (outer <= outerLimit - 1) {
+    var inner = 0;
+    while (inner <= innerLimit - 1) {
+        value = (value * 1103 + 97 + outer + inner) % 65521;
+        if (value % 7 == 0) {
+            checksum = checksum + value / 7;
+        } else if (value % 5 == 0) {
+            checksum = checksum + value % 97;
+        } else {
+            checksum = checksum + value % 31;
+        }
+        checksum = checksum % 1000000007;
+        inner = inner + 1;
+    }
+
+    checksum = (checksum + outer * 17 + value % 13) % 1000000007;
+    outer = outer + 1;
+}
+
+system.console.printLine("BENCH_NUMERIC_LOOPS_PASS");
+return checksum;

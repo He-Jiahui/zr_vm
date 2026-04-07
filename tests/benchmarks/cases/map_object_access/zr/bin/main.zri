@@ -1,0 +1,373 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 45
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 42
+
+CONSTANTS (28):
+  [0] native closure
+  [1] string: "bench_config"
+  [2] null
+  [3] native closure
+  [4] string: "zr.container"
+  [5] string: "Array<string>"
+  [6] string: "aa"
+  [7] string: "bb"
+  [8] string: "cc"
+  [9] string: "dd"
+  [10] string: "Map<string, int>"
+  [11] int: 0
+  [12] int: 3
+  [13] int: 7
+  [14] int: 64
+  [15] int: 32
+  [16] int: 31
+  [17] int: 10007
+  [18] int: 5
+  [19] int: 10009
+  [20] int: 1
+  [21] string: "_slot"
+  [22] int: 1000000007
+  [23] string: "aa_slot"
+  [24] string: "bb_slot"
+  [25] string: "cc_slot"
+  [26] string: "dd_slot"
+  [27] string: "BENCH_MAP_OBJECT_ACCESS_PASS
+"
+
+LOCAL_VARIABLES (16):
+  [0] benchConfig: offset_activate=4, offset_dead=271
+  [1] Array: offset_activate=8, offset_dead=271
+  [2] Map: offset_activate=11, offset_dead=271
+  [3] scale: offset_activate=17, offset_dead=271
+  [4] labels: offset_activate=24, offset_dead=271
+  [5] buckets: offset_activate=63, offset_dead=271
+  [6] checksum: offset_activate=64, offset_dead=271
+  [7] left: offset_activate=65, offset_dead=271
+  [8] right: offset_activate=66, offset_dead=271
+  [9] hits: offset_activate=67, offset_dead=271
+  [10] outer: offset_activate=68, offset_dead=271
+  [11] outerLimit: offset_activate=71, offset_dead=271
+  [12] inner: offset_activate=76, offset_dead=230
+  [13] label: offset_activate=148, offset_dead=222
+  [14] key: offset_activate=151, offset_dead=222
+  [15] existing: offset_activate=155, offset_dead=222
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (16):
+    [0] benchConfig: bench_config
+    [2] Array: object
+    [3] Map: object
+    [4] scale: int
+    [5] labels: Array<string>
+    [6] buckets: Map<string, int>
+    [7] checksum: int
+    [8] left: int
+    [9] right: int
+    [10] hits: int
+    [11] outer: int
+    [14] outerLimit: int
+    [18] inner: int
+    [23] label: string
+    [26] key: string
+    [27] existing: int
+  EXPORTED_SYMBOLS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+INSTRUCTIONS (271):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=1)
+  [2] FUNCTION_CALL (extra=0, operand1=0, operand2=1)
+  [3] GET_CONSTANT (extra=1, operand=2)
+  [4] GET_CONSTANT (extra=1, operand=3)
+  [5] GET_CONSTANT (extra=2, operand=4)
+  [6] FUNCTION_CALL (extra=1, operand1=1, operand2=1)
+  [7] GET_CONSTANT (extra=2, operand=2)
+  [8] GET_MEMBER (extra=3, operand1=1, operand2=0)
+  [9] SET_STACK (extra=2, operand=3)
+  [10] GET_CONSTANT (extra=3, operand=2)
+  [11] GET_MEMBER (extra=4, operand1=1, operand2=1)
+  [12] SET_STACK (extra=3, operand=4)
+  [13] GET_CONSTANT (extra=4, operand=2)
+  [14] GET_STACK (extra=4, operand=0)
+  [15] GET_MEMBER (extra=4, operand1=4, operand2=2)
+  [16] SUPER_FUNCTION_CALL_NO_ARGS (extra=4, operand1=4, operand2=0)
+  [17] CREATE_OBJECT (extra=5)
+  [18] OPCODE_21 (extra=5, operand2=327685, operand1=5, operand1_1=5)
+  [19] GET_MEMBER (extra=6, operand1=5, operand2=3)
+  [20] SET_STACK (extra=7, operand=5)
+  [21] FUNCTION_CALL (extra=6, operand1=6, operand2=1)
+  [22] GET_CONSTANT (extra=6, operand=2)
+  [23] GET_CONSTANT (extra=7, operand=2)
+  [24] GET_STACK (extra=6, operand=5)
+  [25] SET_STACK (extra=7, operand=6)
+  [26] GET_MEMBER (extra=6, operand1=6, operand2=4)
+  [27] GET_CONSTANT (extra=8, operand=6)
+  [28] FUNCTION_CALL (extra=6, operand1=6, operand2=2)
+  [29] GET_CONSTANT (extra=7, operand=2)
+  [30] GET_CONSTANT (extra=8, operand=2)
+  [31] GET_CONSTANT (extra=6, operand=2)
+  [32] GET_STACK (extra=6, operand=5)
+  [33] SET_STACK (extra=7, operand=6)
+  [34] GET_MEMBER (extra=6, operand1=6, operand2=4)
+  [35] GET_CONSTANT (extra=8, operand=7)
+  [36] FUNCTION_CALL (extra=6, operand1=6, operand2=2)
+  [37] GET_CONSTANT (extra=7, operand=2)
+  [38] GET_CONSTANT (extra=8, operand=2)
+  [39] GET_CONSTANT (extra=6, operand=2)
+  [40] GET_STACK (extra=6, operand=5)
+  [41] SET_STACK (extra=7, operand=6)
+  [42] GET_MEMBER (extra=6, operand1=6, operand2=4)
+  [43] GET_CONSTANT (extra=8, operand=8)
+  [44] FUNCTION_CALL (extra=6, operand1=6, operand2=2)
+  [45] GET_CONSTANT (extra=7, operand=2)
+  [46] GET_CONSTANT (extra=8, operand=2)
+  [47] GET_CONSTANT (extra=6, operand=2)
+  [48] GET_STACK (extra=6, operand=5)
+  [49] SET_STACK (extra=7, operand=6)
+  [50] GET_MEMBER (extra=6, operand1=6, operand2=4)
+  [51] GET_CONSTANT (extra=8, operand=9)
+  [52] FUNCTION_CALL (extra=6, operand1=6, operand2=2)
+  [53] GET_CONSTANT (extra=7, operand=2)
+  [54] GET_CONSTANT (extra=8, operand=2)
+  [55] GET_CONSTANT (extra=6, operand=2)
+  [56] CREATE_OBJECT (extra=6)
+  [57] OPCODE_21 (extra=6, operand2=655366, operand1=6, operand1_1=10)
+  [58] GET_MEMBER (extra=7, operand1=6, operand2=3)
+  [59] SET_STACK (extra=8, operand=6)
+  [60] FUNCTION_CALL (extra=7, operand1=7, operand2=1)
+  [61] GET_CONSTANT (extra=7, operand=2)
+  [62] GET_CONSTANT (extra=8, operand=2)
+  [63] GET_CONSTANT (extra=7, operand=11)
+  [64] GET_CONSTANT (extra=8, operand=12)
+  [65] GET_CONSTANT (extra=9, operand=13)
+  [66] GET_CONSTANT (extra=10, operand=11)
+  [67] GET_CONSTANT (extra=11, operand=11)
+  [68] GET_CONSTANT (extra=12, operand=14)
+  [69] GET_STACK (extra=13, operand=4)
+  [70] MUL_SIGNED (extra=14, operand1=12, operand2=13)
+  [71] GET_STACK (extra=15, operand=11)
+  [72] GET_STACK (extra=16, operand=14)
+  [73] LOGICAL_LESS_SIGNED (extra=17, operand1=15, operand2=16)
+  [74] JUMP_IF (extra=17, operand=156)
+  [75] GET_CONSTANT (extra=18, operand=11)
+  [76] GET_STACK (extra=19, operand=18)
+  [77] GET_CONSTANT (extra=20, operand=15)
+  [78] LOGICAL_LESS_SIGNED (extra=21, operand1=19, operand2=20)
+  [79] JUMP_IF (extra=21, operand=143)
+  [80] GET_STACK (extra=22, operand=8)
+  [81] GET_CONSTANT (extra=23, operand=16)
+  [82] MUL_SIGNED (extra=24, operand1=22, operand2=23)
+  [83] GET_STACK (extra=25, operand=11)
+  [84] ADD_INT (extra=26, operand1=24, operand2=25)
+  [85] GET_STACK (extra=27, operand=18)
+  [86] ADD_INT (extra=28, operand1=26, operand2=27)
+  [87] GET_STACK (extra=29, operand=10)
+  [88] ADD_INT (extra=30, operand1=28, operand2=29)
+  [89] GET_CONSTANT (extra=31, operand=17)
+  [90] MOD_SIGNED (extra=32, operand1=30, operand2=31)
+  [91] SET_STACK (extra=8, operand=32)
+  [92] GET_CONSTANT (extra=22, operand=2)
+  [93] GET_CONSTANT (extra=23, operand=2)
+  [94] GET_CONSTANT (extra=24, operand=2)
+  [95] GET_CONSTANT (extra=25, operand=2)
+  [96] GET_CONSTANT (extra=26, operand=2)
+  [97] GET_CONSTANT (extra=27, operand=2)
+  [98] GET_CONSTANT (extra=28, operand=2)
+  [99] GET_CONSTANT (extra=29, operand=2)
+  [100] GET_CONSTANT (extra=30, operand=2)
+  [101] GET_CONSTANT (extra=31, operand=2)
+  [102] GET_CONSTANT (extra=32, operand=2)
+  [103] GET_STACK (extra=22, operand=9)
+  [104] GET_STACK (extra=23, operand=8)
+  [105] ADD_INT (extra=24, operand1=22, operand2=23)
+  [106] GET_STACK (extra=25, operand=18)
+  [107] GET_CONSTANT (extra=26, operand=12)
+  [108] MUL_SIGNED (extra=27, operand1=25, operand2=26)
+  [109] ADD_INT (extra=28, operand1=24, operand2=27)
+  [110] GET_CONSTANT (extra=29, operand=18)
+  [111] ADD_INT (extra=30, operand1=28, operand2=29)
+  [112] GET_CONSTANT (extra=31, operand=19)
+  [113] MOD_SIGNED (extra=32, operand1=30, operand2=31)
+  [114] SET_STACK (extra=9, operand=32)
+  [115] GET_CONSTANT (extra=22, operand=2)
+  [116] GET_CONSTANT (extra=23, operand=2)
+  [117] GET_CONSTANT (extra=24, operand=2)
+  [118] GET_CONSTANT (extra=25, operand=2)
+  [119] GET_CONSTANT (extra=26, operand=2)
+  [120] GET_CONSTANT (extra=27, operand=2)
+  [121] GET_CONSTANT (extra=28, operand=2)
+  [122] GET_CONSTANT (extra=29, operand=2)
+  [123] GET_CONSTANT (extra=30, operand=2)
+  [124] GET_CONSTANT (extra=31, operand=2)
+  [125] GET_CONSTANT (extra=32, operand=2)
+  [126] GET_STACK (extra=22, operand=10)
+  [127] GET_CONSTANT (extra=23, operand=20)
+  [128] ADD_INT (extra=24, operand1=22, operand2=23)
+  [129] SET_STACK (extra=10, operand=24)
+  [130] GET_CONSTANT (extra=22, operand=2)
+  [131] GET_CONSTANT (extra=23, operand=2)
+  [132] GET_CONSTANT (extra=24, operand=2)
+  [133] GET_STACK (extra=22, operand=5)
+  [134] GET_STACK (extra=23, operand=11)
+  [135] GET_STACK (extra=24, operand=18)
+  [136] ADD_INT (extra=25, operand1=23, operand2=24)
+  [137] GET_STACK (extra=26, operand=5)
+  [138] GET_MEMBER (extra=26, operand1=26, operand2=5)
+  [139] MOD (extra=27, operand1=25, operand2=26)
+  [140] SET_STACK (extra=23, operand=27)
+  [141] GET_CONSTANT (extra=24, operand=2)
+  [142] GET_CONSTANT (extra=25, operand=2)
+  [143] GET_CONSTANT (extra=26, operand=2)
+  [144] GET_CONSTANT (extra=27, operand=2)
+  [145] GET_BY_INDEX (extra=22, operand1=22, operand2=23)
+  [146] GET_CONSTANT (extra=23, operand=2)
+  [147] TO_STRING (extra=23, operand1=22)
+  [148] GET_STACK (extra=24, operand=23)
+  [149] GET_CONSTANT (extra=25, operand=21)
+  [150] ADD_STRING (extra=26, operand1=24, operand2=25)
+  [151] GET_STACK (extra=27, operand=6)
+  [152] GET_STACK (extra=28, operand=26)
+  [153] GET_BY_INDEX (extra=27, operand1=27, operand2=28)
+  [154] GET_CONSTANT (extra=28, operand=2)
+  [155] GET_STACK (extra=28, operand=27)
+  [156] GET_CONSTANT (extra=29, operand=2)
+  [157] LOGICAL_EQUAL (extra=30, operand1=28, operand2=29)
+  [158] JUMP_IF (extra=30, operand=11)
+  [159] GET_CONSTANT (extra=31, operand=11)
+  [160] GET_STACK (extra=32, operand=6)
+  [161] GET_STACK (extra=33, operand=26)
+  [162] SET_BY_INDEX (extra=31, operand1=32, operand2=33)
+  [163] GET_CONSTANT (extra=32, operand=2)
+  [164] GET_CONSTANT (extra=33, operand=2)
+  [165] GET_CONSTANT (extra=31, operand=2)
+  [166] GET_CONSTANT (extra=31, operand=11)
+  [167] SET_STACK (extra=27, operand=31)
+  [168] GET_CONSTANT (extra=31, operand=2)
+  [169] JUMP (extra=0, operand=0)
+  [170] GET_STACK (extra=31, operand=27)
+  [171] GET_STACK (extra=32, operand=8)
+  [172] ADD_INT (extra=33, operand1=31, operand2=32)
+  [173] GET_STACK (extra=34, operand=9)
+  [174] ADD_INT (extra=35, operand1=33, operand2=34)
+  [175] GET_STACK (extra=36, operand=10)
+  [176] ADD_INT (extra=37, operand1=35, operand2=36)
+  [177] GET_CONSTANT (extra=38, operand=22)
+  [178] MOD_SIGNED (extra=39, operand1=37, operand2=38)
+  [179] GET_STACK (extra=40, operand=6)
+  [180] GET_STACK (extra=41, operand=26)
+  [181] SET_BY_INDEX (extra=39, operand1=40, operand2=41)
+  [182] GET_CONSTANT (extra=40, operand=2)
+  [183] GET_CONSTANT (extra=41, operand=2)
+  [184] GET_CONSTANT (extra=31, operand=2)
+  [185] GET_CONSTANT (extra=32, operand=2)
+  [186] GET_CONSTANT (extra=33, operand=2)
+  [187] GET_CONSTANT (extra=34, operand=2)
+  [188] GET_CONSTANT (extra=35, operand=2)
+  [189] GET_CONSTANT (extra=36, operand=2)
+  [190] GET_CONSTANT (extra=37, operand=2)
+  [191] GET_CONSTANT (extra=38, operand=2)
+  [192] GET_CONSTANT (extra=39, operand=2)
+  [193] GET_STACK (extra=31, operand=7)
+  [194] GET_STACK (extra=32, operand=6)
+  [195] GET_STACK (extra=33, operand=26)
+  [196] GET_BY_INDEX (extra=32, operand1=32, operand2=33)
+  [197] GET_CONSTANT (extra=33, operand=2)
+  [198] ADD (extra=33, operand1=31, operand2=32)
+  [199] GET_STACK (extra=34, operand=8)
+  [200] ADD (extra=35, operand1=33, operand2=34)
+  [201] GET_STACK (extra=36, operand=10)
+  [202] ADD (extra=37, operand1=35, operand2=36)
+  [203] GET_CONSTANT (extra=38, operand=22)
+  [204] MOD (extra=39, operand1=37, operand2=38)
+  [205] SET_STACK (extra=7, operand=39)
+  [206] GET_CONSTANT (extra=31, operand=2)
+  [207] GET_CONSTANT (extra=32, operand=2)
+  [208] GET_CONSTANT (extra=33, operand=2)
+  [209] GET_CONSTANT (extra=34, operand=2)
+  [210] GET_CONSTANT (extra=35, operand=2)
+  [211] GET_CONSTANT (extra=36, operand=2)
+  [212] GET_CONSTANT (extra=37, operand=2)
+  [213] GET_CONSTANT (extra=38, operand=2)
+  [214] GET_CONSTANT (extra=39, operand=2)
+  [215] GET_STACK (extra=31, operand=18)
+  [216] GET_CONSTANT (extra=32, operand=20)
+  [217] ADD_INT (extra=33, operand1=31, operand2=32)
+  [218] SET_STACK (extra=18, operand=33)
+  [219] GET_CONSTANT (extra=31, operand=2)
+  [220] GET_CONSTANT (extra=32, operand=2)
+  [221] GET_CONSTANT (extra=33, operand=2)
+  [222] JUMP (extra=0, operand=-147)
+  [223] GET_STACK (extra=31, operand=11)
+  [224] GET_CONSTANT (extra=32, operand=20)
+  [225] ADD_INT (extra=33, operand1=31, operand2=32)
+  [226] SET_STACK (extra=11, operand=33)
+  [227] GET_CONSTANT (extra=31, operand=2)
+  [228] GET_CONSTANT (extra=32, operand=2)
+  [229] GET_CONSTANT (extra=33, operand=2)
+  [230] JUMP (extra=0, operand=-160)
+  [231] GET_STACK (extra=31, operand=7)
+  [232] GET_STACK (extra=32, operand=6)
+  [233] GET_CONSTANT (extra=33, operand=23)
+  [234] GET_BY_INDEX (extra=32, operand1=32, operand2=33)
+  [235] GET_CONSTANT (extra=33, operand=2)
+  [236] ADD (extra=33, operand1=31, operand2=32)
+  [237] GET_STACK (extra=34, operand=6)
+  [238] GET_CONSTANT (extra=35, operand=24)
+  [239] GET_BY_INDEX (extra=34, operand1=34, operand2=35)
+  [240] GET_CONSTANT (extra=35, operand=2)
+  [241] ADD (extra=35, operand1=33, operand2=34)
+  [242] GET_STACK (extra=36, operand=6)
+  [243] GET_CONSTANT (extra=37, operand=25)
+  [244] GET_BY_INDEX (extra=36, operand1=36, operand2=37)
+  [245] GET_CONSTANT (extra=37, operand=2)
+  [246] ADD (extra=37, operand1=35, operand2=36)
+  [247] GET_STACK (extra=38, operand=6)
+  [248] GET_CONSTANT (extra=39, operand=26)
+  [249] GET_BY_INDEX (extra=38, operand1=38, operand2=39)
+  [250] GET_CONSTANT (extra=39, operand=2)
+  [251] ADD (extra=39, operand1=37, operand2=38)
+  [252] GET_CONSTANT (extra=40, operand=22)
+  [253] MOD (extra=41, operand1=39, operand2=40)
+  [254] SET_STACK (extra=7, operand=41)
+  [255] GET_CONSTANT (extra=31, operand=2)
+  [256] GET_CONSTANT (extra=32, operand=2)
+  [257] GET_CONSTANT (extra=33, operand=2)
+  [258] GET_CONSTANT (extra=34, operand=2)
+  [259] GET_CONSTANT (extra=35, operand=2)
+  [260] GET_CONSTANT (extra=36, operand=2)
+  [261] GET_CONSTANT (extra=37, operand=2)
+  [262] GET_CONSTANT (extra=38, operand=2)
+  [263] GET_CONSTANT (extra=39, operand=2)
+  [264] GET_CONSTANT (extra=40, operand=2)
+  [265] GET_CONSTANT (extra=41, operand=2)
+  [266] GET_CONSTANT (extra=31, operand=27)
+  [267] GET_STACK (extra=32, operand=7)
+  [268] TO_STRING (extra=33, operand1=32)
+  [269] ADD_STRING (extra=34, operand1=31, operand2=33)
+  [270] FUNCTION_RETURN (extra=1, operand1=34, operand2=0)
+

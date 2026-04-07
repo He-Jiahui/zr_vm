@@ -61,8 +61,8 @@
 - 角色：锁定稳定 artifact contract，而不是仅比较“能不能生成”。
 
 ### `performance_report`
-- 覆盖范围：稳定 benchmark 项目夹具的 binary 模式执行耗时与峰值内存。
-- 角色：生成 `tests_generated/performance/benchmark_report.md` 与 `.json`，作为常规 benchmark 算法测试与运行态占用报告。
+- 覆盖范围：`tests/benchmarks/` 下跨语言 benchmark 集合的运行态耗时与峰值内存。
+- 角色：生成 `tests_generated/performance/benchmark_report.md` 与 `.json`，输出 `case x implementation` 长表报告，并显式记录 `SKIP`/`FAIL`。
 
 ## Tier 过滤
 
@@ -111,6 +111,7 @@
 
 - `tests/fixtures/parser/`
 - `tests/fixtures/projects/`
+- `tests/benchmarks/`
 - `tests/fixtures/reference/core_semantics/`
 - `tests/fixtures/scripts/`
 - `tests/golden/ast/`

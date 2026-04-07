@@ -351,6 +351,13 @@ typedef struct SZrGeneratedTypeMemberExportFixture {
     TZrChar modulePath[ZR_TESTS_PATH_MAX];
 } SZrGeneratedTypeMemberExportFixture;
 
+typedef struct SZrGeneratedImportDiagnosticsFixture {
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    TZrChar moduleAPath[ZR_TESTS_PATH_MAX];
+    TZrChar moduleBPath[ZR_TESTS_PATH_MAX];
+} SZrGeneratedImportDiagnosticsFixture;
+
 static TZrBool regenerate_binary_metadata_fixture_artifacts(SZrState *state,
                                                             SZrGeneratedBinaryMetadataFixture *fixture,
                                                             const TZrChar *moduleSource) {
@@ -640,6 +647,66 @@ static TZrBool prepare_generated_type_member_export_fixture(const TZrChar *artif
     return write_text_file(fixture->projectPath, projectContent, strlen(projectContent)) &&
            write_text_file(fixture->mainPath, mainContent, strlen(mainContent)) &&
            write_text_file(fixture->modulePath, moduleContent, strlen(moduleContent));
+}
+
+static TZrBool prepare_generated_import_diagnostics_fixture(const TZrChar *artifactName,
+                                                            const TZrChar *mainContent,
+                                                            const TZrChar *moduleAName,
+                                                            const TZrChar *moduleAContent,
+                                                            const TZrChar *moduleBName,
+                                                            const TZrChar *moduleBContent,
+                                                            SZrGeneratedImportDiagnosticsFixture *fixture) {
+    static const TZrChar *projectContent =
+        "{\n"
+        "  \"name\": \"import_diagnostics\",\n"
+        "  \"source\": \"src\",\n"
+        "  \"binary\": \"bin\",\n"
+        "  \"entry\": \"main\"\n"
+        "}\n";
+    TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourceRootPath[ZR_TESTS_PATH_MAX];
+    TZrChar *lastSeparator;
+    TZrBool success;
+
+    if (artifactName == ZR_NULL || mainContent == ZR_NULL || fixture == ZR_NULL ||
+        !ZrTests_Path_GetGeneratedArtifact("language_server",
+                                           artifactName,
+                                           "import_diagnostics",
+                                           ".zrp",
+                                           generatedProjectPath,
+                                           sizeof(generatedProjectPath))) {
+        return ZR_FALSE;
+    }
+
+    memset(fixture, 0, sizeof(*fixture));
+    snprintf(fixture->projectPath, sizeof(fixture->projectPath), "%s", generatedProjectPath);
+    snprintf(rootPath, sizeof(rootPath), "%s", generatedProjectPath);
+    lastSeparator = find_last_path_separator(rootPath);
+    if (lastSeparator == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *lastSeparator = '\0';
+
+    ZrLibrary_File_PathJoin(rootPath, "src", sourceRootPath);
+    ZrLibrary_File_PathJoin(sourceRootPath, "main.zr", fixture->mainPath);
+    if (moduleAName != ZR_NULL && moduleAName[0] != '\0') {
+        ZrLibrary_File_PathJoin(sourceRootPath, moduleAName, fixture->moduleAPath);
+    }
+    if (moduleBName != ZR_NULL && moduleBName[0] != '\0') {
+        ZrLibrary_File_PathJoin(sourceRootPath, moduleBName, fixture->moduleBPath);
+    }
+
+    success = write_text_file(fixture->projectPath, projectContent, strlen(projectContent)) &&
+              write_text_file(fixture->mainPath, mainContent, strlen(mainContent));
+    if (success && moduleAName != ZR_NULL && moduleAName[0] != '\0' && moduleAContent != ZR_NULL) {
+        success = write_text_file(fixture->moduleAPath, moduleAContent, strlen(moduleAContent));
+    }
+    if (success && moduleBName != ZR_NULL && moduleBName[0] != '\0' && moduleBContent != ZR_NULL) {
+        success = write_text_file(fixture->moduleBPath, moduleBContent, strlen(moduleBContent));
+    }
+
+    return success;
 }
 
 static const TZrChar *plugin_fixture_path_extension(const TZrChar *path) {
@@ -1059,6 +1126,94 @@ static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     return ZR_FALSE;
 }
 
+static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZrChar *needle) {
+    if (diagnostics == ZR_NULL || needle == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < diagnostics->length; index++) {
+        SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
+        if (diagnosticPtr != ZR_NULL && *diagnosticPtr != ZR_NULL &&
+            (*diagnosticPtr)->message != ZR_NULL &&
+            strstr(test_string_ptr((*diagnosticPtr)->message), needle) != ZR_NULL) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrLspDiagnostic *find_diagnostic_with_message(SZrArray *diagnostics, const TZrChar *needle) {
+    if (diagnostics == ZR_NULL || needle == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < diagnostics->length; index++) {
+        SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
+        if (diagnosticPtr != ZR_NULL &&
+            *diagnosticPtr != ZR_NULL &&
+            (*diagnosticPtr)->message != ZR_NULL &&
+            strstr(test_string_ptr((*diagnosticPtr)->message), needle) != ZR_NULL) {
+            return *diagnosticPtr;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool diagnostic_related_locations_contain_uri(SZrLspDiagnostic *diagnostic, const TZrChar *uriText) {
+    if (diagnostic == ZR_NULL || uriText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < diagnostic->relatedInformation.length; index++) {
+        SZrLspDiagnosticRelatedInformation *relatedInformation =
+            (SZrLspDiagnosticRelatedInformation *)ZrCore_Array_Get(&diagnostic->relatedInformation, index);
+        if (relatedInformation != ZR_NULL &&
+            relatedInformation->location.uri != ZR_NULL &&
+            strcmp(test_string_ptr(relatedInformation->location.uri), uriText) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void describe_diagnostic_messages(SZrArray *diagnostics, TZrChar *buffer, TZrSize bufferSize) {
+    TZrSize offset = 0;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (diagnostics == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < diagnostics->length && offset + 1 < bufferSize; index++) {
+        SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
+        const TZrChar *message;
+        int written;
+
+        if (diagnosticPtr == ZR_NULL || *diagnosticPtr == ZR_NULL || (*diagnosticPtr)->message == ZR_NULL) {
+            continue;
+        }
+
+        message = test_string_ptr((*diagnosticPtr)->message);
+        written = snprintf(buffer + offset,
+                           bufferSize - offset,
+                           "%s%s",
+                           offset == 0 ? "" : " | ",
+                           message != ZR_NULL ? message : "<null>");
+        if (written < 0 || (TZrSize)written >= bufferSize - offset) {
+            buffer[bufferSize - 1] = '\0';
+            return;
+        }
+        offset += (TZrSize)written;
+    }
+}
+
 static TZrBool symbol_array_contains_name(SZrArray *symbols, const TZrChar *needle) {
     if (symbols == ZR_NULL || needle == ZR_NULL) {
         return ZR_FALSE;
@@ -1136,6 +1291,9 @@ static TZrBool semantic_tokens_contain(SZrArray *data,
 static void test_lsp_auto_discovers_project_from_source_file(SZrState *state);
 static void test_lsp_imported_type_members_do_not_leak_into_module_completion(SZrState *state);
 static void test_lsp_imported_constructor_and_meta_call_infer_through_module_type(SZrState *state);
+static void test_lsp_import_diagnostics_report_unresolved_module(SZrState *state);
+static void test_lsp_import_diagnostics_report_missing_imported_member(SZrState *state);
+static void test_lsp_import_diagnostics_surface_cyclic_initialization_error(SZrState *state);
 static void test_lsp_uses_nearest_ancestor_project(SZrState *state);
 static void test_lsp_ambiguous_project_directory_stays_standalone(SZrState *state);
 static void test_lsp_native_imports_and_ownership_display(SZrState *state);
@@ -1432,11 +1590,10 @@ static void test_lsp_imported_constructor_and_meta_call_infer_through_module_typ
     if (projectUri == ZR_NULL || mainUri == ZR_NULL || libUri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, projectUri, projectContent, projectLength, 1) ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, libUri, libContent, libLength, 1) ||
-        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, extendedContent, extendedLength, 1) ||
-        !lsp_find_position_for_substring(extendedContent, "new lib.Record(3, 4)", 0, 15, &constructorSignaturePosition) ||
-        !lsp_find_position_for_substring(extendedContent, "var r = new lib.Record(3, 4);", 0, 4, &receiverHoverPosition) ||
-        !lsp_find_position_for_substring(extendedContent, "var sum = r();", 0, 4, &sumHoverPosition) ||
-        !lsp_find_position_for_substring(extendedContent, "r.", 0, 2, &receiverCompletionPosition)) {
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
+        !lsp_find_position_for_substring(mainContent, "new lib.Record(3, 4)", 0, 15, &constructorSignaturePosition) ||
+        !lsp_find_position_for_substring(mainContent, "var r = new lib.Record(3, 4);", 0, 4, &receiverHoverPosition) ||
+        !lsp_find_position_for_substring(mainContent, "var sum = r();", 0, 4, &sumHoverPosition)) {
         free(projectContent);
         free(mainContent);
         free(libContent);
@@ -1451,6 +1608,18 @@ static void test_lsp_imported_constructor_and_meta_call_infer_through_module_typ
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 8);
     if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, mainUri, &diagnostics) ||
         diagnostics.length != 0) {
+        TZrChar diagnosticReason[ZR_LSP_TEXT_BUFFER_LENGTH];
+        SZrLspDiagnostic **firstDiagnosticPtr =
+                diagnostics.length > 0 ? (SZrLspDiagnostic **)ZrCore_Array_Get(&diagnostics, 0) : ZR_NULL;
+        SZrLspDiagnostic *firstDiagnostic =
+                firstDiagnosticPtr != ZR_NULL ? *firstDiagnosticPtr : ZR_NULL;
+        snprintf(diagnosticReason,
+                 sizeof(diagnosticReason),
+                 "Imported Record construction and r() meta-call should analyze without diagnostics"
+                 " (count=%zu first=%s code=%s)",
+                 (size_t)diagnostics.length,
+                 firstDiagnostic != ZR_NULL ? test_string_ptr(firstDiagnostic->message) : "<none>",
+                 firstDiagnostic != ZR_NULL ? test_string_ptr(firstDiagnostic->code) : "<none>");
         ZrCore_Array_Free(state, &diagnostics);
         free(projectContent);
         free(mainContent);
@@ -1459,7 +1628,7 @@ static void test_lsp_imported_constructor_and_meta_call_infer_through_module_typ
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Imported Constructor And Meta Call Infer Through Module Type",
-                  "Imported Record construction and r() meta-call should analyze without diagnostics");
+                  diagnosticReason);
         return;
     }
     ZrCore_Array_Free(state, &diagnostics);
@@ -1510,6 +1679,19 @@ static void test_lsp_imported_constructor_and_meta_call_infer_through_module_typ
         return;
     }
 
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, extendedContent, extendedLength, 2) ||
+        !lsp_find_position_for_substring(extendedContent, "r.\n", 0, 2, &receiverCompletionPosition)) {
+        free(projectContent);
+        free(mainContent);
+        free(libContent);
+        free(extendedContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Imported Constructor And Meta Call Infer Through Module Type",
+                  "Failed to switch to completion probe content for imported Record receiver members");
+        return;
+    }
+
     ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
     if (!ZrLanguageServer_Lsp_GetCompletion(state, context, mainUri, receiverCompletionPosition, &completions) ||
         !completion_array_contains_label(&completions, "x") ||
@@ -1537,6 +1719,243 @@ static void test_lsp_imported_constructor_and_meta_call_infer_through_module_typ
     free(extendedContent);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Imported Constructor And Meta Call Infer Through Module Type");
+}
+
+static void test_lsp_import_diagnostics_report_unresolved_module(SZrState *state) {
+    static const TZrChar *mainContent =
+        "var ghost = %import(\"ghost\");\n"
+        "return 0;\n";
+    SZrTestTimer timer;
+    SZrGeneratedImportDiagnosticsFixture fixture;
+    SZrLspContext *context;
+    SZrString *mainUri = ZR_NULL;
+    SZrArray diagnostics;
+    TZrChar summary[768];
+
+    TEST_START("LSP Import Diagnostics Report Unresolved Module");
+    TEST_INFO("Import diagnostics",
+              "Missing import targets should surface a document diagnostic on the %import string literal");
+
+    ZrCore_Array_Construct(&diagnostics);
+    if (!prepare_generated_import_diagnostics_fixture("project_features_import_unresolved_module",
+                                                      mainContent,
+                                                      ZR_NULL,
+                                                      ZR_NULL,
+                                                      ZR_NULL,
+                                                      ZR_NULL,
+                                                      &fixture)) {
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Report Unresolved Module",
+                  "Failed to prepare generated import-diagnostics fixture");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    mainUri = create_file_uri_from_native_path(state, fixture.mainPath);
+    if (context == ZR_NULL || mainUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, strlen(mainContent), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Report Unresolved Module",
+                  "Failed to open the unresolved-import fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, mainUri, &diagnostics) ||
+        !diagnostic_array_contains_message(&diagnostics, "Import target 'ghost' could not be resolved")) {
+        describe_diagnostic_messages(&diagnostics, summary, sizeof(summary));
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Report Unresolved Module",
+                  summary[0] != '\0' ? summary : "Expected an unresolved import diagnostic");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &diagnostics);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Import Diagnostics Report Unresolved Module");
+}
+
+static void test_lsp_import_diagnostics_report_missing_imported_member(SZrState *state) {
+    static const TZrChar *mainContent =
+        "var greet = %import(\"greet\");\n"
+        "var answer = greet.missing;\n";
+    static const TZrChar *moduleContent =
+        "pub var present = 1;\n";
+    SZrTestTimer timer;
+    SZrGeneratedImportDiagnosticsFixture fixture;
+    SZrLspContext *context;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *moduleUri = ZR_NULL;
+    SZrArray diagnostics;
+    TZrChar summary[768];
+    SZrLspDiagnostic *diagnostic;
+
+    TEST_START("LSP Import Diagnostics Report Missing Imported Member");
+    TEST_INFO("Import diagnostics",
+              "Missing imported members should surface a diagnostic on the member access, not silently degrade hover/completion");
+
+    ZrCore_Array_Construct(&diagnostics);
+    if (!prepare_generated_import_diagnostics_fixture("project_features_import_missing_member",
+                                                      mainContent,
+                                                      "greet.zr",
+                                                      moduleContent,
+                                                      ZR_NULL,
+                                                      ZR_NULL,
+                                                      &fixture)) {
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Report Missing Imported Member",
+                  "Failed to prepare the generated import-member fixture");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    mainUri = create_file_uri_from_native_path(state, fixture.mainPath);
+    moduleUri = create_file_uri_from_native_path(state, fixture.moduleAPath);
+    if (context == ZR_NULL || mainUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, strlen(mainContent), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Report Missing Imported Member",
+                  "Failed to open the missing-import-member fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, mainUri, &diagnostics) ||
+        !diagnostic_array_contains_message(&diagnostics, "Import member 'greet.missing' could not be resolved")) {
+        describe_diagnostic_messages(&diagnostics, summary, sizeof(summary));
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Report Missing Imported Member",
+                  summary[0] != '\0' ? summary : "Expected a missing imported member diagnostic");
+        return;
+    }
+
+    diagnostic = find_diagnostic_with_message(&diagnostics, "Import member 'greet.missing' could not be resolved");
+    if (diagnostic == ZR_NULL ||
+        diagnostic->relatedInformation.length < 2 ||
+        !diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(mainUri)) ||
+        moduleUri == ZR_NULL ||
+        !diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(moduleUri))) {
+        snprintf(summary,
+                 sizeof(summary),
+                 "Expected missing imported member diagnostic to include import trace locations"
+                 " (count=%zu main=%d module=%d)",
+                 diagnostic != ZR_NULL ? (size_t)diagnostic->relatedInformation.length : 0u,
+                 diagnostic != ZR_NULL ? diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(mainUri)) : 0,
+                 (diagnostic != ZR_NULL && moduleUri != ZR_NULL)
+                     ? diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(moduleUri))
+                     : 0);
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Report Missing Imported Member",
+                  summary);
+        return;
+    }
+
+    ZrCore_Array_Free(state, &diagnostics);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Import Diagnostics Report Missing Imported Member");
+}
+
+static void test_lsp_import_diagnostics_surface_cyclic_initialization_error(SZrState *state) {
+    static const TZrChar *mainContent =
+        "var a = %import(\"a\");\n"
+        "return 0;\n";
+    static const TZrChar *aContent =
+        "var b = %import(\"b\");\n"
+        "pub var a1 = b.b1;\n";
+    static const TZrChar *bContent =
+        "var a = %import(\"a\");\n"
+        "pub var b1 = a.a1;\n";
+    SZrTestTimer timer;
+    SZrGeneratedImportDiagnosticsFixture fixture;
+    SZrLspContext *context;
+    SZrString *aUri = ZR_NULL;
+    SZrString *bUri = ZR_NULL;
+    SZrArray diagnostics;
+    TZrChar summary[768];
+    SZrLspDiagnostic *diagnostic;
+
+    TEST_START("LSP Import Diagnostics Surface Cyclic Initialization Error");
+    TEST_INFO("Import diagnostics",
+              "Cross-file cyclic import initialization diagnostics from the compiler should remain visible through LSP diagnostics");
+
+    ZrCore_Array_Construct(&diagnostics);
+    if (!prepare_generated_import_diagnostics_fixture("project_features_import_cycle_error",
+                                                      mainContent,
+                                                      "a.zr",
+                                                      aContent,
+                                                      "b.zr",
+                                                      bContent,
+                                                      &fixture)) {
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Surface Cyclic Initialization Error",
+                  "Failed to prepare the generated cyclic-import fixture");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    aUri = create_file_uri_from_native_path(state, fixture.moduleAPath);
+    bUri = create_file_uri_from_native_path(state, fixture.moduleBPath);
+    if (context == ZR_NULL || aUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, aUri, aContent, strlen(aContent), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Surface Cyclic Initialization Error",
+                  "Failed to open the cyclic import fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, aUri, &diagnostics) ||
+        !diagnostic_array_contains_message(&diagnostics, "circular import initialization")) {
+        describe_diagnostic_messages(&diagnostics, summary, sizeof(summary));
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Surface Cyclic Initialization Error",
+                  summary[0] != '\0' ? summary : "Expected a cyclic import initialization diagnostic");
+        return;
+    }
+
+    diagnostic = find_diagnostic_with_message(&diagnostics, "circular import initialization");
+    if (diagnostic == ZR_NULL ||
+        diagnostic->relatedInformation.length < 2 ||
+        !diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(aUri)) ||
+        bUri == ZR_NULL ||
+        !diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(bUri))) {
+        snprintf(summary,
+                 sizeof(summary),
+                 "Expected cyclic import diagnostic to include cross-file trace locations"
+                 " (count=%zu a=%d b=%d)",
+                 diagnostic != ZR_NULL ? (size_t)diagnostic->relatedInformation.length : 0u,
+                 diagnostic != ZR_NULL ? diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(aUri)) : 0,
+                 (diagnostic != ZR_NULL && bUri != ZR_NULL)
+                     ? diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(bUri))
+                     : 0);
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Import Diagnostics Surface Cyclic Initialization Error",
+                  summary);
+        return;
+    }
+
+    ZrCore_Array_Free(state, &diagnostics);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Import Diagnostics Surface Cyclic Initialization Error");
 }
 
 static void test_lsp_uses_nearest_ancestor_project(SZrState *state) {
@@ -4813,6 +5232,7 @@ static void test_lsp_container_native_members_surface_closed_types_and_completio
     SZrLspContext *context;
     const TZrChar *content =
         "var container = %import(\"zr.container\");\n"
+        "var {Array, Map, LinkedList, LinkedNode} = %import(\"zr.container\");\n"
         "var xs: Array<int> = null;\n"
         "var map: Map<string, int> = null;\n"
         "var list: LinkedList<int> = null;\n"
@@ -5951,6 +6371,15 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_imported_constructor_and_meta_call_infer_through_module_type(state);
+    TEST_DIVIDER();
+
+    test_lsp_import_diagnostics_report_unresolved_module(state);
+    TEST_DIVIDER();
+
+    test_lsp_import_diagnostics_report_missing_imported_member(state);
+    TEST_DIVIDER();
+
+    test_lsp_import_diagnostics_surface_cyclic_initialization_error(state);
     TEST_DIVIDER();
 
     test_lsp_uses_nearest_ancestor_project(state);

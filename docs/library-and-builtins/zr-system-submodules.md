@@ -257,7 +257,7 @@ doc_type: module-detail
 - `setLength(length: int): null`
 - `close(): null`
 
-额外还有一个 `@close` 元方法，复用同一个 runtime close 入口，供 `using` / `%using` 自动释放时调用。
+额外还有一个 `@close` 元方法，复用同一个 runtime close 入口，供 `%using` 自动释放时调用。
 
 `FileStream` 目前在 native metadata 中固定注册为：
 
@@ -309,7 +309,7 @@ doc_type: module-detail
 
 - 底层保存稳定的宿主文件句柄 id
 - `close()` 幂等
-- `using` / `%using` 会走 `@close`
+- `%using` 会走 `@close`
 - finalizer 只做一次兜底关闭，不会重复释放已经关闭过的句柄
 - 多个 zr 变量复制的是同一个 wrapper 引用，不会复制底层 fd
 
@@ -333,7 +333,7 @@ var file = new fs.File("sample.txt");
 file.parent.create(true);
 
 var stream = file.open("w+");
-using stream;
+%using stream;
 stream.writeText("abc");
 
 if (tellFd(stream) != 3) {
@@ -382,7 +382,7 @@ acceptFd(stream); // 编译期报错
 5. `File.open(...)` 通过平台文件句柄接口打开底层资源，再创建 `FileStream` wrapper 对象，并把 handle id 与隐藏 native 指针写入对象字段。
 6. 普通 zr 调用里，`FileStream` 只是一个 class 实例引用。
 7. 遇到 extern/native 边界时，FFI lowering 根据 prototype 上的 wrapper metadata 读取 handle id，把它按 `i32` ABI 参数传给宿主函数。
-8. `close()`、`using` 和 finalizer 最终都收敛到同一条关闭路径，负责置 `closed = true`、把隐藏 handle id 更新为 `-1`，并避免二次释放。
+8. `close()`、`%using` 和 finalizer 最终都收敛到同一条关闭路径，负责置 `closed = true`、把隐藏 handle id 更新为 `-1`，并避免二次释放。
 
 ## Edge Cases And Constraints
 
@@ -410,7 +410,7 @@ acceptFd(stream); // 编译期报错
 - `SystemFileInfo` 扩展字段与 `refresh()` 行为
 - `File` / `Folder` 的 `create`、`copyTo`、`moveTo`、`delete`、`entries`、`files`、`folders`、`glob`
 - `FileStream` 的 mode、`read*`、`write*`、`seek`、`setLength`、`close`
-- `using` 自动关闭
+- `%using` 自动关闭
 - `IOException` 抛出路径
 - `handle_id` lowering 只在 extern 边界生效，且关闭后的流会被拒绝
 

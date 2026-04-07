@@ -256,7 +256,7 @@ static void test_zr_task_and_zr_coroutine_register_new_public_shapes(void) {
 
 static void test_percent_async_wraps_declared_return_type_to_task_runner(void) {
     static const char *source =
-            "%async func addOne(value: int): int {\n"
+            "%async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
             "return 0;\n";
@@ -280,10 +280,53 @@ static void test_percent_async_wraps_declared_return_type_to_task_runner(void) {
     TEST_ASSERT_NOT_NULL(returnType->name);
     TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, returnType->name->type);
     TEST_ASSERT_NOT_NULL(returnType->name->data.genericType.name);
-    TEST_ASSERT_EQUAL_STRING("TaskRunner",
+    TEST_ASSERT_EQUAL_STRING("zr.task.TaskRunner",
                              ZrCore_String_GetNativeString(returnType->name->data.genericType.name->name));
     TEST_ASSERT_NOT_NULL(returnType->name->data.genericType.params);
     TEST_ASSERT_EQUAL_UINT64(1, returnType->name->data.genericType.params->count);
+
+    ZrParser_Ast_Free(state, ast);
+    ZrTests_State_Destroy(state);
+}
+
+static void test_percent_async_explicit_return_type_sugar_wraps_to_task_runner(void) {
+    static const char *source =
+            "%async addOne(value: int): %async int {\n"
+            "    return value + 1;\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state = create_task_test_state();
+    SZrAstNode *ast;
+    SZrAstNode *statement;
+    SZrType *returnType;
+    SZrAstNode *innerTypeNode;
+
+    TEST_ASSERT_NOT_NULL(state);
+    ast = parse_task_source_ast(state, source, "task_async_explicit_return_wrap_test.zr");
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_TRUE(ast->data.script.statements->count >= 1);
+
+    statement = ast->data.script.statements->nodes[0];
+    TEST_ASSERT_NOT_NULL(statement);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, statement->type);
+    returnType = statement->data.functionDeclaration.returnType;
+    TEST_ASSERT_NOT_NULL(returnType);
+    TEST_ASSERT_NOT_NULL(returnType->name);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, returnType->name->type);
+    TEST_ASSERT_NOT_NULL(returnType->name->data.genericType.name);
+    TEST_ASSERT_EQUAL_STRING("zr.task.TaskRunner",
+                             ZrCore_String_GetNativeString(returnType->name->data.genericType.name->name));
+    TEST_ASSERT_NOT_NULL(returnType->name->data.genericType.params);
+    TEST_ASSERT_EQUAL_UINT64(1, returnType->name->data.genericType.params->count);
+
+    innerTypeNode = returnType->name->data.genericType.params->nodes[0];
+    TEST_ASSERT_NOT_NULL(innerTypeNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE, innerTypeNode->type);
+    TEST_ASSERT_NOT_NULL(innerTypeNode->data.type.name);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, innerTypeNode->data.type.name->type);
+    TEST_ASSERT_EQUAL_STRING("int", ZrCore_String_GetNativeString(innerTypeNode->data.type.name->data.identifier.name));
 
     ZrParser_Ast_Free(state, ast);
     ZrTests_State_Destroy(state);
@@ -304,7 +347,7 @@ static void test_percent_mutex_and_percent_atomic_are_rejected(void) {
 
 static void test_percent_await_is_rejected_outside_async_context(void) {
     static const char *source =
-            "%async func addOne(value: int): int {\n"
+            "%async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
             "func invalid(): int {\n"
@@ -325,10 +368,10 @@ static void test_percent_await_is_rejected_outside_async_context(void) {
 
 static void test_percent_await_rejects_task_runner_values(void) {
     static const char *source =
-            "%async func addOne(value: int): int {\n"
+            "%async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
-            "%async func invalid(): int {\n"
+            "%async invalid(): int {\n"
             "    var runner = addOne(4);\n"
             "    return %await runner;\n"
             "}\n"
@@ -345,8 +388,8 @@ static void test_percent_await_rejects_task_runner_values(void) {
 
 static void test_borrowed_value_cannot_cross_await_boundary(void) {
     static const char *source =
-            "%async func invalid(value: %borrowed string): string {\n"
-            "    %async func pause(): int { return 1; }\n"
+            "%async invalid(value: %borrowed string): string {\n"
+            "    %async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
             "    %await task;\n"
             "    return value;\n"
@@ -364,9 +407,9 @@ static void test_borrowed_value_cannot_cross_await_boundary(void) {
 
 static void test_borrowed_value_used_before_await_still_compiles(void) {
     static const char *source =
-            "%async func valid(value: %borrowed string): string {\n"
+            "%async valid(value: %borrowed string): string {\n"
             "    var before = value;\n"
-            "    %async func pause(): int { return 1; }\n"
+            "    %async pause(): int { return 1; }\n"
             "    var task = pause().start();\n"
             "    %await task;\n"
             "    return \"done\";\n"
@@ -385,10 +428,10 @@ static void test_borrowed_value_used_before_await_still_compiles(void) {
 
 static void test_task_runner_start_and_await_execute_on_default_scheduler(void) {
     static const char *source =
-            "%async func addOne(value: int): int {\n"
+            "%async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
-            "%async func run(): int {\n"
+            "%async run(): int {\n"
             "    var task = addOne(9).start();\n"
             "    return %await task;\n"
             "}\n"
@@ -406,10 +449,34 @@ static void test_task_runner_start_and_await_execute_on_default_scheduler(void) 
     ZrTests_State_Destroy(state);
 }
 
+static void test_task_runner_start_and_await_execute_with_explicit_async_return_type(void) {
+    static const char *source =
+            "%async addOne(value: int): %async int {\n"
+            "    return value + 1;\n"
+            "}\n"
+            "%async run(): %async int {\n"
+            "    var task = addOne(9).start();\n"
+            "    return %await task;\n"
+            "}\n"
+            "return %await run().start();\n";
+    SZrState *state = create_task_test_state();
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_FALSE(task_source_reports_parser_error(state, source, "task_runner_start_explicit_async_return_test.zr"));
+    function = compile_task_source(state, source, "task_runner_start_explicit_async_return_test.zr");
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(10, result);
+
+    ZrTests_State_Destroy(state);
+}
+
 static void test_coroutine_scheduler_manual_pump_executes_started_runner(void) {
     static const char *source =
             "var coroutine = %import(\"zr.coroutine\");\n"
-            "%async func addOne(value: int): int {\n"
+            "%async addOne(value: int): int {\n"
             "    return value + 1;\n"
             "}\n"
             "coroutine.coroutineScheduler.setAutoCoroutine(false);\n"
@@ -455,12 +522,14 @@ int main(void) {
     RUN_TEST(test_project_config_reads_supportMultithread_and_autoCoroutine_flags);
     RUN_TEST(test_zr_task_and_zr_coroutine_register_new_public_shapes);
     RUN_TEST(test_percent_async_wraps_declared_return_type_to_task_runner);
+    RUN_TEST(test_percent_async_explicit_return_type_sugar_wraps_to_task_runner);
     RUN_TEST(test_percent_mutex_and_percent_atomic_are_rejected);
     RUN_TEST(test_percent_await_is_rejected_outside_async_context);
     RUN_TEST(test_percent_await_rejects_task_runner_values);
     RUN_TEST(test_borrowed_value_cannot_cross_await_boundary);
     RUN_TEST(test_borrowed_value_used_before_await_still_compiles);
     RUN_TEST(test_task_runner_start_and_await_execute_on_default_scheduler);
+    RUN_TEST(test_task_runner_start_and_await_execute_with_explicit_async_return_type);
     RUN_TEST(test_coroutine_scheduler_manual_pump_executes_started_runner);
     RUN_TEST(test_default_scheduler_property_is_readable_and_writable);
     return UNITY_END();

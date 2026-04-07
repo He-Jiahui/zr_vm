@@ -113,6 +113,10 @@ struct SZrIoFunctionExportedVariable {
     struct SZrString *name;
     TZrUInt32 stackSlot;
     TZrUInt8 accessModifier;
+    TZrUInt8 exportKind;
+    TZrUInt8 readiness;
+    TZrUInt8 reserved0;
+    TZrUInt32 callableChildIndex;
 };
 
 typedef struct SZrIoFunctionExportedVariable SZrIoFunctionExportedVariable;
@@ -138,6 +142,10 @@ typedef struct SZrIoFunctionTypedExportSymbol {
     TZrUInt32 stackSlot;
     TZrUInt8 accessModifier;
     TZrUInt8 symbolKind;
+    TZrUInt8 exportKind;
+    TZrUInt8 readiness;
+    TZrUInt16 reserved0;
+    TZrUInt32 callableChildIndex;
     SZrIoFunctionTypedTypeRef valueType;
     TZrSize parameterCount;
     SZrIoFunctionTypedTypeRef *parameterTypes;
@@ -146,6 +154,36 @@ typedef struct SZrIoFunctionTypedExportSymbol {
     TZrUInt32 lineInSourceEnd;
     TZrUInt32 columnInSourceEnd;
 } SZrIoFunctionTypedExportSymbol;
+
+typedef struct SZrIoFunctionModuleEffect {
+    TZrUInt8 kind;
+    TZrUInt8 exportKind;
+    TZrUInt8 readiness;
+    TZrUInt8 reserved0;
+    struct SZrString *moduleName;
+    struct SZrString *symbolName;
+    TZrUInt32 lineInSourceStart;
+    TZrUInt32 columnInSourceStart;
+    TZrUInt32 lineInSourceEnd;
+    TZrUInt32 columnInSourceEnd;
+} SZrIoFunctionModuleEffect;
+
+typedef struct SZrIoFunctionCallableSummary {
+    struct SZrString *name;
+    TZrUInt32 callableChildIndex;
+    TZrSize effectCount;
+    SZrIoFunctionModuleEffect *effects;
+} SZrIoFunctionCallableSummary;
+
+typedef struct SZrIoFunctionTopLevelCallableBinding {
+    struct SZrString *name;
+    TZrUInt32 stackSlot;
+    TZrUInt32 callableChildIndex;
+    TZrUInt8 accessModifier;
+    TZrUInt8 exportKind;
+    TZrUInt8 readiness;
+    TZrUInt8 reserved0;
+} SZrIoFunctionTopLevelCallableBinding;
 
 typedef struct SZrIoFunctionMetadataParameter {
     struct SZrString *name;
@@ -318,6 +356,14 @@ struct SZrIoFunction {
     SZrIoFunctionTypedLocalBinding *typedLocalBindings;
     TZrSize typedExportedSymbolsLength;
     SZrIoFunctionTypedExportSymbol *typedExportedSymbols;
+    TZrSize staticImportsLength;
+    struct SZrString **staticImports;
+    TZrSize moduleEntryEffectsLength;
+    SZrIoFunctionModuleEffect *moduleEntryEffects;
+    TZrSize exportedCallableSummariesLength;
+    SZrIoFunctionCallableSummary *exportedCallableSummaries;
+    TZrSize topLevelCallableBindingsLength;
+    SZrIoFunctionTopLevelCallableBinding *topLevelCallableBindings;
     TZrSize parameterMetadataLength;
     SZrIoFunctionMetadataParameter *parameterMetadata;
     TZrSize compileTimeVariableInfosLength;

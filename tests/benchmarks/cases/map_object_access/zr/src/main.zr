@@ -1,0 +1,52 @@
+var benchConfig = %import("bench_config");
+var {Map} = %import("zr.container");
+
+labelFor(slot: int): string {
+    var normalized = slot % 4;
+    if (normalized == 0) {
+        return "aa";
+    }
+    if (normalized == 1) {
+        return "bb";
+    }
+    if (normalized == 2) {
+        return "cc";
+    }
+    return "dd";
+}
+
+var scale = benchConfig.scale();
+var buckets = new Map<string, int>();
+var checksum = 0;
+var left = 3;
+var right = 7;
+var hits = 0;
+var outer = 0;
+var outerLimit = 64 * scale;
+
+while (outer <= outerLimit - 1) {
+    var inner = 0;
+    while (inner <= 31) {
+        left = (left * 31 + outer + inner + hits) % 10007;
+        right = (right + left + inner * 3 + 5) % 10009;
+        hits = hits + 1;
+        var label = labelFor(outer + inner);
+        var key = label + "_slot";
+        if (buckets[key] == null) {
+            buckets[key] = 0;
+        }
+        var existing = buckets[key] + 0;
+        buckets[key] = (existing + left + right + hits) % 1000000007;
+        var updated = buckets[key] + 0;
+        checksum = (checksum + updated + left + hits) % 1000000007;
+        inner = inner + 1;
+    }
+    outer = outer + 1;
+}
+
+checksum = (checksum
+        + (buckets["aa_slot"] + 0)
+        + (buckets["bb_slot"] + 0)
+        + (buckets["cc_slot"] + 0)
+        + (buckets["dd_slot"] + 0)) % 1000000007;
+return "BENCH_MAP_OBJECT_ACCESS_PASS\n" + <string> checksum;

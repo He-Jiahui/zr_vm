@@ -74,6 +74,7 @@ static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_set_to_map_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_meta_access_fixture(SZrState *state);
+static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state);
 static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state);
 static SZrFunction *compile_exception_control_fixture(SZrState *state);
 
@@ -233,6 +234,20 @@ static TZrByte *read_binary_file_owned(const TZrChar *path, TZrSize *outLength) 
     return buffer;
 }
 
+static TZrByte *read_repo_binary_file_owned(const char *repoRelativePath, TZrSize *outLength) {
+    char pathBuffer[1024];
+
+    if (outLength != ZR_NULL) {
+        *outLength = 0;
+    }
+    if (repoRelativePath == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    snprintf(pathBuffer, sizeof(pathBuffer), "%s/../%s", ZR_VM_TESTS_SOURCE_DIR, repoRelativePath);
+    return read_binary_file_owned(pathBuffer, outLength);
+}
+
 static TZrBool write_embedded_aot_c_file(SZrState *state,
                                          SZrFunction *function,
                                          const TZrChar *moduleName,
@@ -289,6 +304,24 @@ static TZrBool write_standalone_strict_aot_c_file(SZrState *state,
     return ZrParser_Writer_WriteAotCFileWithOptions(state, function, filename, &options);
 }
 
+static TZrBool write_standalone_strict_aot_llvm_file(SZrState *state,
+                                                     SZrFunction *function,
+                                                     const TZrChar *moduleName,
+                                                     const TZrChar *filename) {
+    SZrAotWriterOptions options;
+
+    if (state == ZR_NULL || function == ZR_NULL || moduleName == ZR_NULL || filename == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(&options, 0, sizeof(options));
+    options.moduleName = moduleName;
+    options.inputKind = ZR_AOT_INPUT_KIND_SOURCE;
+    options.inputHash = moduleName;
+    options.requireExecutableLowering = ZR_TRUE;
+    return ZrParser_Writer_WriteAotLlvmFileWithOptions(state, function, filename, &options);
+}
+
 static TZrBytePtr binary_fixture_reader_read(struct SZrState *state, TZrPtr customData, ZR_OUT TZrSize *size) {
     SZrBinaryFixtureReader *reader = (SZrBinaryFixtureReader *)customData;
 
@@ -317,6 +350,36 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
 
     for (index = 0; index < function->instructionsLength; index++) {
         if ((EZrInstructionCode)function->instructionsList[index].instruction.operationCode == opcode) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool function_contains_get_member_name(const SZrFunction *function, const TZrChar *memberName) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < function->instructionsLength; index++) {
+        const TZrInstruction *instruction = &function->instructionsList[index];
+        TZrUInt16 memberEntryIndex;
+        SZrString *symbol;
+
+        if ((EZrInstructionCode)instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_MEMBER)) {
+            continue;
+        }
+
+        memberEntryIndex = instruction->instruction.operand.operand1[1];
+        if (memberEntryIndex >= function->memberEntryLength) {
+            continue;
+        }
+
+        symbol = function->memberEntries[memberEntryIndex].symbol;
+        if (symbol != ZR_NULL && strcmp(ZrCore_String_GetNativeString(symbol), memberName) == 0) {
             return ZR_TRUE;
         }
     }
@@ -2124,6 +2187,433 @@ static void test_aot_c_backend_lowers_signed_compare_div_and_neg_paths(void) {
         free(cText);
         remove(cPath);
         ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Backends Lower Benchmark Style Mod String And Compare Paths";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("benchmark style aot lowering",
+                 "Testing that strict AOT C and LLVM lower benchmark-like generic modulo, <= compare, TO_STRING, and string concatenation paths instead of reporting unsupported instructions");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var container = %import(\"zr.container\");\n"
+                "var items = new container.Array<int>();\n"
+                "items.add(5);\n"
+                "items.add(8);\n"
+                "var slot = items.length % 3;\n"
+                "var label = <string> slot + \":\" + <string> (slot + 1);\n"
+                "var inRange = slot <= 2;\n"
+                "if (inRange) {\n"
+                "    if (label == \"2:3\") {\n"
+                "        return 1;\n"
+                "    }\n"
+                "}\n"
+                "return 0;";
+        const char *cPath = "execbc_aot_benchmark_style_string_numeric_test.c";
+        const char *llvmPath = "execbc_aot_benchmark_style_string_numeric_test.ll";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *function;
+        char *cText;
+        char *llvmText;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(ZrVmLibContainer_Register(state->global));
+
+        sourceName = ZrCore_String_Create(state, "execbc_aot_benchmark_style_string_numeric_test.zr", 48);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(TO_STRING)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_STRING)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED)));
+
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            function,
+                                                            "execbc_aot_benchmark_style_string_numeric_test",
+                                                            cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               function,
+                                                               "execbc_aot_benchmark_style_string_numeric_test",
+                                                               llvmPath));
+
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Mod(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ToString(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Add(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_LogicalLessEqualSigned(state, &frame,"));
+        TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
+
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_Mod("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_ToString("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_Add("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_LogicalLessEqualSigned("));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(MOD)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(TO_STRING)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(ADD_STRING)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText,
+                                                                    ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED)));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(1, result);
+
+        free(cText);
+        free(llvmText);
+        remove(cPath);
+        remove(llvmPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_backends_lower_benchmark_style_generic_sub_paths(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Backends Lower Benchmark Style Generic Sub Paths";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("benchmark style generic subtraction lowering",
+                 "Testing that strict AOT C and LLVM lower benchmark-like generic SUB paths sourced from indexed container values instead of reporting unsupported instructions");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var container = %import(\"zr.container\");\n"
+                "var lhs = new container.Array<int>();\n"
+                "var rhs = new container.Array<int>();\n"
+                "var dst = new container.Array<int>();\n"
+                "lhs.add(7);\n"
+                "rhs.add(3);\n"
+                "dst.add(0);\n"
+                "dst[0] = lhs[0] + rhs[0];\n"
+                "var scratch = dst[0] - lhs[0] / 3 + (rhs[0] % 11);\n"
+                "return scratch;";
+        const char *cPath = "execbc_aot_benchmark_style_generic_sub_test.c";
+        const char *llvmPath = "execbc_aot_benchmark_style_generic_sub_test.ll";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *function;
+        char *cText;
+        char *llvmText;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(ZrVmLibContainer_Register(state->global));
+
+        sourceName = ZrCore_String_Create(state, "execbc_aot_benchmark_style_generic_sub_test.zr", 47);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB)));
+
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            function,
+                                                            "execbc_aot_benchmark_style_generic_sub_test",
+                                                            cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               function,
+                                                               "execbc_aot_benchmark_style_generic_sub_test",
+                                                               llvmPath));
+
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Sub(state, &frame,"));
+        TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
+
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_Sub("));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUB)));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(11, result);
+
+        free(cText);
+        free(llvmText);
+        remove(cPath);
+        remove(llvmPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_backends_lower_benchmark_style_generic_mul_paths(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Backends Lower Benchmark Style Generic Mul Paths";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("benchmark style generic multiplication lowering",
+                 "Testing that strict AOT C and LLVM lower benchmark-like generic MUL paths sourced from method results instead of reporting unsupported instructions");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "class MultiplyWorker {\n"
+                "    pri var state: int;\n"
+                "    pub @constructor(seed: int) {\n"
+                "        this.state = seed;\n"
+                "    }\n"
+                "    pub read(): int {\n"
+                "        return this.state;\n"
+                "    }\n"
+                "}\n"
+                "var worker = new MultiplyWorker(11);\n"
+                "var outer = 5;\n"
+                "return 7 + worker.read() * (outer + 1);";
+        const char *cPath = "execbc_aot_benchmark_style_generic_mul_test.c";
+        const char *llvmPath = "execbc_aot_benchmark_style_generic_mul_test.ll";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *function;
+        char *cText;
+        char *llvmText;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        sourceName = ZrCore_String_Create(state, "execbc_aot_benchmark_style_generic_mul_test.zr", 47);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL)));
+
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            function,
+                                                            "execbc_aot_benchmark_style_generic_mul_test",
+                                                            cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               function,
+                                                               "execbc_aot_benchmark_style_generic_mul_test",
+                                                               llvmPath));
+
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Mul(state, &frame,"));
+        TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
+
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_Mul("));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(MUL)));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(73, result);
+
+        free(cText);
+        free(llvmText);
+        remove(cPath);
+        remove(llvmPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_backends_lower_benchmark_style_generic_div_paths(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Backends Lower Benchmark Style Generic Div Paths";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("benchmark style generic division lowering",
+                 "Testing that strict AOT C and LLVM lower benchmark-like generic DIV paths sourced from indexed container values instead of reporting unsupported instructions");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var container = %import(\"zr.container\");\n"
+                "var lhs = new container.Array<int>();\n"
+                "lhs.add(21);\n"
+                "return lhs[0] / 3;";
+        const char *cPath = "execbc_aot_benchmark_style_generic_div_test.c";
+        const char *llvmPath = "execbc_aot_benchmark_style_generic_div_test.ll";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *function;
+        char *cText;
+        char *llvmText;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(ZrVmLibContainer_Register(state->global));
+
+        sourceName = ZrCore_String_Create(state, "execbc_aot_benchmark_style_generic_div_test.zr", 47);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV)));
+
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            function,
+                                                            "execbc_aot_benchmark_style_generic_div_test",
+                                                            cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               function,
+                                                               "execbc_aot_benchmark_style_generic_div_test",
+                                                               llvmPath));
+
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Div(state, &frame,"));
+        TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
+
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_Div("));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(DIV)));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(7, result);
+
+        free(cText);
+        free(llvmText);
+        remove(cPath);
+        remove(llvmPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_backends_lower_benchmark_style_bitwise_xor_paths(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Backends Lower Benchmark Style Bitwise Xor Paths";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("benchmark style xor lowering",
+                 "Testing that strict AOT C and LLVM lower benchmark-like BITWISE_XOR paths in child methods instead of reporting unsupported instructions");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "class XorWorker {\n"
+                "    pri var state: int;\n"
+                "    pub @constructor(seed: int) {\n"
+                "        this.state = seed;\n"
+                "    }\n"
+                "    pub step(delta: int): int {\n"
+                "        this.state = ((this.state ^ (delta + 31)) + delta * 5 + 19) % 10037;\n"
+                "        return this.state;\n"
+                "    }\n"
+                "}\n"
+                "var worker = new XorWorker(43);\n"
+                "return worker.step(5);";
+        const char *cPath = "execbc_aot_benchmark_style_bitwise_xor_test.c";
+        const char *llvmPath = "execbc_aot_benchmark_style_bitwise_xor_test.ll";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *function;
+        char *cText;
+        char *llvmText;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        sourceName = ZrCore_String_Create(state, "execbc_aot_benchmark_style_bitwise_xor_test.zr", 48);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(BITWISE_XOR)));
+
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            function,
+                                                            "execbc_aot_benchmark_style_bitwise_xor_test",
+                                                            cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               function,
+                                                               "execbc_aot_benchmark_style_bitwise_xor_test",
+                                                               llvmPath));
+
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BitwiseXor(state, &frame,"));
+        TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
+
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_BitwiseXor("));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(BITWISE_XOR)));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(59, result);
+
+        free(cText);
+        free(llvmText);
+        remove(cPath);
+        remove(llvmPath);
+        ZrCore_Function_Free(state, function);
         ZrTests_Runtime_State_Destroy(state);
     }
 
@@ -4487,6 +4977,51 @@ static SZrFunction *compile_meta_access_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state) {
+    const char *source =
+            "class BaseCounter {\n"
+            "    pub var baseValue: int;\n"
+            "    pub virtual bump(): int {\n"
+            "        return this.baseValue + 1;\n"
+            "    }\n"
+            "    pub virtual get score: int {\n"
+            "        return this.baseValue + 10;\n"
+            "    }\n"
+            "    pub virtual @call(): int {\n"
+            "        return this.baseValue + 20;\n"
+            "    }\n"
+            "}\n"
+            "class DerivedCounter: BaseCounter {\n"
+            "    pub override bump(): int {\n"
+            "        return super.bump() + 1;\n"
+            "    }\n"
+            "    pub override get score: int {\n"
+            "        return super.score + 2;\n"
+            "    }\n"
+            "    pub override @call(): int {\n"
+            "        return super.call() + 5;\n"
+            "    }\n"
+            "    pub total(): int {\n"
+            "        return this.bump() + this.score + this();\n"
+            "    }\n"
+            "}\n"
+            "var counter = new DerivedCounter();\n"
+            "counter.baseValue = 1;\n"
+            "return counter.total();\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state, "super_member_dispatch_fixture.zr", 32);
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
 static SZrFunction *compile_static_meta_access_fixture(SZrState *state) {
     const char *source =
             "class Counter {\n"
@@ -4718,6 +5253,7 @@ static SZrFunction *compile_fixed_array_helper_roundtrip_fixture(SZrState *state
 static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state) {
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {Array, Map, Set, LinkedList, Pair} = %import(\"zr.container\");\n"
             "labelFor(value: int) {\n"
             "    if (value % 2 == 0) {\n"
             "        return \"even\";\n"
@@ -4804,6 +5340,7 @@ static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state) 
 static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state) {
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {Array, Map} = %import(\"zr.container\");\n"
             "var buckets = new container.Map<string, Array<int>>();\n"
             "var bucket = new container.Array<int>();\n"
             "bucket.add(1);\n"
@@ -4842,6 +5379,7 @@ static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state) {
 static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state) {
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {LinkedList, Pair} = %import(\"zr.container\");\n"
             "labelFor(value: int) {\n"
             "    if (value % 2 == 0) {\n"
             "        return \"even\";\n"
@@ -4888,6 +5426,7 @@ static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state) {
 static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state) {
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {Set, Pair} = %import(\"zr.container\");\n"
             "var seen = new container.Set<Pair<int, string>>();\n"
             "seen.add(new container.Pair<int, string>(3, \"odd_hi\"));\n"
             "seen.add(new container.Pair<int, string>(1, \"odd_lo\"));\n"
@@ -4923,6 +5462,7 @@ static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state) {
 static SZrFunction *compile_set_to_map_roundtrip_fixture(SZrState *state) {
     const char *source =
             "var container = %import(\"zr.container\");\n"
+            "var {Array, Map, Set, Pair} = %import(\"zr.container\");\n"
             "var seen = new container.Set<Pair<int, string>>();\n"
             "seen.add(new container.Pair<int, string>(3, \"odd_hi\"));\n"
             "seen.add(new container.Pair<int, string>(1, \"odd_lo\"));\n"
@@ -5232,6 +5772,38 @@ static void test_static_meta_access_quickens_to_static_callsite_cache_variants(v
         remove(cPath);
         remove(llvmPath);
         remove(binaryPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_super_member_dispatch_uses_direct_base_lookup_for_methods_properties_and_meta_calls(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Super Member Dispatch Uses Direct Base Lookup For Methods Properties And Meta Calls";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("super member lowering",
+                 "Testing that super.method, super.property, and super meta calls lower without a runtime 'super' lookup and execute against the direct base implementation");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrFunction *function;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_super_member_dispatch_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_FALSE(function_contains_get_member_name(function, "super"));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(42, result);
+
         ZrCore_Function_Free(state, function);
         ZrTests_Runtime_State_Destroy(state);
     }
@@ -5565,6 +6137,57 @@ static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicat
     ZR_TEST_DIVIDER();
 }
 
+static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Benchmark String Build Binary Roundtrip Loads Runtime Entry";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("benchmark binary roundtrip loading",
+                 "Testing that the checked-in string_build benchmark main.zro parses and reloads into a runtime function instead of failing at the project entry load step");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrBinaryFixtureReader reader;
+        TZrByte *binaryBytes = ZR_NULL;
+        TZrSize binaryLength = 0;
+        SZrIo io;
+        SZrIoSource *sourceObject = ZR_NULL;
+        SZrFunction *runtimeFunction = ZR_NULL;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        binaryBytes = read_repo_binary_file_owned("tests/benchmarks/cases/string_build/zr/bin/main.zro", &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        memset(&reader, 0, sizeof(reader));
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        ZrCore_Io_Init(state, &io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io.isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(&io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        TEST_ASSERT_EQUAL_UINT32(1u, sourceObject->modulesLength);
+        TEST_ASSERT_NOT_NULL(sourceObject->modules[0].entryFunction);
+
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(TO_STRING)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(ADD_STRING)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MOD_SIGNED)));
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        free(binaryBytes);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -5596,6 +6219,11 @@ int main(void) {
     RUN_TEST(test_aot_c_backend_lowers_to_object_with_runtime_helper);
     RUN_TEST(test_aot_c_backend_lowers_to_struct_with_runtime_helper);
     RUN_TEST(test_aot_c_backend_lowers_signed_compare_div_and_neg_paths);
+    RUN_TEST(test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths);
+    RUN_TEST(test_aot_backends_lower_benchmark_style_generic_sub_paths);
+    RUN_TEST(test_aot_backends_lower_benchmark_style_generic_mul_paths);
+    RUN_TEST(test_aot_backends_lower_benchmark_style_generic_div_paths);
+    RUN_TEST(test_aot_backends_lower_benchmark_style_bitwise_xor_paths);
     RUN_TEST(test_aot_runtime_observation_policy_is_thread_local);
     RUN_TEST(test_aot_runtime_begin_instruction_respects_resolved_observation_policy);
     RUN_TEST(test_aot_runtime_begin_instruction_publishes_line_debug_events);
@@ -5632,9 +6260,11 @@ int main(void) {
     RUN_TEST(test_binary_roundtrip_preserves_set_pair_hash_and_iteration);
     RUN_TEST(test_binary_roundtrip_preserves_set_to_map_bucket_values);
     RUN_TEST(test_binary_roundtrip_preserves_container_matrix_native_call_arguments);
+    RUN_TEST(test_benchmark_string_build_binary_roundtrip_loads_runtime_entry);
     RUN_TEST(test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir_contracts);
     RUN_TEST(test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_set_opcodes);
     RUN_TEST(test_static_meta_access_quickens_to_static_callsite_cache_variants);
+    RUN_TEST(test_super_member_dispatch_uses_direct_base_lookup_for_methods_properties_and_meta_calls);
     RUN_TEST(test_reference_property_fixture_preserves_meta_access_artifacts_with_true_aot_c_lowering);
     RUN_TEST(test_reference_member_index_fixture_preserves_split_access_artifacts);
     RUN_TEST(test_reference_foreach_fixture_preserves_iter_contract_artifacts);

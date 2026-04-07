@@ -12,10 +12,25 @@
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/runtime_decorator.h"
+#include "zr_vm_core/string.h"
 
 static TZrBool io_runtime_convert_constant(SZrState *state,
                                            const SZrIoFunctionConstantVariable *source,
                                            SZrTypeValue *destination);
+static TZrBool io_runtime_copy_static_imports(SZrState *state,
+                                              const SZrIoFunction *source,
+                                              SZrFunction *function);
+static TZrBool io_runtime_copy_module_effects(SZrState *state,
+                                              SZrFunctionModuleEffect **outEffects,
+                                              TZrUInt32 *outCount,
+                                              const SZrIoFunctionModuleEffect *sourceEffects,
+                                              TZrSize sourceCount);
+static TZrBool io_runtime_copy_callable_summaries(SZrState *state,
+                                                  const SZrIoFunction *source,
+                                                  SZrFunction *function);
+static TZrBool io_runtime_copy_top_level_callable_bindings(SZrState *state,
+                                                           const SZrIoFunction *source,
+                                                           SZrFunction *function);
 
 static void io_runtime_init_inline_function(SZrState *state, SZrFunction *function) {
     ZrCore_Memory_RawSet(function, 0, sizeof(*function));
@@ -668,11 +683,16 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         if (function->exportedVariables == ZR_NULL) {
             return ZR_FALSE;
         }
+        ZrCore_Memory_RawSet(function->exportedVariables, 0, exportBytes);
 
         for (TZrSize index = 0; index < source->exportedVariablesLength; index++) {
             function->exportedVariables[index].name = source->exportedVariables[index].name;
             function->exportedVariables[index].stackSlot = source->exportedVariables[index].stackSlot;
             function->exportedVariables[index].accessModifier = source->exportedVariables[index].accessModifier;
+            function->exportedVariables[index].exportKind = source->exportedVariables[index].exportKind;
+            function->exportedVariables[index].readiness = source->exportedVariables[index].readiness;
+            function->exportedVariables[index].reserved0 = source->exportedVariables[index].reserved0;
+            function->exportedVariables[index].callableChildIndex = source->exportedVariables[index].callableChildIndex;
         }
         function->exportedVariableLength = (TZrUInt32)source->exportedVariablesLength;
     }
@@ -715,6 +735,10 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             destinationSymbol->stackSlot = sourceSymbol->stackSlot;
             destinationSymbol->accessModifier = sourceSymbol->accessModifier;
             destinationSymbol->symbolKind = sourceSymbol->symbolKind;
+            destinationSymbol->exportKind = sourceSymbol->exportKind;
+            destinationSymbol->readiness = sourceSymbol->readiness;
+            destinationSymbol->reserved0 = sourceSymbol->reserved0;
+            destinationSymbol->callableChildIndex = sourceSymbol->callableChildIndex;
             io_runtime_copy_typed_type_ref(&destinationSymbol->valueType, &sourceSymbol->valueType);
             destinationSymbol->parameterCount = (TZrUInt32)sourceSymbol->parameterCount;
             destinationSymbol->lineInSourceStart = sourceSymbol->lineInSourceStart;
@@ -739,6 +763,26 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             }
         }
         function->typedExportedSymbolLength = (TZrUInt32)source->typedExportedSymbolsLength;
+    }
+
+    if (!io_runtime_copy_static_imports(state, source, function)) {
+        return ZR_FALSE;
+    }
+
+    if (!io_runtime_copy_module_effects(state,
+                                        &function->moduleEntryEffects,
+                                        &function->moduleEntryEffectLength,
+                                        source->moduleEntryEffects,
+                                        source->moduleEntryEffectsLength)) {
+        return ZR_FALSE;
+    }
+
+    if (!io_runtime_copy_callable_summaries(state, source, function)) {
+        return ZR_FALSE;
+    }
+
+    if (!io_runtime_copy_top_level_callable_bindings(state, source, function)) {
+        return ZR_FALSE;
     }
 
     if (!io_runtime_copy_metadata_parameters(state,
@@ -951,6 +995,165 @@ static TZrBool io_runtime_populate_function(SZrState *state,
 
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
 
+    return ZR_TRUE;
+}
+
+static TZrBool io_runtime_copy_static_imports(SZrState *state,
+                                              const SZrIoFunction *source,
+                                              SZrFunction *function) {
+    SZrGlobalState *global;
+
+    if (state == ZR_NULL || source == ZR_NULL || function == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (source->staticImportsLength == 0 || source->staticImports == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    global = state->global;
+    function->staticImports = (SZrString **)ZrCore_Memory_RawMallocWithType(global,
+                                                                            sizeof(SZrString *) *
+                                                                                    source->staticImportsLength,
+                                                                            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (function->staticImports == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(function->staticImports, 0, sizeof(SZrString *) * source->staticImportsLength);
+    for (TZrSize index = 0; index < source->staticImportsLength; index++) {
+        function->staticImports[index] = source->staticImports[index];
+    }
+    function->staticImportLength = (TZrUInt32)source->staticImportsLength;
+    return ZR_TRUE;
+}
+
+static TZrBool io_runtime_copy_module_effects(SZrState *state,
+                                              SZrFunctionModuleEffect **outEffects,
+                                              TZrUInt32 *outCount,
+                                              const SZrIoFunctionModuleEffect *sourceEffects,
+                                              TZrSize sourceCount) {
+    SZrGlobalState *global;
+
+    if (outEffects == ZR_NULL || outCount == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outEffects = ZR_NULL;
+    *outCount = 0;
+    if (state == ZR_NULL || sourceEffects == ZR_NULL || sourceCount == 0 || state->global == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    global = state->global;
+    *outEffects = (SZrFunctionModuleEffect *)ZrCore_Memory_RawMallocWithType(global,
+                                                                              sizeof(SZrFunctionModuleEffect) * sourceCount,
+                                                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (*outEffects == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(*outEffects, 0, sizeof(SZrFunctionModuleEffect) * sourceCount);
+    for (TZrSize index = 0; index < sourceCount; index++) {
+        (*outEffects)[index].kind = sourceEffects[index].kind;
+        (*outEffects)[index].exportKind = sourceEffects[index].exportKind;
+        (*outEffects)[index].readiness = sourceEffects[index].readiness;
+        (*outEffects)[index].reserved0 = sourceEffects[index].reserved0;
+        (*outEffects)[index].moduleName = sourceEffects[index].moduleName;
+        (*outEffects)[index].symbolName = sourceEffects[index].symbolName;
+        (*outEffects)[index].lineInSourceStart = sourceEffects[index].lineInSourceStart;
+        (*outEffects)[index].columnInSourceStart = sourceEffects[index].columnInSourceStart;
+        (*outEffects)[index].lineInSourceEnd = sourceEffects[index].lineInSourceEnd;
+        (*outEffects)[index].columnInSourceEnd = sourceEffects[index].columnInSourceEnd;
+    }
+
+    *outCount = (TZrUInt32)sourceCount;
+    return ZR_TRUE;
+}
+
+static TZrBool io_runtime_copy_callable_summaries(SZrState *state,
+                                                  const SZrIoFunction *source,
+                                                  SZrFunction *function) {
+    SZrGlobalState *global;
+
+    if (state == ZR_NULL || source == ZR_NULL || function == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (source->exportedCallableSummariesLength == 0 || source->exportedCallableSummaries == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    global = state->global;
+    function->exportedCallableSummaries =
+            (SZrFunctionCallableSummary *)ZrCore_Memory_RawMallocWithType(global,
+                                                                          sizeof(SZrFunctionCallableSummary) *
+                                                                                  source->exportedCallableSummariesLength,
+                                                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (function->exportedCallableSummaries == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(function->exportedCallableSummaries,
+                         0,
+                         sizeof(SZrFunctionCallableSummary) * source->exportedCallableSummariesLength);
+    for (TZrSize index = 0; index < source->exportedCallableSummariesLength; index++) {
+        const SZrIoFunctionCallableSummary *sourceSummary = &source->exportedCallableSummaries[index];
+        SZrFunctionCallableSummary *destinationSummary = &function->exportedCallableSummaries[index];
+
+        destinationSummary->name = sourceSummary->name;
+        destinationSummary->callableChildIndex = sourceSummary->callableChildIndex;
+        if (!io_runtime_copy_module_effects(state,
+                                            &destinationSummary->effects,
+                                            &destinationSummary->effectCount,
+                                            sourceSummary->effects,
+                                            sourceSummary->effectCount)) {
+            return ZR_FALSE;
+        }
+    }
+
+    function->exportedCallableSummaryLength = (TZrUInt32)source->exportedCallableSummariesLength;
+    return ZR_TRUE;
+}
+
+static TZrBool io_runtime_copy_top_level_callable_bindings(SZrState *state,
+                                                           const SZrIoFunction *source,
+                                                           SZrFunction *function) {
+    SZrGlobalState *global;
+
+    if (state == ZR_NULL || source == ZR_NULL || function == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (source->topLevelCallableBindingsLength == 0 || source->topLevelCallableBindings == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    global = state->global;
+    function->topLevelCallableBindings =
+            (SZrFunctionTopLevelCallableBinding *)ZrCore_Memory_RawMallocWithType(
+                    global,
+                    sizeof(SZrFunctionTopLevelCallableBinding) * source->topLevelCallableBindingsLength,
+                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (function->topLevelCallableBindings == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(function->topLevelCallableBindings,
+                         0,
+                         sizeof(SZrFunctionTopLevelCallableBinding) * source->topLevelCallableBindingsLength);
+    for (TZrSize index = 0; index < source->topLevelCallableBindingsLength; index++) {
+        function->topLevelCallableBindings[index].name = source->topLevelCallableBindings[index].name;
+        function->topLevelCallableBindings[index].stackSlot = source->topLevelCallableBindings[index].stackSlot;
+        function->topLevelCallableBindings[index].callableChildIndex =
+                source->topLevelCallableBindings[index].callableChildIndex;
+        function->topLevelCallableBindings[index].accessModifier =
+                source->topLevelCallableBindings[index].accessModifier;
+        function->topLevelCallableBindings[index].exportKind = source->topLevelCallableBindings[index].exportKind;
+        function->topLevelCallableBindings[index].readiness = source->topLevelCallableBindings[index].readiness;
+        function->topLevelCallableBindings[index].reserved0 = source->topLevelCallableBindings[index].reserved0;
+    }
+    function->topLevelCallableBindingLength = (TZrUInt32)source->topLevelCallableBindingsLength;
     return ZR_TRUE;
 }
 

@@ -34,8 +34,12 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
 plan_sources:
   - user: 2026-03-31 实现 ZR VM CLI 命令系统与 compile/run/REPL 计划
+  - user: 2026-04-06 扩展 zr_vm_cli 入口参数、透传参数与 process.arguments 契约
+  - user: 2026-04-06 扩成 CLI 覆盖矩阵，列出入口模式、合法组合、非法组合和 process.arguments 契约
 tests:
   - tests/cli/test_cli_args.c
+  - tests/cli/test_cli_repl_e2e.c
+  - tests/cli/test_cli_debug_e2e.c
   - tests/cmake/run_cli_suite.cmake
   - tests/CMakeLists.txt
 doc_type: category-index
@@ -48,10 +52,14 @@ doc_type: category-index
 ## 当前主题
 
 - `zr-vm-cli-command-system.md`
-  - flag 模式与位置参数兼容规则
-  - 项目上下文、输出目录和增量 manifest
-  - compile / compile+run / REPL handler 的职责分离
-  - `.zro` 里内部 native helper 的稳定序列化与运行时恢复
+  - 主模式、修饰符、别名和非法组合规则
+  - `.zrp` 直跑、`--compile --run`、`-e/-c`、`--project -m` 的入口语义
+  - `--` 透传与 `zr.system.process.arguments` 注入契约
+  - REPL / post-run `-i` / 增量 manifest / 运行层边界
+- `zr-vm-cli-coverage-matrix.md`
+  - 入口模式、合法组合、非法组合和 `zr.system.process.arguments` 的查表矩阵
+  - parser / runtime 拒绝边界与稳定错误片段
+  - 当前单测、集成用例和专用 fixture 的覆盖映射
 - `zr-debugger-v1-launch-workflow.md`
   - `launch-under-debug` 作为 v1 主路线的模块分层
   - `zr_vm_debug` / `zr_vm_network` / CLI runtime 的职责边界
@@ -64,7 +72,8 @@ doc_type: category-index
 
 ## 阅读顺序
 
-1. 先看 `zr-vm-cli-command-system.md`，了解 CLI 第一版对用户暴露的模式和内部模块边界。
-2. 需要修改调试 launch、断点解析、`zrdbg/1` 协议或 loopback transport 时，再看 `zr-debugger-v1-launch-workflow.md`。
-3. 需要修改 `.zrp` 编辑体验或 project config 刷新路径时，再看 `zrp-editor-schema-and-lsp-refresh.md`。
-4. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。
+1. 先看 `zr-vm-cli-command-system.md`，了解当前 CLI 主模式、入口参数契约和内部模块边界。
+2. 需要快速确认某个入口模式、flag 组合、报错文案或 `process.arguments` 行为时，再看 `zr-vm-cli-coverage-matrix.md`。
+3. 需要修改调试 launch、断点解析、`zrdbg/1` 协议或 loopback transport 时，再看 `zr-debugger-v1-launch-workflow.md`。
+4. 需要修改 `.zrp` 编辑体验或 project config 刷新路径时，再看 `zrp-editor-schema-and-lsp-refresh.md`。
+5. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。

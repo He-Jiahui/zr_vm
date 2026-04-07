@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_prime_trial_division",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

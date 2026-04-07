@@ -23,11 +23,24 @@ SZrAstNode *parse_struct_field(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 
-    // 解析 using 关键字（可选，field-scoped 生命周期管理）
-    TZrBool isUsingManaged = ZR_FALSE;
     if (ps->lexer->t.token == ZR_TK_USING) {
+        report_error(ps, "Field-scoped lifecycle management requires '%using'");
+        skip_to_semicolon_or_eos(ps);
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        return ZR_NULL;
+    }
+
+    // 解析 %using 关键字（可选，field-scoped 生命周期管理）
+    TZrBool isUsingManaged = ZR_FALSE;
+    if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
         isUsingManaged = ZR_TRUE;
-        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    if (isUsingManaged && ps->lexer->t.token != ZR_TK_CONST && ps->lexer->t.token != ZR_TK_VAR) {
+        report_error(ps, "Field-scoped '%using' must prefix a field declaration");
+        skip_to_semicolon_or_eos(ps);
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        return ZR_NULL;
     }
 
     // 解析 const 关键字（可选，可以在 var 之前或之后）
@@ -384,9 +397,12 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
             TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
             TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-            // 跳过访问修饰符和 static（用于 lookahead）。
-            // 保留 using/const，让字段解析器自己处理这两种合法前缀。
-            if (ps->lexer->t.token == ZR_TK_PERCENT) {
+            TZrBool sawFieldUsingPrefix = ZR_FALSE;
+            // 跳过字段 %using 前缀或方法 receiver qualifier。
+            if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
+                sawFieldUsingPrefix = ZR_TRUE;
+                // 字段前缀已消费，继续向前看字段声明。
+            } else if (ps->lexer->t.token == ZR_TK_PERCENT) {
                 parse_optional_method_receiver_qualifier(ps);
             }
             while (ps->lexer->t.token == ZR_TK_SHARP) {
@@ -399,6 +415,16 @@ SZrAstNode *parse_struct_declaration(SZrParserState *ps) {
             }
 
             EZrToken nextToken = ps->lexer->t.token;
+            if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
+                sawFieldUsingPrefix = ZR_TRUE;
+                nextToken = ps->lexer->t.token;
+            } else if (nextToken == ZR_TK_PERCENT) {
+                parse_optional_method_receiver_qualifier(ps);
+                nextToken = ps->lexer->t.token;
+            }
+            if (sawFieldUsingPrefix) {
+                nextToken = ZR_TK_USING;
+            }
 
             if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_CONST || nextToken == ZR_TK_USING) {
                 // 恢复状态并解析字段

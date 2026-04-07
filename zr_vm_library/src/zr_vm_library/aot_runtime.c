@@ -1,5 +1,6 @@
 #include "zr_vm_library/aot_runtime.h"
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -178,6 +179,14 @@ static void aot_runtime_resolve_observation_policy(const SZrState *state,
                                                    TZrUInt32 *outObservationMask,
                                                    TZrBool *outPublishAllInstructions);
 static TZrBool aot_runtime_value_is_truthy(SZrState *state, const SZrTypeValue *value);
+static TZrBool aot_runtime_extract_numeric_double(const SZrTypeValue *value, TZrFloat64 *outValue);
+static TZrBool aot_runtime_extract_integer_like_value(const SZrTypeValue *value, TZrInt64 *outValue);
+static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
+                                              ZrAotGeneratedFrame *frame,
+                                              TZrUInt32 destinationSlot,
+                                              const SZrTypeValue *leftValue,
+                                              const SZrTypeValue *rightValue,
+                                              SZrFunction *metaFunction);
 
 static SZrLibrary_Project *aot_runtime_get_project(SZrGlobalState *global) {
     return (global != ZR_NULL && global->userData != ZR_NULL) ? (SZrLibrary_Project *)global->userData : ZR_NULL;
@@ -1210,8 +1219,7 @@ static TZrBool aot_runtime_try_prepare_direct_native_call(SZrState *state,
 
     functionIndex = aot_runtime_find_function_index_in_record(record, metadataFunction);
     if (functionIndex == UINT32_MAX || functionIndex >= record->descriptor->functionThunkCount ||
-        record->descriptor->functionThunks[functionIndex] == ZR_NULL ||
-        record->descriptor->functionThunks[functionIndex] != (FZrAotEntryThunk)closureNative->nativeFunction) {
+        record->descriptor->functionThunks[functionIndex] == ZR_NULL) {
         return ZR_TRUE;
     }
 
@@ -1226,7 +1234,7 @@ static TZrBool aot_runtime_try_prepare_direct_native_call(SZrState *state,
         return ZR_FALSE;
     }
 
-    directCall->nativeFunction = (FZrAotEntryThunk)closureNative->nativeFunction;
+    directCall->nativeFunction = record->descriptor->functionThunks[functionIndex];
     return ZR_TRUE;
 }
 
@@ -2348,7 +2356,15 @@ TZrBool ZrLibrary_AotRuntime_BeginInstruction(SZrState *state,
         return ZR_FALSE;
     }
 
-    frame->callInfo = callInfo;
+    if (callInfo->functionBase.valuePointer != ZR_NULL) {
+        if (!aot_runtime_refresh_frame_from_callinfo(state, frame, callInfo)) {
+            return ZR_FALSE;
+        }
+        callInfo = frame->callInfo;
+    } else {
+        frame->callInfo = callInfo;
+        state->callInfoList = callInfo;
+    }
     frame->currentInstructionIndex = instructionIndex;
     publishAllInstructions = (TZrBool)(frame->publishAllInstructions ||
                                        ((state->debugHookSignal & ZR_DEBUG_HOOK_MASK_LINE) != 0u));
@@ -3119,6 +3135,144 @@ TZrBool ZrLibrary_AotRuntime_LogicalLessSigned(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_LogicalGreaterSigned(SZrState *state,
+                                                  ZrAotGeneratedFrame *frame,
+                                                  TZrUInt32 destinationSlot,
+                                                  TZrUInt32 leftSlot,
+                                                  TZrUInt32 rightSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer leftPointer = aot_runtime_frame_slot(frame, leftSlot);
+    TZrStackValuePointer rightPointer = aot_runtime_frame_slot(frame, rightSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *leftValue;
+    SZrTypeValue *rightValue;
+    TZrInt64 leftNumber;
+    TZrInt64 rightNumber;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || leftPointer == ZR_NULL || rightPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_GREATER_SIGNED: invalid stack slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    leftValue = ZrCore_Stack_GetValue(leftPointer);
+    rightValue = ZrCore_Stack_GetValue(rightPointer);
+    if (destinationValue == ZR_NULL || leftValue == ZR_NULL || rightValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_GREATER_SIGNED: missing value");
+        return ZR_FALSE;
+    }
+
+    if (!aot_runtime_extract_integer_like_value(leftValue, &leftNumber)) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_GREATER_SIGNED: left operand is not integer-like");
+        return ZR_FALSE;
+    }
+    if (!aot_runtime_extract_integer_like_value(rightValue, &rightNumber)) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_GREATER_SIGNED: right operand is not integer-like");
+        return ZR_FALSE;
+    }
+
+    ZR_VALUE_FAST_SET(destinationValue,
+                      nativeBool,
+                      leftNumber > rightNumber ? ZR_TRUE : ZR_FALSE,
+                      ZR_VALUE_TYPE_BOOL);
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_LogicalLessEqualSigned(SZrState *state,
+                                                    ZrAotGeneratedFrame *frame,
+                                                    TZrUInt32 destinationSlot,
+                                                    TZrUInt32 leftSlot,
+                                                    TZrUInt32 rightSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer leftPointer = aot_runtime_frame_slot(frame, leftSlot);
+    TZrStackValuePointer rightPointer = aot_runtime_frame_slot(frame, rightSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *leftValue;
+    SZrTypeValue *rightValue;
+    TZrInt64 leftNumber;
+    TZrInt64 rightNumber;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || leftPointer == ZR_NULL || rightPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_LESS_EQUAL_SIGNED: invalid stack slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    leftValue = ZrCore_Stack_GetValue(leftPointer);
+    rightValue = ZrCore_Stack_GetValue(rightPointer);
+    if (destinationValue == ZR_NULL || leftValue == ZR_NULL || rightValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_LESS_EQUAL_SIGNED: missing value");
+        return ZR_FALSE;
+    }
+
+    if (!aot_runtime_extract_integer_like_value(leftValue, &leftNumber)) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_LESS_EQUAL_SIGNED: left operand is not integer-like");
+        return ZR_FALSE;
+    }
+    if (!aot_runtime_extract_integer_like_value(rightValue, &rightNumber)) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_LESS_EQUAL_SIGNED: right operand is not integer-like");
+        return ZR_FALSE;
+    }
+
+    ZR_VALUE_FAST_SET(destinationValue,
+                      nativeBool,
+                      leftNumber <= rightNumber ? ZR_TRUE : ZR_FALSE,
+                      ZR_VALUE_TYPE_BOOL);
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_LogicalGreaterEqualSigned(SZrState *state,
+                                                       ZrAotGeneratedFrame *frame,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 leftSlot,
+                                                       TZrUInt32 rightSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer leftPointer = aot_runtime_frame_slot(frame, leftSlot);
+    TZrStackValuePointer rightPointer = aot_runtime_frame_slot(frame, rightSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *leftValue;
+    SZrTypeValue *rightValue;
+    TZrInt64 leftNumber;
+    TZrInt64 rightNumber;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || leftPointer == ZR_NULL || rightPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_GREATER_EQUAL_SIGNED: invalid stack slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    leftValue = ZrCore_Stack_GetValue(leftPointer);
+    rightValue = ZrCore_Stack_GetValue(rightPointer);
+    if (destinationValue == ZR_NULL || leftValue == ZR_NULL || rightValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_GREATER_EQUAL_SIGNED: missing value");
+        return ZR_FALSE;
+    }
+
+    if (!aot_runtime_extract_integer_like_value(leftValue, &leftNumber)) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_GREATER_EQUAL_SIGNED: left operand is not integer-like");
+        return ZR_FALSE;
+    }
+    if (!aot_runtime_extract_integer_like_value(rightValue, &rightNumber)) {
+        aot_runtime_fail(state, runtimeState, "LOGICAL_GREATER_EQUAL_SIGNED: right operand is not integer-like");
+        return ZR_FALSE;
+    }
+
+    ZR_VALUE_FAST_SET(destinationValue,
+                      nativeBool,
+                      leftNumber >= rightNumber ? ZR_TRUE : ZR_FALSE,
+                      ZR_VALUE_TYPE_BOOL);
+    return ZR_TRUE;
+}
+
 TZrBool ZrLibrary_AotRuntime_IsTruthy(SZrState *state,
                                       ZrAotGeneratedFrame *frame,
                                       TZrUInt32 sourceSlot,
@@ -3177,6 +3331,235 @@ TZrBool ZrLibrary_AotRuntime_Add(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLibrary_AotRuntime_Sub(SZrState *state,
+                                 ZrAotGeneratedFrame *frame,
+                                 TZrUInt32 destinationSlot,
+                                 TZrUInt32 leftSlot,
+                                 TZrUInt32 rightSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer leftPointer = aot_runtime_frame_slot(frame, leftSlot);
+    TZrStackValuePointer rightPointer = aot_runtime_frame_slot(frame, rightSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *leftValue;
+    SZrTypeValue *rightValue;
+    SZrMeta *metaValue;
+    TZrInt64 leftInt;
+    TZrInt64 rightInt;
+    TZrUInt64 leftUInt;
+    TZrUInt64 rightUInt;
+    TZrFloat64 leftDouble;
+    TZrFloat64 rightDouble;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || leftPointer == ZR_NULL || rightPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SUB: invalid stack slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    leftValue = ZrCore_Stack_GetValue(leftPointer);
+    rightValue = ZrCore_Stack_GetValue(rightPointer);
+    if (destinationValue == ZR_NULL || leftValue == ZR_NULL || rightValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "SUB: missing value");
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_BOOL(leftValue->type) && ZR_VALUE_IS_TYPE_BOOL(rightValue->type)) {
+        ZR_VALUE_FAST_SET(destinationValue,
+                          nativeBool,
+                          leftValue->value.nativeObject.nativeBool && rightValue->value.nativeObject.nativeBool,
+                          ZR_VALUE_TYPE_BOOL);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue->type)) {
+        leftInt = leftValue->value.nativeObject.nativeInt64;
+        rightInt = rightValue->value.nativeObject.nativeInt64;
+        ZrCore_Value_InitAsInt(state, destinationValue, leftInt - rightInt);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue->type)) {
+        leftUInt = leftValue->value.nativeObject.nativeUInt64;
+        rightUInt = rightValue->value.nativeObject.nativeUInt64;
+        ZrCore_Value_InitAsUInt(state, destinationValue, leftUInt - rightUInt);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_FLOAT(leftValue->type) && ZR_VALUE_IS_TYPE_FLOAT(rightValue->type)) {
+        leftDouble = leftValue->value.nativeObject.nativeDouble;
+        rightDouble = rightValue->value.nativeObject.nativeDouble;
+        ZrCore_Value_InitAsFloat(state, destinationValue, leftDouble - rightDouble);
+        return ZR_TRUE;
+    }
+
+    metaValue = ZrCore_Value_GetMeta(state, leftValue, ZR_META_SUB);
+    if (metaValue == ZR_NULL || metaValue->function == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(destinationValue);
+        return ZR_TRUE;
+    }
+
+    return aot_runtime_invoke_binary_meta(state, frame, destinationSlot, leftValue, rightValue, metaValue->function);
+}
+
+TZrBool ZrLibrary_AotRuntime_Mul(SZrState *state,
+                                 ZrAotGeneratedFrame *frame,
+                                 TZrUInt32 destinationSlot,
+                                 TZrUInt32 leftSlot,
+                                 TZrUInt32 rightSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer leftPointer = aot_runtime_frame_slot(frame, leftSlot);
+    TZrStackValuePointer rightPointer = aot_runtime_frame_slot(frame, rightSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *leftValue;
+    SZrTypeValue *rightValue;
+    SZrMeta *metaValue;
+    TZrInt64 leftInt;
+    TZrInt64 rightInt;
+    TZrUInt64 leftUInt;
+    TZrUInt64 rightUInt;
+    TZrFloat64 leftDouble;
+    TZrFloat64 rightDouble;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || leftPointer == ZR_NULL || rightPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "MUL: invalid stack slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    leftValue = ZrCore_Stack_GetValue(leftPointer);
+    rightValue = ZrCore_Stack_GetValue(rightPointer);
+    if (destinationValue == ZR_NULL || leftValue == ZR_NULL || rightValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "MUL: missing value");
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue->type)) {
+        leftInt = leftValue->value.nativeObject.nativeInt64;
+        rightInt = rightValue->value.nativeObject.nativeInt64;
+        ZrCore_Value_InitAsInt(state, destinationValue, leftInt * rightInt);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue->type)) {
+        leftUInt = leftValue->value.nativeObject.nativeUInt64;
+        rightUInt = rightValue->value.nativeObject.nativeUInt64;
+        ZrCore_Value_InitAsUInt(state, destinationValue, leftUInt * rightUInt);
+        return ZR_TRUE;
+    }
+
+    if (aot_runtime_extract_integer_like_value(leftValue, &leftInt) &&
+        aot_runtime_extract_integer_like_value(rightValue, &rightInt) &&
+        !ZR_VALUE_IS_TYPE_FLOAT(leftValue->type) &&
+        !ZR_VALUE_IS_TYPE_FLOAT(rightValue->type)) {
+        ZrCore_Value_InitAsInt(state, destinationValue, leftInt * rightInt);
+        return ZR_TRUE;
+    }
+
+    if (aot_runtime_extract_numeric_double(leftValue, &leftDouble) &&
+        aot_runtime_extract_numeric_double(rightValue, &rightDouble)) {
+        ZrCore_Value_InitAsFloat(state, destinationValue, leftDouble * rightDouble);
+        return ZR_TRUE;
+    }
+
+    metaValue = ZrCore_Value_GetMeta(state, leftValue, ZR_META_MUL);
+    if (metaValue == ZR_NULL || metaValue->function == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(destinationValue);
+        return ZR_TRUE;
+    }
+
+    return aot_runtime_invoke_binary_meta(state, frame, destinationSlot, leftValue, rightValue, metaValue->function);
+}
+
+TZrBool ZrLibrary_AotRuntime_Div(SZrState *state,
+                                 ZrAotGeneratedFrame *frame,
+                                 TZrUInt32 destinationSlot,
+                                 TZrUInt32 leftSlot,
+                                 TZrUInt32 rightSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer leftPointer = aot_runtime_frame_slot(frame, leftSlot);
+    TZrStackValuePointer rightPointer = aot_runtime_frame_slot(frame, rightSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *leftValue;
+    SZrTypeValue *rightValue;
+    SZrMeta *metaValue;
+    TZrInt64 leftInt;
+    TZrInt64 rightInt;
+    TZrUInt64 leftUInt;
+    TZrUInt64 rightUInt;
+    TZrFloat64 leftDouble;
+    TZrFloat64 rightDouble;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || leftPointer == ZR_NULL || rightPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "DIV: invalid stack slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    leftValue = ZrCore_Stack_GetValue(leftPointer);
+    rightValue = ZrCore_Stack_GetValue(rightPointer);
+    if (destinationValue == ZR_NULL || leftValue == ZR_NULL || rightValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "DIV: missing value");
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue->type)) {
+        leftInt = leftValue->value.nativeObject.nativeInt64;
+        rightInt = rightValue->value.nativeObject.nativeInt64;
+        if (rightInt == 0) {
+            ZrCore_Debug_RunError(state, "divide by zero");
+        }
+        ZrCore_Value_InitAsInt(state, destinationValue, leftInt / rightInt);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue->type)) {
+        leftUInt = leftValue->value.nativeObject.nativeUInt64;
+        rightUInt = rightValue->value.nativeObject.nativeUInt64;
+        if (rightUInt == 0) {
+            ZrCore_Debug_RunError(state, "divide by zero");
+        }
+        ZrCore_Value_InitAsUInt(state, destinationValue, leftUInt / rightUInt);
+        return ZR_TRUE;
+    }
+
+    if (aot_runtime_extract_integer_like_value(leftValue, &leftInt) &&
+        aot_runtime_extract_integer_like_value(rightValue, &rightInt) &&
+        !ZR_VALUE_IS_TYPE_FLOAT(leftValue->type) &&
+        !ZR_VALUE_IS_TYPE_FLOAT(rightValue->type)) {
+        if (rightInt == 0) {
+            ZrCore_Debug_RunError(state, "divide by zero");
+        }
+        ZrCore_Value_InitAsInt(state, destinationValue, leftInt / rightInt);
+        return ZR_TRUE;
+    }
+
+    if (aot_runtime_extract_numeric_double(leftValue, &leftDouble) &&
+        aot_runtime_extract_numeric_double(rightValue, &rightDouble)) {
+        if (rightDouble == 0.0) {
+            ZrCore_Debug_RunError(state, "divide by zero");
+        }
+        ZrCore_Value_InitAsFloat(state, destinationValue, leftDouble / rightDouble);
+        return ZR_TRUE;
+    }
+
+    metaValue = ZrCore_Value_GetMeta(state, leftValue, ZR_META_DIV);
+    if (metaValue == ZR_NULL || metaValue->function == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(destinationValue);
+        return ZR_TRUE;
+    }
+
+    return aot_runtime_invoke_binary_meta(state, frame, destinationSlot, leftValue, rightValue, metaValue->function);
+}
+
 static TZrBool aot_runtime_extract_numeric_double(const SZrTypeValue *value, TZrFloat64 *outValue) {
     if (value == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
@@ -3196,6 +3579,27 @@ static TZrBool aot_runtime_extract_numeric_double(const SZrTypeValue *value, TZr
     }
     if (ZR_VALUE_IS_TYPE_BOOL(value->type)) {
         *outValue = value->value.nativeObject.nativeBool ? 1.0 : 0.0;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool aot_runtime_extract_integer_like_value(const SZrTypeValue *value, TZrInt64 *outValue) {
+    if (value == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+        *outValue = value->value.nativeObject.nativeInt64;
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+        *outValue = (TZrInt64)value->value.nativeObject.nativeUInt64;
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_BOOL(value->type)) {
+        *outValue = value->value.nativeObject.nativeBool ? 1 : 0;
         return ZR_TRUE;
     }
 
@@ -3310,6 +3714,78 @@ static TZrBool aot_runtime_invoke_unary_meta(SZrState *state,
     return ZrLibrary_AotRuntime_Call(state, frame, destinationSlot, functionSlot, 1);
 }
 
+static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
+                                              ZrAotGeneratedFrame *frame,
+                                              TZrUInt32 destinationSlot,
+                                              const SZrTypeValue *receiverValue,
+                                              const SZrTypeValue *argumentValue,
+                                              SZrFunction *metadataFunction) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer callBase = ZR_NULL;
+    TZrUInt32 functionSlot = 0;
+    SZrTypeValue *functionValue;
+    SZrTypeValue stableReceiver;
+    SZrTypeValue stableArgument;
+    SZrLibraryAotLoadedModule *record;
+    TZrUInt32 functionIndex;
+    ZrAotGeneratedDirectCall directCall;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || frame == ZR_NULL || receiverValue == ZR_NULL || argumentValue == ZR_NULL ||
+        metadataFunction == ZR_NULL || !aot_runtime_reserve_temp_call_base(state, frame, 3, &callBase, &functionSlot)) {
+        return ZR_FALSE;
+    }
+
+    functionValue = ZrCore_Stack_GetValue(callBase);
+    if (functionValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stableReceiver = *receiverValue;
+    stableArgument = *argumentValue;
+    ZrCore_Value_InitAsRawObject(state, functionValue, ZR_CAST_RAW_OBJECT_AS_SUPER(metadataFunction));
+    functionValue->type = ZR_VALUE_TYPE_FUNCTION;
+    functionValue->isGarbageCollectable = ZR_TRUE;
+    functionValue->isNative = ZR_FALSE;
+    ZrCore_Stack_CopyValue(state, callBase + 1, &stableReceiver);
+    ZrCore_Stack_CopyValue(state, callBase + 2, &stableArgument);
+
+    state->stackTop.valuePointer = callBase + 3;
+    if (frame->callInfo != ZR_NULL && frame->callInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+        frame->callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
+
+    memset(&directCall, 0, sizeof(directCall));
+    record = runtimeState != ZR_NULL ? aot_runtime_find_record_for_function(runtimeState, metadataFunction) : ZR_NULL;
+    if (record != ZR_NULL && record->descriptor != ZR_NULL && record->descriptor->functionThunks != ZR_NULL) {
+        functionIndex = aot_runtime_find_function_index_in_record(record, metadataFunction);
+        if (functionIndex != UINT32_MAX && functionIndex < record->descriptor->functionThunkCount &&
+            record->descriptor->functionThunks[functionIndex] != ZR_NULL) {
+            if (!aot_runtime_prepare_vm_direct_call_frame(state,
+                                                          frame,
+                                                          destinationSlot,
+                                                          functionSlot,
+                                                          2,
+                                                          metadataFunction,
+                                                          functionIndex,
+                                                          &directCall)) {
+                return ZR_FALSE;
+            }
+            directCall.nativeFunction = record->descriptor->functionThunks[functionIndex];
+            return ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,
+                                                              frame,
+                                                              &directCall,
+                                                              destinationSlot,
+                                                              functionSlot,
+                                                              2,
+                                                              1);
+        }
+    }
+
+    return ZrLibrary_AotRuntime_Call(state, frame, destinationSlot, functionSlot, 2);
+}
+
 TZrBool ZrLibrary_AotRuntime_AddInt(SZrState *state,
                                     ZrAotGeneratedFrame *frame,
                                     TZrUInt32 destinationSlot,
@@ -3408,6 +3884,48 @@ TZrBool ZrLibrary_AotRuntime_SubInt(SZrState *state,
     }
 
     ZrCore_Value_InitAsFloat(state, ZrCore_Stack_GetValue(destinationPointer), leftDouble - rightDouble);
+    return ZR_TRUE;
+}
+
+TZrBool ZrLibrary_AotRuntime_BitwiseXor(SZrState *state,
+                                        ZrAotGeneratedFrame *frame,
+                                        TZrUInt32 destinationSlot,
+                                        TZrUInt32 leftSlot,
+                                        TZrUInt32 rightSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer leftPointer = aot_runtime_frame_slot(frame, leftSlot);
+    TZrStackValuePointer rightPointer = aot_runtime_frame_slot(frame, rightSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *leftValue;
+    SZrTypeValue *rightValue;
+    TZrInt64 leftInt;
+    TZrInt64 rightInt;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || leftPointer == ZR_NULL || rightPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "BITWISE_XOR: invalid stack slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    leftValue = ZrCore_Stack_GetValue(leftPointer);
+    rightValue = ZrCore_Stack_GetValue(rightPointer);
+    if (destinationValue == ZR_NULL || leftValue == ZR_NULL || rightValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "BITWISE_XOR: missing value");
+        return ZR_FALSE;
+    }
+    if (!ZR_VALUE_IS_TYPE_INT(leftValue->type) || !ZR_VALUE_IS_TYPE_INT(rightValue->type)) {
+        aot_runtime_fail(state, runtimeState, "BITWISE_XOR: operands must be integer values");
+        return ZR_FALSE;
+    }
+
+    leftInt = ZR_VALUE_IS_TYPE_SIGNED_INT(leftValue->type) ? leftValue->value.nativeObject.nativeInt64
+                                                           : (TZrInt64)leftValue->value.nativeObject.nativeUInt64;
+    rightInt = ZR_VALUE_IS_TYPE_SIGNED_INT(rightValue->type) ? rightValue->value.nativeObject.nativeInt64
+                                                             : (TZrInt64)rightValue->value.nativeObject.nativeUInt64;
+    ZR_VALUE_FAST_SET(destinationValue, nativeInt64, leftInt ^ rightInt, ZR_VALUE_TYPE_INT64);
     return ZR_TRUE;
 }
 
@@ -3554,6 +4072,125 @@ TZrBool ZrLibrary_AotRuntime_Neg(SZrState *state,
     }
 
     return aot_runtime_invoke_unary_meta(state, frame, destinationSlot, sourceValue, metaValue->function);
+}
+
+TZrBool ZrLibrary_AotRuntime_Mod(SZrState *state,
+                                 ZrAotGeneratedFrame *frame,
+                                 TZrUInt32 destinationSlot,
+                                 TZrUInt32 leftSlot,
+                                 TZrUInt32 rightSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer leftPointer = aot_runtime_frame_slot(frame, leftSlot);
+    TZrStackValuePointer rightPointer = aot_runtime_frame_slot(frame, rightSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *leftValue;
+    SZrTypeValue *rightValue;
+    TZrInt64 leftInt;
+    TZrInt64 rightInt;
+    TZrFloat64 leftDouble;
+    TZrFloat64 rightDouble;
+    SZrMeta *metaValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || leftPointer == ZR_NULL || rightPointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "MOD: invalid stack slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    leftValue = ZrCore_Stack_GetValue(leftPointer);
+    rightValue = ZrCore_Stack_GetValue(rightPointer);
+    if (destinationValue == ZR_NULL || leftValue == ZR_NULL || rightValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "MOD: missing value");
+        return ZR_FALSE;
+    }
+
+    if ((ZR_VALUE_IS_TYPE_NUMBER(leftValue->type) || ZR_VALUE_IS_TYPE_BOOL(leftValue->type)) &&
+        (ZR_VALUE_IS_TYPE_NUMBER(rightValue->type) || ZR_VALUE_IS_TYPE_BOOL(rightValue->type))) {
+        if (ZR_VALUE_IS_TYPE_INT(leftValue->type) && ZR_VALUE_IS_TYPE_INT(rightValue->type)) {
+            if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(rightValue->type)) {
+                TZrUInt64 rightUnsigned = rightValue->value.nativeObject.nativeUInt64;
+
+                if (rightUnsigned == 0u) {
+                    ZrCore_Debug_RunError(state, "modulo by zero");
+                }
+                ZR_VALUE_FAST_SET(destinationValue,
+                                  nativeUInt64,
+                                  leftValue->value.nativeObject.nativeUInt64 % rightUnsigned,
+                                  ZR_VALUE_TYPE_UINT64);
+                return ZR_TRUE;
+            }
+
+            if (!aot_runtime_extract_integer_like_value(leftValue, &leftInt) ||
+                !aot_runtime_extract_integer_like_value(rightValue, &rightInt)) {
+                aot_runtime_fail(state, runtimeState, "MOD: integer-like extraction failed");
+                return ZR_FALSE;
+            }
+            if (rightInt == 0) {
+                ZrCore_Debug_RunError(state, "modulo by zero");
+            }
+            if (rightInt < 0) {
+                rightInt = -rightInt;
+            }
+            ZrCore_Value_InitAsInt(state, destinationValue, leftInt % rightInt);
+            return ZR_TRUE;
+        }
+
+        if (!aot_runtime_extract_numeric_double(leftValue, &leftDouble) ||
+            !aot_runtime_extract_numeric_double(rightValue, &rightDouble)) {
+            aot_runtime_fail(state, runtimeState, "MOD: numeric extraction failed");
+            return ZR_FALSE;
+        }
+        if (rightDouble == 0.0) {
+            ZrCore_Debug_RunError(state, "modulo by zero");
+        }
+        ZrCore_Value_InitAsFloat(state, destinationValue, fmod(leftDouble, rightDouble));
+        return ZR_TRUE;
+    }
+
+    metaValue = ZrCore_Value_GetMeta(state, leftValue, ZR_META_MOD);
+    if (metaValue == ZR_NULL || metaValue->function == ZR_NULL) {
+        ZrCore_Value_ResetAsNull(destinationValue);
+        return ZR_TRUE;
+    }
+
+    return aot_runtime_invoke_binary_meta(state, frame, destinationSlot, leftValue, rightValue, metaValue->function);
+}
+
+TZrBool ZrLibrary_AotRuntime_ToString(SZrState *state,
+                                      ZrAotGeneratedFrame *frame,
+                                      TZrUInt32 destinationSlot,
+                                      TZrUInt32 sourceSlot) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *sourceValue;
+    SZrString *resultString;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    if (state == ZR_NULL || destinationPointer == ZR_NULL || sourcePointer == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "TO_STRING: invalid stack slot");
+        return ZR_FALSE;
+    }
+
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    if (destinationValue == ZR_NULL || sourceValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "TO_STRING: missing value");
+        return ZR_FALSE;
+    }
+
+    resultString = ZrCore_Value_ConvertToString(state, sourceValue);
+    if (resultString != ZR_NULL) {
+        ZrCore_Value_InitAsRawObject(state, destinationValue, ZR_CAST_RAW_OBJECT_AS_SUPER(resultString));
+    } else {
+        ZrCore_Value_ResetAsNull(destinationValue);
+    }
+    return ZR_TRUE;
 }
 
 TZrBool ZrLibrary_AotRuntime_GetMember(SZrState *state,
@@ -3982,6 +4619,20 @@ TZrBool ZrLibrary_AotRuntime_FinishDirectCall(SZrState *state,
         state->callInfoList != callInfo) {
         aot_runtime_fail(state, runtimeState, "generated AOT direct call finish is missing active call info");
         return ZR_FALSE;
+    }
+
+    if (state->threadStatus == ZR_THREAD_STATUS_FINE && callInfo->functionBase.valuePointer != ZR_NULL) {
+        TZrStackValuePointer returnTop = state->stackTop.valuePointer;
+        if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
+            state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
+        }
+        // Direct AOT thunk invocation bypasses ZrCore_Function_PreCall, so it must
+        // still close any open upvalues before PostCall tears down the callee frame.
+        ZrCore_Closure_CloseClosure(state,
+                                    callInfo->functionBase.valuePointer + 1,
+                                    ZR_THREAD_STATUS_INVALID,
+                                    ZR_FALSE);
+        state->stackTop.valuePointer = returnTop;
     }
 
     ZrCore_Function_PostCall(state, callInfo, resultCount);

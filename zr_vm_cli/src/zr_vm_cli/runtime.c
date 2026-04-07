@@ -16,6 +16,8 @@
 #include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/file.h"
+#include "zr_vm_library/native_binding.h"
+#include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 
@@ -137,6 +139,119 @@ static void zr_cli_runtime_emit_executed_via(SZrState *state,
     }
 }
 
+static TZrBool zr_cli_runtime_resolve_effective_entry_module(const SZrCliCommand *command,
+                                                             const SZrCliProjectContext *project,
+                                                             TZrChar *normalizedBuffer,
+                                                             TZrSize normalizedBufferSize,
+                                                             const TZrChar **outEffectiveEntryModule,
+                                                             const TZrChar **outEntryIdentifier) {
+    TZrChar moduleBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize index;
+
+    if (command == ZR_NULL || project == ZR_NULL || normalizedBuffer == ZR_NULL || normalizedBufferSize == 0 ||
+        outEffectiveEntryModule == ZR_NULL || outEntryIdentifier == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (command->mode != ZR_CLI_MODE_RUN_PROJECT_MODULE) {
+        *outEffectiveEntryModule = project->entryModule;
+        *outEntryIdentifier = command->projectPath;
+        return ZR_TRUE;
+    }
+
+    if (command->moduleName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; command->moduleName[index] != '\0' && index + 1 < sizeof(moduleBuffer); index++) {
+        moduleBuffer[index] = command->moduleName[index] == '.' ? '/' : command->moduleName[index];
+    }
+    moduleBuffer[index] = '\0';
+    if (command->moduleName[index] != '\0') {
+        return ZR_FALSE;
+    }
+
+    if (!ZrCli_Project_NormalizeModuleName(moduleBuffer, normalizedBuffer, normalizedBufferSize)) {
+        return ZR_FALSE;
+    }
+
+    *outEffectiveEntryModule = normalizedBuffer;
+    *outEntryIdentifier = command->moduleName;
+    return ZR_TRUE;
+}
+
+TZrBool ZrCli_Runtime_InjectProcessArguments(SZrState *state,
+                                             const TZrChar *entryIdentifier,
+                                             const TZrChar *const *programArgs,
+                                             TZrSize programArgCount) {
+    static const TZrChar processModuleName[] = "zr.system.process";
+    static const TZrChar argumentsExportName[] = "arguments";
+    SZrString *processModuleString;
+    SZrObjectModule *processModule;
+    SZrString *argumentsName;
+    SZrObject *argumentsArray;
+    SZrTypeValue argumentsValue;
+    TZrBool ignoredArray = ZR_FALSE;
+    TZrSize index;
+
+    if (state == ZR_NULL || entryIdentifier == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    processModuleString = ZrCore_String_CreateFromNative(state, processModuleName);
+    if (processModuleString == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    processModule = ZrCore_Module_ImportByPath(state, processModuleString);
+    if (processModule == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    argumentsArray = ZrLib_Array_New(state);
+    if (argumentsArray == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ignoredArray = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(argumentsArray));
+    ZrLib_Value_SetString(state, &argumentsValue, entryIdentifier);
+    if (!ZrLib_Array_PushValue(state, argumentsArray, &argumentsValue)) {
+        if (ignoredArray) {
+            ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(argumentsArray));
+        }
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < programArgCount; index++) {
+        if (programArgs == ZR_NULL || programArgs[index] == ZR_NULL) {
+            continue;
+        }
+
+        ZrLib_Value_SetString(state, &argumentsValue, programArgs[index]);
+        if (!ZrLib_Array_PushValue(state, argumentsArray, &argumentsValue)) {
+            if (ignoredArray) {
+                ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(argumentsArray));
+            }
+            return ZR_FALSE;
+        }
+    }
+
+    argumentsName = ZrCore_String_CreateFromNative(state, argumentsExportName);
+    if (argumentsName == ZR_NULL) {
+        if (ignoredArray) {
+            ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(argumentsArray));
+        }
+        return ZR_FALSE;
+    }
+
+    ZrLib_Value_SetObject(state, &argumentsValue, argumentsArray, ZR_VALUE_TYPE_ARRAY);
+    ZrCore_Module_AddPubExport(state, processModule, argumentsName, &argumentsValue);
+    if (ignoredArray) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(argumentsArray));
+    }
+    return ZR_TRUE;
+}
+
 #if defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
 static void zr_cli_runtime_emit_debug_endpoint(SZrState *state,
                                                const SZrCliCommand *command,
@@ -248,6 +363,7 @@ static TZrBool zr_cli_runtime_prepare_and_execute_entry(SZrState *state,
 
 static TZrBool zr_cli_runtime_load_entry_function(SZrState *state,
                                                   const SZrCliProjectContext *project,
+                                                  const TZrChar *entryModule,
                                                   TZrBool preferBinary,
                                                   SZrFunction **outFunction,
                                                   TZrChar *loadedPathBuffer,
@@ -260,8 +376,8 @@ static TZrBool zr_cli_runtime_load_entry_function(SZrState *state,
     }
 
     *outFunction = ZR_NULL;
-    ZrCli_Project_ResolveBinaryPath(project, project->entryModule, entryBinaryPath, sizeof(entryBinaryPath));
-    ZrCli_Project_ResolveSourcePath(project, project->entryModule, entrySourcePath, sizeof(entrySourcePath));
+    ZrCli_Project_ResolveBinaryPath(project, entryModule, entryBinaryPath, sizeof(entryBinaryPath));
+    ZrCli_Project_ResolveSourcePath(project, entryModule, entrySourcePath, sizeof(entrySourcePath));
 
     if (preferBinary && ZrLibrary_File_Exist(entryBinaryPath) == ZR_LIBRARY_FILE_IS_FILE) {
         SZrIo io;
@@ -315,6 +431,38 @@ static TZrBool zr_cli_runtime_load_entry_function(SZrState *state,
     return ZR_FALSE;
 }
 
+static TZrBool zr_cli_runtime_source_first_loader(SZrState *state, TZrNativeString path, TZrNativeString md5, SZrIo *io) {
+    SZrCliProjectContext project;
+    SZrLibrary_Project *libraryProject;
+    TZrChar resolvedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    ZR_UNUSED_PARAMETER(md5);
+
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->userData == ZR_NULL || path == ZR_NULL ||
+        io == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    libraryProject = (SZrLibrary_Project *) state->global->userData;
+    if (!ZrCli_ProjectContext_FromGlobal(&project,
+                                         state->global,
+                                         ZrCore_String_GetNativeString(libraryProject->file))) {
+        return ZR_FALSE;
+    }
+
+    if (ZrCli_Project_ResolveSourcePath(&project, path, resolvedPath, sizeof(resolvedPath)) &&
+        ZrLibrary_File_Exist(resolvedPath) == ZR_LIBRARY_FILE_IS_FILE) {
+        return ZrCli_Project_OpenFileIo(state, resolvedPath, ZR_FALSE, io);
+    }
+
+    if (ZrCli_Project_ResolveBinaryPath(&project, path, resolvedPath, sizeof(resolvedPath)) &&
+        ZrLibrary_File_Exist(resolvedPath) == ZR_LIBRARY_FILE_IS_FILE) {
+        return ZrCli_Project_OpenFileIo(state, resolvedPath, ZR_TRUE, io);
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool zr_cli_runtime_binary_first_loader(SZrState *state, TZrNativeString path, TZrNativeString md5, SZrIo *io) {
     SZrCliProjectContext project;
     SZrLibrary_Project *libraryProject;
@@ -351,6 +499,9 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
     SZrGlobalState *global;
     SZrCliProjectContext project;
     SZrState *state;
+    TZrChar normalizedEntryModule[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *effectiveEntryModule = ZR_NULL;
+    const TZrChar *entryIdentifier = ZR_NULL;
     SZrFunction *entryFunction = ZR_NULL;
     SZrTypeValue result;
     TZrChar loadedEntryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
@@ -375,10 +526,40 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
     }
 
     state = global->mainThreadState;
+    if (!ZrCli_ProjectContext_FromGlobal(&project, global, command->projectPath)) {
+        ZrCore_Log_Error(state, "failed to resolve project context: %s\n", command->projectPath);
+        ZrLibrary_CommonState_CommonGlobalState_Free(global);
+        return 1;
+    }
+
+    if (!zr_cli_runtime_resolve_effective_entry_module(command,
+                                                       &project,
+                                                       normalizedEntryModule,
+                                                       sizeof(normalizedEntryModule),
+                                                       &effectiveEntryModule,
+                                                       &entryIdentifier)) {
+        ZrCore_Log_Error(state, "failed to resolve project entry target\n");
+        ZrLibrary_CommonState_CommonGlobalState_Free(global);
+        return 1;
+    }
+
     if (!ZrLibrary_AotRuntime_ConfigureGlobal(global,
                                               (EZrLibraryProjectExecutionMode)command->executionMode,
                                               command->requireAotPath)) {
         ZrCore_Log_Error(state, "failed to configure AOT runtime\n");
+        ZrLibrary_CommonState_CommonGlobalState_Free(global);
+        return 1;
+    }
+
+    if (command->executionMode == ZR_CLI_EXECUTION_MODE_INTERP) {
+        global->sourceLoader = zr_cli_runtime_source_first_loader;
+    }
+
+    if (!ZrCli_Runtime_InjectProcessArguments(state,
+                                              entryIdentifier,
+                                              command->programArgs,
+                                              command->programArgCount)) {
+        ZrCore_Log_Error(state, "failed to initialize zr.system.process.arguments\n");
         ZrLibrary_CommonState_CommonGlobalState_Free(global);
         return 1;
     }
@@ -404,23 +585,18 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
         TZrChar debugError[256];
         TZrBool ignoredFunction = ZR_FALSE;
 
-        if (!ZrCli_ProjectContext_FromGlobal(&project, global, command->projectPath)) {
-            ZrCore_Log_Error(state, "failed to resolve project context: %s\n", command->projectPath);
-            ZrLibrary_CommonState_CommonGlobalState_Free(global);
-            return 1;
-        }
-
         if (command->executionMode == ZR_CLI_EXECUTION_MODE_BINARY) {
             global->sourceLoader = zr_cli_runtime_binary_first_loader;
         }
 
         if (!zr_cli_runtime_load_entry_function(state,
                                                 &project,
+                                                effectiveEntryModule,
                                                 command->executionMode == ZR_CLI_EXECUTION_MODE_BINARY,
                                                 &entryFunction,
                                                 loadedEntryPath,
                                                 sizeof(loadedEntryPath))) {
-            ZrCore_Log_Error(state, "failed to load project entry: %s\n", project.entryModule);
+            ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
             ZrLibrary_CommonState_CommonGlobalState_Free(global);
             return 1;
         }
@@ -437,7 +613,7 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
 
         if (!ZrDebug_AgentStart(state,
                                 entryFunction,
-                                project.entryModule,
+                                effectiveEntryModule,
                                 &debugConfig,
                                 &debugAgent,
                                 debugError,
@@ -474,22 +650,32 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
 
     switch (command->executionMode) {
         case ZR_CLI_EXECUTION_MODE_INTERP: {
-            EZrThreadStatus status = ZrLibrary_Project_Run(state, &result);
-            success = status == ZR_THREAD_STATUS_FINE;
+            if (command->mode == ZR_CLI_MODE_RUN_PROJECT_MODULE) {
+                if (!zr_cli_runtime_load_entry_function(state,
+                                                        &project,
+                                                        effectiveEntryModule,
+                                                        ZR_FALSE,
+                                                        &entryFunction,
+                                                        loadedEntryPath,
+                                                        sizeof(loadedEntryPath))) {
+                    ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
+                    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+                    return 1;
+                }
+
+                success = zr_cli_runtime_prepare_and_execute_entry(state, entryFunction, loadedEntryPath, &result);
+            } else {
+                EZrThreadStatus status = ZrLibrary_Project_Run(state, &result);
+                success = status == ZR_THREAD_STATUS_FINE;
+            }
             executedVia = "interp";
         } break;
 
         case ZR_CLI_EXECUTION_MODE_BINARY:
-            if (!ZrCli_ProjectContext_FromGlobal(&project, global, command->projectPath)) {
-                ZrCore_Log_Error(state, "failed to resolve project context: %s\n", command->projectPath);
-                ZrLibrary_CommonState_CommonGlobalState_Free(global);
-                return 1;
-            }
-
             global->sourceLoader = zr_cli_runtime_binary_first_loader;
-            if (!zr_cli_runtime_load_entry_function(state, &project, ZR_TRUE, &entryFunction, loadedEntryPath,
+            if (!zr_cli_runtime_load_entry_function(state, &project, effectiveEntryModule, ZR_TRUE, &entryFunction, loadedEntryPath,
                                                     sizeof(loadedEntryPath))) {
-                ZrCore_Log_Error(state, "failed to load project entry: %s\n", project.entryModule);
+                ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
                 ZrLibrary_CommonState_CommonGlobalState_Free(global);
                 return 1;
             }
@@ -542,6 +728,72 @@ zr_cli_runtime_finish:
                                      executedVia != ZR_NULL ? executedVia : zr_cli_runtime_mode_name(command->executionMode));
 
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    return 0;
+}
+
+int ZrCli_Runtime_RunInline(const SZrCliCommand *command) {
+    SZrGlobalState *global;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *entryFunction;
+    SZrTypeValue result;
+    const TZrChar *sourceLabel;
+    TZrBool success;
+
+    if (command == ZR_NULL || command->inlineCode == ZR_NULL) {
+        ZrCore_Log_Error(ZR_NULL, "inline mode requires source code\n");
+        return 1;
+    }
+
+    global = ZrCli_Project_CreateBareGlobal();
+    if (global == ZR_NULL) {
+        ZrCore_Log_Error(ZR_NULL, "failed to initialize inline runtime\n");
+        return 1;
+    }
+
+    if (!ZrCli_Project_RegisterStandardModules(global)) {
+        ZrCore_Log_Error(global->mainThreadState, "failed to register standard modules\n");
+        ZrLibrary_NativeRegistry_Free(global);
+        ZrCore_GlobalState_Free(global);
+        return 1;
+    }
+
+    state = global->mainThreadState;
+    sourceLabel = command->inlineModeAlias != ZR_NULL ? command->inlineModeAlias : "<inline>";
+    if (!ZrCli_Runtime_InjectProcessArguments(state,
+                                              sourceLabel,
+                                              command->programArgs,
+                                              command->programArgCount)) {
+        ZrCore_Log_Error(state, "failed to initialize zr.system.process.arguments\n");
+        ZrLibrary_NativeRegistry_Free(global);
+        ZrCore_GlobalState_Free(global);
+        return 1;
+    }
+
+    sourceName = ZrCore_String_CreateFromNative(state, sourceLabel);
+    entryFunction = ZrParser_Source_Compile(state, command->inlineCode, strlen(command->inlineCode), sourceName);
+    if (entryFunction == ZR_NULL) {
+        ZrLibrary_NativeRegistry_Free(global);
+        ZrCore_GlobalState_Free(global);
+        return 1;
+    }
+
+    success = zr_cli_runtime_prepare_and_execute_entry(state, entryFunction, sourceLabel, &result);
+    if (!success) {
+        zr_cli_runtime_handle_failure(state, state->threadStatus);
+        ZrLibrary_NativeRegistry_Free(global);
+        ZrCore_GlobalState_Free(global);
+        return 1;
+    }
+
+    if (!zr_cli_runtime_print_result(state, &result)) {
+        ZrLibrary_NativeRegistry_Free(global);
+        ZrCore_GlobalState_Free(global);
+        return 1;
+    }
+
+    ZrLibrary_NativeRegistry_Free(global);
+    ZrCore_GlobalState_Free(global);
     return 0;
 }
 

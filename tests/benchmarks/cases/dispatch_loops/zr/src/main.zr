@@ -1,0 +1,118 @@
+var benchConfig = %import("bench_config");
+var system = %import("zr.system");
+
+class MultiplyWorker {
+    pri var state: int;
+
+    pub @constructor(seed: int) {
+        this.state = seed;
+    }
+
+    pub step(delta: int): int {
+        this.state = (this.state * 13 + delta + 7) % 10007;
+        return this.state;
+    }
+
+    pub read(): int {
+        return this.state;
+    }
+}
+
+class ScaleWorker {
+    pri var state: int;
+
+    pub @constructor(seed: int) {
+        this.state = seed;
+    }
+
+    pub step(delta: int): int {
+        this.state = (this.state * 17 + delta * 3 + 11) % 10009;
+        return this.state;
+    }
+
+    pub read(): int {
+        return this.state;
+    }
+}
+
+class XorWorker {
+    pri var state: int;
+
+    pub @constructor(seed: int) {
+        this.state = seed;
+    }
+
+    pub step(delta: int): int {
+        this.state = ((this.state ^ (delta + 31)) + delta * 5 + 19) % 10037;
+        return this.state;
+    }
+
+    pub read(): int {
+        return this.state;
+    }
+}
+
+class DriftWorker {
+    pri var state: int;
+
+    pub @constructor(seed: int) {
+        this.state = seed;
+    }
+
+    pub step(delta: int): int {
+        this.state = (this.state + delta * delta + 23) % 10039;
+        return this.state;
+    }
+
+    pub read(): int {
+        return this.state;
+    }
+}
+
+var scale = benchConfig.scale();
+var outerLimit = 120 * scale;
+var innerLimit = 320 * scale;
+var innerChecksum = 0;
+var outerChecksum = 0;
+var worker0 = new MultiplyWorker(17);
+var worker1 = new ScaleWorker(29);
+var worker2 = new XorWorker(43);
+var worker3 = new DriftWorker(61);
+var outer = 0;
+
+while (outer <= outerLimit - 1) {
+    var inner = 0;
+    while (inner <= innerLimit - 1) {
+        var index = (outer + inner) % 4;
+        var delta = outer * 7 + inner * 11 + index;
+        if (index == 0) {
+            var value = worker0.step(delta);
+            innerChecksum = (innerChecksum + value * 1 + delta % 29) % 1000000007;
+        } else if (index == 1) {
+            var value = worker1.step(delta);
+            innerChecksum = (innerChecksum + value * 2 + delta % 29) % 1000000007;
+        } else if (index == 2) {
+            var value = worker2.step(delta);
+            innerChecksum = (innerChecksum + value * 3 + delta % 29) % 1000000007;
+        } else {
+            var value = worker3.step(delta);
+            innerChecksum = (innerChecksum + value * 4 + delta % 29) % 1000000007;
+        }
+        inner = inner + 1;
+    }
+
+    if (outer % 4 == 0) {
+        outerChecksum = (outerChecksum + worker0.read() * (outer + 1)) % 1000000007;
+    } else if (outer % 4 == 1) {
+        outerChecksum = (outerChecksum + worker1.read() * (outer + 1)) % 1000000007;
+    } else if (outer % 4 == 2) {
+        outerChecksum = (outerChecksum + worker2.read() * (outer + 1)) % 1000000007;
+    } else {
+        outerChecksum = (outerChecksum + worker3.read() * (outer + 1)) % 1000000007;
+    }
+    outer = outer + 1;
+}
+
+var checksum = (innerChecksum + outerChecksum) % 1000000007;
+system.console.printLine("BENCH_DISPATCH_LOOPS_PASS");
+return checksum;

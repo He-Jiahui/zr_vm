@@ -1,5 +1,32 @@
 #include "parser_internal.h"
 
+static SZrAstNode *parse_type_literal_expression(SZrParserState *ps) {
+    SZrType *typeInfo;
+    SZrAstNode *node;
+    SZrFileRange startLoc;
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    startLoc = get_current_location(ps);
+    typeInfo = parse_type(ps);
+    if (typeInfo == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    node = create_ast_node(ps,
+                           ZR_AST_TYPE_LITERAL_EXPRESSION,
+                           ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    if (node == ZR_NULL) {
+        free_owned_type(ps->state, typeInfo);
+        return ZR_NULL;
+    }
+
+    node->data.typeLiteralExpression.typeInfo = typeInfo;
+    return node;
+}
+
 SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
@@ -87,6 +114,8 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
             node = parse_reserved_await_expression(ps);
         } else if (current_percent_directive_equals(ps, "type")) {
             node = parse_reserved_type_expression(ps);
+        } else if (current_percent_directive_equals(ps, "func")) {
+            node = parse_type_literal_expression(ps);
         } else {
             node = parse_percent_ownership_expression(ps);
         }

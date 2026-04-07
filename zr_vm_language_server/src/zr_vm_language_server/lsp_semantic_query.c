@@ -87,6 +87,121 @@ static TZrBool semantic_query_append_location(SZrState *state,
     return ZR_TRUE;
 }
 
+static SZrFilePosition semantic_query_file_position_from_offset(const TZrChar *content,
+                                                                TZrSize contentLength,
+                                                                TZrSize offset) {
+    TZrInt32 line = 1;
+    TZrInt32 column = 1;
+
+    if (content == ZR_NULL) {
+        return ZrParser_FilePosition_Create(offset, 1, 1);
+    }
+
+    if (offset > contentLength) {
+        offset = contentLength;
+    }
+
+    for (TZrSize index = 0; index < offset; index++) {
+        if (content[index] == '\n') {
+            line++;
+            column = 1;
+        } else {
+            column++;
+        }
+    }
+
+    return ZrParser_FilePosition_Create(offset, line, column);
+}
+
+static TZrBool semantic_query_identifier_boundary(const TZrChar *content, TZrSize contentLength, TZrSize offset) {
+    if (content == ZR_NULL || offset >= contentLength) {
+        return ZR_TRUE;
+    }
+
+    return !(isalnum((unsigned char)content[offset]) || content[offset] == '_');
+}
+
+static TZrBool semantic_query_try_enum_member_name_range(SZrLspContext *context,
+                                                         SZrSymbol *symbol,
+                                                         SZrFileRange *outRange) {
+    SZrFileVersion *fileVersion;
+    const TZrChar *content;
+    TZrSize contentLength;
+    const TZrChar *nameText;
+    TZrSize nameLength;
+    TZrSize anchorOffset;
+    TZrSize rangeEndOffset;
+    TZrSize searchStart;
+    TZrSize searchEnd;
+
+    if (context == ZR_NULL || symbol == ZR_NULL || outRange == ZR_NULL ||
+        symbol->type != ZR_SYMBOL_ENUM_MEMBER || symbol->name == ZR_NULL || symbol->location.source == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, symbol->location.source);
+    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    content = fileVersion->content;
+    contentLength = fileVersion->contentLength;
+    nameText = symbol->name->shortStringLength < ZR_VM_LONG_STRING_FLAG
+                   ? ZrCore_String_GetNativeStringShort(symbol->name)
+                   : ZrCore_String_GetNativeString(symbol->name);
+    if (nameText == ZR_NULL || nameText[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    nameLength = strlen(nameText);
+    anchorOffset = symbol->location.start.offset <= contentLength
+                       ? symbol->location.start.offset
+                       : contentLength;
+    rangeEndOffset = symbol->location.end.offset > anchorOffset && symbol->location.end.offset <= contentLength
+                         ? symbol->location.end.offset
+                         : anchorOffset;
+    searchStart = anchorOffset;
+    while (searchStart > 0 && content[searchStart - 1] != '\n' && content[searchStart - 1] != '\r') {
+        searchStart--;
+    }
+
+    searchEnd = rangeEndOffset;
+    while (searchEnd < contentLength && content[searchEnd] != '\n' && content[searchEnd] != '\r') {
+        searchEnd++;
+    }
+
+    for (TZrSize index = searchStart; index + nameLength <= searchEnd; index++) {
+        if (memcmp(content + index, nameText, nameLength) != 0) {
+            continue;
+        }
+
+        if (!semantic_query_identifier_boundary(content, contentLength, index == 0 ? contentLength : index - 1) ||
+            !semantic_query_identifier_boundary(content, contentLength, index + nameLength)) {
+            continue;
+        }
+
+        *outRange = ZrParser_FileRange_Create(semantic_query_file_position_from_offset(content, contentLength, index),
+                                              semantic_query_file_position_from_offset(content,
+                                                                                       contentLength,
+                                                                                       index + nameLength),
+                                              symbol->location.source);
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrFileRange semantic_query_symbol_lookup_range(SZrLspContext *context, SZrSymbol *symbol) {
+    SZrFileRange range;
+
+    range = ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol);
+    if (semantic_query_try_enum_member_name_range(context, symbol, &range)) {
+        return range;
+    }
+
+    return range;
+}
+
 static TZrBool semantic_query_append_document_highlight(SZrState *state,
                                                         SZrArray *result,
                                                         SZrFileRange range,
@@ -192,7 +307,7 @@ static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
         !semantic_query_append_location(state,
                                         result,
                                         query->symbol->location.source,
-                                        ZrLanguageServer_Lsp_GetSymbolLookupRange(query->symbol))) {
+                                        semantic_query_symbol_lookup_range(ZR_NULL, query->symbol))) {
         return ZR_FALSE;
     }
 
@@ -238,7 +353,7 @@ static TZrBool semantic_query_append_local_symbol_highlights(SZrState *state,
     if (ZrLanguageServer_Lsp_StringsEqual(query->symbol->location.source, query->uri) &&
         !semantic_query_append_document_highlight(state,
                                                   result,
-                                                  ZrLanguageServer_Lsp_GetSymbolLookupRange(query->symbol),
+                                                  semantic_query_symbol_lookup_range(ZR_NULL, query->symbol),
                                                   3)) {
         return ZR_FALSE;
     }
@@ -555,6 +670,45 @@ static TZrBool semantic_query_matches_external_type_member(SZrLspSemanticQuery *
             ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.ownerTypeName, candidate->ownerTypeName));
 }
 
+static TZrBool semantic_query_try_resolve_receiver_external_type_member(SZrState *state,
+                                                                        SZrLspContext *context,
+                                                                        SZrLspProjectIndex *projectIndex,
+                                                                        SZrSemanticAnalyzer *analyzer,
+                                                                        SZrString *uri,
+                                                                        SZrAstNode *ast,
+                                                                        const TZrChar *content,
+                                                                        TZrSize contentLength,
+                                                                        TZrSize cursorOffset,
+                                                                        SZrLspResolvedMetadataMember *outResolved) {
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL || uri == ZR_NULL || ast == ZR_NULL ||
+        content == ZR_NULL || outResolved == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(state,
+                                                             context,
+                                                             projectIndex,
+                                                             analyzer,
+                                                             uri,
+                                                             ast,
+                                                             content,
+                                                             contentLength,
+                                                             cursorOffset,
+                                                             outResolved)) {
+        return ZR_TRUE;
+    }
+
+    return ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(state,
+                                                               projectIndex,
+                                                               analyzer,
+                                                               uri,
+                                                               ast,
+                                                               content,
+                                                               contentLength,
+                                                               cursorOffset,
+                                                               outResolved);
+}
+
 static TZrBool semantic_query_append_external_type_member_locations_recursive(SZrState *state,
                                                                               SZrLspProjectIndex *projectIndex,
                                                                               SZrSemanticAnalyzer *analyzer,
@@ -634,14 +788,16 @@ static TZrBool semantic_query_try_append_primary_external_type_member_locations(
                                                                    contentLength,
                                                                    memberNode->data.memberExpression.property->location);
         if (cursorOffset >= contentLength ||
-            !ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(state,
-                                                                 projectIndex,
-                                                                 analyzer,
-                                                                 astRoot,
-                                                                 content,
-                                                                 contentLength,
-                                                                 cursorOffset,
-                                                                 &resolvedMember) ||
+            !semantic_query_try_resolve_receiver_external_type_member(state,
+                                                                      ZR_NULL,
+                                                                      projectIndex,
+                                                                      analyzer,
+                                                                      uri,
+                                                                      astRoot,
+                                                                      content,
+                                                                      contentLength,
+                                                                      cursorOffset,
+                                                                      &resolvedMember) ||
             !semantic_query_matches_external_type_member(query, &resolvedMember)) {
             continue;
         }
@@ -1658,11 +1814,11 @@ static TZrBool semantic_query_resolve_external_metadata_target(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrBool semantic_query_resolve_receiver_native_member_target(SZrState *state,
-                                                                    SZrLspContext *context,
-                                                                    SZrString *uri,
-                                                                    SZrSemanticAnalyzer *analyzer,
-                                                                    SZrLspSemanticQuery *query) {
+static TZrBool semantic_query_resolve_receiver_type_member_target(SZrState *state,
+                                                                  SZrLspContext *context,
+                                                                  SZrString *uri,
+                                                                  SZrSemanticAnalyzer *analyzer,
+                                                                  SZrLspSemanticQuery *query) {
     SZrFileVersion *fileVersion;
     SZrLspMetadataProvider provider;
 
@@ -1672,21 +1828,38 @@ static TZrBool semantic_query_resolve_receiver_native_member_target(SZrState *st
 
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || analyzer->ast == ZR_NULL ||
-        !ZrLanguageServer_Lsp_TryResolveReceiverNativeMember(state,
-                                                             query->projectIndex,
-                                                             analyzer,
-                                                             analyzer->ast,
-                                                             fileVersion->content,
-                                                             fileVersion->contentLength,
-                                                             query->queryRange.start.offset,
-                                                             &query->resolvedMember)) {
+        !semantic_query_try_resolve_receiver_external_type_member(state,
+                                                                  context,
+                                                                  query->projectIndex,
+                                                                  analyzer,
+                                                                  uri,
+                                                                  analyzer->ast,
+                                                                  fileVersion->content,
+                                                                  fileVersion->contentLength,
+                                                                  query->queryRange.start.offset,
+                                                                  &query->resolvedMember)) {
         return ZR_FALSE;
     }
 
-    ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
-    ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(&provider,
-                                                                            query->projectIndex,
-                                                                            &query->resolvedMember);
+    if (!query->resolvedMember.hasDeclaration &&
+        (query->resolvedMember.module.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE ||
+         query->resolvedMember.module.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER)) {
+        ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
+        ZrLanguageServer_LspMetadataProvider_ResolveProjectTypeMemberDeclaration(&provider,
+                                                                                 query->projectIndex,
+                                                                                 query->resolvedMember.ownerTypeName,
+                                                                                 query->resolvedMember.memberName,
+                                                                                 &query->resolvedMember);
+    }
+
+    if (!query->resolvedMember.hasDeclaration &&
+        (query->resolvedMember.module.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN ||
+         query->resolvedMember.module.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN)) {
+        ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
+        ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(&provider,
+                                                                                query->projectIndex,
+                                                                                &query->resolvedMember);
+    }
 
     query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_TYPE_MEMBER;
     query->moduleName = query->resolvedMember.module.moduleName;
@@ -1903,7 +2076,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
         return ZR_TRUE;
     }
 
-    if (semantic_query_resolve_receiver_native_member_target(state, context, uri, analyzer, query)) {
+    if (semantic_query_resolve_receiver_type_member_target(state, context, uri, analyzer, query)) {
         return ZR_TRUE;
     }
 
@@ -2209,7 +2382,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendDefinitio
                semantic_query_append_location(state,
                                               result,
                                               query->symbol->location.source,
-                                              ZrLanguageServer_Lsp_GetSymbolLookupRange(query->symbol));
+                                              semantic_query_symbol_lookup_range(context, query->symbol));
     }
 
     return ZR_FALSE;

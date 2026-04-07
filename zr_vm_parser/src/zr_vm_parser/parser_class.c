@@ -1,9 +1,63 @@
 #include "parser_internal.h"
+static TZrUInt32 class_member_allowed_modifier_flags(void) {
+    return ZR_DECLARATION_MODIFIER_ABSTRACT |
+           ZR_DECLARATION_MODIFIER_VIRTUAL |
+           ZR_DECLARATION_MODIFIER_OVERRIDE |
+           ZR_DECLARATION_MODIFIER_FINAL |
+           ZR_DECLARATION_MODIFIER_SHADOW;
+}
+
+static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    EZrAstNodeType kind = ZR_AST_CLASS_METHOD;
+    TZrBool sawFieldUsingPrefix = ZR_FALSE;
+
+    if (ps == ZR_NULL) {
+        return ZR_AST_CLASS_METHOD;
+    }
+
+    save_parser_cursor(ps, &cursor);
+
+    if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
+        sawFieldUsingPrefix = ZR_TRUE;
+    } else if (ps->lexer->t.token == ZR_TK_PERCENT) {
+        parse_optional_method_receiver_qualifier(ps);
+    }
+
+    while (ps->lexer->t.token == ZR_TK_SHARP) {
+        parse_decorator_expression(ps);
+    }
+
+    parse_access_modifier(ps);
+    if (ps->lexer->t.token == ZR_TK_STATIC) {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
+
+    if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
+        sawFieldUsingPrefix = ZR_TRUE;
+    }
+
+    if (sawFieldUsingPrefix || ps->lexer->t.token == ZR_TK_VAR || ps->lexer->t.token == ZR_TK_CONST) {
+        kind = ZR_AST_CLASS_FIELD;
+    } else if (ps->lexer->t.token == ZR_TK_GET || ps->lexer->t.token == ZR_TK_SET) {
+        kind = ZR_AST_CLASS_PROPERTY;
+    } else if (ps->lexer->t.token == ZR_TK_AT) {
+        kind = ZR_AST_CLASS_META_FUNCTION;
+    } else {
+        kind = ZR_AST_CLASS_METHOD;
+    }
+
+    restore_parser_cursor(ps, &cursor);
+    return kind;
+}
 
 SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange endLoc;
     SZrAstNodeArray *decorators;
+    TZrUInt32 modifierFlags;
 
     // 允许 top-level decorators 出现在访问修饰符之前。
     decorators = parse_leading_decorators(ps);
@@ -13,6 +67,10 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
 
     // 解析可见性修饰符（可选，默认 private）
     EZrAccessModifier accessModifier = parse_access_modifier(ps);
+
+    modifierFlags = parse_declaration_modifier_flags(ps,
+                                                     ZR_DECLARATION_MODIFIER_ABSTRACT |
+                                                             ZR_DECLARATION_MODIFIER_FINAL);
 
     // 同时继续兼容访问修饰符之后的装饰器写法。
     while (ps->lexer->t.token == ZR_TK_SHARP) {
@@ -100,76 +158,28 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     // 解析成员直到遇到右大括号
     while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
         SZrAstNode *member = ZR_NULL;
-
-        // 检查成员类型
         EZrToken token = ps->lexer->t.token;
 
-        // 检查是否是装饰器或访问修饰符（可能是字段、方法或属性）
-        if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO ||
-            token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
-            token == ZR_TK_VAR) {
-            // 保存状态以便向前看
-            TZrSize savedPos = ps->lexer->currentPos;
-            TZrInt32 savedChar = ps->lexer->currentChar;
-            TZrInt32 savedLine = ps->lexer->lineNumber;
-            TZrInt32 savedLastLine = ps->lexer->lastLine;
-            SZrToken savedToken = ps->lexer->t;
-            SZrToken savedLookahead = ps->lexer->lookahead;
-            TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
-            TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
-            TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
-            TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
-            // 跳过装饰器
-            if (ps->lexer->t.token == ZR_TK_PERCENT) {
-                parse_optional_method_receiver_qualifier(ps);
+        if (token == ZR_TK_PERCENT || token == ZR_TK_SHARP || token == ZR_TK_PUB || token == ZR_TK_PRI ||
+            token == ZR_TK_PRO || token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
+            token == ZR_TK_VAR || token == ZR_TK_ABSTRACT || token == ZR_TK_VIRTUAL ||
+            token == ZR_TK_OVERRIDE || token == ZR_TK_FINAL || token == ZR_TK_SHADOW || token == ZR_TK_AT ||
+            token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
+            switch (classify_class_member_from_current(ps)) {
+                case ZR_AST_CLASS_FIELD:
+                    member = parse_class_field(ps);
+                    break;
+                case ZR_AST_CLASS_PROPERTY:
+                    member = parse_class_property(ps);
+                    break;
+                case ZR_AST_CLASS_META_FUNCTION:
+                    member = parse_class_meta_function(ps);
+                    break;
+                case ZR_AST_CLASS_METHOD:
+                default:
+                    member = parse_class_method(ps);
+                    break;
             }
-            while (ps->lexer->t.token == ZR_TK_SHARP) {
-                parse_decorator_expression(ps);
-            }
-
-            // 跳过访问修饰符和 static（用于 lookahead）
-            // 注意：不跳过 const，因为 const 可能是字段的一部分
-            while (ps->lexer->t.token == ZR_TK_PUB || ps->lexer->t.token == ZR_TK_PRI ||
-                   ps->lexer->t.token == ZR_TK_PRO || ps->lexer->t.token == ZR_TK_STATIC) {
-                ZrParser_Lexer_Next(ps->lexer);
-            }
-
-            // 检查是字段、属性还是方法
-            // 如果下一个 token 是 const 或 var，则是字段
-            EZrToken nextToken = ps->lexer->t.token;
-
-            // 恢复状态，让成员解析函数处理
-            ps->lexer->currentPos = savedPos;
-            ps->lexer->currentChar = savedChar;
-            ps->lexer->lineNumber = savedLine;
-            ps->lexer->lastLine = savedLastLine;
-            ps->lexer->t = savedToken;
-            ps->lexer->lookahead = savedLookahead;
-            ps->lexer->lookaheadPos = savedLookaheadPos;
-            ps->lexer->lookaheadChar = savedLookaheadChar;
-            ps->lexer->lookaheadLine = savedLookaheadLine;
-            ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-
-            if (nextToken == ZR_TK_VAR || nextToken == ZR_TK_CONST || nextToken == ZR_TK_USING) {
-                // 字段（var 或 const 都可以表示字段）
-                member = parse_class_field(ps);
-            } else if (nextToken == ZR_TK_GET || nextToken == ZR_TK_SET) {
-                // 属性
-                member = parse_class_property(ps);
-            } else if (nextToken == ZR_TK_AT) {
-                // 元函数
-                member = parse_class_meta_function(ps);
-            } else {
-                // 方法
-                member = parse_class_method(ps);
-            }
-        } else if (token == ZR_TK_AT) {
-            // 元函数
-            member = parse_class_meta_function(ps);
-        } else if (token == ZR_TK_IDENTIFIER || token == ZR_TK_SHARP || token == ZR_TK_PERCENT) {
-            // 方法（可能有装饰器）
-            member = parse_class_method(ps);
         } else {
             // 未知的成员类型，报告错误并跳过
             report_error(ps, "Unexpected token in class declaration");
@@ -206,6 +216,7 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     node->data.classDeclaration.decorators = decorators;
     node->data.classDeclaration.accessModifier = accessModifier;
     node->data.classDeclaration.isOwned = ZR_FALSE;
+    node->data.classDeclaration.modifierFlags = modifierFlags;
     return node;
 }
 
@@ -231,16 +242,35 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
 
     // 解析 static 关键字（可选）
     TZrBool isStatic = ZR_FALSE;
+    TZrUInt32 invalidModifierFlags = ZR_DECLARATION_MODIFIER_NONE;
     if (ps->lexer->t.token == ZR_TK_STATIC) {
         isStatic = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
 
-    // 解析 using 关键字（可选，field-scoped 生命周期管理）
-    TZrBool fieldIsUsingManaged = ZR_FALSE;
+    invalidModifierFlags = parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
+    if (invalidModifierFlags != ZR_DECLARATION_MODIFIER_NONE) {
+        report_error(ps, "Field declarations do not support abstract/virtual/override/final/shadow modifiers");
+    }
+
     if (ps->lexer->t.token == ZR_TK_USING) {
+        report_error(ps, "Field-scoped lifecycle management requires '%using'");
+        skip_to_semicolon_or_eos(ps);
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        return ZR_NULL;
+    }
+
+    // 解析 %using 关键字（可选，field-scoped 生命周期管理）
+    TZrBool fieldIsUsingManaged = ZR_FALSE;
+    if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
         fieldIsUsingManaged = ZR_TRUE;
-        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    if (fieldIsUsingManaged && ps->lexer->t.token != ZR_TK_CONST && ps->lexer->t.token != ZR_TK_VAR) {
+        report_error(ps, "Field-scoped '%using' must prefix a field declaration");
+        skip_to_semicolon_or_eos(ps);
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        return ZR_NULL;
     }
 
     // 解析 const 关键字（可选，可以在 var 之前或之后）
@@ -314,7 +344,9 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
 
 SZrAstNode *parse_class_method(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
+    SZrFileRange endLoc;
     EZrOwnershipQualifier receiverQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    TZrUInt32 modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
 
     if (ps->lexer->t.token == ZR_TK_PERCENT) {
         receiverQualifier = parse_optional_method_receiver_qualifier(ps);
@@ -339,6 +371,12 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     if (ps->lexer->t.token == ZR_TK_STATIC) {
         isStatic = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    modifierFlags = parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
+
+    if (receiverQualifier == ZR_OWNERSHIP_QUALIFIER_NONE && ps->lexer->t.token == ZR_TK_PERCENT) {
+        receiverQualifier = parse_optional_method_receiver_qualifier(ps);
     }
 
     if (ps->lexer->t.token == ZR_TK_IDENTIFIER && current_identifier_equals(ps, "func")) {
@@ -402,17 +440,23 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    // 解析方法体
-    SZrAstNode *body = parse_block(ps);
-    if (body == ZR_NULL) {
-        ZrParser_AstNodeArray_Free(ps->state, decorators);
-        if (params != ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, params);
+    // 解析方法体；允许 bodyless 成员声明，由语义阶段约束 abstract/非法组合。
+    SZrAstNode *body = ZR_NULL;
+    if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
+        endLoc = get_current_token_location(ps);
+        consume_token(ps, ZR_TK_SEMICOLON);
+    } else {
+        body = parse_block(ps);
+        if (body == ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, decorators);
+            if (params != ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, params);
+            }
+            return ZR_NULL;
         }
-        return ZR_NULL;
+        endLoc = body->location;
     }
 
-    SZrFileRange endLoc = body->location;
     SZrFileRange methodLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_METHOD, methodLoc);
@@ -427,6 +471,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     node->data.classMethod.decorators = decorators;
     node->data.classMethod.access = access;
     node->data.classMethod.isStatic = isStatic;
+    node->data.classMethod.modifierFlags = modifierFlags;
     node->data.classMethod.receiverQualifier = receiverQualifier;
     node->data.classMethod.name = name;
     node->data.classMethod.nameLocation = nameLoc;
@@ -442,10 +487,13 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
 
 SZrAstNode *parse_property_get(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
+    TZrUInt32 modifierFlags;
 
     // 期望 get 关键字
     expect_token(ps, ZR_TK_GET);
     ZrParser_Lexer_Next(ps->lexer);
+
+    modifierFlags = parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
 
     // 解析属性名
     SZrAstNode *nameNode = parse_identifier(ps);
@@ -461,13 +509,20 @@ SZrAstNode *parse_property_get(SZrParserState *ps) {
         targetType = parse_type(ps);
     }
 
-    // 解析方法体
-    SZrAstNode *body = parse_block(ps);
-    if (body == ZR_NULL) {
-        return ZR_NULL;
+    // 解析方法体；抽象访问器等场景允许使用 ';'。
+    SZrAstNode *body = ZR_NULL;
+    SZrFileRange endLoc;
+    if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
+        endLoc = get_current_token_location(ps);
+        consume_token(ps, ZR_TK_SEMICOLON);
+    } else {
+        body = parse_block(ps);
+        if (body == ZR_NULL) {
+            return ZR_NULL;
+        }
+        endLoc = body->location;
     }
 
-    SZrFileRange endLoc = body->location;
     SZrFileRange getLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_PROPERTY_GET, getLoc);
@@ -475,6 +530,7 @@ SZrAstNode *parse_property_get(SZrParserState *ps) {
         return ZR_NULL;
     }
 
+    node->data.propertyGet.modifierFlags = modifierFlags;
     node->data.propertyGet.name = name;
     node->data.propertyGet.nameLocation = nameLoc;
     node->data.propertyGet.targetType = targetType;
@@ -486,10 +542,13 @@ SZrAstNode *parse_property_get(SZrParserState *ps) {
 
 SZrAstNode *parse_property_set(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
+    TZrUInt32 modifierFlags;
 
     // 期望 set 关键字
     expect_token(ps, ZR_TK_SET);
     ZrParser_Lexer_Next(ps->lexer);
+
+    modifierFlags = parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
 
     // 解析属性名
     SZrAstNode *nameNode = parse_identifier(ps);
@@ -519,13 +578,20 @@ SZrAstNode *parse_property_set(SZrParserState *ps) {
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
 
-    // 解析方法体
-    SZrAstNode *body = parse_block(ps);
-    if (body == ZR_NULL) {
-        return ZR_NULL;
+    // 解析方法体；抽象访问器等场景允许使用 ';'。
+    SZrAstNode *body = ZR_NULL;
+    SZrFileRange endLoc;
+    if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
+        endLoc = get_current_token_location(ps);
+        consume_token(ps, ZR_TK_SEMICOLON);
+    } else {
+        body = parse_block(ps);
+        if (body == ZR_NULL) {
+            return ZR_NULL;
+        }
+        endLoc = body->location;
     }
 
-    SZrFileRange endLoc = body->location;
     SZrFileRange setLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_PROPERTY_SET, setLoc);
@@ -533,6 +599,7 @@ SZrAstNode *parse_property_set(SZrParserState *ps) {
         return ZR_NULL;
     }
 
+    node->data.propertySet.modifierFlags = modifierFlags;
     node->data.propertySet.name = name;
     node->data.propertySet.nameLocation = nameLoc;
     node->data.propertySet.param = param;
@@ -545,6 +612,7 @@ SZrAstNode *parse_property_set(SZrParserState *ps) {
 
 SZrAstNode *parse_class_property(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
+    TZrUInt32 modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
 
     // 解析装饰器（可选）
     SZrAstNodeArray *decorators = ZrParser_AstNodeArray_New(ps->state, 2);
@@ -566,6 +634,8 @@ SZrAstNode *parse_class_property(SZrParserState *ps) {
         isStatic = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
+
+    modifierFlags = parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
 
     // 解析 get 或 set
     SZrAstNode *modifier = ZR_NULL;
@@ -596,6 +666,7 @@ SZrAstNode *parse_class_property(SZrParserState *ps) {
     node->data.classProperty.decorators = decorators;
     node->data.classProperty.access = access;
     node->data.classProperty.isStatic = isStatic;
+    node->data.classProperty.modifierFlags = modifierFlags;
     node->data.classProperty.modifier = modifier;
     return node;
 }
@@ -604,6 +675,7 @@ SZrAstNode *parse_class_property(SZrParserState *ps) {
 
 SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    TZrUInt32 modifierFlags = ZR_DECLARATION_MODIFIER_NONE;
 
     // 解析访问修饰符（可选）
     EZrAccessModifier access = parse_access_modifier(ps);
@@ -614,6 +686,8 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
         isStatic = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
+
+    modifierFlags = parse_declaration_modifier_flags(ps, class_member_allowed_modifier_flags());
 
     // 期望 @ 符号
     expect_token(ps, ZR_TK_AT);
@@ -691,17 +765,24 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
         returnType = parse_type(ps);
     }
 
-    // 解析方法体
-    SZrAstNode *body = parse_block(ps);
-    if (body == ZR_NULL) {
-        if (params != ZR_NULL) {
-            ZrParser_AstNodeArray_Free(ps->state, params);
+    // 解析方法体；抽象成员等场景允许使用 ';'。
+    SZrAstNode *body = ZR_NULL;
+    SZrFileRange endLoc;
+    if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
+        endLoc = get_current_token_location(ps);
+        consume_token(ps, ZR_TK_SEMICOLON);
+    } else {
+        body = parse_block(ps);
+        if (body == ZR_NULL) {
+            if (params != ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, params);
+            }
+            ZrParser_AstNodeArray_Free(ps->state, superArgs);
+            return ZR_NULL;
         }
-        ZrParser_AstNodeArray_Free(ps->state, superArgs);
-        return ZR_NULL;
+        endLoc = get_current_location(ps);
     }
 
-    SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange metaLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_META_FUNCTION, metaLoc);
@@ -715,6 +796,7 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
 
     node->data.classMetaFunction.access = access;
     node->data.classMetaFunction.isStatic = isStatic;
+    node->data.classMetaFunction.modifierFlags = modifierFlags;
     node->data.classMetaFunction.meta = meta;
     node->data.classMetaFunction.params = params;
     node->data.classMetaFunction.args = args;

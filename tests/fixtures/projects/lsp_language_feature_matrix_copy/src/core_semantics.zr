@@ -1,0 +1,56 @@
+%module "core_semantics";
+
+pub interface ScoreReadable {
+    read(): int;
+}
+
+pub class Counter: ScoreReadable {
+    pri var current: int = 0;
+
+    pub @constructor(start: int) {
+        this.current = start;
+    }
+
+    pub read(): int {
+        return this.current;
+    }
+}
+
+pub struct Pair {
+    pub var left: int;
+    pub var right: int;
+
+    pub @constructor(left: int, right: int) {
+        this.left = left;
+        this.right = right;
+    }
+}
+
+pub enum Mode: int {
+    Idle = 1;
+    Hot = 2;
+}
+
+makeEscaping(offset: int) {
+    var callback = (value: int) -> {
+        return value + offset;
+    };
+    return callback;
+}
+
+pub lambdaScore(): int {
+    var captured = 4;
+    var direct = ((delta: int) -> {
+        return captured + delta;
+    })(3);
+    var escaped = makeEscaping(5);
+    var pair = $Pair(1, 2);
+    var mode = Mode.Hot;
+    var counter = new Counter(8);
+
+    if (mode == Mode.Hot) {
+        direct = direct + 1;
+    }
+
+    return direct + escaped(pair.left) + counter.read();
+}

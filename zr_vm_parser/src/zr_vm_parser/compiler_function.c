@@ -20,7 +20,9 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     if (!ZrParser_CompileTime_RegisterDecoratorFunctionIfAvailable(cs, node, node->location)) {
         return;
     }
-    
+
+    SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
+
     // 保存当前函数节点（用于访问参数信息）
     cs->currentFunctionNode = node;
     
@@ -53,7 +55,6 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldExceptionHandlerInfoLength = cs->exceptionHandlerInfos.length;
     TZrSize oldTryContextLength = cs->tryContextStack.length;
     TZrBool oldIsInConstructor = cs->isInConstructor;
-    SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     TZrSize oldConstLocalVarLength = cs->constLocalVars.length;
     TZrSize oldConstParameterLength = cs->constParameters.length;
     TZrInstruction *savedParentInstructions = ZR_NULL;
@@ -374,7 +375,6 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 清空 const 变量跟踪（函数编译完成）
     cs->constLocalVars.length = 0;
     cs->constParameters.length = 0;
-    cs->currentFunctionNode = ZR_NULL;
 
     if (cs->hasError) {
         if (cs->currentFunction != ZR_NULL) {
@@ -755,6 +755,9 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             SZrExportedVariable exportedVar;
             exportedVar.name = functionName;
             exportedVar.stackSlot = functionVarIndex;
+            exportedVar.exportKind = ZR_MODULE_EXPORT_KIND_FUNCTION;
+            exportedVar.readiness = ZR_MODULE_EXPORT_READY_DECLARATION;
+            exportedVar.callableChildIndex = (TZrUInt32)(cs->childFunctions.length - 1);
             if (cs->isCompilingCompileTimeRuntimeSupport) {
                 exportedVar.accessModifier = ZR_ACCESS_PROTECTED;
                 ZrCore_Array_Push(cs->state, &cs->proVariables, &exportedVar);

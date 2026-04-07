@@ -152,6 +152,9 @@ typedef struct SZrCompiledPrototypeInfo {
     TZrUInt32 hasDecoratorMetadata;
     TZrUInt32 decoratorMetadataConstantIndex;
     TZrUInt32 decoratorsCount;
+    TZrUInt32 modifierFlags;
+    TZrUInt32 nextVirtualSlotIndex;
+    TZrUInt32 nextPropertyIdentity;
 } SZrCompiledPrototypeInfo;
 
 typedef struct SZrCompiledMemberInfo {
@@ -178,6 +181,14 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 decoratorMetadataConstantIndex;
     TZrUInt32 hasDecoratorNames;
     TZrUInt32 decoratorNamesConstantIndex;
+    TZrUInt32 modifierFlags;
+    TZrUInt32 ownerTypeNameStringIndex;
+    TZrUInt32 baseDefinitionOwnerTypeNameStringIndex;
+    TZrUInt32 baseDefinitionNameStringIndex;
+    TZrUInt32 virtualSlotIndex;
+    TZrUInt32 interfaceContractSlot;
+    TZrUInt32 propertyIdentity;
+    TZrUInt32 accessorRole;
 } SZrCompiledMemberInfo;
 #pragma pack(pop)
 
@@ -560,6 +571,8 @@ void extern_compiler_register_struct_prototype(SZrCompilerState *cs, SZrAstNode 
 
 void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *declarationNode) ;
 
+void compile_enum_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
+
 void compiler_register_extern_block_bindings(SZrCompilerState *cs, SZrExternBlock *externBlock) ;
 
 void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) ;
@@ -572,7 +585,8 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
 
 SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *node,
                                                   SZrString *superTypeName,
-                                                  TZrBool injectThis, TZrUInt32 *outParameterCount) ;
+                                                  TZrBool injectThis, TZrUInt32 *outParameterCount,
+                                                  SZrString **outInferredReturnTypeName) ;
 
 void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
 

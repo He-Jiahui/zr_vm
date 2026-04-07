@@ -76,6 +76,9 @@ typedef struct SZrCompiledPrototypeInfoView {
     TZrUInt32 hasDecoratorMetadata;
     TZrUInt32 decoratorMetadataConstantIndex;
     TZrUInt32 decoratorsCount;
+    TZrUInt32 modifierFlags;
+    TZrUInt32 nextVirtualSlotIndex;
+    TZrUInt32 nextPropertyIdentity;
 } SZrCompiledPrototypeInfoView;
 
 typedef struct SZrCompiledMemberInfoView {
@@ -102,6 +105,14 @@ typedef struct SZrCompiledMemberInfoView {
     TZrUInt32 decoratorMetadataConstantIndex;
     TZrUInt32 hasDecoratorNames;
     TZrUInt32 decoratorNamesConstantIndex;
+    TZrUInt32 modifierFlags;
+    TZrUInt32 ownerTypeNameStringIndex;
+    TZrUInt32 baseDefinitionOwnerTypeNameStringIndex;
+    TZrUInt32 baseDefinitionNameStringIndex;
+    TZrUInt32 virtualSlotIndex;
+    TZrUInt32 interfaceContractSlot;
+    TZrUInt32 propertyIdentity;
+    TZrUInt32 accessorRole;
 } SZrCompiledMemberInfoView;
 #pragma pack(pop)
 
@@ -1622,7 +1633,7 @@ static void test_using_statement_compiles_through_frontend(void) {
     }
 
     {
-        const char *source = "var resource = \"x\"; using (resource) { var inner = 1; } return 7;";
+        const char *source = "var resource = \"x\"; %using (resource) { var inner = 1; } return 7;";
         SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
@@ -1659,7 +1670,7 @@ static void test_field_scoped_using_metadata_serializes_into_prototype_data(void
     timer.startTime = clock();
     TEST_START(testSummary);
     TEST_INFO("Field-scoped using prototype metadata",
-              "Testing that compiler prototypeData preserves managed-field metadata for explicit `using var` fields");
+              "Testing that compiler prototypeData preserves managed-field metadata for explicit `%using var` fields");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -1670,8 +1681,8 @@ static void test_field_scoped_using_metadata_serializes_into_prototype_data(void
 
     {
         const char *source =
-            "pub struct HandleBox { using var handle: %unique Resource; var count: int; }\n"
-            "pub class Holder { using var resource: %shared Resource; var version: int; }";
+            "pub struct HandleBox { %using var handle: %unique Resource; var count: int; }\n"
+            "pub class Holder { %using var resource: %shared Resource; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_using_meta.zr", 19);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
@@ -1748,7 +1759,7 @@ static void test_static_using_field_is_rejected_by_compiler(void) {
     timer.startTime = clock();
     TEST_START(testSummary);
     TEST_INFO("Static using rejection",
-              "Testing that `static using var` is rejected as a compile-time error by the compiler frontend");
+              "Testing that `static %using var` is rejected as a compile-time error by the compiler frontend");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -1758,7 +1769,7 @@ static void test_static_using_field_is_rejected_by_compiler(void) {
     }
 
     {
-        const char *source = "class Holder { static using var resource: %unique Resource; }";
+        const char *source = "class Holder { static %using var resource: %unique Resource; }";
         SZrString *sourceName = ZrCore_String_Create(state, "static_using_compile_error.zr", 29);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
@@ -1766,6 +1777,440 @@ static void test_static_using_field_is_rejected_by_compiler(void) {
         if (ast == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse static using field source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        TEST_ASSERT_NULL(func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_advanced_oop_metadata_serializes_override_and_property_chains(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Advanced OOP Metadata Serializes Override And Property Chains";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Advanced OOP metadata serialization",
+              "Testing that abstract/final/override metadata, base-definition info, virtual slots, and property identity survive prototypeData serialization");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "abstract class Base {\n"
+            "    pub abstract ping(): int;\n"
+            "    pub abstract get score: int;\n"
+            "}\n"
+            "final class Derived : Base {\n"
+            "    pub override final ping(): int { return 1; }\n"
+            "    pub override get final score: int { return 2; }\n"
+            "}";
+        SZrString *sourceName = ZrCore_String_Create(state, "advanced_oop_metadata.zr", 24);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        const SZrCompiledPrototypeInfoView *baseProto;
+        const SZrCompiledPrototypeInfoView *derivedProto;
+        const SZrCompiledMemberInfoView *basePing;
+        const SZrCompiledMemberInfoView *derivedPing;
+        const SZrCompiledMemberInfoView *baseGetter;
+        const SZrCompiledMemberInfoView *derivedGetter;
+        SZrString *baseDefinitionOwner;
+        SZrString *baseDefinitionName;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse advanced OOP metadata source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile advanced OOP metadata source");
+            destroy_test_state(state);
+            return;
+        }
+
+        baseProto = find_compiled_prototype_by_name(state, func, "Base");
+        derivedProto = find_compiled_prototype_by_name(state, func, "Derived");
+        TEST_ASSERT_NOT_NULL(baseProto);
+        TEST_ASSERT_NOT_NULL(derivedProto);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, baseProto->modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, derivedProto->modifierFlags & ZR_DECLARATION_MODIFIER_FINAL);
+
+        basePing = find_compiled_member_by_name(state, func, baseProto, "ping");
+        derivedPing = find_compiled_member_by_name(state, func, derivedProto, "ping");
+        baseGetter = find_compiled_member_by_name(state, func, baseProto, "__get_score");
+        derivedGetter = find_compiled_member_by_name(state, func, derivedProto, "__get_score");
+        TEST_ASSERT_NOT_NULL(basePing);
+        TEST_ASSERT_NOT_NULL(derivedPing);
+        TEST_ASSERT_NOT_NULL(baseGetter);
+        TEST_ASSERT_NOT_NULL(derivedGetter);
+
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, basePing->modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, derivedPing->modifierFlags & ZR_DECLARATION_MODIFIER_OVERRIDE);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, derivedPing->modifierFlags & ZR_DECLARATION_MODIFIER_FINAL);
+        TEST_ASSERT_NOT_EQUAL_UINT32((TZrUInt32)-1, basePing->virtualSlotIndex);
+        TEST_ASSERT_EQUAL_UINT32(basePing->virtualSlotIndex, derivedPing->virtualSlotIndex);
+
+        baseDefinitionOwner = get_string_constant_at(state, func, derivedPing->baseDefinitionOwnerTypeNameStringIndex);
+        baseDefinitionName = get_string_constant_at(state, func, derivedPing->baseDefinitionNameStringIndex);
+        TEST_ASSERT_NOT_NULL(baseDefinitionOwner);
+        TEST_ASSERT_NOT_NULL(baseDefinitionName);
+        TEST_ASSERT_EQUAL_STRING("Base", ZrCore_String_GetNativeString(baseDefinitionOwner));
+        TEST_ASSERT_EQUAL_STRING("ping", ZrCore_String_GetNativeString(baseDefinitionName));
+
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, baseGetter->modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, derivedGetter->modifierFlags & ZR_DECLARATION_MODIFIER_OVERRIDE);
+        TEST_ASSERT_NOT_EQUAL_UINT32(0, derivedGetter->modifierFlags & ZR_DECLARATION_MODIFIER_FINAL);
+        TEST_ASSERT_EQUAL_UINT32(1, baseGetter->accessorRole);
+        TEST_ASSERT_EQUAL_UINT32(1, derivedGetter->accessorRole);
+        TEST_ASSERT_NOT_EQUAL_UINT32((TZrUInt32)-1, baseGetter->virtualSlotIndex);
+        TEST_ASSERT_EQUAL_UINT32(baseGetter->virtualSlotIndex, derivedGetter->virtualSlotIndex);
+        TEST_ASSERT_NOT_EQUAL_UINT32((TZrUInt32)-1, baseGetter->propertyIdentity);
+        TEST_ASSERT_EQUAL_UINT32(baseGetter->propertyIdentity, derivedGetter->propertyIdentity);
+
+        baseDefinitionOwner = get_string_constant_at(state, func, derivedGetter->baseDefinitionOwnerTypeNameStringIndex);
+        baseDefinitionName = get_string_constant_at(state, func, derivedGetter->baseDefinitionNameStringIndex);
+        TEST_ASSERT_NOT_NULL(baseDefinitionOwner);
+        TEST_ASSERT_NOT_NULL(baseDefinitionName);
+        TEST_ASSERT_EQUAL_STRING("Base", ZrCore_String_GetNativeString(baseDefinitionOwner));
+        TEST_ASSERT_EQUAL_STRING("__get_score", ZrCore_String_GetNativeString(baseDefinitionName));
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_abstract_class_construction_is_rejected_by_compiler(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Abstract Class Construction Is Rejected By Compiler";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Abstract class construction rejection",
+              "Testing that `new` on an abstract class is rejected by the compiler frontend");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "abstract class Base { }\n"
+            "var value = new Base();";
+        SZrString *sourceName = ZrCore_String_Create(state, "abstract_class_new_error.zr", 27);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse abstract class construction source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        TEST_ASSERT_NULL(func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_final_class_inheritance_is_rejected_by_compiler(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Final Class Inheritance Is Rejected By Compiler";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Final class inheritance rejection",
+              "Testing that classes cannot inherit from a final base class");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "final class Base { }\n"
+            "class Derived : Base { }";
+        SZrString *sourceName = ZrCore_String_Create(state, "final_class_inheritance_error.zr", 32);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse final class inheritance source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        TEST_ASSERT_NULL(func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_override_of_non_virtual_member_is_rejected_by_compiler(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Override Of Non Virtual Member Is Rejected By Compiler";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Override target validation",
+              "Testing that override only binds to inherited virtual or abstract members");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Base {\n"
+            "    pub ping(): int { return 0; }\n"
+            "}\n"
+            "class Derived : Base {\n"
+            "    pub override ping(): int { return 1; }\n"
+            "}";
+        SZrString *sourceName = ZrCore_String_Create(state, "override_non_virtual_error.zr", 29);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse override non-virtual source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        TEST_ASSERT_NULL(func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_inherited_same_name_requires_explicit_override_or_shadow(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Inherited Same Name Requires Explicit Override Or Shadow";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Explicit override/shadow enforcement",
+              "Testing that inherited same-name members cannot silently hide a base implementation");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Base {\n"
+            "    pub virtual ping(): int { return 0; }\n"
+            "}\n"
+            "class Derived : Base {\n"
+            "    pub ping(): int { return 1; }\n"
+            "}";
+        SZrString *sourceName = ZrCore_String_Create(state, "implicit_override_error.zr", 25);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse implicit override source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        TEST_ASSERT_NULL(func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_shadow_does_not_satisfy_abstract_base_member(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Shadow Does Not Satisfy Abstract Base Member";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Shadow versus abstract requirement",
+              "Testing that shadow opens a new chain and does not satisfy an inherited abstract obligation");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "abstract class Base {\n"
+            "    pub abstract ping(): int;\n"
+            "}\n"
+            "class Derived : Base {\n"
+            "    pub shadow ping(): int { return 1; }\n"
+            "}";
+        SZrString *sourceName = ZrCore_String_Create(state, "shadow_abstract_requirement_error.zr", 36);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse shadow abstract requirement source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        TEST_ASSERT_NULL(func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_interface_plain_member_serializes_interface_contract_slot(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Interface Plain Member Serializes Interface Contract Slot";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Interface contract slot binding",
+              "Testing that a plain class member satisfies an interface contract without override and records the bound interface slot");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "interface Readable { read(): int; }\n"
+            "class Device : Readable {\n"
+            "    pub read(): int { return 1; }\n"
+            "}";
+        SZrString *sourceName = ZrCore_String_Create(state, "interface_contract_slot.zr", 26);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        const SZrCompiledPrototypeInfoView *interfaceProto;
+        const SZrCompiledPrototypeInfoView *deviceProto;
+        const SZrCompiledMemberInfoView *interfaceRead;
+        const SZrCompiledMemberInfoView *deviceRead;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse interface contract slot source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile interface contract slot source");
+            destroy_test_state(state);
+            return;
+        }
+
+        interfaceProto = find_compiled_prototype_by_name(state, func, "Readable");
+        deviceProto = find_compiled_prototype_by_name(state, func, "Device");
+        TEST_ASSERT_NOT_NULL(interfaceProto);
+        TEST_ASSERT_NOT_NULL(deviceProto);
+
+        interfaceRead = find_compiled_member_by_name(state, func, interfaceProto, "read");
+        deviceRead = find_compiled_member_by_name(state, func, deviceProto, "read");
+        TEST_ASSERT_NOT_NULL(interfaceRead);
+        TEST_ASSERT_NOT_NULL(deviceRead);
+        TEST_ASSERT_NOT_EQUAL_UINT32((TZrUInt32)-1, interfaceRead->interfaceContractSlot);
+        TEST_ASSERT_EQUAL_UINT32(interfaceRead->interfaceContractSlot, deviceRead->interfaceContractSlot);
+        TEST_ASSERT_EQUAL_UINT32((TZrUInt32)-1, deviceRead->virtualSlotIndex);
+        TEST_ASSERT_EQUAL_UINT32(0, deviceRead->modifierFlags & ZR_DECLARATION_MODIFIER_OVERRIDE);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_interface_missing_member_is_rejected_by_compiler(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Interface Missing Member Is Rejected By Compiler";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Interface requirement enforcement",
+              "Testing that a concrete class must implement interface members");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "interface Readable { read(): int; }\n"
+            "class Missing : Readable { }";
+        SZrString *sourceName = ZrCore_String_Create(state, "interface_missing_member_error.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse missing interface member source");
             destroy_test_state(state);
             return;
         }
@@ -2733,6 +3178,14 @@ int main(void) {
     RUN_TEST(test_using_statement_compiles_through_frontend);
     RUN_TEST(test_field_scoped_using_metadata_serializes_into_prototype_data);
     RUN_TEST(test_static_using_field_is_rejected_by_compiler);
+    RUN_TEST(test_advanced_oop_metadata_serializes_override_and_property_chains);
+    RUN_TEST(test_abstract_class_construction_is_rejected_by_compiler);
+    RUN_TEST(test_final_class_inheritance_is_rejected_by_compiler);
+    RUN_TEST(test_override_of_non_virtual_member_is_rejected_by_compiler);
+    RUN_TEST(test_inherited_same_name_requires_explicit_override_or_shadow);
+    RUN_TEST(test_shadow_does_not_satisfy_abstract_base_member);
+    RUN_TEST(test_interface_plain_member_serializes_interface_contract_slot);
+    RUN_TEST(test_interface_missing_member_is_rejected_by_compiler);
     RUN_TEST(test_ownership_builtin_shared_expression_compiles_without_prototype_target);
     RUN_TEST(test_ownership_builtin_shared_new_wraps_constructed_result);
     RUN_TEST(test_ownership_unique_share_runtime_moves_source_to_null);

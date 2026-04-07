@@ -243,10 +243,28 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_LogicalNotEqual(struct SZrState *sta
                                                             TZrUInt32 rightSlot);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_LogicalLessSigned(struct SZrState *state,
-                                                              ZrAotGeneratedFrame *frame,
-                                                              TZrUInt32 destinationSlot,
-                                                              TZrUInt32 leftSlot,
-                                                              TZrUInt32 rightSlot);
+                                                             ZrAotGeneratedFrame *frame,
+                                                             TZrUInt32 destinationSlot,
+                                                             TZrUInt32 leftSlot,
+                                                             TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_LogicalGreaterSigned(struct SZrState *state,
+                                                                 ZrAotGeneratedFrame *frame,
+                                                                 TZrUInt32 destinationSlot,
+                                                                 TZrUInt32 leftSlot,
+                                                                 TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_LogicalLessEqualSigned(struct SZrState *state,
+                                                                   ZrAotGeneratedFrame *frame,
+                                                                   TZrUInt32 destinationSlot,
+                                                                   TZrUInt32 leftSlot,
+                                                                   TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_LogicalGreaterEqualSigned(struct SZrState *state,
+                                                                      ZrAotGeneratedFrame *frame,
+                                                                      TZrUInt32 destinationSlot,
+                                                                      TZrUInt32 leftSlot,
+                                                                      TZrUInt32 rightSlot);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_IsTruthy(struct SZrState *state,
                                                      ZrAotGeneratedFrame *frame,
@@ -254,6 +272,30 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_IsTruthy(struct SZrState *state,
                                                      TZrBool *outTruthy);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Add(struct SZrState *state,
+                                                ZrAotGeneratedFrame *frame,
+                                                TZrUInt32 destinationSlot,
+                                                TZrUInt32 leftSlot,
+                                                TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Sub(struct SZrState *state,
+                                                ZrAotGeneratedFrame *frame,
+                                                TZrUInt32 destinationSlot,
+                                                TZrUInt32 leftSlot,
+                                                TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Mul(struct SZrState *state,
+                                                ZrAotGeneratedFrame *frame,
+                                                TZrUInt32 destinationSlot,
+                                                TZrUInt32 leftSlot,
+                                                TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Div(struct SZrState *state,
+                                                ZrAotGeneratedFrame *frame,
+                                                TZrUInt32 destinationSlot,
+                                                TZrUInt32 leftSlot,
+                                                TZrUInt32 rightSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Mod(struct SZrState *state,
                                                 ZrAotGeneratedFrame *frame,
                                                 TZrUInt32 destinationSlot,
                                                 TZrUInt32 leftSlot,
@@ -271,6 +313,12 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SubInt(struct SZrState *state,
                                                    TZrUInt32 leftSlot,
                                                    TZrUInt32 rightSlot);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_BitwiseXor(struct SZrState *state,
+                                                       ZrAotGeneratedFrame *frame,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 leftSlot,
+                                                       TZrUInt32 rightSlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_MulSigned(struct SZrState *state,
                                                       ZrAotGeneratedFrame *frame,
                                                       TZrUInt32 destinationSlot,
@@ -287,6 +335,11 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_Neg(struct SZrState *state,
                                                 ZrAotGeneratedFrame *frame,
                                                 TZrUInt32 destinationSlot,
                                                 TZrUInt32 sourceSlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_ToString(struct SZrState *state,
+                                                     ZrAotGeneratedFrame *frame,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 sourceSlot);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_GetMember(struct SZrState *state,
                                                       ZrAotGeneratedFrame *frame,

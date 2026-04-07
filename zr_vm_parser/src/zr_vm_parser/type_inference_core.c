@@ -510,6 +510,10 @@ TZrBool try_parse_generic_instance_type_name(SZrState *state,
 }
 
 static SZrTypePrototypeInfo *find_compiler_type_prototype_inference_exact(SZrCompilerState *cs, SZrString *typeName) {
+    SZrTypePrototypeInfo *bestMatch = ZR_NULL;
+    const TZrChar *typeNameText;
+    const TZrChar *lastDot;
+
     if (cs == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
     }
@@ -517,14 +521,108 @@ static SZrTypePrototypeInfo *find_compiler_type_prototype_inference_exact(SZrCom
     for (TZrSize i = 0; i < cs->typePrototypes.length; i++) {
         SZrTypePrototypeInfo *info = (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, i);
         if (info != ZR_NULL && info->name != ZR_NULL && ZrCore_String_Equal(info->name, typeName)) {
-            return info;
+            if (bestMatch == ZR_NULL || (bestMatch->isImportedNative && !info->isImportedNative)) {
+                bestMatch = info;
+                if (!info->isImportedNative) {
+                    return info;
+                }
+            }
         }
     }
 
     if (cs->currentTypePrototypeInfo != ZR_NULL &&
         cs->currentTypePrototypeInfo->name != ZR_NULL &&
-        ZrCore_String_Equal(cs->currentTypePrototypeInfo->name, typeName)) {
+        ZrCore_String_Equal(cs->currentTypePrototypeInfo->name, typeName) &&
+        (bestMatch == ZR_NULL ||
+         (bestMatch->isImportedNative && !cs->currentTypePrototypeInfo->isImportedNative))) {
         return cs->currentTypePrototypeInfo;
+    }
+
+    if (bestMatch != ZR_NULL) {
+        return bestMatch;
+    }
+
+    typeNameText = ZrCore_String_GetNativeString(typeName);
+    lastDot = typeNameText != ZR_NULL ? strrchr(typeNameText, '.') : ZR_NULL;
+    if (lastDot != ZR_NULL && lastDot > typeNameText && lastDot[1] != '\0') {
+        SZrString *moduleName =
+                ZrCore_String_Create(cs->state, (TZrNativeString)typeNameText, (TZrSize)(lastDot - typeNameText));
+        SZrString *memberName = ZrCore_String_CreateFromNative(cs->state, (TZrNativeString)(lastDot + 1));
+        SZrTypePrototypeInfo *moduleInfo = ZR_NULL;
+
+        if (moduleName != ZR_NULL && memberName != ZR_NULL) {
+            moduleInfo = find_compiler_type_prototype_inference_exact(cs, moduleName);
+            if (moduleInfo == ZR_NULL && ensure_import_module_compile_info(cs, moduleName)) {
+                moduleInfo = find_compiler_type_prototype_inference_exact(cs, moduleName);
+            }
+        }
+        if (moduleInfo != ZR_NULL && moduleInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
+            for (TZrSize memberIndex = 0; memberIndex < moduleInfo->members.length; memberIndex++) {
+                SZrTypeMemberInfo *memberInfo =
+                        (SZrTypeMemberInfo *)ZrCore_Array_Get(&moduleInfo->members, memberIndex);
+                if (memberInfo != ZR_NULL && memberInfo->name != ZR_NULL &&
+                    memberInfo->fieldTypeName != ZR_NULL &&
+                    ZrCore_String_Equal(memberInfo->name, memberName)) {
+                    if (ZrCore_String_Equal(memberInfo->fieldTypeName, typeName)) {
+                        return bestMatch;
+                    }
+                    return find_compiler_type_prototype_inference_exact(cs, memberInfo->fieldTypeName);
+                }
+            }
+        }
+    }
+
+    return bestMatch;
+}
+
+static SZrAstNode *find_type_declaration_in_array_inference(SZrAstNodeArray *declarations, SZrString *typeName) {
+    if (declarations == ZR_NULL || declarations->nodes == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < declarations->count; index++) {
+        SZrAstNode *declaration = declarations->nodes[index];
+
+        if (declaration == ZR_NULL) {
+            continue;
+        }
+
+        switch (declaration->type) {
+            case ZR_AST_STRUCT_DECLARATION:
+                if (declaration->data.structDeclaration.name != ZR_NULL &&
+                    declaration->data.structDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.structDeclaration.name->name, typeName)) {
+                    return declaration;
+                }
+                break;
+
+            case ZR_AST_CLASS_DECLARATION:
+                if (declaration->data.classDeclaration.name != ZR_NULL &&
+                    declaration->data.classDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.classDeclaration.name->name, typeName)) {
+                    return declaration;
+                }
+                break;
+
+            case ZR_AST_INTERFACE_DECLARATION:
+                if (declaration->data.interfaceDeclaration.name != ZR_NULL &&
+                    declaration->data.interfaceDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.interfaceDeclaration.name->name, typeName)) {
+                    return declaration;
+                }
+                break;
+
+            case ZR_AST_ENUM_DECLARATION:
+                if (declaration->data.enumDeclaration.name != ZR_NULL &&
+                    declaration->data.enumDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.enumDeclaration.name->name, typeName)) {
+                    return declaration;
+                }
+                break;
+
+            default:
+                break;
+        }
     }
 
     return ZR_NULL;
@@ -532,6 +630,7 @@ static SZrTypePrototypeInfo *find_compiler_type_prototype_inference_exact(SZrCom
 
 static SZrAstNode *find_type_declaration_inference(SZrCompilerState *cs, SZrString *typeName) {
     SZrScript *script;
+    SZrAstNode *match;
 
     if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
@@ -546,52 +645,165 @@ static SZrAstNode *find_type_declaration_inference(SZrCompilerState *cs, SZrStri
         return ZR_NULL;
     }
 
+    match = find_type_declaration_in_array_inference(script->statements, typeName);
+    if (match != ZR_NULL) {
+        return match;
+    }
+
     for (TZrSize index = 0; index < script->statements->count; index++) {
         SZrAstNode *statement = script->statements->nodes[index];
 
-        if (statement == ZR_NULL) {
+        if (statement == ZR_NULL || statement->type != ZR_AST_EXTERN_BLOCK ||
+            statement->data.externBlock.declarations == ZR_NULL) {
             continue;
         }
 
-        switch (statement->type) {
-            case ZR_AST_STRUCT_DECLARATION:
-                if (statement->data.structDeclaration.name != ZR_NULL &&
-                    statement->data.structDeclaration.name->name != ZR_NULL &&
-                    ZrCore_String_Equal(statement->data.structDeclaration.name->name, typeName)) {
-                    return statement;
-                }
+        match = find_type_declaration_in_array_inference(statement->data.externBlock.declarations, typeName);
+        if (match != ZR_NULL) {
+            return match;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool generic_declaration_contains_type_name_inference(SZrGenericDeclaration *generic,
+                                                                SZrString *typeName) {
+    if (generic == ZR_NULL || generic->params == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < generic->params->count; index++) {
+        SZrAstNode *parameterNode = generic->params->nodes[index];
+        SZrParameter *parameter;
+
+        if (parameterNode == ZR_NULL || parameterNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        parameter = &parameterNode->data.parameter;
+        if (parameter->name != ZR_NULL &&
+            parameter->name->name != ZR_NULL &&
+            ZrCore_String_Equal(parameter->name->name, typeName)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool current_generic_context_contains_type_name_inference(SZrCompilerState *cs,
+                                                                    SZrString *typeName) {
+    SZrGenericDeclaration *generic = ZR_NULL;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (cs->currentFunctionNode != ZR_NULL) {
+        switch (cs->currentFunctionNode->type) {
+            case ZR_AST_FUNCTION_DECLARATION:
+                generic = cs->currentFunctionNode->data.functionDeclaration.generic;
                 break;
 
-            case ZR_AST_CLASS_DECLARATION:
-                if (statement->data.classDeclaration.name != ZR_NULL &&
-                    statement->data.classDeclaration.name->name != ZR_NULL &&
-                    ZrCore_String_Equal(statement->data.classDeclaration.name->name, typeName)) {
-                    return statement;
-                }
+            case ZR_AST_CLASS_METHOD:
+                generic = cs->currentFunctionNode->data.classMethod.generic;
                 break;
 
-            case ZR_AST_INTERFACE_DECLARATION:
-                if (statement->data.interfaceDeclaration.name != ZR_NULL &&
-                    statement->data.interfaceDeclaration.name->name != ZR_NULL &&
-                    ZrCore_String_Equal(statement->data.interfaceDeclaration.name->name, typeName)) {
-                    return statement;
-                }
+            case ZR_AST_STRUCT_METHOD:
+                generic = cs->currentFunctionNode->data.structMethod.generic;
                 break;
 
-            case ZR_AST_ENUM_DECLARATION:
-                if (statement->data.enumDeclaration.name != ZR_NULL &&
-                    statement->data.enumDeclaration.name->name != ZR_NULL &&
-                    ZrCore_String_Equal(statement->data.enumDeclaration.name->name, typeName)) {
-                    return statement;
-                }
+            case ZR_AST_INTERFACE_METHOD_SIGNATURE:
+                generic = cs->currentFunctionNode->data.interfaceMethodSignature.generic;
                 break;
 
             default:
                 break;
         }
+
+        if (generic_declaration_contains_type_name_inference(generic, typeName)) {
+            return ZR_TRUE;
+        }
     }
 
-    return ZR_NULL;
+    if (cs->currentTypeNode != ZR_NULL) {
+        switch (cs->currentTypeNode->type) {
+            case ZR_AST_CLASS_DECLARATION:
+                generic = cs->currentTypeNode->data.classDeclaration.generic;
+                break;
+
+            case ZR_AST_STRUCT_DECLARATION:
+                generic = cs->currentTypeNode->data.structDeclaration.generic;
+                break;
+
+            case ZR_AST_INTERFACE_DECLARATION:
+                generic = cs->currentTypeNode->data.interfaceDeclaration.generic;
+                break;
+
+            default:
+                break;
+        }
+
+        if (generic_declaration_contains_type_name_inference(generic, typeName)) {
+            return ZR_TRUE;
+        }
+    }
+
+    if (cs->currentTypePrototypeInfo != ZR_NULL) {
+        for (TZrSize index = 0; index < cs->currentTypePrototypeInfo->genericParameters.length; index++) {
+            SZrTypeGenericParameterInfo *genericInfo =
+                    (SZrTypeGenericParameterInfo *)ZrCore_Array_Get(&cs->currentTypePrototypeInfo->genericParameters,
+                                                                    index);
+            if (genericInfo != ZR_NULL && genericInfo->name != ZR_NULL &&
+                ZrCore_String_Equal(genericInfo->name, typeName)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+ZR_PARSER_API TZrBool type_name_is_explicitly_available_in_context_inference(SZrCompilerState *cs,
+                                                                              SZrString *typeName) {
+    TZrNativeString typeNameText = ZR_NULL;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        typeNameText = ZrCore_String_GetNativeStringShort(typeName);
+    } else {
+        typeNameText = ZrCore_String_GetNativeString(typeName);
+    }
+
+    if (typeNameText != ZR_NULL && strchr(typeNameText, '.') != ZR_NULL) {
+        if (find_compiler_type_prototype_inference(cs, typeName) != ZR_NULL) {
+            return ZR_TRUE;
+        }
+        if (find_type_declaration_inference(cs, typeName) != ZR_NULL) {
+            return ZR_TRUE;
+        }
+    }
+
+    for (TZrSize index = 0; index < cs->typeValueAliases.length; index++) {
+        SZrTypeBinding *binding = (SZrTypeBinding *)ZrCore_Array_Get(&cs->typeValueAliases, index);
+        if (binding != ZR_NULL && binding->name != ZR_NULL && ZrCore_String_Equal(binding->name, typeName)) {
+            return ZR_TRUE;
+        }
+    }
+
+    if (cs->typeEnv != ZR_NULL && ZrParser_TypeEnvironment_LookupType(cs->typeEnv, typeName)) {
+        return ZR_TRUE;
+    }
+
+    if (current_generic_context_contains_type_name_inference(cs, typeName)) {
+        return ZR_TRUE;
+    }
+
+    return find_type_declaration_inference(cs, typeName) != ZR_NULL;
 }
 
 static SZrString *resolve_source_declaration_lookup_type_name_inference(SZrCompilerState *cs, SZrString *typeName) {
@@ -652,12 +864,12 @@ static TZrBool resolve_type_name_from_target_node_inference(SZrCompilerState *cs
     return *outTypeName != ZR_NULL;
 }
 
-static TZrBool resolve_source_type_declaration_target_inference(SZrCompilerState *cs,
-                                                                SZrAstNode *node,
-                                                                SZrString **outTypeName,
-                                                                EZrObjectPrototypeType *outPrototypeType,
-                                                                TZrBool *outAllowValueConstruction,
-                                                                TZrBool *outAllowBoxedConstruction) {
+ZR_PARSER_API TZrBool resolve_source_type_declaration_target_inference(SZrCompilerState *cs,
+                                                                       SZrAstNode *node,
+                                                                       SZrString **outTypeName,
+                                                                       EZrObjectPrototypeType *outPrototypeType,
+                                                                       TZrBool *outAllowValueConstruction,
+                                                                       TZrBool *outAllowBoxedConstruction) {
     SZrString *resolvedTypeName = ZR_NULL;
     SZrString *lookupTypeName;
     SZrAstNode *declarationNode;
@@ -714,10 +926,12 @@ static TZrBool resolve_source_type_declaration_target_inference(SZrCompilerState
                 *outPrototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS;
             }
             if (outAllowValueConstruction != ZR_NULL) {
-                *outAllowValueConstruction = ZR_TRUE;
+                *outAllowValueConstruction =
+                        (declarationNode->data.classDeclaration.modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) == 0;
             }
             if (outAllowBoxedConstruction != ZR_NULL) {
-                *outAllowBoxedConstruction = ZR_TRUE;
+                *outAllowBoxedConstruction =
+                        (declarationNode->data.classDeclaration.modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) == 0;
             }
             return ZR_TRUE;
 
@@ -1670,6 +1884,7 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
         closedPrototype.name = typeName;
         closedPrototype.type = openPrototypeSnapshot.type;
         closedPrototype.accessModifier = openPrototypeSnapshot.accessModifier;
+        closedPrototype.modifierFlags = openPrototypeSnapshot.modifierFlags;
         closedPrototype.isImportedNative = openPrototypeSnapshot.isImportedNative;
         closedPrototype.extendsTypeName = substitute_generic_type_name(cs->state,
                                                                        openPrototypeSnapshot.extendsTypeName,
@@ -1682,6 +1897,8 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
         closedPrototype.allowValueConstruction = openPrototypeSnapshot.allowValueConstruction;
         closedPrototype.allowBoxedConstruction = openPrototypeSnapshot.allowBoxedConstruction;
         closedPrototype.constructorSignature = openPrototypeSnapshot.constructorSignature;
+        closedPrototype.nextVirtualSlotIndex = openPrototypeSnapshot.nextVirtualSlotIndex;
+        closedPrototype.nextPropertyIdentity = openPrototypeSnapshot.nextPropertyIdentity;
         ZrCore_Array_Init(cs->state, &closedPrototype.inherits, sizeof(SZrString *), openPrototypeSnapshot.inherits.length);
         ZrCore_Array_Init(cs->state, &closedPrototype.implements, sizeof(SZrString *), openPrototypeSnapshot.implements.length);
         ZrCore_Array_Init(cs->state, &closedPrototype.genericParameters, sizeof(SZrTypeGenericParameterInfo), 1);
@@ -2866,14 +3083,15 @@ TZrBool type_name_is_module_prototype_inference(SZrCompilerState *cs, SZrString 
     return info != ZR_NULL && info->type == ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
 }
 
-TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
-                                           SZrAstNode *node,
-                                           SZrTypePrototypeInfo **outPrototype,
-                                           SZrString **outTypeName) {
+ZR_PARSER_API TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
+                                                         SZrAstNode *node,
+                                                         SZrTypePrototypeInfo **outPrototype,
+                                                         SZrString **outTypeName) {
     SZrAstNode *targetNode = node;
     SZrString *typeName = ZR_NULL;
     SZrTypePrototypeInfo *prototype = ZR_NULL;
     SZrInferredType inferredType;
+    TZrBool identifierBoundAsVariable = ZR_FALSE;
 
     if (outPrototype != ZR_NULL) {
         *outPrototype = ZR_NULL;
@@ -2893,8 +3111,32 @@ TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
     }
 
     if (targetNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+        TZrBool identifierNamesVisibleAsType = ZR_FALSE;
+
         typeName = targetNode->data.identifier.name;
-        prototype = find_compiler_type_prototype_inference(cs, typeName);
+        if (typeName != ZR_NULL) {
+            prototype = find_compiler_type_prototype_inference(cs, typeName);
+            identifierNamesVisibleAsType =
+                    type_name_is_explicitly_available_in_context_inference(cs, typeName);
+        }
+
+        if (prototype != ZR_NULL && !identifierNamesVisibleAsType) {
+            prototype = ZR_NULL;
+        }
+
+        /* Prototype-target contexts must prefer registered type names even when
+         * source extern bindings also publish a same-named descriptor value. */
+        if (prototype == ZR_NULL && !identifierNamesVisibleAsType &&
+            cs->typeEnv != ZR_NULL && typeName != ZR_NULL) {
+            ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+            identifierBoundAsVariable =
+                    ZrParser_TypeEnvironment_LookupVariable(cs->state, cs->typeEnv, typeName, &inferredType);
+            ZrParser_InferredType_Free(cs->state, &inferredType);
+        }
+
+        if (!identifierBoundAsVariable && prototype == ZR_NULL && identifierNamesVisibleAsType) {
+            prototype = find_compiler_type_prototype_inference(cs, typeName);
+        }
     } else if (targetNode->type == ZR_AST_TYPE) {
         ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
         if (!ZrParser_AstTypeToInferredType_Convert(cs, &targetNode->data.type, &inferredType)) {
@@ -2907,7 +3149,9 @@ TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
         ZrParser_InferredType_Free(cs->state, &inferredType);
     }
 
-    if (prototype == ZR_NULL) {
+    if (prototype == ZR_NULL &&
+        targetNode->type != ZR_AST_IDENTIFIER_LITERAL &&
+        targetNode->type != ZR_AST_PRIMARY_EXPRESSION) {
         ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
         if (!ZrParser_ExpressionType_Infer(cs, targetNode, &inferredType)) {
             ZrParser_InferredType_Free(cs->state, &inferredType);
@@ -2923,6 +3167,7 @@ TZrBool resolve_prototype_target_inference(SZrCompilerState *cs,
         SZrString *resolvedRootTypeName = ZR_NULL;
 
         if (resolve_expression_root_type(cs, targetNode, &resolvedRootTypeName, &isTypeReference) &&
+            isTypeReference &&
             resolvedRootTypeName != ZR_NULL) {
             typeName = resolvedRootTypeName;
             prototype = find_compiler_type_prototype_inference(cs, typeName);
@@ -3066,7 +3311,12 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
     }
 
     if (construct->isNew && !allowBoxedConstruction) {
-        ZrParser_Compiler_Error(cs, "Prototype does not allow boxed construction", node->location);
+        if (prototype != ZR_NULL &&
+            (prototype->modifierFlags & ZR_DECLARATION_MODIFIER_ABSTRACT) != 0) {
+            ZrParser_Compiler_Error(cs, "Abstract classes cannot be constructed", node->location);
+        } else {
+            ZrParser_Compiler_Error(cs, "Prototype does not allow boxed construction", node->location);
+        }
         return ZR_FALSE;
     }
 

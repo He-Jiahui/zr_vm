@@ -18,6 +18,10 @@ static const SZrPrototypeMetadataFieldMapping kModulePrototypeFfiMetadataFieldMa
         {"ffiOwnerMode", "__zr_ffiOwnerMode"},
         {"ffiReleaseHook", "__zr_ffiReleaseHook"},
 };
+static const TZrChar *kModulePrototypeEnumMembersFieldName = "__zr_enumMembers";
+static const TZrChar *kModulePrototypeEnumValueTypeFieldName = "__zr_enumValueTypeName";
+static const TZrChar *kModulePrototypeEnumValueFieldName = "__zr_enumValue";
+static const TZrChar *kModulePrototypeEnumNameFieldName = "__zr_enumName";
 
 static void register_prototype_in_global_scope(SZrState *state,
                                                SZrString *typeName,
@@ -120,6 +124,23 @@ static SZrFunction *get_function_from_constant(SZrState *state, const SZrTypeVal
     return ZrCore_Closure_GetMetadataFunctionFromValue(state, constant);
 }
 
+static SZrString *module_prototype_get_string_constant(SZrState *state,
+                                                       SZrFunction *entryFunction,
+                                                       TZrUInt32 constantIndex) {
+    const SZrTypeValue *constantValue;
+
+    if (state == ZR_NULL || entryFunction == ZR_NULL || constantIndex >= entryFunction->constantValueLength) {
+        return ZR_NULL;
+    }
+
+    constantValue = &entryFunction->constantValueList[constantIndex];
+    if (constantValue->type != ZR_VALUE_TYPE_STRING || constantValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_STRING(state, constantValue->value.object);
+}
+
 static void module_prototype_apply_protocol_mask(SZrObjectPrototype *prototype, TZrUInt64 protocolMask) {
     if (prototype == ZR_NULL || protocolMask == 0) {
         return;
@@ -136,6 +157,7 @@ static void module_prototype_apply_protocol_mask(SZrObjectPrototype *prototype, 
 
 static void module_prototype_add_runtime_descriptor(SZrState *state,
                                                     SZrObjectPrototype *prototype,
+                                                    SZrFunction *entryFunction,
                                                     SZrString *memberName,
                                                     const SZrCompiledMemberInfo *member,
                                                     SZrFunction *function) {
@@ -150,6 +172,19 @@ static void module_prototype_add_runtime_descriptor(SZrState *state,
     descriptor.isStatic = member->isStatic ? ZR_TRUE : ZR_FALSE;
     descriptor.isWritable = member->isConst ? ZR_FALSE : ZR_TRUE;
     descriptor.contractRole = member->contractRole;
+    descriptor.modifierFlags = member->modifierFlags;
+    descriptor.ownerTypeName =
+            module_prototype_get_string_constant(state, entryFunction, member->ownerTypeNameStringIndex);
+    descriptor.baseDefinitionOwnerTypeName =
+            module_prototype_get_string_constant(state,
+                                                 entryFunction,
+                                                 member->baseDefinitionOwnerTypeNameStringIndex);
+    descriptor.baseDefinitionName =
+            module_prototype_get_string_constant(state, entryFunction, member->baseDefinitionNameStringIndex);
+    descriptor.virtualSlotIndex = member->virtualSlotIndex;
+    descriptor.interfaceContractSlot = member->interfaceContractSlot;
+    descriptor.propertyIdentity = member->propertyIdentity;
+    descriptor.accessorRole = member->accessorRole;
 
     switch (member->memberType) {
         case ZR_AST_CONSTANT_STRUCT_FIELD:
@@ -393,6 +428,141 @@ static void module_prototype_set_hidden_string_metadata(SZrState *state,
     ZrCore_Object_SetValue(state, &prototype->super, &key, &fieldValue);
 }
 
+static const SZrTypeValue *module_prototype_get_object_field_value(SZrState *state,
+                                                                   SZrObject *object,
+                                                                   SZrString *fieldName) {
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    zr_module_init_string_key(state, &key, fieldName);
+    return ZrCore_Object_GetValue(state, object, &key);
+}
+
+static const SZrTypeValue *module_prototype_get_metadata_field_value(SZrState *state,
+                                                                     const SZrTypeValue *metadataValue,
+                                                                     const TZrChar *fieldName) {
+    SZrObject *metadataObject;
+    SZrString *fieldNameString;
+
+    if (state == ZR_NULL || metadataValue == ZR_NULL || fieldName == ZR_NULL ||
+        metadataValue->type != ZR_VALUE_TYPE_OBJECT || metadataValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    metadataObject = ZR_CAST_OBJECT(state, metadataValue->value.object);
+    fieldNameString = ZrCore_String_CreateFromNative(state, (TZrNativeString)fieldName);
+    if (metadataObject == ZR_NULL || fieldNameString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return module_prototype_get_object_field_value(state, metadataObject, fieldNameString);
+}
+
+static void module_prototype_attach_enum_hidden_metadata(SZrState *state,
+                                                         SZrObjectPrototype *prototype,
+                                                         const SZrPrototypeCreationInfo *protoInfo) {
+    const TZrChar *enumValueTypeName = ZR_NULL;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || protoInfo == ZR_NULL ||
+        protoInfo->prototypeType != ZR_OBJECT_PROTOTYPE_TYPE_ENUM || !protoInfo->hasDecoratorMetadata) {
+        return;
+    }
+
+    if (module_prototype_read_metadata_string_field(state,
+                                                    &protoInfo->decoratorMetadataValue,
+                                                    kModulePrototypeEnumValueTypeFieldName,
+                                                    &enumValueTypeName) &&
+        enumValueTypeName != ZR_NULL) {
+        module_prototype_set_hidden_string_metadata(state,
+                                                    prototype,
+                                                    kModulePrototypeEnumValueTypeFieldName,
+                                                    enumValueTypeName);
+    }
+}
+
+static const SZrTypeValue *module_prototype_get_enum_member_scalar_value(SZrState *state,
+                                                                         const SZrPrototypeCreationInfo *protoInfo,
+                                                                         SZrString *memberName) {
+    const SZrTypeValue *membersValue;
+    SZrObject *membersObject;
+
+    if (state == ZR_NULL || protoInfo == ZR_NULL || memberName == ZR_NULL || !protoInfo->hasDecoratorMetadata) {
+        return ZR_NULL;
+    }
+
+    membersValue = module_prototype_get_metadata_field_value(state,
+                                                             &protoInfo->decoratorMetadataValue,
+                                                             kModulePrototypeEnumMembersFieldName);
+    if (membersValue == ZR_NULL || membersValue->type != ZR_VALUE_TYPE_OBJECT || membersValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    membersObject = ZR_CAST_OBJECT(state, membersValue->value.object);
+    if (membersObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return module_prototype_get_object_field_value(state, membersObject, memberName);
+}
+
+static TZrBool module_prototype_set_object_field_string(SZrState *state,
+                                                        SZrObject *object,
+                                                        SZrString *fieldName,
+                                                        const SZrTypeValue *fieldValue) {
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || fieldValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    zr_module_init_string_key(state, &key, fieldName);
+    ZrCore_Object_SetValue(state, object, &key, fieldValue);
+    return ZR_TRUE;
+}
+
+static TZrBool module_prototype_add_enum_member_instance(SZrState *state,
+                                                         SZrObjectPrototype *prototype,
+                                                         SZrString *memberName,
+                                                         const SZrTypeValue *underlyingValue) {
+    SZrObject *enumObject;
+    SZrString *valueFieldName;
+    SZrString *nameFieldName;
+    SZrTypeValue enumObjectValue;
+    SZrTypeValue nameValue;
+
+    if (state == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL || underlyingValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    enumObject = ZrCore_Object_New(state, prototype);
+    if (enumObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Object_Init(state, enumObject);
+
+    valueFieldName = ZrCore_String_CreateFromNative(state, (TZrNativeString)kModulePrototypeEnumValueFieldName);
+    nameFieldName = ZrCore_String_CreateFromNative(state, (TZrNativeString)kModulePrototypeEnumNameFieldName);
+    if (valueFieldName == ZR_NULL || nameFieldName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!module_prototype_set_object_field_string(state, enumObject, valueFieldName, underlyingValue)) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &nameValue, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+    nameValue.type = ZR_VALUE_TYPE_STRING;
+    if (!module_prototype_set_object_field_string(state, enumObject, nameFieldName, &nameValue)) {
+        return ZR_FALSE;
+    }
+
+    zr_module_init_object_value(state, &enumObjectValue, ZR_CAST_RAW_OBJECT_AS_SUPER(enumObject));
+    return module_prototype_set_object_field_string(state, &prototype->super, memberName, &enumObjectValue);
+}
+
 static void module_prototype_attach_ffi_wrapper_hidden_metadata(SZrState *state,
                                                                 SZrObjectPrototype *prototype,
                                                                 const SZrPrototypeCreationInfo *protoInfo) {
@@ -573,6 +743,9 @@ static TZrBool parse_compiled_prototype_info(SZrState *state,
     protoInfo->prototypeType = (EZrObjectPrototypeType)type;
     protoInfo->accessModifier = (EZrAccessModifier)accessModifier;
     protoInfo->protocolMask = protoInfoHeader->protocolMask;
+    protoInfo->modifierFlags = protoInfoHeader->modifierFlags;
+    protoInfo->nextVirtualSlotIndex = protoInfoHeader->nextVirtualSlotIndex;
+    protoInfo->nextPropertyIdentity = protoInfoHeader->nextPropertyIdentity;
     protoInfo->hasDecoratorMetadata = ZR_FALSE;
     ZrCore_Value_ResetAsNull(&protoInfo->decoratorMetadataValue);
     protoInfo->prototype = ZR_NULL;
@@ -674,6 +847,9 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                 protoInfoData.prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
                 protoInfoData.accessModifier = ZR_ACCESS_CONSTANT_PRIVATE;
                 protoInfoData.protocolMask = 0;
+                protoInfoData.modifierFlags = 0;
+                protoInfoData.nextVirtualSlotIndex = 0;
+                protoInfoData.nextPropertyIdentity = 0;
                 protoInfoData.hasDecoratorMetadata = ZR_FALSE;
                 ZrCore_Value_ResetAsNull(&protoInfoData.decoratorMetadataValue);
                 ZrCore_Array_Init(state,
@@ -693,11 +869,14 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                             if (protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
                                 prototype =
                                         (SZrObjectPrototype *)ZrCore_StructPrototype_New(state, protoInfoData.typeName);
-                            } else if (protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+                            } else if (protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS ||
+                                       protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_ENUM) {
                                 prototype = ZrCore_ObjectPrototype_New(state,
                                                                        protoInfoData.typeName,
                                                                        protoInfoData.prototypeType);
-                                ZrCore_ObjectPrototype_InitMetaTable(state, prototype);
+                                if (protoInfoData.prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
+                                    ZrCore_ObjectPrototype_InitMetaTable(state, prototype);
+                                }
                             }
                             if (prototype != ZR_NULL) {
                                 entryFunction->prototypeInstances[i] = prototype;
@@ -709,8 +888,12 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                             SZrTypeValue prototypeValue;
                             protoInfoData.prototype = prototype;
                             protoInfoData.needsPostCreateSetup = prototypeWasCreated;
+                            prototype->modifierFlags = protoInfoData.modifierFlags;
+                            prototype->nextVirtualSlotIndex = protoInfoData.nextVirtualSlotIndex;
+                            prototype->nextPropertyIdentity = protoInfoData.nextPropertyIdentity;
                             ZrCore_Reflection_AttachPrototypeRuntimeMetadata(state, prototype, module, entryFunction);
                             module_prototype_attach_ffi_wrapper_hidden_metadata(state, prototype, &protoInfoData);
+                            module_prototype_attach_enum_hidden_metadata(state, prototype, &protoInfoData);
 
                             zr_module_init_object_value(
                                     state, &prototypeValue, ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
@@ -791,8 +974,29 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
 
                         if (member->memberType == ZR_AST_CONSTANT_STRUCT_FIELD ||
                             member->memberType == ZR_AST_CONSTANT_CLASS_FIELD) {
+                            if (protoInfo->prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_ENUM &&
+                                member->isStatic) {
+                                const SZrTypeValue *enumScalarValue =
+                                        module_prototype_get_enum_member_scalar_value(state, protoInfo, memberName);
+
+                                module_prototype_add_runtime_descriptor(state,
+                                                                        protoInfo->prototype,
+                                                                        entryFunction,
+                                                                        memberName,
+                                                                        member,
+                                                                        ZR_NULL);
+                                if (enumScalarValue != ZR_NULL) {
+                                    module_prototype_add_enum_member_instance(state,
+                                                                              protoInfo->prototype,
+                                                                              memberName,
+                                                                              enumScalarValue);
+                                }
+                                continue;
+                            }
+
                             module_prototype_add_runtime_descriptor(state,
                                                                     protoInfo->prototype,
+                                                                    entryFunction,
                                                                     memberName,
                                                                     member,
                                                                     ZR_NULL);
@@ -855,6 +1059,7 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
 
                             module_prototype_add_runtime_descriptor(state,
                                                                     protoInfo->prototype,
+                                                                    entryFunction,
                                                                     memberName,
                                                                     member,
                                                                     function);

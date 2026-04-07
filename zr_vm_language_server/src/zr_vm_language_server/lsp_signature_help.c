@@ -11,6 +11,7 @@
 typedef enum EZrLspCallContextKind {
     ZR_LSP_CALL_CONTEXT_NONE = 0,
     ZR_LSP_CALL_CONTEXT_FUNCTION_CALL,
+    ZR_LSP_CALL_CONTEXT_CONSTRUCT_CALL,
     ZR_LSP_CALL_CONTEXT_SUPER_CONSTRUCTOR_CALL
 } EZrLspCallContextKind;
 
@@ -458,6 +459,52 @@ static void signature_append_parameter_label(SZrState *state,
                             typeBuffer[0] != '\0' ? typeBuffer : "object");
 }
 
+static void signature_append_parameter_label_from_metadata(SZrState *state,
+                                                           const SZrTypeMemberInfo *memberInfo,
+                                                           TZrSize index,
+                                                           const SZrInferredType *resolvedType,
+                                                           EZrParameterPassingMode passingMode,
+                                                           TZrChar *buffer,
+                                                           TZrSize bufferSize,
+                                                           TZrSize *offset) {
+    const SZrInferredType *typeToRender = resolvedType;
+    SZrString *parameterName = ZR_NULL;
+    const TZrChar *passingModeText;
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+
+    if (memberInfo == ZR_NULL || buffer == ZR_NULL || offset == ZR_NULL) {
+        return;
+    }
+
+    if (parameterName == ZR_NULL && index < memberInfo->parameterNames.length) {
+        SZrString **namePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterNames, index);
+        if (namePtr != ZR_NULL) {
+            parameterName = *namePtr;
+        }
+    }
+    if (typeToRender == ZR_NULL && index < memberInfo->parameterTypes.length) {
+        typeToRender = (const SZrInferredType *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterTypes, index);
+    }
+
+    passingModeText = signature_parameter_passing_mode_text(passingMode);
+    if (passingModeText != ZR_NULL) {
+        signature_buffer_append(buffer, bufferSize, offset, "%s ", passingModeText);
+    }
+
+    if (typeToRender != ZR_NULL) {
+        signature_format_type(state, typeToRender, typeBuffer, sizeof(typeBuffer));
+    } else {
+        typeBuffer[0] = '\0';
+    }
+
+    signature_buffer_append(buffer,
+                            bufferSize,
+                            offset,
+                            "%s: %s",
+                            signature_string_native(parameterName),
+                            typeBuffer[0] != '\0' ? typeBuffer : "object");
+}
+
 static SZrGenericDeclaration *signature_method_generic_declaration(SZrAstNode *declarationNode) {
     if (declarationNode == ZR_NULL) {
         return ZR_NULL;
@@ -550,6 +597,48 @@ static TZrBool signature_build_label_from_method(SZrState *state,
                                              buffer,
                                              bufferSize,
                                              &offset);
+        }
+    } else {
+        TZrSize parameterCount = memberInfo->parameterCount;
+        if (memberInfo->parameterTypes.length > parameterCount) {
+            parameterCount = memberInfo->parameterTypes.length;
+        }
+        if (memberInfo->parameterNames.length > parameterCount) {
+            parameterCount = memberInfo->parameterNames.length;
+        }
+
+        for (TZrSize index = 0; index < parameterCount; index++) {
+            SZrInferredType *resolvedType = ZR_NULL;
+            EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+
+            if (index > 0) {
+                signature_buffer_append(buffer, bufferSize, &offset, ", ");
+            }
+            if (resolvedSignature != ZR_NULL && index < resolvedSignature->parameterTypes.length) {
+                resolvedType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&resolvedSignature->parameterTypes, index);
+            }
+            if (resolvedSignature != ZR_NULL && index < resolvedSignature->parameterPassingModes.length) {
+                EZrParameterPassingMode *mode =
+                    (EZrParameterPassingMode *)ZrCore_Array_Get((SZrArray *)&resolvedSignature->parameterPassingModes, index);
+                if (mode != ZR_NULL) {
+                    passingMode = *mode;
+                }
+            } else if (index < memberInfo->parameterPassingModes.length) {
+                EZrParameterPassingMode *mode =
+                    (EZrParameterPassingMode *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterPassingModes, index);
+                if (mode != ZR_NULL) {
+                    passingMode = *mode;
+                }
+            }
+
+            signature_append_parameter_label_from_metadata(state,
+                                                           memberInfo,
+                                                           index,
+                                                           resolvedType,
+                                                           passingMode,
+                                                           buffer,
+                                                           bufferSize,
+                                                           &offset);
         }
     }
     signature_buffer_append(buffer, bufferSize, &offset, "): ");
@@ -719,6 +808,79 @@ static void signature_update_best_context(SZrLspCallContext *best,
         best->metaFunctionNode = ZR_NULL;
         best->argumentNodes = callNode->data.functionCall.args;
         best->callMemberIndex = callMemberIndex;
+        best->span = span;
+    }
+}
+
+static SZrFileRange signature_construct_call_context_range(SZrAstNode *constructNode) {
+    SZrConstructExpression *construct;
+    SZrFileRange range;
+
+    memset(&range, 0, sizeof(range));
+    if (constructNode == ZR_NULL || constructNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        return range;
+    }
+
+    construct = &constructNode->data.constructExpression;
+    range = constructNode->location;
+    if (construct->args != ZR_NULL && construct->args->count > 0) {
+        SZrAstNode *lastArg = construct->args->nodes[construct->args->count - 1];
+        if (lastArg != ZR_NULL) {
+            range.end = lastArg->location.end;
+        }
+    }
+
+    return range;
+}
+
+static TZrBool signature_construct_call_matches_position(SZrAstNode *constructNode, SZrFileRange position) {
+    SZrConstructExpression *construct;
+    SZrFileRange constructRange;
+
+    if (constructNode == ZR_NULL || constructNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    construct = &constructNode->data.constructExpression;
+    constructRange = signature_construct_call_context_range(constructNode);
+    if (signature_range_contains_position(constructRange, position)) {
+        return ZR_TRUE;
+    }
+
+    if (construct->args != ZR_NULL) {
+        for (TZrSize index = 0; index < construct->args->count; index++) {
+            SZrAstNode *argNode = construct->args->nodes[index];
+            if (argNode != ZR_NULL && signature_range_contains_position(argNode->location, position)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void signature_update_best_construct_context(SZrLspCallContext *best, SZrAstNode *constructNode) {
+    TZrSize span;
+    SZrAstNode *primaryNode = ZR_NULL;
+
+    if (best == ZR_NULL || constructNode == ZR_NULL || constructNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        return;
+    }
+
+    if (constructNode->data.constructExpression.target != ZR_NULL &&
+        constructNode->data.constructExpression.target->type == ZR_AST_PRIMARY_EXPRESSION) {
+        primaryNode = constructNode->data.constructExpression.target;
+    }
+
+    span = signature_range_span(signature_construct_call_context_range(constructNode));
+    if (best->kind == ZR_LSP_CALL_CONTEXT_NONE || span <= best->span) {
+        best->kind = ZR_LSP_CALL_CONTEXT_CONSTRUCT_CALL;
+        best->ownerTypeNode = ZR_NULL;
+        best->primaryNode = primaryNode;
+        best->callNode = constructNode;
+        best->metaFunctionNode = ZR_NULL;
+        best->argumentNodes = constructNode->data.constructExpression.args;
+        best->callMemberIndex = 0;
         best->span = span;
     }
 }
@@ -985,6 +1147,9 @@ static void signature_find_call_context_in_node(SZrAstNode *node,
             break;
 
         case ZR_AST_CONSTRUCT_EXPRESSION:
+            if (signature_construct_call_matches_position(node, position)) {
+                signature_update_best_construct_context(best, node);
+            }
             signature_find_call_context_in_node(node->data.constructExpression.target, position, best);
             signature_find_call_context_in_array(node->data.constructExpression.args, position, best);
             break;
@@ -2919,6 +3084,152 @@ static TZrBool signature_resolve_super_constructor_help(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool signature_resolve_construct_help(SZrState *state,
+                                                SZrLspContext *lspContext,
+                                                SZrString *uri,
+                                                SZrSemanticAnalyzer *analyzer,
+                                                SZrCompilerState *compilerState,
+                                                SZrLspCallContext *context,
+                                                SZrFilePosition position,
+                                                SZrLspSignatureHelp **result) {
+    SZrConstructExpression *construct;
+    SZrInferredType constructedType;
+    const SZrTypeMemberInfo *constructorInfo;
+    SZrTypeMemberInfo temporaryConstructorInfo;
+    SZrFunctionCall constructorCall;
+    SZrResolvedCallSignature resolvedSignature;
+    TZrChar labelBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+    TZrBool resolved = ZR_FALSE;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || compilerState == ZR_NULL || context == ZR_NULL ||
+        result == ZR_NULL || context->kind != ZR_LSP_CALL_CONTEXT_CONSTRUCT_CALL ||
+        context->callNode == ZR_NULL || context->callNode->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    construct = &context->callNode->data.constructExpression;
+    ZrParser_InferredType_Init(state, &constructedType, ZR_VALUE_TYPE_OBJECT);
+    if (!infer_construct_expression_type(compilerState, context->callNode, &constructedType) ||
+        constructedType.typeName == ZR_NULL) {
+        ZrParser_InferredType_Free(state, &constructedType);
+        return ZR_FALSE;
+    }
+
+    constructorInfo = signature_find_type_meta_member(compilerState, constructedType.typeName, ZR_META_CONSTRUCTOR);
+    memset(&temporaryConstructorInfo, 0, sizeof(temporaryConstructorInfo));
+    if ((constructorInfo == ZR_NULL ||
+         (constructorInfo->declarationNode == ZR_NULL &&
+          constructorInfo->parameterNames.length == 0 &&
+          constructorInfo->parameterTypes.length == 0)) &&
+        lspContext != ZR_NULL &&
+        uri != ZR_NULL &&
+        construct->target != ZR_NULL &&
+        construct->target->type == ZR_AST_PRIMARY_EXPRESSION &&
+        construct->target->data.primaryExpression.property != ZR_NULL) {
+        SZrInferredType moduleType;
+        SZrLspProjectIndex *projectIndex;
+        SZrLspProjectFileRecord *record = ZR_NULL;
+        SZrFileVersion *moduleFileVersion = ZR_NULL;
+
+        ZrParser_InferredType_Init(state, &moduleType, ZR_VALUE_TYPE_OBJECT);
+        if (ZrParser_ExpressionType_Infer(compilerState,
+                                          construct->target->data.primaryExpression.property,
+                                          &moduleType) &&
+            moduleType.typeName != ZR_NULL &&
+            type_name_is_module_prototype_inference(compilerState, moduleType.typeName)) {
+            projectIndex = ZrLanguageServer_LspProject_FindProjectForUri(lspContext, uri);
+            if (projectIndex != ZR_NULL) {
+                record = ZrLanguageServer_LspProject_FindRecordByModuleName(projectIndex, moduleType.typeName);
+                if (record != ZR_NULL && record->uri != ZR_NULL) {
+                    moduleFileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(lspContext, record->uri);
+                }
+            }
+            if (moduleFileVersion != ZR_NULL &&
+                moduleFileVersion->ast != ZR_NULL &&
+                signature_prepare_ast_specialized_receiver_constructor(state,
+                                                                       compilerState,
+                                                                       moduleFileVersion->ast,
+                                                                       &constructedType,
+                                                                       (SZrTypeMemberInfo **)&constructorInfo,
+                                                                       &temporaryConstructorInfo)) {
+                ZrParser_InferredType_Free(state, &moduleType);
+            } else {
+                ZrParser_InferredType_Free(state, &moduleType);
+            }
+        } else {
+            ZrParser_InferredType_Free(state, &moduleType);
+        }
+    }
+    if (constructorInfo == ZR_NULL &&
+        !signature_prepare_ast_specialized_receiver_constructor(state,
+                                                                compilerState,
+                                                                analyzer->ast,
+                                                                &constructedType,
+                                                                (SZrTypeMemberInfo **)&constructorInfo,
+                                                                &temporaryConstructorInfo)) {
+        ZrParser_InferredType_Free(state, &constructedType);
+        return ZR_FALSE;
+    }
+
+    memset(&constructorCall, 0, sizeof(constructorCall));
+    constructorCall.args = construct->args;
+    constructorCall.hasNamedArgs = ZR_FALSE;
+    constructorCall.genericArguments = ZR_NULL;
+    constructorCall.argNames = ZR_NULL;
+
+    memset(&resolvedSignature, 0, sizeof(resolvedSignature));
+    ZrParser_InferredType_Init(state, &resolvedSignature.returnType, ZR_VALUE_TYPE_OBJECT);
+    ZrCore_Array_Construct(&resolvedSignature.parameterTypes);
+    ZrCore_Array_Construct(&resolvedSignature.parameterPassingModes);
+
+    if (resolve_generic_member_call_signature_detailed(compilerState,
+                                                       constructorInfo,
+                                                       &constructorCall,
+                                                       &resolvedSignature,
+                                                       ZR_NULL,
+                                                       0) == ZR_GENERIC_CALL_RESOLVE_OK) {
+        resolved = ZR_TRUE;
+    } else {
+        resolved = signature_resolve_member_call_signature_locally(state,
+                                                                   analyzer,
+                                                                   compilerState,
+                                                                   (SZrTypeMemberInfo *)constructorInfo,
+                                                                   &constructorCall,
+                                                                   position.offset,
+                                                                   &resolvedSignature);
+    }
+
+    if (!resolved ||
+        !signature_build_label_from_method(state,
+                                           (SZrTypeMemberInfo *)constructorInfo,
+                                           &resolvedSignature,
+                                           labelBuffer,
+                                           sizeof(labelBuffer))) {
+        free_resolved_call_signature(state, &resolvedSignature);
+        signature_free_temporary_member_info(state, &temporaryConstructorInfo);
+        ZrParser_InferredType_Free(state, &constructedType);
+        return ZR_FALSE;
+    }
+
+    if (!signature_populate_help_from_label(state,
+                                            labelBuffer,
+                                            signature_method_parameter_nodes(constructorInfo->declarationNode),
+                                            &resolvedSignature,
+                                            signature_active_parameter_index_for_arguments(context->argumentNodes,
+                                                                                          position),
+                                            result)) {
+        free_resolved_call_signature(state, &resolvedSignature);
+        signature_free_temporary_member_info(state, &temporaryConstructorInfo);
+        ZrParser_InferredType_Free(state, &constructedType);
+        return ZR_FALSE;
+    }
+
+    free_resolved_call_signature(state, &resolvedSignature);
+    signature_free_temporary_member_info(state, &temporaryConstructorInfo);
+    ZrParser_InferredType_Free(state, &constructedType);
+    return ZR_TRUE;
+}
+
 static TZrBool signature_resolve_function_help(SZrState *state,
                                                SZrCompilerState *compilerState,
                                                SZrLspCallContext *context,
@@ -3188,6 +3499,18 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
                                                         &callContext,
                                                         filePosition,
                                                         result) &&
+               *result != ZR_NULL;
+    }
+
+    if (callContext.kind == ZR_LSP_CALL_CONTEXT_CONSTRUCT_CALL) {
+        return signature_resolve_construct_help(state,
+                                                context,
+                                                uri,
+                                                analyzer,
+                                                analyzer->compilerState,
+                                                &callContext,
+                                                filePosition,
+                                                result) &&
                *result != ZR_NULL;
     }
 

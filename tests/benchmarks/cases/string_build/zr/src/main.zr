@@ -1,0 +1,81 @@
+var benchConfig = %import("bench_config");
+var container = %import("zr.container");
+
+fragmentFor(slot: int): string {
+    var normalized = slot % 6;
+    if (normalized == 0) {
+        return "al";
+    }
+    if (normalized == 1) {
+        return "be";
+    }
+    if (normalized == 2) {
+        return "cy";
+    }
+    if (normalized == 3) {
+        return "do";
+    }
+    if (normalized == 4) {
+        return "ex";
+    }
+    return "fu";
+}
+
+var scale = benchConfig.scale();
+var counts = new container.Map<string, int>();
+var keys = new container.Array<string>();
+var assembled = "";
+var assembledScore = 0;
+var checksum = 0;
+var seed = 17;
+var iterations = 180 * scale;
+var index = 0;
+
+while (index <= iterations - 1) {
+    seed = (seed * 73 + 19 + index) % 997;
+    var tokenId = (seed + index) % 23;
+    var firstFragment = fragmentFor(seed);
+    var secondFragment = fragmentFor(tokenId);
+    var thirdFragment = fragmentFor(tokenId + 2);
+    var token = firstFragment + "-" + secondFragment + thirdFragment;
+    var tokenScore = (seed % 211) + tokenId * 17 + index;
+    assembled = assembled + token;
+    assembledScore = (assembledScore * 41 + tokenScore) % 1000000007;
+    if (index % 4 == 0) {
+        assembled = assembled + "|";
+        assembledScore = (assembledScore + 3) % 1000000007;
+    } else {
+        assembled = assembled + ":";
+        assembledScore = (assembledScore + 7) % 1000000007;
+    }
+
+    if (index % 9 == 8) {
+        if (counts[assembled] == null) {
+            counts[assembled] = 0;
+            keys.add(assembled);
+        }
+        var existing = counts[assembled] + 0;
+        counts[assembled] = (existing + assembledScore + index + 1) % 1000000007;
+        checksum = (checksum + (counts[assembled] + 0) + seed % 97) % 1000000007;
+        assembled = token;
+        assembledScore = tokenScore % 1000000007;
+    }
+    index = index + 1;
+}
+
+if (assembled != "") {
+    if (counts[assembled] == null) {
+        counts[assembled] = 0;
+        keys.add(assembled);
+    }
+    var existing = counts[assembled] + 0;
+    counts[assembled] = (existing + assembledScore + iterations) % 1000000007;
+}
+
+var keyIndex = 0;
+for (var key in keys) {
+    checksum = (checksum + (counts[key] + 0) * (keyIndex + 1)) % 1000000007;
+    keyIndex = keyIndex + 1;
+}
+
+return "BENCH_STRING_BUILD_PASS\n" + <string> checksum;

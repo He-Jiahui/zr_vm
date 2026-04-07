@@ -538,7 +538,7 @@ TZrBool execution_meta_set_member(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
+    ZrCore_Value_Copy(state, receiverAndResult, &stableReceiver);
     return ZR_TRUE;
 }
 
@@ -575,7 +575,7 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
                                        &ignoredResult,
                                        ZR_TRUE,
                                        expectedStatic)) {
-        ZrCore_Value_Copy(state, receiverAndResult, &stableAssignedValue);
+        ZrCore_Value_Copy(state, receiverAndResult, &stableReceiver);
         return ZR_TRUE;
     }
 

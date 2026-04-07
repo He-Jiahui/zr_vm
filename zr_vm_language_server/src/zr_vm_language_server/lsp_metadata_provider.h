@@ -102,6 +102,12 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveNativeTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,
     SZrLspResolvedMetadataMember *resolvedMember);
+TZrBool ZrLanguageServer_LspMetadataProvider_ResolveProjectTypeMemberDeclaration(
+    SZrLspMetadataProvider *provider,
+    SZrLspProjectIndex *projectIndex,
+    SZrString *ownerTypeName,
+    SZrString *memberName,
+    SZrLspResolvedMetadataMember *outResolved);
 TZrBool ZrLanguageServer_LspMetadataProvider_FindNativeTypeMemberDeclaration(
     SZrLspMetadataProvider *provider,
     SZrLspProjectIndex *projectIndex,

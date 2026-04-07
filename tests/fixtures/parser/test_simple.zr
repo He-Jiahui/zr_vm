@@ -205,14 +205,14 @@ class Student:Person, Man{
 
     pub test():void{
         // 函数
-        key.register(()=>{
+        key.register(()->{
             var i = 1;
             return null;
         });
-        key.register((k:int,b:float)=>{
+        key.register((k:int,b:float)->{
 
         });
-        key.register((k,b)=>{
+        key.register((k,b)->{
 
         });
         key["reg"].member["sant"]();
