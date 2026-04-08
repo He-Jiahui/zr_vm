@@ -67,6 +67,11 @@ static TZrBool zr_vm_task_lock_is_active(SZrState *state, SZrObject *handle) {
     return zr_vm_task_get_bool_field(state, handle, ZR_VM_TASK_LOCK_ACTIVE_FIELD, ZR_FALSE);
 }
 
+static TZrBool zr_vm_task_shared_cell_is_alive_locked(const ZrVmTaskSharedCell *cell) {
+    return cell != ZR_NULL && cell->lifecycleState == ZR_VM_TASK_SHARED_CELL_LIFECYCLE_ALIVE &&
+           cell->strongCount > 0u;
+}
+
 TZrBool zr_vm_task_shared_cell_is_alive_native(ZrVmTaskSharedCell *cell) {
     TZrBool alive = ZR_FALSE;
 
@@ -75,7 +80,7 @@ TZrBool zr_vm_task_shared_cell_is_alive_native(ZrVmTaskSharedCell *cell) {
     }
 
     zr_vm_task_sync_mutex_lock(&cell->mutex);
-    alive = (TZrBool)(cell->alive && cell->strongCount > 0u);
+    alive = zr_vm_task_shared_cell_is_alive_locked(cell);
     zr_vm_task_sync_mutex_unlock(&cell->mutex);
     return alive;
 }
@@ -88,7 +93,7 @@ TZrBool zr_vm_task_shared_cell_add_strong_ref(ZrVmTaskSharedCell *cell) {
     }
 
     zr_vm_task_sync_mutex_lock(&cell->mutex);
-    if (cell->alive && cell->strongCount > 0u) {
+    if (zr_vm_task_shared_cell_is_alive_locked(cell)) {
         cell->strongCount++;
         retained = ZR_TRUE;
     }
@@ -107,6 +112,22 @@ TZrBool zr_vm_task_shared_cell_add_weak_ref(ZrVmTaskSharedCell *cell) {
     return ZR_TRUE;
 }
 
+TZrBool zr_vm_task_shared_cell_add_weak_ref_if_alive(ZrVmTaskSharedCell *cell) {
+    TZrBool retained = ZR_FALSE;
+
+    if (cell == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    zr_vm_task_sync_mutex_lock(&cell->mutex);
+    if (zr_vm_task_shared_cell_is_alive_locked(cell)) {
+        cell->weakCount++;
+        retained = ZR_TRUE;
+    }
+    zr_vm_task_sync_mutex_unlock(&cell->mutex);
+    return retained;
+}
+
 void zr_vm_task_shared_cell_release_strong(ZrVmTaskSharedCell *cell) {
     TZrBool freeCell = ZR_FALSE;
     ZrVmTaskTransportValue releasedValue;
@@ -120,15 +141,25 @@ void zr_vm_task_shared_cell_release_strong(ZrVmTaskSharedCell *cell) {
     if (cell->strongCount > 0u) {
         cell->strongCount--;
         if (cell->strongCount == 0u) {
-            cell->alive = ZR_FALSE;
+            cell->lifecycleState = ZR_VM_TASK_SHARED_CELL_LIFECYCLE_DESTROYING;
             releasedValue = cell->value;
             memset(&cell->value, 0, sizeof(cell->value));
             freeCell = cell->weakCount == 0u;
+            if (freeCell) {
+                cell->lifecycleState = ZR_VM_TASK_SHARED_CELL_LIFECYCLE_DROPPED;
+            }
         }
     }
     zr_vm_task_sync_mutex_unlock(&cell->mutex);
 
     zr_vm_task_transport_clear(&releasedValue);
+    if (!freeCell) {
+        zr_vm_task_sync_mutex_lock(&cell->mutex);
+        if (cell->strongCount == 0u && cell->lifecycleState == ZR_VM_TASK_SHARED_CELL_LIFECYCLE_DESTROYING) {
+            cell->lifecycleState = ZR_VM_TASK_SHARED_CELL_LIFECYCLE_DROPPED;
+        }
+        zr_vm_task_sync_mutex_unlock(&cell->mutex);
+    }
     if (freeCell) {
         zr_vm_task_sync_mutex_destroy(&cell->mutex);
         free(cell);
@@ -146,6 +177,9 @@ void zr_vm_task_shared_cell_release_weak(ZrVmTaskSharedCell *cell) {
     if (cell->weakCount > 0u) {
         cell->weakCount--;
         freeCell = (TZrBool)(cell->weakCount == 0u && cell->strongCount == 0u);
+        if (freeCell) {
+            cell->lifecycleState = ZR_VM_TASK_SHARED_CELL_LIFECYCLE_DROPPED;
+        }
     }
     zr_vm_task_sync_mutex_unlock(&cell->mutex);
 
@@ -170,7 +204,7 @@ static ZrVmTaskSharedCell *zr_vm_task_shared_cell_new(SZrState *state, const SZr
     zr_vm_task_sync_mutex_init(&cell->mutex);
     cell->strongCount = 1u;
     cell->weakCount = 0u;
-    cell->alive = ZR_TRUE;
+    cell->lifecycleState = ZR_VM_TASK_SHARED_CELL_LIFECYCLE_ALIVE;
     if (!zr_vm_task_transport_encode_value(state,
                                            value,
                                            &cell->value,
@@ -464,7 +498,7 @@ static TZrBool zr_vm_task_mutex_lock_internal(ZrLibCallContext *context,
     cell = zr_vm_task_mutex_cell_from_handle(context->state, zr_vm_task_self_object(context));
     actualKind = zr_vm_task_mutex_handle_kind(context->state, zr_vm_task_self_object(context));
     if (cell == ZR_NULL || actualKind != expectedMutexKind) {
-        return zr_vm_task_raise_runtime_error(context->state, "Mutex handle is invalid");
+        return zr_vm_task_raise_runtime_error(context->state, "Thread mutex cell is invalid");
     }
 
     zr_vm_task_sync_mutex_lock(&cell->mutex);
@@ -595,7 +629,7 @@ TZrBool zr_vm_task_shared_load(ZrLibCallContext *context, SZrTypeValue *result) 
 
     memset(&snapshot, 0, sizeof(snapshot));
     zr_vm_task_sync_mutex_lock(&cell->mutex);
-    alive = (TZrBool)(cell->alive && cell->strongCount > 0u);
+    alive = zr_vm_task_shared_cell_is_alive_locked(cell);
     if (alive) {
         alive = zr_vm_task_transport_clone_value(&cell->value, &snapshot);
     }
@@ -642,7 +676,7 @@ TZrBool zr_vm_task_shared_store(ZrLibCallContext *context, SZrTypeValue *result)
     alive = ZR_FALSE;
     if (cell != ZR_NULL) {
         zr_vm_task_sync_mutex_lock(&cell->mutex);
-        if (cell->alive && cell->strongCount > 0u) {
+        if (zr_vm_task_shared_cell_is_alive_locked(cell)) {
             previousValue = cell->value;
             cell->value = encodedValue;
             memset(&encodedValue, 0, sizeof(encodedValue));
@@ -683,7 +717,7 @@ TZrBool zr_vm_task_shared_downgrade(ZrLibCallContext *context, SZrTypeValue *res
     }
 
     cell = zr_vm_task_shared_cell_from_handle(context->state, zr_vm_task_self_object(context));
-    if (!zr_vm_task_shared_cell_is_alive_native(cell) || !zr_vm_task_shared_cell_add_weak_ref(cell)) {
+    if (!zr_vm_task_shared_cell_add_weak_ref_if_alive(cell)) {
         return zr_vm_task_raise_runtime_error(context->state, "Shared handle is no longer alive");
     }
 
@@ -893,7 +927,7 @@ TZrBool zr_vm_task_lock_store(ZrLibCallContext *context, SZrTypeValue *result) {
     if (!zr_vm_task_transport_encode_value(context->state,
                                            value,
                                            &encodedValue,
-                                           "Lock only stores sendable values and thread transport handles")) {
+                                           "Lock only stores Send values and thread transport handles")) {
         return ZR_FALSE;
     }
 

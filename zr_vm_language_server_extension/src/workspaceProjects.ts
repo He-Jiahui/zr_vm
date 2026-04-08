@@ -11,6 +11,7 @@ import {
 const ZR_PROJECT_GLOB = '**/*.zrp';
 const ZR_PROJECT_EXCLUDE_GLOB = '**/{build,bin,node_modules,.git,.vscode-test}/**';
 const ZR_SELECTED_PROJECT_KEY = 'zr.selectedProjectUri';
+const onDidChangeSelectedProjectEmitter = new vscode.EventEmitter<vscode.Uri | undefined>();
 
 export interface WorkspaceProject {
     id: string;
@@ -23,6 +24,8 @@ export interface WorkspaceProject {
     relativePath: string;
     label: string;
 }
+
+export const onDidChangeSelectedProject = onDidChangeSelectedProjectEmitter.event;
 
 export async function discoverWorkspaceProjects(): Promise<WorkspaceProject[]> {
     const uris = await vscode.workspace.findFiles(ZR_PROJECT_GLOB, ZR_PROJECT_EXCLUDE_GLOB);
@@ -98,12 +101,12 @@ export async function resolveSelectedProjectUri(
     const storedId = context.workspaceState.get<string>(ZR_SELECTED_PROJECT_KEY);
 
     if (projects.length === 0) {
-        await context.workspaceState.update(ZR_SELECTED_PROJECT_KEY, undefined);
+        await setSelectedProjectUri(context, undefined);
         return undefined;
     }
 
     if (projects.length === 1) {
-        await context.workspaceState.update(ZR_SELECTED_PROJECT_KEY, projects[0].id);
+        await setSelectedProjectUri(context, projects[0].uri);
         return projects[0].uri;
     }
 
@@ -121,6 +124,20 @@ export async function resolveSelectedProjectUri(
     return selectWorkspaceProject(context, folder, projects);
 }
 
+export async function resolveSelectedWorkspaceProject(
+    context: vscode.ExtensionContext,
+    folder: vscode.WorkspaceFolder | undefined,
+    allowPrompt: boolean,
+): Promise<WorkspaceProject | undefined> {
+    const projects = await discoverWorkspaceProjects();
+    const selectedUri = await resolveSelectedProjectUri(context, folder, allowPrompt);
+    if (!selectedUri) {
+        return undefined;
+    }
+
+    return projects.find((project) => project.uri.toString() === selectedUri.toString());
+}
+
 export async function selectWorkspaceProject(
     context: vscode.ExtensionContext,
     folder: vscode.WorkspaceFolder | undefined,
@@ -132,7 +149,7 @@ export async function selectWorkspaceProject(
     void folder;
 
     if (projects.length === 0) {
-        await context.workspaceState.update(ZR_SELECTED_PROJECT_KEY, undefined);
+        await setSelectedProjectUri(context, undefined);
         return undefined;
     }
 
@@ -156,12 +173,17 @@ export async function selectWorkspaceProject(
         return undefined;
     }
 
-    await context.workspaceState.update(ZR_SELECTED_PROJECT_KEY, selectedProject.id);
+    await setSelectedProjectUri(context, selectedProject.uri);
     return selectedProject.uri;
 }
 
 export async function hasWorkspaceProjects(): Promise<boolean> {
     return (await discoverWorkspaceProjects()).length > 0;
+}
+
+export function getSelectedProjectUri(context: vscode.ExtensionContext): vscode.Uri | undefined {
+    const storedId = context.workspaceState.get<string>(ZR_SELECTED_PROJECT_KEY);
+    return storedId ? vscode.Uri.parse(storedId) : undefined;
 }
 
 export async function findProjectFile(folder: vscode.WorkspaceFolder | undefined): Promise<vscode.Uri | undefined> {
@@ -257,4 +279,19 @@ function lastPathSegment(pathValue: string): string {
 
 function compareStrings(left: string, right: string): number {
     return left.localeCompare(right);
+}
+
+async function setSelectedProjectUri(
+    context: vscode.ExtensionContext,
+    uri: vscode.Uri | undefined,
+): Promise<void> {
+    const nextValue = uri?.toString();
+    const previousValue = context.workspaceState.get<string>(ZR_SELECTED_PROJECT_KEY);
+
+    if (previousValue === nextValue) {
+        return;
+    }
+
+    await context.workspaceState.update(ZR_SELECTED_PROJECT_KEY, nextValue);
+    onDidChangeSelectedProjectEmitter.fire(uri);
 }

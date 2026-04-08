@@ -18,9 +18,9 @@ set(CMAKE_C_STANDARD 11)           # 默认 C 11
 set(CMAKE_C_STANDARD_REQUIRED ON)  # 必须支持指定标准
 set(CMAKE_C_EXTENSIONS OFF)        # 禁用编译器扩展（如 GNU g++ 的扩展）
 
-# 设置默认构建类型为 Debug
-if (NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE "Debug")
+# 仅对单配置生成器设置默认构建类型；多配置生成器（如 VS/MSVC）由 --config 决定。
+if (NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
 endif ()
 
 
@@ -45,12 +45,10 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 option(USE_SYSTEM_PACKAGES "Use system package manager for dependencies" ON)
 option(BUILD_EXPERIMENTAL_NETWORK_LIB "Build zr_vm_lib_network module" ON)
 
-# 为 Debug 构建添加 -DDEBUG 宏定义
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    add_compile_options(-DZR_DEBUG)
-elseif (CMAKE_BUILD_TYPE STREQUAL "Release")
-    add_compile_options(-DZR_RELEASE)
-endif ()
+add_compile_definitions(
+        $<$<CONFIG:Debug>:ZR_DEBUG>
+        $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:ZR_RELEASE>
+)
 
 if (WIN32)
     add_compile_options(-DZR_PLATFORM_WIN)

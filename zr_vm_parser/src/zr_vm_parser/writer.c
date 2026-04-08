@@ -314,10 +314,6 @@ ZR_PARSER_API TZrUInt64 ZrParser_Writer_GetSerializableNativeHelperId(FZrNativeF
         return ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK;
     }
 
-    if (function == ZrCore_Ownership_NativeUsing) {
-        return ZR_IO_NATIVE_HELPER_OWNERSHIP_USING;
-    }
-
     if (function == ZrCore_Reflection_TypeOfNativeEntry) {
         return ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF;
     }

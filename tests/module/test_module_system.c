@@ -21,6 +21,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "module_fixture_support.h"
 #include "runtime_support.h"
 #include "zr_vm_library.h"
 #include "zr_vm_library/native_registry.h"
@@ -384,11 +385,11 @@ static const TZrChar *kProbeDeviceImplements[] = {
 };
 
 static const TZrChar *kProbeCounterIterableImplements[] = {
-        "Iterable<int>",
+        "zr.builtin.IEnumerable<int>",
 };
 
 static const TZrChar *kProbeCounterIteratorImplements[] = {
-        "Iterator<int>",
+        "zr.builtin.IEnumerator<int>",
 };
 
 static const ZrLibFieldDescriptor kProbeDeviceFields[] = {
@@ -637,6 +638,7 @@ static const ZrLibModuleDescriptor kProbeFutureAbiModuleDescriptor = {
         "9.9.9",
         ZR_VM_NATIVE_RUNTIME_ABI_VERSION + 1,
         0,
+        ZR_NULL,
 };
 
 static const ZrLibModuleDescriptor kProbeUnsupportedCapabilityModuleDescriptor = {
@@ -657,6 +659,7 @@ static const ZrLibModuleDescriptor kProbeUnsupportedCapabilityModuleDescriptor =
         "1.0.0",
         ZR_VM_NATIVE_RUNTIME_ABI_VERSION,
         ((TZrUInt64)1u << 40),
+        ZR_NULL,
 };
 
 // 测试时间测量结构
@@ -781,34 +784,11 @@ static void destroy_test_state(SZrState *state) {
     }
 }
 
-static TZrBool string_equals_cstring(SZrString *value, const TZrChar *expected) {
-    const TZrChar *nativeString;
-
-    if (value == ZR_NULL || expected == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    nativeString = ZrCore_String_GetNativeString(value);
-    return nativeString != ZR_NULL && strcmp(nativeString, expected) == 0;
-}
-
-static const SZrTypeValue *get_object_field_value(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
-    SZrString *fieldNameString;
-    SZrTypeValue key;
-
-    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    fieldNameString = ZrCore_String_Create(state, (TZrNativeString)fieldName, strlen(fieldName));
-    if (fieldNameString == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldNameString));
-    key.type = ZR_VALUE_TYPE_STRING;
-    return ZrCore_Object_GetValue(state, object, &key);
-}
+#define string_equals_cstring ZrTests_Fixture_StringEqualsCString
+#define get_object_field_value ZrTests_Fixture_GetObjectFieldValue
+#define get_array_length ZrTests_Fixture_GetArrayLength
+#define get_array_entry_object ZrTests_Fixture_GetArrayEntryObject
+#define get_array_entry_value ZrTests_Fixture_GetArrayEntryValue
 
 static const SZrTypeValue *get_module_export_value(SZrState *state, SZrObjectModule *module, const TZrChar *exportName) {
     SZrString *exportNameString;
@@ -847,42 +827,6 @@ static const TZrChar *get_current_exception_message_cstring(SZrState *state) {
     return ZrCore_String_GetNativeString(ZR_CAST_STRING(state, messageValue->value.object));
 }
 
-static TZrSize get_array_length(SZrObject *array) {
-    if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
-        return 0;
-    }
-
-    return array->nodeMap.elementCount;
-}
-
-static SZrObject *get_array_entry_object(SZrState *state, SZrObject *array, TZrSize index) {
-    SZrTypeValue key;
-    const SZrTypeValue *entryValue;
-
-    if (state == ZR_NULL || array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
-        return ZR_NULL;
-    }
-
-    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)index);
-    entryValue = ZrCore_Object_GetValue(state, array, &key);
-    if (entryValue == ZR_NULL || entryValue->type != ZR_VALUE_TYPE_OBJECT) {
-        return ZR_NULL;
-    }
-
-    return ZR_CAST_OBJECT(state, entryValue->value.object);
-}
-
-static const SZrTypeValue *get_array_entry_value(SZrState *state, SZrObject *array, TZrSize index) {
-    SZrTypeValue key;
-
-    if (state == ZR_NULL || array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
-        return ZR_NULL;
-    }
-
-    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)index);
-    return ZrCore_Object_GetValue(state, array, &key);
-}
-
 static const SZrTypeValue *get_zr_global_value(SZrState *state, const TZrChar *memberName) {
     SZrGlobalState *global;
     SZrObject *zrObject;
@@ -915,170 +859,30 @@ static SZrObjectModule *import_native_module(SZrState *state, const TZrChar *mod
     return ZrCore_Module_ImportByPath(state, modulePath);
 }
 
-typedef struct {
-    const TZrChar *path;
-    const TZrChar *source;
-    const TZrByte *bytes;
-    TZrSize length;
-    TZrBool isBinary;
-} SZrModuleFixtureSource;
+typedef ZrTestsFixtureSource SZrModuleFixtureSource;
+typedef ZrTestsFixtureReader SZrModuleFixtureReader;
 
-#define MODULE_FIXTURE_SOURCE_TEXT(pathValue, sourceValue) \
-    {                                                      \
-            (pathValue),                                   \
-            (sourceValue),                                 \
-            ZR_NULL,                                       \
-            0,                                             \
-            ZR_FALSE,                                      \
-    }
-
-typedef struct {
-    const TZrByte *bytes;
-    TZrSize length;
-    TZrBool consumed;
-} SZrModuleFixtureReader;
+#define MODULE_FIXTURE_SOURCE_TEXT(pathValue, sourceValue) ZR_TESTS_FIXTURE_SOURCE_TEXT(pathValue, sourceValue)
+#define read_test_file_bytes ZrTests_Fixture_ReadFileBytes
+#define module_fixture_reader_read ZrTests_Fixture_ReaderRead
 
 static const SZrModuleFixtureSource *g_module_fixture_sources = ZR_NULL;
 static TZrSize g_module_fixture_source_count = 0;
-
-static TZrBytePtr module_fixture_reader_read(SZrState *state, TZrPtr customData, TZrSize *size) {
-    SZrModuleFixtureReader *reader = (SZrModuleFixtureReader *)customData;
-
-    ZR_UNUSED_PARAMETER(state);
-
-    if (reader == ZR_NULL || size == ZR_NULL || reader->consumed) {
-        if (size != ZR_NULL) {
-            *size = 0;
-        }
-        return ZR_NULL;
-    }
-
-    reader->consumed = ZR_TRUE;
-    *size = reader->length;
-    return (TZrBytePtr)reader->bytes;
-}
-
-static void module_fixture_reader_close(SZrState *state, TZrPtr customData) {
-    ZR_UNUSED_PARAMETER(state);
-
-    if (customData != ZR_NULL) {
-        free(customData);
-    }
-}
-
-static TZrByte *read_test_file_bytes(const TZrChar *path, TZrSize *outLength) {
-    FILE *file;
-    long fileSize;
-    TZrByte *buffer;
-
-    if (path == ZR_NULL || outLength == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    file = fopen(path, "rb");
-    if (file == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    fileSize = ftell(file);
-    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0) {
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    buffer = (TZrByte *)malloc((size_t)fileSize);
-    if (buffer == ZR_NULL) {
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    if (fileSize > 0 && fread(buffer, 1, (size_t)fileSize, file) != (size_t)fileSize) {
-        free(buffer);
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    fclose(file);
-    *outLength = (TZrSize)fileSize;
-    return buffer;
-}
 
 static TZrByte *build_module_binary_fixture(SZrState *state,
                                             const TZrChar *moduleSource,
                                             const TZrChar *binaryPath,
                                             TZrSize *outLength) {
-    SZrString *sourceName;
-    SZrFunction *function;
-
-    if (state == ZR_NULL || moduleSource == ZR_NULL || binaryPath == ZR_NULL || outLength == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    sourceName = ZrCore_String_Create(state, (TZrNativeString)binaryPath, strlen(binaryPath));
-    if (sourceName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    function = ZrParser_Source_Compile(state, moduleSource, strlen(moduleSource), sourceName);
-    if (function == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (!ZrParser_Writer_WriteBinaryFile(state, function, binaryPath)) {
-        ZrCore_Function_Free(state, function);
-        return ZR_NULL;
-    }
-
-    return read_test_file_bytes(binaryPath, outLength);
+    return ZrTests_Fixture_BuildBinaryFile(state, moduleSource, binaryPath, ZR_FALSE, outLength);
 }
 
 static TZrBool module_fixture_source_loader(SZrState *state, TZrNativeString sourcePath, TZrNativeString md5, SZrIo *io) {
-    TZrSize index;
-
-    ZR_UNUSED_PARAMETER(md5);
-
-    if (state == ZR_NULL || sourcePath == ZR_NULL || io == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (index = 0; index < g_module_fixture_source_count; index++) {
-        const SZrModuleFixtureSource *fixture = &g_module_fixture_sources[index];
-        if (fixture->path != ZR_NULL && strcmp(fixture->path, sourcePath) == 0) {
-            SZrModuleFixtureReader *reader =
-                    (SZrModuleFixtureReader *)malloc(sizeof(SZrModuleFixtureReader));
-            if (reader == ZR_NULL) {
-                return ZR_FALSE;
-            }
-
-            if (fixture->bytes != ZR_NULL && fixture->length > 0) {
-                reader->bytes = fixture->bytes;
-                reader->length = fixture->length;
-                reader->consumed = ZR_FALSE;
-                ZrCore_Io_Init(state, io, module_fixture_reader_read, module_fixture_reader_close, reader);
-                io->isBinary = fixture->isBinary ? ZR_TRUE : ZR_FALSE;
-                return ZR_TRUE;
-            }
-
-            if (fixture->source == ZR_NULL) {
-                free(reader);
-                return ZR_FALSE;
-            }
-
-            reader->bytes = (const TZrByte *)fixture->source;
-            reader->length = strlen(fixture->source);
-            reader->consumed = ZR_FALSE;
-            ZrCore_Io_Init(state, io, module_fixture_reader_read, module_fixture_reader_close, reader);
-            io->isBinary = ZR_FALSE;
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
+    return ZrTests_Fixture_SourceLoaderFromArray(state,
+                                                 sourcePath,
+                                                 md5,
+                                                 io,
+                                                 g_module_fixture_sources,
+                                                 g_module_fixture_source_count);
 }
 
 static SZrObject *find_named_entry_in_array(SZrState *state,
@@ -1896,15 +1700,15 @@ static void test_complete_module_loading_flow(void) {
     TEST_DIVIDER();
 }
 
-static void test_module_restores_field_scoped_using_prototype_metadata(void) {
+static void test_module_restores_owned_field_prototype_metadata(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Module Restores Field-Scoped Using Metadata";
+    const char *testSummary = "Module Restores Owned Field Metadata";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    TEST_INFO("Field-scoped using runtime metadata",
-              "Testing that prototypeData loading restores struct field offsets and managed-field metadata for `%using var` fields");
+    TEST_INFO("Owned field runtime metadata",
+              "Testing that prototypeData loading restores struct field offsets and managed-field metadata for direct %unique/%shared fields");
 
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
@@ -1912,8 +1716,8 @@ static void test_module_restores_field_scoped_using_prototype_metadata(void) {
     {
         const char *source =
             "%module \"field_meta\";\n"
-            "pub struct HandleBox { %using var handle: %unique Resource; var count: int; }\n"
-            "pub class Holder { %using var resource: %shared Resource; var version: int; }";
+            "pub struct HandleBox { var handle: %unique Resource; var count: int; }\n"
+            "pub class Holder { var resource: %shared Resource; var version: int; }";
         SZrString *sourceName = ZrCore_String_Create(state, "field_meta.zr", 13);
         SZrFunction *entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         SZrObjectModule *module;
@@ -2231,6 +2035,70 @@ static void test_imported_function_alias_with_parameters_preserves_call_signatur
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
         TEST_ASSERT_EQUAL_INT64(7, result.value.nativeObject.nativeInt64);
+
+        ZrCore_Function_Free(state, entryFunction);
+        state->global->sourceLoader = ZR_NULL;
+        g_module_fixture_sources = previousFixtures;
+        g_module_fixture_source_count = previousFixtureCount;
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_module_init_summary_cache_growth_keeps_current_source_summary_stable(void) {
+    static const SZrModuleFixtureSource kFixtures[] = {
+            MODULE_FIXTURE_SOURCE_TEXT("dep0", "pub value(): int {\n    return 0;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep1", "pub value(): int {\n    return 1;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep2", "pub value(): int {\n    return 2;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep3", "pub value(): int {\n    return 3;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep4", "pub value(): int {\n    return 4;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep5", "pub value(): int {\n    return 5;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep6", "pub value(): int {\n    return 6;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep7", "pub value(): int {\n    return 7;\n}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT("dep8", "pub value(): int {\n    return 8;\n}\n"),
+    };
+    SZrTestTimer timer;
+    const char *testSummary = "Module Init Summary Cache Growth Keeps Current Source Summary Stable";
+    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
+    TZrSize previousFixtureCount = g_module_fixture_source_count;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "var dep0 = %import(\"dep0\");\n"
+                "var dep1 = %import(\"dep1\");\n"
+                "var dep2 = %import(\"dep2\");\n"
+                "var dep3 = %import(\"dep3\");\n"
+                "var dep4 = %import(\"dep4\");\n"
+                "var dep5 = %import(\"dep5\");\n"
+                "var dep6 = %import(\"dep6\");\n"
+                "var dep7 = %import(\"dep7\");\n"
+                "var dep8 = %import(\"dep8\");\n"
+                "return dep8.value() + dep0.value();\n";
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        g_module_fixture_sources = kFixtures;
+        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
+        state->global->sourceLoader = module_fixture_source_loader;
+
+        sourceName = ZrCore_String_Create(state, "module_init_summary_realloc_safe_test.zr", 41);
+        TEST_ASSERT_NOT_NULL(sourceName);
+
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        TEST_ASSERT_EQUAL_UINT32(9u, entryFunction->staticImportLength);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(8, result);
 
         ZrCore_Function_Free(state, entryFunction);
         state->global->sourceLoader = ZR_NULL;
@@ -4087,6 +3955,181 @@ static void test_builtin_module_exports_protocols_roots_and_wrappers(void) {
     TEST_DIVIDER();
 }
 
+static void test_builtin_module_exports_complete_type_hints(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Builtin Module Exports Complete Type Hints";
+    static const struct {
+        const TZrChar *symbolName;
+        const TZrChar *signature;
+    } kBuiltinTypeHints[] = {
+            {"IEnumerable", "interface IEnumerable<T>"},
+            {"IEnumerator", "interface IEnumerator<T>"},
+            {"IArrayLike", "interface IArrayLike<T>"},
+            {"IEquatable", "interface IEquatable<T>"},
+            {"IHashable", "interface IHashable"},
+            {"IComparable", "interface IComparable<T>"},
+            {"IComparer", "interface IComparer<T>"},
+            {"Object", "class Object"},
+            {"Module", "class Module"},
+            {"TypeInfo", "class TypeInfo"},
+            {"Integer", "class Integer"},
+            {"Float", "class Float"},
+            {"Double", "class Double"},
+            {"String", "class String"},
+            {"Bool", "class Bool"},
+            {"Byte", "class Byte"},
+            {"Char", "class Char"},
+            {"UInt64", "class UInt64"},
+    };
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *module;
+        const SZrTypeValue *moduleInfoValue;
+        const SZrTypeValue *typeHintsValue;
+        SZrObject *moduleInfo;
+        SZrObject *typeHintsArray;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        module = import_native_module(state, "zr.builtin");
+        TEST_ASSERT_NOT_NULL(module);
+
+        moduleInfoValue = get_module_export_value(state, module, ZR_NATIVE_MODULE_INFO_EXPORT_NAME);
+        TEST_ASSERT_NOT_NULL(moduleInfoValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, moduleInfoValue->type);
+
+        moduleInfo = ZR_CAST_OBJECT(state, moduleInfoValue->value.object);
+        TEST_ASSERT_NOT_NULL(moduleInfo);
+
+        typeHintsValue = get_object_field_value(state, moduleInfo, "typeHints");
+        TEST_ASSERT_NOT_NULL(typeHintsValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, typeHintsValue->type);
+
+        typeHintsArray = ZR_CAST_OBJECT(state, typeHintsValue->value.object);
+        TEST_ASSERT_NOT_NULL(typeHintsArray);
+        TEST_ASSERT_EQUAL_UINT64(ZR_ARRAY_COUNT(kBuiltinTypeHints), get_array_length(typeHintsArray));
+
+        for (TZrSize index = 0; index < ZR_ARRAY_COUNT(kBuiltinTypeHints); index++) {
+            SZrObject *hintEntry = find_named_entry_in_array(state,
+                                                             typeHintsArray,
+                                                             "symbolName",
+                                                             kBuiltinTypeHints[index].symbolName);
+            const SZrTypeValue *signatureValue;
+
+            TEST_ASSERT_NOT_NULL(hintEntry);
+            signatureValue = get_object_field_value(state, hintEntry, "signature");
+            TEST_ASSERT_NOT_NULL(signatureValue);
+            TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, signatureValue->type);
+            TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, signatureValue->value.object),
+                                                   kBuiltinTypeHints[index].signature));
+        }
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_builtin_wrapper_box_helpers_preserve_runtime_semantics(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Builtin Wrapper Box Helpers Preserve Runtime Semantics";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "var builtin = %import(\"zr.builtin\");\n"
+                "var {TypeInfo} = %import(\"zr.builtin\");\n"
+                "var left = builtin.Object.box(7);\n"
+                "var right = TypeInfo.box(7);\n"
+                "var other = builtin.Object.box(9);\n"
+                "return {\n"
+                "    leftType: builtin.Object.type(left),\n"
+                "    rightType: builtin.Object.type(right),\n"
+                "    reflectionName: %type(left).name,\n"
+                "    baseType: %type(left).extendsTypeName,\n"
+                "    equalsRight: left.equals(right),\n"
+                "    compareRight: left.compareTo(right),\n"
+                "    compareOther: left.compareTo(other),\n"
+                "    hashEqual: left.hashCode() == right.hashCode()\n"
+                "};\n";
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        SZrTypeValue result;
+        SZrObject *resultObject;
+        const SZrTypeValue *leftTypeValue;
+        const SZrTypeValue *rightTypeValue;
+        const SZrTypeValue *reflectionNameValue;
+        const SZrTypeValue *baseTypeValue;
+        const SZrTypeValue *equalsRightValue;
+        const SZrTypeValue *compareRightValue;
+        const SZrTypeValue *compareOtherValue;
+        const SZrTypeValue *hashEqualValue;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        sourceName = ZrCore_String_Create(state, "builtin_box_helpers_runtime_test.zr", 35);
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
+
+        resultObject = ZR_CAST_OBJECT(state, result.value.object);
+        TEST_ASSERT_NOT_NULL(resultObject);
+
+        leftTypeValue = get_object_field_value(state, resultObject, "leftType");
+        rightTypeValue = get_object_field_value(state, resultObject, "rightType");
+        reflectionNameValue = get_object_field_value(state, resultObject, "reflectionName");
+        baseTypeValue = get_object_field_value(state, resultObject, "baseType");
+        equalsRightValue = get_object_field_value(state, resultObject, "equalsRight");
+        compareRightValue = get_object_field_value(state, resultObject, "compareRight");
+        compareOtherValue = get_object_field_value(state, resultObject, "compareOther");
+        hashEqualValue = get_object_field_value(state, resultObject, "hashEqual");
+
+        TEST_ASSERT_NOT_NULL(leftTypeValue);
+        TEST_ASSERT_NOT_NULL(rightTypeValue);
+        TEST_ASSERT_NOT_NULL(reflectionNameValue);
+        TEST_ASSERT_NOT_NULL(baseTypeValue);
+        TEST_ASSERT_NOT_NULL(equalsRightValue);
+        TEST_ASSERT_NOT_NULL(compareRightValue);
+        TEST_ASSERT_NOT_NULL(compareOtherValue);
+        TEST_ASSERT_NOT_NULL(hashEqualValue);
+
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, leftTypeValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, rightTypeValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, reflectionNameValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, baseTypeValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, equalsRightValue->type);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(compareRightValue->type));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(compareOtherValue->type));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, hashEqualValue->type);
+
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, leftTypeValue->value.object), "Integer"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, rightTypeValue->value.object), "Integer"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, reflectionNameValue->value.object), "Integer"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, baseTypeValue->value.object), "zr.builtin.Object"));
+        TEST_ASSERT_TRUE(equalsRightValue->value.nativeObject.nativeBool);
+        TEST_ASSERT_EQUAL_INT64(0, compareRightValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(-1, compareOtherValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_TRUE(hashEqualValue->value.nativeObject.nativeBool);
+
+        ZrCore_Function_Free(state, entryFunction);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_container_array_runtime_supports_add_and_computed_index_access(void) {
     SZrTestTimer timer;
     const char *testSummary = "Container Array Runtime Supports Add And Computed Index Access";
@@ -4552,8 +4595,10 @@ static void test_percent_type_source_module_reflection_uses_ordered_script_metad
         const SZrTypeValue *entryValue;
         const SZrTypeValue *vectorEntriesValue;
         const SZrTypeValue *normalizeEntriesValue;
+        const SZrTypeValue *normalizeImplEntriesValue;
         const SZrTypeValue *versionEntriesValue;
         SZrObject *vectorEntries;
+        SZrObject *normalizeImplEntries;
         SZrObject *normalizeEntries;
         SZrObject *versionEntries;
         SZrString *resultString;
@@ -4587,21 +4632,29 @@ static void test_percent_type_source_module_reflection_uses_ordered_script_metad
         normalizeEntriesValue = get_object_field_value(state,
                                                        ZR_CAST_OBJECT(state, declarationsValue->value.object),
                                                        "normalize");
+        normalizeImplEntriesValue = get_object_field_value(state,
+                                                           ZR_CAST_OBJECT(state, declarationsValue->value.object),
+                                                           "normalizeImpl");
         versionEntriesValue = get_object_field_value(state, ZR_CAST_OBJECT(state, variablesValue->value.object), "version");
         TEST_ASSERT_NOT_NULL(vectorEntriesValue);
         TEST_ASSERT_NOT_NULL(normalizeEntriesValue);
+        TEST_ASSERT_NOT_NULL(normalizeImplEntriesValue);
         TEST_ASSERT_NOT_NULL(versionEntriesValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, vectorEntriesValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, normalizeImplEntriesValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, normalizeEntriesValue->type);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, versionEntriesValue->type);
 
         vectorEntries = ZR_CAST_OBJECT(state, vectorEntriesValue->value.object);
+        normalizeImplEntries = ZR_CAST_OBJECT(state, normalizeImplEntriesValue->value.object);
         normalizeEntries = ZR_CAST_OBJECT(state, normalizeEntriesValue->value.object);
         versionEntries = ZR_CAST_OBJECT(state, versionEntriesValue->value.object);
         TEST_ASSERT_NOT_NULL(vectorEntries);
+        TEST_ASSERT_NOT_NULL(normalizeImplEntries);
         TEST_ASSERT_NOT_NULL(normalizeEntries);
         TEST_ASSERT_NOT_NULL(versionEntries);
         TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(vectorEntries));
+        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(normalizeImplEntries));
         TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(normalizeEntries));
         TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(versionEntries));
 
@@ -4610,6 +4663,7 @@ static void test_percent_type_source_module_reflection_uses_ordered_script_metad
         TEST_ASSERT_TRUE(string_equals_cstring(resultString,
                                                "module reflect_math{\n"
                                                "class Vector2;\n"
+                                               "normalizeImpl(value:int, delta:int): int;\n"
                                                "normalize(value:int, delta:int): int;\n"
                                                "version:int;\n"
                                                "__entry(): void;\n"
@@ -6240,7 +6294,6 @@ static void test_source_module_class_boxed_construction_preserves_field_access(v
         sourceName = ZrCore_String_Create(state, "source_module_class_runtime_test.zr", 35);
         entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(entryFunction);
-
         TEST_ASSERT_TRUE(function_contains_opcode(entryFunction, ZR_INSTRUCTION_ENUM(CREATE_OBJECT)));
         TEST_ASSERT_TRUE(function_contains_to_object_type_name(entryFunction, "Box"));
         TEST_ASSERT_TRUE(function_contains_get_member_name(entryFunction, "__constructor"));
@@ -6263,301 +6316,237 @@ static void test_source_module_class_boxed_construction_preserves_field_access(v
     TEST_DIVIDER();
 }
 
-static void test_percent_type_source_field_reflection_exposes_runtime_field_decorator_metadata(void) {
-    static const SZrModuleFixtureSource kFixtures[] = {
-            MODULE_FIXTURE_SOURCE_TEXT(
-                    "reflect_runtime_field_decorators",
-                    "class MarkField {\n"
-                    "    @decorate(target: %type Field): void {\n"
-                    "        target.metadata.isRuntimeField = true;\n"
-                    "    }\n"
-                    "}\n"
-                    "\n"
-                    "pub class User {\n"
-                    "    #MarkField#\n"
-                    "    pub var id: int = 1;\n"
-                    "}\n"),
-    };
+typedef struct {
+    const TZrChar *modulePath;
+    const TZrChar *moduleSource;
+    const TZrChar *memberReflectionExpression;
+    const TZrChar *sourceNameText;
+    const TZrChar *expectedKind;
+    const TZrChar *expectedMetadataFlagName;
+    const TZrChar *expectedDecoratorName;
+    const TZrChar *binaryPath;
+} SZrRuntimeMemberDecoratorReflectionCase;
+
+static void assert_runtime_member_decorator_reflection_object(
+        SZrState *state,
+        SZrObject *reflectionObject,
+        const SZrRuntimeMemberDecoratorReflectionCase *testCase) {
+    const SZrTypeValue *kindValue;
+    const SZrTypeValue *metadataValue;
+    const SZrTypeValue *decoratorsValue;
+    const SZrTypeValue *flagValue;
+    const SZrTypeValue *decoratorNameValue;
+    SZrObject *metadataObject;
+    SZrObject *decoratorsArray;
+    SZrObject *decoratorEntry;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(reflectionObject);
+    TEST_ASSERT_NOT_NULL(testCase);
+
+    kindValue = get_object_field_value(state, reflectionObject, "kind");
+    metadataValue = get_object_field_value(state, reflectionObject, "metadata");
+    decoratorsValue = get_object_field_value(state, reflectionObject, "decorators");
+    TEST_ASSERT_NOT_NULL(kindValue);
+    TEST_ASSERT_NOT_NULL(metadataValue);
+    TEST_ASSERT_NOT_NULL(decoratorsValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, kindValue->type);
+    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, kindValue->value.object), testCase->expectedKind));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, metadataValue->type);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, decoratorsValue->type);
+
+    metadataObject = ZR_CAST_OBJECT(state, metadataValue->value.object);
+    decoratorsArray = ZR_CAST_OBJECT(state, decoratorsValue->value.object);
+    TEST_ASSERT_NOT_NULL(metadataObject);
+    TEST_ASSERT_NOT_NULL(decoratorsArray);
+
+    flagValue = get_object_field_value(state, metadataObject, testCase->expectedMetadataFlagName);
+    TEST_ASSERT_NOT_NULL(flagValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, flagValue->type);
+    TEST_ASSERT_TRUE(flagValue->value.nativeObject.nativeBool);
+
+    TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(decoratorsArray));
+    decoratorEntry = get_array_entry_object(state, decoratorsArray, 0);
+    TEST_ASSERT_NOT_NULL(decoratorEntry);
+    decoratorNameValue = get_object_field_value(state, decoratorEntry, "name");
+    TEST_ASSERT_NOT_NULL(decoratorNameValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, decoratorNameValue->type);
+    TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, decoratorNameValue->value.object),
+                                           testCase->expectedDecoratorName));
+}
+
+static void run_runtime_member_decorator_reflection_test(
+        const char *testSummary,
+        const SZrRuntimeMemberDecoratorReflectionCase *testCase,
+        TZrBool useBinaryFixture) {
     SZrTestTimer timer;
-    const char *testSummary = "Percent Type Source Field Reflection Exposes Runtime Field Decorator Metadata";
     const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
     TZrSize previousFixtureCount = g_module_fixture_source_count;
+    TZrByte *binaryBytes = ZR_NULL;
+    TZrSize binaryLength = 0;
+    char sourceBuffer[256];
+    int sourceLength;
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
     {
         SZrState *state = create_test_state();
-        const TZrChar *source =
-                "var decorated = %import(\"reflect_runtime_field_decorators\");\n"
-                "return %type(decorated.User).members.id[0];\n";
+        SZrModuleFixtureSource fixture = {0};
         SZrString *sourceName;
         SZrFunction *entryFunction;
         SZrTypeValue result;
         SZrObject *reflectionObject;
-        const SZrTypeValue *kindValue;
-        const SZrTypeValue *metadataValue;
-        const SZrTypeValue *decoratorsValue;
-        SZrObject *metadataObject;
-        SZrObject *decoratorsArray;
-        SZrObject *decoratorEntry;
-        const SZrTypeValue *flagValue;
-        const SZrTypeValue *decoratorNameValue;
 
         TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(testCase);
 
-        g_module_fixture_sources = kFixtures;
-        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
+        sourceLength = snprintf(sourceBuffer,
+                                sizeof(sourceBuffer),
+                                "var decorated = %%import(\"%s\");\nreturn %s;\n",
+                                testCase->modulePath,
+                                testCase->memberReflectionExpression);
+        TEST_ASSERT_TRUE(sourceLength > 0 && (TZrSize)sourceLength < sizeof(sourceBuffer));
+
+        if (useBinaryFixture) {
+            TEST_ASSERT_NOT_NULL(testCase->binaryPath);
+            binaryBytes = build_module_binary_fixture(state, testCase->moduleSource, testCase->binaryPath, &binaryLength);
+            TEST_ASSERT_NOT_NULL(binaryBytes);
+            TEST_ASSERT_TRUE(binaryLength > 0);
+
+            fixture.path = testCase->modulePath;
+            fixture.source = ZR_NULL;
+            fixture.bytes = binaryBytes;
+            fixture.length = binaryLength;
+            fixture.isBinary = ZR_TRUE;
+        } else {
+            fixture.path = testCase->modulePath;
+            fixture.source = testCase->moduleSource;
+            fixture.bytes = ZR_NULL;
+            fixture.length = 0;
+            fixture.isBinary = ZR_FALSE;
+        }
+
+        g_module_fixture_sources = &fixture;
+        g_module_fixture_source_count = 1;
         state->global->sourceLoader = module_fixture_source_loader;
 
-        sourceName = ZrCore_String_Create(state, "type_source_runtime_field_decorator_reflection_test.zr", 53);
-        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        sourceName = ZrCore_String_Create(state,
+                                          (TZrNativeString)testCase->sourceNameText,
+                                          strlen(testCase->sourceNameText));
+        TEST_ASSERT_NOT_NULL(sourceName);
+        entryFunction = ZrParser_Source_Compile(state, sourceBuffer, strlen(sourceBuffer), sourceName);
         TEST_ASSERT_NOT_NULL(entryFunction);
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
 
         reflectionObject = ZR_CAST_OBJECT(state, result.value.object);
         TEST_ASSERT_NOT_NULL(reflectionObject);
-
-        kindValue = get_object_field_value(state, reflectionObject, "kind");
-        metadataValue = get_object_field_value(state, reflectionObject, "metadata");
-        decoratorsValue = get_object_field_value(state, reflectionObject, "decorators");
-        TEST_ASSERT_NOT_NULL(kindValue);
-        TEST_ASSERT_NOT_NULL(metadataValue);
-        TEST_ASSERT_NOT_NULL(decoratorsValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, kindValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, kindValue->value.object), "field"));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, metadataValue->type);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, decoratorsValue->type);
-
-        metadataObject = ZR_CAST_OBJECT(state, metadataValue->value.object);
-        decoratorsArray = ZR_CAST_OBJECT(state, decoratorsValue->value.object);
-        TEST_ASSERT_NOT_NULL(metadataObject);
-        TEST_ASSERT_NOT_NULL(decoratorsArray);
-
-        flagValue = get_object_field_value(state, metadataObject, "isRuntimeField");
-        TEST_ASSERT_NOT_NULL(flagValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, flagValue->type);
-        TEST_ASSERT_TRUE(flagValue->value.nativeObject.nativeBool);
-
-        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(decoratorsArray));
-        decoratorEntry = get_array_entry_object(state, decoratorsArray, 0);
-        TEST_ASSERT_NOT_NULL(decoratorEntry);
-        decoratorNameValue = get_object_field_value(state, decoratorEntry, "name");
-        TEST_ASSERT_NOT_NULL(decoratorNameValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, decoratorNameValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, decoratorNameValue->value.object), "MarkField"));
+        assert_runtime_member_decorator_reflection_object(state, reflectionObject, testCase);
 
         ZrCore_Function_Free(state, entryFunction);
         state->global->sourceLoader = ZR_NULL;
         g_module_fixture_sources = previousFixtures;
         g_module_fixture_source_count = previousFixtureCount;
+        if (binaryBytes != ZR_NULL) {
+            free(binaryBytes);
+        }
+        if (useBinaryFixture && testCase->binaryPath != ZR_NULL) {
+            remove(testCase->binaryPath);
+        }
         destroy_test_state(state);
     }
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
     TEST_DIVIDER();
+}
+
+static void test_percent_type_source_field_reflection_exposes_runtime_field_decorator_metadata(void) {
+    static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
+            "reflect_runtime_field_decorators",
+            "class MarkField {\n"
+            "    @decorate(target: %type Field): void {\n"
+            "        target.metadata.isRuntimeField = true;\n"
+            "    }\n"
+            "}\n"
+            "\n"
+            "pub class User {\n"
+            "    #MarkField#\n"
+            "    pub var id: int = 1;\n"
+            "}\n",
+            "%type(decorated.User).members.id[0]",
+            "type_source_runtime_field_decorator_reflection_test.zr",
+            "field",
+            "isRuntimeField",
+            "MarkField",
+            "test_reflect_runtime_field_decorators_binary_fixture.zro",
+    };
+
+    run_runtime_member_decorator_reflection_test(
+            "Percent Type Source Field Reflection Exposes Runtime Field Decorator Metadata",
+            &kCase,
+            ZR_FALSE);
 }
 
 static void test_percent_type_source_method_reflection_exposes_runtime_method_decorator_metadata(void) {
-    static const SZrModuleFixtureSource kFixtures[] = {
-            MODULE_FIXTURE_SOURCE_TEXT(
-                    "reflect_runtime_method_decorators",
-                    "class MarkMethod {\n"
-                    "    @decorate(target: %type Method): void {\n"
-                    "        target.metadata.instrumented = true;\n"
-                    "    }\n"
-                    "}\n"
-                    "\n"
-                    "pub class User {\n"
-                    "    #MarkMethod#\n"
-                    "    pub load(id: int): int {\n"
-                    "        return id;\n"
-                    "    }\n"
-                    "}\n"),
+    static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
+            "reflect_runtime_method_decorators",
+            "class MarkMethod {\n"
+            "    @decorate(target: %type Method): void {\n"
+            "        target.metadata.instrumented = true;\n"
+            "    }\n"
+            "}\n"
+            "\n"
+            "pub class User {\n"
+            "    #MarkMethod#\n"
+            "    pub load(id: int): int {\n"
+            "        return id;\n"
+            "    }\n"
+            "}\n",
+            "%type(decorated.User).members.load[0]",
+            "type_source_runtime_method_decorator_reflection_test.zr",
+            "method",
+            "instrumented",
+            "MarkMethod",
+            "test_reflect_runtime_method_decorators_binary_fixture.zro",
     };
-    SZrTestTimer timer;
-    const char *testSummary = "Percent Type Source Method Reflection Exposes Runtime Method Decorator Metadata";
-    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
-    TZrSize previousFixtureCount = g_module_fixture_source_count;
 
-    TEST_START(testSummary);
-    timer.startTime = clock();
-
-    {
-        SZrState *state = create_test_state();
-        const TZrChar *source =
-                "var decorated = %import(\"reflect_runtime_method_decorators\");\n"
-                "return %type(decorated.User).members.load[0];\n";
-        SZrString *sourceName;
-        SZrFunction *entryFunction;
-        SZrTypeValue result;
-        SZrObject *reflectionObject;
-        const SZrTypeValue *kindValue;
-        const SZrTypeValue *metadataValue;
-        const SZrTypeValue *decoratorsValue;
-        SZrObject *metadataObject;
-        SZrObject *decoratorsArray;
-        SZrObject *decoratorEntry;
-        const SZrTypeValue *flagValue;
-        const SZrTypeValue *decoratorNameValue;
-
-        TEST_ASSERT_NOT_NULL(state);
-
-        g_module_fixture_sources = kFixtures;
-        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
-        state->global->sourceLoader = module_fixture_source_loader;
-
-        sourceName = ZrCore_String_Create(state, "type_source_runtime_method_decorator_reflection_test.zr", 54);
-        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
-        TEST_ASSERT_NOT_NULL(entryFunction);
-        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
-
-        reflectionObject = ZR_CAST_OBJECT(state, result.value.object);
-        TEST_ASSERT_NOT_NULL(reflectionObject);
-
-        kindValue = get_object_field_value(state, reflectionObject, "kind");
-        metadataValue = get_object_field_value(state, reflectionObject, "metadata");
-        decoratorsValue = get_object_field_value(state, reflectionObject, "decorators");
-        TEST_ASSERT_NOT_NULL(kindValue);
-        TEST_ASSERT_NOT_NULL(metadataValue);
-        TEST_ASSERT_NOT_NULL(decoratorsValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, kindValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, kindValue->value.object), "method"));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, metadataValue->type);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, decoratorsValue->type);
-
-        metadataObject = ZR_CAST_OBJECT(state, metadataValue->value.object);
-        decoratorsArray = ZR_CAST_OBJECT(state, decoratorsValue->value.object);
-        TEST_ASSERT_NOT_NULL(metadataObject);
-        TEST_ASSERT_NOT_NULL(decoratorsArray);
-
-        flagValue = get_object_field_value(state, metadataObject, "instrumented");
-        TEST_ASSERT_NOT_NULL(flagValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, flagValue->type);
-        TEST_ASSERT_TRUE(flagValue->value.nativeObject.nativeBool);
-
-        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(decoratorsArray));
-        decoratorEntry = get_array_entry_object(state, decoratorsArray, 0);
-        TEST_ASSERT_NOT_NULL(decoratorEntry);
-        decoratorNameValue = get_object_field_value(state, decoratorEntry, "name");
-        TEST_ASSERT_NOT_NULL(decoratorNameValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, decoratorNameValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, decoratorNameValue->value.object), "MarkMethod"));
-
-        ZrCore_Function_Free(state, entryFunction);
-        state->global->sourceLoader = ZR_NULL;
-        g_module_fixture_sources = previousFixtures;
-        g_module_fixture_source_count = previousFixtureCount;
-        destroy_test_state(state);
-    }
-
-    timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    run_runtime_member_decorator_reflection_test(
+            "Percent Type Source Method Reflection Exposes Runtime Method Decorator Metadata",
+            &kCase,
+            ZR_FALSE);
 }
 
 static void test_percent_type_source_property_reflection_exposes_runtime_property_decorator_metadata(void) {
-    static const SZrModuleFixtureSource kFixtures[] = {
-            MODULE_FIXTURE_SOURCE_TEXT(
-                    "reflect_runtime_property_decorators",
-                    "class MarkProperty {\n"
-                    "    @decorate(target: %type Property): void {\n"
-                    "        target.metadata.observable = true;\n"
-                    "    }\n"
-                    "}\n"
-                    "\n"
-                    "pub class User {\n"
-                    "    pri var _value: int = 1;\n"
-                    "\n"
-                    "    #MarkProperty#\n"
-                    "    pub get value: int {\n"
-                    "        return this._value;\n"
-                    "    }\n"
-                    "}\n"),
+    static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
+            "reflect_runtime_property_decorators",
+            "class MarkProperty {\n"
+            "    @decorate(target: %type Property): void {\n"
+            "        target.metadata.observable = true;\n"
+            "    }\n"
+            "}\n"
+            "\n"
+            "pub class User {\n"
+            "    pri var _value: int = 1;\n"
+            "\n"
+            "    #MarkProperty#\n"
+            "    pub get value: int {\n"
+            "        return this._value;\n"
+            "    }\n"
+            "}\n",
+            "%type(decorated.User).members.value[0]",
+            "type_source_runtime_property_decorator_reflection_test.zr",
+            "property",
+            "observable",
+            "MarkProperty",
+            "test_reflect_runtime_property_decorators_binary_fixture.zro",
     };
-    SZrTestTimer timer;
-    const char *testSummary = "Percent Type Source Property Reflection Exposes Runtime Property Decorator Metadata";
-    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
-    TZrSize previousFixtureCount = g_module_fixture_source_count;
 
-    TEST_START(testSummary);
-    timer.startTime = clock();
-
-    {
-        SZrState *state = create_test_state();
-        const TZrChar *source =
-                "var decorated = %import(\"reflect_runtime_property_decorators\");\n"
-                "return %type(decorated.User).members.value[0];\n";
-        SZrString *sourceName;
-        SZrFunction *entryFunction;
-        SZrTypeValue result;
-        SZrObject *reflectionObject;
-        const SZrTypeValue *kindValue;
-        const SZrTypeValue *metadataValue;
-        const SZrTypeValue *decoratorsValue;
-        SZrObject *metadataObject;
-        SZrObject *decoratorsArray;
-        SZrObject *decoratorEntry;
-        const SZrTypeValue *flagValue;
-        const SZrTypeValue *decoratorNameValue;
-
-        TEST_ASSERT_NOT_NULL(state);
-
-        g_module_fixture_sources = kFixtures;
-        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
-        state->global->sourceLoader = module_fixture_source_loader;
-
-        sourceName = ZrCore_String_Create(state, "type_source_runtime_property_decorator_reflection_test.zr", 56);
-        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
-        TEST_ASSERT_NOT_NULL(entryFunction);
-        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
-
-        reflectionObject = ZR_CAST_OBJECT(state, result.value.object);
-        TEST_ASSERT_NOT_NULL(reflectionObject);
-
-        kindValue = get_object_field_value(state, reflectionObject, "kind");
-        metadataValue = get_object_field_value(state, reflectionObject, "metadata");
-        decoratorsValue = get_object_field_value(state, reflectionObject, "decorators");
-        TEST_ASSERT_NOT_NULL(kindValue);
-        TEST_ASSERT_NOT_NULL(metadataValue);
-        TEST_ASSERT_NOT_NULL(decoratorsValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, kindValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, kindValue->value.object), "property"));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, metadataValue->type);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, decoratorsValue->type);
-
-        metadataObject = ZR_CAST_OBJECT(state, metadataValue->value.object);
-        decoratorsArray = ZR_CAST_OBJECT(state, decoratorsValue->value.object);
-        TEST_ASSERT_NOT_NULL(metadataObject);
-        TEST_ASSERT_NOT_NULL(decoratorsArray);
-
-        flagValue = get_object_field_value(state, metadataObject, "observable");
-        TEST_ASSERT_NOT_NULL(flagValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, flagValue->type);
-        TEST_ASSERT_TRUE(flagValue->value.nativeObject.nativeBool);
-
-        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(decoratorsArray));
-        decoratorEntry = get_array_entry_object(state, decoratorsArray, 0);
-        TEST_ASSERT_NOT_NULL(decoratorEntry);
-        decoratorNameValue = get_object_field_value(state, decoratorEntry, "name");
-        TEST_ASSERT_NOT_NULL(decoratorNameValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, decoratorNameValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, decoratorNameValue->value.object), "MarkProperty"));
-
-        ZrCore_Function_Free(state, entryFunction);
-        state->global->sourceLoader = ZR_NULL;
-        g_module_fixture_sources = previousFixtures;
-        g_module_fixture_source_count = previousFixtureCount;
-        destroy_test_state(state);
-    }
-
-    timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    run_runtime_member_decorator_reflection_test(
+            "Percent Type Source Property Reflection Exposes Runtime Property Decorator Metadata",
+            &kCase,
+            ZR_FALSE);
 }
 
 static void test_percent_type_source_reflection_exposes_advanced_oop_metadata(void) {
@@ -7008,7 +6997,8 @@ static void test_binary_runtime_decorated_pub_function_is_directly_callable_from
 }
 
 static void test_percent_type_binary_field_reflection_exposes_runtime_field_decorator_metadata(void) {
-    static const TZrChar *kModuleSource =
+    static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
+            "reflect_runtime_field_decorators_binary",
             "class MarkField {\n"
             "    @decorate(target: %type Field): void {\n"
             "        target.metadata.isRuntimeField = true;\n"
@@ -7018,107 +7008,24 @@ static void test_percent_type_binary_field_reflection_exposes_runtime_field_deco
             "pub class User {\n"
             "    #MarkField#\n"
             "    pub var id: int = 1;\n"
-            "}\n";
-    SZrTestTimer timer;
-    const char *testSummary = "Percent Type Binary Field Reflection Exposes Runtime Field Decorator Metadata";
-    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
-    TZrSize previousFixtureCount = g_module_fixture_source_count;
-    TZrByte *binaryBytes = ZR_NULL;
-    TZrSize binaryLength = 0;
-    const TZrChar *binaryPath = "test_reflect_runtime_field_decorators_binary_fixture.zro";
-    SZrModuleFixtureSource fixtures[1];
+            "}\n",
+            "%type(decorated.User).members.id[0]",
+            "type_binary_runtime_field_decorator_reflection_test.zr",
+            "field",
+            "isRuntimeField",
+            "MarkField",
+            "test_reflect_runtime_field_decorators_binary_fixture.zro",
+    };
 
-    TEST_START(testSummary);
-    timer.startTime = clock();
-
-    {
-        SZrState *state = create_test_state();
-        const TZrChar *source =
-                "var decorated = %import(\"reflect_runtime_field_decorators_binary\");\n"
-                "return %type(decorated.User).members.id[0];\n";
-        SZrString *sourceName;
-        SZrFunction *entryFunction;
-        SZrTypeValue result;
-        SZrObject *reflectionObject;
-        const SZrTypeValue *kindValue;
-        const SZrTypeValue *metadataValue;
-        const SZrTypeValue *decoratorsValue;
-        SZrObject *metadataObject;
-        SZrObject *decoratorsArray;
-        SZrObject *decoratorEntry;
-        const SZrTypeValue *flagValue;
-        const SZrTypeValue *decoratorNameValue;
-
-        TEST_ASSERT_NOT_NULL(state);
-
-        binaryBytes = build_module_binary_fixture(state, kModuleSource, binaryPath, &binaryLength);
-        TEST_ASSERT_NOT_NULL(binaryBytes);
-        TEST_ASSERT_TRUE(binaryLength > 0);
-
-        fixtures[0].path = "reflect_runtime_field_decorators_binary";
-        fixtures[0].bytes = binaryBytes;
-        fixtures[0].length = binaryLength;
-        fixtures[0].isBinary = ZR_TRUE;
-        fixtures[0].source = ZR_NULL;
-
-        g_module_fixture_sources = fixtures;
-        g_module_fixture_source_count = 1;
-        state->global->sourceLoader = module_fixture_source_loader;
-
-        sourceName = ZrCore_String_Create(state, "type_binary_runtime_field_decorator_reflection_test.zr", 54);
-        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
-        TEST_ASSERT_NOT_NULL(entryFunction);
-        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
-
-        reflectionObject = ZR_CAST_OBJECT(state, result.value.object);
-        TEST_ASSERT_NOT_NULL(reflectionObject);
-
-        kindValue = get_object_field_value(state, reflectionObject, "kind");
-        metadataValue = get_object_field_value(state, reflectionObject, "metadata");
-        decoratorsValue = get_object_field_value(state, reflectionObject, "decorators");
-        TEST_ASSERT_NOT_NULL(kindValue);
-        TEST_ASSERT_NOT_NULL(metadataValue);
-        TEST_ASSERT_NOT_NULL(decoratorsValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, kindValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, kindValue->value.object), "field"));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, metadataValue->type);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, decoratorsValue->type);
-
-        metadataObject = ZR_CAST_OBJECT(state, metadataValue->value.object);
-        decoratorsArray = ZR_CAST_OBJECT(state, decoratorsValue->value.object);
-        TEST_ASSERT_NOT_NULL(metadataObject);
-        TEST_ASSERT_NOT_NULL(decoratorsArray);
-
-        flagValue = get_object_field_value(state, metadataObject, "isRuntimeField");
-        TEST_ASSERT_NOT_NULL(flagValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, flagValue->type);
-        TEST_ASSERT_TRUE(flagValue->value.nativeObject.nativeBool);
-
-        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(decoratorsArray));
-        decoratorEntry = get_array_entry_object(state, decoratorsArray, 0);
-        TEST_ASSERT_NOT_NULL(decoratorEntry);
-        decoratorNameValue = get_object_field_value(state, decoratorEntry, "name");
-        TEST_ASSERT_NOT_NULL(decoratorNameValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, decoratorNameValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, decoratorNameValue->value.object), "MarkField"));
-
-        ZrCore_Function_Free(state, entryFunction);
-        state->global->sourceLoader = ZR_NULL;
-        g_module_fixture_sources = previousFixtures;
-        g_module_fixture_source_count = previousFixtureCount;
-        free(binaryBytes);
-        remove(binaryPath);
-        destroy_test_state(state);
-    }
-
-    timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    run_runtime_member_decorator_reflection_test(
+            "Percent Type Binary Field Reflection Exposes Runtime Field Decorator Metadata",
+            &kCase,
+            ZR_TRUE);
 }
 
 static void test_percent_type_binary_method_reflection_exposes_runtime_method_decorator_metadata(void) {
-    static const TZrChar *kModuleSource =
+    static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
+            "reflect_runtime_method_decorators_binary",
             "class MarkMethod {\n"
             "    @decorate(target: %type Method): void {\n"
             "        target.metadata.instrumented = true;\n"
@@ -7130,107 +7037,24 @@ static void test_percent_type_binary_method_reflection_exposes_runtime_method_de
             "    pub load(id: int): int {\n"
             "        return id;\n"
             "    }\n"
-            "}\n";
-    SZrTestTimer timer;
-    const char *testSummary = "Percent Type Binary Method Reflection Exposes Runtime Method Decorator Metadata";
-    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
-    TZrSize previousFixtureCount = g_module_fixture_source_count;
-    TZrByte *binaryBytes = ZR_NULL;
-    TZrSize binaryLength = 0;
-    const TZrChar *binaryPath = "test_reflect_runtime_method_decorators_binary_fixture.zro";
-    SZrModuleFixtureSource fixtures[1];
+            "}\n",
+            "%type(decorated.User).members.load[0]",
+            "type_binary_runtime_method_decorator_reflection_test.zr",
+            "method",
+            "instrumented",
+            "MarkMethod",
+            "test_reflect_runtime_method_decorators_binary_fixture.zro",
+    };
 
-    TEST_START(testSummary);
-    timer.startTime = clock();
-
-    {
-        SZrState *state = create_test_state();
-        const TZrChar *source =
-                "var decorated = %import(\"reflect_runtime_method_decorators_binary\");\n"
-                "return %type(decorated.User).members.load[0];\n";
-        SZrString *sourceName;
-        SZrFunction *entryFunction;
-        SZrTypeValue result;
-        SZrObject *reflectionObject;
-        const SZrTypeValue *kindValue;
-        const SZrTypeValue *metadataValue;
-        const SZrTypeValue *decoratorsValue;
-        SZrObject *metadataObject;
-        SZrObject *decoratorsArray;
-        SZrObject *decoratorEntry;
-        const SZrTypeValue *flagValue;
-        const SZrTypeValue *decoratorNameValue;
-
-        TEST_ASSERT_NOT_NULL(state);
-
-        binaryBytes = build_module_binary_fixture(state, kModuleSource, binaryPath, &binaryLength);
-        TEST_ASSERT_NOT_NULL(binaryBytes);
-        TEST_ASSERT_TRUE(binaryLength > 0);
-
-        fixtures[0].path = "reflect_runtime_method_decorators_binary";
-        fixtures[0].bytes = binaryBytes;
-        fixtures[0].length = binaryLength;
-        fixtures[0].isBinary = ZR_TRUE;
-        fixtures[0].source = ZR_NULL;
-
-        g_module_fixture_sources = fixtures;
-        g_module_fixture_source_count = 1;
-        state->global->sourceLoader = module_fixture_source_loader;
-
-        sourceName = ZrCore_String_Create(state, "type_binary_runtime_method_decorator_reflection_test.zr", 55);
-        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
-        TEST_ASSERT_NOT_NULL(entryFunction);
-        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
-
-        reflectionObject = ZR_CAST_OBJECT(state, result.value.object);
-        TEST_ASSERT_NOT_NULL(reflectionObject);
-
-        kindValue = get_object_field_value(state, reflectionObject, "kind");
-        metadataValue = get_object_field_value(state, reflectionObject, "metadata");
-        decoratorsValue = get_object_field_value(state, reflectionObject, "decorators");
-        TEST_ASSERT_NOT_NULL(kindValue);
-        TEST_ASSERT_NOT_NULL(metadataValue);
-        TEST_ASSERT_NOT_NULL(decoratorsValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, kindValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, kindValue->value.object), "method"));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, metadataValue->type);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, decoratorsValue->type);
-
-        metadataObject = ZR_CAST_OBJECT(state, metadataValue->value.object);
-        decoratorsArray = ZR_CAST_OBJECT(state, decoratorsValue->value.object);
-        TEST_ASSERT_NOT_NULL(metadataObject);
-        TEST_ASSERT_NOT_NULL(decoratorsArray);
-
-        flagValue = get_object_field_value(state, metadataObject, "instrumented");
-        TEST_ASSERT_NOT_NULL(flagValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, flagValue->type);
-        TEST_ASSERT_TRUE(flagValue->value.nativeObject.nativeBool);
-
-        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(decoratorsArray));
-        decoratorEntry = get_array_entry_object(state, decoratorsArray, 0);
-        TEST_ASSERT_NOT_NULL(decoratorEntry);
-        decoratorNameValue = get_object_field_value(state, decoratorEntry, "name");
-        TEST_ASSERT_NOT_NULL(decoratorNameValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, decoratorNameValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, decoratorNameValue->value.object), "MarkMethod"));
-
-        ZrCore_Function_Free(state, entryFunction);
-        state->global->sourceLoader = ZR_NULL;
-        g_module_fixture_sources = previousFixtures;
-        g_module_fixture_source_count = previousFixtureCount;
-        free(binaryBytes);
-        remove(binaryPath);
-        destroy_test_state(state);
-    }
-
-    timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    run_runtime_member_decorator_reflection_test(
+            "Percent Type Binary Method Reflection Exposes Runtime Method Decorator Metadata",
+            &kCase,
+            ZR_TRUE);
 }
 
 static void test_percent_type_binary_property_reflection_exposes_runtime_property_decorator_metadata(void) {
-    static const TZrChar *kModuleSource =
+    static const SZrRuntimeMemberDecoratorReflectionCase kCase = {
+            "reflect_runtime_property_decorators_binary",
             "class MarkProperty {\n"
             "    @decorate(target: %type Property): void {\n"
             "        target.metadata.observable = true;\n"
@@ -7244,103 +7068,19 @@ static void test_percent_type_binary_property_reflection_exposes_runtime_propert
             "    pub get value: int {\n"
             "        return this._value;\n"
             "    }\n"
-            "}\n";
-    SZrTestTimer timer;
-    const char *testSummary = "Percent Type Binary Property Reflection Exposes Runtime Property Decorator Metadata";
-    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
-    TZrSize previousFixtureCount = g_module_fixture_source_count;
-    TZrByte *binaryBytes = ZR_NULL;
-    TZrSize binaryLength = 0;
-    const TZrChar *binaryPath = "test_reflect_runtime_property_decorators_binary_fixture.zro";
-    SZrModuleFixtureSource fixtures[1];
+            "}\n",
+            "%type(decorated.User).members.value[0]",
+            "type_binary_runtime_property_decorator_reflection_test.zr",
+            "property",
+            "observable",
+            "MarkProperty",
+            "test_reflect_runtime_property_decorators_binary_fixture.zro",
+    };
 
-    TEST_START(testSummary);
-    timer.startTime = clock();
-
-    {
-        SZrState *state = create_test_state();
-        const TZrChar *source =
-                "var decorated = %import(\"reflect_runtime_property_decorators_binary\");\n"
-                "return %type(decorated.User).members.value[0];\n";
-        SZrString *sourceName;
-        SZrFunction *entryFunction;
-        SZrTypeValue result;
-        SZrObject *reflectionObject;
-        const SZrTypeValue *kindValue;
-        const SZrTypeValue *metadataValue;
-        const SZrTypeValue *decoratorsValue;
-        SZrObject *metadataObject;
-        SZrObject *decoratorsArray;
-        SZrObject *decoratorEntry;
-        const SZrTypeValue *flagValue;
-        const SZrTypeValue *decoratorNameValue;
-
-        TEST_ASSERT_NOT_NULL(state);
-
-        binaryBytes = build_module_binary_fixture(state, kModuleSource, binaryPath, &binaryLength);
-        TEST_ASSERT_NOT_NULL(binaryBytes);
-        TEST_ASSERT_TRUE(binaryLength > 0);
-
-        fixtures[0].path = "reflect_runtime_property_decorators_binary";
-        fixtures[0].bytes = binaryBytes;
-        fixtures[0].length = binaryLength;
-        fixtures[0].isBinary = ZR_TRUE;
-        fixtures[0].source = ZR_NULL;
-
-        g_module_fixture_sources = fixtures;
-        g_module_fixture_source_count = 1;
-        state->global->sourceLoader = module_fixture_source_loader;
-
-        sourceName = ZrCore_String_Create(state, "type_binary_runtime_property_decorator_reflection_test.zr", 57);
-        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
-        TEST_ASSERT_NOT_NULL(entryFunction);
-        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
-
-        reflectionObject = ZR_CAST_OBJECT(state, result.value.object);
-        TEST_ASSERT_NOT_NULL(reflectionObject);
-
-        kindValue = get_object_field_value(state, reflectionObject, "kind");
-        metadataValue = get_object_field_value(state, reflectionObject, "metadata");
-        decoratorsValue = get_object_field_value(state, reflectionObject, "decorators");
-        TEST_ASSERT_NOT_NULL(kindValue);
-        TEST_ASSERT_NOT_NULL(metadataValue);
-        TEST_ASSERT_NOT_NULL(decoratorsValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, kindValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, kindValue->value.object), "property"));
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, metadataValue->type);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, decoratorsValue->type);
-
-        metadataObject = ZR_CAST_OBJECT(state, metadataValue->value.object);
-        decoratorsArray = ZR_CAST_OBJECT(state, decoratorsValue->value.object);
-        TEST_ASSERT_NOT_NULL(metadataObject);
-        TEST_ASSERT_NOT_NULL(decoratorsArray);
-
-        flagValue = get_object_field_value(state, metadataObject, "observable");
-        TEST_ASSERT_NOT_NULL(flagValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, flagValue->type);
-        TEST_ASSERT_TRUE(flagValue->value.nativeObject.nativeBool);
-
-        TEST_ASSERT_EQUAL_UINT32(1, (TZrUInt32)get_array_length(decoratorsArray));
-        decoratorEntry = get_array_entry_object(state, decoratorsArray, 0);
-        TEST_ASSERT_NOT_NULL(decoratorEntry);
-        decoratorNameValue = get_object_field_value(state, decoratorEntry, "name");
-        TEST_ASSERT_NOT_NULL(decoratorNameValue);
-        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, decoratorNameValue->type);
-        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, decoratorNameValue->value.object), "MarkProperty"));
-
-        ZrCore_Function_Free(state, entryFunction);
-        state->global->sourceLoader = ZR_NULL;
-        g_module_fixture_sources = previousFixtures;
-        g_module_fixture_source_count = previousFixtureCount;
-        free(binaryBytes);
-        remove(binaryPath);
-        destroy_test_state(state);
-    }
-
-    timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    run_runtime_member_decorator_reflection_test(
+            "Percent Type Binary Property Reflection Exposes Runtime Property Decorator Metadata",
+            &kCase,
+            ZR_TRUE);
 }
 
 static void test_percent_type_binary_reflection_restores_advanced_oop_metadata(void) {
@@ -7738,14 +7478,14 @@ static void test_reference_protocols_native_iterable_fixture_uses_registered_con
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, implementsValue->type);
     implementsArray = ZR_CAST_OBJECT(state, implementsValue->value.object);
     TEST_ASSERT_NOT_NULL(implementsArray);
-    TEST_ASSERT_NOT_NULL(find_string_entry_in_array(state, implementsArray, "Iterable<int>"));
+    TEST_ASSERT_NOT_NULL(find_string_entry_in_array(state, implementsArray, "zr.builtin.IEnumerable<int>"));
 
     implementsValue = get_object_field_value(state, iteratorEntry, "implements");
     TEST_ASSERT_NOT_NULL(implementsValue);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, implementsValue->type);
     implementsArray = ZR_CAST_OBJECT(state, implementsValue->value.object);
     TEST_ASSERT_NOT_NULL(implementsArray);
-    TEST_ASSERT_NOT_NULL(find_string_entry_in_array(state, implementsArray, "Iterator<int>"));
+    TEST_ASSERT_NOT_NULL(find_string_entry_in_array(state, implementsArray, "zr.builtin.IEnumerator<int>"));
 
     methodsValue = get_object_field_value(state, iterableEntry, "methods");
     TEST_ASSERT_NOT_NULL(methodsValue);
@@ -8254,7 +7994,7 @@ int main(void) {
     RUN_TEST(test_complete_module_loading_flow);
 
     // 11. prototypeData 中 using 字段元数据恢复
-    RUN_TEST(test_module_restores_field_scoped_using_prototype_metadata);
+    RUN_TEST(test_module_restores_owned_field_prototype_metadata);
 
     // 12. prototypeData 中高级 OOP runtime descriptor 元数据恢复
     RUN_TEST(test_module_restores_advanced_oop_runtime_descriptor_metadata);
@@ -8264,6 +8004,9 @@ int main(void) {
 
     // 14. 带参导出函数别名在跨模块调用时保留调用签名
     RUN_TEST(test_imported_function_alias_with_parameters_preserves_call_signature);
+
+    // 14.1 module init summary cache 扩容后当前 source summary 仍可安全 finalize
+    RUN_TEST(test_module_init_summary_cache_growth_keeps_current_source_summary_stable);
 
     // 14. 循环 source module 允许 declaration-ready 顶层函数引用
     RUN_TEST(test_cyclic_source_modules_allow_declaration_ready_function_references);
@@ -8324,6 +8067,12 @@ int main(void) {
 
     // 26.1 zr.builtin 导出协议、根类型与 primitive wrappers
     RUN_TEST(test_builtin_module_exports_protocols_roots_and_wrappers);
+
+    // 26.2 zr.builtin typeHints 覆盖全部正式 builtin 类型
+    RUN_TEST(test_builtin_module_exports_complete_type_hints);
+
+    // 26.3 builtin Object.box / TypeInfo.box 生成 wrapper 并保持值语义
+    RUN_TEST(test_builtin_wrapper_box_helpers_preserve_runtime_semantics);
 
     // 27. zr.container Array runtime 支持 add 和 [] 访问
     RUN_TEST(test_container_array_runtime_supports_add_and_computed_index_access);

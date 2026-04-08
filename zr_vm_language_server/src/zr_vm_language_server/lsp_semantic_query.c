@@ -391,6 +391,30 @@ static TZrBool semantic_query_uri_to_native_path(SZrString *uri, TZrChar *buffer
     return ZrLanguageServer_Lsp_FileUriToNativePath(uri, buffer, bufferSize);
 }
 
+static TZrBool semantic_query_path_has_extension(const TZrChar *path, const TZrChar *extension) {
+    TZrSize pathLength;
+    TZrSize extensionLength;
+
+    if (path == ZR_NULL || extension == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pathLength = strlen(path);
+    extensionLength = strlen(extension);
+    return pathLength >= extensionLength && strcmp(path + pathLength - extensionLength, extension) == 0;
+}
+
+static TZrBool semantic_query_uri_is_binary_metadata_uri(SZrString *uri) {
+    TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (uri == ZR_NULL || !semantic_query_uri_to_native_path(uri, nativePath, sizeof(nativePath))) {
+        return ZR_FALSE;
+    }
+
+    return semantic_query_path_has_extension(nativePath, ZR_VM_BINARY_MODULE_FILE_EXTENSION) ||
+           semantic_query_path_has_extension(nativePath, ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION);
+}
+
 static TZrBool semantic_query_try_get_analyzer_for_uri(SZrState *state,
                                                        SZrLspContext *context,
                                                        SZrString *uri,
@@ -680,7 +704,7 @@ static TZrBool semantic_query_try_resolve_receiver_external_type_member(SZrState
                                                                         TZrSize contentLength,
                                                                         TZrSize cursorOffset,
                                                                         SZrLspResolvedMetadataMember *outResolved) {
-    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL || uri == ZR_NULL || ast == ZR_NULL ||
+    if (state == ZR_NULL || analyzer == ZR_NULL || uri == ZR_NULL || ast == ZR_NULL ||
         content == ZR_NULL || outResolved == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1995,10 +2019,16 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     ZrLanguageServer_LspSemanticQuery_Init(query);
     query->uri = uri;
     query->position = position;
-
-    projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     query->queryRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
+
+    if (semantic_query_uri_is_binary_metadata_uri(uri)) {
+        query->projectIndex = ZrLanguageServer_LspProject_GetOrCreateForUri(state, context, uri);
+        query->analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+        return semantic_query_resolve_external_metadata_target(state, context, uri, position, query);
+    }
+
+    projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     query->projectIndex = projectIndex;
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
     if (analyzer == ZR_NULL) {

@@ -855,19 +855,19 @@ static void test_semantic_analyzer_records_using_cleanup_and_template_segments(S
     TEST_PASS(timer, "Semantic Analyzer Records Using Cleanup And Template Segments");
 }
 
-static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(SZrState *state) {
+static void test_semantic_analyzer_records_owned_field_cleanup_metadata(SZrState *state) {
     SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Records Field-Scoped Using Cleanup Metadata");
+    TEST_START("Semantic Analyzer Records Owned Field Cleanup Metadata");
 
-    TEST_INFO("Field-scoped using semantic metadata",
-              "Analyzing `%using var` fields should register field symbols and distinguish struct-value cleanup from instance-field cleanup");
+    TEST_INFO("Owned field semantic metadata",
+              "Analyzing direct %unique/%shared fields should register field symbols and distinguish struct-value cleanup from instance-field cleanup");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
-            "struct HandleBox { %using var handle: %unique Resource; }\n"
-            "class Holder { %using var resource: %unique Resource; }";
-        SZrString *sourceName = ZrCore_String_Create(state, "field_using_semantic_test.zr", 28);
+            "struct HandleBox { var handle: %unique Resource; }\n"
+            "class Holder { var resource: %shared Resource; }";
+        SZrString *sourceName = ZrCore_String_Create(state, "owned_field_semantic_test.zr", 27);
         SZrAstNode *ast;
         SZrString *handleName;
         SZrString *resourceName;
@@ -878,7 +878,7 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
-                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Semantic Analyzer Records Owned Field Cleanup Metadata",
                       "Failed to create semantic analyzer");
             return;
         }
@@ -887,7 +887,7 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
         if (ast == ZR_NULL) {
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Semantic Analyzer Records Owned Field Cleanup Metadata",
                       "Failed to parse test code");
             return;
         }
@@ -896,7 +896,7 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Semantic Analyzer Records Owned Field Cleanup Metadata",
                       "Failed to analyze AST");
             return;
         }
@@ -906,7 +906,7 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Semantic Analyzer Records Owned Field Cleanup Metadata",
                       "Expected one struct-value cleanup step and one instance-field cleanup step");
             return;
         }
@@ -922,8 +922,8 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
-                      "Using-managed fields were not registered as semantic field symbols");
+                      "Semantic Analyzer Records Owned Field Cleanup Metadata",
+                      "Ownership-managed fields were not registered as semantic field symbols");
             return;
         }
 
@@ -933,7 +933,7 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Semantic Analyzer Records Owned Field Cleanup Metadata",
                       "Cleanup plan entries were missing");
             return;
         }
@@ -942,7 +942,7 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Semantic Analyzer Records Owned Field Cleanup Metadata",
                       "Cleanup plan entries did not record owner lifetime regions");
             return;
         }
@@ -954,7 +954,7 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
+                      "Semantic Analyzer Records Owned Field Cleanup Metadata",
                       "Cleanup plan did not distinguish struct-value fields from instance fields");
             return;
         }
@@ -964,8 +964,8 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
-                      "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata",
-                      "Cleanup plan did not target the registered using-managed field symbols");
+                      "Semantic Analyzer Records Owned Field Cleanup Metadata",
+                      "Cleanup plan did not target the registered ownership-managed field symbols");
             return;
         }
 
@@ -973,61 +973,7 @@ static void test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(S
         ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     }
 
-    TEST_PASS(timer, "Semantic Analyzer Records Field-Scoped Using Cleanup Metadata");
-}
-
-static void test_semantic_analyzer_rejects_static_using_field(SZrState *state) {
-    SZrTestTimer timer;
-    TEST_START("Semantic Analyzer Rejects Static Using Field");
-
-    TEST_INFO("Static using diagnostic",
-              "Analyzing `static %using var` should emit a compile-time diagnostic instead of silently accepting lifecycle-managed static fields");
-
-    {
-        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
-        const TZrChar *testCode = "class Holder { static %using var resource: %unique Resource; }";
-        SZrString *sourceName = ZrCore_String_Create(state, "static_using_field_test.zr", 26);
-        SZrAstNode *ast;
-
-        if (analyzer == ZR_NULL) {
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Rejects Static Using Field",
-                      "Failed to create semantic analyzer");
-            return;
-        }
-
-        ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
-        if (ast == ZR_NULL) {
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Rejects Static Using Field",
-                      "Failed to parse test code");
-            return;
-        }
-
-        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Rejects Static Using Field",
-                      "Failed to analyze AST");
-            return;
-        }
-
-        if (!has_diagnostic_code(analyzer, "static_using_field")) {
-            ZrParser_Ast_Free(state, ast);
-            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-            TEST_FAIL(timer,
-                      "Semantic Analyzer Rejects Static Using Field",
-                      "Expected a static_using_field diagnostic for lifecycle-managed static fields");
-            return;
-        }
-
-        ZrParser_Ast_Free(state, ast);
-        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
-    }
-
-    TEST_PASS(timer, "Semantic Analyzer Rejects Static Using Field");
+    TEST_PASS(timer, "Semantic Analyzer Records Owned Field Cleanup Metadata");
 }
 
 // 测试获取诊断信息
@@ -2857,9 +2803,7 @@ int main(void) {
 
     test_semantic_analyzer_records_using_cleanup_and_template_segments(state);
     TEST_DIVIDER();
-    test_semantic_analyzer_records_field_scoped_using_cleanup_metadata(state);
-    TEST_DIVIDER();
-    test_semantic_analyzer_rejects_static_using_field(state);
+    test_semantic_analyzer_records_owned_field_cleanup_metadata(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_get_diagnostics(state);

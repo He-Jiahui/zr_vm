@@ -45,8 +45,8 @@ doc_type: module-detail
 - `zr.task.spawnThread(...)`
 - `zr.task.currentScheduler()`
 - `zr.task.await(...)`
-- `%mutex`
-- `%atomic`
+
+`%mutex` / `%atomic` 也不再属于兼容接口集合。它们现在由 parser 直接拒绝；线程同步能力已经收口到 `zr.thread.UniqueMutex<T>` / `SharedMutex<T>`。
 
 ## `%async` / `%await` Lowering
 
@@ -103,6 +103,7 @@ doc_type: module-detail
 
 - `%await` 只能出现在 `%async` 上下文
 - borrowed binding 不能跨 `await` 使用
+- `zr.thread.Lock<T>` / `SharedLock<T>` 这类 affine guard 也不能跨 `await` 使用
 - borrowed 值在 `await` 前使用、`await` 后不再读，仍然允许
 
 ## Module Materialization Hook
@@ -114,4 +115,4 @@ native binding descriptor 现在支持模块 materialize 回调。`zr.task` 与 
 - `zr.task.defaultScheduler`
 - `zr.coroutine.coroutineScheduler`
 
-`zr.thread` 的 worker isolate 调度和跨线程 transport 另见 `zr-thread-runtime.md`。
+`zr.thread` 的 worker isolate 调度、`Send/Sync` cross-thread contract、shared control cell 和 mutex/guard 约束，另见 `zr-thread-runtime.md`。

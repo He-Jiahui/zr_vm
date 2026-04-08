@@ -22,6 +22,7 @@ typedef struct SZrFileVersion {
     TZrChar *content;                    // 文件内容
     TZrSize contentLength;            // 内容长度
     SZrAstNode *ast;                  // 解析后的 AST
+    TZrBool usesFallbackAst;            // 当前 AST 是否是旧版本保留下来的 last-good 快照
     TZrBool isDirty;                    // 是否需要重新解析
     SZrFileRange lastChangeRange;     // 最后变更的范围（用于增量解析）
     TZrChar *lastContentHash;           // 内容哈希（用于快速比较，可选）

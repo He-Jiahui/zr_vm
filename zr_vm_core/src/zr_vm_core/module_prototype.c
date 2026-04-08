@@ -125,7 +125,7 @@ static SZrObjectPrototype *find_prototype_in_qualified_module(SZrState *state, c
 
     qualifiedModule = ZrCore_Module_GetFromCache(state, moduleName);
     if (qualifiedModule == ZR_NULL) {
-        qualifiedModule = ZrCore_Module_Import(state, moduleName);
+        qualifiedModule = ZrCore_Module_ImportByPath(state, moduleName);
     }
     if (qualifiedModule == ZR_NULL) {
         return ZR_NULL;
@@ -1103,8 +1103,7 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                                                                 member->fieldOffset);
                             }
 
-                            if (member->isUsingManaged ||
-                                member->ownershipQualifier != 0) {
+                            if (member->ownershipQualifier != 0) {
                                 ZrCore_ObjectPrototype_AddManagedField(state,
                                                                        protoInfo->prototype,
                                                                        memberName,

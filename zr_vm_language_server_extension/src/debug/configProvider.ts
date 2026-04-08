@@ -3,7 +3,6 @@ import * as vscode from 'vscode';
 import { resolveNativeCliPath } from '../nativeAssets';
 import {
     activeWorkspaceFolder,
-    findProjectFile,
     resolveProjectUri as resolveWorkspaceProjectUri,
     resolveRelativePath,
     resolveSelectedProjectUri,
@@ -24,7 +23,7 @@ class ZrDebugConfigurationProvider implements vscode.DebugConfigurationProvider 
     constructor(private readonly context: vscode.ExtensionContext) {}
 
     async provideDebugConfigurations(folder: vscode.WorkspaceFolder | undefined): Promise<vscode.DebugConfiguration[]> {
-        const launchProject = await findProjectFile(folder);
+        const launchProject = await resolveSelectedProjectUri(this.context, folder, true);
         const launchCwd = folder?.uri.fsPath ?? (launchProject ? path.dirname(launchProject.fsPath) : undefined);
 
         return [

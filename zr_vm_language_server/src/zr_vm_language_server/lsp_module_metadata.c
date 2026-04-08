@@ -1,4 +1,5 @@
 #include "lsp_module_metadata.h"
+#include "lsp_virtual_documents.h"
 
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
@@ -580,7 +581,6 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(SZrState *stat
                                                                   SZrString *moduleName,
                                                                   SZrString **outUri) {
     const TZrChar *moduleText;
-    ZrLibRegisteredModuleInfo moduleInfo;
     EZrLspImportedModuleSourceKind sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
 
     if (outUri != ZR_NULL) {
@@ -602,13 +602,7 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(SZrState *stat
         return ZR_FALSE;
     }
 
-    memset(&moduleInfo, 0, sizeof(moduleInfo));
-    if (!ZrLibrary_NativeRegistry_GetModuleInfo(state->global, moduleText, &moduleInfo) ||
-        moduleInfo.sourcePath == ZR_NULL || moduleInfo.sourcePath[0] == '\0') {
-        return ZR_FALSE;
-    }
-
-    *outUri = module_metadata_create_file_uri_from_native_path(state, moduleInfo.sourcePath);
+    *outUri = ZrLanguageServer_LspVirtualDocuments_CreateDeclarationUri(state, moduleText);
     return *outUri != ZR_NULL;
 }
 const TZrChar *ZrLanguageServer_LspModuleMetadata_SourceKindLabel(EZrLspImportedModuleSourceKind sourceKind) {

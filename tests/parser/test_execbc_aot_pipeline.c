@@ -474,17 +474,33 @@ static void assert_runtime_function_matches_source_function(const SZrFunction *e
 
 static TZrBool function_tree_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
     TZrUInt32 childIndex;
+    TZrUInt32 constantIndex;
 
     if (function_contains_opcode(function, opcode)) {
         return ZR_TRUE;
     }
-    if (function == ZR_NULL || function->childFunctionList == ZR_NULL) {
+    if (function == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
-        if (function_tree_contains_opcode(&function->childFunctionList[childIndex], opcode)) {
-            return ZR_TRUE;
+    if (function->childFunctionList != ZR_NULL) {
+        for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+            if (function_tree_contains_opcode(&function->childFunctionList[childIndex], opcode)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    if (function->constantValueList != ZR_NULL) {
+        for (constantIndex = 0; constantIndex < function->constantValueLength; constantIndex++) {
+            const SZrTypeValue *constantValue = &function->constantValueList[constantIndex];
+
+            if ((constantValue->type == ZR_VALUE_TYPE_FUNCTION || constantValue->type == ZR_VALUE_TYPE_CLOSURE) &&
+                constantValue->value.object != ZR_NULL &&
+                constantValue->value.object->type == ZR_RAW_OBJECT_TYPE_FUNCTION &&
+                function_tree_contains_opcode((const SZrFunction *)constantValue->value.object, opcode)) {
+                return ZR_TRUE;
+            }
         }
     }
 
@@ -5352,7 +5368,10 @@ static SZrFunction *compile_array_int_index_quickening_fixture(SZrState *state) 
             "var index = 1;\n"
             "var value = xs[index];\n"
             "xs[index] = value + 5;\n"
-            "return xs[index] + xs[0];\n";
+            "var scaled = xs[index] * 3;\n"
+            "var reduced = xs[0] / 2;\n"
+            "var mixed = xs[2] % 7;\n"
+            "return scaled - reduced + mixed + xs[0];\n";
     SZrString *sourceName;
 
     if (state == ZR_NULL) {
@@ -6090,12 +6109,12 @@ static void test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir
 
 static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_specialized_helpers(void) {
     SZrExecBcAotTestTimer timer;
-    const char *testSummary = "ExecBC Quickens Array Int Index Sites And True AOT Lowers Specialized Helpers";
+    const char *testSummary = "ExecBC Quickens Array Int Add Index Sites And True AOT Lowers Specialized Helpers";
 
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("array int index quickening",
-                 "Testing that statically typed container.Array<int> bracket access quickens to dedicated ExecBC opcodes and that AOT C plus LLVM lower them to specialized runtime helpers");
+                 "Testing that statically typed container.Array<int> add/index sites quicken to SUPER_ARRAY_* helpers, downstream int arithmetic stays specialized in ExecBC, and AOT C plus LLVM lower those sites to specialized runtime helpers");
 
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -6119,8 +6138,19 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
 
         function = compile_array_int_index_quickening_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_INT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SET_BY_INDEX)));
 
@@ -6136,17 +6166,21 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(llvmText);
 
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_ARRAY_ADD_INT"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_ARRAY_GET_INT"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_ARRAY_SET_INT"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SuperArrayAddInt"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SuperArrayGetInt"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SuperArraySetInt"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArrayAddInt("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArrayGetInt("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArraySetInt("));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
 
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
-        TEST_ASSERT_EQUAL_INT64(35, result);
+        TEST_ASSERT_EQUAL_INT64(82, result);
 
         binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
         TEST_ASSERT_NOT_NULL(binaryBytes);
@@ -6165,12 +6199,25 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
         TEST_ASSERT_NOT_NULL(sourceObject);
         runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
         TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)));
         TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)));
         TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(ADD_INT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUB_INT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MUL_SIGNED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(DIV_SIGNED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MOD_SIGNED)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(ADD)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUB)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MUL)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(DIV)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MOD)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SET_BY_INDEX)));
 
         result = 0;
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
-        TEST_ASSERT_EQUAL_INT64(35, result);
+        TEST_ASSERT_EQUAL_INT64(82, result);
 
         ZrCore_Function_Free(state, runtimeFunction);
         ZrCore_Io_Free(state->global, io);

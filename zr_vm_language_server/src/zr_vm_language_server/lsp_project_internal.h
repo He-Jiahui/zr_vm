@@ -32,6 +32,15 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectByProjectUri(SZrLspCo
                                                                         SZrString *uri,
                                                                         TZrSize *outIndex);
 SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext *context, SZrString *uri);
+SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateForUri(SZrState *state,
+                                                                  SZrLspContext *context,
+                                                                  SZrString *uri);
+SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateByProjectUri(SZrState *state,
+                                                                        SZrLspContext *context,
+                                                                        SZrString *projectUri);
+TZrBool ZrLanguageServer_LspProject_EnsureScannedSourceGraph(SZrState *state,
+                                                             SZrLspContext *context,
+                                                             SZrLspProjectIndex *projectIndex);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_RemoveProjectByProjectUri(SZrState *state,
                                                                                      SZrLspContext *context,
                                                                                      SZrString *uri);
@@ -44,6 +53,10 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectFo
 
 void ZrLanguageServer_LspProject_FreeImportBindings(SZrState *state, SZrArray *bindings);
 void ZrLanguageServer_LspProject_CollectImportBindings(SZrState *state, SZrAstNode *node, SZrArray *bindings);
+TZrBool ZrLanguageServer_LspProject_CollectImportModuleNamesForUri(SZrState *state,
+                                                                   SZrLspContext *context,
+                                                                   SZrString *uri,
+                                                                   SZrArray *moduleNames);
 SZrLspImportBinding *ZrLanguageServer_LspProject_FindImportBindingByAlias(SZrArray *bindings, SZrString *aliasName);
 TZrBool ZrLanguageServer_LspProject_FindImportBindingHit(SZrAstNode *node,
                                                          SZrArray *bindings,

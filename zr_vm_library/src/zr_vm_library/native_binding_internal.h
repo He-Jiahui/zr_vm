@@ -226,9 +226,9 @@ SZrObject *native_metadata_make_constant_entry(SZrState *state, const ZrLibConst
 SZrObject *native_metadata_make_enum_member_entry(SZrState *state, const ZrLibEnumMemberDescriptor *descriptor);
 SZrObject *native_metadata_make_module_link_entry(SZrState *state, const ZrLibModuleLinkDescriptor *descriptor);
 SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescriptor *descriptor);
-SZrObject *native_metadata_make_module_info(SZrState *state,
-                                                   const ZrLibModuleDescriptor *descriptor,
-                                                   const ZrLibRegisteredModuleRecord *record);
+ZR_LIBRARY_API SZrObject *native_metadata_make_module_info(SZrState *state,
+                                                           const ZrLibModuleDescriptor *descriptor,
+                                                           const ZrLibRegisteredModuleRecord *record);
 TZrBool native_registry_add_constant(SZrState *state,
                                             SZrObjectModule *module,
                                             const ZrLibConstantDescriptor *descriptor);

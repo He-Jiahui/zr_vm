@@ -125,6 +125,12 @@
 #define ZR_LSP_FIELD_WORKSPACE_FOLDERS "workspaceFolders"
 #define ZR_LSP_FIELD_WORKSPACE "workspace"
 #define ZR_LSP_FIELD_SERVER_INFO "serverInfo"
+#define ZR_LSP_FIELD_SOURCE_KIND "sourceKind"
+#define ZR_LSP_FIELD_IS_ENTRY "isEntry"
+#define ZR_LSP_FIELD_MODULE_NAME "moduleName"
+#define ZR_LSP_FIELD_DISPLAY_NAME "displayName"
+#define ZR_LSP_FIELD_DESCRIPTION "description"
+#define ZR_LSP_FIELD_NAVIGATION_URI "navigationUri"
 
 #define ZR_LSP_MARKUP_KIND_MARKDOWN "markdown"
 #define ZR_LSP_INSERT_TEXT_FORMAT_KIND_PLAINTEXT "plaintext"
@@ -160,6 +166,8 @@
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_DID_CHANGE "textDocument/didChange"
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_DID_CLOSE "textDocument/didClose"
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_DID_SAVE "textDocument/didSave"
+#define ZR_LSP_METHOD_ZR_NATIVE_DECLARATION_DOCUMENT "zr/nativeDeclarationDocument"
+#define ZR_LSP_METHOD_ZR_PROJECT_MODULES "zr/projectModules"
 
 #define ZR_LSP_SERVER_NAME "zr_vm_language_server_stdio"
 #define ZR_LSP_SERVER_VERSION "0.0.1"

@@ -72,7 +72,7 @@ static TZrBool type_inference_named_struct_is_move_only(SZrCompilerState *cs, SZ
             continue;
         }
 
-        if (memberInfo->isUsingManaged || memberInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
+        if (memberInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE) {
             return ZR_TRUE;
         }
 
@@ -738,6 +738,29 @@ static void infer_lambda_return_type_register_variable_declaration(SZrCompilerSt
     ZrParser_InferredType_Free(cs->state, &bindingType);
 }
 
+static void infer_lambda_return_type_predeclare_block_functions(SZrCompilerState *cs, SZrAstNodeArray *statements) {
+    if (cs == ZR_NULL || statements == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < statements->count; index++) {
+        SZrAstNode *statement = statements->nodes[index];
+        SZrAstNode *previousFunctionNode;
+
+        if (statement == ZR_NULL || statement->type != ZR_AST_FUNCTION_DECLARATION) {
+            continue;
+        }
+
+        previousFunctionNode = cs->currentFunctionNode;
+        cs->currentFunctionNode = statement;
+        compiler_register_function_type_binding(cs, &statement->data.functionDeclaration);
+        cs->currentFunctionNode = previousFunctionNode;
+        if (cs->hasError) {
+            return;
+        }
+    }
+}
+
 static void infer_lambda_return_type_from_node(SZrCompilerState *cs,
                                                SZrAstNode *node,
                                                TZrBool *foundReturn,
@@ -749,14 +772,30 @@ static void infer_lambda_return_type_from_node(SZrCompilerState *cs,
     switch (node->type) {
         case ZR_AST_BLOCK: {
             SZrBlock *block = &node->data.block;
+            SZrTypeEnvironment *savedEnv;
+            SZrTypeEnvironment *blockEnv;
             if (block->body == ZR_NULL) {
                 return;
             }
+
+            savedEnv = cs->typeEnv;
+            blockEnv = ZrParser_TypeEnvironment_New(cs->state);
+            if (blockEnv != ZR_NULL) {
+                blockEnv->parent = savedEnv;
+                cs->typeEnv = blockEnv;
+            }
+
+            infer_lambda_return_type_predeclare_block_functions(cs, block->body);
             for (TZrSize index = 0; index < block->body->count; index++) {
                 infer_lambda_return_type_from_node(cs, block->body->nodes[index], foundReturn, result);
-                if (*foundReturn) {
-                    return;
+                if (cs->hasError || *foundReturn) {
+                    break;
                 }
+            }
+
+            cs->typeEnv = savedEnv;
+            if (blockEnv != ZR_NULL) {
+                ZrParser_TypeEnvironment_Free(cs->state, blockEnv);
             }
             return;
         }
@@ -1897,6 +1936,83 @@ static TZrBool ast_type_resolve_segment_type_names(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
+static SZrString *ast_type_build_qualified_module_member_type_name(SZrCompilerState *cs,
+                                                                   SZrString *moduleTypeName,
+                                                                   SZrString *memberResolvedTypeName) {
+    TZrNativeString moduleTypeText;
+    TZrNativeString memberTypeText;
+    const TZrChar *memberGenericStart;
+    const TZrChar *memberRootDot;
+    TZrChar buffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    TZrInt32 written;
+
+    if (cs == ZR_NULL || moduleTypeName == ZR_NULL || memberResolvedTypeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    moduleTypeText = ZrCore_String_GetNativeString(moduleTypeName);
+    memberTypeText = ZrCore_String_GetNativeString(memberResolvedTypeName);
+    memberGenericStart = memberTypeText != ZR_NULL ? strchr(memberTypeText, '<') : ZR_NULL;
+    memberRootDot = memberTypeText != ZR_NULL
+                            ? memchr(memberTypeText,
+                                     '.',
+                                     memberGenericStart != ZR_NULL ? (size_t)(memberGenericStart - memberTypeText)
+                                                                   : strlen(memberTypeText))
+                            : ZR_NULL;
+    if (moduleTypeText == ZR_NULL || memberTypeText == ZR_NULL || memberRootDot != ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    written = snprintf(buffer, sizeof(buffer), "%s.%s", moduleTypeText, memberTypeText);
+    if (written <= 0 || (TZrSize)written >= sizeof(buffer)) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(cs->state, buffer, (TZrSize)written);
+}
+
+static SZrString *ast_type_build_canonical_module_member_type_name(SZrCompilerState *cs,
+                                                                   SZrString *canonicalMemberTypeName,
+                                                                   SZrString *requestedMemberTypeName) {
+    const TZrChar *canonicalText;
+    const TZrChar *requestedText;
+    const TZrChar *requestedGenericStart;
+    const TZrChar *canonicalGenericStart;
+    TZrSize canonicalBaseLength;
+    TZrChar buffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    TZrInt32 written;
+
+    if (cs == ZR_NULL || canonicalMemberTypeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    canonicalText = ZrCore_String_GetNativeString(canonicalMemberTypeName);
+    if (canonicalText == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    requestedText = requestedMemberTypeName != ZR_NULL ? ZrCore_String_GetNativeString(requestedMemberTypeName) : ZR_NULL;
+    requestedGenericStart = requestedText != ZR_NULL ? strchr(requestedText, '<') : ZR_NULL;
+    if (requestedGenericStart == ZR_NULL) {
+        return canonicalMemberTypeName;
+    }
+
+    canonicalGenericStart = strchr(canonicalText, '<');
+    canonicalBaseLength = canonicalGenericStart != ZR_NULL ? (TZrSize)(canonicalGenericStart - canonicalText)
+                                                           : strlen(canonicalText);
+    written = snprintf(buffer,
+                       sizeof(buffer),
+                       "%.*s%s",
+                       (int)canonicalBaseLength,
+                       canonicalText,
+                       requestedGenericStart);
+    if (written <= 0 || (TZrSize)written >= sizeof(buffer)) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(cs->state, buffer, (TZrSize)written);
+}
+
 static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs,
                                                             const SZrType *astType,
                                                             SZrInferredType *result) {
@@ -1922,6 +2038,19 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
     }
 
     if (!resolvedRootFromModuleAlias) {
+        SZrString *qualifiedTypeName = extract_type_name_string(cs, (SZrType *)astType);
+        if (qualifiedTypeName != ZR_NULL) {
+            ensure_generic_instance_type_prototype(cs, qualifiedTypeName);
+            if (find_compiler_type_prototype_inference(cs, qualifiedTypeName) != ZR_NULL) {
+                ZrParser_InferredType_Free(cs->state, &currentType);
+                return inferred_type_from_type_name(cs, qualifiedTypeName, result);
+            }
+            if (ast_type_builtin_canonical_name(ZrCore_String_GetNativeString(qualifiedTypeName)) != ZR_NULL) {
+                ZrParser_InferredType_Free(cs->state, &currentType);
+                return ast_type_report_missing_explicit_binding(cs, qualifiedTypeName, astType->name->location);
+            }
+        }
+
         ZrParser_InferredType_Free(cs->state, &currentType);
         if (!ast_type_resolve_unqualified_inferred_type(cs, astType, &currentType)) {
             return ZR_FALSE;
@@ -1954,8 +2083,17 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
         ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
         if (type_name_is_module_prototype_inference(cs, currentType.typeName) &&
             memberResolvedTypeName != ZR_NULL) {
-            ensure_generic_instance_type_prototype(cs, memberResolvedTypeName);
-            if (inferred_type_from_type_name(cs, memberResolvedTypeName, &nextType)) {
+            SZrString *qualifiedMemberTypeName =
+                    ast_type_build_canonical_module_member_type_name(cs, memberInfo->fieldTypeName, memberResolvedTypeName);
+            SZrString *candidateTypeName =
+                    qualifiedMemberTypeName != ZR_NULL ? qualifiedMemberTypeName
+                                                       : (memberInfo->fieldTypeName != ZR_NULL
+                                                                  ? memberInfo->fieldTypeName
+                                                                  : memberResolvedTypeName);
+
+            ensure_generic_instance_type_prototype(cs, candidateTypeName);
+            if (find_compiler_type_prototype_inference(cs, candidateTypeName) != ZR_NULL &&
+                inferred_type_from_type_name(cs, candidateTypeName, &nextType)) {
                 resolvedFromModuleMember = ZR_TRUE;
             }
         }
@@ -2009,13 +2147,21 @@ TZrBool ZrParser_AstTypeToInferredType_Convert(SZrCompilerState *cs, const SZrTy
     ZrParser_InferredType_Init(cs->state, &namedType, ZR_VALUE_TYPE_OBJECT);
     namedTypeInitialized = ZR_TRUE;
 
-    if (astType->subType != ZR_NULL && ast_type_try_resolve_qualified_inferred_type(cs, astType, &namedType)) {
-        if (cs->semanticContext != ZR_NULL && namedType.typeName != ZR_NULL) {
-            ZrParser_Semantic_RegisterInferredType(cs->semanticContext,
-                                                   &namedType,
-                                                   ZR_SEMANTIC_TYPE_KIND_REFERENCE,
-                                                   namedType.typeName,
-                                                   astType->name);
+    if (astType->subType != ZR_NULL) {
+        if (ast_type_try_resolve_qualified_inferred_type(cs, astType, &namedType)) {
+            if (cs->semanticContext != ZR_NULL && namedType.typeName != ZR_NULL) {
+                ZrParser_Semantic_RegisterInferredType(cs->semanticContext,
+                                                       &namedType,
+                                                       ZR_SEMANTIC_TYPE_KIND_REFERENCE,
+                                                       namedType.typeName,
+                                                       astType->name);
+            }
+        } else if (cs->hasError) {
+            ZrParser_InferredType_Free(cs->state, &namedType);
+            return ZR_FALSE;
+        } else if (!ast_type_resolve_unqualified_inferred_type(cs, astType, &namedType)) {
+            ZrParser_InferredType_Free(cs->state, &namedType);
+            return ZR_FALSE;
         }
     } else if (!ast_type_resolve_unqualified_inferred_type(cs, astType, &namedType)) {
         ZrParser_InferredType_Free(cs->state, &namedType);

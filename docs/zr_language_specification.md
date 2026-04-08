@@ -535,8 +535,9 @@ for (var i in array) {
 
 ```zr
 // 生成器允许在 out 时返回结果，直到运行结束
+var builtin = %import("zr.builtin");
 var k = {{
-    if (Object.type(j) == "array") {
+    if (builtin.Object.type(j) == "array") {
         out j.toArray();
     }
     // default out null;
@@ -544,7 +545,7 @@ var k = {{
 // 函数返回生成器
 test(){
     return {{
-        if (Object.type(j) == "array") {
+        if (builtin.Object.type(j) == "array") {
             out j.toArray();
         }
         // default out null;

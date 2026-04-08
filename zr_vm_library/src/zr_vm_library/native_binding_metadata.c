@@ -560,6 +560,7 @@ SZrObject *native_metadata_make_function_entry(SZrState *state, const ZrLibFunct
     native_metadata_set_string_field(state, object, "returnTypeName", descriptor->returnTypeName);
     native_metadata_set_int_field(state, object, "minArgumentCount", descriptor->minArgumentCount);
     native_metadata_set_int_field(state, object, "maxArgumentCount", descriptor->maxArgumentCount);
+    native_metadata_set_int_field(state, object, "contractRole", (TZrInt64)descriptor->contractRole);
     if (hasParameterMetadata) {
         native_metadata_set_int_field(state, object, "parameterCount", (TZrInt64)descriptor->parameterCount);
         ZrLib_Value_SetObject(state, &parametersValue, parametersArray, ZR_VALUE_TYPE_ARRAY);
@@ -795,9 +796,9 @@ SZrObject *native_metadata_make_type_entry(SZrState *state, const ZrLibTypeDescr
     return object;
 }
 
-SZrObject *native_metadata_make_module_info(SZrState *state,
-                                                   const ZrLibModuleDescriptor *descriptor,
-                                                   const ZrLibRegisteredModuleRecord *record) {
+ZR_LIBRARY_API SZrObject *native_metadata_make_module_info(SZrState *state,
+                                                           const ZrLibModuleDescriptor *descriptor,
+                                                           const ZrLibRegisteredModuleRecord *record) {
     SZrObject *object;
     SZrObject *functionsArray;
     SZrObject *constantsArray;
@@ -1671,6 +1672,43 @@ SZrObjectPrototype *native_registry_get_module_prototype(SZrState *state,
     return (SZrObjectPrototype *)object;
 }
 
+static SZrObjectPrototype *native_registry_find_same_module_qualified_prototype(SZrState *state,
+                                                                                SZrObjectModule *module,
+                                                                                const TZrChar *moduleName,
+                                                                                const TZrChar *qualifiedTypeName) {
+    const TZrChar *genericStart;
+    const TZrChar *lastDot;
+    TZrSize moduleNameLength;
+    TZrSize exportNameLength;
+    TZrChar exportNameBuffer[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+
+    if (state == ZR_NULL || module == ZR_NULL || moduleName == ZR_NULL || qualifiedTypeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    genericStart = strchr(qualifiedTypeName, '<');
+    lastDot = strrchr(qualifiedTypeName, '.');
+    if (lastDot == ZR_NULL || lastDot == qualifiedTypeName || lastDot[1] == '\0' ||
+        (genericStart != ZR_NULL && lastDot > genericStart)) {
+        return ZR_NULL;
+    }
+
+    moduleNameLength = (TZrSize)(lastDot - qualifiedTypeName);
+    exportNameLength = genericStart != ZR_NULL
+                               ? (TZrSize)(genericStart - (lastDot + 1))
+                               : strlen(lastDot + 1);
+    if (strncmp(moduleName, qualifiedTypeName, moduleNameLength) != 0 ||
+        moduleName[moduleNameLength] != '\0' ||
+        exportNameLength == 0 ||
+        exportNameLength >= sizeof(exportNameBuffer)) {
+        return ZR_NULL;
+    }
+
+    memcpy(exportNameBuffer, lastDot + 1, exportNameLength);
+    exportNameBuffer[exportNameLength] = '\0';
+    return native_registry_get_module_prototype(state, module, exportNameBuffer);
+}
+
 void native_registry_resolve_type_relationships(SZrState *state,
                                                        SZrObjectModule *module,
                                                        const ZrLibModuleDescriptor *descriptor) {
@@ -1695,14 +1733,26 @@ void native_registry_resolve_type_relationships(SZrState *state,
         }
 
         superPrototype = typeDescriptor->extendsTypeName != ZR_NULL
-                                 ? ZrLib_Type_FindPrototype(state, typeDescriptor->extendsTypeName)
+                                 ? native_registry_find_same_module_qualified_prototype(state,
+                                                                                         module,
+                                                                                         descriptor->moduleName,
+                                                                                         typeDescriptor->extendsTypeName)
                                  : ZR_NULL;
+        if (superPrototype == ZR_NULL && typeDescriptor->extendsTypeName != ZR_NULL) {
+            superPrototype = ZrLib_Type_FindPrototype(state, typeDescriptor->extendsTypeName);
+        }
         if (superPrototype == ZR_NULL &&
             typeDescriptor->prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_CLASS &&
             !(descriptor->moduleName != ZR_NULL &&
               strcmp(descriptor->moduleName, "zr.builtin") == 0 &&
               strcmp(typeDescriptor->name, "Object") == 0)) {
-            superPrototype = ZrLib_Type_FindPrototype(state, "zr.builtin.Object");
+            superPrototype = native_registry_find_same_module_qualified_prototype(state,
+                                                                                  module,
+                                                                                  descriptor->moduleName,
+                                                                                  "zr.builtin.Object");
+            if (superPrototype == ZR_NULL) {
+                superPrototype = ZrLib_Type_FindPrototype(state, "zr.builtin.Object");
+            }
         }
         if (superPrototype == ZR_NULL || superPrototype == prototype) {
             continue;

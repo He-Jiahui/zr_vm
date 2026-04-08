@@ -33,6 +33,9 @@ SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state
                                                                  SZrSymbol *symbol,
                                                                  const TZrChar *content,
                                                                  TZrSize contentLength);
+SZrString *ZrLanguageServer_Lsp_AppendSymbolFfiMetadataMarkdown(SZrState *state,
+                                                                SZrString *base,
+                                                                SZrSymbol *symbol);
 void ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(SZrState *state,
                                                        SZrSemanticAnalyzer *analyzer,
                                                        SZrCompletionItem *item,
@@ -103,6 +106,8 @@ typedef struct SZrLspProjectIndex {
     SZrString *projectFilePath;
     SZrString *projectRootPath;
     SZrString *sourceRootPath;
+    TZrBool hasSemanticProjectLoad;
+    TZrBool hasLightweightSourceGraph;
     SZrArray files; // SZrLspProjectFileRecord*
 } SZrLspProjectIndex;
 
@@ -155,6 +160,9 @@ TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
 SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(SZrState *state,
                                                                     SZrLspContext *context,
                                                                     SZrString *uri);
+SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectByProjectUri(SZrState *state,
+                                                                          SZrLspContext *context,
+                                                                          SZrString *projectUri);
 TZrBool ZrLanguageServer_Lsp_ProjectTryGetDefinition(SZrState *state,
                                                      SZrLspContext *context,
                                                      SZrString *uri,

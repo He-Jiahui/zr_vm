@@ -6,13 +6,13 @@
 #include "unity.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_core/function.h"
-#include "zr_vm_core/io.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
-#include "zr_vm_parser/writer.h"
+#include "module_fixture_support.h"
+#include "runtime_support.h"
 #include "test_support.h"
 
 #ifndef ZR_ARRAY_COUNT
@@ -24,224 +24,31 @@ typedef struct {
     clock_t endTime;
 } SZrTestTimer;
 
-typedef struct {
-    const TZrChar *path;
-    const TZrChar *source;
-    const TZrByte *bytes;
-    TZrSize length;
-    TZrBool isBinary;
-} SZrModuleFixtureSource;
+typedef ZrTestsFixtureSource SZrModuleFixtureSource;
 
-#define MODULE_FIXTURE_SOURCE_TEXT(pathValue, sourceValue) \
-    {                                                      \
-            (pathValue),                                   \
-            (sourceValue),                                 \
-            ZR_NULL,                                       \
-            0,                                             \
-            ZR_FALSE,                                      \
-    }
-
-typedef struct {
-    const TZrByte *bytes;
-    TZrSize length;
-    TZrBool consumed;
-} SZrModuleFixtureReader;
+#define MODULE_FIXTURE_SOURCE_TEXT(pathValue, sourceValue) ZR_TESTS_FIXTURE_SOURCE_TEXT(pathValue, sourceValue)
+#define string_equals_cstring ZrTests_Fixture_StringEqualsCString
+#define get_object_field_value ZrTests_Fixture_GetObjectFieldValue
+#define get_array_length ZrTests_Fixture_GetArrayLength
+#define get_array_entry_object ZrTests_Fixture_GetArrayEntryObject
 
 static const SZrModuleFixtureSource *g_module_fixture_sources = ZR_NULL;
 static TZrSize g_module_fixture_source_count = 0;
-
-static TZrBool string_equals_cstring(SZrString *value, const TZrChar *expected) {
-    const TZrChar *nativeString;
-
-    if (value == ZR_NULL || expected == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    nativeString = ZrCore_String_GetNativeString(value);
-    return nativeString != ZR_NULL && strcmp(nativeString, expected) == 0;
-}
-
-static const SZrTypeValue *get_object_field_value(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
-    SZrString *fieldNameString;
-    SZrTypeValue key;
-
-    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    fieldNameString = ZrCore_String_Create(state, (TZrNativeString)fieldName, strlen(fieldName));
-    if (fieldNameString == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldNameString));
-    key.type = ZR_VALUE_TYPE_STRING;
-    return ZrCore_Object_GetValue(state, object, &key);
-}
-
-static TZrSize get_array_length(SZrObject *array) {
-    if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
-        return 0;
-    }
-
-    return array->nodeMap.elementCount;
-}
-
-static SZrObject *get_array_entry_object(SZrState *state, SZrObject *array, TZrSize index) {
-    SZrTypeValue key;
-    const SZrTypeValue *entryValue;
-
-    if (state == ZR_NULL || array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
-        return ZR_NULL;
-    }
-
-    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)index);
-    entryValue = ZrCore_Object_GetValue(state, array, &key);
-    if (entryValue == ZR_NULL || entryValue->type != ZR_VALUE_TYPE_OBJECT || entryValue->value.object == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    return ZR_CAST_OBJECT(state, entryValue->value.object);
-}
-
-static TZrBytePtr module_fixture_reader_read(SZrState *state, TZrPtr customData, TZrSize *size) {
-    SZrModuleFixtureReader *reader = (SZrModuleFixtureReader *)customData;
-
-    ZR_UNUSED_PARAMETER(state);
-
-    if (reader == ZR_NULL || size == ZR_NULL || reader->consumed) {
-        if (size != ZR_NULL) {
-            *size = 0;
-        }
-        return ZR_NULL;
-    }
-
-    reader->consumed = ZR_TRUE;
-    *size = reader->length;
-    return (TZrBytePtr)reader->bytes;
-}
-
-static void module_fixture_reader_close(SZrState *state, TZrPtr customData) {
-    ZR_UNUSED_PARAMETER(state);
-
-    if (customData != ZR_NULL) {
-        free(customData);
-    }
-}
-
-static TZrByte *read_test_file_bytes(const TZrChar *path, TZrSize *outLength) {
-    FILE *file;
-    long fileSize;
-    TZrByte *buffer;
-
-    if (path == ZR_NULL || outLength == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    file = fopen(path, "rb");
-    if (file == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    fileSize = ftell(file);
-    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0) {
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    buffer = (TZrByte *)malloc((size_t)fileSize);
-    if (buffer == ZR_NULL) {
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    if (fileSize > 0 && fread(buffer, 1, (size_t)fileSize, file) != (size_t)fileSize) {
-        free(buffer);
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    fclose(file);
-    *outLength = (TZrSize)fileSize;
-    return buffer;
-}
 
 static TZrByte *build_module_binary_fixture(SZrState *state,
                                             const TZrChar *moduleSource,
                                             const TZrChar *binaryPath,
                                             TZrSize *outLength) {
-    SZrString *sourceName;
-    SZrFunction *function;
-    TZrBool oldEmitCompileTimeRuntimeSupport = ZR_FALSE;
-
-    if (state == ZR_NULL || moduleSource == ZR_NULL || binaryPath == ZR_NULL || outLength == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    sourceName = ZrCore_String_Create(state, (TZrNativeString)binaryPath, strlen(binaryPath));
-    if (sourceName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (state->global != ZR_NULL) {
-        oldEmitCompileTimeRuntimeSupport = state->global->emitCompileTimeRuntimeSupport;
-        state->global->emitCompileTimeRuntimeSupport = ZR_TRUE;
-    }
-    function = ZrParser_Source_Compile(state, moduleSource, strlen(moduleSource), sourceName);
-    if (state->global != ZR_NULL) {
-        state->global->emitCompileTimeRuntimeSupport = oldEmitCompileTimeRuntimeSupport;
-    }
-    if (function == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (!ZrParser_Writer_WriteBinaryFile(state, function, binaryPath)) {
-        ZrCore_Function_Free(state, function);
-        return ZR_NULL;
-    }
-
-    return read_test_file_bytes(binaryPath, outLength);
+    return ZrTests_Fixture_BuildBinaryFile(state, moduleSource, binaryPath, ZR_TRUE, outLength);
 }
 
 static TZrBool module_fixture_source_loader(SZrState *state, TZrNativeString sourcePath, TZrNativeString md5, SZrIo *io) {
-    TZrSize index;
-
-    ZR_UNUSED_PARAMETER(md5);
-
-    if (state == ZR_NULL || sourcePath == ZR_NULL || io == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (index = 0; index < g_module_fixture_source_count; index++) {
-        const SZrModuleFixtureSource *fixture = &g_module_fixture_sources[index];
-        if (fixture->path != ZR_NULL && strcmp(fixture->path, sourcePath) == 0) {
-            SZrModuleFixtureReader *reader =
-                    (SZrModuleFixtureReader *)malloc(sizeof(SZrModuleFixtureReader));
-            if (reader == ZR_NULL) {
-                return ZR_FALSE;
-            }
-
-            if (fixture->bytes != ZR_NULL && fixture->length > 0) {
-                reader->bytes = fixture->bytes;
-                reader->length = fixture->length;
-            } else {
-                reader->bytes = (const TZrByte *)fixture->source;
-                reader->length = fixture->source != ZR_NULL ? strlen(fixture->source) : 0;
-            }
-            reader->consumed = ZR_FALSE;
-
-            ZrCore_Io_Init(state, io, module_fixture_reader_read, module_fixture_reader_close, reader);
-            io->isBinary = fixture->isBinary;
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
+    return ZrTests_Fixture_SourceLoaderFromArray(state,
+                                                 sourcePath,
+                                                 md5,
+                                                 io,
+                                                 g_module_fixture_sources,
+                                                 g_module_fixture_source_count);
 }
 
 static void assert_member_reflection(SZrState *state,

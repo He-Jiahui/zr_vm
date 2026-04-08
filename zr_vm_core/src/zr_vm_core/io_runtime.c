@@ -61,9 +61,6 @@ FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helper
         case ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK:
             return ZrCore_Ownership_NativeWeak;
 
-        case ZR_IO_NATIVE_HELPER_OWNERSHIP_USING:
-            return ZrCore_Ownership_NativeUsing;
-
         case ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF:
             return ZrCore_Reflection_TypeOfNativeEntry;
 
@@ -73,6 +70,7 @@ FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helper
         case ZR_IO_NATIVE_HELPER_RUNTIME_MEMBER_DECORATOR_APPLY:
             return ZrCore_RuntimeDecorator_ApplyMemberNativeEntry;
 
+        case ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_OWNERSHIP_USING:
         case ZR_IO_NATIVE_HELPER_NONE:
         default:
             return ZR_NULL;

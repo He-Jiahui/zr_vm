@@ -1605,10 +1605,85 @@ static TZrBool signature_build_specialized_type_name(SZrCompilerState *compilerS
     return *outTypeName != ZR_NULL;
 }
 
+typedef struct SZrSignatureTypeResolutionContext {
+    SZrTypePrototypeInfo *typePrototype;
+    SZrAstNode *typeNode;
+    SZrAstNode *functionNode;
+} SZrSignatureTypeResolutionContext;
+
+typedef struct SZrSignatureCompilerContextSnapshot {
+    SZrTypePrototypeInfo *typePrototype;
+    SZrAstNode *typeNode;
+    SZrAstNode *functionNode;
+    SZrString *typeName;
+} SZrSignatureCompilerContextSnapshot;
+
+static void signature_push_type_resolution_context(
+        SZrCompilerState *compilerState,
+        const SZrSignatureTypeResolutionContext *context,
+        SZrSignatureCompilerContextSnapshot *snapshot) {
+    if (compilerState == ZR_NULL || snapshot == ZR_NULL) {
+        return;
+    }
+
+    snapshot->typePrototype = compilerState->currentTypePrototypeInfo;
+    snapshot->typeNode = compilerState->currentTypeNode;
+    snapshot->functionNode = compilerState->currentFunctionNode;
+    snapshot->typeName = compilerState->currentTypeName;
+
+    if (context == ZR_NULL) {
+        return;
+    }
+
+    if (context->typePrototype != ZR_NULL) {
+        compilerState->currentTypePrototypeInfo = context->typePrototype;
+        compilerState->currentTypeName = context->typePrototype->name;
+    }
+    if (context->typeNode != ZR_NULL) {
+        compilerState->currentTypeNode = context->typeNode;
+    }
+    if (context->functionNode != ZR_NULL) {
+        compilerState->currentFunctionNode = context->functionNode;
+    }
+}
+
+static void signature_pop_type_resolution_context(
+        SZrCompilerState *compilerState,
+        const SZrSignatureCompilerContextSnapshot *snapshot) {
+    if (compilerState == ZR_NULL || snapshot == ZR_NULL) {
+        return;
+    }
+
+    compilerState->currentTypePrototypeInfo = snapshot->typePrototype;
+    compilerState->currentTypeNode = snapshot->typeNode;
+    compilerState->currentFunctionNode = snapshot->functionNode;
+    compilerState->currentTypeName = snapshot->typeName;
+}
+
+static TZrBool signature_convert_ast_type_with_context(
+        SZrCompilerState *compilerState,
+        SZrType *sourceType,
+        const SZrSignatureTypeResolutionContext *context,
+        SZrInferredType *outType) {
+    SZrSignatureCompilerContextSnapshot snapshot;
+    TZrBool success;
+
+    if (compilerState == ZR_NULL || sourceType == ZR_NULL || outType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(&snapshot, 0, sizeof(snapshot));
+    signature_push_type_resolution_context(compilerState, context, &snapshot);
+    success = ZrParser_AstTypeToInferredType_Convert(compilerState, sourceType, outType);
+    signature_pop_type_resolution_context(compilerState, &snapshot);
+    return success;
+}
+
 static TZrBool signature_build_specialized_type_name_from_ast_type(SZrCompilerState *compilerState,
                                                                    SZrType *sourceType,
                                                                    const SZrArray *genericParameters,
                                                                    const SZrArray *bindingTypes,
+                                                                   const SZrSignatureTypeResolutionContext *context,
                                                                    SZrString **outTypeName) {
     SZrInferredType unresolvedType;
     SZrInferredType resolvedType;
@@ -1626,7 +1701,7 @@ static TZrBool signature_build_specialized_type_name_from_ast_type(SZrCompilerSt
 
     ZrParser_InferredType_Init(compilerState->state, &unresolvedType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(compilerState->state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
-    if (!ZrParser_AstTypeToInferredType_Convert(compilerState, sourceType, &unresolvedType) ||
+    if (!signature_convert_ast_type_with_context(compilerState, sourceType, context, &unresolvedType) ||
         !signature_substitute_receiver_generic_type(compilerState->state,
                                                     genericParameters,
                                                     bindingTypes,
@@ -1810,12 +1885,18 @@ static TZrBool signature_prepare_specialized_receiver_member(SZrState *state,
 
     if (memberInfo->returnTypeName != ZR_NULL) {
         SZrType *returnTypeNode = signature_method_return_type_node(memberInfo->declarationNode);
+        SZrSignatureTypeResolutionContext resolutionContext;
+
+        memset(&resolutionContext, 0, sizeof(resolutionContext));
+        resolutionContext.typePrototype = openPrototype;
+        resolutionContext.functionNode = memberInfo->declarationNode;
 
         if (returnTypeNode != ZR_NULL) {
             if (!signature_build_specialized_type_name_from_ast_type(compilerState,
                                                                      returnTypeNode,
                                                                      &openPrototype->genericParameters,
                                                                      &bindingTypes,
+                                                                     &resolutionContext,
                                                                      &temporaryMemberInfo->returnTypeName)) {
                 goto cleanup;
             }
@@ -1916,6 +1997,7 @@ static void signature_free_generic_parameter_infos(SZrState *state, SZrArray *ge
 
 static TZrBool signature_collect_parameter_types_from_ast(SZrCompilerState *compilerState,
                                                           SZrAstNodeArray *params,
+                                                          const SZrSignatureTypeResolutionContext *context,
                                                           SZrArray *dest) {
     if (compilerState == ZR_NULL || dest == ZR_NULL) {
         return ZR_FALSE;
@@ -1936,9 +2018,10 @@ static TZrBool signature_collect_parameter_types_from_ast(SZrCompilerState *comp
 
         ZrParser_InferredType_Init(compilerState->state, &paramType, ZR_VALUE_TYPE_OBJECT);
         if (paramNode->data.parameter.typeInfo != ZR_NULL &&
-            !ZrParser_AstTypeToInferredType_Convert(compilerState,
-                                                    paramNode->data.parameter.typeInfo,
-                                                    &paramType)) {
+            !signature_convert_ast_type_with_context(compilerState,
+                                                     paramNode->data.parameter.typeInfo,
+                                                     context,
+                                                     &paramType)) {
             ZrParser_InferredType_Free(compilerState->state, &paramType);
             free_inferred_type_array(compilerState->state, dest);
             return ZR_FALSE;
@@ -1977,7 +2060,9 @@ static TZrBool signature_collect_parameter_passing_modes_from_ast(SZrState *stat
     return ZR_TRUE;
 }
 
-static SZrString *signature_create_type_name_from_ast_type(SZrCompilerState *compilerState, SZrType *typeInfo) {
+static SZrString *signature_create_type_name_from_ast_type(SZrCompilerState *compilerState,
+                                                           SZrType *typeInfo,
+                                                           const SZrSignatureTypeResolutionContext *context) {
     SZrInferredType inferredType;
     TZrChar buffer[ZR_LSP_TEXT_BUFFER_LENGTH];
     const TZrChar *displayText;
@@ -1988,7 +2073,7 @@ static SZrString *signature_create_type_name_from_ast_type(SZrCompilerState *com
     }
 
     ZrParser_InferredType_Init(compilerState->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-    if (!ZrParser_AstTypeToInferredType_Convert(compilerState, typeInfo, &inferredType)) {
+    if (!signature_convert_ast_type_with_context(compilerState, typeInfo, context, &inferredType)) {
         ZrParser_InferredType_Free(compilerState->state, &inferredType);
         return ZR_NULL;
     }
@@ -2147,6 +2232,7 @@ static TZrBool signature_prepare_ast_specialized_receiver_constructor(SZrState *
                                                                       const SZrInferredType *receiverType,
                                                                       SZrTypeMemberInfo **resolvedMemberInfo,
                                                                       SZrTypeMemberInfo *temporaryMemberInfo) {
+    SZrTypePrototypeInfo *openPrototype = ZR_NULL;
     SZrString *baseName = ZR_NULL;
     SZrArray argumentTypeNames;
     SZrArray bindingTypes;
@@ -2159,6 +2245,7 @@ static TZrBool signature_prepare_ast_specialized_receiver_constructor(SZrState *
     SZrType *returnType = ZR_NULL;
     SZrString *memberName = ZR_NULL;
     const TZrChar *baseNameText;
+    SZrSignatureTypeResolutionContext resolutionContext;
     TZrBool success = ZR_FALSE;
 
     if (resolvedMemberInfo != ZR_NULL) {
@@ -2181,6 +2268,7 @@ static TZrBool signature_prepare_ast_specialized_receiver_constructor(SZrState *
     baseNameText = signature_string_native(baseName);
     typeDeclarationNode =
         signature_find_type_declaration_recursive(rootNode, baseNameText, strlen(baseNameText));
+    openPrototype = baseName != ZR_NULL ? find_compiler_type_prototype_inference(compilerState, baseName) : ZR_NULL;
     memberDeclarationNode = signature_find_constructor_declaration_in_type(typeDeclarationNode);
     if (typeDeclarationNode == ZR_NULL || memberDeclarationNode == ZR_NULL) {
         goto cleanup;
@@ -2218,11 +2306,16 @@ static TZrBool signature_prepare_ast_specialized_receiver_constructor(SZrState *
     ZrCore_Array_Construct(&temporaryMemberInfo->genericParameters);
     ZrCore_Array_Construct(&temporaryMemberInfo->parameterPassingModes);
 
+    memset(&resolutionContext, 0, sizeof(resolutionContext));
+    resolutionContext.typePrototype = openPrototype;
+    resolutionContext.typeNode = typeDeclarationNode;
+    resolutionContext.functionNode = memberDeclarationNode;
+
     if (!signature_collect_generic_parameter_infos_from_ast(state, &typeGenericParameters, typeGeneric) ||
         !signature_collect_parameter_passing_modes_from_ast(state,
                                                             params,
                                                             &temporaryMemberInfo->parameterPassingModes) ||
-        !signature_collect_parameter_types_from_ast(compilerState, params, &rawParameterTypes) ||
+        !signature_collect_parameter_types_from_ast(compilerState, params, &resolutionContext, &rawParameterTypes) ||
         !signature_build_receiver_binding_types(compilerState, &argumentTypeNames, &bindingTypes)) {
         goto cleanup;
     }
@@ -2254,12 +2347,12 @@ static TZrBool signature_prepare_ast_specialized_receiver_constructor(SZrState *
     }
 
     if (returnType != ZR_NULL) {
-        temporaryMemberInfo->returnTypeName = signature_create_type_name_from_ast_type(compilerState, returnType);
-        if (!signature_build_specialized_type_name(compilerState,
-                                                   temporaryMemberInfo->returnTypeName,
-                                                   &typeGenericParameters,
-                                                   &bindingTypes,
-                                                   &temporaryMemberInfo->returnTypeName)) {
+        if (!signature_build_specialized_type_name_from_ast_type(compilerState,
+                                                                 returnType,
+                                                                 &typeGenericParameters,
+                                                                 &bindingTypes,
+                                                                 &resolutionContext,
+                                                                 &temporaryMemberInfo->returnTypeName)) {
             goto cleanup;
         }
     }
@@ -2287,6 +2380,7 @@ static TZrBool signature_prepare_ast_specialized_receiver_member(SZrState *state
                                                                  SZrString *memberName,
                                                                  SZrTypeMemberInfo **resolvedMemberInfo,
                                                                  SZrTypeMemberInfo *temporaryMemberInfo) {
+    SZrTypePrototypeInfo *openPrototype = ZR_NULL;
     SZrString *baseName = ZR_NULL;
     SZrArray argumentTypeNames;
     SZrArray bindingTypes;
@@ -2299,6 +2393,7 @@ static TZrBool signature_prepare_ast_specialized_receiver_member(SZrState *state
     SZrAstNodeArray *params = ZR_NULL;
     SZrType *returnType = ZR_NULL;
     const TZrChar *baseNameText;
+    SZrSignatureTypeResolutionContext resolutionContext;
     TZrBool success = ZR_FALSE;
 
     if (resolvedMemberInfo != ZR_NULL) {
@@ -2322,6 +2417,7 @@ static TZrBool signature_prepare_ast_specialized_receiver_member(SZrState *state
     baseNameText = signature_string_native(baseName);
     typeDeclarationNode =
         signature_find_type_declaration_recursive(rootNode, baseNameText, strlen(baseNameText));
+    openPrototype = baseName != ZR_NULL ? find_compiler_type_prototype_inference(compilerState, baseName) : ZR_NULL;
     memberDeclarationNode =
         signature_find_method_declaration_in_type(typeDeclarationNode,
                                                   signature_string_native(memberName),
@@ -2356,6 +2452,11 @@ static TZrBool signature_prepare_ast_specialized_receiver_member(SZrState *state
     ZrCore_Array_Construct(&temporaryMemberInfo->genericParameters);
     ZrCore_Array_Construct(&temporaryMemberInfo->parameterPassingModes);
 
+    memset(&resolutionContext, 0, sizeof(resolutionContext));
+    resolutionContext.typePrototype = openPrototype;
+    resolutionContext.typeNode = typeDeclarationNode;
+    resolutionContext.functionNode = memberDeclarationNode;
+
     if (!signature_collect_generic_parameter_infos_from_ast(state, &typeGenericParameters, typeGeneric) ||
         !signature_collect_generic_parameter_infos_from_ast(state,
                                                             &temporaryMemberInfo->genericParameters,
@@ -2363,7 +2464,7 @@ static TZrBool signature_prepare_ast_specialized_receiver_member(SZrState *state
         !signature_collect_parameter_passing_modes_from_ast(state,
                                                             params,
                                                             &temporaryMemberInfo->parameterPassingModes) ||
-        !signature_collect_parameter_types_from_ast(compilerState, params, &rawParameterTypes) ||
+        !signature_collect_parameter_types_from_ast(compilerState, params, &resolutionContext, &rawParameterTypes) ||
         !signature_build_receiver_binding_types(compilerState, &argumentTypeNames, &bindingTypes)) {
         goto cleanup;
     }
@@ -2394,12 +2495,12 @@ static TZrBool signature_prepare_ast_specialized_receiver_member(SZrState *state
         }
     }
 
-    temporaryMemberInfo->returnTypeName = signature_create_type_name_from_ast_type(compilerState, returnType);
-    if (!signature_build_specialized_type_name(compilerState,
-                                               temporaryMemberInfo->returnTypeName,
-                                               &typeGenericParameters,
-                                               &bindingTypes,
-                                               &temporaryMemberInfo->returnTypeName)) {
+    if (!signature_build_specialized_type_name_from_ast_type(compilerState,
+                                                             returnType,
+                                                             &typeGenericParameters,
+                                                             &bindingTypes,
+                                                             &resolutionContext,
+                                                             &temporaryMemberInfo->returnTypeName)) {
         goto cleanup;
     }
 

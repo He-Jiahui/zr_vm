@@ -5227,6 +5227,149 @@ static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents
     TEST_PASS(timer, "LSP Watched Descriptor Plugin Refresh Reanalyzes Open Documents");
 }
 
+static void test_lsp_builtin_native_module_members_surface_completion_and_hover(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    const TZrChar *content =
+        "var builtin = %import(\"zr.builtin\");\n"
+        "var {Integer, TypeInfo} = %import(\"zr.builtin\");\n"
+        "var boxed: Integer = null;\n"
+        "var meta: TypeInfo = %type(7);\n"
+        "builtin.Integer;\n"
+        "boxed.hashCode;\n"
+        "TypeInfo.box;\n";
+    SZrString *uri;
+    SZrLspPosition importHoverPosition;
+    SZrLspPosition moduleCompletionPosition;
+    SZrLspPosition builtinTypeDefinitionPosition;
+    SZrLspPosition wrapperCompletionPosition;
+    SZrLspPosition typeInfoCompletionPosition;
+    SZrLspPosition boxedHoverPosition;
+    SZrLspPosition metaHoverPosition;
+    SZrArray completions;
+    SZrArray definitions;
+    SZrLspHover *hover = ZR_NULL;
+    TZrChar completionLabels[512];
+
+    TEST_START("LSP Builtin Native Module Members Surface Completion And Hover");
+    TEST_INFO("Builtin native completion / hover",
+              "zr.builtin imports should expose builtin module members, wrapper instance members, reflection members, and native builtin hover text");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state,
+                               "file:///builtin_native_members.zr",
+                               strlen("file:///builtin_native_members.zr"));
+    completionLabels[0] = '\0';
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "\"zr.builtin\"", 0, 1, &importHoverPosition) ||
+        !lsp_find_position_for_substring(content, "builtin.Integer", 0, 8, &moduleCompletionPosition) ||
+        !lsp_find_position_for_substring(content, "builtin.Integer", 0, 8, &builtinTypeDefinitionPosition) ||
+        !lsp_find_position_for_substring(content, "boxed.hashCode", 0, 6, &wrapperCompletionPosition) ||
+        !lsp_find_position_for_substring(content, "TypeInfo.box", 0, 9, &typeInfoCompletionPosition) ||
+        !lsp_find_position_for_substring(content, "boxed.hashCode", 0, 0, &boxedHoverPosition) ||
+        !lsp_find_position_for_substring(content, "meta: TypeInfo", 0, 0, &metaHoverPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Builtin Native Module Members Surface Completion And Hover",
+                  "Failed to prepare builtin-native LSP fixture");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, importHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "module <zr.builtin>") ||
+        !hover_contains_text(hover, "Source: native builtin")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Builtin Native Module Members Surface Completion And Hover",
+                  "Hover on %import(\"zr.builtin\") should surface the native builtin module entry");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, moduleCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "Integer") ||
+        !completion_array_contains_label(&completions, "TypeInfo") ||
+        !completion_array_contains_label(&completions, "Object") ||
+        !completion_array_contains_label(&completions, "IEnumerable")) {
+        describe_completion_labels(&completions, completionLabels, sizeof(completionLabels));
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Builtin Native Module Members Surface Completion And Hover",
+                  completionLabels[0] != '\0'
+                      ? completionLabels
+                      : "Builtin module completion should list protocol, root, and wrapper members");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, builtinTypeDefinitionPosition, &definitions) ||
+        definitions.length == 0) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Builtin Native Module Members Surface Completion And Hover",
+                  "Goto definition on builtin.Integer should resolve to an explicit builtin declaration target");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, wrapperCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "equals") ||
+        !completion_array_contains_label(&completions, "compareTo") ||
+        !completion_array_contains_label(&completions, "hashCode")) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Builtin Native Module Members Surface Completion And Hover",
+                  "Integer wrapper completion should list equals/compareTo/hashCode");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, typeInfoCompletionPosition, &completions) ||
+        !completion_array_contains_label(&completions, "box")) {
+        describe_completion_labels(&completions, completionLabels, sizeof(completionLabels));
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Builtin Native Module Members Surface Completion And Hover",
+                  completionLabels[0] != '\0'
+                      ? completionLabels
+                      : "Imported TypeInfo completion should list the explicit static box helper");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, boxedHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "Integer")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Builtin Native Module Members Surface Completion And Hover",
+                  "Hover on boxed should resolve to the imported Integer wrapper type");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, metaHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "TypeInfo")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Builtin Native Module Members Surface Completion And Hover",
+                  "Hover on meta should resolve to the builtin TypeInfo reflection root");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Builtin Native Module Members Surface Completion And Hover");
+}
+
 static void test_lsp_container_native_members_surface_closed_types_and_completions(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -6467,6 +6610,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents(state);
+    TEST_DIVIDER();
+
+    test_lsp_builtin_native_module_members_surface_completion_and_hover(state);
     TEST_DIVIDER();
 
     test_lsp_container_native_members_surface_closed_types_and_completions(state);

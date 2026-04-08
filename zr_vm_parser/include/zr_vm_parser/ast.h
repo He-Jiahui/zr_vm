@@ -584,7 +584,7 @@ typedef struct SZrStructField {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TZrBool isStatic;
-    TZrBool isUsingManaged; // 是否使用 field-scoped using 生命周期管理
+    TZrBool isUsingManaged; // legacy field-scoped `%using` 标记；当前语义固定为 false
     TZrBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrType *typeInfo; // 可选
@@ -646,7 +646,7 @@ typedef struct SZrClassField {
     SZrAstNodeArray *decorators;
     EZrAccessModifier access;
     TZrBool isStatic;
-    TZrBool isUsingManaged; // 是否使用 field-scoped using 生命周期管理
+    TZrBool isUsingManaged; // legacy field-scoped `%using` 标记；当前语义固定为 false
     TZrBool isConst; // 是否为 const 字段
     SZrIdentifier *name;
     SZrFileRange nameLocation;

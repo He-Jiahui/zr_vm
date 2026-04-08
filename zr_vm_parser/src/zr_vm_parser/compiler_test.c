@@ -354,6 +354,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 将编译结果复制到函数对象（参考 compile_function_declaration）
     SZrFunction *newFunc = cs->currentFunction;
     SZrGlobalState *global = cs->state->global;
+    optimize_instructions(cs);
 
     // 复制指令列表
     if (cs->instructions.length > 0) {

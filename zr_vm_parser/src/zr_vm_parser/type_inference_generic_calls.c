@@ -12,12 +12,6 @@
 #include <stdio.h>
 #include <string.h>
 
-typedef struct SZrGenericCallBinding {
-    const SZrTypeGenericParameterInfo *parameterInfo;
-    TZrBool isBound;
-    SZrInferredType inferredType;
-} SZrGenericCallBinding;
-
 static void resolved_call_signature_init(SZrState *state, SZrResolvedCallSignature *signature) {
     if (state == ZR_NULL || signature == ZR_NULL) {
         return;
@@ -125,6 +119,159 @@ static TZrBool copy_direct_member_signature(SZrCompilerState *cs,
     }
 
     return inferred_type_from_type_name(cs, memberInfo->returnTypeName, &signature->returnType);
+}
+
+static TZrBool append_text_fragment_local(TZrChar *buffer,
+                                          TZrSize bufferSize,
+                                          TZrSize *offset,
+                                          const TZrChar *fragment) {
+    TZrSize fragmentLength;
+
+    if (buffer == ZR_NULL || bufferSize == 0 || offset == ZR_NULL || fragment == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fragmentLength = strlen(fragment);
+    if (*offset + fragmentLength >= bufferSize) {
+        return ZR_FALSE;
+    }
+
+    memcpy(buffer + *offset, fragment, fragmentLength);
+    *offset += fragmentLength;
+    buffer[*offset] = '\0';
+    return ZR_TRUE;
+}
+
+static SZrString *binding_type_name_for_substitution(SZrState *state, const SZrGenericCallBinding *binding) {
+    TZrChar buffer[ZR_PARSER_TEXT_BUFFER_LENGTH];
+    const TZrChar *typeText;
+
+    if (state == ZR_NULL || binding == ZR_NULL || !binding->isBound) {
+        return ZR_NULL;
+    }
+
+    if (binding->inferredType.typeName != ZR_NULL) {
+        return binding->inferredType.typeName;
+    }
+
+    typeText = ZrParser_TypeNameString_Get(state, &binding->inferredType, buffer, sizeof(buffer));
+    if (typeText == ZR_NULL || typeText[0] == '\0') {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(state, (TZrNativeString)typeText, strlen(typeText));
+}
+
+static SZrString *substitute_generic_type_name_from_bindings(SZrState *state,
+                                                             SZrString *sourceTypeName,
+                                                             const SZrArray *bindings) {
+    SZrString *baseName = ZR_NULL;
+    SZrArray argumentNames;
+    const TZrChar *nativeTypeName;
+    TZrSize nativeTypeNameLength;
+
+    if (state == ZR_NULL || sourceTypeName == ZR_NULL || bindings == ZR_NULL) {
+        return sourceTypeName;
+    }
+
+    for (TZrSize index = 0; index < bindings->length; index++) {
+        SZrGenericCallBinding *binding = (SZrGenericCallBinding *)ZrCore_Array_Get((SZrArray *)bindings, index);
+        SZrString *boundTypeName;
+
+        if (binding == ZR_NULL || binding->parameterInfo == ZR_NULL || binding->parameterInfo->name == ZR_NULL) {
+            continue;
+        }
+
+        if (!ZrCore_String_Equal(binding->parameterInfo->name, sourceTypeName)) {
+            continue;
+        }
+
+        boundTypeName = binding_type_name_for_substitution(state, binding);
+        return boundTypeName != ZR_NULL ? boundTypeName : sourceTypeName;
+    }
+
+    nativeTypeName = ZrCore_String_GetNativeString(sourceTypeName);
+    nativeTypeNameLength = nativeTypeName != ZR_NULL ? strlen(nativeTypeName) : 0;
+    if (nativeTypeName != ZR_NULL &&
+        nativeTypeNameLength > 2 &&
+        strcmp(nativeTypeName + nativeTypeNameLength - 2, "[]") == 0) {
+        SZrString *elementTypeName =
+            ZrCore_String_Create(state, (TZrNativeString)nativeTypeName, nativeTypeNameLength - 2);
+        SZrString *substitutedElement = substitute_generic_type_name_from_bindings(state, elementTypeName, bindings);
+        TZrChar buffer[ZR_PARSER_TEXT_BUFFER_LENGTH];
+        const TZrChar *elementNative =
+                substitutedElement != ZR_NULL ? ZrCore_String_GetNativeString(substitutedElement) : ZR_NULL;
+
+        if (elementNative == ZR_NULL) {
+            return sourceTypeName;
+        }
+
+        snprintf(buffer, sizeof(buffer), "%s[]", elementNative);
+        return ZrCore_String_CreateFromNative(state, buffer);
+    }
+
+    ZrCore_Array_Construct(&argumentNames);
+    if (try_parse_generic_instance_type_name(state, sourceTypeName, &baseName, &argumentNames)) {
+        TZrChar buffer[ZR_PARSER_TEXT_BUFFER_LENGTH];
+        TZrSize offset = 0;
+        SZrString *resultName = ZR_NULL;
+
+        buffer[0] = '\0';
+        if (!append_text_fragment_local(buffer, sizeof(buffer), &offset, ZrCore_String_GetNativeString(baseName)) ||
+            !append_text_fragment_local(buffer, sizeof(buffer), &offset, "<")) {
+            ZrCore_Array_Free(state, &argumentNames);
+            return sourceTypeName;
+        }
+
+        for (TZrSize index = 0; index < argumentNames.length; index++) {
+            SZrString **argumentNamePtr = (SZrString **)ZrCore_Array_Get(&argumentNames, index);
+            SZrString *substitutedName;
+
+            if (argumentNamePtr == ZR_NULL || *argumentNamePtr == ZR_NULL) {
+                continue;
+            }
+
+            if (index > 0 && !append_text_fragment_local(buffer, sizeof(buffer), &offset, ", ")) {
+                ZrCore_Array_Free(state, &argumentNames);
+                return sourceTypeName;
+            }
+
+            substitutedName = substitute_generic_type_name_from_bindings(state, *argumentNamePtr, bindings);
+            if (substitutedName == ZR_NULL ||
+                !append_text_fragment_local(buffer,
+                                            sizeof(buffer),
+                                            &offset,
+                                            ZrCore_String_GetNativeString(substitutedName))) {
+                ZrCore_Array_Free(state, &argumentNames);
+                return sourceTypeName;
+            }
+        }
+
+        if (append_text_fragment_local(buffer, sizeof(buffer), &offset, ">")) {
+            resultName = ZrCore_String_Create(state, buffer, offset);
+        }
+
+        ZrCore_Array_Free(state, &argumentNames);
+        if (resultName != ZR_NULL) {
+            return resultName;
+        }
+    }
+
+    return sourceTypeName;
+}
+
+static TZrBool infer_substituted_generic_type_name(SZrCompilerState *cs,
+                                                   SZrString *sourceTypeName,
+                                                   const SZrArray *bindings,
+                                                   SZrInferredType *outType) {
+    SZrString *substitutedTypeName;
+
+    if (cs == ZR_NULL || sourceTypeName == ZR_NULL || bindings == ZR_NULL || outType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    substitutedTypeName = substitute_generic_type_name_from_bindings(cs->state, sourceTypeName, bindings);
+    return substitutedTypeName != ZR_NULL && inferred_type_from_type_name(cs, substitutedTypeName, outType);
 }
 
 static TZrInt32 find_generic_binding_index(const SZrArray *bindings, SZrString *typeName) {
@@ -564,11 +711,20 @@ static EZrGenericCallResolveStatus build_substituted_member_signature_from_decla
     if (returnTypeNode != ZR_NULL) {
         SZrInferredType unresolvedReturnType;
 
+        if (memberInfo->returnTypeName != ZR_NULL) {
+            ZrParser_InferredType_Init(cs->state, &signature->returnType, ZR_VALUE_TYPE_OBJECT);
+            if (!infer_substituted_generic_type_name(cs,
+                                                     memberInfo->returnTypeName,
+                                                     bindings,
+                                                     &signature->returnType)) {
+                ZrParser_InferredType_Free(cs->state, &signature->returnType);
+                return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+            }
+            return ZR_GENERIC_CALL_RESOLVE_OK;
+        }
+
         ZrParser_InferredType_Init(cs->state, &unresolvedReturnType, ZR_VALUE_TYPE_OBJECT);
-        if (((memberInfo->returnTypeName != ZR_NULL &&
-              !inferred_type_from_type_name(cs, memberInfo->returnTypeName, &unresolvedReturnType)) ||
-             (memberInfo->returnTypeName == ZR_NULL &&
-              !ZrParser_AstTypeToInferredType_Convert(cs, returnTypeNode, &unresolvedReturnType))) ||
+        if (!ZrParser_AstTypeToInferredType_Convert(cs, returnTypeNode, &unresolvedReturnType) ||
             !substitute_generic_parameter_type(cs->state, bindings, &unresolvedReturnType, &signature->returnType)) {
             ZrParser_InferredType_Free(cs->state, &unresolvedReturnType);
             return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
@@ -761,7 +917,6 @@ static EZrGenericCallResolveStatus build_substituted_member_signature(
         const SZrTypeMemberInfo *memberInfo,
         const SZrArray *bindings,
         SZrResolvedCallSignature *signature) {
-    SZrInferredType unresolvedReturnType;
     EZrGenericCallResolveStatus astStatus;
 
     if (cs == ZR_NULL || memberInfo == ZR_NULL || bindings == ZR_NULL || signature == ZR_NULL) {
@@ -808,18 +963,12 @@ static EZrGenericCallResolveStatus build_substituted_member_signature(
         return ZR_GENERIC_CALL_RESOLVE_OK;
     }
 
-    ZrParser_InferredType_Init(cs->state, &unresolvedReturnType, ZR_VALUE_TYPE_OBJECT);
-    if (!inferred_type_from_type_name(cs, memberInfo->returnTypeName, &unresolvedReturnType)) {
-        ZrParser_InferredType_Free(cs->state, &unresolvedReturnType);
+    ZrParser_InferredType_Init(cs->state, &signature->returnType, ZR_VALUE_TYPE_OBJECT);
+    if (!infer_substituted_generic_type_name(cs, memberInfo->returnTypeName, bindings, &signature->returnType)) {
+        ZrParser_InferredType_Free(cs->state, &signature->returnType);
         return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
     }
 
-    if (!substitute_generic_parameter_type(cs->state, bindings, &unresolvedReturnType, &signature->returnType)) {
-        ZrParser_InferredType_Free(cs->state, &unresolvedReturnType);
-        return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
-    }
-
-    ZrParser_InferredType_Free(cs->state, &unresolvedReturnType);
     return ZR_GENERIC_CALL_RESOLVE_OK;
 }
 
@@ -936,6 +1085,95 @@ static void free_generic_call_bindings(SZrState *state, SZrArray *bindings) {
     }
 }
 
+ZR_PARSER_API EZrGenericCallResolveStatus resolve_generic_constructed_type_name(
+        SZrCompilerState *cs,
+        SZrString *baseTypeName,
+        const SZrArray *genericParameters,
+        const SZrArray *parameterTypes,
+        SZrAstNodeArray *arguments,
+        SZrString **outTypeName,
+        TZrChar *diagnosticBuffer,
+        TZrSize diagnosticBufferSize) {
+    SZrArray bindings;
+    SZrArray argumentTypes;
+    SZrArray resolvedTypeArguments;
+    EZrGenericCallResolveStatus status = ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+
+    if (outTypeName != ZR_NULL) {
+        *outTypeName = ZR_NULL;
+    }
+    if (diagnosticBuffer != ZR_NULL && diagnosticBufferSize > 0) {
+        diagnosticBuffer[0] = '\0';
+    }
+
+    if (cs == ZR_NULL || baseTypeName == ZR_NULL || genericParameters == ZR_NULL || parameterTypes == ZR_NULL) {
+        return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+    }
+
+    if (genericParameters->length == 0) {
+        if (outTypeName != ZR_NULL) {
+            *outTypeName = baseTypeName;
+        }
+        return ZR_GENERIC_CALL_RESOLVE_OK;
+    }
+
+    if (!initialize_generic_call_bindings(cs, genericParameters, &bindings)) {
+        return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+    }
+
+    ZrCore_Array_Construct(&argumentTypes);
+    if (arguments != ZR_NULL && arguments->count > 0) {
+        ZrCore_Array_Init(cs->state, &argumentTypes, sizeof(SZrInferredType), arguments->count);
+        for (TZrSize index = 0; index < arguments->count; index++) {
+            if (!infer_call_argument_type_node_for_generic(cs, arguments->nodes[index], &argumentTypes)) {
+                free_inferred_type_array(cs->state, &argumentTypes);
+                free_generic_call_bindings(cs->state, &bindings);
+                return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+            }
+        }
+    }
+
+    status = resolve_generic_bindings_from_arguments(cs->state,
+                                                     parameterTypes,
+                                                     &argumentTypes,
+                                                     &bindings,
+                                                     diagnosticBuffer,
+                                                     diagnosticBufferSize);
+    if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
+        status = ensure_all_generic_bindings_resolved(&bindings, diagnosticBuffer, diagnosticBufferSize);
+    }
+    if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
+        status = validate_generic_call_bindings_constraints(cs, &bindings, diagnosticBuffer, diagnosticBufferSize);
+    }
+
+    if (status == ZR_GENERIC_CALL_RESOLVE_OK && outTypeName != ZR_NULL) {
+        ZrCore_Array_Construct(&resolvedTypeArguments);
+        ZrCore_Array_Init(cs->state, &resolvedTypeArguments, sizeof(SZrInferredType), bindings.length);
+        for (TZrSize index = 0; index < bindings.length; index++) {
+            SZrGenericCallBinding *binding = (SZrGenericCallBinding *)ZrCore_Array_Get(&bindings, index);
+            if (binding == ZR_NULL || !binding->isBound) {
+                continue;
+            }
+            ZrCore_Array_Push(cs->state, &resolvedTypeArguments, &binding->inferredType);
+        }
+        *outTypeName = build_generic_instance_name(cs->state, baseTypeName, &resolvedTypeArguments);
+        free_inferred_type_array(cs->state, &resolvedTypeArguments);
+        if (*outTypeName == ZR_NULL) {
+            if (diagnosticBuffer != ZR_NULL && diagnosticBufferSize > 0) {
+                snprintf(diagnosticBuffer,
+                         diagnosticBufferSize,
+                         "unable to materialize generic type '%s' from constructor arguments",
+                         generic_callable_name_text(baseTypeName));
+            }
+            status = ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+        }
+    }
+
+    free_inferred_type_array(cs->state, &argumentTypes);
+    free_generic_call_bindings(cs->state, &bindings);
+    return status;
+}
+
 EZrGenericCallResolveStatus resolve_generic_function_call_signature_detailed(
         SZrCompilerState *cs,
         SZrTypeEnvironment *env,
@@ -1010,6 +1248,10 @@ EZrGenericCallResolveStatus resolve_generic_function_call_signature_detailed(
 
     if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
         status = ensure_all_generic_bindings_resolved(&bindings, diagnosticBuffer, diagnosticBufferSize);
+    }
+
+    if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
+        status = validate_generic_call_bindings_constraints(cs, &bindings, diagnosticBuffer, diagnosticBufferSize);
     }
 
     if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
@@ -1129,6 +1371,10 @@ EZrGenericCallResolveStatus resolve_generic_member_call_signature_detailed(
 
     if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
         status = ensure_all_generic_bindings_resolved(&bindings, diagnosticBuffer, diagnosticBufferSize);
+    }
+
+    if (status == ZR_GENERIC_CALL_RESOLVE_OK) {
+        status = validate_generic_call_bindings_constraints(cs, &bindings, diagnosticBuffer, diagnosticBufferSize);
     }
 
     if (status == ZR_GENERIC_CALL_RESOLVE_OK) {

@@ -427,10 +427,10 @@ static void zr_vm_task_worker_run_launch(ZrVmTaskWorkerLaunch *launch) {
         if (!zr_vm_task_transport_encode_value(workerState,
                                                &resultValue,
                                                &payload,
-                                               "spawnThread only returns sendable values and thread transport handles")) {
+                                               "spawnThread only returns Send values and thread transport handles")) {
             zr_vm_task_worker_queue_error_message(launch->ownerRuntime,
                                                   launch->ownerHandle,
-                                                  "spawnThread only returns sendable values and thread transport handles");
+                                                  "spawnThread only returns Send values and thread transport handles");
             goto cleanup;
         }
 
@@ -571,11 +571,11 @@ TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context,
 	        }
 
 	        for (captureIndex = 0; captureIndex < captureCount; captureIndex++) {
-	            const SZrTypeValue *captureValue = ZrCore_ClosureValue_GetValue(closure->closureValuesExtend[captureIndex]);
+            const SZrTypeValue *captureValue = ZrCore_ClosureValue_GetValue(closure->closureValuesExtend[captureIndex]);
             if (!zr_vm_task_transport_encode_value(context->state,
                                                    captureValue,
                                                    &launch->captures[captureIndex],
-                                                   "spawnThread only captures sendable values and thread transport handles")) {
+                                                   "spawnThread only captures Send values and thread transport handles")) {
                 zr_vm_task_worker_launch_free(launch);
                 remove(tempPath);
                 return ZR_FALSE;

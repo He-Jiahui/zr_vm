@@ -961,8 +961,8 @@ class Holder {
 - `docs/library-and-builtins/zr-thread-runtime.md`
 - `docs/library-and-builtins/zr-system-submodules.md`
 - `docs/parser-and-semantics/ffi-extern-declarations.md`
-- `docs/parser-and-semantics/field-scoped-using.md`
-- `docs/parser-and-semantics/ownership-upgrade-release-semir-aot.md`
+- `docs/parser-and-semantics/owned-field-lifecycle.md`
+- `docs/parser-and-semantics/ownership-builtins-semir-aot.md`
 - `tests/fixtures/projects/language_feature_gauntlet/src/*.zr`
 - `tests/projects/test_language_feature_gauntlet.c`
 - `tests/exceptions/test_exceptions.c`

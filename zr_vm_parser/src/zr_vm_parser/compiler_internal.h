@@ -317,7 +317,7 @@ void compiler_register_extern_function_type_binding_to_env(SZrCompilerState *cs,
 
 TZrUInt32 find_local_var_in_current_scope(SZrCompilerState *cs, SZrString *name) ;
 
-void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) ;
+ZR_PARSER_API void ZrParser_Compiler_PredeclareFunctionBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) ;
 
 TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) ;
 TZrBool emit_runtime_decorator_applications(SZrCompilerState *cs,
@@ -497,9 +497,9 @@ TZrBool extern_compiler_emit_method_call_to_local(SZrCompilerState *cs,
                                                          TZrUInt32 localSlot,
                                                          SZrFileRange location) ;
 
-void enter_scope(SZrCompilerState *cs) ;
+ZR_PARSER_API void enter_scope(SZrCompilerState *cs) ;
 
-void exit_scope(SZrCompilerState *cs) ;
+ZR_PARSER_API void exit_scope(SZrCompilerState *cs) ;
 
 void enter_type_scope(SZrCompilerState *cs) ;
 

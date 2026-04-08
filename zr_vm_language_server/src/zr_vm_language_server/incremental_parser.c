@@ -78,6 +78,7 @@ SZrFileVersion *ZrLanguageServer_FileVersion_New(SZrState *state,
     fileVersion->version = version;
     fileVersion->contentLength = contentLength;
     fileVersion->ast = ZR_NULL;
+    fileVersion->usesFallbackAst = ZR_FALSE;
     fileVersion->isDirty = ZR_TRUE;
     fileVersion->lastChangeRange = ZrParser_FileRange_Create(
         ZrParser_FilePosition_Create(0, 0, 0),
@@ -157,12 +158,6 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
     fileVersion->lastChangeRange = changeRange;
     fileVersion->hasIncrementalInfo = ZR_TRUE; // 标记有增量信息
     
-    // 释放旧 AST
-    if (fileVersion->ast != ZR_NULL) {
-        ZrParser_Ast_Free(state, fileVersion->ast);
-        fileVersion->ast = ZR_NULL;
-    }
-
     clear_parser_diagnostics(state, fileVersion);
     
     // 释放旧哈希
@@ -398,6 +393,8 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         SZrParserState parserState;
         SZrParserDiagnosticCollector collector;
         SZrString *sourceName = uri; // 使用 URI 作为源文件名
+        SZrAstNode *previousAst = fileVersion->ast;
+        SZrAstNode *parsedAst;
 
         clear_parser_diagnostics(state, fileVersion);
         ZrParser_State_Init(&parserState, state, fileVersion->content, fileVersion->contentLength, sourceName);
@@ -411,8 +408,29 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         parserState.errorCallback = collect_parser_diagnostic;
         parserState.errorUserData = &collector;
         parserState.suppressErrorOutput = ZR_TRUE;
-        fileVersion->ast = ZrParser_ParseWithState(&parserState);
+        parsedAst = ZrParser_ParseWithState(&parserState);
         ZrParser_State_Free(&parserState);
+
+        if (parsedAst != ZR_NULL) {
+            if (fileVersion->parserDiagnostics.length == 0 || previousAst == ZR_NULL) {
+                if (previousAst != ZR_NULL && previousAst != parsedAst) {
+                    ZrParser_Ast_Free(state, previousAst);
+                }
+                fileVersion->ast = parsedAst;
+                fileVersion->usesFallbackAst = ZR_FALSE;
+            } else {
+                ZrParser_Ast_Free(state, parsedAst);
+                fileVersion->usesFallbackAst = ZR_TRUE;
+            }
+        } else if (fileVersion->parserDiagnostics.length > 0 && previousAst != ZR_NULL) {
+            fileVersion->usesFallbackAst = ZR_TRUE;
+        } else {
+            if (previousAst != ZR_NULL) {
+                ZrParser_Ast_Free(state, previousAst);
+            }
+            fileVersion->ast = ZR_NULL;
+            fileVersion->usesFallbackAst = ZR_FALSE;
+        }
     }
     
     if (fileVersion->ast != ZR_NULL || fileVersion->parserDiagnostics.length > 0) {

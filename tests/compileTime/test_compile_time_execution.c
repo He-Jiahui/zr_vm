@@ -7,6 +7,8 @@
 #include <time.h>
 #include <string.h>
 #include "unity.h"
+#include "runtime_support.h"
+#include "module_fixture_support.h"
 #include "test_support.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
@@ -32,39 +34,15 @@ typedef struct {
     clock_t endTime;
 } SZrTestTimer;
 
-// 测试日志宏（符合测试规范）
-#define TEST_START(summary) do { \
-    printf("Unit Test - %s\n", summary); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_INFO(summary, details) do { \
-    printf("Testing %s:\n %s\n", summary, details); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_PASS_CUSTOM(timer, summary) do { \
-    double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
-    printf("Pass - Cost Time:%.3fms - %s\n", elapsed, summary); \
-    fflush(stdout); \
-} while(0)
-
+#define TEST_START(summary) ZR_TEST_START(summary)
+#define TEST_INFO(summary, details) ZR_TEST_INFO(summary, details)
+#define TEST_PASS_CUSTOM(timer, summary) ZR_TEST_PASS(timer, summary)
 #define TEST_FAIL_CUSTOM(timer, summary, reason) do { \
-    clock_t failureTime = clock(); \
-    double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
-    printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_DIVIDER() do { \
-    printf("----------\n"); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_MODULE_DIVIDER() do { \
-    printf("==========\n"); \
-    fflush(stdout); \
-} while(0)
+    (timer).endTime = clock(); \
+    ZR_TEST_FAIL(timer, summary, reason); \
+} while (0)
+#define TEST_DIVIDER() ZR_TEST_DIVIDER()
+#define TEST_MODULE_DIVIDER() ZR_TEST_MODULE_DIVIDER()
 
 static SZrState* create_test_state(void) {
     return ZrTests_State_Create(ZR_NULL);
@@ -74,163 +52,29 @@ static void destroy_test_state(SZrState* state) {
     ZrTests_State_Destroy(state);
 }
 
-typedef struct {
-    const TZrChar* path;
-    const TZrChar* source;
-    const TZrByte* bytes;
-    TZrSize length;
-    TZrBool isBinary;
-} SZrCompileTimeImportFixture;
+typedef ZrTestsFixtureSource SZrCompileTimeImportFixture;
+typedef ZrTestsFixtureReader SZrCompileTimeImportReader;
 
-typedef struct {
-    const TZrByte* bytes;
-    TZrSize length;
-    TZrBool consumed;
-} SZrCompileTimeImportReader;
+#define compile_time_import_reader_read ZrTests_Fixture_ReaderRead
+#define compile_time_import_reader_close ZrTests_Fixture_ReaderClose
 
 static const SZrCompileTimeImportFixture* gCompileTimeImportFixtures = ZR_NULL;
 static TZrSize gCompileTimeImportFixtureCount = 0;
-
-static TZrBytePtr compile_time_import_reader_read(SZrState* state, TZrPtr customData, TZrSize* size) {
-    SZrCompileTimeImportReader* reader = (SZrCompileTimeImportReader*)customData;
-
-    ZR_UNUSED_PARAMETER(state);
-
-    if (reader == ZR_NULL || size == ZR_NULL || reader->consumed) {
-        if (size != ZR_NULL) {
-            *size = 0;
-        }
-        return ZR_NULL;
-    }
-
-    reader->consumed = ZR_TRUE;
-    *size = reader->length;
-    return (TZrBytePtr)reader->bytes;
-}
-
-static void compile_time_import_reader_close(SZrState* state, TZrPtr customData) {
-    ZR_UNUSED_PARAMETER(state);
-
-    if (customData != ZR_NULL) {
-        free(customData);
-    }
-}
-
-static TZrByte* read_compile_time_import_test_file_bytes(const TZrChar* path, TZrSize* outLength) {
-    FILE* file;
-    long fileSize;
-    TZrByte* buffer;
-
-    if (path == ZR_NULL || outLength == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    file = fopen(path, "rb");
-    if (file == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    fileSize = ftell(file);
-    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0) {
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    buffer = (TZrByte*)malloc((size_t)fileSize);
-    if (buffer == ZR_NULL) {
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    if (fileSize > 0 && fread(buffer, 1, (size_t)fileSize, file) != (size_t)fileSize) {
-        free(buffer);
-        fclose(file);
-        return ZR_NULL;
-    }
-
-    fclose(file);
-    *outLength = (TZrSize)fileSize;
-    return buffer;
-}
 
 static TZrByte* build_compile_time_import_binary_fixture(SZrState* state,
                                                          const TZrChar* moduleSource,
                                                          const TZrChar* binaryPath,
                                                          TZrSize* outLength) {
-    SZrString* sourceName;
-    SZrFunction* function;
-    TZrBool oldEmitCompileTimeRuntimeSupport = ZR_FALSE;
-
-    if (state == ZR_NULL || moduleSource == ZR_NULL || binaryPath == ZR_NULL || outLength == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    sourceName = ZrCore_String_Create(state, (TZrNativeString)binaryPath, strlen(binaryPath));
-    if (sourceName == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (state->global != ZR_NULL) {
-        oldEmitCompileTimeRuntimeSupport = state->global->emitCompileTimeRuntimeSupport;
-        state->global->emitCompileTimeRuntimeSupport = ZR_TRUE;
-    }
-    function = ZrParser_Source_Compile(state, moduleSource, strlen(moduleSource), sourceName);
-    if (state->global != ZR_NULL) {
-        state->global->emitCompileTimeRuntimeSupport = oldEmitCompileTimeRuntimeSupport;
-    }
-    if (function == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    if (!ZrParser_Writer_WriteBinaryFile(state, function, binaryPath)) {
-        ZrCore_Function_Free(state, function);
-        return ZR_NULL;
-    }
-
-    ZrCore_Function_Free(state, function);
-    return read_compile_time_import_test_file_bytes(binaryPath, outLength);
+    return ZrTests_Fixture_BuildBinaryFile(state, moduleSource, binaryPath, ZR_TRUE, outLength);
 }
 
 static TZrBool compile_time_import_source_loader(SZrState* state, TZrNativeString sourcePath, TZrNativeString md5, SZrIo* io) {
-    TZrSize i;
-
-    ZR_UNUSED_PARAMETER(md5);
-
-    if (state == ZR_NULL || sourcePath == ZR_NULL || io == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (i = 0; i < gCompileTimeImportFixtureCount; i++) {
-        const SZrCompileTimeImportFixture* fixture = &gCompileTimeImportFixtures[i];
-        if (fixture->path != ZR_NULL &&
-            (fixture->source != ZR_NULL || (fixture->bytes != ZR_NULL && fixture->length > 0)) &&
-            strcmp(fixture->path, sourcePath) == 0) {
-            SZrCompileTimeImportReader* reader =
-                    (SZrCompileTimeImportReader*)malloc(sizeof(SZrCompileTimeImportReader));
-            if (reader == ZR_NULL) {
-                return ZR_FALSE;
-            }
-
-            if (fixture->bytes != ZR_NULL && fixture->length > 0) {
-                reader->bytes = fixture->bytes;
-                reader->length = fixture->length;
-            } else {
-                reader->bytes = (const TZrByte*)fixture->source;
-                reader->length = fixture->source != ZR_NULL ? strlen(fixture->source) : 0;
-            }
-            reader->consumed = ZR_FALSE;
-            ZrCore_Io_Init(state, io, compile_time_import_reader_read, compile_time_import_reader_close, reader);
-            io->isBinary = fixture->isBinary;
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
+    return ZrTests_Fixture_SourceLoaderFromArray(state,
+                                                 sourcePath,
+                                                 md5,
+                                                 io,
+                                                 gCompileTimeImportFixtures,
+                                                 gCompileTimeImportFixtureCount);
 }
 
 static TZrBool execute_test_function(SZrState* state, SZrFunction* testFunc, TZrInt64 expectedValue, const TZrChar* testName) {

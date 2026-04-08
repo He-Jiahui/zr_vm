@@ -170,6 +170,22 @@ export class ZrWasmBridge {
         );
     }
 
+    async getNativeDeclarationDocument(uri: string): Promise<WasmResponse<string>> {
+        return this.invoke<string>(
+            'wasm_ZrLspGetNativeDeclarationDocument',
+            ['number', 'string', 'number'],
+            [await this.context(), uri, byteLength(uri)],
+        );
+    }
+
+    async getProjectModules(projectUri: string): Promise<WasmResponse<unknown[]>> {
+        return this.invoke<unknown[]>(
+            'wasm_ZrLspGetProjectModules',
+            ['number', 'string', 'number'],
+            [await this.context(), projectUri, byteLength(projectUri)],
+        );
+    }
+
     async getDocumentHighlights(uri: string, line: number, character: number): Promise<WasmResponse<unknown[]>> {
         return this.invoke<unknown[]>(
             'wasm_ZrLspGetDocumentHighlights',

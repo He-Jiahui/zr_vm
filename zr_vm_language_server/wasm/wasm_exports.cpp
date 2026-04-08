@@ -397,6 +397,55 @@ static cJSON* serialize_symbol_array(SZrState *state, SZrArray *symbols) {
     return json;
 }
 
+static cJSON* serialize_project_module_summary(SZrState *state, SZrLspProjectModuleSummary *summary) {
+    cJSON *json = cJSON_CreateObject();
+    const char *moduleName = ZR_NULL;
+    const char *displayName = ZR_NULL;
+    const char *description = ZR_NULL;
+    const char *navigationUri = ZR_NULL;
+
+    if (json == ZR_NULL || state == ZR_NULL || summary == ZR_NULL) {
+        return json;
+    }
+
+    moduleName = string_to_cstr(state, summary->moduleName);
+    displayName = string_to_cstr(state, summary->displayName);
+    description = string_to_cstr(state, summary->description);
+    navigationUri = string_to_cstr(state, summary->navigationUri);
+
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_SOURCE_KIND, summary->sourceKind);
+    cJSON_AddBoolToObject(json, ZR_LSP_FIELD_IS_ENTRY, summary->isEntry ? cJSON_True : cJSON_False);
+    cJSON_AddStringToObject(json, ZR_LSP_FIELD_MODULE_NAME, moduleName != ZR_NULL ? moduleName : "");
+    cJSON_AddStringToObject(json, ZR_LSP_FIELD_DISPLAY_NAME, displayName != ZR_NULL ? displayName : "");
+    cJSON_AddStringToObject(json, ZR_LSP_FIELD_DESCRIPTION, description != ZR_NULL ? description : "");
+    cJSON_AddStringToObject(json, ZR_LSP_FIELD_NAVIGATION_URI, navigationUri != ZR_NULL ? navigationUri : "");
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_lsp_range(summary->range));
+
+    free_cstr(state, moduleName);
+    free_cstr(state, displayName);
+    free_cstr(state, description);
+    free_cstr(state, navigationUri);
+    return json;
+}
+
+static cJSON* serialize_project_modules(SZrState *state, SZrArray *modules) {
+    cJSON *json = cJSON_CreateArray();
+
+    if (json == ZR_NULL || state == ZR_NULL || modules == ZR_NULL) {
+        return json;
+    }
+
+    for (TZrSize i = 0; i < modules->length; i++) {
+        SZrLspProjectModuleSummary **summaryPtr =
+            (SZrLspProjectModuleSummary **)ZrCore_Array_Get(modules, i);
+        if (summaryPtr != ZR_NULL && *summaryPtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_project_module_summary(state, *summaryPtr));
+        }
+    }
+
+    return json;
+}
+
 static cJSON* serialize_document_highlight(SZrLspDocumentHighlight *highlight) {
     cJSON *json = cJSON_CreateObject();
     if (json == ZR_NULL || highlight == ZR_NULL) {
@@ -893,6 +942,75 @@ const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int 
 
     ZrCore_Array_Free(g_wasm_state, &symbols);
     return create_error_response("Failed to get workspace symbols");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetNativeDeclarationDocument(void* context, const char* uri, int uriLen) {
+    SZrString *uriStr;
+    SZrString *documentText = ZR_NULL;
+    const char *text = ZR_NULL;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    if (!ZrLanguageServer_Lsp_GetNativeDeclarationDocument(g_wasm_state,
+                                                           (SZrLspContext*)context,
+                                                           uriStr,
+                                                           &documentText) ||
+        documentText == ZR_NULL) {
+        return create_error_response("Failed to get native declaration document");
+    }
+
+    text = string_to_cstr(g_wasm_state, documentText);
+    if (text == ZR_NULL) {
+        return create_error_response("Failed to serialize native declaration document");
+    }
+
+    {
+        cJSON *data = cJSON_CreateString(text);
+        const char *jsonStr = create_success_response(data);
+        free_cstr(g_wasm_state, text);
+        return jsonStr;
+    }
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetProjectModules(void* context, const char* projectUri, int projectUriLen) {
+    SZrString *projectUriStr;
+    SZrArray modules;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || projectUri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    projectUriStr = cstr_to_string(g_wasm_state, projectUri, projectUriLen);
+    if (projectUriStr == ZR_NULL) {
+        return create_error_response("Failed to create project URI string");
+    }
+
+    ZrCore_Array_Init(g_wasm_state, &modules, sizeof(SZrLspProjectModuleSummary*), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    if (ZrLanguageServer_Lsp_GetProjectModules(g_wasm_state,
+                                               (SZrLspContext*)context,
+                                               projectUriStr,
+                                               &modules)) {
+        cJSON *data = serialize_project_modules(g_wasm_state, &modules);
+        const char *jsonStr = create_success_response(data);
+        ZrLanguageServer_Lsp_FreeProjectModules(g_wasm_state, &modules);
+        return jsonStr;
+    }
+
+    ZrLanguageServer_Lsp_FreeProjectModules(g_wasm_state, &modules);
+    return create_error_response("Failed to get project modules");
 }
 
 #ifdef __EMSCRIPTEN__

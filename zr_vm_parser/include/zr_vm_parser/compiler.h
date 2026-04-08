@@ -298,7 +298,7 @@ typedef struct SZrTypeMemberInfo {
     TZrBool isStatic;                     // 是否为静态成员
     TZrUInt32 modifierFlags;              // abstract/virtual/override/final/shadow 修饰符
     TZrBool isConst;                      // 是否为 const 字段
-    TZrBool isUsingManaged;               // 是否显式使用 field-scoped using
+    TZrBool isUsingManaged;               // legacy field-scoped `%using` 元数据位
     EZrOwnershipQualifier ownershipQualifier; // 字段所有权限定符
     EZrOwnershipQualifier receiverQualifier;  // 方法 receiver 所有权限定符
     TZrBool callsClose;                   // 生命周期结束时是否需要先调用 @close
@@ -325,6 +325,7 @@ typedef struct SZrTypeMemberInfo {
     SZrArray decorators;                  // 成员级 compile-time decorator 记录（SZrTypeDecoratorInfo）
     TZrBool hasDecoratorMetadata;         // 是否存在成员级 compile-time decorator metadata
     SZrTypeValue decoratorMetadataValue;  // 成员级 compile-time decorator metadata 常量值
+    TZrUInt32 contractRole;               // 稳定成员契约角色（EZrMemberContractRole）
     SZrAstNode *declarationNode;          // 声明节点（可选）
     EZrMetaType metaType;               // 元方法类型（如果是元方法，如CONSTRUCTOR）
     TZrBool isMetaMethod;                 // 是否为元方法
@@ -403,6 +404,9 @@ ZR_PARSER_API void ZrParser_CompileResult_Free(SZrState *state, SZrCompileResult
 ZR_PARSER_API void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRange location);
 
 ZR_PARSER_API void add_pending_absolute_patch(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId);
+
+// 校验 async/task 相关的借用与 guard 边界约束
+ZR_PARSER_API TZrBool compiler_validate_task_effects(SZrCompilerState *cs, SZrAstNode *node);
 
 // 编译期错误级别
 enum EZrCompileTimeErrorLevel {

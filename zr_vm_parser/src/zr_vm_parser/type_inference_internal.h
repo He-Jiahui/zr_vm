@@ -5,6 +5,12 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/ast.h"
 
+typedef struct SZrGenericCallBinding {
+    const SZrTypeGenericParameterInfo *parameterInfo;
+    TZrBool isBound;
+    SZrInferredType inferredType;
+} SZrGenericCallBinding;
+
 typedef enum EZrGenericCallResolveStatus {
     ZR_GENERIC_CALL_RESOLVE_OK = 0,
     ZR_GENERIC_CALL_RESOLVE_ARITY_MISMATCH,
@@ -23,6 +29,13 @@ SZrTypeMemberInfo *find_compiler_type_member_inference(SZrCompilerState *cs,
                                                        SZrString *memberName);
 ZR_PARSER_API TZrBool type_name_is_module_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 ZR_PARSER_API TZrBool inferred_type_from_type_name(SZrCompilerState *cs, SZrString *typeName, SZrInferredType *result);
+ZR_PARSER_API TZrBool inferred_type_implements_protocol_mask(SZrCompilerState *cs,
+                                                             const SZrInferredType *type,
+                                                             TZrUInt64 protocolMask);
+ZR_PARSER_API TZrBool infer_member_call_contract_return_type(SZrCompilerState *cs,
+                                                             const SZrTypeMemberInfo *memberInfo,
+                                                             SZrFunctionCall *call,
+                                                             SZrInferredType *result);
 ZR_PARSER_API TZrBool type_name_is_explicitly_available_in_context_inference(SZrCompilerState *cs,
                                                                               SZrString *typeName);
 TZrBool inferred_type_try_map_primitive_name(const TZrNativeString nameStr,
@@ -36,6 +49,20 @@ ZR_PARSER_API TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *c
 ZR_PARSER_API SZrString *build_generic_instance_name(SZrState *state,
                                                      SZrString *baseName,
                                                      const SZrArray *typeArguments);
+ZR_PARSER_API EZrGenericCallResolveStatus validate_generic_call_bindings_constraints(
+        SZrCompilerState *cs,
+        const SZrArray *bindings,
+        TZrChar *diagnosticBuffer,
+        TZrSize diagnosticBufferSize);
+ZR_PARSER_API EZrGenericCallResolveStatus resolve_generic_constructed_type_name(
+        SZrCompilerState *cs,
+        SZrString *baseTypeName,
+        const SZrArray *genericParameters,
+        const SZrArray *parameterTypes,
+        SZrAstNodeArray *arguments,
+        SZrString **outTypeName,
+        TZrChar *diagnosticBuffer,
+        TZrSize diagnosticBufferSize);
 TZrBool infer_function_call_argument_types_for_candidate(SZrCompilerState *cs,
                                                          SZrTypeEnvironment *env,
                                                          SZrString *funcName,

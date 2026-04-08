@@ -1,0 +1,367 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 52
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 62
+
+CONSTANTS (19):
+  [0] native closure
+  [1] string: "bench_config"
+  [2] null
+  [3] native closure
+  [4] string: "zr.container"
+  [5] int: 24
+  [6] int: 32
+  [7] string: "Array<int>"
+  [8] int: 0
+  [9] int: 1
+  [10] int: 13
+  [11] int: 7
+  [12] int: 997
+  [13] int: 17
+  [14] int: 11
+  [15] int: 991
+  [16] int: 3
+  [17] int: 1000000007
+  [18] string: "BENCH_MATRIX_ADD_2D_PASS
+"
+
+LOCAL_VARIABLES (16):
+  [0] benchConfig: offset_activate=4, offset_dead=333
+  [1] container: offset_activate=8, offset_dead=333
+  [2] scale: offset_activate=11, offset_dead=333
+  [3] rows: offset_activate=14, offset_dead=333
+  [4] cols: offset_activate=17, offset_dead=333
+  [5] cells: offset_activate=20, offset_dead=333
+  [6] lhs: offset_activate=27, offset_dead=333
+  [7] rhs: offset_activate=34, offset_dead=333
+  [8] dst: offset_activate=41, offset_dead=333
+  [9] scratch: offset_activate=48, offset_dead=333
+  [10] index: offset_activate=49, offset_dead=333
+  [11] checksum: offset_activate=151, offset_dead=333
+  [12] row: offset_activate=152, offset_dead=333
+  [13] rowSum: offset_activate=159, offset_dead=284
+  [14] col: offset_activate=160, offset_dead=284
+  [15] index: offset_activate=171, offset_dead=257
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (16):
+    [0] benchConfig: bench_config
+    [1] container: zr.container
+    [2] scale: int
+    [5] rows: int
+    [8] cols: int
+    [11] cells: int
+    [12] lhs: Array<int>
+    [13] rhs: Array<int>
+    [14] dst: Array<int>
+    [15] scratch: Array<int>
+    [16] index: int
+    [27] checksum: int
+    [28] row: int
+    [34] rowSum: int
+    [35] col: int
+    [45] index: int
+  EXPORTED_SYMBOLS (0):
+  STATIC_IMPORTS (2):
+    import bench_config
+    import zr.container
+  MODULE_ENTRY_EFFECTS (1):
+    IMPORT_CALL bench_config.scale [kind=function readiness=declaration]
+  EXPORTED_CALLABLE_SUMMARIES (0):
+  TOP_LEVEL_CALLABLE_BINDINGS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+INSTRUCTIONS (267):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] GET_CONSTANT (extra=1, operand=1)
+  [2] FUNCTION_CALL (extra=0, operand1=0, operand2=1)
+  [3] GET_CONSTANT (extra=1, operand=2)
+  [4] GET_CONSTANT (extra=1, operand=3)
+  [5] GET_CONSTANT (extra=2, operand=4)
+  [6] FUNCTION_CALL (extra=1, operand1=1, operand2=1)
+  [7] GET_CONSTANT (extra=2, operand=2)
+  [8] GET_STACK (extra=2, operand=0)
+  [9] GET_MEMBER (extra=2, operand1=2, operand2=0)
+  [10] SUPER_FUNCTION_CALL_NO_ARGS (extra=2, operand1=2, operand2=0)
+  [11] GET_CONSTANT (extra=3, operand=5)
+  [12] GET_STACK (extra=4, operand=2)
+  [13] MUL_SIGNED (extra=5, operand1=3, operand2=4)
+  [14] GET_CONSTANT (extra=6, operand=6)
+  [15] GET_STACK (extra=7, operand=2)
+  [16] MUL_SIGNED (extra=8, operand1=6, operand2=7)
+  [17] GET_STACK (extra=9, operand=5)
+  [18] GET_STACK (extra=10, operand=8)
+  [19] MUL_SIGNED (extra=11, operand1=9, operand2=10)
+  [20] CREATE_OBJECT (extra=12)
+  [21] OPCODE_24 (extra=12, operand2=458764, operand1=12, operand1_1=7)
+  [22] GET_MEMBER (extra=13, operand1=12, operand2=1)
+  [23] SET_STACK (extra=14, operand=12)
+  [24] FUNCTION_CALL (extra=13, operand1=13, operand2=1)
+  [25] GET_CONSTANT (extra=13, operand=2)
+  [26] GET_CONSTANT (extra=14, operand=2)
+  [27] CREATE_OBJECT (extra=13)
+  [28] OPCODE_24 (extra=13, operand2=458765, operand1=13, operand1_1=7)
+  [29] GET_MEMBER (extra=14, operand1=13, operand2=1)
+  [30] SET_STACK (extra=15, operand=13)
+  [31] FUNCTION_CALL (extra=14, operand1=14, operand2=1)
+  [32] GET_CONSTANT (extra=14, operand=2)
+  [33] GET_CONSTANT (extra=15, operand=2)
+  [34] CREATE_OBJECT (extra=14)
+  [35] OPCODE_24 (extra=14, operand2=458766, operand1=14, operand1_1=7)
+  [36] GET_MEMBER (extra=15, operand1=14, operand2=1)
+  [37] SET_STACK (extra=16, operand=14)
+  [38] FUNCTION_CALL (extra=15, operand1=15, operand2=1)
+  [39] GET_CONSTANT (extra=15, operand=2)
+  [40] GET_CONSTANT (extra=16, operand=2)
+  [41] CREATE_OBJECT (extra=15)
+  [42] OPCODE_24 (extra=15, operand2=458767, operand1=15, operand1_1=7)
+  [43] GET_MEMBER (extra=16, operand1=15, operand2=1)
+  [44] SET_STACK (extra=17, operand=15)
+  [45] FUNCTION_CALL (extra=16, operand1=16, operand2=1)
+  [46] GET_CONSTANT (extra=16, operand=2)
+  [47] GET_CONSTANT (extra=17, operand=2)
+  [48] GET_CONSTANT (extra=16, operand=8)
+  [49] GET_STACK (extra=17, operand=16)
+  [50] GET_STACK (extra=18, operand=11)
+  [51] GET_CONSTANT (extra=19, operand=9)
+  [52] SUB_INT (extra=20, operand1=18, operand2=19)
+  [53] LOGICAL_LESS_EQUAL_SIGNED (extra=21, operand1=17, operand2=20)
+  [54] JUMP_IF (extra=21, operand=40)
+  [55] GET_STACK (extra=22, operand=12)
+  [56] SET_STACK (extra=23, operand=22)
+  [57] GET_STACK (extra=22, operand=23)
+  [58] GET_CONSTANT (extra=24, operand=8)
+  [59] SUPER_ARRAY_ADD_INT (extra=22, operand1=23, operand2=24)
+  [60] GET_CONSTANT (extra=23, operand=2)
+  [61] GET_CONSTANT (extra=24, operand=2)
+  [62] GET_CONSTANT (extra=22, operand=2)
+  [63] GET_STACK (extra=22, operand=13)
+  [64] SET_STACK (extra=23, operand=22)
+  [65] GET_STACK (extra=22, operand=23)
+  [66] GET_CONSTANT (extra=24, operand=8)
+  [67] SUPER_ARRAY_ADD_INT (extra=22, operand1=23, operand2=24)
+  [68] GET_CONSTANT (extra=23, operand=2)
+  [69] GET_CONSTANT (extra=24, operand=2)
+  [70] GET_CONSTANT (extra=22, operand=2)
+  [71] GET_STACK (extra=22, operand=14)
+  [72] SET_STACK (extra=23, operand=22)
+  [73] GET_STACK (extra=22, operand=23)
+  [74] GET_CONSTANT (extra=24, operand=8)
+  [75] SUPER_ARRAY_ADD_INT (extra=22, operand1=23, operand2=24)
+  [76] GET_CONSTANT (extra=23, operand=2)
+  [77] GET_CONSTANT (extra=24, operand=2)
+  [78] GET_CONSTANT (extra=22, operand=2)
+  [79] GET_STACK (extra=22, operand=15)
+  [80] SET_STACK (extra=23, operand=22)
+  [81] GET_STACK (extra=22, operand=23)
+  [82] GET_CONSTANT (extra=24, operand=8)
+  [83] SUPER_ARRAY_ADD_INT (extra=22, operand1=23, operand2=24)
+  [84] GET_CONSTANT (extra=23, operand=2)
+  [85] GET_CONSTANT (extra=24, operand=2)
+  [86] GET_CONSTANT (extra=22, operand=2)
+  [87] GET_STACK (extra=22, operand=16)
+  [88] GET_CONSTANT (extra=23, operand=9)
+  [89] ADD_INT (extra=24, operand1=22, operand2=23)
+  [90] SET_STACK (extra=16, operand=24)
+  [91] GET_CONSTANT (extra=22, operand=2)
+  [92] GET_CONSTANT (extra=23, operand=2)
+  [93] GET_CONSTANT (extra=24, operand=2)
+  [94] JUMP (extra=0, operand=-46)
+  [95] GET_CONSTANT (extra=22, operand=8)
+  [96] SET_STACK (extra=16, operand=22)
+  [97] GET_CONSTANT (extra=22, operand=2)
+  [98] GET_STACK (extra=22, operand=16)
+  [99] GET_STACK (extra=23, operand=11)
+  [100] GET_CONSTANT (extra=24, operand=9)
+  [101] SUB_INT (extra=25, operand1=23, operand2=24)
+  [102] LOGICAL_LESS_EQUAL_SIGNED (extra=26, operand1=22, operand2=25)
+  [103] JUMP_IF (extra=26, operand=46)
+  [104] GET_STACK (extra=27, operand=16)
+  [105] GET_CONSTANT (extra=28, operand=10)
+  [106] MUL_SIGNED (extra=29, operand1=27, operand2=28)
+  [107] GET_CONSTANT (extra=30, operand=11)
+  [108] ADD_INT (extra=31, operand1=29, operand2=30)
+  [109] GET_CONSTANT (extra=32, operand=12)
+  [110] MOD_SIGNED (extra=33, operand1=31, operand2=32)
+  [111] GET_STACK (extra=34, operand=12)
+  [112] GET_STACK (extra=35, operand=16)
+  [113] SUPER_ARRAY_SET_INT (extra=33, operand1=34, operand2=35)
+  [114] GET_CONSTANT (extra=34, operand=2)
+  [115] GET_CONSTANT (extra=35, operand=2)
+  [116] GET_CONSTANT (extra=27, operand=2)
+  [117] GET_CONSTANT (extra=28, operand=2)
+  [118] GET_CONSTANT (extra=29, operand=2)
+  [119] GET_CONSTANT (extra=30, operand=2)
+  [120] GET_CONSTANT (extra=31, operand=2)
+  [121] GET_CONSTANT (extra=32, operand=2)
+  [122] GET_CONSTANT (extra=33, operand=2)
+  [123] GET_STACK (extra=27, operand=16)
+  [124] GET_CONSTANT (extra=28, operand=13)
+  [125] MUL_SIGNED (extra=29, operand1=27, operand2=28)
+  [126] GET_CONSTANT (extra=30, operand=14)
+  [127] ADD_INT (extra=31, operand1=29, operand2=30)
+  [128] GET_CONSTANT (extra=32, operand=15)
+  [129] MOD_SIGNED (extra=33, operand1=31, operand2=32)
+  [130] GET_STACK (extra=34, operand=13)
+  [131] GET_STACK (extra=35, operand=16)
+  [132] SUPER_ARRAY_SET_INT (extra=33, operand1=34, operand2=35)
+  [133] GET_CONSTANT (extra=34, operand=2)
+  [134] GET_CONSTANT (extra=35, operand=2)
+  [135] GET_CONSTANT (extra=27, operand=2)
+  [136] GET_CONSTANT (extra=28, operand=2)
+  [137] GET_CONSTANT (extra=29, operand=2)
+  [138] GET_CONSTANT (extra=30, operand=2)
+  [139] GET_CONSTANT (extra=31, operand=2)
+  [140] GET_CONSTANT (extra=32, operand=2)
+  [141] GET_CONSTANT (extra=33, operand=2)
+  [142] GET_STACK (extra=27, operand=16)
+  [143] GET_CONSTANT (extra=28, operand=9)
+  [144] ADD_INT (extra=29, operand1=27, operand2=28)
+  [145] SET_STACK (extra=16, operand=29)
+  [146] GET_CONSTANT (extra=27, operand=2)
+  [147] GET_CONSTANT (extra=28, operand=2)
+  [148] GET_CONSTANT (extra=29, operand=2)
+  [149] JUMP (extra=0, operand=-52)
+  [150] GET_CONSTANT (extra=27, operand=8)
+  [151] GET_CONSTANT (extra=28, operand=8)
+  [152] GET_STACK (extra=29, operand=28)
+  [153] GET_STACK (extra=30, operand=5)
+  [154] GET_CONSTANT (extra=31, operand=9)
+  [155] SUB_INT (extra=32, operand1=30, operand2=31)
+  [156] LOGICAL_LESS_EQUAL_SIGNED (extra=33, operand1=29, operand2=32)
+  [157] JUMP_IF (extra=33, operand=77)
+  [158] GET_CONSTANT (extra=34, operand=8)
+  [159] GET_CONSTANT (extra=35, operand=8)
+  [160] GET_STACK (extra=36, operand=35)
+  [161] GET_STACK (extra=37, operand=8)
+  [162] GET_CONSTANT (extra=38, operand=9)
+  [163] SUB_INT (extra=39, operand1=37, operand2=38)
+  [164] LOGICAL_LESS_EQUAL_SIGNED (extra=40, operand1=36, operand2=39)
+  [165] JUMP_IF (extra=40, operand=54)
+  [166] GET_STACK (extra=41, operand=28)
+  [167] GET_STACK (extra=42, operand=8)
+  [168] MUL_SIGNED (extra=43, operand1=41, operand2=42)
+  [169] GET_STACK (extra=44, operand=35)
+  [170] ADD_INT (extra=45, operand1=43, operand2=44)
+  [171] GET_STACK (extra=46, operand=12)
+  [172] GET_STACK (extra=47, operand=45)
+  [173] SUPER_ARRAY_GET_INT (extra=46, operand1=46, operand2=47)
+  [174] GET_STACK (extra=47, operand=13)
+  [175] GET_STACK (extra=48, operand=45)
+  [176] SUPER_ARRAY_GET_INT (extra=47, operand1=47, operand2=48)
+  [177] ADD_INT (extra=48, operand1=46, operand2=47)
+  [178] GET_STACK (extra=49, operand=28)
+  [179] GET_STACK (extra=50, operand=35)
+  [180] ADD_INT (extra=51, operand1=49, operand2=50)
+  [181] GET_CONSTANT (extra=52, operand=11)
+  [182] MOD_SIGNED (extra=53, operand1=51, operand2=52)
+  [183] ADD_INT (extra=54, operand1=48, operand2=53)
+  [184] GET_STACK (extra=55, operand=14)
+  [185] GET_STACK (extra=56, operand=45)
+  [186] SUPER_ARRAY_SET_INT (extra=54, operand1=55, operand2=56)
+  [187] GET_STACK (extra=46, operand=14)
+  [188] GET_STACK (extra=47, operand=45)
+  [189] SUPER_ARRAY_GET_INT (extra=46, operand1=46, operand2=47)
+  [190] GET_STACK (extra=47, operand=12)
+  [191] GET_STACK (extra=48, operand=45)
+  [192] SUPER_ARRAY_GET_INT (extra=47, operand1=47, operand2=48)
+  [193] GET_CONSTANT (extra=48, operand=16)
+  [194] DIV_SIGNED (extra=49, operand1=47, operand2=48)
+  [195] SUB_INT (extra=50, operand1=46, operand2=49)
+  [196] GET_STACK (extra=51, operand=13)
+  [197] GET_STACK (extra=52, operand=45)
+  [198] SUPER_ARRAY_GET_INT (extra=51, operand1=51, operand2=52)
+  [199] GET_CONSTANT (extra=52, operand=14)
+  [200] MOD_SIGNED (extra=53, operand1=51, operand2=52)
+  [201] ADD_INT (extra=54, operand1=50, operand2=53)
+  [202] GET_STACK (extra=55, operand=15)
+  [203] GET_STACK (extra=56, operand=45)
+  [204] SUPER_ARRAY_SET_INT (extra=54, operand1=55, operand2=56)
+  [205] GET_STACK (extra=46, operand=34)
+  [206] GET_STACK (extra=47, operand=15)
+  [207] GET_STACK (extra=48, operand=45)
+  [208] SUPER_ARRAY_GET_INT (extra=47, operand1=47, operand2=48)
+  [209] GET_STACK (extra=48, operand=35)
+  [210] GET_CONSTANT (extra=49, operand=9)
+  [211] ADD_INT (extra=50, operand1=48, operand2=49)
+  [212] MUL_SIGNED (extra=51, operand1=47, operand2=50)
+  [213] ADD_INT (extra=52, operand1=46, operand2=51)
+  [214] SET_STACK (extra=34, operand=52)
+  [215] GET_STACK (extra=46, operand=35)
+  [216] GET_CONSTANT (extra=47, operand=9)
+  [217] ADD_INT (extra=48, operand1=46, operand2=47)
+  [218] SET_STACK (extra=35, operand=48)
+  [219] JUMP (extra=0, operand=-60)
+  [220] GET_STACK (extra=46, operand=27)
+  [221] GET_STACK (extra=47, operand=34)
+  [222] GET_STACK (extra=48, operand=28)
+  [223] GET_CONSTANT (extra=49, operand=9)
+  [224] ADD_INT (extra=50, operand1=48, operand2=49)
+  [225] MUL_SIGNED (extra=51, operand1=47, operand2=50)
+  [226] ADD_INT (extra=52, operand1=46, operand2=51)
+  [227] GET_CONSTANT (extra=53, operand=17)
+  [228] MOD_SIGNED (extra=54, operand1=52, operand2=53)
+  [229] SET_STACK (extra=27, operand=54)
+  [230] GET_STACK (extra=46, operand=28)
+  [231] GET_CONSTANT (extra=47, operand=9)
+  [232] ADD_INT (extra=48, operand1=46, operand2=47)
+  [233] SET_STACK (extra=28, operand=48)
+  [234] JUMP (extra=0, operand=-83)
+  [235] GET_CONSTANT (extra=46, operand=8)
+  [236] SET_STACK (extra=45, operand=46)
+  [237] GET_STACK (extra=46, operand=45)
+  [238] GET_STACK (extra=47, operand=11)
+  [239] GET_CONSTANT (extra=48, operand=9)
+  [240] SUB_INT (extra=47, operand1=47, operand2=48)
+  [241] LOGICAL_LESS_EQUAL_SIGNED (extra=46, operand1=46, operand2=47)
+  [242] JUMP_IF (extra=46, operand=19)
+  [243] GET_STACK (extra=51, operand=27)
+  [244] GET_STACK (extra=52, operand=15)
+  [245] GET_STACK (extra=53, operand=45)
+  [246] SUPER_ARRAY_GET_INT (extra=52, operand1=52, operand2=53)
+  [247] GET_STACK (extra=53, operand=45)
+  [248] GET_CONSTANT (extra=54, operand=13)
+  [249] MOD_SIGNED (extra=55, operand1=53, operand2=54)
+  [250] GET_CONSTANT (extra=56, operand=9)
+  [251] ADD_INT (extra=57, operand1=55, operand2=56)
+  [252] MUL_SIGNED (extra=58, operand1=52, operand2=57)
+  [253] ADD_INT (extra=59, operand1=51, operand2=58)
+  [254] GET_CONSTANT (extra=60, operand=17)
+  [255] MOD_SIGNED (extra=61, operand1=59, operand2=60)
+  [256] SET_STACK (extra=27, operand=61)
+  [257] GET_STACK (extra=51, operand=45)
+  [258] GET_CONSTANT (extra=52, operand=9)
+  [259] ADD_INT (extra=53, operand1=51, operand2=52)
+  [260] SET_STACK (extra=45, operand=53)
+  [261] JUMP (extra=0, operand=-25)
+  [262] GET_CONSTANT (extra=46, operand=18)
+  [263] GET_STACK (extra=47, operand=27)
+  [264] TO_STRING (extra=47, operand1=47)
+  [265] ADD_STRING (extra=46, operand1=46, operand2=47)
+  [266] FUNCTION_RETURN (extra=1, operand1=46, operand2=0)
+

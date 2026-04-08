@@ -22,7 +22,9 @@ typedef enum EZrProtocolId {
     ZR_PROTOCOL_ID_COMPARABLE = 3,
     ZR_PROTOCOL_ID_ITERABLE = 4,
     ZR_PROTOCOL_ID_ITERATOR = 5,
-    ZR_PROTOCOL_ID_ARRAY_LIKE = 6
+    ZR_PROTOCOL_ID_ARRAY_LIKE = 6,
+    ZR_PROTOCOL_ID_TASK_HANDLE = 7,
+    ZR_PROTOCOL_ID_TASK_RUNNER = 8
 } EZrProtocolId;
 
 #define ZR_PROTOCOL_BIT(PROTOCOL_ID) (1ull << (TZrUInt64)(PROTOCOL_ID))
@@ -93,6 +95,9 @@ struct ZR_STRUCT_ALIGN SZrObject {
 
     EZrObjectInternalType internalType;
     TZrUInt32 memberVersion;
+    SZrHashKeyValuePair *cachedHiddenItemsPair;
+    SZrHashKeyValuePair *cachedLengthPair;
+    SZrHashKeyValuePair *cachedCapacityPair;
 
     // SZrRawObject *gcList;
 };
@@ -228,6 +233,21 @@ ZR_CORE_API TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
                                              SZrTypeValue *receiver,
                                              const SZrTypeValue *key,
                                              const SZrTypeValue *value);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayGetInt(struct SZrState *state,
+                                                   SZrTypeValue *receiver,
+                                                   const SZrTypeValue *key,
+                                                   SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArraySetInt(struct SZrState *state,
+                                                   SZrTypeValue *receiver,
+                                                   const SZrTypeValue *key,
+                                                   const SZrTypeValue *value);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayAddInt(struct SZrState *state,
+                                                   SZrTypeValue *receiver,
+                                                   const SZrTypeValue *value,
+                                                   SZrTypeValue *result);
 
 ZR_CORE_API TZrBool ZrCore_Object_IterInit(struct SZrState *state,
                                            SZrTypeValue *iterableValue,

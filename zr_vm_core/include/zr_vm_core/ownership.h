@@ -46,10 +46,6 @@ ZR_CORE_API TZrBool ZrCore_Ownership_LoanValue(struct SZrState *state,
                                                SZrTypeValue *destination,
                                                SZrTypeValue *source);
 
-ZR_CORE_API TZrBool ZrCore_Ownership_UsingValue(struct SZrState *state,
-                                                SZrTypeValue *destination,
-                                                SZrTypeValue *source);
-
 ZR_CORE_API TZrBool ZrCore_Ownership_ShareValue(struct SZrState *state,
                                                 SZrTypeValue *destination,
                                                 SZrTypeValue *source);
@@ -84,6 +80,5 @@ ZR_CORE_API void ZrCore_Ownership_NotifyObjectReleased(struct SZrState *state,
 ZR_CORE_API TZrInt64 ZrCore_Ownership_NativeUnique(struct SZrState *state);
 ZR_CORE_API TZrInt64 ZrCore_Ownership_NativeShared(struct SZrState *state);
 ZR_CORE_API TZrInt64 ZrCore_Ownership_NativeWeak(struct SZrState *state);
-ZR_CORE_API TZrInt64 ZrCore_Ownership_NativeUsing(struct SZrState *state);
 
 #endif // ZR_VM_CORE_OWNERSHIP_H

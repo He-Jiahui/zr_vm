@@ -2376,6 +2376,36 @@ LZrReturning: {
             }
             DONE(1);
 
+            ZR_INSTRUCTION_LABEL(SUPER_ARRAY_GET_INT) {
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
+                if (!ZrCore_Object_SuperArrayGetInt(state, opA, opB, destination)) {
+                    ZrCore_Debug_RunError(state,
+                                          "SUPER_ARRAY_GET_INT: receiver must be an array-like object with int index");
+                }
+            }
+            DONE(1);
+
+            ZR_INSTRUCTION_LABEL(SUPER_ARRAY_SET_INT) {
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
+                if (!ZrCore_Object_SuperArraySetInt(state, opA, opB, destination)) {
+                    ZrCore_Debug_RunError(state,
+                                          "SUPER_ARRAY_SET_INT: receiver must be an array-like object with int index");
+                }
+            }
+            DONE(1);
+
+            ZR_INSTRUCTION_LABEL(SUPER_ARRAY_ADD_INT) {
+                opA = &BASE(A1(instruction))->value;
+                opB = &BASE(B1(instruction))->value;
+                if (!ZrCore_Object_SuperArrayAddInt(state, opA, opB, destination)) {
+                    ZrCore_Debug_RunError(state,
+                                          "SUPER_ARRAY_ADD_INT: receiver must be an array-like object with int payload");
+                }
+            }
+            DONE(1);
+
             ZR_INSTRUCTION_LABEL(ITER_INIT) {
                 opA = &BASE(A1(instruction))->value;
                 if (!ZrCore_Object_IterInit(state, opA, destination)) {

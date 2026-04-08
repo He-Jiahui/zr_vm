@@ -101,6 +101,13 @@ static TZrBool diagnostic_array_contains_range(SZrArray *diagnostics,
                                                TZrInt32 endLine,
                                                TZrInt32 endCharacter);
 static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZrChar *needle);
+static TZrBool lsp_find_position_for_substring(const TZrChar *content,
+                                               const TZrChar *needle,
+                                               TZrSize occurrence,
+                                               TZrInt32 extraCharacterOffset,
+                                               SZrLspPosition *outPosition);
+static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle);
+static SZrLspSymbolInformation *find_symbol_information_by_name(SZrArray *symbols, const TZrChar *name);
 static TZrBool build_fixture_native_path(const TZrChar *relativePath, TZrChar *buffer, TZrSize bufferSize);
 static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength);
 static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrChar *path);
@@ -237,6 +244,99 @@ static void test_lsp_get_parser_diagnostics(SZrState *state) {
     ZrCore_Array_Free(state, &diagnostics);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Get Parser Diagnostics");
+}
+
+static void test_lsp_incomplete_edit_preserves_prior_semantic_snapshot(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    SZrArray diagnostics;
+    SZrArray symbols;
+    SZrLspHover *hover = ZR_NULL;
+    SZrLspPosition laterUsage;
+    const TZrChar *validContent =
+        "var total = 10;\n"
+        "valueOf() {\n"
+        "    return total;\n"
+        "}\n"
+        "var later: int = 12;\n";
+    const TZrChar *brokenContent =
+        "var total = 10;\n"
+        "valueOf() {\n"
+        "    return total;\n"
+        "\n"
+        "var later: int = 12;\n";
+
+    TEST_START("LSP Incomplete Edit Preserves Prior Semantic Snapshot");
+    TEST_INFO("Incremental syntax fallback",
+              "A missing closing brace in the middle of the file should still surface parser diagnostics without dropping semantic information for unchanged declarations below it");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Incomplete Edit Preserves Prior Semantic Snapshot",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///incomplete_edit_snapshot.zr", 36);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, validContent, strlen(validContent), 1) ||
+        !lsp_find_position_for_substring(validContent, "var later: int = 12;", 0, 4, &laterUsage)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Incomplete Edit Preserves Prior Semantic Snapshot",
+                  "Failed to prepare the valid baseline document");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, brokenContent, strlen(brokenContent), 2)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Incomplete Edit Preserves Prior Semantic Snapshot",
+                  "Failed to update the document to the incomplete-edit version");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
+        diagnostics.length == 0) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Incomplete Edit Preserves Prior Semantic Snapshot",
+                  "Parser diagnostics should still report the missing function terminator");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, laterUsage, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "later") ||
+        !hover_contains_text(hover, "int")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Incomplete Edit Preserves Prior Semantic Snapshot",
+                  "Hover for the unchanged declaration below the syntax error should still resolve through the last good semantic snapshot");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDocumentSymbols(state, context, uri, &symbols) ||
+        find_symbol_information_by_name(&symbols, "total") == ZR_NULL ||
+        find_symbol_information_by_name(&symbols, "valueOf") == ZR_NULL ||
+        find_symbol_information_by_name(&symbols, "later") == ZR_NULL) {
+        ZrCore_Array_Free(state, &symbols);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Incomplete Edit Preserves Prior Semantic Snapshot",
+                  "Document symbols for unchanged declarations should survive a mid-file missing-brace edit");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &symbols);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Incomplete Edit Preserves Prior Semantic Snapshot");
 }
 
 // 测试获取补全
@@ -613,6 +713,28 @@ static TZrBool location_array_contains_position(SZrArray *locations,
             if (startsBefore && endsAfter) {
                 return ZR_TRUE;
             }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool location_array_contains_uri_text(SZrArray *locations, const TZrChar *uriText) {
+    if (locations == ZR_NULL || uriText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < locations->length; index++) {
+        SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, index);
+        const TZrChar *text;
+
+        if (locationPtr == ZR_NULL || *locationPtr == ZR_NULL || (*locationPtr)->uri == ZR_NULL) {
+            continue;
+        }
+
+        text = test_string_ptr((*locationPtr)->uri);
+        if (text != ZR_NULL && strcmp(text, uriText) == 0) {
+            return ZR_TRUE;
         }
     }
 
@@ -3823,6 +3945,318 @@ static void test_lsp_semantic_query_unifies_import_target_navigation(SZrState *s
     TEST_PASS(timer, "LSP Semantic Query Unifies Import Target Navigation");
 }
 
+static void test_lsp_native_declaration_document_renders_virtual_zr_source(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrString *documentText = ZR_NULL;
+    const TZrChar *renderedText;
+
+    TEST_START("LSP Native Declaration Document Renders Virtual ZR Source");
+    TEST_INFO("Native declaration virtual document",
+              "The language server should render native module descriptors into zr-decompiled virtual ZR declarations.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Native Declaration Document Renders Virtual ZR Source",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                               "zr-decompiled:/zr.container.zr",
+                               strlen("zr-decompiled:/zr.container.zr"));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetNativeDeclarationDocument(state, context, uri, &documentText) ||
+        documentText == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Declaration Document Renders Virtual ZR Source",
+                  "Failed to resolve the zr.container decompiled declaration document");
+        return;
+    }
+
+    renderedText = test_string_ptr(documentText);
+    if (renderedText == ZR_NULL ||
+        strstr(renderedText, "%extern(\"zr.container\")") == ZR_NULL ||
+        strstr(renderedText, "pub class Array<T>") == ZR_NULL ||
+        strstr(renderedText, "pub var length: int;") == ZR_NULL ||
+        strstr(renderedText, "pub @constructor") == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Declaration Document Renders Virtual ZR Source",
+                  "Expected zr.container to render extern-style declarations for Array<T> including fields and constructor metadata");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Native Declaration Document Renders Virtual ZR Source");
+}
+
+static void test_lsp_native_import_definition_uses_virtual_declaration_uri(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var container = %import(\"zr.container\");\n"
+        "run() {\n"
+        "    return container;\n"
+        "}\n";
+    SZrLspPosition importLiteralPosition;
+    SZrArray definitions;
+
+    TEST_START("LSP Native Import Definition Uses Virtual Declaration URI");
+    TEST_INFO("Native import goto definition",
+              "Goto definition on a native import should land on the zr-decompiled virtual declaration document instead of a C source file.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Native Import Definition Uses Virtual Declaration URI",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///native_import_virtual_definition.zr", 42);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "\"zr.container\"", 0, 1, &importLiteralPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Import Definition Uses Virtual Declaration URI",
+                  "Failed to prepare native import definition fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, importLiteralPosition, &definitions) ||
+        !location_array_contains_uri_text(&definitions, "zr-decompiled:/zr.container.zr")) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Import Definition Uses Virtual Declaration URI",
+                  "Expected native import definition results to include zr-decompiled:/zr.container.zr");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &definitions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Native Import Definition Uses Virtual Declaration URI");
+}
+
+static void test_lsp_project_modules_summarize_project_native_and_binary_modules(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    TZrChar projectPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    SZrString *projectUri = ZR_NULL;
+    SZrArray modules;
+    TZrBool foundProjectModule = ZR_FALSE;
+    TZrBool foundBinaryModule = ZR_FALSE;
+    TZrBool foundNativeModule = ZR_FALSE;
+
+    TEST_START("LSP Project Modules Summarize Project Native And Binary Modules");
+    TEST_INFO("Project module summary",
+              "The language server should summarize selected-project source, binary and native modules through a single request.");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/aot_module_graph_pipeline.zrp",
+                                   projectPath,
+                                   sizeof(projectPath))) {
+        TEST_FAIL(timer,
+                  "LSP Project Modules Summarize Project Native And Binary Modules",
+                  "Failed to build the project fixture path");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    projectUri = create_file_uri_from_native_path(state, projectPath);
+    if (context == ZR_NULL || projectUri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Modules Summarize Project Native And Binary Modules",
+                  "Failed to create the LSP context or project URI");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &modules, sizeof(SZrLspProjectModuleSummary *), 8);
+    if (!ZrLanguageServer_Lsp_GetProjectModules(state, context, projectUri, &modules)) {
+        ZrCore_Array_Free(state, &modules);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Modules Summarize Project Native And Binary Modules",
+                  "The project modules request failed for the fixture project");
+        return;
+    }
+
+    for (TZrSize index = 0; index < modules.length; index++) {
+        SZrLspProjectModuleSummary **summaryPtr =
+            (SZrLspProjectModuleSummary **)ZrCore_Array_Get(&modules, index);
+        const TZrChar *moduleNameText;
+        const TZrChar *navigationUriText;
+
+        if (summaryPtr == ZR_NULL || *summaryPtr == ZR_NULL) {
+            continue;
+        }
+
+        moduleNameText = test_string_ptr((*summaryPtr)->moduleName);
+        navigationUriText = test_string_ptr((*summaryPtr)->navigationUri);
+        if (moduleNameText != ZR_NULL &&
+            strcmp(moduleNameText, "main") == 0 &&
+            (*summaryPtr)->sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE) {
+            foundProjectModule = ZR_TRUE;
+        } else if (moduleNameText != ZR_NULL &&
+                   strcmp(moduleNameText, "graph_binary_stage") == 0 &&
+                   (*summaryPtr)->sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA &&
+                   navigationUriText != ZR_NULL &&
+                   strstr(navigationUriText, "graph_binary_stage.zro") != ZR_NULL) {
+            foundBinaryModule = ZR_TRUE;
+        } else if (moduleNameText != ZR_NULL &&
+                   strcmp(moduleNameText, "zr.system") == 0 &&
+                   (*summaryPtr)->sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN &&
+                   navigationUriText != ZR_NULL &&
+                   strcmp(navigationUriText, "zr-decompiled:/zr.system.zr") == 0) {
+            foundNativeModule = ZR_TRUE;
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeProjectModules(state, &modules);
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    if (!foundProjectModule || !foundBinaryModule || !foundNativeModule) {
+        TEST_FAIL(timer,
+                  "LSP Project Modules Summarize Project Native And Binary Modules",
+                  "Expected projectModules to include at least one project source module, one binary metadata module, and the zr.system native module");
+        return;
+    }
+
+    TEST_PASS(timer, "LSP Project Modules Summarize Project Native And Binary Modules");
+}
+
+static void test_lsp_project_source_bootstrap_indexes_open_file_symbols_and_modules(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    TZrChar projectPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar *sourceContent = ZR_NULL;
+    TZrSize sourceLength = 0;
+    SZrString *sourceUri = ZR_NULL;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *query = ZR_NULL;
+    SZrArray symbols;
+    SZrArray modules;
+    SZrLspSymbolInformation *symbolInfo = ZR_NULL;
+    TZrBool foundOpenSourceModule = ZR_FALSE;
+
+    TEST_START("LSP Project Source Bootstrap Indexes Open File Symbols And Modules");
+    TEST_INFO("Project source bootstrap",
+              "Opening a project-owned .zr file through a VS Code style encoded URI should upgrade the project to semantic load, index the file into workspace symbols, and expose it through projectModules.");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/import_basic/import_basic.zrp",
+                                   projectPath,
+                                   sizeof(projectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/import_basic/src/lsp_smoke.zr",
+                                   sourcePath,
+                                   sizeof(sourcePath))) {
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "Failed to build the project or source fixture paths");
+        return;
+    }
+
+    sourceContent = read_fixture_text_file(sourcePath, &sourceLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    sourceUri = create_percent_encoded_file_uri_from_native_path(state, sourcePath);
+    projectUri = create_percent_encoded_file_uri_from_native_path(state, projectPath);
+    query = ZrCore_String_Create(state, "x", 1);
+    if (sourceContent == ZR_NULL || context == ZR_NULL || sourceUri == ZR_NULL || projectUri == ZR_NULL || query == ZR_NULL) {
+        free(sourceContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "Failed to prepare the encoded project bootstrap fixture");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, sourceUri, sourceContent, sourceLength, 1)) {
+        free(sourceContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "Failed to open the project-owned source document");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &symbols, sizeof(SZrLspSymbolInformation *), 8);
+    if (!ZrLanguageServer_Lsp_GetWorkspaceSymbols(state, context, query, &symbols)) {
+        ZrCore_Array_Free(state, &symbols);
+        free(sourceContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "workspace/symbol failed for the bootstrapped source file");
+        return;
+    }
+
+    symbolInfo = find_symbol_information_by_name(&symbols, "x");
+    if (symbolInfo == ZR_NULL || symbolInfo->location.uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_StringsEqual(symbolInfo->location.uri, sourceUri)) {
+        ZrCore_Array_Free(state, &symbols);
+        free(sourceContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "Expected workspace symbols to include x from the encoded open project source file");
+        return;
+    }
+    ZrCore_Array_Free(state, &symbols);
+
+    ZrCore_Array_Init(state, &modules, sizeof(SZrLspProjectModuleSummary *), 8);
+    if (!ZrLanguageServer_Lsp_GetProjectModules(state, context, projectUri, &modules)) {
+        ZrLanguageServer_Lsp_FreeProjectModules(state, &modules);
+        free(sourceContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "projectModules failed for the encoded selected project URI");
+        return;
+    }
+
+    for (TZrSize index = 0; index < modules.length; index++) {
+        SZrLspProjectModuleSummary **summaryPtr =
+            (SZrLspProjectModuleSummary **)ZrCore_Array_Get(&modules, index);
+        const TZrChar *moduleNameText;
+        const TZrChar *navigationUriText;
+
+        if (summaryPtr == ZR_NULL || *summaryPtr == ZR_NULL) {
+            continue;
+        }
+
+        moduleNameText = test_string_ptr((*summaryPtr)->moduleName);
+        navigationUriText = test_string_ptr((*summaryPtr)->navigationUri);
+        if (moduleNameText != ZR_NULL &&
+            strcmp(moduleNameText, "lsp_smoke") == 0 &&
+            (*summaryPtr)->sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE &&
+            navigationUriText != ZR_NULL &&
+            strstr(navigationUriText, "lsp_smoke.zr") != ZR_NULL) {
+            foundOpenSourceModule = ZR_TRUE;
+            break;
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeProjectModules(state, &modules);
+    free(sourceContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    if (!foundOpenSourceModule) {
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "Expected projectModules to reuse the semantic project and include the opened lsp_smoke source file");
+        return;
+    }
+
+    TEST_PASS(timer, "LSP Project Source Bootstrap Indexes Open File Symbols And Modules");
+}
+
 static void test_lsp_semantic_query_collects_receiver_completion_items(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4298,6 +4732,9 @@ int main(void) {
 
     test_lsp_get_parser_diagnostics(state);
     TEST_DIVIDER();
+
+    test_lsp_incomplete_edit_preserves_prior_semantic_snapshot(state);
+    TEST_DIVIDER();
     
     test_lsp_get_completion(state);
     TEST_DIVIDER();
@@ -4405,6 +4842,18 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_query_unifies_import_target_navigation(state);
+    TEST_DIVIDER();
+
+    test_lsp_native_declaration_document_renders_virtual_zr_source(state);
+    TEST_DIVIDER();
+
+    test_lsp_native_import_definition_uses_virtual_declaration_uri(state);
+    TEST_DIVIDER();
+
+    test_lsp_project_modules_summarize_project_native_and_binary_modules(state);
+    TEST_DIVIDER();
+
+    test_lsp_project_source_bootstrap_indexes_open_file_symbols_and_modules(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_query_collects_receiver_completion_items(state);

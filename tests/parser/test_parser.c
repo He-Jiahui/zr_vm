@@ -183,6 +183,77 @@ static const char *module_declaration_name_native(SZrState *state, SZrAstNode *a
     return string_node_native(state, ast->data.script.moduleName->data.moduleDeclaration.name);
 }
 
+typedef struct {
+    TZrBool reported;
+    EZrToken token;
+    SZrFileRange location;
+    char message[512];
+} SZrCapturedParserDiagnostic;
+
+static void clear_parser_diagnostic(SZrCapturedParserDiagnostic *diagnostic) {
+    if (diagnostic == ZR_NULL) {
+        return;
+    }
+
+    diagnostic->reported = ZR_FALSE;
+    diagnostic->token = ZR_TK_EOS;
+    memset(&diagnostic->location, 0, sizeof(diagnostic->location));
+    diagnostic->message[0] = '\0';
+}
+
+static void capture_parser_error(void *userData,
+                                 const SZrFileRange *location,
+                                 const char *message,
+                                 EZrToken token) {
+    SZrCapturedParserDiagnostic *diagnostic = (SZrCapturedParserDiagnostic *)userData;
+
+    if (diagnostic == ZR_NULL || diagnostic->reported) {
+        return;
+    }
+
+    diagnostic->reported = ZR_TRUE;
+    diagnostic->token = token;
+    if (location != ZR_NULL) {
+        diagnostic->location = *location;
+    }
+    if (message != ZR_NULL) {
+        snprintf(diagnostic->message, sizeof(diagnostic->message), "%s", message);
+    }
+}
+
+static SZrAstNode *parse_source_with_diagnostic(SZrState *state,
+                                                const char *source,
+                                                size_t sourceLength,
+                                                const char *sourceNameText,
+                                                SZrCapturedParserDiagnostic *diagnostic) {
+    SZrParserState parserState;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_NOT_NULL(sourceNameText);
+
+    clear_parser_diagnostic(diagnostic);
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ZrParser_State_Init(&parserState, state, source, sourceLength, sourceName);
+    parserState.errorCallback = capture_parser_error;
+    parserState.errorUserData = diagnostic;
+    parserState.suppressErrorOutput = ZR_TRUE;
+
+    ast = ZrParser_ParseWithState(&parserState);
+    if (diagnostic != ZR_NULL && !diagnostic->reported &&
+        parserState.hasError && parserState.errorMessage != ZR_NULL) {
+        diagnostic->reported = ZR_TRUE;
+        snprintf(diagnostic->message, sizeof(diagnostic->message), "%s", parserState.errorMessage);
+    }
+
+    ZrParser_State_Free(&parserState);
+    return ast;
+}
+
 // 测试初始化和清理
 void setUp(void) {
 }
@@ -200,7 +271,7 @@ static void test_function_declaration_optional_func_keyword(void);
 static void test_async_prefixed_type_annotation_parsing(void);
 static void test_function_type_annotation_parsing(void);
 static void test_type_query_accepts_function_type_expression(void);
-static void test_type_value_alias_parsing(void);
+static void test_type_value_alias_parsing_variants(void);
 static void test_class_abstract_member_and_final_class_parsing(void);
 static void test_class_member_modifier_and_super_member_parsing(void);
 
@@ -1810,6 +1881,80 @@ static void test_field_scoped_using_field_requires_var_keyword(void) {
     TEST_DIVIDER();
 }
 
+static void test_removed_percent_using_new_expression_reports_migration_diagnostic(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Removed Percent Using New Expression Reports Migration Diagnostic";
+    const char *expectedMessage =
+        "Ownership '%using' expressions are removed; keep '%using' as a statement or block lifetime fence only";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCapturedParserDiagnostic diagnostic;
+        SZrAstNode *ast;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_INFO("Removed %using new diagnostic",
+                  "Testing that `%using new ...` now reports the ownership migration diagnostic");
+
+        ast = parse_source_with_diagnostic(state,
+                                           "%using new Holder();",
+                                           strlen("%using new Holder();"),
+                                           "removed_percent_using_new_expr.zr",
+                                           &diagnostic);
+        TEST_ASSERT_TRUE(diagnostic.reported);
+        TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, expectedMessage));
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_removed_percent_using_expression_reports_migration_diagnostic(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Removed Percent Using Expression Reports Migration Diagnostic";
+    const char *expectedMessage =
+        "Ownership '%using' expressions are removed; keep '%using' as a statement or block lifetime fence only";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCapturedParserDiagnostic diagnostic;
+        SZrAstNode *ast;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_INFO("Removed %using(expr) diagnostic",
+                  "Testing that `%using(expr)` now reports the ownership migration diagnostic");
+
+        ast = parse_source_with_diagnostic(state,
+                                           "%using(owner);",
+                                           strlen("%using(owner);"),
+                                           "removed_percent_using_expr.zr",
+                                           &diagnostic);
+        TEST_ASSERT_TRUE(diagnostic.reported);
+        TEST_ASSERT_NOT_NULL(strstr(diagnostic.message, expectedMessage));
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_field_scoped_bare_using_field_is_rejected(void) {
     SZrTestTimer timer;
     const char *testSummary = "Field-Scoped Bare Using Field Rejection";
@@ -1821,7 +1966,7 @@ static void test_field_scoped_bare_using_field_is_rejected(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     TEST_INFO("Field-scoped bare using syntax rejection",
-              "Testing that bare `using var` fields are no longer accepted now that field lifecycle management requires `%using var`");
+              "Testing that bare `using var` fields are no longer accepted now that owner lifecycle lives in direct field types");
 
     {
         const char *source = "struct Broken { using var handle: %unique Resource; }";
@@ -2283,126 +2428,117 @@ static void test_type_query_accepts_function_type_expression(void) {
     TEST_DIVIDER();
 }
 
-static void test_type_value_alias_parsing(void) {
-    SZrTestTimer timer;
-    const char *testSummary = "Type Value Alias Parsing";
+static void assert_function_type_value_alias_parsing_case(void) {
+    SZrState *state = create_test_state();
+    const char *source =
+            "var f = %func(int)->int;\n"
+            "var c:f = (x:int)->{ return x; };";
+    SZrString *sourceName = ZrCore_String_Create(state, "type_value_alias_test.zr", 24);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    SZrAstNode *aliasDecl;
+    SZrAstNode *closureDecl;
 
-    TEST_START(testSummary);
-    timer.startTime = clock();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
 
-    {
-        SZrState *state = create_test_state();
-        const char *source =
-                "var f = %func(int)->int;\n"
-                "var c:f = (x:int)->{ return x; };";
-        SZrString *sourceName = ZrCore_String_Create(state, "type_value_alias_test.zr", 24);
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        SZrAstNode *aliasDecl;
-        SZrAstNode *closureDecl;
+    aliasDecl = ast->data.script.statements->nodes[0];
+    closureDecl = ast->data.script.statements->nodes[1];
+    TEST_ASSERT_NOT_NULL(aliasDecl);
+    TEST_ASSERT_NOT_NULL(closureDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, aliasDecl->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, closureDecl->type);
+    TEST_ASSERT_NOT_NULL(aliasDecl->data.variableDeclaration.value);
+    TEST_ASSERT_NOT_NULL(closureDecl->data.variableDeclaration.typeInfo);
+    TEST_ASSERT_NOT_NULL(closureDecl->data.variableDeclaration.typeInfo->name);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, closureDecl->data.variableDeclaration.typeInfo->name->type);
+    TEST_ASSERT_EQUAL_STRING(
+            "f",
+            ZrCore_String_GetNativeString(closureDecl->data.variableDeclaration.typeInfo->name->data.identifier.name));
+    TEST_ASSERT_NOT_NULL(closureDecl->data.variableDeclaration.value);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, closureDecl->data.variableDeclaration.value->type);
 
-        TEST_ASSERT_NOT_NULL(state);
-        TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
-
-        aliasDecl = ast->data.script.statements->nodes[0];
-        closureDecl = ast->data.script.statements->nodes[1];
-        TEST_ASSERT_NOT_NULL(aliasDecl);
-        TEST_ASSERT_NOT_NULL(closureDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, aliasDecl->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, closureDecl->type);
-        TEST_ASSERT_NOT_NULL(aliasDecl->data.variableDeclaration.value);
-        TEST_ASSERT_NOT_NULL(closureDecl->data.variableDeclaration.typeInfo);
-        TEST_ASSERT_NOT_NULL(closureDecl->data.variableDeclaration.typeInfo->name);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, closureDecl->data.variableDeclaration.typeInfo->name->type);
-        TEST_ASSERT_EQUAL_STRING(
-                "f",
-                ZrCore_String_GetNativeString(closureDecl->data.variableDeclaration.typeInfo->name->data.identifier.name));
-        TEST_ASSERT_NOT_NULL(closureDecl->data.variableDeclaration.value);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, closureDecl->data.variableDeclaration.value->type);
-
-        ZrParser_Ast_Free(state, ast);
-        destroy_test_state(state);
-    }
-
-    timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
 }
 
-static void test_array_type_value_alias_parsing(void) {
+static void assert_array_type_value_alias_parsing_case(void) {
+    SZrState *state = create_test_state();
+    const char *source =
+            "var cubeType = int[][][];\n"
+            "var container = %import(\"zr.container\");\n"
+            "var jaggedType = container.Array<int[]>[];\n";
+    SZrString *sourceName = ZrCore_String_Create(state, "array_type_value_alias_test.zr", 30);
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    SZrAstNode *cubeAliasDecl;
+    SZrAstNode *jaggedAliasDecl;
+    SZrType *cubeAliasType;
+    SZrType *jaggedAliasType;
+    SZrAstNode *jaggedNameNode;
+    SZrAstNode *elementTypeNode;
+    SZrType *elementTypeInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
+
+    cubeAliasDecl = ast->data.script.statements->nodes[0];
+    jaggedAliasDecl = ast->data.script.statements->nodes[2];
+    TEST_ASSERT_NOT_NULL(cubeAliasDecl);
+    TEST_ASSERT_NOT_NULL(jaggedAliasDecl);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, cubeAliasDecl->type);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, jaggedAliasDecl->type);
+
+    TEST_ASSERT_NOT_NULL(cubeAliasDecl->data.variableDeclaration.value);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_LITERAL_EXPRESSION, cubeAliasDecl->data.variableDeclaration.value->type);
+    cubeAliasType = cubeAliasDecl->data.variableDeclaration.value->data.typeLiteralExpression.typeInfo;
+    TEST_ASSERT_NOT_NULL(cubeAliasType);
+    TEST_ASSERT_EQUAL_INT(3, cubeAliasType->dimensions);
+    TEST_ASSERT_NOT_NULL(cubeAliasType->name);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, cubeAliasType->name->type);
+    TEST_ASSERT_EQUAL_STRING("int", ZrCore_String_GetNativeString(cubeAliasType->name->data.identifier.name));
+
+    TEST_ASSERT_NOT_NULL(jaggedAliasDecl->data.variableDeclaration.value);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_LITERAL_EXPRESSION, jaggedAliasDecl->data.variableDeclaration.value->type);
+    jaggedAliasType = jaggedAliasDecl->data.variableDeclaration.value->data.typeLiteralExpression.typeInfo;
+    TEST_ASSERT_NOT_NULL(jaggedAliasType);
+    TEST_ASSERT_NOT_NULL(jaggedAliasType->name);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, jaggedAliasType->name->type);
+    TEST_ASSERT_EQUAL_STRING("container", ZrCore_String_GetNativeString(jaggedAliasType->name->data.identifier.name));
+    TEST_ASSERT_NOT_NULL(jaggedAliasType->subType);
+    TEST_ASSERT_EQUAL_INT(1, jaggedAliasType->subType->dimensions);
+    jaggedNameNode = jaggedAliasType->subType->name;
+    TEST_ASSERT_NOT_NULL(jaggedNameNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, jaggedNameNode->type);
+    TEST_ASSERT_EQUAL_STRING("Array", ZrCore_String_GetNativeString(jaggedNameNode->data.genericType.name->name));
+    TEST_ASSERT_NOT_NULL(jaggedNameNode->data.genericType.params);
+    TEST_ASSERT_EQUAL_INT(1, (int)jaggedNameNode->data.genericType.params->count);
+    elementTypeNode = jaggedNameNode->data.genericType.params->nodes[0];
+    TEST_ASSERT_NOT_NULL(elementTypeNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE, elementTypeNode->type);
+    elementTypeInfo = &elementTypeNode->data.type;
+    TEST_ASSERT_EQUAL_INT(1, elementTypeInfo->dimensions);
+    TEST_ASSERT_NOT_NULL(elementTypeInfo->name);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, elementTypeInfo->name->type);
+    TEST_ASSERT_EQUAL_STRING("int", ZrCore_String_GetNativeString(elementTypeInfo->name->data.identifier.name));
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_state(state);
+}
+
+static void test_type_value_alias_parsing_variants(void) {
     SZrTestTimer timer;
-    const char *testSummary = "Array Type Value Alias Parsing";
+    const char *testSummary = "Type Value Alias Parsing Variants";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    {
-        SZrState *state = create_test_state();
-        const char *source =
-                "var cubeType = int[][][];\n"
-                "var container = %import(\"zr.container\");\n"
-                "var jaggedType = container.Array<int[]>[];\n";
-        SZrString *sourceName = ZrCore_String_Create(state, "array_type_value_alias_test.zr", 30);
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        SZrAstNode *cubeAliasDecl;
-        SZrAstNode *jaggedAliasDecl;
-        SZrType *cubeAliasType;
-        SZrType *jaggedAliasType;
-        SZrAstNode *jaggedNameNode;
-        SZrAstNode *elementTypeNode;
-        SZrType *elementTypeInfo;
-
-        TEST_ASSERT_NOT_NULL(state);
-        TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(3, (int)ast->data.script.statements->count);
-
-        cubeAliasDecl = ast->data.script.statements->nodes[0];
-        jaggedAliasDecl = ast->data.script.statements->nodes[2];
-        TEST_ASSERT_NOT_NULL(cubeAliasDecl);
-        TEST_ASSERT_NOT_NULL(jaggedAliasDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, cubeAliasDecl->type);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, jaggedAliasDecl->type);
-
-        TEST_ASSERT_NOT_NULL(cubeAliasDecl->data.variableDeclaration.value);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_LITERAL_EXPRESSION, cubeAliasDecl->data.variableDeclaration.value->type);
-        cubeAliasType = cubeAliasDecl->data.variableDeclaration.value->data.typeLiteralExpression.typeInfo;
-        TEST_ASSERT_NOT_NULL(cubeAliasType);
-        TEST_ASSERT_EQUAL_INT(3, cubeAliasType->dimensions);
-        TEST_ASSERT_NOT_NULL(cubeAliasType->name);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, cubeAliasType->name->type);
-        TEST_ASSERT_EQUAL_STRING("int", ZrCore_String_GetNativeString(cubeAliasType->name->data.identifier.name));
-
-        TEST_ASSERT_NOT_NULL(jaggedAliasDecl->data.variableDeclaration.value);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE_LITERAL_EXPRESSION, jaggedAliasDecl->data.variableDeclaration.value->type);
-        jaggedAliasType = jaggedAliasDecl->data.variableDeclaration.value->data.typeLiteralExpression.typeInfo;
-        TEST_ASSERT_NOT_NULL(jaggedAliasType);
-        TEST_ASSERT_NOT_NULL(jaggedAliasType->name);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, jaggedAliasType->name->type);
-        TEST_ASSERT_EQUAL_STRING("container", ZrCore_String_GetNativeString(jaggedAliasType->name->data.identifier.name));
-        TEST_ASSERT_NOT_NULL(jaggedAliasType->subType);
-        TEST_ASSERT_EQUAL_INT(1, jaggedAliasType->subType->dimensions);
-        jaggedNameNode = jaggedAliasType->subType->name;
-        TEST_ASSERT_NOT_NULL(jaggedNameNode);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_GENERIC_TYPE, jaggedNameNode->type);
-        TEST_ASSERT_EQUAL_STRING("Array", ZrCore_String_GetNativeString(jaggedNameNode->data.genericType.name->name));
-        TEST_ASSERT_NOT_NULL(jaggedNameNode->data.genericType.params);
-        TEST_ASSERT_EQUAL_INT(1, (int)jaggedNameNode->data.genericType.params->count);
-        elementTypeNode = jaggedNameNode->data.genericType.params->nodes[0];
-        TEST_ASSERT_NOT_NULL(elementTypeNode);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_TYPE, elementTypeNode->type);
-        elementTypeInfo = &elementTypeNode->data.type;
-        TEST_ASSERT_EQUAL_INT(1, elementTypeInfo->dimensions);
-        TEST_ASSERT_NOT_NULL(elementTypeInfo->name);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, elementTypeInfo->name->type);
-        TEST_ASSERT_EQUAL_STRING("int", ZrCore_String_GetNativeString(elementTypeInfo->name->data.identifier.name));
-
-        ZrParser_Ast_Free(state, ast);
-        destroy_test_state(state);
-    }
+    assert_function_type_value_alias_parsing_case();
+    assert_array_type_value_alias_parsing_case();
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -3002,6 +3138,8 @@ int main(void) {
     RUN_TEST(test_struct_declaration);
     RUN_TEST(test_field_scoped_using_field_parsing);
     RUN_TEST(test_field_scoped_using_field_requires_var_keyword);
+    RUN_TEST(test_removed_percent_using_new_expression_reports_migration_diagnostic);
+    RUN_TEST(test_removed_percent_using_expression_reports_migration_diagnostic);
     RUN_TEST(test_field_scoped_bare_using_field_is_rejected);
     RUN_TEST(test_owned_class_and_prefixed_ownership_parsing);
     RUN_TEST(test_class_abstract_member_and_final_class_parsing);
@@ -3010,8 +3148,7 @@ int main(void) {
     RUN_TEST(test_function_type_annotation_parsing);
     RUN_TEST(test_function_type_missing_return_arrow_is_rejected);
     RUN_TEST(test_type_query_accepts_function_type_expression);
-    RUN_TEST(test_type_value_alias_parsing);
-    RUN_TEST(test_array_type_value_alias_parsing);
+    RUN_TEST(test_type_value_alias_parsing_variants);
     
     TEST_MODULE_DIVIDER();
     printf("Statement Tests\n");

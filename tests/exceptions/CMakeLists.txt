@@ -3,7 +3,6 @@
 # 添加异常测试源文件
 set(EXCEPTIONS_TEST_SOURCES
     test_exceptions.c
-    ${CMAKE_SOURCE_DIR}/tests/test_support.c
 )
 
 # 创建异常测试可执行文件

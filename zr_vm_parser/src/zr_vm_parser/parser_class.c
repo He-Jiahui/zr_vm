@@ -254,15 +254,14 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
     }
 
     if (ps->lexer->t.token == ZR_TK_USING) {
-        report_error(ps, "Field-scoped '%using' is no longer supported; express ownership on the field type directly");
+        report_error(ps, "Field-scoped '%using' is removed; write 'var field: %unique T' or 'var field: %shared T' so ownership lives in the field type");
         skip_to_semicolon_or_eos(ps);
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
     }
 
-    TZrBool fieldIsUsingManaged = ZR_FALSE;
     if (consume_percent_keyword_token(ps, ZR_TK_USING)) {
-        report_error(ps, "Field-scoped '%using' is removed; write '%unique field: T' or '%shared field: T' directly in the type");
+        report_error(ps, "Field-scoped '%using' is removed; write 'var field: %unique T' or 'var field: %shared T' so ownership lives in the field type");
         skip_to_semicolon_or_eos(ps);
         ZrParser_AstNodeArray_Free(ps->state, decorators);
         return ZR_NULL;
@@ -326,7 +325,7 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
     node->data.classField.decorators = decorators;
     node->data.classField.access = access;
     node->data.classField.isStatic = isStatic;
-    node->data.classField.isUsingManaged = fieldIsUsingManaged;
+    node->data.classField.isUsingManaged = ZR_FALSE;
     node->data.classField.isConst = isConst;
     node->data.classField.name = name;
     node->data.classField.nameLocation = nameLoc;

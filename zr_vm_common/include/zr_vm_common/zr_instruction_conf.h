@@ -29,6 +29,9 @@
     Z(SET_MEMBER)                                                                                                      \
     Z(GET_BY_INDEX)                                                                                                    \
     Z(SET_BY_INDEX)                                                                                                    \
+    Z(SUPER_ARRAY_GET_INT)                                                                                             \
+    Z(SUPER_ARRAY_SET_INT)                                                                                             \
+    Z(SUPER_ARRAY_ADD_INT)                                                                                             \
     Z(ITER_INIT)                                                                                                       \
     Z(ITER_MOVE_NEXT)                                                                                                  \
     Z(ITER_CURRENT)                                                                                                    \

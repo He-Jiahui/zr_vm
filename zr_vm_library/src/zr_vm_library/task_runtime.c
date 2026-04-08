@@ -1029,17 +1029,18 @@ static const ZrLibFunctionDescriptor g_task_functions[] = {
         {"__createTaskRunner", 1, 1, task_runtime_create_runner, "zr.task.TaskRunner<T>",
          "Internal helper used by %async lowering.", g_create_runner_parameters,
          ZR_ARRAY_COUNT(g_create_runner_parameters), g_task_single_generic_parameter,
-         ZR_ARRAY_COUNT(g_task_single_generic_parameter)},
+         ZR_ARRAY_COUNT(g_task_single_generic_parameter), ZR_MEMBER_CONTRACT_ROLE_NONE},
         {"__awaitTask", 1, 1, task_runtime_await_hidden, "T",
          "Internal helper used by %await lowering.", g_await_parameters, ZR_ARRAY_COUNT(g_await_parameters),
-         g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter)},
+         g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter),
+         ZR_MEMBER_CONTRACT_ROLE_TASK_AWAIT},
 };
 
 static const ZrLibFunctionDescriptor g_coroutine_functions[] = {
         {"start", 1, 1, task_runtime_coroutine_start_function, "zr.task.Task<T>",
          "Queue a TaskRunner on the coroutine scheduler.", g_scheduler_start_parameters,
          ZR_ARRAY_COUNT(g_scheduler_start_parameters), g_task_single_generic_parameter,
-         ZR_ARRAY_COUNT(g_task_single_generic_parameter)},
+         ZR_ARRAY_COUNT(g_task_single_generic_parameter), ZR_MEMBER_CONTRACT_ROLE_NONE},
 };
 
 static const ZrLibTypeDescriptor g_task_types[] = {
@@ -1047,16 +1048,18 @@ static const ZrLibTypeDescriptor g_task_types[] = {
                                     ZR_ARRAY_COUNT(g_scheduler_methods), ZR_NULL, 0,
                                     "Scheduler interface implemented by task schedulers.", ZR_NULL, ZR_NULL, 0,
                                     ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0),
-        ZR_LIB_TYPE_DESCRIPTOR_INIT("TaskRunner", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_runner_methods,
-                                    ZR_ARRAY_COUNT(g_runner_methods), ZR_NULL, 0,
-                                    "Cold async runner produced by %async declarations.", ZR_NULL, ZR_NULL, 0,
-                                    ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
-                                    g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter)),
-        ZR_LIB_TYPE_DESCRIPTOR_INIT("Task", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_task_methods,
-                                    ZR_ARRAY_COUNT(g_task_methods), ZR_NULL, 0,
-                                    "Started task handle that can be awaited.", ZR_NULL, ZR_NULL, 0, ZR_NULL, 0,
-                                    ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, g_task_single_generic_parameter,
-                                    ZR_ARRAY_COUNT(g_task_single_generic_parameter)),
+        ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("TaskRunner", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_runner_methods,
+                                             ZR_ARRAY_COUNT(g_runner_methods), ZR_NULL, 0,
+                                             "Cold async runner produced by %async declarations.", ZR_NULL, ZR_NULL, 0,
+                                             ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL,
+                                             g_task_single_generic_parameter, ZR_ARRAY_COUNT(g_task_single_generic_parameter),
+                                             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_RUNNER)),
+        ZR_LIB_TYPE_DESCRIPTOR_PROTOCOL_INIT("Task", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0, g_task_methods,
+                                             ZR_ARRAY_COUNT(g_task_methods), ZR_NULL, 0,
+                                             "Started task handle that can be awaited.", ZR_NULL, ZR_NULL, 0, ZR_NULL, 0,
+                                             ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, g_task_single_generic_parameter,
+                                             ZR_ARRAY_COUNT(g_task_single_generic_parameter),
+                                             ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_TASK_HANDLE)),
 };
 
 static const ZrLibTypeDescriptor g_coroutine_types[] = {

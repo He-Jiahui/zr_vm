@@ -3,6 +3,193 @@
 //
 
 #include "compile_expression_internal.h"
+#include "type_inference_internal.h"
+
+static const TZrChar *compile_identifier_builtin_explicit_source(const TZrChar *identifierText) {
+    if (identifierText == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (strcmp(identifierText, "IEnumerable") == 0 || strcmp(identifierText, "Iterable") == 0) {
+        return "zr.builtin.IEnumerable";
+    }
+    if (strcmp(identifierText, "IEnumerator") == 0 || strcmp(identifierText, "Iterator") == 0) {
+        return "zr.builtin.IEnumerator";
+    }
+    if (strcmp(identifierText, "IArrayLike") == 0 || strcmp(identifierText, "ArrayLike") == 0) {
+        return "zr.builtin.IArrayLike";
+    }
+    if (strcmp(identifierText, "IEquatable") == 0 || strcmp(identifierText, "Equatable") == 0) {
+        return "zr.builtin.IEquatable";
+    }
+    if (strcmp(identifierText, "IHashable") == 0 || strcmp(identifierText, "Hashable") == 0) {
+        return "zr.builtin.IHashable";
+    }
+    if (strcmp(identifierText, "IComparable") == 0 || strcmp(identifierText, "Comparable") == 0) {
+        return "zr.builtin.IComparable";
+    }
+    if (strcmp(identifierText, "IComparer") == 0) {
+        return "zr.builtin.IComparer";
+    }
+    if (strcmp(identifierText, "zr.system.reflect.Type") == 0 ||
+        strcmp(identifierText, "zr.system.reflect.CallableType") == 0 ||
+        strcmp(identifierText, "TypeInfo") == 0) {
+        return "zr.builtin.TypeInfo";
+    }
+    if (strcmp(identifierText, "Object") == 0) {
+        return "zr.builtin.Object";
+    }
+    if (strcmp(identifierText, "Module") == 0) {
+        return "zr.builtin.Module";
+    }
+    if (strcmp(identifierText, "Integer") == 0) {
+        return "zr.builtin.Integer";
+    }
+    if (strcmp(identifierText, "Float") == 0) {
+        return "zr.builtin.Float";
+    }
+    if (strcmp(identifierText, "Double") == 0) {
+        return "zr.builtin.Double";
+    }
+    if (strcmp(identifierText, "String") == 0) {
+        return "zr.builtin.String";
+    }
+    if (strcmp(identifierText, "Bool") == 0) {
+        return "zr.builtin.Bool";
+    }
+    if (strcmp(identifierText, "Byte") == 0) {
+        return "zr.builtin.Byte";
+    }
+    if (strcmp(identifierText, "Char") == 0) {
+        return "zr.builtin.Char";
+    }
+    if (strcmp(identifierText, "UInt64") == 0) {
+        return "zr.builtin.UInt64";
+    }
+
+    return ZR_NULL;
+}
+
+static TZrNativeString compile_identifier_name_text(SZrString *name) {
+    if (name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (name->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        return ZrCore_String_GetNativeStringShort(name);
+    }
+
+    return ZrCore_String_GetNativeString(name);
+}
+
+static SZrString *compile_identifier_build_module_member_source(SZrCompilerState *cs,
+                                                                SZrString *moduleName,
+                                                                SZrString *memberName) {
+    TZrNativeString moduleText;
+    TZrNativeString memberText;
+    TZrChar buffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
+    TZrInt32 written;
+
+    if (cs == ZR_NULL || moduleName == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    moduleText = compile_identifier_name_text(moduleName);
+    memberText = compile_identifier_name_text(memberName);
+    if (moduleText == ZR_NULL || memberText == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    written = snprintf(buffer, sizeof(buffer), "%s.%s", moduleText, memberText);
+    if (written <= 0 || (TZrSize)written >= sizeof(buffer)) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(cs->state, buffer, (TZrSize)written);
+}
+
+static SZrString *compile_identifier_find_hidden_explicit_source(SZrCompilerState *cs, SZrString *name) {
+    const TZrChar *builtinSource;
+
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    builtinSource = compile_identifier_builtin_explicit_source(compile_identifier_name_text(name));
+    if (builtinSource != ZR_NULL) {
+        return ZrCore_String_Create(cs->state, (TZrNativeString)builtinSource, strlen(builtinSource));
+    }
+
+    for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
+        SZrTypePrototypeInfo *prototype =
+                (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
+        if (prototype == ZR_NULL || prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
+            continue;
+        }
+
+        for (TZrSize memberIndex = 0; memberIndex < prototype->members.length; memberIndex++) {
+            SZrTypeMemberInfo *memberInfo =
+                    (SZrTypeMemberInfo *)ZrCore_Array_Get(&prototype->members, memberIndex);
+            if (memberInfo == ZR_NULL || memberInfo->name == ZR_NULL ||
+                !ZrCore_String_Equal(memberInfo->name, name)) {
+                continue;
+            }
+
+            return compile_identifier_build_module_member_source(cs, prototype->name, memberInfo->name);
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void compile_identifier_report_hidden_name(SZrCompilerState *cs,
+                                                  SZrString *name,
+                                                  SZrString *explicitSource,
+                                                  SZrFileRange location) {
+    TZrNativeString nameText;
+    TZrNativeString sourceText;
+    TZrChar errorBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
+
+    if (cs == ZR_NULL || name == ZR_NULL || explicitSource == ZR_NULL) {
+        return;
+    }
+
+    nameText = compile_identifier_name_text(name);
+    sourceText = compile_identifier_name_text(explicitSource);
+    if (nameText == ZR_NULL || sourceText == ZR_NULL) {
+        return;
+    }
+
+    snprintf(errorBuffer,
+             sizeof(errorBuffer),
+             "Identifier '%s' is not implicitly visible; use '%s' via explicit import or module qualifier",
+             nameText,
+             sourceText);
+    ZrParser_Compiler_Error(cs, errorBuffer, location);
+}
+
+static void compile_identifier_report_unresolved_name(SZrCompilerState *cs,
+                                                      SZrString *name,
+                                                      SZrFileRange location) {
+    TZrNativeString nameText;
+    TZrChar errorBuffer[ZR_PARSER_ERROR_BUFFER_LENGTH];
+
+    if (cs == ZR_NULL || name == ZR_NULL) {
+        return;
+    }
+
+    nameText = compile_identifier_name_text(name);
+    if (nameText == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Identifier not found in current scope", location);
+        return;
+    }
+
+    snprintf(errorBuffer,
+             sizeof(errorBuffer),
+             "Identifier '%s' not found in current scope; only 'zr' is implicitly global",
+             nameText);
+    ZrParser_Compiler_Error(cs, errorBuffer, location);
+}
 
 static void record_template_segment_semantics(SZrCompilerState *cs, SZrAstNode *segmentNode) {
     SZrTemplateSegment segment;
@@ -321,27 +508,24 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         emit_instruction(cs, getSubFuncInst);
         return;
     }
-    
-    // 如果不是子函数，尝试作为全局对象（zr）的成员访问（使用 GET_GLOBAL + GET_MEMBER）
-    // 1. 使用 GET_GLOBAL 获取全局 zr 对象
-    TZrUInt32 globalObjSlot = allocate_stack_slot(cs);
-    TZrInstruction getGlobalInst =
-            create_instruction_0(ZR_INSTRUCTION_ENUM(GET_GLOBAL), ZR_COMPILE_SLOT_U16(globalObjSlot));
-    emit_instruction(cs, getGlobalInst);
+
+    if (type_name_is_explicitly_available_in_context_inference(cs, name) &&
+        (find_compiler_type_prototype(cs, name) != ZR_NULL || find_type_declaration(cs, name) != ZR_NULL)) {
+        if (emit_load_global_identifier(cs, name) == ZR_PARSER_SLOT_NONE) {
+            ZrParser_Compiler_Error(cs, "Failed to load explicit type binding", node->location);
+        }
+        return;
+    }
 
     {
-        TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, name);
-        if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
-            ZrParser_Compiler_Error(cs, "Failed to register global member symbol", cs->currentAst->location);
+        SZrString *explicitSource = compile_identifier_find_hidden_explicit_source(cs, name);
+        if (explicitSource != ZR_NULL) {
+            compile_identifier_report_hidden_name(cs, name, explicitSource, node->location);
             return;
         }
-
-        emit_instruction(cs,
-                         create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
-                                              (TZrUInt16)globalObjSlot,
-                                              (TZrUInt16)globalObjSlot,
-                                              (TZrUInt16)memberId));
     }
+
+    compile_identifier_report_unresolved_name(cs, name, node->location);
 }
 
 // 编译一元表达式

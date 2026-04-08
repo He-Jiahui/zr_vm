@@ -31,7 +31,6 @@ typedef enum EZrOwnershipValueKind {
     ZR_OWNERSHIP_VALUE_KIND_WEAK,
     ZR_OWNERSHIP_VALUE_KIND_BORROWED,
     ZR_OWNERSHIP_VALUE_KIND_LOANED,
-    ZR_OWNERSHIP_VALUE_KIND_USING,
 } EZrOwnershipValueKind;
 
 struct ZR_STRUCT_ALIGN SZrTypeValue {
@@ -79,7 +78,47 @@ ZR_CORE_API SZrTypeValue *ZrCore_Value_GetStackOffsetValue(struct SZrState *stat
         (VALUE)->ownershipWeakRef = ZR_NULL;                                                                           \
     }
 
-ZR_CORE_API void ZrCore_Value_Copy(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source);
+ZR_CORE_API void ZrCore_Value_CopySlow(struct SZrState *state,
+                                       SZrTypeValue *destination,
+                                       const SZrTypeValue *source);
+
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_CanFastCopyPrimitive(const SZrTypeValue *destination,
+                                                                 const SZrTypeValue *source) {
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(source != ZR_NULL);
+    ZR_ASSERT(source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+              (source->ownershipControl == ZR_NULL && source->ownershipWeakRef == ZR_NULL));
+    ZR_ASSERT(destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+              (destination->ownershipControl == ZR_NULL && destination->ownershipWeakRef == ZR_NULL));
+
+    return destination != source && !source->isGarbageCollectable &&
+           source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
+           source->ownershipControl == ZR_NULL &&
+           source->ownershipWeakRef == ZR_NULL &&
+           destination->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
+           destination->ownershipControl == ZR_NULL &&
+           destination->ownershipWeakRef == ZR_NULL;
+}
+
+static ZR_FORCE_INLINE void ZrCore_Value_CopyPrimitiveUnchecked(SZrTypeValue *destination,
+                                                                const SZrTypeValue *source) {
+    *destination = *source;
+}
+
+static ZR_FORCE_INLINE void ZrCore_Value_Copy(struct SZrState *state,
+                                              SZrTypeValue *destination,
+                                              const SZrTypeValue *source) {
+    if (ZR_LIKELY(ZrCore_Value_CanFastCopyPrimitive(destination, source))) {
+        ZrCore_Value_CopyPrimitiveUnchecked(destination, source);
+        return;
+    }
+
+    if (destination == source) {
+        return;
+    }
+
+    ZrCore_Value_CopySlow(state, destination, source);
+}
 
 ZR_CORE_API TZrUInt64 ZrCore_Value_GetHash(struct SZrState *state, const SZrTypeValue *value);
 
@@ -87,16 +126,16 @@ ZR_CORE_API TZrUInt64 ZrCore_Value_GetHash(struct SZrState *state, const SZrType
 ZR_CORE_API TZrBool ZrCore_Value_CompareDirectly(struct SZrState *state, const SZrTypeValue *value1,
                                          const SZrTypeValue *value2);
 
-ZR_FORCE_INLINE EZrValueType ZrCore_Value_GetType(const SZrTypeValue *value) { return value->type; }
+static ZR_FORCE_INLINE EZrValueType ZrCore_Value_GetType(const SZrTypeValue *value) { return value->type; }
 
-ZR_FORCE_INLINE SZrRawObject *ZrCore_Value_GetRawObject(const SZrTypeValue *value) { return value->value.object; }
+static ZR_FORCE_INLINE SZrRawObject *ZrCore_Value_GetRawObject(const SZrTypeValue *value) { return value->value.object; }
 
-ZR_FORCE_INLINE TZrBool ZrCore_Value_IsGarbageCollectable(const SZrTypeValue *value) { return value->isGarbageCollectable; }
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_IsGarbageCollectable(const SZrTypeValue *value) { return value->isGarbageCollectable; }
 
 
-ZR_FORCE_INLINE TZrBool ZrCore_Value_IsNative(const SZrTypeValue *value) { return value->isNative; }
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_IsNative(const SZrTypeValue *value) { return value->isNative; }
 
-ZR_FORCE_INLINE TZrBool ZrCore_Value_CanValueToString(struct SZrState *state, SZrTypeValue *value) {
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_CanValueToString(struct SZrState *state, SZrTypeValue *value) {
     ZR_UNUSED_PARAMETER(state);
     EZrValueType type = value->type;
     return ZR_VALUE_IS_TYPE_NORMAL(type);

@@ -503,7 +503,7 @@ TZrBool zr_vm_task_channel_send(ZrLibCallContext *context, SZrTypeValue *result)
 	    if (!zr_vm_task_transport_encode_value(context->state,
 	                                           value,
 	                                           &message->value,
-	                                           "Channel only transports sendable values and thread transport handles")) {
+	                                           "Channel only transports Send values and thread transport handles")) {
 	        free(message);
 	        return ZR_FALSE;
 	    }

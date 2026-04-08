@@ -24,7 +24,7 @@ pub struct Point {
 }
 
 pub %owned class PointSet {
-    pri %using var _points: %unique Array<Point> = %unique new Array<Point>();
+    pri var _points: %unique Array<Point> = %unique new Array<Point>();
 
     pub @constructor(capacity: int) {
         this._points.capacity = capacity;

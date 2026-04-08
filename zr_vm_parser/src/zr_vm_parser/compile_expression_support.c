@@ -82,6 +82,85 @@ static EZrInstructionCode resolve_ownership_builtin_opcode(const SZrConstructExp
     }
 }
 
+static const TZrChar *compile_ownership_builtin_operand_error_message(EZrOwnershipBuiltinKind builtinKind) {
+    switch (builtinKind) {
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+            return "'%shared' requires a %unique owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+            return "'%weak' requires a %shared owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+            return "'%loan' requires a %unique owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+            return "'%upgrade' requires a %weak owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+            return "'%release' requires a %unique or %shared owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
+            return "'%detach' requires a %unique or %shared owner";
+        case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool compile_ownership_builtin_operand_matches_qualifier(EZrOwnershipBuiltinKind builtinKind,
+                                                                   EZrOwnershipQualifier qualifier) {
+    switch (builtinKind) {
+        case ZR_OWNERSHIP_BUILTIN_KIND_SHARED:
+        case ZR_OWNERSHIP_BUILTIN_KIND_LOAN:
+            return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+        case ZR_OWNERSHIP_BUILTIN_KIND_WEAK:
+            return qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
+        case ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE:
+            return qualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
+        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_DETACH:
+            return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+                   qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
+        case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE:
+        case ZR_OWNERSHIP_BUILTIN_KIND_BORROW:
+        default:
+            return ZR_TRUE;
+    }
+}
+
+static TZrBool validate_ownership_builtin_operand_expression(SZrCompilerState *cs,
+                                                             const SZrConstructExpression *constructExpr,
+                                                             SZrFileRange errorLocation) {
+    EZrOwnershipBuiltinKind builtinKind;
+    SZrInferredType inferredType;
+    const TZrChar *errorMessage;
+    TZrBool success;
+
+    if (cs == ZR_NULL || constructExpr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    builtinKind = resolve_construct_expression_builtin_kind(constructExpr);
+    errorMessage = compile_ownership_builtin_operand_error_message(builtinKind);
+    if (errorMessage == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    success = ZrParser_ExpressionType_Infer(cs, constructExpr->target, &inferredType);
+    if (!success) {
+        ZrParser_InferredType_Free(cs->state, &inferredType);
+        return ZR_FALSE;
+    }
+
+    if (!compile_ownership_builtin_operand_matches_qualifier(builtinKind, inferredType.ownershipQualifier)) {
+        ZrParser_InferredType_Free(cs->state, &inferredType);
+        ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Free(cs->state, &inferredType);
+    return ZR_TRUE;
+}
+
 TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
                                                     SZrConstructExpression *constructExpr,
                                                     SZrFileRange location) {
@@ -99,6 +178,12 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
     builtinKind = resolve_construct_expression_builtin_kind(constructExpr);
     if (opcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
         ZrParser_Compiler_Error(cs, "Unsupported ownership builtin expression", location);
+        return ZR_FALSE;
+    }
+
+    if (!validate_ownership_builtin_operand_expression(cs,
+                                                       constructExpr,
+                                                       constructExpr->target != ZR_NULL ? constructExpr->target->location : location)) {
         return ZR_FALSE;
     }
 
@@ -136,8 +221,6 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
         return ZR_TRUE;
     }
 
-    argumentSlot = allocate_stack_slot(cs);
-
     shouldResetConsumedIdentifier =
             (builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_SHARED ||
              builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_LOAN) &&
@@ -146,8 +229,19 @@ TZrBool compile_ownership_builtin_expression(SZrCompilerState *cs,
             infer_expression_ownership_qualifier_local(cs, constructExpr->target) ==
                     ZR_OWNERSHIP_QUALIFIER_UNIQUE;
 
-    if (compile_expression_into_slot(cs, constructExpr->target, argumentSlot) == ZR_PARSER_SLOT_NONE) {
-        return ZR_FALSE;
+    if (shouldResetConsumedIdentifier) {
+        argumentSlot = find_local_var(cs, constructExpr->target->data.identifier.name);
+        if (argumentSlot == ZR_PARSER_SLOT_NONE) {
+            ZrParser_Compiler_Error(cs,
+                                    "Failed to resolve consumed ownership source binding",
+                                    location);
+            return ZR_FALSE;
+        }
+    } else {
+        argumentSlot = allocate_stack_slot(cs);
+        if (compile_expression_into_slot(cs, constructExpr->target, argumentSlot) == ZR_PARSER_SLOT_NONE) {
+            return ZR_FALSE;
+        }
     }
 
     emit_instruction(cs,

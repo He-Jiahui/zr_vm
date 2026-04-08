@@ -2,6 +2,8 @@
 // Created by HeJiahui on 2025/6/22.
 //
 #include "zr_vm_core/object.h"
+#include "object_call_internal.h"
+#include "object_super_array_internal.h"
 
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/conversion.h"
@@ -18,11 +20,6 @@
 #include <string.h>
 
 #define ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS ((TZrUInt8)1)
-
-static TZrBool object_node_map_is_ready(const SZrObject *object) {
-    return object != ZR_NULL && object->nodeMap.isValid && object->nodeMap.buckets != ZR_NULL &&
-           object->nodeMap.capacity > 0;
-}
 
 static const TZrChar *object_module_name_string(SZrState *state, const SZrObjectModule *module) {
     if (state == ZR_NULL || module == ZR_NULL) {
@@ -170,19 +167,12 @@ static TZrBool object_make_string_key(SZrState *state, SZrString *name, SZrTypeV
     return ZR_TRUE;
 }
 
+static TZrBool object_make_cached_string_key(SZrState *state, const TZrChar *name, SZrTypeValue *outKey) {
+    return object_make_string_key(state, ZrCore_Object_CachedKnownFieldString(state, name), outKey);
+}
+
 static TZrBool object_make_hidden_key(SZrState *state, const TZrChar *name, SZrTypeValue *outKey) {
-    SZrString *stringObject;
-
-    if (state == ZR_NULL || name == ZR_NULL || outKey == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    stringObject = ZrCore_String_Create(state, (TZrNativeString)name, strlen(name));
-    if (stringObject == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    return object_make_string_key(state, stringObject, outKey);
+    return object_make_cached_string_key(state, name, outKey);
 }
 
 static TZrBool object_hidden_set(SZrState *state, SZrObject *object, const TZrChar *name, const SZrTypeValue *value) {
@@ -212,417 +202,6 @@ static TZrBool object_hidden_get(SZrState *state, SZrObject *object, const TZrCh
     ZrCore_Value_ResetAsNull(outValue);
     ZrCore_Value_Copy(state, outValue, value);
     return ZR_TRUE;
-}
-
-static TZrStackValuePointer object_resolve_call_scratch_base(TZrStackValuePointer stackTop,
-                                                             const SZrCallInfo *callInfo) {
-    TZrStackValuePointer base = stackTop;
-
-    if (callInfo != ZR_NULL && callInfo->functionTop.valuePointer > base) {
-        base = callInfo->functionTop.valuePointer;
-    }
-
-    return base;
-}
-
-static TZrBool object_pin_value_object(SZrState *state, const SZrTypeValue *value, TZrBool *addedByCaller) {
-    SZrRawObject *object;
-
-    if (addedByCaller != ZR_NULL) {
-        *addedByCaller = ZR_FALSE;
-    }
-
-    if (state == ZR_NULL || state->global == ZR_NULL || value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
-        return ZR_TRUE;
-    }
-
-    object = ZrCore_Value_GetRawObject(value);
-    if (object == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    if (ZrCore_GarbageCollector_IsObjectIgnored(state->global, object)) {
-        return ZR_TRUE;
-    }
-
-    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
-        return ZR_FALSE;
-    }
-
-    if (addedByCaller != ZR_NULL) {
-        *addedByCaller = ZR_TRUE;
-    }
-    return ZR_TRUE;
-}
-
-static void object_unpin_value_object(SZrGlobalState *global, const SZrTypeValue *value, TZrBool addedByCaller) {
-    SZrRawObject *object;
-
-    if (!addedByCaller || global == ZR_NULL || value == ZR_NULL || !ZrCore_Value_IsGarbageCollectable(value)) {
-        return;
-    }
-
-    object = ZrCore_Value_GetRawObject(value);
-    if (object != ZR_NULL) {
-        ZrCore_GarbageCollector_UnignoreObject(global, object);
-    }
-}
-
-static TZrBool object_value_is_struct_instance(SZrState *state, const SZrTypeValue *value) {
-    SZrObject *object;
-
-    if (state == ZR_NULL || value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT || value->value.object == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    object = ZR_CAST_OBJECT(state, value->value.object);
-    return object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_STRUCT;
-}
-
-static TZrBool object_sync_struct_receiver_value(SZrState *state,
-                                                 SZrTypeValue *receiverTarget,
-                                                 const SZrTypeValue *stackReceiver) {
-    SZrObject *targetObject;
-    SZrObject *sourceObject;
-
-    if (state == ZR_NULL || receiverTarget == ZR_NULL || stackReceiver == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (!object_value_is_struct_instance(state, receiverTarget) ||
-        !object_value_is_struct_instance(state, stackReceiver)) {
-        ZrCore_Value_Copy(state, receiverTarget, stackReceiver);
-        return state->threadStatus == ZR_THREAD_STATUS_FINE;
-    }
-
-    targetObject = ZR_CAST_OBJECT(state, receiverTarget->value.object);
-    sourceObject = ZR_CAST_OBJECT(state, stackReceiver->value.object);
-    if (targetObject == ZR_NULL || sourceObject == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (targetObject == sourceObject) {
-        return ZR_TRUE;
-    }
-
-    targetObject->prototype = sourceObject->prototype;
-    targetObject->internalType = sourceObject->internalType;
-    if (object_node_map_is_ready(sourceObject)) {
-        for (TZrSize bucketIndex = 0; bucketIndex < sourceObject->nodeMap.capacity; bucketIndex++) {
-            for (SZrHashKeyValuePair *pair = sourceObject->nodeMap.buckets[bucketIndex]; pair != ZR_NULL; pair = pair->next) {
-                ZrCore_Object_SetValue(state, targetObject, &pair->key, &pair->value);
-                if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
-                    return ZR_FALSE;
-                }
-            }
-        }
-    }
-
-    receiverTarget->type = stackReceiver->type;
-    receiverTarget->value.object = ZR_CAST_RAW_OBJECT_AS_SUPER(targetObject);
-    receiverTarget->isGarbageCollectable = stackReceiver->isGarbageCollectable;
-    receiverTarget->isNative = stackReceiver->isNative;
-    return ZR_TRUE;
-}
-
-static TZrBool object_call_value(SZrState *state,
-                                 const SZrTypeValue *callable,
-                                 const SZrTypeValue *receiver,
-                                 const SZrTypeValue *arguments,
-                                 TZrSize argumentCount,
-                                 SZrTypeValue *result) {
-    SZrTypeValue stableCallable;
-    SZrTypeValue stableReceiver;
-    SZrTypeValue inlineArguments[ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY];
-    SZrTypeValue *stableArguments = ZR_NULL;
-    TZrBool inlineArgumentPinAdded[ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY];
-    TZrBool *argumentPinAdded = ZR_NULL;
-    TZrBool freeStableArguments = ZR_FALSE;
-    TZrBool freeArgumentPinAdded = ZR_FALSE;
-    TZrBool callablePinAdded = ZR_FALSE;
-    TZrBool receiverPinAdded = ZR_FALSE;
-    TZrSize stableArgumentsBytes = 0;
-    TZrSize argumentPinAddedBytes = 0;
-    TZrStackValuePointer savedStackTop;
-    SZrCallInfo *savedCallInfo;
-    TZrSize totalArguments;
-    TZrSize scratchSlots;
-    TZrStackValuePointer base;
-    TZrStackValuePointer resultStackSlot;
-    SZrFunctionStackAnchor savedStackTopAnchor;
-    SZrFunctionStackAnchor baseAnchor;
-    SZrFunctionStackAnchor callInfoBaseAnchor;
-    SZrFunctionStackAnchor callInfoTopAnchor;
-    SZrFunctionStackAnchor callInfoReturnAnchor;
-    SZrFunctionStackAnchor receiverAnchor;
-    SZrFunctionStackAnchor resultAnchor;
-    TZrBool syncStructReceiver = ZR_FALSE;
-    TZrBool hasAnchoredReturnDestination = ZR_FALSE;
-    TZrBool hasReceiverAnchor = ZR_FALSE;
-    TZrBool hasResultAnchor = ZR_FALSE;
-    TZrSize index;
-
-    if (state == ZR_NULL || callable == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    stableCallable = *callable;
-    memset(inlineArgumentPinAdded, 0, sizeof(inlineArgumentPinAdded));
-    if (receiver != ZR_NULL) {
-        stableReceiver = *receiver;
-    }
-    if (argumentCount > 0) {
-        if (arguments == ZR_NULL) {
-            return ZR_FALSE;
-        }
-
-        if (argumentCount <= ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY) {
-            stableArguments = inlineArguments;
-            argumentPinAdded = inlineArgumentPinAdded;
-        } else {
-            stableArgumentsBytes = argumentCount * sizeof(SZrTypeValue);
-            stableArguments = (SZrTypeValue *)ZrCore_Memory_RawMallocWithType(state->global,
-                                                                              stableArgumentsBytes,
-                                                                              ZR_MEMORY_NATIVE_TYPE_OBJECT);
-            if (stableArguments == ZR_NULL) {
-                return ZR_FALSE;
-            }
-            freeStableArguments = ZR_TRUE;
-
-            argumentPinAddedBytes = argumentCount * sizeof(TZrBool);
-            argumentPinAdded = (TZrBool *)ZrCore_Memory_RawMallocWithType(state->global,
-                                                                          argumentPinAddedBytes,
-                                                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
-            if (argumentPinAdded == ZR_NULL) {
-                ZrCore_Memory_RawFreeWithType(state->global,
-                                              stableArguments,
-                                              stableArgumentsBytes,
-                                              ZR_MEMORY_NATIVE_TYPE_OBJECT);
-                return ZR_FALSE;
-            }
-            freeArgumentPinAdded = ZR_TRUE;
-        }
-
-        memset(argumentPinAdded, 0, argumentCount * sizeof(TZrBool));
-        for (index = 0; index < argumentCount; index++) {
-            stableArguments[index] = arguments[index];
-        }
-    }
-
-    if (!object_pin_value_object(state, &stableCallable, &callablePinAdded)) {
-        if (freeArgumentPinAdded) {
-            ZrCore_Memory_RawFreeWithType(state->global,
-                                          argumentPinAdded,
-                                          argumentPinAddedBytes,
-                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
-        }
-        if (freeStableArguments) {
-            ZrCore_Memory_RawFreeWithType(state->global,
-                                          stableArguments,
-                                          stableArgumentsBytes,
-                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
-        }
-        return ZR_FALSE;
-    }
-
-    if (receiver != ZR_NULL && !object_pin_value_object(state, &stableReceiver, &receiverPinAdded)) {
-        object_unpin_value_object(state->global, &stableCallable, callablePinAdded);
-        if (freeArgumentPinAdded) {
-            ZrCore_Memory_RawFreeWithType(state->global,
-                                          argumentPinAdded,
-                                          argumentPinAddedBytes,
-                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
-        }
-        if (freeStableArguments) {
-            ZrCore_Memory_RawFreeWithType(state->global,
-                                          stableArguments,
-                                          stableArgumentsBytes,
-                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
-        }
-        return ZR_FALSE;
-    }
-
-    for (index = 0; index < argumentCount; index++) {
-        if (!object_pin_value_object(state, &stableArguments[index], &argumentPinAdded[index])) {
-            while (index > 0) {
-                index--;
-                object_unpin_value_object(state->global, &stableArguments[index], argumentPinAdded[index]);
-            }
-            object_unpin_value_object(state->global, receiver != ZR_NULL ? &stableReceiver : ZR_NULL, receiverPinAdded);
-            object_unpin_value_object(state->global, &stableCallable, callablePinAdded);
-            if (freeArgumentPinAdded) {
-                ZrCore_Memory_RawFreeWithType(state->global,
-                                              argumentPinAdded,
-                                              argumentPinAddedBytes,
-                                              ZR_MEMORY_NATIVE_TYPE_OBJECT);
-            }
-            if (freeStableArguments) {
-                ZrCore_Memory_RawFreeWithType(state->global,
-                                              stableArguments,
-                                              stableArgumentsBytes,
-                                              ZR_MEMORY_NATIVE_TYPE_OBJECT);
-            }
-            return ZR_FALSE;
-        }
-    }
-
-    ZrCore_Value_ResetAsNull(result);
-    savedStackTop = state->stackTop.valuePointer;
-    savedCallInfo = state->callInfoList;
-    totalArguments = argumentCount + (receiver != ZR_NULL ? 1 : 0);
-    scratchSlots = 1 + totalArguments;
-    base = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
-    resultStackSlot = ZR_CAST(TZrStackValuePointer, result);
-    syncStructReceiver = object_value_is_struct_instance(state, receiver);
-
-    if (resultStackSlot >= state->stackBase.valuePointer && resultStackSlot < state->stackTail.valuePointer) {
-        ZrCore_Function_StackAnchorInit(state, resultStackSlot, &resultAnchor);
-        hasResultAnchor = ZR_TRUE;
-    }
-
-    if (syncStructReceiver) {
-        TZrStackValuePointer receiverStackSlot = ZR_CAST(TZrStackValuePointer, receiver);
-        if (receiverStackSlot >= state->stackBase.valuePointer && receiverStackSlot < state->stackTail.valuePointer) {
-            ZrCore_Function_StackAnchorInit(state, receiverStackSlot, &receiverAnchor);
-            hasReceiverAnchor = ZR_TRUE;
-        }
-    }
-
-    ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
-    ZrCore_Function_StackAnchorInit(state, base, &baseAnchor);
-    if (savedCallInfo != ZR_NULL) {
-        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &callInfoBaseAnchor);
-        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &callInfoTopAnchor);
-        hasAnchoredReturnDestination =
-            (TZrBool)(savedCallInfo->hasReturnDestination && savedCallInfo->returnDestination != ZR_NULL);
-        if (hasAnchoredReturnDestination) {
-            ZrCore_Function_StackAnchorInit(state, savedCallInfo->returnDestination, &callInfoReturnAnchor);
-        }
-    }
-
-    ZrCore_Function_ReserveScratchSlots(state, scratchSlots, base);
-    savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
-    base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
-    if (savedCallInfo != ZR_NULL) {
-        savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
-        if (hasAnchoredReturnDestination) {
-            savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
-        }
-        base = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
-    }
-
-    state->stackTop.valuePointer = base + scratchSlots;
-    if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
-        savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
-        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &callInfoBaseAnchor);
-        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &callInfoTopAnchor);
-        if (hasAnchoredReturnDestination) {
-            ZrCore_Function_StackAnchorInit(state, savedCallInfo->returnDestination, &callInfoReturnAnchor);
-        }
-    }
-    if (receiver != ZR_NULL) {
-        ZrCore_Stack_CopyValue(state, base + 1, &stableReceiver);
-        base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
-        if (savedCallInfo != ZR_NULL) {
-            savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-            savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
-            if (hasAnchoredReturnDestination) {
-                savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
-            }
-        }
-    }
-    for (index = 0; index < argumentCount; index++) {
-        ZrCore_Stack_CopyValue(state,
-                               base + 1 + (receiver != ZR_NULL ? 1 : 0) + index,
-                               &stableArguments[index]);
-        base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
-        if (savedCallInfo != ZR_NULL) {
-            savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-            savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
-            if (hasAnchoredReturnDestination) {
-                savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
-            }
-        }
-    }
-    ZrCore_Stack_CopyValue(state, base, &stableCallable);
-
-    for (index = argumentCount; index > 0; index--) {
-        object_unpin_value_object(state->global,
-                                  &stableArguments[index - 1],
-                                  argumentPinAdded[index - 1]);
-    }
-    object_unpin_value_object(state->global,
-                              receiver != ZR_NULL ? &stableReceiver : ZR_NULL,
-                              receiverPinAdded);
-    object_unpin_value_object(state->global, &stableCallable, callablePinAdded);
-
-    base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
-    savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
-    if (savedCallInfo != ZR_NULL) {
-        savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
-        if (hasAnchoredReturnDestination) {
-            savedCallInfo->returnDestination = ZrCore_Function_StackAnchorRestore(state, &callInfoReturnAnchor);
-        }
-    }
-    if (hasResultAnchor) {
-        result = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &resultAnchor));
-    }
-
-    if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
-        if (syncStructReceiver) {
-            SZrTypeValue *stackReceiver = ZrCore_Stack_GetValue(base + 1);
-            SZrTypeValue *receiverTarget = ZR_NULL;
-
-            if (hasReceiverAnchor) {
-                receiverTarget = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
-            } else if (receiver != ZR_NULL) {
-                receiverTarget = ZR_CAST(SZrTypeValue *, receiver);
-            }
-
-            if (receiverTarget != ZR_NULL &&
-                stackReceiver != ZR_NULL &&
-                !object_sync_struct_receiver_value(state, receiverTarget, stackReceiver) &&
-                state->threadStatus == ZR_THREAD_STATUS_FINE) {
-                state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
-            }
-        }
-
-        SZrTypeValue *stackResult = ZrCore_Stack_GetValue(base);
-        ZrCore_Value_Copy(state, result, stackResult);
-        state->stackTop.valuePointer = savedStackTop;
-        state->callInfoList = savedCallInfo;
-        if (freeStableArguments) {
-            ZrCore_Memory_RawFreeWithType(state->global,
-                                          stableArguments,
-                                          stableArgumentsBytes,
-                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
-        }
-        if (freeArgumentPinAdded) {
-            ZrCore_Memory_RawFreeWithType(state->global,
-                                          argumentPinAdded,
-                                          argumentPinAddedBytes,
-                                          ZR_MEMORY_NATIVE_TYPE_OBJECT);
-        }
-        return ZR_TRUE;
-    }
-
-    state->stackTop.valuePointer = savedStackTop;
-    state->callInfoList = savedCallInfo;
-    if (freeStableArguments) {
-        ZrCore_Memory_RawFreeWithType(state->global,
-                                      stableArguments,
-                                      stableArgumentsBytes,
-                                      ZR_MEMORY_NATIVE_TYPE_OBJECT);
-    }
-    if (freeArgumentPinAdded) {
-        ZrCore_Memory_RawFreeWithType(state->global,
-                                      argumentPinAdded,
-                                      argumentPinAddedBytes,
-                                      ZR_MEMORY_NATIVE_TYPE_OBJECT);
-    }
-    return ZR_FALSE;
 }
 
 static SZrObjectPrototype *object_value_resolve_prototype(SZrState *state, const SZrTypeValue *value) {
@@ -683,30 +262,6 @@ static const SZrTypeValue *object_get_prototype_value(SZrState *state,
     return ZR_NULL;
 }
 
-static TZrBool object_make_callable_value(SZrState *state, SZrFunction *function, SZrTypeValue *result) {
-    if (state == ZR_NULL || function == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    ZrCore_Value_InitAsRawObject(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
-    return ZR_TRUE;
-}
-
-static TZrBool object_call_function_with_receiver(SZrState *state,
-                                                  SZrFunction *function,
-                                                  SZrTypeValue *receiver,
-                                                  const SZrTypeValue *arguments,
-                                                  TZrSize argumentCount,
-                                                  SZrTypeValue *result) {
-    SZrTypeValue callableValue;
-
-    if (!object_make_callable_value(state, function, &callableValue)) {
-        return ZR_FALSE;
-    }
-
-    return object_call_value(state, &callableValue, receiver, arguments, argumentCount, result);
-}
-
 static TZrBool object_allows_dynamic_member_write(const SZrObject *object) {
     if (object == ZR_NULL) {
         return ZR_FALSE;
@@ -744,12 +299,12 @@ static TZrBool object_get_index_length(SZrState *state,
 
     prototype = object_value_resolve_prototype(state, receiver);
     if (prototype != ZR_NULL && prototype->indexContract.getLengthFunction != ZR_NULL) {
-        return object_call_function_with_receiver(state,
-                                                  prototype->indexContract.getLengthFunction,
-                                                  receiver,
-                                                  ZR_NULL,
-                                                  0,
-                                                  result);
+        return ZrCore_Object_CallFunctionWithReceiver(state,
+                                                      prototype->indexContract.getLengthFunction,
+                                                      receiver,
+                                                      ZR_NULL,
+                                                      0,
+                                                      result);
     }
 
     if (!object_can_use_direct_index_fallback(object)) {
@@ -768,6 +323,7 @@ SZrObject *ZrCore_Object_New(SZrState *state, SZrObjectPrototype *prototype) {
     object->internalType = ZR_OBJECT_INTERNAL_TYPE_OBJECT;
     object->memberVersion = 0;
     ZrCore_HashSet_Construct(&object->nodeMap);
+    object_reset_hot_field_pair_cache(object);
     return object;
 }
 
@@ -785,10 +341,12 @@ SZrObject *ZrCore_Object_NewCustomized(struct SZrState *state, TZrSize size, EZr
     object->internalType = internalType;
     object->memberVersion = 0;
     ZrCore_HashSet_Construct(&object->nodeMap);
+    object_reset_hot_field_pair_cache(object);
     return object;
 }
 
 void ZrCore_Object_Init(struct SZrState *state, SZrObject *object) {
+    object_reset_hot_field_pair_cache(object);
     ZrCore_HashSet_Init(state, &object->nodeMap, ZR_OBJECT_TABLE_INITIAL_SIZE_LOG2);
 }
 
@@ -1236,12 +794,12 @@ TZrBool ZrCore_Object_GetMember(struct SZrState *state,
 
         if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY &&
             descriptor->getterFunction != ZR_NULL) {
-            return object_call_function_with_receiver(state,
-                                                     descriptor->getterFunction,
-                                                     receiver,
-                                                     ZR_NULL,
-                                                     0,
-                                                     result);
+            return ZrCore_Object_CallFunctionWithReceiver(state,
+                                                          descriptor->getterFunction,
+                                                          receiver,
+                                                          ZR_NULL,
+                                                          0,
+                                                          result);
         }
 
         if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY &&
@@ -1310,12 +868,12 @@ TZrBool ZrCore_Object_SetMember(struct SZrState *state,
         if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY &&
             descriptor->setterFunction != ZR_NULL) {
             SZrTypeValue ignoredResult;
-            return object_call_function_with_receiver(state,
-                                                     descriptor->setterFunction,
-                                                     receiver,
-                                                     value,
-                                                     1,
-                                                     &ignoredResult);
+            return ZrCore_Object_CallFunctionWithReceiver(state,
+                                                          descriptor->setterFunction,
+                                                          receiver,
+                                                          value,
+                                                          1,
+                                                          &ignoredResult);
         }
 
         if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_FIELD ||
@@ -1386,12 +944,12 @@ TZrBool ZrCore_Object_InvokeMember(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    return object_call_value(state,
-                             &callableValue,
-                             (descriptor != ZR_NULL && descriptor->isStatic) ? ZR_NULL : receiver,
-                             arguments,
-                             argumentCount,
-                             result);
+    return ZrCore_Object_CallValue(state,
+                                   &callableValue,
+                                   (descriptor != ZR_NULL && descriptor->isStatic) ? ZR_NULL : receiver,
+                                   arguments,
+                                   argumentCount,
+                                   result);
 }
 
 TZrBool ZrCore_Object_ResolveMemberCallable(struct SZrState *state,
@@ -1476,12 +1034,12 @@ TZrBool ZrCore_Object_InvokeResolvedFunction(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    return object_call_function_with_receiver(state,
-                                              function,
-                                              isStatic ? ZR_NULL : receiver,
-                                              arguments,
-                                              argumentCount,
-                                              result);
+    return ZrCore_Object_CallFunctionWithReceiver(state,
+                                                  function,
+                                                  isStatic ? ZR_NULL : receiver,
+                                                  arguments,
+                                                  argumentCount,
+                                                  result);
 }
 
 TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
@@ -1491,6 +1049,7 @@ TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
     SZrObject *object;
     SZrObjectPrototype *prototype;
     const SZrTypeValue *resolvedValue;
+    TZrBool superArrayApplicable = ZR_FALSE;
 
     if (state == ZR_NULL || receiver == ZR_NULL || key == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -1505,14 +1064,21 @@ TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    if (!ZrCore_Object_SuperArrayTryGetIntFast(state, receiver, key, result, &superArrayApplicable)) {
+        return ZR_FALSE;
+    }
+    if (superArrayApplicable) {
+        return ZR_TRUE;
+    }
+
     prototype = object_value_resolve_prototype(state, receiver);
     if (prototype != ZR_NULL && prototype->indexContract.getByIndexFunction != ZR_NULL) {
-        return object_call_function_with_receiver(state,
-                                                  prototype->indexContract.getByIndexFunction,
-                                                  receiver,
-                                                  key,
-                                                  1,
-                                                  result);
+        return ZrCore_Object_CallFunctionWithReceiver(state,
+                                                      prototype->indexContract.getByIndexFunction,
+                                                      receiver,
+                                                      key,
+                                                      1,
+                                                      result);
     }
 
     if (!object_can_use_direct_index_fallback(object)) {
@@ -1543,6 +1109,7 @@ TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
                                  const SZrTypeValue *value) {
     SZrObject *object;
     SZrObjectPrototype *prototype;
+    TZrBool superArrayApplicable = ZR_FALSE;
 
     if (state == ZR_NULL || receiver == ZR_NULL || key == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
@@ -1557,18 +1124,25 @@ TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    if (!ZrCore_Object_SuperArrayTrySetIntFast(state, receiver, key, value, &superArrayApplicable)) {
+        return ZR_FALSE;
+    }
+    if (superArrayApplicable) {
+        return ZR_TRUE;
+    }
+
     prototype = object_value_resolve_prototype(state, receiver);
     if (prototype != ZR_NULL && prototype->indexContract.setByIndexFunction != ZR_NULL) {
         SZrTypeValue arguments[2];
         SZrTypeValue ignoredResult;
         arguments[0] = *key;
         arguments[1] = *value;
-        return object_call_function_with_receiver(state,
-                                                  prototype->indexContract.setByIndexFunction,
-                                                  receiver,
-                                                  arguments,
-                                                  2,
-                                                  &ignoredResult);
+        return ZrCore_Object_CallFunctionWithReceiver(state,
+                                                      prototype->indexContract.setByIndexFunction,
+                                                      receiver,
+                                                      arguments,
+                                                      2,
+                                                      &ignoredResult);
     }
 
     if (!object_can_use_direct_index_fallback(object)) {
@@ -1600,12 +1174,12 @@ TZrBool ZrCore_Object_IterInit(struct SZrState *state,
     if (iterableValue->type != ZR_VALUE_TYPE_ARRAY &&
         prototype != ZR_NULL &&
         prototype->iterableContract.iterInitFunction != ZR_NULL) {
-        if (object_call_function_with_receiver(state,
-                                              prototype->iterableContract.iterInitFunction,
-                                              iterableValue,
-                                              ZR_NULL,
-                                              0,
-                                              result)) {
+        if (ZrCore_Object_CallFunctionWithReceiver(state,
+                                                   prototype->iterableContract.iterInitFunction,
+                                                   iterableValue,
+                                                   ZR_NULL,
+                                                   0,
+                                                   result)) {
             return ZR_TRUE;
         }
     }
@@ -1660,12 +1234,12 @@ TZrBool ZrCore_Object_IterMoveNext(struct SZrState *state,
     }
     prototype = object_value_resolve_prototype(state, iteratorValue);
     if (prototype != ZR_NULL && prototype->iteratorContract.moveNextFunction != ZR_NULL) {
-        if (object_call_function_with_receiver(state,
-                                              prototype->iteratorContract.moveNextFunction,
-                                              iteratorValue,
-                                              ZR_NULL,
-                                              0,
-                                              result)) {
+        if (ZrCore_Object_CallFunctionWithReceiver(state,
+                                                   prototype->iteratorContract.moveNextFunction,
+                                                   iteratorValue,
+                                                   ZR_NULL,
+                                                   0,
+                                                   result)) {
             return ZR_TRUE;
         }
     }
@@ -1722,12 +1296,12 @@ TZrBool ZrCore_Object_IterCurrent(struct SZrState *state,
     prototype = object_value_resolve_prototype(state, iteratorValue);
     if (prototype != ZR_NULL) {
         if (prototype->iteratorContract.currentFunction != ZR_NULL) {
-            if (object_call_function_with_receiver(state,
-                                                  prototype->iteratorContract.currentFunction,
-                                                  iteratorValue,
-                                                  ZR_NULL,
-                                                  0,
-                                                  result)) {
+            if (ZrCore_Object_CallFunctionWithReceiver(state,
+                                                       prototype->iteratorContract.currentFunction,
+                                                       iteratorValue,
+                                                       ZR_NULL,
+                                                       0,
+                                                       result)) {
                 return ZR_TRUE;
             }
         }

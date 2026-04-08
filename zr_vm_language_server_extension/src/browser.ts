@@ -11,8 +11,10 @@ import {
     type TransportAwareLanguageClientLifecycle,
 } from './languageClientLifecycle';
 import { registerWebDebugSupportUnavailable } from './debug/webSupport';
+import { setLanguageClientRequestClient } from './languageClientRequests';
 import { registerWebProjectActionsUnavailable } from './projectActionsWeb';
 import { registerZrStructureViews, ZrStructureController } from './structure';
+import { registerVirtualDocumentSupport } from './virtualDocuments';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
 
 const CONFIG_SECTION = 'zr.languageServer';
@@ -38,7 +40,8 @@ function refreshStructureViewsAsync(): void {
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     context.subscriptions.push(registerZrpJsonSupport());
     context.subscriptions.push(...registerWebDebugSupportUnavailable());
-    context.subscriptions.push(...registerWebProjectActionsUnavailable());
+    context.subscriptions.push(...registerWebProjectActionsUnavailable(context));
+    context.subscriptions.push(registerVirtualDocumentSupport());
     structureController = registerZrStructureViews(context);
     context.subscriptions.push(structureController);
 
@@ -134,6 +137,7 @@ async function startClient(context: vscode.ExtensionContext, requestedByUser: bo
     lifecycle.attachClient(nextClient);
     client = nextClient;
     clientLifecycle = lifecycle;
+    setLanguageClientRequestClient(nextClient);
 
     await withTimeout(
         nextClient.start(),
@@ -159,6 +163,7 @@ async function stopClient(): Promise<void> {
         const currentLifecycle = clientLifecycle;
         client = undefined;
         clientLifecycle = undefined;
+        setLanguageClientRequestClient(undefined);
         try {
             if (currentLifecycle !== undefined) {
                 await stopLanguageClientSafely(currentClient, currentLifecycle);

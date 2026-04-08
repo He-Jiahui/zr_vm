@@ -17,6 +17,12 @@ static TZrBool completion_metadata_symbol_is_better(SZrSymbol *candidate, SZrSym
 static SZrSymbol *find_symbol_for_completion_metadata(SZrSymbolTable *table, SZrString *name);
 static const SZrTypePrototypeInfo *find_type_prototype_by_text(SZrSemanticAnalyzer *analyzer,
                                                                const TZrChar *typeName);
+static void append_type_prototype_member_completions(SZrState *state,
+                                                     SZrSemanticAnalyzer *analyzer,
+                                                     const SZrTypePrototypeInfo *prototype,
+                                                     TZrBool wantStatic,
+                                                     TZrSize depth,
+                                                     SZrArray *result);
 static TZrBool extract_base_type_name(const TZrChar *typeName,
                                       TZrChar *buffer,
                                       TZrSize bufferSize);
@@ -45,6 +51,116 @@ static TZrBool receiver_type_text_is_specific(const TZrChar *text) {
     return text != ZR_NULL && text[0] != '\0' &&
            strcmp(text, "object") != 0 &&
            strcmp(text, "unknown") != 0;
+}
+
+static TZrBool lsp_interface_support_file_range_contains_range(SZrFileRange outer, SZrFileRange inner) {
+    if (!ZrLanguageServer_Lsp_StringsEqual(outer.source, inner.source) &&
+        outer.source != ZR_NULL &&
+        inner.source != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (outer.start.offset > 0 && outer.end.offset > 0 &&
+        inner.start.offset > 0 && inner.end.offset > 0) {
+        return outer.start.offset <= inner.start.offset &&
+               inner.end.offset <= outer.end.offset;
+    }
+
+    return ((outer.start.line < inner.start.line) ||
+            (outer.start.line == inner.start.line && outer.start.column <= inner.start.column)) &&
+           ((inner.end.line < outer.end.line) ||
+            (inner.end.line == outer.end.line && inner.end.column <= outer.end.column));
+}
+
+static TZrBool receiver_project_range_is_declared_in_extern_block(SZrAstNode *node, SZrFileRange range) {
+    if (node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_SCRIPT:
+            if (node->data.script.statements != ZR_NULL && node->data.script.statements->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.script.statements->count; index++) {
+                    if (receiver_project_range_is_declared_in_extern_block(node->data.script.statements->nodes[index],
+                                                                           range)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            return node->data.compileTimeDeclaration.declaration != ZR_NULL &&
+                   receiver_project_range_is_declared_in_extern_block(node->data.compileTimeDeclaration.declaration,
+                                                                      range);
+
+        case ZR_AST_BLOCK:
+            if (node->data.block.body != ZR_NULL && node->data.block.body->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.block.body->count; index++) {
+                    if (receiver_project_range_is_declared_in_extern_block(node->data.block.body->nodes[index],
+                                                                           range)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_EXTERN_BLOCK:
+            if (node->data.externBlock.declarations != ZR_NULL &&
+                node->data.externBlock.declarations->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.externBlock.declarations->count; index++) {
+                    SZrAstNode *declaration = node->data.externBlock.declarations->nodes[index];
+
+                    if (declaration != ZR_NULL &&
+                        lsp_interface_support_file_range_contains_range(declaration->location, range)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool receiver_project_declaration_is_ffi_wrapper(SZrSemanticAnalyzer *analyzer,
+                                                           SZrAstNode *declarationNode,
+                                                           SZrFileRange declarationRange) {
+    if (declarationNode != ZR_NULL &&
+        (declarationNode->type == ZR_AST_EXTERN_FUNCTION_DECLARATION ||
+         declarationNode->type == ZR_AST_EXTERN_DELEGATE_DECLARATION)) {
+        return ZR_TRUE;
+    }
+
+    if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if ((declarationRange.end.offset <= declarationRange.start.offset &&
+         declarationRange.end.line <= declarationRange.start.line &&
+         declarationRange.source == ZR_NULL) &&
+        declarationNode != ZR_NULL) {
+        declarationRange = declarationNode->location;
+    }
+
+    return receiver_project_range_is_declared_in_extern_block(analyzer->ast, declarationRange);
+}
+
+static EZrLspImportedModuleSourceKind receiver_project_member_source_kind(
+    SZrSemanticAnalyzer *analyzer,
+    SZrLspProjectFileRecord *sourceRecord,
+    SZrAstNode *declarationNode,
+    SZrFileRange declarationRange) {
+    if (sourceRecord != ZR_NULL) {
+        return sourceRecord->isFfiWrapperSource
+                   ? ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER
+                   : ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
+    }
+
+    return receiver_project_declaration_is_ffi_wrapper(analyzer, declarationNode, declarationRange)
+               ? ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER
+               : ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
 }
 
 static SZrFilePosition lsp_interface_support_file_position_from_offset(const TZrChar *content,
@@ -258,6 +374,258 @@ static void append_buffer_text(TZrChar *buffer,
     }
 
     append_buffer_slice(buffer, bufferSize, used, text, strlen(text));
+}
+
+static const TZrChar *lsp_interface_identifier_node_text(SZrAstNode *node) {
+    if (node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL || node->data.identifier.name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_GetNativeString(node->data.identifier.name);
+}
+
+static const TZrChar *lsp_interface_member_property_text(SZrAstNode *node) {
+    if (node == ZR_NULL || node->type != ZR_AST_MEMBER_EXPRESSION || node->data.memberExpression.computed) {
+        return ZR_NULL;
+    }
+
+    return lsp_interface_identifier_node_text(node->data.memberExpression.property);
+}
+
+static TZrBool lsp_interface_text_equals(const TZrChar *value, const TZrChar *expected) {
+    return value != ZR_NULL && expected != ZR_NULL && strcmp(value, expected) == 0;
+}
+
+static SZrAstNodeArray *lsp_interface_get_decorator_array_for_node(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (node->type) {
+        case ZR_AST_STRUCT_DECLARATION:
+            return node->data.structDeclaration.decorators;
+        case ZR_AST_STRUCT_FIELD:
+            return node->data.structField.decorators;
+        case ZR_AST_ENUM_DECLARATION:
+            return node->data.enumDeclaration.decorators;
+        case ZR_AST_ENUM_MEMBER:
+            return node->data.enumMember.decorators;
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            return node->data.externFunctionDeclaration.decorators;
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+            return node->data.externDelegateDeclaration.decorators;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool lsp_interface_extract_ffi_decorator(SZrAstNode *decoratorNode,
+                                                   const TZrChar **outLeafName,
+                                                   TZrBool *outHasCall,
+                                                   SZrFunctionCall **outCall) {
+    SZrAstNode *expr;
+    SZrPrimaryExpression *primary;
+    SZrAstNode *ffiMember;
+    SZrAstNode *leafMember;
+
+    if (outLeafName != ZR_NULL) {
+        *outLeafName = ZR_NULL;
+    }
+    if (outHasCall != ZR_NULL) {
+        *outHasCall = ZR_FALSE;
+    }
+    if (outCall != ZR_NULL) {
+        *outCall = ZR_NULL;
+    }
+
+    if (decoratorNode == ZR_NULL || decoratorNode->type != ZR_AST_DECORATOR_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    expr = decoratorNode->data.decoratorExpression.expr;
+    if (expr == ZR_NULL || expr->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    primary = &expr->data.primaryExpression;
+    if (!lsp_interface_text_equals(lsp_interface_identifier_node_text(primary->property), "zr") ||
+        primary->members == ZR_NULL || primary->members->count < 2 || primary->members->count > 3) {
+        return ZR_FALSE;
+    }
+
+    ffiMember = primary->members->nodes[0];
+    leafMember = primary->members->nodes[1];
+    if (!lsp_interface_text_equals(lsp_interface_member_property_text(ffiMember), "ffi")) {
+        return ZR_FALSE;
+    }
+
+    if (outLeafName != ZR_NULL) {
+        *outLeafName = lsp_interface_member_property_text(leafMember);
+        if (*outLeafName == ZR_NULL) {
+            return ZR_FALSE;
+        }
+    }
+
+    if (primary->members->count == 3) {
+        SZrAstNode *callNode = primary->members->nodes[2];
+        if (callNode == ZR_NULL || callNode->type != ZR_AST_FUNCTION_CALL) {
+            return ZR_FALSE;
+        }
+        if (outHasCall != ZR_NULL) {
+            *outHasCall = ZR_TRUE;
+        }
+        if (outCall != ZR_NULL) {
+            *outCall = &callNode->data.functionCall;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool lsp_interface_call_read_single_integer_arg(SZrFunctionCall *call, TZrInt64 *outValue) {
+    SZrAstNode *arg;
+
+    if (outValue != ZR_NULL) {
+        *outValue = 0;
+    }
+    if (call == ZR_NULL || call->args == ZR_NULL || call->args->count != 1) {
+        return ZR_FALSE;
+    }
+
+    arg = call->args->nodes[0];
+    if (arg == ZR_NULL || arg->type != ZR_AST_INTEGER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    if (outValue != ZR_NULL) {
+        *outValue = arg->data.integerLiteral.value;
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool lsp_interface_call_read_single_string_arg(SZrFunctionCall *call, const TZrChar **outValue) {
+    SZrAstNode *arg;
+
+    if (outValue != ZR_NULL) {
+        *outValue = ZR_NULL;
+    }
+    if (call == ZR_NULL || call->args == ZR_NULL || call->args->count != 1) {
+        return ZR_FALSE;
+    }
+
+    arg = call->args->nodes[0];
+    if (arg == ZR_NULL || arg->type != ZR_AST_STRING_LITERAL || arg->data.stringLiteral.value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (outValue != ZR_NULL) {
+        *outValue = ZrCore_String_GetNativeString(arg->data.stringLiteral.value);
+    }
+    return ZR_TRUE;
+}
+
+static void append_symbol_ffi_hover_metadata(SZrSymbol *symbol,
+                                             TZrChar *buffer,
+                                             TZrSize bufferSize,
+                                             TZrSize *used) {
+    SZrAstNodeArray *decorators;
+
+    if (symbol == ZR_NULL || symbol->astNode == ZR_NULL || buffer == ZR_NULL || used == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    decorators = lsp_interface_get_decorator_array_for_node(symbol->astNode);
+    if (decorators == ZR_NULL || decorators->nodes == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < decorators->count; index++) {
+        SZrAstNode *decoratorNode = decorators->nodes[index];
+        const TZrChar *leafName = ZR_NULL;
+        TZrBool hasCall = ZR_FALSE;
+        SZrFunctionCall *call = ZR_NULL;
+        TZrInt64 integerValue = 0;
+        const TZrChar *stringValue = ZR_NULL;
+        TZrChar metadataLine[96];
+
+        if (!lsp_interface_extract_ffi_decorator(decoratorNode, &leafName, &hasCall, &call) ||
+            leafName == ZR_NULL || !hasCall) {
+            continue;
+        }
+
+        metadataLine[0] = '\0';
+        switch (symbol->astNode->type) {
+            case ZR_AST_STRUCT_DECLARATION:
+                if (lsp_interface_text_equals(leafName, "pack") &&
+                    lsp_interface_call_read_single_integer_arg(call, &integerValue)) {
+                    snprintf(metadataLine, sizeof(metadataLine), "\nPack: %lld", (long long)integerValue);
+                } else if (lsp_interface_text_equals(leafName, "align") &&
+                           lsp_interface_call_read_single_integer_arg(call, &integerValue)) {
+                    snprintf(metadataLine, sizeof(metadataLine), "\nAlign: %lld", (long long)integerValue);
+                }
+                break;
+
+            case ZR_AST_STRUCT_FIELD:
+                if (lsp_interface_text_equals(leafName, "offset") &&
+                    lsp_interface_call_read_single_integer_arg(call, &integerValue)) {
+                    snprintf(metadataLine, sizeof(metadataLine), "\nOffset: %lld", (long long)integerValue);
+                }
+                break;
+
+            case ZR_AST_ENUM_DECLARATION:
+                if (lsp_interface_text_equals(leafName, "underlying") &&
+                    lsp_interface_call_read_single_string_arg(call, &stringValue) &&
+                    stringValue != ZR_NULL) {
+                    snprintf(metadataLine, sizeof(metadataLine), "\nUnderlying: %s", stringValue);
+                }
+                break;
+
+            case ZR_AST_ENUM_MEMBER:
+                if (lsp_interface_text_equals(leafName, "value") &&
+                    lsp_interface_call_read_single_integer_arg(call, &integerValue)) {
+                    snprintf(metadataLine, sizeof(metadataLine), "\nValue: %lld", (long long)integerValue);
+                }
+                break;
+
+            default:
+                break;
+        }
+
+        if (metadataLine[0] != '\0') {
+            append_buffer_text(buffer, bufferSize, used, metadataLine);
+        }
+    }
+}
+
+SZrString *ZrLanguageServer_Lsp_AppendSymbolFfiMetadataMarkdown(SZrState *state,
+                                                                SZrString *base,
+                                                                SZrSymbol *symbol) {
+    TZrNativeString baseText;
+    TZrSize baseLength;
+    TZrChar metadataBuffer[ZR_LSP_COMMENT_BUFFER_LENGTH];
+    TZrChar combinedBuffer[ZR_LSP_DOCUMENTATION_BUFFER_LENGTH];
+    TZrSize metadataUsed = 0;
+    TZrSize combinedUsed = 0;
+
+    if (state == ZR_NULL || base == ZR_NULL || symbol == ZR_NULL) {
+        return base;
+    }
+
+    metadataBuffer[0] = '\0';
+    append_symbol_ffi_hover_metadata(symbol, metadataBuffer, sizeof(metadataBuffer), &metadataUsed);
+    if (metadataUsed == 0) {
+        return base;
+    }
+
+    get_string_view(base, &baseText, &baseLength);
+    if (baseText == ZR_NULL || baseLength == 0 || strstr(baseText, metadataBuffer) != ZR_NULL) {
+        return base;
+    }
+
+    combinedBuffer[0] = '\0';
+    append_buffer_slice(combinedBuffer, sizeof(combinedBuffer), &combinedUsed, baseText, baseLength);
+    append_buffer_slice(combinedBuffer, sizeof(combinedBuffer), &combinedUsed, metadataBuffer, metadataUsed);
+    return ZrCore_String_Create(state, combinedBuffer, strlen(combinedBuffer));
 }
 
 static void append_cleaned_line_comment(const TZrChar *content,
@@ -520,6 +888,8 @@ SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state
             append_buffer_text(markdownBuffer, sizeof(markdownBuffer), &used, typeText);
         }
     }
+
+    append_symbol_ffi_hover_metadata(symbol, markdownBuffer, sizeof(markdownBuffer), &used);
 
     if (extract_leading_comment_text(content,
                                      contentLength,
@@ -1564,6 +1934,67 @@ static TZrBool copy_type_text_from_type_env(SZrState *state,
     return typeText != ZR_NULL && typeText[0] != '\0';
 }
 
+static TZrBool receiver_name_is_explicit_type_binding(SZrSemanticAnalyzer *analyzer, SZrString *receiverName) {
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
+        analyzer->compilerState->typeEnv == ZR_NULL || receiverName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return ZrParser_TypeEnvironment_LookupType(analyzer->compilerState->typeEnv, receiverName);
+}
+
+static TZrBool append_receiver_explicit_type_binding_completions(SZrState *state,
+                                                                 SZrLspProjectIndex *projectIndex,
+                                                                 SZrSemanticAnalyzer *analyzer,
+                                                                 SZrAstNode *ast,
+                                                                 SZrString *receiverName,
+                                                                 SZrArray *result) {
+    const TZrChar *typeText;
+    const SZrTypePrototypeInfo *prototype;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || receiverName == ZR_NULL || result == ZR_NULL ||
+        !receiver_name_is_explicit_type_binding(analyzer, receiverName)) {
+        return ZR_FALSE;
+    }
+
+    typeText = ZrCore_String_GetNativeString(receiverName);
+    if (typeText == ZR_NULL || typeText[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    prototype = find_type_prototype_by_text(analyzer, typeText);
+    if (prototype != ZR_NULL) {
+        append_type_prototype_member_completions(state, analyzer, prototype, ZR_TRUE, 0, result);
+        if (result->length > 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    if (append_type_symbol_member_completions_by_name(state, analyzer, typeText, ZR_TRUE, result)) {
+        return ZR_TRUE;
+    }
+
+    return append_receiver_native_type_completions(state,
+                                                   projectIndex,
+                                                   analyzer,
+                                                   ast,
+                                                   typeText,
+                                                   ZR_TRUE,
+                                                   result);
+}
+
+static TZrBool prototype_array_layout_matches(const SZrArray *array, TZrSize elementSize) {
+    if (array == ZR_NULL || !array->isValid || array->elementSize != elementSize) {
+        return ZR_FALSE;
+    }
+
+    if (array->length == 0) {
+        return ZR_TRUE;
+    }
+
+    return array->head != ZR_NULL && array->capacity >= array->length;
+}
+
 static SZrSymbol *lookup_receiver_symbol_at_offset(SZrSemanticAnalyzer *analyzer,
                                                    SZrString *uri,
                                                    const TZrChar *content,
@@ -1669,6 +2100,305 @@ static SZrFileRange receiver_project_member_lookup_range(SZrAstNode *declaration
     }
 
     return declarationNode->location;
+}
+
+static TZrBool receiver_project_identifier_boundary(const TZrChar *content,
+                                                    TZrSize contentLength,
+                                                    TZrSize offset) {
+    if (content == ZR_NULL || offset >= contentLength) {
+        return ZR_TRUE;
+    }
+
+    return !(isalnum((unsigned char)content[offset]) || content[offset] == '_');
+}
+
+static TZrBool receiver_project_try_member_name_range(const TZrChar *content,
+                                                      TZrSize contentLength,
+                                                      SZrString *uri,
+                                                      SZrAstNode *declarationNode,
+                                                      SZrString *memberName,
+                                                      SZrFileRange *outRange) {
+    TZrNativeString memberText;
+    TZrSize memberLength;
+    TZrSize searchStart;
+    TZrSize searchEnd;
+
+    if (content == ZR_NULL || declarationNode == ZR_NULL || memberName == ZR_NULL || outRange == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    get_string_view(memberName, &memberText, &memberLength);
+    if (memberText == ZR_NULL || memberLength == 0) {
+        return ZR_FALSE;
+    }
+
+    searchStart = declarationNode->location.start.offset <= contentLength
+                      ? declarationNode->location.start.offset
+                      : contentLength;
+    searchEnd = declarationNode->location.end.offset > searchStart &&
+                        declarationNode->location.end.offset <= contentLength
+                    ? declarationNode->location.end.offset
+                    : searchStart;
+
+    while (searchStart > 0 && content[searchStart - 1] != '\n' && content[searchStart - 1] != '\r') {
+        searchStart--;
+    }
+    while (searchEnd < contentLength && content[searchEnd] != '\n' && content[searchEnd] != '\r') {
+        searchEnd++;
+    }
+
+    for (TZrSize index = searchStart; index + memberLength <= searchEnd; index++) {
+        if (memcmp(content + index, memberText, memberLength) != 0) {
+            continue;
+        }
+
+        if (!receiver_project_identifier_boundary(content, contentLength, index == 0 ? contentLength : index - 1) ||
+            !receiver_project_identifier_boundary(content, contentLength, index + memberLength)) {
+            continue;
+        }
+
+        *outRange = ZrParser_FileRange_Create(
+            lsp_interface_support_file_position_from_offset(content, contentLength, index),
+            lsp_interface_support_file_position_from_offset(content, contentLength, index + memberLength),
+            uri);
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrFileRange receiver_project_member_declaration_range(SZrString *uri,
+                                                              const TZrChar *content,
+                                                              TZrSize contentLength,
+                                                              SZrAstNode *declarationNode,
+                                                              SZrString *memberName) {
+    SZrFileRange range;
+
+    if (declarationNode == ZR_NULL) {
+        return ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 0, 0),
+                                         ZrParser_FilePosition_Create(0, 0, 0),
+                                         ZR_NULL);
+    }
+
+    switch (declarationNode->type) {
+        case ZR_AST_CLASS_FIELD:
+            range = declarationNode->data.classField.nameLocation;
+            break;
+
+        case ZR_AST_STRUCT_FIELD:
+            if (receiver_project_try_member_name_range(content, contentLength, uri, declarationNode, memberName, &range)) {
+                return range;
+            }
+            range = declarationNode->location;
+            break;
+
+        case ZR_AST_CLASS_METHOD:
+            range = declarationNode->data.classMethod.nameLocation;
+            break;
+
+        case ZR_AST_STRUCT_METHOD:
+            if (receiver_project_try_member_name_range(content, contentLength, uri, declarationNode, memberName, &range)) {
+                return range;
+            }
+            range = declarationNode->location;
+            break;
+
+        case ZR_AST_CLASS_PROPERTY:
+            if (declarationNode->data.classProperty.modifier != ZR_NULL) {
+                return receiver_project_member_declaration_range(uri,
+                                                                 content,
+                                                                 contentLength,
+                                                                 declarationNode->data.classProperty.modifier,
+                                                                 memberName);
+            }
+            range = declarationNode->location;
+            break;
+
+        case ZR_AST_PROPERTY_GET:
+            range = declarationNode->data.propertyGet.nameLocation;
+            break;
+
+        case ZR_AST_PROPERTY_SET:
+            range = declarationNode->data.propertySet.nameLocation;
+            break;
+
+        case ZR_AST_ENUM_MEMBER:
+            if (receiver_project_try_member_name_range(content, contentLength, uri, declarationNode, memberName, &range)) {
+                return range;
+            }
+            range = declarationNode->location;
+            break;
+
+        default:
+            range = declarationNode->location;
+            break;
+    }
+
+    if (range.source == ZR_NULL) {
+        range.source = uri;
+    }
+    return range;
+}
+
+static TZrBool receiver_project_node_declares_type(SZrAstNode *node, SZrString *typeName) {
+    if (node == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_CLASS_DECLARATION:
+            return node->data.classDeclaration.name != ZR_NULL &&
+                   node->data.classDeclaration.name->name != ZR_NULL &&
+                   ZrLanguageServer_Lsp_StringsEqual(node->data.classDeclaration.name->name, typeName);
+
+        case ZR_AST_STRUCT_DECLARATION:
+            return node->data.structDeclaration.name != ZR_NULL &&
+                   node->data.structDeclaration.name->name != ZR_NULL &&
+                   ZrLanguageServer_Lsp_StringsEqual(node->data.structDeclaration.name->name, typeName);
+
+        case ZR_AST_ENUM_DECLARATION:
+            return node->data.enumDeclaration.name != ZR_NULL &&
+                   node->data.enumDeclaration.name->name != ZR_NULL &&
+                   ZrLanguageServer_Lsp_StringsEqual(node->data.enumDeclaration.name->name, typeName);
+
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static SZrAstNode *receiver_project_find_type_declaration_recursive(SZrAstNode *node, SZrString *typeName);
+
+static SZrAstNode *receiver_project_find_type_declaration_in_array(SZrAstNodeArray *nodes, SZrString *typeName) {
+    if (nodes == ZR_NULL || nodes->nodes == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < nodes->count; index++) {
+        SZrAstNode *match = receiver_project_find_type_declaration_recursive(nodes->nodes[index], typeName);
+        if (match != ZR_NULL) {
+            return match;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrAstNode *receiver_project_find_type_declaration_recursive(SZrAstNode *node, SZrString *typeName) {
+    if (node == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (receiver_project_node_declares_type(node, typeName)) {
+        return node;
+    }
+
+    switch (node->type) {
+        case ZR_AST_SCRIPT:
+            return receiver_project_find_type_declaration_in_array(node->data.script.statements, typeName);
+
+        case ZR_AST_BLOCK:
+            return receiver_project_find_type_declaration_in_array(node->data.block.body, typeName);
+
+        case ZR_AST_COMPILE_TIME_DECLARATION:
+            return receiver_project_find_type_declaration_recursive(node->data.compileTimeDeclaration.declaration,
+                                                                    typeName);
+
+        case ZR_AST_EXTERN_BLOCK:
+            return receiver_project_find_type_declaration_in_array(node->data.externBlock.declarations, typeName);
+
+        default:
+            return ZR_NULL;
+    }
+}
+
+static SZrAstNode *receiver_project_find_type_member_declaration(SZrAstNode *typeDeclaration,
+                                                                 SZrString *memberName,
+                                                                 EZrLspMetadataMemberKind *outKind) {
+    SZrAstNodeArray *members = ZR_NULL;
+
+    if (outKind != ZR_NULL) {
+        *outKind = ZR_LSP_METADATA_MEMBER_NONE;
+    }
+    if (typeDeclaration == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (typeDeclaration->type == ZR_AST_CLASS_DECLARATION) {
+        members = typeDeclaration->data.classDeclaration.members;
+    } else if (typeDeclaration->type == ZR_AST_STRUCT_DECLARATION) {
+        members = typeDeclaration->data.structDeclaration.members;
+    } else if (typeDeclaration->type == ZR_AST_ENUM_DECLARATION) {
+        members = typeDeclaration->data.enumDeclaration.members;
+    } else {
+        return ZR_NULL;
+    }
+
+    if (members == ZR_NULL || members->nodes == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < members->count; index++) {
+        SZrAstNode *member = members->nodes[index];
+        SZrString *name = ZR_NULL;
+        EZrLspMetadataMemberKind kind = ZR_LSP_METADATA_MEMBER_NONE;
+
+        if (member == ZR_NULL) {
+            continue;
+        }
+
+        switch (member->type) {
+            case ZR_AST_CLASS_FIELD:
+                name = member->data.classField.name != ZR_NULL ? member->data.classField.name->name : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_FIELD;
+                break;
+
+            case ZR_AST_STRUCT_FIELD:
+                name = member->data.structField.name != ZR_NULL ? member->data.structField.name->name : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_FIELD;
+                break;
+
+            case ZR_AST_CLASS_METHOD:
+                name = member->data.classMethod.name != ZR_NULL ? member->data.classMethod.name->name : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_METHOD;
+                break;
+
+            case ZR_AST_STRUCT_METHOD:
+                name = member->data.structMethod.name != ZR_NULL ? member->data.structMethod.name->name : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_METHOD;
+                break;
+
+            case ZR_AST_CLASS_PROPERTY:
+                if (member->data.classProperty.modifier != ZR_NULL) {
+                    if (member->data.classProperty.modifier->type == ZR_AST_PROPERTY_GET &&
+                        member->data.classProperty.modifier->data.propertyGet.name != ZR_NULL) {
+                        name = member->data.classProperty.modifier->data.propertyGet.name->name;
+                        kind = ZR_LSP_METADATA_MEMBER_FIELD;
+                    } else if (member->data.classProperty.modifier->type == ZR_AST_PROPERTY_SET &&
+                               member->data.classProperty.modifier->data.propertySet.name != ZR_NULL) {
+                        name = member->data.classProperty.modifier->data.propertySet.name->name;
+                        kind = ZR_LSP_METADATA_MEMBER_FIELD;
+                    }
+                }
+                break;
+
+            case ZR_AST_ENUM_MEMBER:
+                name = member->data.enumMember.name != ZR_NULL ? member->data.enumMember.name->name : ZR_NULL;
+                kind = ZR_LSP_METADATA_MEMBER_CONSTANT;
+                break;
+
+            default:
+                break;
+        }
+
+        if (name != ZR_NULL && ZrLanguageServer_Lsp_StringsEqual(name, memberName)) {
+            if (outKind != ZR_NULL) {
+                *outKind = kind;
+            }
+            return member;
+        }
+    }
+
+    return ZR_NULL;
 }
 
 static EZrLspMetadataMemberKind receiver_project_member_kind(const SZrTypeMemberInfo *memberInfo) {
@@ -1778,6 +2508,23 @@ static void receiver_project_member_set_type_text(SZrState *state,
             break;
     }
 
+    if (typeText != ZR_NULL && typeText[0] != '\0') {
+        outResolved->resolvedTypeText = ZrCore_String_Create(state, (TZrNativeString)typeText, strlen(typeText));
+    }
+}
+
+static void receiver_project_set_type_text_from_symbol(SZrState *state,
+                                                       SZrSymbol *symbol,
+                                                       SZrLspResolvedMetadataMember *outResolved) {
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+    const TZrChar *typeText;
+
+    if (state == ZR_NULL || symbol == ZR_NULL || symbol->typeInfo == ZR_NULL || outResolved == ZR_NULL ||
+        outResolved->resolvedTypeText != ZR_NULL) {
+        return;
+    }
+
+    typeText = ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
     if (typeText != ZR_NULL && typeText[0] != '\0') {
         outResolved->resolvedTypeText = ZrCore_String_Create(state, (TZrNativeString)typeText, strlen(typeText));
     }
@@ -2578,6 +3325,9 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
     SZrString *memberName = ZR_NULL;
     SZrTypePrototypeInfo *prototype = ZR_NULL;
     const SZrTypeMemberInfo *memberInfo = ZR_NULL;
+    SZrAstNode *typeDeclaration = ZR_NULL;
+    SZrAstNode *memberDeclaration = ZR_NULL;
+    EZrLspMetadataMemberKind memberDeclarationKind = ZR_LSP_METADATA_MEMBER_NONE;
     SZrFileRange declarationRange;
     SZrString *declarationUri;
     SZrLspProjectFileRecord *sourceRecord = ZR_NULL;
@@ -2673,22 +3423,89 @@ TZrBool ZrLanguageServer_Lsp_TryResolveReceiverProjectMember(SZrState *state,
         if (memberInfo->declarationNode != ZR_NULL) {
             declarationRange = receiver_project_member_lookup_range(memberInfo->declarationNode);
             declarationUri = declarationRange.source;
-            if (declarationUri != ZR_NULL && !ZrLanguageServer_Lsp_StringsEqual(declarationUri, uri)) {
+            if (declarationUri == ZR_NULL) {
+                declarationUri = uri;
+                declarationRange.source = uri;
+            }
+            if (declarationUri != ZR_NULL) {
                 if (projectIndex != ZR_NULL) {
                     sourceRecord = ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, declarationUri);
                     outResolved->module.projectIndex = projectIndex;
                     outResolved->module.sourceRecord = sourceRecord;
-                    outResolved->module.sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
+                    outResolved->module.sourceKind = receiver_project_member_source_kind(analyzer,
+                                                                                         sourceRecord,
+                                                                                         memberInfo->declarationNode,
+                                                                                         declarationRange);
                     if (sourceRecord != ZR_NULL) {
                         outResolved->module.moduleName = sourceRecord->moduleName;
                     }
                 }
                 if (outResolved->module.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED) {
-                    outResolved->module.sourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE;
+                    outResolved->module.sourceKind = receiver_project_member_source_kind(analyzer,
+                                                                                         sourceRecord,
+                                                                                         memberInfo->declarationNode,
+                                                                                         declarationRange);
                 }
+                outResolved->declarationAnalyzer = analyzer;
                 outResolved->declarationUri = declarationUri;
                 outResolved->declarationRange = declarationRange;
                 outResolved->hasDeclaration = ZR_TRUE;
+                outResolved->declarationSymbol =
+                    ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(analyzer, declarationRange);
+                receiver_project_set_type_text_from_symbol(state, outResolved->declarationSymbol, outResolved);
+            }
+        }
+    }
+
+    if (!outResolved->hasDeclaration) {
+        typeDeclaration = receiver_project_find_type_declaration_recursive(ast, typeName);
+        memberDeclaration = receiver_project_find_type_member_declaration(typeDeclaration,
+                                                                          memberName,
+                                                                          &memberDeclarationKind);
+        if (memberDeclaration != ZR_NULL && memberDeclarationKind != ZR_LSP_METADATA_MEMBER_NONE) {
+            if (outResolved->memberName == ZR_NULL) {
+                outResolved->memberName = memberName;
+            }
+            if (outResolved->memberKind == ZR_LSP_METADATA_MEMBER_NONE) {
+                outResolved->memberKind = memberDeclarationKind;
+            }
+            if (outResolved->ownerTypeName == ZR_NULL) {
+                outResolved->ownerTypeName = prototype != ZR_NULL ? prototype->name : typeName;
+            }
+
+            declarationRange = receiver_project_member_declaration_range(uri,
+                                                                         content,
+                                                                         contentLength,
+                                                                         memberDeclaration,
+                                                                         memberName);
+            declarationUri = declarationRange.source != ZR_NULL ? declarationRange.source : uri;
+            if (declarationUri != ZR_NULL) {
+                declarationRange.source = declarationUri;
+                if (projectIndex != ZR_NULL) {
+                    sourceRecord = ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, declarationUri);
+                    outResolved->module.projectIndex = projectIndex;
+                    outResolved->module.sourceRecord = sourceRecord;
+                    outResolved->module.sourceKind = receiver_project_member_source_kind(analyzer,
+                                                                                         sourceRecord,
+                                                                                         memberDeclaration,
+                                                                                         declarationRange);
+                    if (sourceRecord != ZR_NULL) {
+                        outResolved->module.moduleName = sourceRecord->moduleName;
+                    }
+                }
+                if (outResolved->module.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED) {
+                    outResolved->module.sourceKind = receiver_project_member_source_kind(analyzer,
+                                                                                         sourceRecord,
+                                                                                         memberDeclaration,
+                                                                                         declarationRange);
+                }
+                outResolved->declarationAnalyzer = analyzer;
+                outResolved->declarationUri = declarationUri;
+                outResolved->declarationRange = declarationRange;
+                outResolved->hasDeclaration = ZR_TRUE;
+                outResolved->declarationSymbol =
+                    ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(analyzer, declarationRange);
+                receiver_project_set_type_text_from_symbol(state, outResolved->declarationSymbol, outResolved);
             }
         }
     }
@@ -2725,37 +3542,40 @@ static void append_type_prototype_member_completions(SZrState *state,
         return;
     }
 
-    for (TZrSize index = 0; index < prototype->members.length; index++) {
-        const SZrTypeMemberInfo *member =
-            (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&prototype->members, index);
-        const TZrChar *kind = ZR_NULL;
-        SZrString *displayName = ZR_NULL;
+    if (prototype_array_layout_matches(&prototype->members, sizeof(SZrTypeMemberInfo))) {
+        for (TZrSize index = 0; index < prototype->members.length; index++) {
+            const SZrTypeMemberInfo *member =
+                (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&prototype->members, index);
+            const TZrChar *kind = ZR_NULL;
+            SZrString *displayName = ZR_NULL;
 
-        if (member == ZR_NULL || member->name == ZR_NULL || member->isMetaMethod || member->isStatic != wantStatic) {
-            continue;
-        }
+            if (member == ZR_NULL || member->name == ZR_NULL || member->isMetaMethod ||
+                member->isStatic != wantStatic) {
+                continue;
+            }
 
-        displayName = completion_type_member_display_name(state, member, &kind);
-        switch (member->memberType) {
-            case ZR_AST_CLASS_FIELD:
-            case ZR_AST_STRUCT_FIELD:
-                kind = "field";
-                break;
-            case ZR_AST_CLASS_PROPERTY:
-                kind = "property";
-                break;
-            case ZR_AST_CLASS_METHOD:
-            case ZR_AST_STRUCT_METHOD:
-                if (kind == ZR_NULL) {
-                    kind = "method";
-                }
-                break;
-            default:
-                break;
-        }
+            displayName = completion_type_member_display_name(state, member, &kind);
+            switch (member->memberType) {
+                case ZR_AST_CLASS_FIELD:
+                case ZR_AST_STRUCT_FIELD:
+                    kind = "field";
+                    break;
+                case ZR_AST_CLASS_PROPERTY:
+                    kind = "property";
+                    break;
+                case ZR_AST_CLASS_METHOD:
+                case ZR_AST_STRUCT_METHOD:
+                    if (kind == ZR_NULL) {
+                        kind = "method";
+                    }
+                    break;
+                default:
+                    break;
+            }
 
-        if (kind != ZR_NULL && displayName != ZR_NULL) {
-            append_completion_item_for_symbol_name(state, result, displayName, kind);
+            if (kind != ZR_NULL && displayName != ZR_NULL) {
+                append_completion_item_for_symbol_name(state, result, displayName, kind);
+            }
         }
     }
 
@@ -2772,22 +3592,24 @@ static void append_type_prototype_member_completions(SZrState *state,
         }
     }
 
-    for (TZrSize index = 0; index < prototype->inherits.length; index++) {
-        SZrString **inheritPtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&prototype->inherits, index);
-        const SZrTypePrototypeInfo *basePrototype;
+    if (prototype_array_layout_matches(&prototype->inherits, sizeof(SZrString *))) {
+        for (TZrSize index = 0; index < prototype->inherits.length; index++) {
+            SZrString **inheritPtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&prototype->inherits, index);
+            const SZrTypePrototypeInfo *basePrototype;
 
-        if (inheritPtr == ZR_NULL || *inheritPtr == ZR_NULL) {
-            continue;
-        }
+            if (inheritPtr == ZR_NULL || *inheritPtr == ZR_NULL) {
+                continue;
+            }
 
-        basePrototype = find_type_prototype_by_text(analyzer, ZrCore_String_GetNativeString(*inheritPtr));
-        if (basePrototype != ZR_NULL && basePrototype != prototype) {
-            append_type_prototype_member_completions(state,
-                                                     analyzer,
-                                                     basePrototype,
-                                                     wantStatic,
-                                                     depth + 1,
-                                                     result);
+            basePrototype = find_type_prototype_by_text(analyzer, ZrCore_String_GetNativeString(*inheritPtr));
+            if (basePrototype != ZR_NULL && basePrototype != prototype) {
+                append_type_prototype_member_completions(state,
+                                                         analyzer,
+                                                         basePrototype,
+                                                         wantStatic,
+                                                         depth + 1,
+                                                         result);
+            }
         }
     }
 }
@@ -2816,7 +3638,9 @@ static TZrBool append_receiver_symbol_type_completions(SZrState *state,
     prototype = find_type_prototype_by_text(analyzer, typeText);
     if (prototype != ZR_NULL) {
         append_type_prototype_member_completions(state, analyzer, prototype, wantStatic, 0, result);
-        return result->length > 0;
+        if (result->length > 0) {
+            return ZR_TRUE;
+        }
     }
 
     if (append_type_symbol_member_completions_by_name(state, analyzer, typeText, wantStatic, result)) {
@@ -2869,8 +3693,10 @@ static TZrBool append_receiver_name_type_env_completions(SZrState *state,
     prototype = find_type_prototype_by_text(analyzer, typeText);
     if (prototype != ZR_NULL) {
         append_type_prototype_member_completions(state, analyzer, prototype, wantStatic, 0, result);
-        ZrParser_InferredType_Free(state, &inferredType);
-        return result->length > 0;
+        if (result->length > 0) {
+            ZrParser_InferredType_Free(state, &inferredType);
+            return ZR_TRUE;
+        }
     }
 
     if (append_type_symbol_member_completions_by_name(state, analyzer, typeText, wantStatic, result)) {
@@ -2904,11 +3730,12 @@ static TZrBool append_imported_type_receiver_completions(SZrState *state,
     SZrFileRange queryRange;
     SZrLspSemanticImportChainHit hit;
     const SZrTypePrototypeInfo *prototype;
+    SZrSemanticAnalyzer *declarationAnalyzer;
+    SZrSymbol *declarationSymbol;
     TZrBool appended = ZR_FALSE;
 
     if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL ||
-        uri == ZR_NULL || content == ZR_NULL || result == ZR_NULL || receiverStart == 0 ||
-        content[receiverStart - 1] != '.') {
+        uri == ZR_NULL || content == ZR_NULL || result == ZR_NULL || receiverStart >= contentLength) {
         return ZR_FALSE;
     }
 
@@ -2932,29 +3759,48 @@ static TZrBool append_imported_type_receiver_completions(SZrState *state,
                                                                 &bindings,
                                                                 queryRange,
                                                                 &hit) ||
-        hit.resolvedMember.memberKind != ZR_LSP_METADATA_MEMBER_TYPE ||
-        hit.resolvedMember.declarationAnalyzer == ZR_NULL ||
-        hit.resolvedMember.declarationSymbol == ZR_NULL) {
+        hit.resolvedMember.memberKind != ZR_LSP_METADATA_MEMBER_TYPE) {
         ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
         return ZR_FALSE;
     }
 
-    if (hit.resolvedMember.declarationSymbol->type == ZR_SYMBOL_CLASS) {
+    declarationAnalyzer = hit.resolvedMember.declarationAnalyzer;
+    declarationSymbol = hit.resolvedMember.declarationSymbol;
+    if (declarationAnalyzer == ZR_NULL &&
+        hit.resolvedMember.module.sourceRecord != ZR_NULL &&
+        hit.resolvedMember.module.sourceRecord->uri != ZR_NULL) {
+        declarationAnalyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state,
+                                                                       context,
+                                                                       hit.resolvedMember.module.sourceRecord->uri);
+    }
+    if (declarationSymbol == ZR_NULL &&
+        declarationAnalyzer != ZR_NULL &&
+        declarationAnalyzer->symbolTable != ZR_NULL &&
+        hit.resolvedMember.memberName != ZR_NULL) {
+        declarationSymbol = ZrLanguageServer_SymbolTable_Lookup(declarationAnalyzer->symbolTable,
+                                                                hit.resolvedMember.memberName,
+                                                                ZR_NULL);
+    }
+    if (declarationAnalyzer == ZR_NULL || declarationSymbol == ZR_NULL) {
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        return ZR_FALSE;
+    }
+
+    if (declarationSymbol->type == ZR_SYMBOL_CLASS) {
         append_class_member_completions_recursive(state,
-                                                  hit.resolvedMember.declarationAnalyzer,
-                                                  hit.resolvedMember.declarationSymbol,
+                                                  declarationAnalyzer,
+                                                  declarationSymbol,
                                                   ZR_TRUE,
                                                   0,
                                                   result);
         appended = result->length > 0;
-    } else if (hit.resolvedMember.declarationSymbol->type == ZR_SYMBOL_STRUCT &&
-               hit.resolvedMember.declarationSymbol->name != ZR_NULL) {
-        prototype = find_type_prototype_by_text(hit.resolvedMember.declarationAnalyzer,
-                                                ZrCore_String_GetNativeString(
-                                                    hit.resolvedMember.declarationSymbol->name));
+    } else if (declarationSymbol->type == ZR_SYMBOL_STRUCT &&
+               declarationSymbol->name != ZR_NULL) {
+        prototype = find_type_prototype_by_text(declarationAnalyzer,
+                                                ZrCore_String_GetNativeString(declarationSymbol->name));
         if (prototype != ZR_NULL) {
             append_type_prototype_member_completions(state,
-                                                     hit.resolvedMember.declarationAnalyzer,
+                                                     declarationAnalyzer,
                                                      prototype,
                                                      ZR_TRUE,
                                                      0,
@@ -2962,8 +3808,8 @@ static TZrBool append_imported_type_receiver_completions(SZrState *state,
             appended = result->length > 0;
         } else {
             append_struct_member_completions_recursive(state,
-                                                       hit.resolvedMember.declarationAnalyzer,
-                                                       hit.resolvedMember.declarationSymbol,
+                                                       declarationAnalyzer,
+                                                       declarationSymbol,
                                                        ZR_TRUE,
                                                        0,
                                                        result);
@@ -3413,6 +4259,7 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                            TZrSize contentLength,
                                                            TZrSize cursorOffset,
                                                            SZrArray *result) {
+    TZrSize memberDotOffset;
     TZrSize receiverEnd;
     TZrSize receiverStart;
     TZrSize receiverLength;
@@ -3425,12 +4272,19 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
     TZrSize bestOffset = 0;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL || content == ZR_NULL ||
-        result == ZR_NULL || cursorOffset == 0 || cursorOffset > contentLength ||
-        content[cursorOffset - 1] != '.') {
+        result == ZR_NULL || cursorOffset > contentLength) {
         return ZR_FALSE;
     }
 
-    receiverEnd = cursorOffset - 1;
+    if (cursorOffset < contentLength && content[cursorOffset] == '.') {
+        memberDotOffset = cursorOffset;
+    } else if (cursorOffset > 0 && content[cursorOffset - 1] == '.') {
+        memberDotOffset = cursorOffset - 1;
+    } else {
+        return ZR_FALSE;
+    }
+
+    receiverEnd = memberDotOffset;
     receiverTypeName[0] = '\0';
     receiverStart = receiverEnd;
     while (receiverStart > 0) {
@@ -3488,19 +4342,58 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
     if (receiverSymbol != ZR_NULL && receiverSymbol->type == ZR_SYMBOL_CLASS) {
         classSymbol = receiverSymbol;
         wantStatic = ZR_TRUE;
+    } else if (receiverSymbol == ZR_NULL &&
+               receiver_name_is_explicit_type_binding(analyzer, receiverName)) {
+        wantStatic = ZR_TRUE;
+        if (append_receiver_explicit_type_binding_completions(state,
+                                                              projectIndex,
+                                                              analyzer,
+                                                              ast,
+                                                              receiverName,
+                                                               result)) {
+            return ZR_TRUE;
+        }
+    }
+
+    if (receiverSymbol == ZR_NULL &&
+        append_imported_type_receiver_completions(state,
+                                                  context,
+                                                  projectIndex,
+                                                  analyzer,
+                                                  ast,
+                                                  uri,
+                                                  content,
+                                                  contentLength,
+                                                  receiverStart,
+                                                  result)) {
+        return ZR_TRUE;
     }
 
     if (!wantStatic) {
         find_receiver_variable_prototype_recursive(state,
-                                                  analyzer,
-                                                  ast,
-                                                  content + receiverStart,
+                                                   analyzer,
+                                                   ast,
+                                                   content + receiverStart,
                                                   receiverLength,
                                                   cursorOffset,
                                                   &receiverPrototype,
-                                                  receiverTypeName,
-                                                  sizeof(receiverTypeName),
-                                                  &bestOffset);
+                                                   receiverTypeName,
+                                                   sizeof(receiverTypeName),
+                                                   &bestOffset);
+        if (receiverTypeName[0] != '\0') {
+            receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
+        }
+        if (receiverTypeName[0] != '\0' &&
+            (receiverPrototype == ZR_NULL || receiverPrototype->isImportedNative) &&
+            append_receiver_native_type_completions(state,
+                                                    projectIndex,
+                                                    analyzer,
+                                                    ast,
+                                                    receiverTypeName,
+                                                    ZR_FALSE,
+                                                    result)) {
+            return ZR_TRUE;
+        }
         if (receiverPrototype != ZR_NULL) {
             append_type_prototype_member_completions(state,
                                                      analyzer,
@@ -3569,19 +4462,19 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
     }
 
     if (append_receiver_symbol_type_completions(state,
-                                                       projectIndex,
-                                                       analyzer,
-                                                       ast,
-                                                       receiverSymbol,
-                                                       ZR_FALSE,
-                                                       result)) {
+                                                projectIndex,
+                                                analyzer,
+                                                ast,
+                                                receiverSymbol,
+                                                wantStatic,
+                                                result)) {
         return ZR_TRUE;
     } else if (append_receiver_name_type_env_completions(state,
                                                          projectIndex,
                                                          analyzer,
                                                          ast,
                                                          receiverName,
-                                                         ZR_FALSE,
+                                                         wantStatic,
                                                          result)) {
         return ZR_TRUE;
     } else {
@@ -3595,6 +4488,20 @@ TZrBool ZrLanguageServer_Lsp_TryCollectReceiverCompletions(SZrState *state,
                                                   receiverTypeName,
                                                   sizeof(receiverTypeName),
                                                   &bestOffset);
+        if (receiverTypeName[0] != '\0') {
+            receiverPrototype = find_type_prototype_by_text(analyzer, receiverTypeName);
+        }
+        if (receiverTypeName[0] != '\0' &&
+            (receiverPrototype == ZR_NULL || receiverPrototype->isImportedNative) &&
+            append_receiver_native_type_completions(state,
+                                                    projectIndex,
+                                                    analyzer,
+                                                    ast,
+                                                    receiverTypeName,
+                                                    ZR_FALSE,
+                                                    result)) {
+            return ZR_TRUE;
+        }
         if (receiverPrototype != ZR_NULL) {
             append_type_prototype_member_completions(state,
                                                      analyzer,

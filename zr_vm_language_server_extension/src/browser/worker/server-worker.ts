@@ -208,6 +208,16 @@ connection.onWorkspaceSymbol(async ({ query }) => {
     return responseData<unknown[]>(response, []);
 });
 
+connection.onRequest('zr/nativeDeclarationDocument', async ({ uri }: { uri: string }) => {
+    const response = await bridge.getNativeDeclarationDocument(uri);
+    return responseData<string | null>(response, null);
+});
+
+connection.onRequest('zr/projectModules', async ({ uri }: { uri: string }) => {
+    const response = await bridge.getProjectModules(uri);
+    return responseData<unknown[]>(response, []);
+});
+
 connection.onDocumentHighlight(async ({ textDocument, position }) => {
     const response = await bridge.getDocumentHighlights(textDocument.uri, position.line, position.character);
     return responseData<DocumentHighlight[]>(response, []);

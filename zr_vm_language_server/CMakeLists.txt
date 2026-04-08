@@ -171,7 +171,7 @@ if(BUILD_WASM)
         # 使用 EMSCRIPTEN_KEEPALIVE + EXPORTED_FUNCTIONS 导出函数
         # 函数已在 wasm_exports.cpp 中使用 EMSCRIPTEN_KEEPALIVE 标记
         # 注意：函数名使用 wasm_ 前缀以避免与原始 LSP 函数冲突
-        set(EXPORTED_FUNCTIONS_JSON "[\"_malloc\",\"_free\",\"_wasm_malloc\",\"_wasm_free\",\"_wasm_ZrLspContextNew\",\"_wasm_ZrLspContextFree\",\"_wasm_ZrLspUpdateDocument\",\"_wasm_ZrLspCloseDocument\",\"_wasm_ZrLspGetDiagnostics\",\"_wasm_ZrLspGetCompletion\",\"_wasm_ZrLspGetHover\",\"_wasm_ZrLspGetDefinition\",\"_wasm_ZrLspFindReferences\",\"_wasm_ZrLspRename\",\"_wasm_ZrLspGetDocumentSymbols\",\"_wasm_ZrLspGetWorkspaceSymbols\",\"_wasm_ZrLspGetDocumentHighlights\",\"_wasm_ZrLspGetSemanticTokens\",\"_wasm_ZrLspPrepareRename\"]")
+        set(EXPORTED_FUNCTIONS_JSON "[\"_malloc\",\"_free\",\"_wasm_malloc\",\"_wasm_free\",\"_wasm_ZrLspContextNew\",\"_wasm_ZrLspContextFree\",\"_wasm_ZrLspUpdateDocument\",\"_wasm_ZrLspCloseDocument\",\"_wasm_ZrLspGetDiagnostics\",\"_wasm_ZrLspGetCompletion\",\"_wasm_ZrLspGetHover\",\"_wasm_ZrLspGetDefinition\",\"_wasm_ZrLspFindReferences\",\"_wasm_ZrLspRename\",\"_wasm_ZrLspGetDocumentSymbols\",\"_wasm_ZrLspGetWorkspaceSymbols\",\"_wasm_ZrLspGetNativeDeclarationDocument\",\"_wasm_ZrLspGetProjectModules\",\"_wasm_ZrLspGetDocumentHighlights\",\"_wasm_ZrLspGetSemanticTokens\",\"_wasm_ZrLspPrepareRename\"]")
         
         # 设置 Emscripten 编译选项
         target_compile_options(${zr_curr_module_name}_wasm PRIVATE

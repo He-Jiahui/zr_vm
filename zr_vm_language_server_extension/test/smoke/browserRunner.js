@@ -451,6 +451,13 @@ function commandArguments(node) {
     return Array.isArray(node?.commandArguments) ? node.commandArguments : [];
 }
 
+function findImmediateGroupNode(node, label) {
+    return findImmediateStructureNode(
+        structureChildren(node),
+        (child) => child?.nodeType === 'group' && child.label === label,
+    );
+}
+
 async function verifyActiveSelection(uriSuffix, line, character, label) {
     await withRetry(
         async () => vscode.window.activeTextEditor,
@@ -647,77 +654,75 @@ async function verifyStructureViews(workspaceRoot) {
     const mainUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_smoke_main.zr');
     const helperUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_helper.zr');
     const cycleUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'structure_cycle.zr');
+    const alternateProjectRootUri = vscode.Uri.joinPath(workspaceRoot, '.structure_selected_project_smoke');
+    const alternateProjectUri = vscode.Uri.joinPath(alternateProjectRootUri, 'structure_selected_project_smoke.zrp');
+    const alternateProjectSrcUri = vscode.Uri.joinPath(alternateProjectRootUri, 'src');
+    const alternateProjectMainUri = vscode.Uri.joinPath(alternateProjectSrcUri, 'main.zr');
 
     await vscode.workspace.fs.writeFile(mainUri, new TextEncoder().encode(STRUCTURE_SMOKE_MAIN_SOURCE));
     await vscode.workspace.fs.writeFile(helperUri, new TextEncoder().encode(STRUCTURE_SMOKE_HELPER_SOURCE));
     await vscode.workspace.fs.writeFile(cycleUri, new TextEncoder().encode(STRUCTURE_SMOKE_CYCLE_SOURCE));
-
     try {
         const mainDocument = await openDocument(mainUri);
         const totalDefinitionPosition = findPositionBySubstring(mainDocument, 'pub total(): int {', 0, 4);
-        const helperImportPosition = findPositionBySubstring(
+        const nativeImportPosition = findPositionBySubstring(
             mainDocument,
-            'var helper = %import("structure_helper");',
+            '"zr.system"',
             0,
-            0,
+            1,
         );
-        const helperDocument = await vscode.workspace.openTextDocument(helperUri);
-        const helperValuePosition = findPositionBySubstring(helperDocument, 'pub var value = () => {', 0, 8);
+        const extension = vscode.extensions.all.find((item) => item.packageJSON?.name === 'zr-vm-language-server');
+
+        assert(extension?.packageJSON?.contributes?.views?.zr?.some((view) =>
+            view.id === 'zrFiles' && view.name === 'Current File Structure'),
+        'Expected zrFiles view to be renamed to Current File Structure');
+        assert(extension?.packageJSON?.contributes?.views?.zr?.some((view) =>
+            view.id === 'zrImports' && view.name === 'Selected Project'),
+        'Expected zrImports view to be renamed to Selected Project');
+        assert((await vscode.commands.getCommands(true)).includes('zr.selectProject'),
+            'Expected zr.selectProject to be registered in web mode');
+        assert((await vscode.commands.getCommands(true)).includes('zr.runSelectedProject'),
+            'Expected zr.runSelectedProject to be registered in web mode');
+        assert((await vscode.commands.getCommands(true)).includes('zr.debugSelectedProject'),
+            'Expected zr.debugSelectedProject to be registered in web mode');
 
         await vscode.commands.executeCommand('zr.structure.refresh');
+        await withRetry(
+            async () => vscode.window.activeTextEditor,
+            (editor) => editor?.document?.uri?.toString() === mainUri.toString(),
+            15000,
+            'structure refresh preserves active editor',
+        );
         const snapshot = await withRetry(
             async () => vscode.commands.executeCommand('zr.__inspectStructureViews'),
-            (value) => Array.isArray(value?.files) && Array.isArray(value?.imports),
+            (value) => Array.isArray(value?.files) && Array.isArray(value?.project),
             15000,
             'structure view snapshot',
         );
 
-        const projectNode = findStructureNode(
+        const mainFileNode = findImmediateStructureNode(
             snapshot.files,
-            (node) => node.nodeType === 'project' && node.label === 'import_basic',
+            (node) => node.nodeType === 'file' && node.label === 'structure_smoke_main',
         );
-        assert(projectNode, 'Expected structure views to group files under the owning .zrp project');
+        assert(mainFileNode, 'Expected the Current File Structure view to render the active .zr file as the root node');
 
-        const mainFileNode = findStructureNode(
-            snapshot.files,
-            (node) => node.nodeType === 'file' && node.moduleName === 'structure_smoke_main',
-        );
-        assert(mainFileNode, 'Expected ZR Files view to include structure_smoke_main');
-
-        const mainImportsGroup = findStructureNode(
-            structureChildren(mainFileNode),
-            (node) => node.nodeType === 'imports',
-        );
-        const mainDeclarationsGroup = findImmediateStructureNode(
-            structureChildren(mainFileNode),
-            (node) => node.nodeType === 'declarations',
-        );
+        const mainImportsGroup = findImmediateGroupNode(mainFileNode, 'Imports');
+        const mainDeclarationsGroup = findImmediateGroupNode(mainFileNode, 'Declarations');
         assert(mainImportsGroup, 'Expected structure_smoke_main to include an Imports group');
         assert(mainDeclarationsGroup, 'Expected structure_smoke_main to include a Declarations group');
         assert(
             findStructureNode(
                 structureChildren(mainImportsGroup),
-                (node) => node.nodeType === 'import' && node.moduleName === 'structure_helper',
+                (node) => node.nodeType === 'import' && node.label === 'structure_helper',
             ),
             'Expected Imports group to include workspace import structure_helper',
         );
         assert(
             findStructureNode(
                 structureChildren(mainImportsGroup),
-                (node) => node.nodeType === 'import' && node.moduleName === 'zr.system' && node.description === 'builtin',
+                (node) => node.nodeType === 'import' && node.label === 'zr.system',
             ),
             'Expected Imports group to include builtin import zr.system',
-        );
-        const builtinSystemImportNode = findStructureNode(
-            structureChildren(mainImportsGroup),
-            (node) => node.nodeType === 'import' && node.moduleName === 'zr.system',
-        );
-        assert(
-            findStructureNode(
-                structureChildren(builtinSystemImportNode),
-                (node) => node.nodeType === 'module' && node.moduleName === 'zr.system.fs',
-            ),
-            'Expected builtin import zr.system to expose builtin child modules',
         );
         assert(
             findStructureNode(
@@ -741,55 +746,47 @@ async function verifyStructureViews(workspaceRoot) {
             'Expected Declarations group to include %test symbol structureViewSmoke',
         );
 
-        const mainImportRoot = findStructureNode(
-            snapshot.imports,
-            (node) => node.nodeType === 'module' && node.moduleName === 'structure_smoke_main',
+        const projectActionSelectNode = findImmediateStructureNode(
+            snapshot.project,
+            (node) => node.nodeType === 'action' && node.label === 'Select Project',
         );
-        assert(mainImportRoot, 'Expected ZR Imports view to include structure_smoke_main root module');
-
-        const helperModuleNode = findStructureNode(
-            structureChildren(mainImportRoot),
-            (node) => node.nodeType === 'module' && node.moduleName === 'structure_helper',
+        const projectActionRunNode = findImmediateStructureNode(
+            snapshot.project,
+            (node) => node.nodeType === 'action' && node.label === 'Run Selected Project',
         );
-        assert(helperModuleNode, 'Expected import tree to include structure_helper module');
-        const builtinSystemModuleNode = findStructureNode(
-            structureChildren(mainImportRoot),
-            (node) => node.nodeType === 'module' && node.moduleName === 'zr.system',
+        const projectActionDebugNode = findImmediateStructureNode(
+            snapshot.project,
+            (node) => node.nodeType === 'action' && node.label === 'Debug Selected Project',
         );
         assert(
-            findStructureNode(
-                structureChildren(builtinSystemModuleNode),
-                (node) => node.nodeType === 'module' && node.moduleName === 'zr.system.vm',
-            ),
-            'Expected import tree to expand builtin modules such as zr.system',
+            projectActionSelectNode?.commandId === 'zr.selectProject' &&
+            projectActionRunNode?.commandId === 'zr.runSelectedProject' &&
+            projectActionDebugNode?.commandId === 'zr.debugSelectedProject',
+            'Expected Selected Project view actions to expose select/run/debug commands in web mode',
         );
 
-        const helperDeclarationsGroup = findImmediateStructureNode(
-            structureChildren(helperModuleNode),
-            (node) => node.nodeType === 'declarations',
+        const selectedProjectNode = findStructureNode(
+            snapshot.project,
+            (node) => node.nodeType === 'project' && node.label === 'import_basic',
         );
-        assert(helperDeclarationsGroup, 'Expected structure_helper module to expose a Declarations group');
-        assert(
-            findStructureNode(
-                structureChildren(helperDeclarationsGroup),
-                (node) => node.nodeType === 'declaration' && node.label === 'value',
-            ),
-            'Expected helper module Declarations group to include value',
-        );
+        assert(selectedProjectNode, 'Expected the Selected Project view to render the auto-selected import_basic project');
 
-        const cycleModuleNode = findStructureNode(
-            structureChildren(helperModuleNode),
-            (node) => node.nodeType === 'module' && node.moduleName === 'structure_cycle',
-        );
-        assert(cycleModuleNode, 'Expected import tree to include structure_cycle under structure_helper');
+        const projectModulesGroup = findImmediateGroupNode(selectedProjectNode, 'Project Modules');
+        const nativeModulesGroup = findImmediateGroupNode(selectedProjectNode, 'Native Modules');
+        const binaryModulesGroup = findImmediateGroupNode(selectedProjectNode, 'Binary Modules');
+        assert(projectModulesGroup, 'Expected the selected project view to include a Project Modules group');
+        assert(nativeModulesGroup, 'Expected the selected project view to include a Native Modules group');
+        assert(binaryModulesGroup, 'Expected the selected project view to include a Binary Modules group');
         assert(
             findStructureNode(
-                structureChildren(cycleModuleNode),
-                (node) => node.nodeType === 'module' &&
-                    node.moduleName === 'structure_helper' &&
-                    node.isRecursiveReference === true,
+                structureChildren(projectModulesGroup),
+                (node) => node.nodeType === 'module' && node.label === 'main',
             ),
-            'Expected cycle back-edge to structure_helper to be marked as a recursive reference',
+            'Expected Project Modules to include the selected project entry module',
+        );
+        const nativeProjectModuleNode = findStructureNode(
+            structureChildren(nativeModulesGroup),
+            (node) => node.nodeType === 'module',
         );
 
         const totalNode = findStructureNode(
@@ -798,35 +795,124 @@ async function verifyStructureViews(workspaceRoot) {
         );
         assert(totalNode?.commandId, 'Expected declaration node total to expose a navigation command');
         await vscode.commands.executeCommand(totalNode.commandId, ...commandArguments(totalNode));
-        await verifyActiveSelection(
-            '/src/structure_smoke_main.zr',
-            totalDefinitionPosition.line,
-            totalDefinitionPosition.character,
+        await withRetry(
+            async () => vscode.window.activeTextEditor,
+            (editor) => uriPath(editor?.document?.uri).endsWith('/src/structure_smoke_main.zr') &&
+                editor?.selection?.active?.line === totalDefinitionPosition.line,
+            15000,
             'structure declaration navigation',
         );
 
         const helperImportNode = findStructureNode(
             structureChildren(mainImportsGroup),
-            (node) => node.nodeType === 'import' && node.moduleName === 'structure_helper',
+            (node) => node.nodeType === 'import' && node.label === 'structure_helper',
         );
         assert(helperImportNode?.commandId, 'Expected import node structure_helper to expose a navigation command');
         await vscode.commands.executeCommand(helperImportNode.commandId, ...commandArguments(helperImportNode));
-        await verifyActiveSelection(
-            '/src/structure_smoke_main.zr',
-            helperImportPosition.line,
-            helperImportPosition.character,
-            'structure import navigation',
+        await withRetry(
+            async () => vscode.window.activeTextEditor,
+            (editor) => uriPath(editor?.document?.uri).endsWith('/src/structure_helper.zr'),
+            15000,
+            'workspace import definition navigation',
         );
 
-        assert(helperModuleNode?.commandId, 'Expected helper module node to expose a navigation command');
-        await vscode.commands.executeCommand(helperModuleNode.commandId, ...commandArguments(helperModuleNode));
-        await verifyActiveSelection(
-            '/src/structure_helper.zr',
-            helperValuePosition.line,
-            helperValuePosition.character,
-            'structure module navigation',
+        await vscode.window.showTextDocument(mainDocument, { preview: false });
+        const nativeImportNode = findStructureNode(
+            structureChildren(mainImportsGroup),
+            (node) => node.nodeType === 'import' && node.label === 'zr.system',
         );
+        assert(nativeImportNode?.commandId, 'Expected native import node zr.system to expose a navigation command');
+        await vscode.commands.executeCommand(nativeImportNode.commandId, ...commandArguments(nativeImportNode));
+        await withRetry(
+            async () => vscode.window.activeTextEditor,
+            (editor) => editor?.document?.uri?.scheme === 'zr-decompiled' &&
+                uriPath(editor.document.uri).endsWith('/zr.system.zr'),
+            15000,
+            'native import opens zr-decompiled document',
+        );
+
+        const nativeDocument = await withRetry(
+            async () => vscode.workspace.openTextDocument(vscode.Uri.parse('zr-decompiled:/zr.system.zr')),
+            (document) => typeof document?.getText === 'function' &&
+                document.getText().includes('%extern("zr.system")'),
+            15000,
+            'native declaration virtual document load',
+        );
+        assert(nativeDocument.getText().includes('%extern("zr.system")'),
+            'Expected zr-decompiled virtual documents to be backed by native declaration rendering');
+
+        const nativeDefinitions = await withRetry(
+            async () => vscode.commands.executeCommand(
+                'vscode.executeDefinitionProvider',
+                mainDocument.uri,
+                nativeImportPosition,
+            ),
+            (items) => Array.isArray(items) && items.length > 0,
+            15000,
+            'native import definition provider',
+        );
+        assert(
+            nativeDefinitions.some((item) =>
+                locationUri(item)?.scheme === 'zr-decompiled' &&
+                uriPath(locationUri(item)).endsWith('/zr.system.zr')),
+            'Expected native import goto definition to resolve into zr-decompiled virtual documents',
+        );
+
+        if (nativeProjectModuleNode) {
+            assert(nativeProjectModuleNode.commandId, 'Expected selected-project native module nodes to expose navigation commands');
+            await vscode.commands.executeCommand(nativeProjectModuleNode.commandId, ...commandArguments(nativeProjectModuleNode));
+            await withRetry(
+                async () => vscode.window.activeTextEditor,
+                (editor) => editor?.document?.uri?.scheme === 'zr-decompiled',
+                15000,
+                'selected project native module navigation',
+            );
+        }
+
+        await vscode.workspace.fs.createDirectory(alternateProjectSrcUri);
+        await vscode.workspace.fs.writeFile(
+            alternateProjectUri,
+            new TextEncoder().encode(JSON.stringify({
+                name: 'structure_selected_project_smoke',
+                source: 'src',
+                binary: 'bin',
+                entry: 'main',
+            }, null, 2) + '\n'),
+        );
+        await vscode.workspace.fs.writeFile(
+            alternateProjectMainUri,
+            new TextEncoder().encode('return 7;\n'),
+        );
+
+        await withPatchedWindowMethod('showQuickPick', async (items) => items.find((item) => item.label === 'structure_selected_project_smoke'), async () => {
+            await vscode.commands.executeCommand('zr.selectProject');
+        });
+        await withRetry(
+            async () => vscode.commands.executeCommand('zr.__inspectStructureViews'),
+            (value) => Boolean(findStructureNode(
+                value?.project,
+                (node) => node.nodeType === 'project' && node.label === 'structure_selected_project_smoke',
+            )),
+            15000,
+            'selected project updates after zr.selectProject',
+        );
+
+        await vscode.commands.executeCommand('zr.structure.refresh');
+        await withRetry(
+            async () => vscode.commands.executeCommand('zr.__inspectStructureViews'),
+            (value) => Boolean(findStructureNode(
+                value?.project,
+                (node) => node.nodeType === 'project' && node.label === 'structure_selected_project_smoke',
+            )),
+            15000,
+            'selected project persists across refresh',
+        );
+
+        await withPatchedWindowMethod('showQuickPick', async (items) => items.find((item) => item.label === 'import_basic'), async () => {
+            await vscode.commands.executeCommand('zr.selectProject');
+        });
     } finally {
+        await vscode.workspace.fs.delete(alternateProjectRootUri, { recursive: true, useTrash: false });
         await deleteDocumentFile(mainUri);
         await deleteDocumentFile(helperUri);
         await deleteDocumentFile(cycleUri);

@@ -249,7 +249,7 @@ var list: LinkedList<int> = new container.LinkedList<int>();
   - open generic 参数 / 约束 / implemented interfaces
   - closed native instance canonical name、字段 / 方法 / meta-method 签名替换
 - 编译 / 类型推断: `tests/container/test_container_type_inference.c`
-  - fixed array 类型身份与 `ArrayLike` / `Iterable` 适配
+  - fixed array 类型身份与 `zr.builtin.IArrayLike` / `zr.builtin.IEnumerable` 适配
   - native generic 约束接受 / 拒绝路径
   - `GET_MEMBER` / `SET_MEMBER` 与 `GET_BY_INDEX` / `SET_BY_INDEX` 分流后的返回类型
   - typed function return 上的 native container method 闭型保持
@@ -267,7 +267,7 @@ var list: LinkedList<int> = new container.LinkedList<int>();
 - `Map` / `Set` 迭代顺序无关聚合，不锁顺序只锁总和/集合语义
 - `Map` key 与成员名冲突、`Pair` 相等 key 覆盖不增计数
 - `LinkedList.clear` 后旧节点完全脱链
-- fixed array 作为参数传给 `ArrayLike<T>` / `Iterable<T>` 约束目标
+- fixed array 作为参数传给 `zr.builtin.IArrayLike<T>` / `zr.builtin.IEnumerable<T>` 约束目标
 - 同一 closed native generic 在重复 materialize / import alias 场景下保持稳定身份
 
 ### 3.7 基础访问语义 / 迭代 / 协议 / 构造目标测试
@@ -311,12 +311,17 @@ for (var item in values) {
   - 深尾递归必须证明 `callInfo` 链保持有界，而不是只验证结果值正确
   - 带活动异常处理器或 `%using` cleanup 的 frame 必须允许显式回退到非复用路径，不能为了 TCO 破坏现有展开语义
 - ownership lifecycle artifact: `tests/parser/test_parser.c` + `tests/parser/test_compiler_features.c` + `tests/parser/test_execbc_aot_pipeline.c`
-  - parser 必须把 `%upgrade(expr)` / `%release(expr)` 解析成 dedicated ownership builtin，而不是继续复用普通 helper-call 形态
-  - ExecBC 必须显式保留 `OWN_UPGRADE` / `OWN_RELEASE`
-  - `SemIR`、`.zri`、AOT C、AOT LLVM 必须显式保留 `OWN_UPGRADE` / `OWN_RELEASE`
-  - AOT artifact 必须声明 `ZrCore_Ownership_UpgradeValue` / `ZrCore_Ownership_ReleaseValue` runtime contract 或等价 contract
+  - parser 必须把 `%borrow(expr)` / `%loan(expr)` / `%upgrade(expr)` / `%release(expr)` / `%detach(expr)` 解析成 dedicated ownership builtin，而不是继续复用普通 helper-call 形态
+  - parser 必须拒绝 legacy ownership expression `%using(expr)` / `%using new ...`，并把 `%using` 收敛回 statement 或 block 级 lifetime fence
+  - ExecBC 必须显式保留 `OWN_BORROW` / `OWN_LOAN` / `OWN_UPGRADE` / `OWN_RELEASE` / `OWN_DETACH`
+  - `SemIR`、`.zri`、AOT C、AOT LLVM 必须显式保留这些 `OWN_*` ownership opcode，不能继续出现 legacy `OWN_USING`
+  - statement `%using` 必须继续走 `MARK_TO_BE_CLOSED` / `CLOSE_SCOPE`，不能重新混回 ownership builtin surface
+  - AOT artifact 必须声明 `ZrCore_Ownership_UpgradeValue` / `ZrCore_Ownership_ReleaseValue` / `ZrCore_Ownership_DetachValue` 等对应 runtime contract 或等价 contract
+  - `%weak` 只能从 `%shared` 创建，`%upgrade` 只能接 `%weak`
+  - `%detach(shared)` 至少必须限制为单 owner shared；multi-owner shared 不能假装正确地退回 plain GC
   - `%upgrade(weak)` 在仍有 shared owner 时必须返回非空 shared；最后一个 shared owner 消失后再次升级必须返回 `null`
   - `%release` 当前若尚未引入 place-aware ownership effect，至少必须限制为 local identifier binding，不能假装正确支持 member/index/closure-place release
+  - borrowed / loaned binding 不可跨 `await`
 - runtime contracts: `tests/instructions/test_instructions.c`
   - member descriptor、index contract、iterable contract、iterator contract 全部走显式 contract dispatch
   - `META_GET` / `META_SET` 必须直接调用 hidden accessor runtime path，而不是先退回普通成员取值再走 helper call
@@ -338,7 +343,7 @@ for (var item in values) {
   - 旧访问语义产生的 `.zri/.zro` 视为失效产物，fixture 需要重新编译，不保留运行时兼容分支
 
 **持续回归优先补充点**:
-- protocol conformance 统一走稳定 `protocol_id`，不再依赖 `Iterable` / `Iterator` / `ArrayLike` 字符串白名单
+- protocol conformance 统一走稳定 `protocol_id`，不再依赖 `zr.builtin.IEnumerable` / `zr.builtin.IEnumerator` / `zr.builtin.IArrayLike` 字符串白名单
 - construct-target resolution 统一走 prototype identity，不再按 `"Array"` / `"Map"` / `"Tensor"` / `"Pair"` 等名字复用 self
 - property accessor、static member、prototype member、dynamic member write opt-in 的顺序冲突和边界错误路径
 - 空迭代器、失效迭代器、GC 下活跃 iterator/constructor 对象、重复导入 `.zro` 的压力测试
@@ -505,8 +510,9 @@ var k = while(true) {
 **状态**: 部分实现
 
 ```zr
+var builtin = %import("zr.builtin");
 var k = {{
-    if (Object.type(j) == "array") {
+    if (builtin.Object.type(j) == "array") {
         out j.toArray();
     }
     out null;

@@ -122,6 +122,7 @@ typedef struct ZrLibFunctionDescriptor {
     TZrSize parameterCount;
     const ZrLibGenericParameterDescriptor *genericParameters;
     TZrSize genericParameterCount;
+    TZrUInt32 contractRole;
 } ZrLibFunctionDescriptor;
 
 typedef struct ZrLibMethodDescriptor {

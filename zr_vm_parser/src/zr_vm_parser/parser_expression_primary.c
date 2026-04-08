@@ -749,8 +749,67 @@ static TZrBool type_literal_probe_can_start(EZrToken token) {
            token == ZR_TK_LPAREN || token == ZR_TK_PERCENT;
 }
 
+static TZrBool type_literal_probe_identifier_supports_bare_array_literal(SZrString *name) {
+    if (name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return zr_string_equals_literal(name, "int") ||
+           zr_string_equals_literal(name, "uint") ||
+           zr_string_equals_literal(name, "float") ||
+           zr_string_equals_literal(name, "bool") ||
+           zr_string_equals_literal(name, "string") ||
+           zr_string_equals_literal(name, "null") ||
+           zr_string_equals_literal(name, "void") ||
+           zr_string_equals_literal(name, "i8") ||
+           zr_string_equals_literal(name, "u8") ||
+           zr_string_equals_literal(name, "i16") ||
+           zr_string_equals_literal(name, "u16") ||
+           zr_string_equals_literal(name, "i32") ||
+           zr_string_equals_literal(name, "u32") ||
+           zr_string_equals_literal(name, "i64") ||
+           zr_string_equals_literal(name, "u64") ||
+           zr_string_equals_literal(name, "Integer") ||
+           zr_string_equals_literal(name, "Float") ||
+           zr_string_equals_literal(name, "Double") ||
+           zr_string_equals_literal(name, "String") ||
+           zr_string_equals_literal(name, "Bool") ||
+           zr_string_equals_literal(name, "Byte") ||
+           zr_string_equals_literal(name, "Char") ||
+           zr_string_equals_literal(name, "UInt64") ||
+           zr_string_equals_literal(name, "TypeInfo") ||
+           zr_string_equals_literal(name, "Object") ||
+           zr_string_equals_literal(name, "Module");
+}
+
+static TZrBool type_literal_probe_identifier_is_reserved_type_query_name(SZrString *name) {
+    if (type_literal_probe_identifier_supports_bare_array_literal(name)) {
+        return ZR_TRUE;
+    }
+
+    if (name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return zr_string_equals_literal(name, "Class") ||
+           zr_string_equals_literal(name, "Struct") ||
+           zr_string_equals_literal(name, "Function") ||
+           zr_string_equals_literal(name, "Field") ||
+           zr_string_equals_literal(name, "Method") ||
+           zr_string_equals_literal(name, "Property") ||
+           zr_string_equals_literal(name, "Parameter");
+}
+
 static TZrBool type_literal_probe_has_unambiguous_marker(const SZrType *typeInfo) {
     if (typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if ((typeInfo->dimensions > 0 || typeInfo->hasArraySizeConstraint) &&
+        typeInfo->name != ZR_NULL &&
+        typeInfo->name->type == ZR_AST_IDENTIFIER_LITERAL &&
+        typeInfo->subType == ZR_NULL &&
+        !type_literal_probe_identifier_supports_bare_array_literal(typeInfo->name->data.identifier.name)) {
         return ZR_FALSE;
     }
 
@@ -765,6 +824,35 @@ static TZrBool type_literal_probe_has_unambiguous_marker(const SZrType *typeInfo
     }
 
     return typeInfo->subType != ZR_NULL ? type_literal_probe_has_unambiguous_marker(typeInfo->subType) : ZR_FALSE;
+}
+
+static TZrBool type_literal_probe_is_reserved_type_query_target(const SZrType *typeInfo) {
+    SZrString *identifierName;
+
+    if (typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (typeInfo->name == ZR_NULL || typeInfo->name->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    identifierName = typeInfo->name->data.identifier.name;
+
+    if ((typeInfo->dimensions > 0 || typeInfo->hasArraySizeConstraint) &&
+        typeInfo->subType == ZR_NULL &&
+        !type_literal_probe_identifier_supports_bare_array_literal(identifierName)) {
+        return ZR_FALSE;
+    }
+
+    if (typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE ||
+        typeInfo->dimensions > 0 ||
+        typeInfo->hasArraySizeConstraint ||
+        typeInfo->subType != ZR_NULL) {
+        return type_literal_probe_identifier_is_reserved_type_query_name(identifierName);
+    }
+
+    return type_literal_probe_identifier_is_reserved_type_query_name(identifierName);
 }
 
 static TZrBool type_literal_probe_is_terminator(EZrToken token) {
@@ -835,15 +923,15 @@ SZrAstNode *parse_reserved_type_expression(SZrParserState *ps) {
         operand = try_parse_unambiguous_type_literal_expression(ps);
     }
 
-    if (operand == ZR_NULL &&
-        (ps->lexer->t.token == ZR_TK_PERCENT || ps->lexer->t.token == ZR_TK_LBRACKET ||
-         ps->lexer->t.token == ZR_TK_LPAREN)) {
+    if (operand == ZR_NULL && type_literal_probe_can_start(ps->lexer->t.token)) {
         SZrParserCursor cursor;
         SZrType *parsedType = ZR_NULL;
 
         save_parser_cursor(ps, &cursor);
         parsedType = parse_type(ps);
-        if (parsedType != ZR_NULL && ps->lexer->t.token == ZR_TK_RPAREN) {
+        if (parsedType != ZR_NULL &&
+            ps->lexer->t.token == ZR_TK_RPAREN &&
+            type_literal_probe_is_reserved_type_query_target(parsedType)) {
             operand = create_ast_node(ps,
                                       ZR_AST_TYPE_LITERAL_EXPRESSION,
                                       ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));

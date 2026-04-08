@@ -14,9 +14,11 @@ import {
     type TransportAwareLanguageClientLifecycle,
 } from './languageClientLifecycle';
 import { registerDesktopDebugSupport } from './debug/configProvider';
+import { setLanguageClientRequestClient } from './languageClientRequests';
 import { LANGUAGE_SERVER_CONFIG_SECTION, resolveNativeLanguageServerPath } from './nativeAssets';
 import { registerDesktopProjectActions } from './projectActions';
 import { registerZrStructureViews, ZrStructureController } from './structure';
+import { registerVirtualDocumentSupport } from './virtualDocuments';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
 
 const CONFIG_SECTION = LANGUAGE_SERVER_CONFIG_SECTION;
@@ -41,6 +43,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(registerZrpJsonSupport());
     context.subscriptions.push(...registerDesktopDebugSupport(context));
     context.subscriptions.push(...registerDesktopProjectActions(context));
+    context.subscriptions.push(registerVirtualDocumentSupport());
     structureController = registerZrStructureViews(context);
     context.subscriptions.push(structureController);
 
@@ -155,6 +158,7 @@ async function startClient(
     lifecycle.attachClient(nextClient);
     client = nextClient;
     clientLifecycle = lifecycle;
+    setLanguageClientRequestClient(nextClient);
 
     await nextClient.start();
     await nextClient.setTrace(resolveTrace(config.get<string>('trace.server', 'off')));
@@ -176,6 +180,7 @@ async function stopClient(): Promise<void> {
         const currentLifecycle = clientLifecycle;
         client = undefined;
         clientLifecycle = undefined;
+        setLanguageClientRequestClient(undefined);
         try {
             if (currentLifecycle !== undefined) {
                 await stopLanguageClientSafely(currentClient, currentLifecycle);

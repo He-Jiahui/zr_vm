@@ -8,7 +8,7 @@ FUNCTION: <anonymous>
   HAS_VAR_ARGS: false
   STACK_SIZE: 6
 
-CONSTANTS (42):
+CONSTANTS (8):
   [0] null
   [1] native closure
   [2] string: "core_semantics"
@@ -17,40 +17,6 @@ CONSTANTS (42):
   [5] native closure
   [6] string: "async_native"
   [7] function
-  [8] string: "ScoreReadable"
-  [9] string: "read"
-  [10] string: "int"
-  [11] string: "Counter"
-  [12] string: "current"
-  [13] string: "constructor"
-  [14] string: "Pair"
-  [15] string: "left"
-  [16] string: "right"
-  [17] string: "Mode"
-  [18] unknown type: 18
-  [19] string: "Idle"
-  [20] string: "Hot"
-  [21] string: "makeEscaping"
-  [22] string: "object"
-  [23] string: "lambdaScore"
-  [24] string: "SignalBox"
-  [25] string: "raw"
-  [26] string: "created"
-  [27] string: "__get_value"
-  [28] string: "__set_value"
-  [29] string: "bump"
-  [30] string: "identity"
-  [31] string: "call"
-  [32] string: "Vector2"
-  [33] string: "x"
-  [34] string: "y"
-  [35] string: "add"
-  [36] string: "traceClass"
-  [37] string: "null"
-  [38] string: "combineVectors"
-  [39] string: "Holder"
-  [40] string: "makeEscapingCallback"
-  [41] string: "nativeScore"
 
 LOCAL_VARIABLES (4):
   [0] runMatrix: offset_activate=0, offset_dead=18
@@ -67,7 +33,22 @@ TYPE_METADATA:
     [2] meta: oop_meta
     [3] native: async_native
   EXPORTED_SYMBOLS (1):
-    fn runMatrix(): int
+    fn runMatrix(): int [kind=function readiness=declaration child=0]
+  STATIC_IMPORTS (3):
+    import core_semantics
+    import oop_meta
+    import async_native
+  MODULE_ENTRY_EFFECTS (3):
+    IMPORT_CALL core_semantics.lambdaScore [kind=function readiness=declaration]
+    IMPORT_CALL async_native.nativeScore [kind=function readiness=declaration]
+    IMPORT_CALL oop_meta.combineVectors [kind=function readiness=declaration]
+  EXPORTED_CALLABLE_SUMMARIES (1):
+    fn runMatrix [child=4294967295 effects=3]
+      IMPORT_CALL core_semantics.lambdaScore [kind=function readiness=declaration]
+      IMPORT_CALL async_native.nativeScore [kind=function readiness=declaration]
+      IMPORT_CALL oop_meta.combineVectors [kind=function readiness=declaration]
+  TOP_LEVEL_CALLABLE_BINDINGS (1):
+    fn runMatrix [slot=0 child=0 kind=function readiness=declaration access=0]
   COMPILE_TIME_VARIABLES (0):
   COMPILE_TIME_FUNCTIONS (0):
   TESTS (0):
@@ -88,411 +69,7 @@ CALLSITE_CACHE_TABLE (0):
 
 EH_TABLE (0):
 
-PROTOTYPES (10):
-// ========== PROTOTYPES FROM DATA (count: 10) ==========
-// --- Prototype 1 ---
-interface ScoreReadable {
-  access: public (0),
-  members: [
-    {
-      type: CLASS_METHOD (18),
-      name: "read",
-      access: private (1),
-      static: false,
-      isMetaMethod: false,
-      functionConstantIndex: 0,
-      parameterCount: 0,
-      returnType: "int"
-    }
-  ]
-}
-
-// --- Prototype 2 ---
-class Counter : ScoreReadable {
-  access: public (0),
-  members: [
-    {
-      type: CLASS_FIELD (17),
-      name: "current",
-      access: private (1),
-      static: false,
-      fieldType: "int",
-      fieldOffset: 0,
-      fieldSize: 8
-    },
-    {
-      type: CLASS_META_FUNCTION (20),
-      name: "constructor",
-      access: public (0),
-      static: false,
-      isMetaMethod: true,
-      metaType: CONSTRUCTOR (0),
-      functionConstantIndex: 1,
-      parameterCount: 1,
-      returnType: "<void>"
-    },
-    {
-      type: CLASS_METHOD (18),
-      name: "read",
-      access: public (0),
-      static: false,
-      isMetaMethod: false,
-      functionConstantIndex: 2,
-      parameterCount: 0,
-      returnType: "int"
-    }
-  ]
-}
-
-// --- Prototype 3 ---
-struct Pair {
-  access: public (0),
-  members: [
-    {
-      type: STRUCT_FIELD (14),
-      name: "left",
-      access: public (0),
-      static: false,
-      fieldType: "int",
-      fieldOffset: 0,
-      fieldSize: 8
-    },
-    {
-      type: STRUCT_FIELD (14),
-      name: "right",
-      access: public (0),
-      static: false,
-      fieldType: "int",
-      fieldOffset: 8,
-      fieldSize: 8
-    },
-    {
-      type: STRUCT_META_FUNCTION (16),
-      name: "constructor",
-      access: public (0),
-      static: false,
-      isMetaMethod: true,
-      metaType: CONSTRUCTOR (0),
-      functionConstantIndex: 3,
-      parameterCount: 2,
-      returnType: "<void>"
-    }
-  ]
-}
-
-// --- Prototype 4 ---
-enum Mode {
-  access: public (0),
-  members: [
-    {
-      type: CLASS_FIELD (17),
-      name: "Idle",
-      access: public (0),
-      static: true,
-      fieldType: "Mode",
-      fieldOffset: 0,
-      fieldSize: 0
-    },
-    {
-      type: CLASS_FIELD (17),
-      name: "Hot",
-      access: public (0),
-      static: true,
-      fieldType: "Mode",
-      fieldOffset: 0,
-      fieldSize: 0
-    }
-  ]
-}
-
-// --- Prototype 5 ---
-module core_semantics {
-  access: public (0),
-  members: [
-    {
-      type: CLASS_METHOD (18),
-      name: "makeEscaping",
-      access: public (0),
-      static: true,
-      isMetaMethod: false,
-      functionConstantIndex: 0,
-      parameterCount: 1,
-      returnType: "object"
-    },
-    {
-      type: CLASS_METHOD (18),
-      name: "lambdaScore",
-      access: public (0),
-      static: true,
-      isMetaMethod: false,
-      functionConstantIndex: 0,
-      parameterCount: 0,
-      returnType: "int"
-    },
-    {
-      type: CLASS_FIELD (17),
-      name: "ScoreReadable",
-      access: public (0),
-      static: true,
-      fieldType: "ScoreReadable",
-      fieldOffset: 0,
-      fieldSize: 0
-    },
-    {
-      type: CLASS_FIELD (17),
-      name: "Counter",
-      access: public (0),
-      static: true,
-      fieldType: "Counter",
-      fieldOffset: 0,
-      fieldSize: 0
-    },
-    {
-      type: CLASS_FIELD (17),
-      name: "Pair",
-      access: public (0),
-      static: true,
-      fieldType: "Pair",
-      fieldOffset: 0,
-      fieldSize: 0
-    },
-    {
-      type: CLASS_FIELD (17),
-      name: "Mode",
-      access: public (0),
-      static: true,
-      fieldType: "Mode",
-      fieldOffset: 0,
-      fieldSize: 0
-    }
-  ]
-}
-
-// --- Prototype 6 ---
-class SignalBox {
-  access: public (0),
-  members: [
-    {
-      type: CLASS_FIELD (17),
-      name: "raw",
-      access: private (1),
-      static: false,
-      fieldType: "int",
-      fieldOffset: 0,
-      fieldSize: 8
-    },
-    {
-      type: CLASS_FIELD (17),
-      name: "created",
-      access: public (0),
-      static: true,
-      fieldType: "int",
-      fieldOffset: 0,
-      fieldSize: 8
-    },
-    {
-      type: CLASS_META_FUNCTION (20),
-      name: "constructor",
-      access: public (0),
-      static: false,
-      isMetaMethod: true,
-      metaType: CONSTRUCTOR (0),
-      functionConstantIndex: 2,
-      parameterCount: 1,
-      returnType: "<void>"
-    },
-    {
-      type: CLASS_METHOD (18),
-      name: "__get_value",
-      access: public (0),
-      static: false,
-      isMetaMethod: false,
-      functionConstantIndex: 3,
-      parameterCount: 0,
-      returnType: "int"
-    },
-    {
-      type: CLASS_METHOD (18),
-      name: "__set_value",
-      access: public (0),
-      static: false,
-      isMetaMethod: false,
-      functionConstantIndex: 4,
-      parameterCount: 1,
-      returnType: "<void>"
-    },
-    {
-      type: CLASS_METHOD (18),
-      name: "bump",
-      access: public (0),
-      static: false,
-      isMetaMethod: false,
-      functionConstantIndex: 5,
-      parameterCount: 1,
-      returnType: "int"
-    },
-    {
-      type: CLASS_METHOD (18),
-      name: "identity",
-      access: public (0),
-      static: true,
-      isMetaMethod: false,
-      functionConstantIndex: 6,
-      parameterCount: 1,
-      returnType: "int"
-    },
-    {
-      type: CLASS_META_FUNCTION (20),
-      name: "call",
-      access: public (0),
-      static: false,
-      isMetaMethod: true,
-      metaType: CALL (15),
-      functionConstantIndex: 7,
-      parameterCount: 1,
-      returnType: "int"
-    }
-  ]
-}
-
-// --- Prototype 7 ---
-struct Vector2 {
-  access: public (0),
-  members: [
-    {
-      type: STRUCT_FIELD (14),
-      name: "x",
-      access: public (0),
-      static: false,
-      fieldType: "int",
-      fieldOffset: 0,
-      fieldSize: 8
-    },
-    {
-      type: STRUCT_FIELD (14),
-      name: "y",
-      access: public (0),
-      static: false,
-      fieldType: "int",
-      fieldOffset: 8,
-      fieldSize: 8
-    },
-    {
-      type: STRUCT_META_FUNCTION (16),
-      name: "constructor",
-      access: public (0),
-      static: false,
-      isMetaMethod: true,
-      metaType: CONSTRUCTOR (0),
-      functionConstantIndex: 10,
-      parameterCount: 2,
-      returnType: "<void>"
-    },
-    {
-      type: STRUCT_META_FUNCTION (16),
-      name: "add",
-      access: public (0),
-      static: true,
-      isMetaMethod: true,
-      metaType: ADD (2),
-      functionConstantIndex: 11,
-      parameterCount: 2,
-      returnType: "Vector2"
-    }
-  ]
-}
-
-// --- Prototype 8 ---
-module oop_meta {
-  access: public (0),
-  members: [
-    {
-      type: CLASS_METHOD (18),
-      name: "traceClass",
-      access: public (0),
-      static: true,
-      isMetaMethod: false,
-      functionConstantIndex: 0,
-      parameterCount: 1,
-      returnType: "null"
-    },
-    {
-      type: CLASS_METHOD (18),
-      name: "combineVectors",
-      access: public (0),
-      static: true,
-      isMetaMethod: false,
-      functionConstantIndex: 0,
-      parameterCount: 0,
-      returnType: "int"
-    },
-    {
-      type: CLASS_FIELD (17),
-      name: "SignalBox",
-      access: public (0),
-      static: true,
-      fieldType: "SignalBox",
-      fieldOffset: 0,
-      fieldSize: 0
-    },
-    {
-      type: CLASS_FIELD (17),
-      name: "Vector2",
-      access: public (0),
-      static: true,
-      fieldType: "Vector2",
-      fieldOffset: 0,
-      fieldSize: 0
-    }
-  ]
-}
-
-// --- Prototype 9 ---
-class Holder {
-  access: private (1),
-  members: [
-  ]
-}
-
-// --- Prototype 10 ---
-module async_native {
-  access: public (0),
-  members: [
-    {
-      type: CLASS_METHOD (18),
-      name: "makeEscapingCallback",
-      access: public (0),
-      static: true,
-      isMetaMethod: false,
-      functionConstantIndex: 0,
-      parameterCount: 1,
-      returnType: "object"
-    },
-    {
-      type: CLASS_METHOD (18),
-      name: "nativeScore",
-      access: public (0),
-      static: true,
-      isMetaMethod: false,
-      functionConstantIndex: 0,
-      parameterCount: 0,
-      returnType: "int"
-    },
-    {
-      type: CLASS_FIELD (17),
-      name: "Holder",
-      access: public (0),
-      static: true,
-      fieldType: "Holder",
-      fieldOffset: 0,
-      fieldSize: 0
-    }
-  ]
-}
-
-// ========== END OF PROTOTYPES ==========
-
-INSTRUCTIONS (18):
+INSTRUCTIONS (17):
   [0] GET_CONSTANT (extra=0, operand=0)
   [1] GET_CONSTANT (extra=1, operand=1)
   [2] GET_CONSTANT (extra=2, operand=2)
@@ -505,12 +82,11 @@ INSTRUCTIONS (18):
   [9] GET_CONSTANT (extra=3, operand=5)
   [10] GET_CONSTANT (extra=4, operand=6)
   [11] FUNCTION_CALL (extra=3, operand1=3, operand2=1)
-  [12] GET_CONSTANT (extra=4, operand=0)
-  [13] CREATE_CLOSURE (extra=4)
-  [14] SET_STACK (extra=0, operand=4)
-  [15] GET_STACK (extra=5, operand=0)
-  [16] SUPER_FUNCTION_TAIL_CALL_NO_ARGS (extra=5, operand1=5, operand2=0)
-  [17] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+  [12] CREATE_CLOSURE (extra=4)
+  [13] SET_STACK (extra=0, operand=4)
+  [14] GET_STACK (extra=5, operand=0)
+  [15] SUPER_FUNCTION_TAIL_CALL_NO_ARGS (extra=5, operand1=5, operand2=0)
+  [16] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
 
 CHILD_FUNCTIONS (1):
   [0] FUNCTION:
@@ -553,6 +129,10 @@ CHILD_FUNCTIONS (1):
         [5] builtinScore: int
         [6] vectorScore: int
       EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
       COMPILE_TIME_VARIABLES (0):
       COMPILE_TIME_FUNCTIONS (0):
       TESTS (0):
@@ -591,11 +171,11 @@ CHILD_FUNCTIONS (1):
 
     INSTRUCTIONS (52):
       [0] CREATE_OBJECT (extra=0)
-      [1] OPCODE_21 (extra=0)
+      [1] OPCODE_23 (extra=0)
       [2] OPCODE_8 (extra=1, operand1=0, operand2=0)
       [3] SET_STACK (extra=2, operand=0)
       [4] GET_CONSTANT (extra=3, operand=1)
-      [5] OPCODE_73 (extra=1, operand1=1, operand2=2)
+      [5] OPCODE_75 (extra=1, operand1=1, operand2=2)
       [6] GET_CONSTANT (extra=1, operand=2)
       [7] GET_CONSTANT (extra=2, operand=2)
       [8] GET_CONSTANT (extra=3, operand=2)
@@ -614,7 +194,7 @@ CHILD_FUNCTIONS (1):
       [21] SET_STACK (extra=3, operand=2)
       [22] OPCODE_8 (extra=2, operand1=2, operand2=3)
       [23] GET_CONSTANT (extra=4, operand=4)
-      [24] OPCODE_73 (extra=2, operand1=2, operand2=2)
+      [24] OPCODE_75 (extra=2, operand1=2, operand2=2)
       [25] GET_CONSTANT (extra=3, operand=2)
       [26] GET_CONSTANT (extra=4, operand=2)
       [27] GET_STACK (extra=3, operand=0)

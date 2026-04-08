@@ -1168,9 +1168,12 @@ TZrBool ZrLanguageServer_LspProject_ResolveExternalMetadataDeclaration(
         return ZR_FALSE;
     }
 
-    projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
+    projectIndex = ZrLanguageServer_LspProject_GetOrCreateForUri(state, context, uri);
     if (projectIndex == ZR_NULL || !project_navigation_uri_to_native_path(uri, nativePath, sizeof(nativePath))) {
         return ZR_FALSE;
+    }
+    if (!projectIndex->hasSemanticProjectLoad && !projectIndex->hasLightweightSourceGraph) {
+        ZrLanguageServer_LspProject_EnsureScannedSourceGraph(state, context, projectIndex);
     }
 
     sourceRecord = ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, uri);

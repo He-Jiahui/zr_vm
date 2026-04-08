@@ -333,6 +333,8 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
 
             case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(operandA1, &slotCount);
                 function_note_generated_frame_slot(operandB1, &slotCount);
@@ -786,19 +788,16 @@ void ZrCore_Function_CallWithoutYield(struct SZrState *state, TZrStackValuePoint
 void ZrCore_Function_StackAnchorInit(struct SZrState *state,
                                TZrStackValuePointer stackPointer,
                                SZrFunctionStackAnchor *anchor) {
-    if (state == ZR_NULL || anchor == ZR_NULL || stackPointer == ZR_NULL) {
-        return;
-    }
-
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(anchor != ZR_NULL);
+    ZR_ASSERT(stackPointer != ZR_NULL);
     anchor->offset = ZrCore_Stack_SavePointerAsOffset(state, stackPointer);
 }
 
 TZrStackValuePointer ZrCore_Function_StackAnchorRestore(struct SZrState *state,
                                                   const SZrFunctionStackAnchor *anchor) {
-    if (state == ZR_NULL || anchor == ZR_NULL) {
-        return ZR_NULL;
-    }
-
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(anchor != ZR_NULL);
     return ZrCore_Stack_LoadOffsetToPointer(state, anchor->offset);
 }
 
@@ -809,10 +808,9 @@ TZrStackValuePointer ZrCore_Function_CheckStackAndAnchor(struct SZrState *state,
                                                    SZrFunctionStackAnchor *anchor) {
     TZrStackValuePointer effectiveCheckPointer;
 
-    if (state == ZR_NULL || stackPointer == ZR_NULL || anchor == ZR_NULL) {
-        return stackPointer;
-    }
-
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(stackPointer != ZR_NULL);
+    ZR_ASSERT(anchor != ZR_NULL);
     effectiveCheckPointer = checkPointer != ZR_NULL ? checkPointer : stackPointer;
     ZrCore_Function_StackAnchorInit(state, stackPointer, anchor);
     ZrCore_Function_CheckStackAndGc(state, size, effectiveCheckPointer);

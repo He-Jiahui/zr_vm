@@ -108,6 +108,65 @@ static void reflection_populate_compiled_member_oop_metadata(SZrState *state,
                                                              SZrObject *memberReflection,
                                                              SZrFunction *entryFunction,
                                                              const SZrCompiledMemberInfo *member);
+static void reflection_get_prototype_metadata_context(SZrState *state,
+                                                      SZrObjectPrototype *prototype,
+                                                      SZrObjectModule **outModule,
+                                                      SZrFunction **outEntryFunction);
+static const TZrChar *reflection_prototype_qualified_name(SZrState *state,
+                                                          SZrObjectPrototype *prototype,
+                                                          TZrChar *buffer,
+                                                          TZrSize bufferSize);
+
+static SZrObjectPrototype *reflection_lookup_builtin_type_info_prototype(SZrState *state) {
+    SZrObject *zrObject;
+    struct SZrObjectModule *builtinModule;
+    SZrString *moduleName;
+    SZrString *exportName;
+    SZrString *typeName;
+    SZrTypeValue key;
+    const SZrTypeValue *value;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->zrObject.type != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_NULL;
+    }
+
+    zrObject = ZR_CAST_OBJECT(state, state->global->zrObject.value.object);
+    if (zrObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    typeName = ZrCore_String_CreateFromNative(state, "TypeInfo");
+    if (typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(typeName));
+    key.type = ZR_VALUE_TYPE_STRING;
+    value = ZrCore_Object_GetValue(state, zrObject, &key);
+    if (value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT || value->value.object == ZR_NULL) {
+        moduleName = ZrCore_String_CreateFromNative(state, "zr.builtin");
+        exportName = ZrCore_String_CreateFromNative(state, "TypeInfo");
+        if (moduleName == ZR_NULL || exportName == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        builtinModule = ZrCore_Module_ImportByPath(state, moduleName);
+        if (builtinModule == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        value = ZrCore_Module_GetPubExport(state, builtinModule, exportName);
+    }
+    if (value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT || value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (ZR_CAST_OBJECT(state, value->value.object)->internalType != ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        return ZR_NULL;
+    }
+
+    return (SZrObjectPrototype *)ZR_CAST_OBJECT(state, value->value.object);
+}
 
 static SZrObject *reflection_new_object(SZrState *state) {
     SZrObject *object;
@@ -803,8 +862,15 @@ static void reflection_init_common_fields(SZrState *state,
                                           const TZrChar *qualifiedName,
                                           const TZrChar *kind,
                                           TZrUInt64 hash) {
+    SZrObjectPrototype *typeInfoPrototype;
+
     if (state == ZR_NULL || reflectionObject == ZR_NULL) {
         return;
+    }
+
+    typeInfoPrototype = reflection_lookup_builtin_type_info_prototype(state);
+    if (typeInfoPrototype != ZR_NULL) {
+        reflectionObject->prototype = typeInfoPrototype;
     }
 
     reflection_set_field_bool(state, reflectionObject, kReflectionMarkerFieldName, ZR_TRUE);
@@ -818,6 +884,38 @@ static void reflection_init_common_fields(SZrState *state,
     reflection_set_field_null(state, reflectionObject, "owner");
     reflection_set_field_null(state, reflectionObject, "module");
     reflection_init_default_sections(state, reflectionObject);
+}
+
+static const TZrChar *reflection_prototype_qualified_name(SZrState *state,
+                                                          SZrObjectPrototype *prototype,
+                                                          TZrChar *buffer,
+                                                          TZrSize bufferSize) {
+    SZrObjectModule *module = ZR_NULL;
+    SZrFunction *entryFunction = ZR_NULL;
+    const TZrChar *typeName;
+
+    if (buffer != ZR_NULL && bufferSize > 0) {
+        buffer[0] = '\0';
+    }
+    if (state == ZR_NULL || prototype == ZR_NULL || prototype->name == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_NULL;
+    }
+
+    typeName = ZrCore_String_GetNativeString(prototype->name);
+    if (typeName == ZR_NULL || typeName[0] == '\0') {
+        return ZR_NULL;
+    }
+
+    reflection_get_prototype_metadata_context(state, prototype, &module, &entryFunction);
+    ZR_UNUSED_PARAMETER(entryFunction);
+
+    if (module != ZR_NULL && module->moduleName != ZR_NULL) {
+        snprintf(buffer, bufferSize, "%s.%s", ZrCore_String_GetNativeString(module->moduleName), typeName);
+    } else {
+        snprintf(buffer, bufferSize, "%s", typeName);
+    }
+
+    return buffer;
 }
 
 static const TZrChar *reflection_prototype_kind_name(EZrObjectPrototypeType prototypeType) {
@@ -3413,7 +3511,9 @@ static SZrObject *reflection_build_type_reflection(SZrState *state,
     SZrObject *moduleReflection = ZR_NULL;
     const TZrChar *name;
     const TZrChar *kind;
+    const TZrChar *extendsTypeName = ZR_NULL;
     TZrChar qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
+    TZrChar extendsTypeNameBuffer[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
 
     if (state == ZR_NULL || (prototype == ZR_NULL && nativeTypeEntry == ZR_NULL)) {
         return ZR_NULL;
@@ -3478,6 +3578,18 @@ static SZrObject *reflection_build_type_reflection(SZrState *state,
 
     if (nativeTypeEntry == ZR_NULL && module != ZR_NULL && name != ZR_NULL) {
         nativeTypeEntry = reflection_find_native_type_entry(state, module, name);
+    }
+
+    if (prototype != ZR_NULL && prototype->superPrototype != ZR_NULL) {
+        extendsTypeName = reflection_prototype_qualified_name(state,
+                                                              prototype->superPrototype,
+                                                              extendsTypeNameBuffer,
+                                                              sizeof(extendsTypeNameBuffer));
+    } else if (nativeTypeEntry != ZR_NULL) {
+        extendsTypeName = reflection_get_field_string_native(state, nativeTypeEntry, "extendsTypeName", ZR_NULL);
+    }
+    if (extendsTypeName != ZR_NULL && extendsTypeName[0] != '\0') {
+        reflection_set_field_string(state, typeReflection, "extendsTypeName", extendsTypeName);
     }
 
     if (nativeTypeEntry != ZR_NULL) {

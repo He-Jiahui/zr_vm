@@ -74,6 +74,152 @@ static void native_binding_unpin_value_object(SZrGlobalState *global,
     }
 }
 
+static ZR_FORCE_INLINE FZrLibBoundCallback native_binding_entry_callback(const ZrLibBindingEntry *entry) {
+    if (entry == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (entry->bindingKind) {
+        case ZR_LIB_RESOLVED_BINDING_FUNCTION:
+            return entry->descriptor.functionDescriptor != ZR_NULL ? entry->descriptor.functionDescriptor->callback
+                                                                   : ZR_NULL;
+        case ZR_LIB_RESOLVED_BINDING_METHOD:
+            return entry->descriptor.methodDescriptor != ZR_NULL ? entry->descriptor.methodDescriptor->callback
+                                                                 : ZR_NULL;
+        case ZR_LIB_RESOLVED_BINDING_META_METHOD:
+            return entry->descriptor.metaMethodDescriptor != ZR_NULL ? entry->descriptor.metaMethodDescriptor->callback
+                                                                     : ZR_NULL;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static ZR_FORCE_INLINE TZrBool native_binding_entry_fixed_argument_count(const ZrLibBindingEntry *entry,
+                                                                         TZrSize *outCount) {
+    TZrUInt16 minArgumentCount;
+    TZrUInt16 maxArgumentCount;
+
+    if (entry == ZR_NULL || outCount == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (entry->bindingKind) {
+        case ZR_LIB_RESOLVED_BINDING_FUNCTION:
+            if (entry->descriptor.functionDescriptor == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            minArgumentCount = entry->descriptor.functionDescriptor->minArgumentCount;
+            maxArgumentCount = entry->descriptor.functionDescriptor->maxArgumentCount;
+            break;
+        case ZR_LIB_RESOLVED_BINDING_METHOD:
+            if (entry->descriptor.methodDescriptor == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            minArgumentCount = entry->descriptor.methodDescriptor->minArgumentCount;
+            maxArgumentCount = entry->descriptor.methodDescriptor->maxArgumentCount;
+            break;
+        case ZR_LIB_RESOLVED_BINDING_META_METHOD:
+            if (entry->descriptor.metaMethodDescriptor == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            minArgumentCount = entry->descriptor.metaMethodDescriptor->minArgumentCount;
+            maxArgumentCount = entry->descriptor.metaMethodDescriptor->maxArgumentCount;
+            break;
+        default:
+            return ZR_FALSE;
+    }
+
+    if (minArgumentCount != maxArgumentCount) {
+        return ZR_FALSE;
+    }
+
+    *outCount = (TZrSize)minArgumentCount;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool native_binding_value_can_use_fast_lane_self(const SZrTypeValue *value) {
+    return value == ZR_NULL ||
+           (value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
+            value->ownershipControl == ZR_NULL &&
+            value->ownershipWeakRef == ZR_NULL);
+}
+
+static ZR_FORCE_INLINE TZrBool native_binding_value_can_use_fast_lane_argument(const SZrTypeValue *value) {
+    return value != ZR_NULL &&
+           !value->isGarbageCollectable &&
+           value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
+           value->ownershipControl == ZR_NULL &&
+           value->ownershipWeakRef == ZR_NULL;
+}
+
+static TZrBool native_binding_can_use_fast_lane(const ZrLibBindingEntry *entry, const ZrLibCallContext *context) {
+    TZrSize expectedArgumentCount;
+    TZrSize index;
+
+    ZR_ASSERT(entry != ZR_NULL);
+    ZR_ASSERT(context != ZR_NULL);
+    ZR_ASSERT(context->state != ZR_NULL);
+
+    if (native_binding_entry_callback(entry) == ZR_NULL ||
+        !native_binding_entry_fixed_argument_count(entry, &expectedArgumentCount) ||
+        context->argumentCount != expectedArgumentCount ||
+        context->argumentCount > ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY) {
+        return ZR_FALSE;
+    }
+
+    if (!native_binding_value_can_use_fast_lane_self(context->selfValue)) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < context->argumentCount; index++) {
+        const SZrTypeValue *argument = ZrCore_Stack_GetValue(context->argumentBase + index);
+        if (!native_binding_value_can_use_fast_lane_argument(argument)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool native_binding_dispatch_fast_lane(SZrState *state,
+                                                 const ZrLibBindingEntry *entry,
+                                                 ZrLibCallContext *context,
+                                                 const SZrFunctionStackAnchor *functionBaseAnchor,
+                                                 SZrTypeValue *result) {
+    FZrLibBoundCallback callback;
+    SZrTypeValue stableSelfCopy;
+    SZrTypeValue stableArgumentCopies[ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY];
+    TZrSize index;
+    TZrBool success;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(entry != ZR_NULL);
+    ZR_ASSERT(context != ZR_NULL);
+    ZR_ASSERT(functionBaseAnchor != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+    callback = native_binding_entry_callback(entry);
+    ZR_ASSERT(callback != ZR_NULL);
+
+    if (context->selfValue != ZR_NULL) {
+        stableSelfCopy = *context->selfValue;
+        context->selfValue = &stableSelfCopy;
+    }
+
+    for (index = 0; index < context->argumentCount; index++) {
+        stableArgumentCopies[index] = *ZrCore_Stack_GetValue(context->argumentBase + index);
+    }
+    context->argumentValues = context->argumentCount > 0 ? stableArgumentCopies : ZR_NULL;
+
+    success = callback(context, result);
+    if (success && context->selfValue != ZR_NULL) {
+        TZrStackValuePointer currentFunctionBase = ZrCore_Function_StackAnchorRestore(state, functionBaseAnchor);
+        ZR_ASSERT(currentFunctionBase != ZR_NULL);
+        ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(currentFunctionBase + 1), context->selfValue);
+    }
+
+    return success;
+}
+
 TZrInt64 native_binding_dispatcher(SZrState *state) {
     ZrLibrary_NativeRegistryState *registry;
     TZrStackValuePointer functionBase;
@@ -156,6 +302,22 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
 
     if (!native_binding_auto_check_arity(&context)) {
         return 0;
+    }
+
+    if (native_binding_can_use_fast_lane(entry, &context)) {
+        success = native_binding_dispatch_fast_lane(state, entry, &context, &functionBaseAnchor, &result);
+        if (!success) {
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return 0;
+            }
+            ZrLib_Value_SetNull(&result);
+        }
+
+        functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
+        closureValue = ZrCore_Stack_GetValue(functionBase);
+        ZrCore_Value_Copy(state, closureValue, &result);
+        state->stackTop.valuePointer = functionBase + 1;
+        return 1;
     }
 
     stableArgumentCopies = inlineArgumentCopies;

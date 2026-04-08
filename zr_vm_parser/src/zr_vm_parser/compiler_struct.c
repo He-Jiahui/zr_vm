@@ -222,6 +222,89 @@ static SZrString *compiler_extract_unqualified_type_head_name(const SZrType *typ
     return ZR_NULL;
 }
 
+static const TZrChar *compiler_builtin_canonical_name(const TZrChar *typeNameText) {
+    if (typeNameText == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (strcmp(typeNameText, "Iterable") == 0) {
+        return "zr.builtin.IEnumerable";
+    }
+    if (strcmp(typeNameText, "Iterator") == 0) {
+        return "zr.builtin.IEnumerator";
+    }
+    if (strcmp(typeNameText, "ArrayLike") == 0) {
+        return "zr.builtin.IArrayLike";
+    }
+    if (strcmp(typeNameText, "Equatable") == 0) {
+        return "zr.builtin.IEquatable";
+    }
+    if (strcmp(typeNameText, "Hashable") == 0) {
+        return "zr.builtin.IHashable";
+    }
+    if (strcmp(typeNameText, "Comparable") == 0) {
+        return "zr.builtin.IComparable";
+    }
+    if (strcmp(typeNameText, "zr.system.reflect.Type") == 0 ||
+        strcmp(typeNameText, "zr.system.reflect.CallableType") == 0 ||
+        strcmp(typeNameText, "TypeInfo") == 0) {
+        return "zr.builtin.TypeInfo";
+    }
+    if (strcmp(typeNameText, "IEnumerable") == 0) {
+        return "zr.builtin.IEnumerable";
+    }
+    if (strcmp(typeNameText, "IEnumerator") == 0) {
+        return "zr.builtin.IEnumerator";
+    }
+    if (strcmp(typeNameText, "IArrayLike") == 0) {
+        return "zr.builtin.IArrayLike";
+    }
+    if (strcmp(typeNameText, "IEquatable") == 0) {
+        return "zr.builtin.IEquatable";
+    }
+    if (strcmp(typeNameText, "IHashable") == 0) {
+        return "zr.builtin.IHashable";
+    }
+    if (strcmp(typeNameText, "IComparable") == 0) {
+        return "zr.builtin.IComparable";
+    }
+    if (strcmp(typeNameText, "IComparer") == 0) {
+        return "zr.builtin.IComparer";
+    }
+    if (strcmp(typeNameText, "Object") == 0) {
+        return "zr.builtin.Object";
+    }
+    if (strcmp(typeNameText, "Module") == 0) {
+        return "zr.builtin.Module";
+    }
+    if (strcmp(typeNameText, "Integer") == 0) {
+        return "zr.builtin.Integer";
+    }
+    if (strcmp(typeNameText, "Float") == 0) {
+        return "zr.builtin.Float";
+    }
+    if (strcmp(typeNameText, "Double") == 0) {
+        return "zr.builtin.Double";
+    }
+    if (strcmp(typeNameText, "String") == 0) {
+        return "zr.builtin.String";
+    }
+    if (strcmp(typeNameText, "Bool") == 0) {
+        return "zr.builtin.Bool";
+    }
+    if (strcmp(typeNameText, "Byte") == 0) {
+        return "zr.builtin.Byte";
+    }
+    if (strcmp(typeNameText, "Char") == 0) {
+        return "zr.builtin.Char";
+    }
+    if (strcmp(typeNameText, "UInt64") == 0) {
+        return "zr.builtin.UInt64";
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool compiler_report_missing_explicit_type_binding(SZrCompilerState *cs,
                                                              SZrString *typeName,
                                                              SZrFileRange location) {
@@ -239,45 +322,7 @@ static TZrBool compiler_report_missing_explicit_type_binding(SZrCompilerState *c
         typeNameText = ZrCore_String_GetNativeString(typeName);
     }
 
-    if (typeNameText != ZR_NULL) {
-        if (strcmp(typeNameText, "Iterable") == 0) {
-            canonicalBuiltinName = "zr.builtin.IEnumerable";
-        } else if (strcmp(typeNameText, "Iterator") == 0) {
-            canonicalBuiltinName = "zr.builtin.IEnumerator";
-        } else if (strcmp(typeNameText, "ArrayLike") == 0) {
-            canonicalBuiltinName = "zr.builtin.IArrayLike";
-        } else if (strcmp(typeNameText, "Equatable") == 0) {
-            canonicalBuiltinName = "zr.builtin.IEquatable";
-        } else if (strcmp(typeNameText, "Hashable") == 0) {
-            canonicalBuiltinName = "zr.builtin.IHashable";
-        } else if (strcmp(typeNameText, "Comparable") == 0) {
-            canonicalBuiltinName = "zr.builtin.IComparable";
-        } else if (strcmp(typeNameText, "zr.system.reflect.Type") == 0 ||
-                   strcmp(typeNameText, "zr.system.reflect.CallableType") == 0 ||
-                   strcmp(typeNameText, "TypeInfo") == 0) {
-            canonicalBuiltinName = "zr.builtin.TypeInfo";
-        } else if (strcmp(typeNameText, "IEnumerable") == 0) {
-            canonicalBuiltinName = "zr.builtin.IEnumerable";
-        } else if (strcmp(typeNameText, "IEnumerator") == 0) {
-            canonicalBuiltinName = "zr.builtin.IEnumerator";
-        } else if (strcmp(typeNameText, "IArrayLike") == 0) {
-            canonicalBuiltinName = "zr.builtin.IArrayLike";
-        } else if (strcmp(typeNameText, "IEquatable") == 0) {
-            canonicalBuiltinName = "zr.builtin.IEquatable";
-        } else if (strcmp(typeNameText, "IHashable") == 0) {
-            canonicalBuiltinName = "zr.builtin.IHashable";
-        } else if (strcmp(typeNameText, "IComparable") == 0) {
-            canonicalBuiltinName = "zr.builtin.IComparable";
-        } else if (strcmp(typeNameText, "IComparer") == 0) {
-            canonicalBuiltinName = "zr.builtin.IComparer";
-        } else if (strcmp(typeNameText, "Object") == 0) {
-            canonicalBuiltinName = "zr.builtin.Object";
-        } else if (strcmp(typeNameText, "Module") == 0) {
-            canonicalBuiltinName = "zr.builtin.Module";
-        } else if (strcmp(typeNameText, "Integer") == 0) {
-            canonicalBuiltinName = "zr.builtin.Integer";
-        }
-    }
+    canonicalBuiltinName = compiler_builtin_canonical_name(typeNameText);
 
     if (typeNameText != ZR_NULL && canonicalBuiltinName != ZR_NULL) {
         snprintf(errorBuffer,
@@ -304,7 +349,10 @@ static TZrBool compiler_type_requires_explicit_binding(SZrCompilerState *cs,
                                                        const SZrType *typeInfo,
                                                        SZrFileRange location) {
     SZrString *headTypeName;
+    SZrString *qualifiedTypeName;
     SZrTypePrototypeInfo *prototype;
+    TZrNativeString headTypeNameText = ZR_NULL;
+    TZrNativeString qualifiedTypeNameText = ZR_NULL;
 
     if (cs == ZR_NULL || typeInfo == ZR_NULL) {
         return ZR_FALSE;
@@ -314,17 +362,35 @@ static TZrBool compiler_type_requires_explicit_binding(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
+    qualifiedTypeName = extract_type_name_string(cs, (SZrType *)typeInfo);
+    if (qualifiedTypeName != ZR_NULL) {
+        qualifiedTypeNameText = ZrCore_String_GetNativeString(qualifiedTypeName);
+        if (qualifiedTypeNameText != ZR_NULL &&
+            compiler_builtin_canonical_name(qualifiedTypeNameText) != ZR_NULL &&
+            find_compiler_type_prototype(cs, qualifiedTypeName) == ZR_NULL) {
+            compiler_report_missing_explicit_type_binding(cs, qualifiedTypeName, location);
+            return ZR_TRUE;
+        }
+    }
+
     headTypeName = compiler_extract_unqualified_type_head_name(typeInfo);
     if (headTypeName == ZR_NULL) {
         return ZR_FALSE;
     }
 
     prototype = find_compiler_type_prototype(cs, headTypeName);
-    if (prototype == ZR_NULL || prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_MODULE) {
-        return ZR_FALSE;
+    if (headTypeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        headTypeNameText = ZrCore_String_GetNativeStringShort(headTypeName);
+    } else {
+        headTypeNameText = ZrCore_String_GetNativeString(headTypeName);
     }
 
     if (type_name_is_explicitly_available_in_context_inference(cs, headTypeName)) {
+        return ZR_FALSE;
+    }
+
+    if ((prototype == ZR_NULL || prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_MODULE) &&
+        compiler_builtin_canonical_name(headTypeNameText) == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -592,7 +658,7 @@ void compiler_collect_generic_parameter_info(SZrCompilerState *cs,
                     continue;
                 }
 
-                constraintName = extract_type_name_string(cs, &constraintNode->data.type);
+                constraintName = extract_generic_argument_name_string(cs, constraintNode);
                 if (constraintName != ZR_NULL) {
                     ZrCore_Array_Push(cs->state, &genericInfo.constraintTypeNames, &constraintName);
                 }
@@ -834,20 +900,8 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.accessModifier = field->access;
                     memberInfo.isStatic = field->isStatic;
                     memberInfo.isConst = field->isConst;
-                    memberInfo.isUsingManaged = field->isUsingManaged;
                     if (field->name != ZR_NULL) {
                         memberInfo.name = field->name->name;
-                    }
-
-                    if (field->isStatic && field->isUsingManaged) {
-                        ZrParser_CompileTime_Error(cs,
-                                           ZR_COMPILE_TIME_ERROR_ERROR,
-                                           "static %using fields are not supported",
-                                           member->location);
-                        cs->currentTypeName = oldTypeName;
-                        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-                        cs->currentTypeNode = oldTypeNode;
-                        return;
                     }
                     
                     // 处理字段类型信息
@@ -894,9 +948,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         memberInfo.fieldSize = sizeof(TZrPtr);
                     }
 
-                    if ((memberInfo.isUsingManaged &&
-                         memberInfo.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_WEAK) ||
-                        memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+                    if (memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
                         memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
                         memberInfo.callsClose = ZR_TRUE;
                         memberInfo.callsDestructor = ZR_TRUE;

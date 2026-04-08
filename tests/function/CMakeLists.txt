@@ -3,7 +3,6 @@
 # 添加测试源文件
 set(NAMED_ARGS_TEST_SOURCES
     test_named_arguments.c
-    ${CMAKE_SOURCE_DIR}/tests/test_support.c
 )
 
 # 创建测试可执行文件

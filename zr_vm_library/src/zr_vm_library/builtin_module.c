@@ -260,6 +260,15 @@ static const ZrLibFieldDescriptor g_array_like_fields[] = {
         ZR_LIB_FIELD_DESCRIPTOR_INIT("length", "int", "Logical element count."),
 };
 
+static const ZrLibFieldDescriptor g_type_info_fields[] = {
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("name", "string", "Reflection short name."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("qualifiedName", "string", "Reflection qualified name."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("kind", "string", "Reflection kind label."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("hash", "UInt64", "Stable reflection hash."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("owner", "zr.builtin.TypeInfo", "Owning reflection target when applicable."),
+        ZR_LIB_FIELD_DESCRIPTOR_INIT("module", "zr.builtin.TypeInfo", "Owning module reflection when applicable."),
+};
+
 static const ZrLibMethodDescriptor g_enumerable_methods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("getIterator", 0, 0, ZR_NULL, "zr.builtin.IEnumerator<T>",
                                            "Create an iterator.", ZR_FALSE, ZR_NULL, 0,
@@ -306,15 +315,17 @@ static const ZrLibMethodDescriptor g_object_methods[] = {
         ZR_LIB_METHOD_DESCRIPTOR_INIT("type", 1, 1, builtin_object_type, "string",
                                       "Return a runtime type label.", ZR_TRUE,
                                       g_object_value_parameter, ZR_ARRAY_COUNT(g_object_value_parameter)),
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("box", 1, 1, builtin_object_box, "zr.builtin.Object",
-                                      "Box a primitive value into its wrapper type.", ZR_TRUE,
-                                      g_object_value_parameter, ZR_ARRAY_COUNT(g_object_value_parameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("box", 1, 1, builtin_object_box, "zr.builtin.Object",
+                                           "Box a primitive value into its wrapper type.", ZR_TRUE,
+                                           g_object_value_parameter, ZR_ARRAY_COUNT(g_object_value_parameter),
+                                           ZR_MEMBER_CONTRACT_ROLE_BUILTIN_BOX),
 };
 
 static const ZrLibMethodDescriptor g_type_info_methods[] = {
-        ZR_LIB_METHOD_DESCRIPTOR_INIT("box", 1, 1, builtin_type_info_box, "zr.builtin.Object",
-                                      "Box a value through reflection metadata.", ZR_TRUE,
-                                      g_object_value_parameter, ZR_ARRAY_COUNT(g_object_value_parameter)),
+        ZR_LIB_METHOD_DESCRIPTOR_ROLE_INIT("box", 1, 1, builtin_type_info_box, "zr.builtin.Object",
+                                           "Box a value through reflection metadata.", ZR_TRUE,
+                                           g_object_value_parameter, ZR_ARRAY_COUNT(g_object_value_parameter),
+                                           ZR_MEMBER_CONTRACT_ROLE_BUILTIN_BOX),
 };
 
 static const ZrLibMethodDescriptor g_wrapper_methods[] = {
@@ -426,7 +437,8 @@ static const ZrLibTypeDescriptor g_builtin_types[] = {
                                     ZR_NULL, 0, ZR_NULL, 0,
                                     "Builtin root module type.", "zr.builtin.Object", ZR_NULL, 0,
                                     ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0),
-        ZR_LIB_TYPE_DESCRIPTOR_INIT("TypeInfo", ZR_OBJECT_PROTOTYPE_TYPE_CLASS, ZR_NULL, 0,
+        ZR_LIB_TYPE_DESCRIPTOR_INIT("TypeInfo", ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                                    g_type_info_fields, ZR_ARRAY_COUNT(g_type_info_fields),
                                     g_type_info_methods, ZR_ARRAY_COUNT(g_type_info_methods), ZR_NULL, 0,
                                     "Builtin reflection root type.", "zr.builtin.Object", ZR_NULL, 0,
                                     ZR_NULL, 0, ZR_NULL, ZR_FALSE, ZR_FALSE, ZR_NULL, ZR_NULL, 0),
@@ -496,11 +508,24 @@ static const ZrLibTypeDescriptor g_builtin_types[] = {
 };
 
 static const ZrLibTypeHintDescriptor g_builtin_hints[] = {
+        {"IEnumerable", "type", "interface IEnumerable<T>", "Canonical builtin enumerable protocol."},
+        {"IEnumerator", "type", "interface IEnumerator<T>", "Canonical builtin iterator protocol."},
+        {"IArrayLike", "type", "interface IArrayLike<T>", "Canonical builtin array-like protocol."},
+        {"IEquatable", "type", "interface IEquatable<T>", "Canonical builtin equality protocol."},
+        {"IHashable", "type", "interface IHashable", "Canonical builtin hash protocol."},
+        {"IComparable", "type", "interface IComparable<T>", "Canonical builtin comparable protocol."},
+        {"IComparer", "type", "interface IComparer<T>", "Canonical builtin comparer protocol."},
         {"Object", "type", "class Object", "Builtin root object type."},
         {"Module", "type", "class Module", "Builtin root module type."},
         {"TypeInfo", "type", "class TypeInfo", "Builtin reflection root type."},
         {"Integer", "type", "class Integer", "Builtin boxed integer wrapper."},
-        {"IEnumerable", "type", "interface IEnumerable<T>", "Builtin iterable protocol."},
+        {"Float", "type", "class Float", "Builtin boxed float wrapper."},
+        {"Double", "type", "class Double", "Builtin boxed double wrapper."},
+        {"String", "type", "class String", "Builtin boxed string wrapper."},
+        {"Bool", "type", "class Bool", "Builtin boxed bool wrapper."},
+        {"Byte", "type", "class Byte", "Builtin boxed byte wrapper."},
+        {"Char", "type", "class Char", "Builtin boxed char wrapper."},
+        {"UInt64", "type", "class UInt64", "Builtin boxed unsigned 64-bit wrapper."},
 };
 
 static const TZrChar g_builtin_hints_json[] =

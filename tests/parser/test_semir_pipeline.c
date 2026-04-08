@@ -269,18 +269,13 @@ static void test_intermediate_writer_emits_semir_sections(void) {
                 "var watcher = %weak(alias);";
         const char *intermediatePath = "semir_sections_test.zri";
         SZrString *sourceName;
-        SZrAstNode *ast;
         SZrFunction *func;
         char *intermediateText;
 
         TEST_ASSERT_NOT_NULL(state);
         sourceName = ZrCore_String_Create(state, "semir_sections_test.zr", 22);
         TEST_ASSERT_NOT_NULL(sourceName);
-        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        TEST_ASSERT_NOT_NULL(ast);
-
-        func = ZrParser_Compiler_Compile(state, ast);
-        ZrParser_Ast_Free(state, ast);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(func);
 
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, func, intermediatePath));
@@ -325,17 +320,12 @@ static void test_ownership_builtins_lower_to_ownership_opcodes(void) {
                 "var alias = %shared(owner);\n"
                 "var watcher = %weak(alias);";
         SZrString *sourceName;
-        SZrAstNode *ast;
         SZrFunction *func;
 
         TEST_ASSERT_NOT_NULL(state);
         sourceName = ZrCore_String_Create(state, "ownership_opcode_lowering_test.zr", 33);
         TEST_ASSERT_NOT_NULL(sourceName);
-        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        TEST_ASSERT_NOT_NULL(ast);
-
-        func = ZrParser_Compiler_Compile(state, ast);
-        ZrParser_Ast_Free(state, ast);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(func);
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE)));
@@ -371,7 +361,6 @@ static void test_binary_roundtrip_preserves_semir_metadata(void) {
                 "var watcher = %weak(alias);";
         const char *binaryPath = "semir_roundtrip_test.zro";
         SZrString *sourceName;
-        SZrAstNode *ast;
         SZrFunction *func;
         TZrSize binaryLength = 0;
         TZrByte *binaryBytes;
@@ -383,11 +372,7 @@ static void test_binary_roundtrip_preserves_semir_metadata(void) {
         TEST_ASSERT_NOT_NULL(state);
         sourceName = ZrCore_String_Create(state, "semir_roundtrip_test.zr", 23);
         TEST_ASSERT_NOT_NULL(sourceName);
-        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        TEST_ASSERT_NOT_NULL(ast);
-
-        func = ZrParser_Compiler_Compile(state, ast);
-        ZrParser_Ast_Free(state, ast);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(func);
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, func, binaryPath));
 

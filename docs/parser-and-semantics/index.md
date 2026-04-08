@@ -22,7 +22,9 @@ plan_sources:
   - user: 2026-03-28 实现“ZR 全目标回归强化与 Field-Scoped using 语义计划”
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
   - user: 2026-04-04 拆分边界“final function assembly + invariant validation”独立出去
+  - user: 2026-04-08 Rust-First Ownership / GC 分层设计
   - .codex/plans/ZR 全目标回归强化与 Field-Scoped using 语义计划.md
+  - .codex/plans/Rust-First Ownership  GC 分层设计.md
 tests:
   - tests/parser/test_parser.c
   - tests/language_server/test_semantic_analyzer.c
@@ -58,17 +60,17 @@ doc_type: category-index
   - meta access 与 cached dynamic/meta call site 现在都带显式 `CALLSITE_CACHE_TABLE`，并使用固定 2-slot PIC
   - child function 的 `.zri`/AOT metadata 会递归输出，constant function/closure 会重绑到 quickened child function tree
   - quickened ExecBC 与稳定语义层继续解耦
-- `ownership-upgrade-release-semir-aot.md`
-  - `%upgrade` / `%release` 的 parser、ExecBC、SemIR、AOT 契约
-  - weak 升级与显式 owner release 的生命周期边界
-  - 当前 local-binding only 的 `%release` 约束
+- `ownership-builtins-semir-aot.md`
+  - `%borrow/%loan/%upgrade/%release/%detach` 的 parser、ExecBC、SemIR、AOT 契约
+  - ownership expression 与 statement `%using` 的边界
+  - legacy ownership using helper 的 artifact 收口
 - `compiler-final-function-assembly.md`
   - `compiler.c` 只保留 orchestration，最终 `SZrFunction` 装配沉到 `compiler_function_assembly.c`
   - script wrapper / top-level function declaration 共用同一套 final assembly 逻辑
   - `CREATE_CLOSURE -> childFunctions` child graph 不变量在装配期统一校验
-- `field-scoped-using.md`
-  - `class`/`struct` 字段级 `%using var` 语法
-  - `static %using` 非法诊断
+- `owned-field-lifecycle.md`
+  - direct `%unique/%shared` field 的字段生命周期语义
+  - legacy field-scoped `%using` 的迁移边界
   - cleanup plan 与 prototype metadata 的传播路径
 - `lsp-semantic-resolution-and-native-imports.md`
   - `this` / `super` / `%compileTime` / `%test` / lambda 的局部符号命中规则
@@ -83,8 +85,8 @@ doc_type: category-index
 2. 再看 `dynamic-iteration-semir-execbc-aot.md`，了解动态迭代在 SemIR、ExecBC quickening 与 AOT 契约之间的边界。
 3. 然后看 `dynamic-meta-tail-call-semir-execbc-aot.md`，了解 dynamic/meta 调用在 tail-site 上的稳定语义契约。
 4. 再看 `call-site-quickening-meta-access-semir-aot.md`，了解 zero-arg/cached call-site quickening、meta access PIC、以及 child artifact 对齐规则。
-5. 再看 `ownership-upgrade-release-semir-aot.md`，了解 weak upgrade 和显式 owner release 的稳定语义边界。
+5. 再看 `ownership-builtins-semir-aot.md`，了解 ownership builtin 与 statement `%using` 的稳定语义边界。
 6. 再看 `compiler-final-function-assembly.md`，了解 parser orchestration 与 final function assembly 的边界。
-7. 再看 `field-scoped-using.md`，了解字段生命周期语义。
+7. 再看 `owned-field-lifecycle.md`，了解 direct owner field 的生命周期语义。
 8. 最后看 `lsp-semantic-resolution-and-native-imports.md`，了解 language server 如何消费 parser/native import metadata 并稳定命中局部语义引用。
 9. 需要落代码时，再对照 frontmatter 里的 `related_code` 和 `tests` 追踪实现与验证入口。

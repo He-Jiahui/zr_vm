@@ -16,5 +16,6 @@ if (TARGET zr_vm_parser_shared)
 endif ()
 
 zr_link_library_for_module(${zr_curr_module_name} "zr_vm_core")
+zr_link_library_for_module(${zr_curr_module_name} "zr_vm_library")
 
 zr_install_module(${zr_curr_module_name})

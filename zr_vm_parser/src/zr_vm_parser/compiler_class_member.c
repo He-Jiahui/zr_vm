@@ -656,6 +656,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
 
     SZrFunction *newFunc = cs->currentFunction;
     SZrGlobalState *global = cs->state->global;
+    optimize_instructions(cs);
 
     if (cs->instructions.length > 0) {
         TZrSize instSize = cs->instructions.length * sizeof(TZrInstruction);

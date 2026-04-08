@@ -561,6 +561,17 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+                fprintf(file,
+                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArrayGetInt(state, &frame, %u, %u, %u));\n",
+                        (unsigned)destinationSlot,
+                        (unsigned)operandA1,
+                        (unsigned)operandB1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
             case ZR_INSTRUCTION_ENUM(SET_MEMBER):
                 fprintf(file,
                         "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMember(state, &frame, %u, %u, %u));\n",
@@ -574,6 +585,24 @@ void backend_aot_write_c_function_body(FILE *file,
                         (unsigned)destinationSlot,
                         (unsigned)operandA1,
                         (unsigned)operandB1);
+                break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
+                fprintf(file,
+                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArraySetInt(state, &frame, %u, %u, %u));\n",
+                        (unsigned)destinationSlot,
+                        (unsigned)operandA1,
+                        (unsigned)operandB1);
+                break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
+                fprintf(file,
+                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SuperArrayAddInt(state, &frame, %u, %u, %u));\n",
+                        (unsigned)destinationSlot,
+                        (unsigned)operandA1,
+                        (unsigned)operandB1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(ITER_INIT):
             case ZR_INSTRUCTION_ENUM(DYN_ITER_INIT):

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import {
     ZR_DEBUG_ATTACH_COMMAND,
     ZR_DEBUG_CURRENT_PROJECT_COMMAND,
+    ZR_DEBUG_SELECTED_PROJECT_COMMAND,
     ZR_DEBUG_TYPE,
 } from './constants';
 
@@ -12,6 +13,7 @@ export function registerWebDebugSupportUnavailable(): vscode.Disposable[] {
 
     return [
         vscode.commands.registerCommand(ZR_DEBUG_CURRENT_PROJECT_COMMAND, unavailable),
+        vscode.commands.registerCommand(ZR_DEBUG_SELECTED_PROJECT_COMMAND, unavailable),
         vscode.commands.registerCommand(ZR_DEBUG_ATTACH_COMMAND, unavailable),
         vscode.debug.registerDebugConfigurationProvider(ZR_DEBUG_TYPE, {
             resolveDebugConfiguration: async () => {

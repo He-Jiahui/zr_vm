@@ -70,35 +70,11 @@ static TZrUInt64 compiler_protocol_mask_from_prototype_info(SZrCompilerState *cs
 }
 
 static TZrUInt32 compiler_member_contract_role_from_member_info(const SZrTypeMemberInfo *memberInfo) {
-    const TZrChar *memberName;
-
-    if (memberInfo == ZR_NULL || memberInfo->name == ZR_NULL) {
+    if (memberInfo == ZR_NULL) {
         return ZR_MEMBER_CONTRACT_ROLE_NONE;
     }
 
-    memberName = ZrCore_String_GetNativeString(memberInfo->name);
-    if (memberName == ZR_NULL) {
-        return ZR_MEMBER_CONTRACT_ROLE_NONE;
-    }
-
-    if ((memberInfo->memberType == ZR_AST_STRUCT_FIELD || memberInfo->memberType == ZR_AST_CLASS_FIELD) &&
-        strcmp(memberName, "current") == 0) {
-        return ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD;
-    }
-
-    if (memberInfo->memberType == ZR_AST_STRUCT_METHOD || memberInfo->memberType == ZR_AST_CLASS_METHOD) {
-        if (strcmp(memberName, "getIterator") == 0) {
-            return ZR_MEMBER_CONTRACT_ROLE_ITERABLE_INIT;
-        }
-        if (strcmp(memberName, "moveNext") == 0) {
-            return ZR_MEMBER_CONTRACT_ROLE_ITERATOR_MOVE_NEXT;
-        }
-        if (strcmp(memberName, "current") == 0) {
-            return ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_METHOD;
-        }
-    }
-
-    return ZR_MEMBER_CONTRACT_ROLE_NONE;
+    return memberInfo->contractRole;
 }
 
 static TZrBool compiler_add_decorator_name_array_constant(SZrCompilerState *cs,
@@ -809,6 +785,7 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
 
     // 如果有顶层函数声明，返回它；否则返回脚本函数
     SZrFunction *func = (cs.topLevelFunction != ZR_NULL) ? cs.topLevelFunction : cs.currentFunction;
+    optimize_instructions(&cs);
     if (!compiler_assemble_final_function(&cs,
                                           func,
                                           ast,
@@ -818,9 +795,6 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
     }
-
-    // 执行指令优化（占位实现，后续填充具体逻辑）
-    optimize_instructions(&cs);
 
     if (!compiler_build_function_semir_metadata(state, func)) {
         ZrCore_Function_Free(state, func);
@@ -898,14 +872,12 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
     // 将编译结果复制到 SZrFunction（与 ZrParser_Compiler_Compile 共用装配逻辑）
     SZrFunction *func = cs.currentFunction;
     SZrGlobalState *global = state->global;
+    optimize_instructions(&cs);
     if (!compiler_assemble_final_function(&cs, func, ast, ZR_TRUE, ZR_FALSE)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
         return ZR_FALSE;
     }
-
-    // 执行指令优化（占位实现，后续填充具体逻辑）
-    optimize_instructions(&cs);
 
     // 复制测试函数列表
     result->mainFunction = func;

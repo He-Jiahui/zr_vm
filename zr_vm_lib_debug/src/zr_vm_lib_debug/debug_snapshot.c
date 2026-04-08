@@ -50,17 +50,17 @@ static TZrBool zr_debug_is_receiver_name(const TZrChar *name) {
 static const TZrChar *zr_debug_protocol_name(EZrProtocolId protocolId) {
     switch (protocolId) {
         case ZR_PROTOCOL_ID_EQUATABLE:
-            return "Equatable";
+            return "zr.builtin.IEquatable";
         case ZR_PROTOCOL_ID_HASHABLE:
-            return "Hashable";
+            return "zr.builtin.IHashable";
         case ZR_PROTOCOL_ID_COMPARABLE:
-            return "Comparable";
+            return "zr.builtin.IComparable";
         case ZR_PROTOCOL_ID_ITERABLE:
-            return "Iterable";
+            return "zr.builtin.IEnumerable";
         case ZR_PROTOCOL_ID_ITERATOR:
-            return "Iterator";
+            return "zr.builtin.IEnumerator";
         case ZR_PROTOCOL_ID_ARRAY_LIKE:
-            return "ArrayLike";
+            return "zr.builtin.IArrayLike";
         case ZR_PROTOCOL_ID_NONE:
         default:
             return "None";

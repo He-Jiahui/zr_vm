@@ -429,6 +429,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 3. 将编译结果复制到函数对象
     SZrFunction *newFunc = cs->currentFunction;
     SZrGlobalState *global = cs->state->global;
+    optimize_instructions(cs);
 
     // 复制指令列表
     // 使用 instructions.length 而不是 instructionCount，确保同步

@@ -327,6 +327,42 @@ static void test_container_array_runtime_clear_preserves_capacity_and_missing_it
     TEST_DIVIDER();
 }
 
+static void test_container_array_runtime_set_item_preserves_object_payloads(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Array Set Item Preserves Object Payloads";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var {Pair} = %import(\"zr.container\");\n"
+            "var xs = new container.Array<Pair<int, string>>();\n"
+            "xs.add(new container.Pair<int, string>(1, \"a\"));\n"
+            "xs.add(new container.Pair<int, string>(2, \"b\"));\n"
+            "xs[0] = new container.Pair<int, string>(5, \"e\");\n"
+            "var head: Pair<int, string> = xs[0];\n"
+            "var tail: Pair<int, string> = xs[1];\n"
+            "return xs.length * 100 + <int> head.first * 10 + <int> tail.first;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_array_set_item_object_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(252, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 static void test_container_array_runtime_accepts_unary_negation_in_constructor_arguments(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Accepts Unary Negation In Constructor Arguments";
@@ -985,6 +1021,10 @@ static void test_reference_object_array_map_plain_index_fixture_keeps_contract_s
     SZrState *state;
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
+    TZrUInt32 genericGetByIndexCount = 0;
+    TZrUInt32 genericSetByIndexCount = 0;
+    TZrUInt32 superArrayGetIntCount = 0;
+    TZrUInt32 superArraySetIntCount = 0;
     size_t sourceSize = 0;
     char *source;
 
@@ -1001,8 +1041,14 @@ static void test_reference_object_array_map_plain_index_fixture_keeps_contract_s
 
     entryFunction = compile_test_script(state, "reference_array_map_plain_index_split.zr", source);
     TEST_ASSERT_NOT_NULL(entryFunction);
-    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)) >= 6);
-    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SET_BY_INDEX)) >= 2);
+    genericGetByIndexCount = count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_BY_INDEX));
+    genericSetByIndexCount = count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SET_BY_INDEX));
+    superArrayGetIntCount = count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT));
+    superArraySetIntCount = count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT));
+    TEST_ASSERT_TRUE(genericGetByIndexCount >= 4);
+    TEST_ASSERT_TRUE(genericSetByIndexCount >= 2);
+    TEST_ASSERT_TRUE(superArrayGetIntCount >= 2);
+    TEST_ASSERT_EQUAL_UINT32(0u, superArraySetIntCount);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
     TEST_ASSERT_EQUAL_INT64(111111, result);
 
@@ -1247,6 +1293,7 @@ int main(void) {
     RUN_TEST(test_container_fixed_array_runtime_preserves_numeric_items_across_helper_calls);
     RUN_TEST(test_container_array_runtime_supports_capacity_growth_and_structural_equality);
     RUN_TEST(test_container_array_runtime_clear_preserves_capacity_and_missing_item_returns_null);
+    RUN_TEST(test_container_array_runtime_set_item_preserves_object_payloads);
     RUN_TEST(test_container_array_runtime_accepts_unary_negation_in_constructor_arguments);
     RUN_TEST(test_container_array_runtime_rejects_negative_capacity);
     RUN_TEST(test_container_array_runtime_rejects_invalid_indexes);

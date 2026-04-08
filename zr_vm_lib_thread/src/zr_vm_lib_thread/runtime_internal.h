@@ -78,12 +78,18 @@ typedef struct ZrVmTaskTransportValue {
     } as;
 } ZrVmTaskTransportValue;
 
+typedef enum EZrVmTaskSharedCellLifecycle {
+    ZR_VM_TASK_SHARED_CELL_LIFECYCLE_ALIVE = 1,
+    ZR_VM_TASK_SHARED_CELL_LIFECYCLE_DESTROYING = 2,
+    ZR_VM_TASK_SHARED_CELL_LIFECYCLE_DROPPED = 3
+} EZrVmTaskSharedCellLifecycle;
+
 typedef struct ZrVmTaskSharedCell {
     ZrVmTaskMutex mutex;
     TZrUInt64 strongCount;
     TZrUInt64 weakCount;
-    TZrBool alive;
-    TZrUInt8 reserved[7];
+    TZrUInt32 lifecycleState;
+    TZrUInt32 reserved;
     ZrVmTaskTransportValue value;
 } ZrVmTaskSharedCell;
 
@@ -258,6 +264,7 @@ TZrBool zr_vm_task_shared_make_value(SZrState *state,
 TZrBool zr_vm_task_shared_cell_is_alive_native(ZrVmTaskSharedCell *cell);
 TZrBool zr_vm_task_shared_cell_add_strong_ref(ZrVmTaskSharedCell *cell);
 TZrBool zr_vm_task_shared_cell_add_weak_ref(ZrVmTaskSharedCell *cell);
+TZrBool zr_vm_task_shared_cell_add_weak_ref_if_alive(ZrVmTaskSharedCell *cell);
 void zr_vm_task_shared_cell_release_strong(ZrVmTaskSharedCell *cell);
 void zr_vm_task_shared_cell_release_weak(ZrVmTaskSharedCell *cell);
 TZrBool zr_vm_task_spawn_thread_worker(ZrLibCallContext *context,

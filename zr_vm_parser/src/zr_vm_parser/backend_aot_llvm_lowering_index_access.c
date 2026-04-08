@@ -40,11 +40,26 @@ TZrBool backend_aot_llvm_lower_index_value_family(const SZrAotLlvmLoweringContex
                                                                  instruction,
                                                                  "ZrLibrary_AotRuntime_GetByIndex",
                                                                  ZR_TRUE);
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+            return backend_aot_llvm_lower_triple_slot_index_call(context,
+                                                                 instruction,
+                                                                 "ZrLibrary_AotRuntime_SuperArrayGetInt",
+                                                                 ZR_TRUE);
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
             return backend_aot_llvm_lower_triple_slot_index_call(context,
                                                                  instruction,
                                                                  "ZrLibrary_AotRuntime_SetByIndex",
                                                                  ZR_FALSE);
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
+            return backend_aot_llvm_lower_triple_slot_index_call(context,
+                                                                 instruction,
+                                                                 "ZrLibrary_AotRuntime_SuperArraySetInt",
+                                                                 ZR_FALSE);
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
+            return backend_aot_llvm_lower_triple_slot_index_call(context,
+                                                                 instruction,
+                                                                 "ZrLibrary_AotRuntime_SuperArrayAddInt",
+                                                                 ZR_TRUE);
         default:
             return ZR_FALSE;
     }

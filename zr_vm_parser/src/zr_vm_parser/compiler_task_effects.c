@@ -1,9 +1,20 @@
 #include "compiler_internal.h"
 
+typedef enum EZrTaskEffectBindingKind {
+    ZR_TASK_EFFECT_BINDING_NONE = 0,
+    ZR_TASK_EFFECT_BINDING_THREAD_MODULE = 1,
+    ZR_TASK_EFFECT_BINDING_UNIQUE_MUTEX = 2,
+    ZR_TASK_EFFECT_BINDING_SHARED_MUTEX = 3,
+    ZR_TASK_EFFECT_BINDING_AFFINE_GUARD = 4,
+    ZR_TASK_EFFECT_BINDING_BORROWED = 5,
+    ZR_TASK_EFFECT_BINDING_LOANED = 6
+} EZrTaskEffectBindingKind;
+
 typedef struct ZrTaskEffectBinding {
     SZrString *name;
     TZrInt32 scopeDepth;
     TZrBool isBorrowed;
+    EZrTaskEffectBindingKind bindingKind;
 } ZrTaskEffectBinding;
 
 typedef struct ZrTaskEffectContext {
@@ -31,6 +42,19 @@ static TZrBool task_effects_identifier_equals(const SZrIdentifier *identifier, c
 
 static TZrBool task_effects_type_is_borrowed(const SZrType *typeInfo) {
     return typeInfo != ZR_NULL && typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+}
+
+static TZrBool task_effects_type_is_loaned(const SZrType *typeInfo) {
+    return typeInfo != ZR_NULL && typeInfo->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED;
+}
+
+static TZrBool task_effects_binding_kind_is_mutex(EZrTaskEffectBindingKind bindingKind) {
+    return bindingKind == ZR_TASK_EFFECT_BINDING_UNIQUE_MUTEX ||
+           bindingKind == ZR_TASK_EFFECT_BINDING_SHARED_MUTEX;
+}
+
+static TZrBool task_effects_binding_kind_is_affine_guard(EZrTaskEffectBindingKind bindingKind) {
+    return bindingKind == ZR_TASK_EFFECT_BINDING_AFFINE_GUARD;
 }
 
 static TZrBool task_effects_context_init(ZrTaskEffectContext *context,
@@ -106,7 +130,10 @@ static void task_effects_leave_scope(ZrTaskEffectContext *context) {
     }
 }
 
-static void task_effects_push_binding(ZrTaskEffectContext *context, SZrString *name, TZrBool isBorrowed) {
+static void task_effects_push_binding(ZrTaskEffectContext *context,
+                                      SZrString *name,
+                                      TZrBool isBorrowed,
+                                      EZrTaskEffectBindingKind bindingKind) {
     ZrTaskEffectBinding binding;
 
     if (context == ZR_NULL || context->cs == ZR_NULL || context->cs->state == ZR_NULL || name == ZR_NULL) {
@@ -116,6 +143,7 @@ static void task_effects_push_binding(ZrTaskEffectContext *context, SZrString *n
     binding.name = name;
     binding.scopeDepth = context->scopeDepth;
     binding.isBorrowed = isBorrowed;
+    binding.bindingKind = bindingKind;
     ZrCore_Array_Push(context->cs->state, &context->bindings, &binding);
 }
 
@@ -159,7 +187,52 @@ static void task_effects_report_borrow_after_await(ZrTaskEffectContext *context,
     ZrParser_Compiler_Error(context->cs, message, location);
 }
 
+static void task_effects_report_loan_after_await(ZrTaskEffectContext *context,
+                                                 SZrString *name,
+                                                 SZrFileRange location) {
+    TZrNativeString nativeName;
+    TZrChar message[256];
+
+    if (context == ZR_NULL || context->cs == ZR_NULL) {
+        return;
+    }
+
+    nativeName = name != ZR_NULL ? ZrCore_String_GetNativeStringShort(name) : ZR_NULL;
+    if (nativeName == ZR_NULL) {
+        nativeName = "<loaned>";
+    }
+
+    snprintf(message,
+             sizeof(message),
+             "Loaned binding '%s' cannot be used after an await boundary",
+             nativeName);
+    ZrParser_Compiler_Error(context->cs, message, location);
+}
+
+static void task_effects_report_affine_guard_after_await(ZrTaskEffectContext *context,
+                                                         SZrString *name,
+                                                         SZrFileRange location) {
+    TZrNativeString nativeName;
+    TZrChar message[256];
+
+    if (context == ZR_NULL || context->cs == ZR_NULL) {
+        return;
+    }
+
+    nativeName = name != ZR_NULL ? ZrCore_String_GetNativeStringShort(name) : ZR_NULL;
+    if (nativeName == ZR_NULL) {
+        nativeName = "<lock>";
+    }
+
+    snprintf(message,
+             sizeof(message),
+             "Affine guard '%s' cannot be used after an await boundary",
+             nativeName);
+    ZrParser_Compiler_Error(context->cs, message, location);
+}
+
 static void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode *node);
+static EZrTaskEffectBindingKind task_effects_infer_binding_kind(const ZrTaskEffectContext *context, SZrAstNode *node);
 
 static void task_effects_validate_node_array(ZrTaskEffectContext *context, SZrAstNodeArray *nodes) {
     TZrSize index;
@@ -175,7 +248,8 @@ static void task_effects_validate_node_array(ZrTaskEffectContext *context, SZrAs
 
 static void task_effects_register_pattern_binding(ZrTaskEffectContext *context,
                                                   SZrAstNode *pattern,
-                                                  TZrBool isBorrowed) {
+                                                  TZrBool isBorrowed,
+                                                  EZrTaskEffectBindingKind bindingKind) {
     TZrSize index;
 
     if (context == ZR_NULL || pattern == ZR_NULL) {
@@ -184,14 +258,15 @@ static void task_effects_register_pattern_binding(ZrTaskEffectContext *context,
 
     switch (pattern->type) {
         case ZR_AST_IDENTIFIER_LITERAL:
-            task_effects_push_binding(context, pattern->data.identifier.name, isBorrowed);
+            task_effects_push_binding(context, pattern->data.identifier.name, isBorrowed, bindingKind);
             break;
         case ZR_AST_DESTRUCTURING_OBJECT:
             if (pattern->data.destructuringObject.keys != ZR_NULL) {
                 for (index = 0; index < pattern->data.destructuringObject.keys->count; index++) {
                     task_effects_register_pattern_binding(context,
                                                           pattern->data.destructuringObject.keys->nodes[index],
-                                                          isBorrowed);
+                                                          isBorrowed,
+                                                          bindingKind);
                 }
             }
             break;
@@ -200,7 +275,8 @@ static void task_effects_register_pattern_binding(ZrTaskEffectContext *context,
                 for (index = 0; index < pattern->data.destructuringArray.keys->count; index++) {
                     task_effects_register_pattern_binding(context,
                                                           pattern->data.destructuringArray.keys->nodes[index],
-                                                          isBorrowed);
+                                                          isBorrowed,
+                                                          bindingKind);
                 }
             }
             break;
@@ -210,14 +286,21 @@ static void task_effects_register_pattern_binding(ZrTaskEffectContext *context,
 }
 
 static void task_effects_register_parameter_node(ZrTaskEffectContext *context, SZrAstNode *parameterNode) {
+    EZrTaskEffectBindingKind bindingKind = ZR_TASK_EFFECT_BINDING_NONE;
+
     if (parameterNode == ZR_NULL || parameterNode->type != ZR_AST_PARAMETER) {
         return;
+    }
+
+    if (task_effects_type_is_loaned(parameterNode->data.parameter.typeInfo)) {
+        bindingKind = ZR_TASK_EFFECT_BINDING_LOANED;
     }
 
     task_effects_push_binding(context,
                               parameterNode->data.parameter.name != ZR_NULL ? parameterNode->data.parameter.name->name
                                                                             : ZR_NULL,
-                              task_effects_type_is_borrowed(parameterNode->data.parameter.typeInfo));
+                              task_effects_type_is_borrowed(parameterNode->data.parameter.typeInfo),
+                              bindingKind);
 }
 
 static void task_effects_register_parameter_list(ZrTaskEffectContext *context, SZrAstNodeArray *params) {
@@ -233,11 +316,20 @@ static void task_effects_register_parameter_list(ZrTaskEffectContext *context, S
 }
 
 static void task_effects_register_vararg_parameter(ZrTaskEffectContext *context, SZrParameter *parameter) {
+    EZrTaskEffectBindingKind bindingKind = ZR_TASK_EFFECT_BINDING_NONE;
+
     if (context == ZR_NULL || parameter == ZR_NULL || parameter->name == ZR_NULL) {
         return;
     }
 
-    task_effects_push_binding(context, parameter->name->name, task_effects_type_is_borrowed(parameter->typeInfo));
+    if (task_effects_type_is_loaned(parameter->typeInfo)) {
+        bindingKind = ZR_TASK_EFFECT_BINDING_LOANED;
+    }
+
+    task_effects_push_binding(context,
+                              parameter->name->name,
+                              task_effects_type_is_borrowed(parameter->typeInfo),
+                              bindingKind);
 }
 
 static TZrBool task_effects_is_zr_task_import(SZrAstNode *node) {
@@ -247,6 +339,134 @@ static TZrBool task_effects_is_zr_task_import(SZrAstNode *node) {
     }
 
     return task_effects_string_equals(node->data.importExpression.modulePath->data.stringLiteral.value, "zr.task");
+}
+
+static TZrBool task_effects_is_zr_thread_import(SZrAstNode *node) {
+    if (node == ZR_NULL || node->type != ZR_AST_IMPORT_EXPRESSION || node->data.importExpression.modulePath == ZR_NULL ||
+        node->data.importExpression.modulePath->type != ZR_AST_STRING_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    return task_effects_string_equals(node->data.importExpression.modulePath->data.stringLiteral.value, "zr.thread");
+}
+
+static TZrBool task_effects_type_node_is_named(SZrAstNode *node, const TZrChar *literal) {
+    if (node == ZR_NULL || literal == ZR_NULL || node->type != ZR_AST_TYPE || node->data.type.name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (node->data.type.name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return task_effects_identifier_equals(&node->data.type.name->data.identifier, literal);
+    }
+
+    return node->data.type.name->type == ZR_AST_GENERIC_TYPE && node->data.type.name->data.genericType.name != ZR_NULL &&
+           task_effects_string_equals(node->data.type.name->data.genericType.name->name, literal);
+}
+
+static TZrBool task_effects_member_is_named(SZrAstNode *node, const TZrChar *literal) {
+    return node != ZR_NULL && node->type == ZR_AST_MEMBER_EXPRESSION && !node->data.memberExpression.computed &&
+           node->data.memberExpression.property != ZR_NULL &&
+           ((node->data.memberExpression.property->type == ZR_AST_IDENTIFIER_LITERAL &&
+             task_effects_identifier_equals(&node->data.memberExpression.property->data.identifier, literal)) ||
+            task_effects_type_node_is_named(node->data.memberExpression.property, literal));
+}
+
+static EZrTaskEffectBindingKind task_effects_infer_construct_binding_kind(const ZrTaskEffectContext *context,
+                                                                          SZrAstNode *node) {
+    SZrAstNode *target;
+    SZrPrimaryExpression *primary;
+    EZrTaskEffectBindingKind targetKind;
+
+    if (context == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        return ZR_TASK_EFFECT_BINDING_NONE;
+    }
+
+    if (!node->data.constructExpression.isNew) {
+        if (node->data.constructExpression.builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_BORROW) {
+            return ZR_TASK_EFFECT_BINDING_BORROWED;
+        }
+        if (node->data.constructExpression.builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_LOAN) {
+            return ZR_TASK_EFFECT_BINDING_LOANED;
+        }
+    }
+
+    target = node->data.constructExpression.target;
+    if (target == ZR_NULL || target->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_TASK_EFFECT_BINDING_NONE;
+    }
+
+    primary = &target->data.primaryExpression;
+    targetKind = task_effects_infer_binding_kind(context, primary->property);
+    if (targetKind != ZR_TASK_EFFECT_BINDING_THREAD_MODULE || primary->members == ZR_NULL || primary->members->count == 0) {
+        return ZR_TASK_EFFECT_BINDING_NONE;
+    }
+
+    if (task_effects_member_is_named(primary->members->nodes[0], "UniqueMutex")) {
+        return ZR_TASK_EFFECT_BINDING_UNIQUE_MUTEX;
+    }
+
+    if (task_effects_member_is_named(primary->members->nodes[0], "SharedMutex")) {
+        return ZR_TASK_EFFECT_BINDING_SHARED_MUTEX;
+    }
+
+    return ZR_TASK_EFFECT_BINDING_NONE;
+}
+
+static EZrTaskEffectBindingKind task_effects_infer_primary_binding_kind(const ZrTaskEffectContext *context,
+                                                                        SZrAstNode *node) {
+    SZrPrimaryExpression *primary;
+    EZrTaskEffectBindingKind receiverKind;
+
+    if (context == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_TASK_EFFECT_BINDING_NONE;
+    }
+
+    primary = &node->data.primaryExpression;
+    if (primary->members == ZR_NULL || primary->members->count < 2) {
+        return ZR_TASK_EFFECT_BINDING_NONE;
+    }
+
+    receiverKind = task_effects_infer_binding_kind(context, primary->property);
+    if (!task_effects_binding_kind_is_mutex(receiverKind) || primary->members->nodes[1] == ZR_NULL ||
+        primary->members->nodes[1]->type != ZR_AST_FUNCTION_CALL) {
+        return ZR_TASK_EFFECT_BINDING_NONE;
+    }
+
+    if (receiverKind == ZR_TASK_EFFECT_BINDING_UNIQUE_MUTEX &&
+        task_effects_member_is_named(primary->members->nodes[0], "lock")) {
+        return ZR_TASK_EFFECT_BINDING_AFFINE_GUARD;
+    }
+
+    if (receiverKind == ZR_TASK_EFFECT_BINDING_SHARED_MUTEX &&
+        (task_effects_member_is_named(primary->members->nodes[0], "read") ||
+         task_effects_member_is_named(primary->members->nodes[0], "write"))) {
+        return ZR_TASK_EFFECT_BINDING_AFFINE_GUARD;
+    }
+
+    return ZR_TASK_EFFECT_BINDING_NONE;
+}
+
+static EZrTaskEffectBindingKind task_effects_infer_binding_kind(const ZrTaskEffectContext *context, SZrAstNode *node) {
+    const ZrTaskEffectBinding *binding;
+
+    if (context == ZR_NULL || node == ZR_NULL) {
+        return ZR_TASK_EFFECT_BINDING_NONE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_IMPORT_EXPRESSION:
+            return task_effects_is_zr_thread_import(node) ? ZR_TASK_EFFECT_BINDING_THREAD_MODULE
+                                                          : ZR_TASK_EFFECT_BINDING_NONE;
+        case ZR_AST_IDENTIFIER_LITERAL:
+            binding = task_effects_find_binding(context, node->data.identifier.name);
+            return binding != ZR_NULL ? binding->bindingKind : ZR_TASK_EFFECT_BINDING_NONE;
+        case ZR_AST_CONSTRUCT_EXPRESSION:
+            return task_effects_infer_construct_binding_kind(context, node);
+        case ZR_AST_PRIMARY_EXPRESSION:
+            return task_effects_infer_primary_binding_kind(context, node);
+        default:
+            return ZR_TASK_EFFECT_BINDING_NONE;
+    }
 }
 
 static TZrBool task_effects_primary_is_await_call(SZrAstNode *node, TZrSize *callMemberIndex) {
@@ -379,7 +599,10 @@ static void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode 
             break;
         case ZR_AST_FUNCTION_DECLARATION:
             if (node->data.functionDeclaration.name != ZR_NULL) {
-                task_effects_push_binding(context, node->data.functionDeclaration.name->name, ZR_FALSE);
+                task_effects_push_binding(context,
+                                          node->data.functionDeclaration.name->name,
+                                          ZR_FALSE,
+                                          ZR_TASK_EFFECT_BINDING_NONE);
             }
             task_effects_validate_function_like(context,
                                                 node->data.functionDeclaration.isAsync,
@@ -397,10 +620,19 @@ static void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode 
                                                 node->data.lambdaExpression.block);
             break;
         case ZR_AST_VARIABLE_DECLARATION:
-            task_effects_validate_node(context, node->data.variableDeclaration.value);
-            task_effects_register_pattern_binding(context,
-                                                 node->data.variableDeclaration.pattern,
-                                                 task_effects_type_is_borrowed(node->data.variableDeclaration.typeInfo));
+            {
+                EZrTaskEffectBindingKind bindingKind =
+                        task_effects_infer_binding_kind(context, node->data.variableDeclaration.value);
+                TZrBool isBorrowed =
+                        task_effects_type_is_borrowed(node->data.variableDeclaration.typeInfo) ||
+                        bindingKind == ZR_TASK_EFFECT_BINDING_BORROWED;
+
+                task_effects_validate_node(context, node->data.variableDeclaration.value);
+                task_effects_register_pattern_binding(context,
+                                                     node->data.variableDeclaration.pattern,
+                                                     isBorrowed,
+                                                     bindingKind);
+            }
             break;
         case ZR_AST_PRIMARY_EXPRESSION:
             task_effects_validate_primary_expression(context, node);
@@ -413,8 +645,13 @@ static void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode 
             }
 
             binding = task_effects_find_binding(context, node->data.identifier.name);
-            if (binding != ZR_NULL && binding->isBorrowed) {
+            if (binding != ZR_NULL &&
+                (binding->isBorrowed || binding->bindingKind == ZR_TASK_EFFECT_BINDING_BORROWED)) {
                 task_effects_report_borrow_after_await(context, node->data.identifier.name, node->location);
+            } else if (binding != ZR_NULL && binding->bindingKind == ZR_TASK_EFFECT_BINDING_LOANED) {
+                task_effects_report_loan_after_await(context, node->data.identifier.name, node->location);
+            } else if (binding != ZR_NULL && task_effects_binding_kind_is_affine_guard(binding->bindingKind)) {
+                task_effects_report_affine_guard_after_await(context, node->data.identifier.name, node->location);
             }
             break;
         }
@@ -524,7 +761,8 @@ static void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode 
             task_effects_enter_scope(context);
             task_effects_register_pattern_binding(context,
                                                  node->data.foreachLoop.pattern,
-                                                 task_effects_type_is_borrowed(node->data.foreachLoop.typeInfo));
+                                                 task_effects_type_is_borrowed(node->data.foreachLoop.typeInfo),
+                                                 ZR_TASK_EFFECT_BINDING_NONE);
             task_effects_validate_node(context, node->data.foreachLoop.block);
             task_effects_leave_scope(context);
             break;
@@ -533,7 +771,7 @@ static void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode 
     }
 }
 
-TZrBool compiler_validate_task_effects(SZrCompilerState *cs, SZrAstNode *node) {
+ZR_PARSER_API TZrBool compiler_validate_task_effects(SZrCompilerState *cs, SZrAstNode *node) {
     ZrTaskEffectContext rootContext;
     TZrBool succeeded;
 

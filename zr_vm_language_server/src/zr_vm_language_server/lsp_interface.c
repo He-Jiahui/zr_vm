@@ -3,6 +3,7 @@
 //
 
 #include "lsp_interface_internal.h"
+#include "lsp_virtual_documents.h"
 #include "lsp_semantic_query.h"
 
 #include "zr_vm_parser/compiler.h"
@@ -16,6 +17,25 @@
 #endif
 
 static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suffix);
+static const TZrChar *lsp_string_text_native(SZrString *value);
+static SZrString *lsp_create_const_string(SZrState *state, const TZrChar *text);
+static TZrBool lsp_append_location_result(SZrState *state, SZrArray *result, SZrString *uri, SZrLspRange range);
+static TZrBool lsp_resolve_virtual_descriptor(SZrState *state,
+                                              SZrLspContext *context,
+                                              SZrString *uri,
+                                              const ZrLibModuleDescriptor **outDescriptor,
+                                              EZrLspImportedModuleSourceKind *outSourceKind,
+                                              TZrChar *moduleNameBuffer,
+                                              TZrSize bufferSize);
+static TZrBool lsp_project_modules_append_summary(SZrState *state,
+                                                  SZrArray *result,
+                                                  TZrInt32 sourceKind,
+                                                  TZrBool isEntry,
+                                                  SZrString *moduleName,
+                                                  SZrString *displayName,
+                                                  SZrString *description,
+                                                  SZrString *navigationUri,
+                                                  SZrLspRange range);
 static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
                                                   SZrSymbolScope *scope,
                                                   SZrSymbol *symbol,
@@ -45,6 +65,152 @@ static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suff
     suffixLength = strlen(suffix);
     return text != ZR_NULL && length >= suffixLength &&
            memcmp(text + length - suffixLength, suffix, suffixLength) == 0;
+}
+
+static const TZrChar *lsp_string_text_native(SZrString *value) {
+    if (value == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return value->shortStringLength < ZR_VM_LONG_STRING_FLAG
+               ? ZrCore_String_GetNativeStringShort(value)
+               : ZrCore_String_GetNativeString(value);
+}
+
+static SZrString *lsp_create_const_string(SZrState *state, const TZrChar *text) {
+    if (state == ZR_NULL || text == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(state, (TZrNativeString)text, strlen(text));
+}
+
+static TZrBool lsp_append_location_result(SZrState *state, SZrArray *result, SZrString *uri, SZrLspRange range) {
+    SZrLspLocation *location;
+
+    if (state == ZR_NULL || result == ZR_NULL || uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!result->isValid) {
+        ZrCore_Array_Init(state, result, sizeof(SZrLspLocation *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    }
+
+    location = (SZrLspLocation *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspLocation));
+    if (location == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    location->uri = uri;
+    location->range = range;
+    ZrCore_Array_Push(state, result, &location);
+    return ZR_TRUE;
+}
+
+static TZrBool lsp_resolve_virtual_descriptor(SZrState *state,
+                                              SZrLspContext *context,
+                                              SZrString *uri,
+                                              const ZrLibModuleDescriptor **outDescriptor,
+                                              EZrLspImportedModuleSourceKind *outSourceKind,
+                                              TZrChar *moduleNameBuffer,
+                                              TZrSize bufferSize) {
+    if (outDescriptor != ZR_NULL) {
+        *outDescriptor = ZR_NULL;
+    }
+    if (outSourceKind != ZR_NULL) {
+        *outSourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
+    }
+    if (moduleNameBuffer != ZR_NULL && bufferSize > 0) {
+        moduleNameBuffer[0] = '\0';
+    }
+    if (state == ZR_NULL || uri == ZR_NULL || outDescriptor == ZR_NULL || moduleNameBuffer == ZR_NULL ||
+        bufferSize == 0 || !ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(uri)) {
+        return ZR_FALSE;
+    }
+
+    if (context != ZR_NULL) {
+        for (TZrSize index = 0; index < context->projectIndexes.length; index++) {
+            SZrLspProjectIndex **projectPtr =
+                (SZrLspProjectIndex **)ZrCore_Array_Get(&context->projectIndexes, index);
+            if (projectPtr != ZR_NULL && *projectPtr != ZR_NULL &&
+                ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(state,
+                                                                             *projectPtr,
+                                                                             uri,
+                                                                             outDescriptor,
+                                                                             outSourceKind,
+                                                                             moduleNameBuffer,
+                                                                             bufferSize) &&
+                *outDescriptor != ZR_NULL) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(state,
+                                                                        ZR_NULL,
+                                                                        uri,
+                                                                        outDescriptor,
+                                                                        outSourceKind,
+                                                                        moduleNameBuffer,
+                                                                        bufferSize) &&
+           *outDescriptor != ZR_NULL;
+}
+
+static TZrBool lsp_project_modules_append_summary(SZrState *state,
+                                                  SZrArray *result,
+                                                  TZrInt32 sourceKind,
+                                                  TZrBool isEntry,
+                                                  SZrString *moduleName,
+                                                  SZrString *displayName,
+                                                  SZrString *description,
+                                                  SZrString *navigationUri,
+                                                  SZrLspRange range) {
+    SZrLspProjectModuleSummary *summary;
+
+    if (state == ZR_NULL || result == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!result->isValid) {
+        ZrCore_Array_Init(state, result, sizeof(SZrLspProjectModuleSummary *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    }
+
+    for (TZrSize index = 0; index < result->length; index++) {
+        SZrLspProjectModuleSummary **summaryPtr =
+            (SZrLspProjectModuleSummary **)ZrCore_Array_Get(result, index);
+        if (summaryPtr == ZR_NULL || *summaryPtr == ZR_NULL) {
+            continue;
+        }
+
+        if ((*summaryPtr)->sourceKind == sourceKind &&
+            ZrLanguageServer_Lsp_StringsEqual((*summaryPtr)->moduleName, moduleName)) {
+            if (isEntry) {
+                (*summaryPtr)->isEntry = ZR_TRUE;
+            }
+            if ((*summaryPtr)->navigationUri == ZR_NULL && navigationUri != ZR_NULL) {
+                (*summaryPtr)->navigationUri = navigationUri;
+                (*summaryPtr)->range = range;
+            }
+            return ZR_TRUE;
+        }
+    }
+
+    summary = (SZrLspProjectModuleSummary *)ZrCore_Memory_RawMalloc(state->global,
+                                                                    sizeof(SZrLspProjectModuleSummary));
+    if (summary == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(summary, 0, sizeof(*summary));
+    summary->sourceKind = sourceKind;
+    summary->isEntry = isEntry;
+    summary->moduleName = moduleName;
+    summary->displayName = displayName != ZR_NULL ? displayName : moduleName;
+    summary->description = description;
+    summary->navigationUri = navigationUri;
+    summary->range = range;
+    ZrCore_Array_Push(state, result, &summary);
+    return ZR_TRUE;
 }
 
 static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
@@ -298,9 +464,13 @@ SZrFilePosition ZrLanguageServer_Lsp_GetDocumentFilePosition(SZrLspContext *cont
     SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
 
     if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
-        return ZrLanguageServer_LspPosition_ToFilePositionWithContent(position,
-                                                                      fileVersion->content,
-                                                                      fileVersion->contentLength);
+        SZrFilePosition filePosition = ZrLanguageServer_LspPosition_ToFilePositionWithContent(position,
+                                                                                              fileVersion->content,
+                                                                                              fileVersion->contentLength);
+        if (fileVersion->usesFallbackAst) {
+            filePosition.offset = 0;
+        }
+        return filePosition;
     }
 
     return ZrLanguageServer_LspPosition_ToFilePosition(position);
@@ -314,9 +484,14 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
                                                 TZrSize version,
                                                 TZrBool allowProjectRefresh) {
     TZrBool analyzeSuccess;
+    SZrSemanticAnalyzer *existingAnalyzer;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || content == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(uri)) {
+        return ZR_TRUE;
     }
 
     if (lsp_string_ends_with_native(uri, ".zrp")) {
@@ -345,35 +520,43 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
             return ZR_FALSE;
         }
 
+        existingAnalyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+        if (fileVersion->parserDiagnostics.length > 0 && fileVersion->usesFallbackAst && existingAnalyzer != ZR_NULL) {
+            return ZR_TRUE;
+        }
+
         ast = fileVersion->ast;
         if (ast == ZR_NULL) {
             ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
             return fileVersion->parserDiagnostics.length > 0;
         }
 
-        analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+        analyzer = existingAnalyzer != ZR_NULL
+                       ? existingAnalyzer
+                       : ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
         if (analyzer == ZR_NULL) {
             return ZR_FALSE;
         }
 
-        if (allowProjectRefresh) {
-            projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
-            if (projectIndex != ZR_NULL) {
-                return ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
-                                                                             context,
-                                                                             uri,
-                                                                             content,
-                                                                             contentLength);
-            }
+        projectIndex = allowProjectRefresh
+                           ? ZrLanguageServer_LspProject_GetOrCreateForUri(state, context, uri)
+                           : ZrLanguageServer_LspProject_FindProjectForUri(context, uri);
+        if (allowProjectRefresh && projectIndex != ZR_NULL) {
+            return ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
+                                                                         context,
+                                                                         uri,
+                                                                         content,
+                                                                         contentLength);
         }
 
-        analyzeSuccess = ZrLanguageServer_Lsp_ProjectAnalyzeDocument(state, context, uri, analyzer, ast);
+        analyzeSuccess = projectIndex != ZR_NULL
+                             ? ZrLanguageServer_Lsp_ProjectAnalyzeDocument(state, context, uri, analyzer, ast)
+                             : ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
         if (!analyzeSuccess) {
             return ZR_FALSE;
         }
 
-        return !allowProjectRefresh ||
-               ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state, context, uri, content, contentLength);
+        return ZR_TRUE;
     }
 }
 
@@ -400,6 +583,13 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
+
+    if (ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(uri)) {
+        if (!result->isValid) {
+            ZrCore_Array_Init(state, result, sizeof(SZrLspDiagnostic *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+        }
+        return ZR_TRUE;
+    }
     
     // 初始化结果数组
     if (!result->isValid) {
@@ -418,6 +608,10 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
         if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
             ZrLanguageServer_Lsp_AppendDiagnostic(state, result, *diagPtr);
         }
+    }
+
+    if (fileVersion->parserDiagnostics.length > 0 && fileVersion->usesFallbackAst) {
+        return ZR_TRUE;
     }
 
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
@@ -666,9 +860,40 @@ TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
                          SZrLspPosition position,
                          SZrArray *result) {
     SZrLspSemanticQuery semanticQuery;
+    const ZrLibModuleDescriptor *virtualDescriptor = ZR_NULL;
+    SZrLspVirtualDeclarationMatch virtualMatch;
+    TZrChar virtualModuleName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    SZrString *targetUri;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(uri) &&
+        lsp_resolve_virtual_descriptor(state,
+                                       context,
+                                       uri,
+                                       &virtualDescriptor,
+                                       ZR_NULL,
+                                       virtualModuleName,
+                                       sizeof(virtualModuleName)) &&
+        ZrLanguageServer_LspVirtualDocuments_FindDeclarationAtPosition(state,
+                                                                       virtualDescriptor,
+                                                                       uri,
+                                                                       position,
+                                                                       &virtualMatch) &&
+        virtualMatch.kind == ZR_LSP_VIRTUAL_DECLARATION_MODULE_LINK &&
+        virtualMatch.targetModuleName != ZR_NULL) {
+        targetUri = ZrLanguageServer_LspVirtualDocuments_CreateDeclarationUri(state, virtualMatch.targetModuleName);
+        if (targetUri == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        return lsp_append_location_result(state,
+                                          result,
+                                          targetUri,
+                                          ZrLanguageServer_LspRange_FromFileRange(
+                                              ZrLanguageServer_LspVirtualDocuments_ModuleEntryRange(targetUri)));
     }
     
     if (ZrLanguageServer_Lsp_TryGetDecoratorDefinition(state, context, uri, position, result)) {
@@ -951,4 +1176,201 @@ TZrBool ZrLanguageServer_Lsp_PrepareRename(SZrState *state,
     *outRange = ZrLanguageServer_LspRange_FromFileRange(ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol));
     *outPlaceholder = symbol->name;
     return ZR_TRUE;
+}
+
+TZrBool ZrLanguageServer_Lsp_GetNativeDeclarationDocument(SZrState *state,
+                                                          SZrLspContext *context,
+                                                          SZrString *uri,
+                                                          SZrString **outText) {
+    const ZrLibModuleDescriptor *descriptor = ZR_NULL;
+    TZrChar moduleNameBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (outText != ZR_NULL) {
+        *outText = ZR_NULL;
+    }
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || outText == ZR_NULL ||
+        !ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(uri) ||
+        !lsp_resolve_virtual_descriptor(state,
+                                       context,
+                                       uri,
+                                       &descriptor,
+                                       ZR_NULL,
+                                       moduleNameBuffer,
+                                       sizeof(moduleNameBuffer)) ||
+        descriptor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return ZrLanguageServer_LspVirtualDocuments_RenderDeclarationText(state, descriptor, uri, outText) &&
+           *outText != ZR_NULL;
+}
+
+TZrBool ZrLanguageServer_Lsp_GetProjectModules(SZrState *state,
+                                               SZrLspContext *context,
+                                               SZrString *projectUri,
+                                               SZrArray *result) {
+    SZrLspProjectIndex *projectIndex;
+    SZrLspRange fileEntryRange;
+
+    if (state == ZR_NULL || context == ZR_NULL || projectUri == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!result->isValid) {
+        ZrCore_Array_Init(state, result, sizeof(SZrLspProjectModuleSummary *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    }
+
+    projectIndex = ZrLanguageServer_LspProject_GetOrCreateByProjectUri(state, context, projectUri);
+    if (projectIndex == ZR_NULL ||
+        !ZrLanguageServer_LspProject_EnsureScannedSourceGraph(state, context, projectIndex)) {
+        return ZR_FALSE;
+    }
+
+    fileEntryRange = ZrLanguageServer_LspRange_FromFileRange(
+        ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 1, 1),
+                                  ZrParser_FilePosition_Create(0, 1, 1),
+                                  ZR_NULL));
+
+    for (TZrSize fileIndex = 0; fileIndex < projectIndex->files.length; fileIndex++) {
+        SZrLspProjectFileRecord **recordPtr =
+            (SZrLspProjectFileRecord **)ZrCore_Array_Get(&projectIndex->files, fileIndex);
+
+        if (recordPtr == ZR_NULL || *recordPtr == ZR_NULL || (*recordPtr)->moduleName == ZR_NULL) {
+            continue;
+        }
+
+        if (!lsp_project_modules_append_summary(
+                state,
+                result,
+                (*recordPtr)->isFfiWrapperSource ? ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER
+                                                 : ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE,
+                projectIndex->project != ZR_NULL && projectIndex->project->entry != ZR_NULL &&
+                    ZrLanguageServer_Lsp_StringsEqual((*recordPtr)->moduleName, projectIndex->project->entry),
+                (*recordPtr)->moduleName,
+                (*recordPtr)->moduleName,
+                (*recordPtr)->path,
+                (*recordPtr)->uri,
+                fileEntryRange)) {
+            return ZR_FALSE;
+        }
+    }
+
+    for (TZrSize fileIndex = 0; fileIndex < projectIndex->files.length; fileIndex++) {
+        SZrLspProjectFileRecord **recordPtr =
+            (SZrLspProjectFileRecord **)ZrCore_Array_Get(&projectIndex->files, fileIndex);
+        SZrArray moduleNames;
+
+        if (recordPtr == ZR_NULL || *recordPtr == ZR_NULL || (*recordPtr)->uri == ZR_NULL) {
+            continue;
+        }
+
+        ZrCore_Array_Init(state, &moduleNames, sizeof(SZrString *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+        if (!ZrLanguageServer_LspProject_CollectImportModuleNamesForUri(state,
+                                                                        context,
+                                                                        (*recordPtr)->uri,
+                                                                        &moduleNames)) {
+            ZrCore_Array_Free(state, &moduleNames);
+            continue;
+        }
+
+        for (TZrSize bindingIndex = 0; bindingIndex < moduleNames.length; bindingIndex++) {
+            SZrString **moduleNamePtr = (SZrString **)ZrCore_Array_Get(&moduleNames, bindingIndex);
+            SZrLspResolvedImportedModule resolved;
+            SZrString *navigationUri = ZR_NULL;
+            SZrString *description;
+            SZrLspRange navigationRange = fileEntryRange;
+
+            if (moduleNamePtr == ZR_NULL || *moduleNamePtr == ZR_NULL) {
+                continue;
+            }
+
+            memset(&resolved, 0, sizeof(resolved));
+            if (!ZrLanguageServer_LspModuleMetadata_ResolveImportedModule(state,
+                                                                         ZR_NULL,
+                                                                         projectIndex,
+                                                                         *moduleNamePtr,
+                                                                         &resolved)) {
+                continue;
+            }
+
+            if ((resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE ||
+                 resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER) &&
+                resolved.sourceRecord != ZR_NULL) {
+                if (!lsp_project_modules_append_summary(
+                        state,
+                        result,
+                        resolved.sourceKind,
+                        projectIndex->project != ZR_NULL && projectIndex->project->entry != ZR_NULL &&
+                            ZrLanguageServer_Lsp_StringsEqual(resolved.sourceRecord->moduleName,
+                                                              projectIndex->project->entry),
+                        resolved.sourceRecord->moduleName,
+                        resolved.sourceRecord->moduleName,
+                        resolved.sourceRecord->path,
+                        resolved.sourceRecord->uri,
+                        fileEntryRange)) {
+                    ZrCore_Array_Free(state, &moduleNames);
+                    return ZR_FALSE;
+                }
+                continue;
+            }
+
+            if (resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA) {
+                if (!ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(state,
+                                                                               projectIndex,
+                                                                               resolved.moduleName,
+                                                                               &navigationUri) ||
+                    navigationUri == ZR_NULL) {
+                    continue;
+                }
+            } else if (resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_BUILTIN ||
+                       resolved.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN) {
+                if (!ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleUri(state,
+                                                                               projectIndex,
+                                                                               resolved.moduleName,
+                                                                               &navigationUri) ||
+                    navigationUri == ZR_NULL) {
+                    continue;
+                }
+                navigationRange = ZrLanguageServer_LspRange_FromFileRange(
+                    ZrLanguageServer_LspVirtualDocuments_ModuleEntryRange(navigationUri));
+            } else {
+                continue;
+            }
+
+            description = lsp_create_const_string(state,
+                                                  ZrLanguageServer_LspModuleMetadata_SourceKindLabel(
+                                                      (EZrLspImportedModuleSourceKind)resolved.sourceKind));
+            if (!lsp_project_modules_append_summary(state,
+                                                    result,
+                                                    resolved.sourceKind,
+                                                    ZR_FALSE,
+                                                    resolved.moduleName,
+                                                    resolved.moduleName,
+                                                    description,
+                                                    navigationUri,
+                                                    navigationRange)) {
+                ZrCore_Array_Free(state, &moduleNames);
+                return ZR_FALSE;
+            }
+        }
+        ZrCore_Array_Free(state, &moduleNames);
+    }
+
+    return ZR_TRUE;
+}
+
+void ZrLanguageServer_Lsp_FreeProjectModules(SZrState *state, SZrArray *result) {
+    if (state == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < result->length; index++) {
+        SZrLspProjectModuleSummary **summaryPtr =
+            (SZrLspProjectModuleSummary **)ZrCore_Array_Get(result, index);
+        if (summaryPtr != ZR_NULL && *summaryPtr != ZR_NULL) {
+            ZrCore_Memory_RawFree(state->global, *summaryPtr, sizeof(SZrLspProjectModuleSummary));
+        }
+    }
+
+    ZrCore_Array_Free(state, result);
 }

@@ -563,9 +563,10 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *stat
     SZrString *name = ZR_NULL;
     SZrInferredType *typeInfo = ZR_NULL;
     EZrAccessModifier accessModifier = ZR_ACCESS_PRIVATE;
-    TZrBool isUsingManaged = ZR_FALSE;
     TZrBool isStatic = ZR_FALSE;
     const SZrType *fieldType = ZR_NULL;
+    EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    TZrBool needsDeterministicCleanup = ZR_FALSE;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || fieldNode == ZR_NULL) {
         return;
@@ -575,14 +576,12 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *stat
         SZrStructField *field = &fieldNode->data.structField;
         name = field->name != ZR_NULL ? field->name->name : ZR_NULL;
         accessModifier = field->access;
-        isUsingManaged = field->isUsingManaged;
         isStatic = field->isStatic;
         fieldType = field->typeInfo;
     } else if (fieldNode->type == ZR_AST_CLASS_FIELD) {
         SZrClassField *field = &fieldNode->data.classField;
         name = field->name != ZR_NULL ? field->name->name : ZR_NULL;
         accessModifier = field->access;
-        isUsingManaged = field->isUsingManaged;
         isStatic = field->isStatic;
         fieldType = field->typeInfo;
     } else {
@@ -594,6 +593,9 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *stat
     }
 
     typeInfo = create_field_symbol_type(state, analyzer, fieldType);
+    if (fieldType != ZR_NULL) {
+        ownershipQualifier = fieldType->ownershipQualifier;
+    }
     ZrLanguageServer_SymbolTable_AddSymbolEx(state,
                              analyzer->symbolTable,
                              ZR_SYMBOL_FIELD,
@@ -613,17 +615,9 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *stat
         ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
     }
 
-    if (!isUsingManaged) {
-        return;
-    }
-
-    if (isStatic) {
-        ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
-                                        analyzer,
-                                        ZR_DIAGNOSTIC_ERROR,
-                                        fieldNode->location,
-                                        "Field-scoped `%using` only supports instance fields",
-                                        "static_using_field");
+    needsDeterministicCleanup = ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+                                ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
+    if (isStatic || !needsDeterministicCleanup) {
         return;
     }
 

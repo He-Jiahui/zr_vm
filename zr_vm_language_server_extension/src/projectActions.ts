@@ -3,6 +3,7 @@ import { resolveNativeCliPath } from './nativeAssets';
 import {
     activeWorkspaceFolder,
     hasWorkspaceProjects,
+    onDidChangeSelectedProject,
     resolveSelectedProjectUri,
     selectWorkspaceProject,
 } from './workspaceProjects';
@@ -66,6 +67,9 @@ class DesktopProjectActionsController implements vscode.Disposable {
                 void this.update();
             }),
             vscode.workspace.onDidChangeWorkspaceFolders(() => {
+                void this.update();
+            }),
+            onDidChangeSelectedProject(() => {
                 void this.update();
             }),
             vscode.workspace.onDidChangeConfiguration((event) => {

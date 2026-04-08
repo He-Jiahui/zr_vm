@@ -218,11 +218,11 @@
       "zr": [
         {
           "id": "zrFiles",
-          "name": "ZR Files"
+          "name": "Current File Structure"
         },
         {
           "id": "zrImports",
-          "name": "ZR Imports"
+          "name": "Selected Project"
         }
       ]
     },
@@ -237,6 +237,21 @@
           "command": "zr.structure.refresh",
           "when": "view == zrImports",
           "group": "navigation"
+        },
+        {
+          "command": "zr.selectProject",
+          "when": "view == zrImports",
+          "group": "navigation@1"
+        },
+        {
+          "command": "zr.runSelectedProject",
+          "when": "view == zrImports",
+          "group": "navigation@2"
+        },
+        {
+          "command": "zr.debugSelectedProject",
+          "when": "view == zrImports",
+          "group": "navigation@3"
         }
       ],
       "editor/title": [

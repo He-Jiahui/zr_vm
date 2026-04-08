@@ -1,14 +1,10 @@
 import * as vscode from 'vscode';
+import { onDidChangeLanguageClient, sendLanguageServerRequest } from './languageClientRequests';
 import {
-    getBuiltinModuleSnapshot,
-    type BuiltinModuleLinkSnapshot,
-    type BuiltinModuleSnapshot,
-    type BuiltinSymbolSnapshot,
-} from './structure/builtinModules';
-import {
-    discoverWorkspaceProjects,
+    activeWorkspaceFolder,
     isZrpDocument,
-    pickWorkspaceProjectForUri,
+    onDidChangeSelectedProject,
+    resolveSelectedWorkspaceProject,
     type WorkspaceProject,
 } from './workspaceProjects';
 
@@ -18,13 +14,11 @@ export const ZR_STRUCTURE_REFRESH_COMMAND = 'zr.structure.refresh';
 export const ZR_STRUCTURE_INSPECT_COMMAND = 'zr.__inspectStructureViews';
 export const ZR_STRUCTURE_OPEN_TARGET_COMMAND = 'zr.structure.openTarget';
 
-const ZR_FILE_GLOB = '**/*.zr';
-const ZR_FILE_EXCLUDE_GLOB = '**/{build,bin,node_modules,.git,.vscode-test}/**';
 const MODULE_PATTERN = /^\s*module\s+(['"])([^'"]+)\1\s*;/m;
 const IMPORT_PATTERN = /(?:\bvar\s+([A-Za-z_]\w*)\s*=\s*)?%import\s*\(\s*(['"])([^'"]+)\2\s*\)/g;
 const REFRESH_DEBOUNCE_MS = 150;
 
-type StructureNodeType = 'workspace' | 'project' | 'file' | 'imports' | 'declarations' | 'import' | 'module' | 'declaration';
+type NodeType = 'info' | 'group' | 'file' | 'import' | 'declaration' | 'project' | 'module' | 'action';
 type OpenTargetKind = 'range' | 'definition';
 
 interface SerializedPosition {
@@ -45,58 +39,45 @@ interface OpenTargetPayload {
     fallbackRange?: SerializedRange;
 }
 
+interface ProjectModuleSummaryPayload {
+    sourceKind: number;
+    isEntry: boolean;
+    moduleName: string;
+    displayName?: string;
+    description?: string;
+    navigationUri?: string;
+    range?: SerializedRange;
+}
+
+interface TreeNode {
+    id: string;
+    nodeType: NodeType;
+    label: string;
+    description?: string;
+    tooltip?: string;
+    uri?: vscode.Uri;
+    icon: vscode.ThemeIcon;
+    collapsibleState: vscode.TreeItemCollapsibleState;
+    command?: vscode.Command;
+    children: TreeNode[];
+}
+
+interface SerializedTreeNode {
+    id: string;
+    nodeType: NodeType;
+    label: string;
+    description?: string;
+    uri?: string;
+    commandId?: string;
+    commandArguments?: unknown[];
+    children: SerializedTreeNode[];
+}
+
 interface ImportEntry {
     alias?: string;
     moduleName: string;
     range: vscode.Range;
-    targetUri?: vscode.Uri;
-    builtinModule?: BuiltinModuleSnapshot;
-    isExternal: boolean;
-}
-
-interface FileSnapshot {
-    uri: vscode.Uri;
-    workspaceFolder: vscode.WorkspaceFolder;
-    project?: WorkspaceProject;
-    moduleName: string;
-    relativePath: string;
-    projectRelativeModulePath?: string;
-    lines: string[];
-    imports: ImportEntry[];
-    symbols: vscode.DocumentSymbol[];
-    navigationRange: vscode.Range;
-}
-
-interface StructureNode {
-    id: string;
-    nodeType: StructureNodeType;
-    label: string;
-    description?: string;
-    tooltip?: string;
-    moduleName?: string;
-    uri?: vscode.Uri;
-    relativePath?: string;
-    isExternal?: boolean;
-    isRecursiveReference?: boolean;
-    icon: vscode.ThemeIcon;
-    collapsibleState: vscode.TreeItemCollapsibleState;
-    command?: vscode.Command;
-    children: StructureNode[];
-}
-
-interface SerializedStructureNode {
-    id: string;
-    nodeType: StructureNodeType;
-    label: string;
-    description?: string;
-    moduleName?: string;
-    uri?: string;
-    relativePath?: string;
-    isExternal?: boolean;
-    isRecursiveReference?: boolean;
-    commandId?: string;
-    commandArguments?: unknown[];
-    children: SerializedStructureNode[];
+    moduleLiteralRange: vscode.Range;
 }
 
 export interface ZrStructureController extends vscode.Disposable {
@@ -107,21 +88,18 @@ export function registerZrStructureViews(context: vscode.ExtensionContext): ZrSt
     return new ZrStructureService(context);
 }
 
-class StructureTreeProvider implements vscode.TreeDataProvider<StructureNode> {
-    private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<StructureNode | undefined>();
-    private roots: StructureNode[] = [];
-    private readonly parentById = new Map<string, StructureNode>();
+class StructureTreeProvider implements vscode.TreeDataProvider<TreeNode> {
+    private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeNode | undefined>();
+    private roots: TreeNode[] = [];
 
-    public readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
+    readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
-    public setRoots(roots: StructureNode[]): void {
+    setRoots(roots: TreeNode[]): void {
         this.roots = roots;
-        this.parentById.clear();
-        indexNodeParents(undefined, roots, this.parentById);
         this.onDidChangeTreeDataEmitter.fire(undefined);
     }
 
-    public getTreeItem(element: StructureNode): vscode.TreeItem {
+    getTreeItem(element: TreeNode): vscode.TreeItem {
         const item = new vscode.TreeItem(element.label, element.collapsibleState);
         item.id = element.id;
         item.description = element.description;
@@ -132,15 +110,11 @@ class StructureTreeProvider implements vscode.TreeDataProvider<StructureNode> {
         return item;
     }
 
-    public getChildren(element?: StructureNode): Thenable<StructureNode[]> {
+    getChildren(element?: TreeNode): Thenable<TreeNode[]> {
         return Promise.resolve(element?.children ?? this.roots);
     }
 
-    public getParent(element: StructureNode): vscode.ProviderResult<StructureNode> {
-        return this.parentById.get(element.id);
-    }
-
-    public dispose(): void {
+    dispose(): void {
         this.onDidChangeTreeDataEmitter.dispose();
     }
 }
@@ -148,33 +122,29 @@ class StructureTreeProvider implements vscode.TreeDataProvider<StructureNode> {
 class ZrStructureService implements ZrStructureController {
     private readonly disposables: vscode.Disposable[] = [];
     private readonly filesProvider = new StructureTreeProvider();
-    private readonly importsProvider = new StructureTreeProvider();
-    private readonly filesView: vscode.TreeView<StructureNode>;
-    private readonly importsView: vscode.TreeView<StructureNode>;
-    private readonly fileRootByUri = new Map<string, StructureNode>();
-    private readonly importRootByUri = new Map<string, StructureNode>();
-    private readonly snapshotByUri = new Map<string, FileSnapshot>();
-
-    private filesRoots: StructureNode[] = [];
-    private importsRoots: StructureNode[] = [];
+    private readonly projectProvider = new StructureTreeProvider();
+    private readonly filesView: vscode.TreeView<TreeNode>;
+    private readonly projectView: vscode.TreeView<TreeNode>;
     private refreshChain: Promise<void> = Promise.resolve();
     private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    private filesRoots: TreeNode[] = [];
+    private projectRoots: TreeNode[] = [];
 
-    public constructor(context: vscode.ExtensionContext) {
+    constructor(private readonly context: vscode.ExtensionContext) {
         this.filesView = vscode.window.createTreeView(ZR_FILES_VIEW_ID, {
             treeDataProvider: this.filesProvider,
             showCollapseAll: true,
         });
-        this.importsView = vscode.window.createTreeView(ZR_IMPORTS_VIEW_ID, {
-            treeDataProvider: this.importsProvider,
+        this.projectView = vscode.window.createTreeView(ZR_IMPORTS_VIEW_ID, {
+            treeDataProvider: this.projectProvider,
             showCollapseAll: true,
         });
 
         this.disposables.push(
             this.filesProvider,
-            this.importsProvider,
+            this.projectProvider,
             this.filesView,
-            this.importsView,
+            this.projectView,
             vscode.commands.registerCommand(ZR_STRUCTURE_REFRESH_COMMAND, async () => {
                 await this.refresh();
             }),
@@ -182,11 +152,15 @@ class ZrStructureService implements ZrStructureController {
                 await this.refresh();
                 return {
                     files: this.filesRoots.map((node) => serializeNode(node)),
-                    imports: this.importsRoots.map((node) => serializeNode(node)),
+                    imports: this.projectRoots.map((node) => serializeNode(node)),
+                    project: this.projectRoots.map((node) => serializeNode(node)),
                 };
             }),
             vscode.commands.registerCommand(ZR_STRUCTURE_OPEN_TARGET_COMMAND, async (payload: OpenTargetPayload) => {
                 await openTarget(payload);
+            }),
+            vscode.window.onDidChangeActiveTextEditor(() => {
+                this.scheduleRefresh();
             }),
             vscode.workspace.onDidChangeTextDocument((event) => {
                 if (event.document.languageId === 'zr') {
@@ -199,7 +173,7 @@ class ZrStructureService implements ZrStructureController {
                 }
             }),
             vscode.workspace.onDidSaveTextDocument((document) => {
-                if (document.languageId === 'zr' || isProjectDocument(document)) {
+                if (document.languageId === 'zr' || isZrpDocument(document)) {
                     this.scheduleRefresh();
                 }
             }),
@@ -215,18 +189,10 @@ class ZrStructureService implements ZrStructureController {
             vscode.workspace.onDidChangeWorkspaceFolders(() => {
                 this.scheduleRefresh();
             }),
-        );
-
-        const watcher = vscode.workspace.createFileSystemWatcher('**/*.{zr,zrp}');
-        this.disposables.push(
-            watcher,
-            watcher.onDidChange(() => {
+            onDidChangeLanguageClient(() => {
                 this.scheduleRefresh();
             }),
-            watcher.onDidCreate(() => {
-                this.scheduleRefresh();
-            }),
-            watcher.onDidDelete(() => {
+            onDidChangeSelectedProject(() => {
                 this.scheduleRefresh();
             }),
         );
@@ -235,7 +201,7 @@ class ZrStructureService implements ZrStructureController {
         void this.refresh();
     }
 
-    public async refresh(): Promise<void> {
+    async refresh(): Promise<void> {
         this.refreshChain = this.refreshChain.then(
             async () => {
                 await this.performRefresh();
@@ -247,7 +213,7 @@ class ZrStructureService implements ZrStructureController {
         await this.refreshChain;
     }
 
-    public dispose(): void {
+    dispose(): void {
         if (this.refreshTimer !== undefined) {
             clearTimeout(this.refreshTimer);
             this.refreshTimer = undefined;
@@ -271,456 +237,207 @@ class ZrStructureService implements ZrStructureController {
     }
 
     private async performRefresh(): Promise<void> {
-        const projects = await discoverWorkspaceProjects();
-        const snapshots = await this.collectSnapshots(projects);
-        this.snapshotByUri.clear();
-        for (const snapshot of snapshots) {
-            this.snapshotByUri.set(snapshot.uri.toString(), snapshot);
-        }
-
-        const moduleIndex = buildModuleIndex(snapshots);
-        resolveImportTargets(snapshots, moduleIndex);
-
-        const singleWorkspace = (vscode.workspace.workspaceFolders?.length ?? 0) <= 1;
-        const fileRoots = snapshots.map((snapshot) => this.buildFileNode(snapshot));
-        const importRoots = snapshots.map((snapshot) => this.buildModuleRoot(snapshot));
-        this.filesRoots = wrapWorkspaceRoots(wrapProjectRoots(snapshots, fileRoots), singleWorkspace);
-        this.importsRoots = wrapWorkspaceRoots(wrapProjectRoots(snapshots, importRoots), singleWorkspace);
+        this.filesRoots = await buildCurrentFileRoots();
+        this.projectRoots = await buildProjectRoots(this.context);
         this.filesProvider.setRoots(this.filesRoots);
-        this.importsProvider.setRoots(this.importsRoots);
+        this.projectProvider.setRoots(this.projectRoots);
+    }
+}
 
-        this.fileRootByUri.clear();
-        this.importRootByUri.clear();
-        for (const node of fileRoots) {
-            if (node.uri) {
-                this.fileRootByUri.set(node.uri.toString(), node);
-            }
-        }
-        for (const node of importRoots) {
-            if (node.uri) {
-                this.importRootByUri.set(node.uri.toString(), node);
-            }
-        }
+async function buildCurrentFileRoots(): Promise<TreeNode[]> {
+    const editor = vscode.window.activeTextEditor;
+    const document = editor?.document;
+
+    if (!document || document.languageId !== 'zr') {
+        return [
+            createInfoNode(
+                'current-file:empty',
+                'Open a .zr file to see its structure.',
+            ),
+        ];
     }
 
-    private async collectSnapshots(projects: WorkspaceProject[]): Promise<FileSnapshot[]> {
-        const uris = await vscode.workspace.findFiles(ZR_FILE_GLOB, ZR_FILE_EXCLUDE_GLOB);
-        uris.sort((left, right) => compareStrings(left.toString(), right.toString()));
+    const moduleName = parseModuleName(document);
+    const imports = parseImports(document);
+    const symbols = await loadDocumentSymbols(document.uri);
+    const importsGroup = createGroupNode(
+        `current-file:${document.uri.toString()}:imports`,
+        'Imports',
+        imports.map((entry) => createImportNode(document, entry)),
+    );
+    const declarationsGroup = createGroupNode(
+        `current-file:${document.uri.toString()}:declarations`,
+        'Declarations',
+        symbols.map((symbol) => createDeclarationNode(document, symbol)),
+    );
+    const fileRange = firstNavigableRange(symbols);
 
-        const snapshots = await Promise.all(uris.map(async (uri) => this.createSnapshot(uri, projects)));
-        return snapshots
-            .filter((snapshot): snapshot is FileSnapshot => snapshot !== undefined)
-            .sort((left, right) => {
-                const folderCompare = compareStrings(left.workspaceFolder.name, right.workspaceFolder.name);
-                if (folderCompare !== 0) {
-                    return folderCompare;
-                }
-
-                const leftProjectKey = left.project?.relativePath ?? '';
-                const rightProjectKey = right.project?.relativePath ?? '';
-                const projectCompare = compareStrings(leftProjectKey, rightProjectKey);
-                if (projectCompare !== 0) {
-                    return projectCompare;
-                }
-
-                return compareStrings(left.relativePath, right.relativePath);
-            });
-    }
-
-    private async createSnapshot(uri: vscode.Uri, projects: WorkspaceProject[]): Promise<FileSnapshot | undefined> {
-        const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
-        if (!workspaceFolder) {
-            return undefined;
-        }
-
-        const project = pickWorkspaceProjectForUri(uri, projects);
-        const document = await vscode.workspace.openTextDocument(uri);
-        const imports = parseImports(document);
-        const symbols = filterImportAliasSymbols(await loadDocumentSymbols(uri), imports);
-        const lines = document.getText().split(/\r?\n/);
-        return {
-            uri,
-            workspaceFolder,
-            project,
-            moduleName: parseModuleName(document),
-            relativePath: relativePathWithinFolder(workspaceFolder, uri),
-            projectRelativeModulePath: projectRelativeModulePath(project, uri),
-            lines,
-            imports,
-            symbols,
-            navigationRange: firstNavigableRange(symbols, lines),
-        };
-    }
-
-    private buildFileNode(snapshot: FileSnapshot): StructureNode {
-        const importsGroup = createGroupNode(
-            `file:${snapshot.uri.toString()}:imports`,
-            'Imports',
-            snapshot.uri,
-            snapshot.relativePath,
-            snapshot.imports
-                .slice()
-                .sort((left, right) => compareStrings(left.moduleName, right.moduleName))
-                .map((entry) => createImportLeaf(snapshot, entry)),
-        );
-        const declarationsGroup = createGroupNode(
-            `file:${snapshot.uri.toString()}:declarations`,
-            'Declarations',
-            snapshot.uri,
-            snapshot.relativePath,
-            snapshot.symbols.map((symbol) => createDeclarationNode(snapshot, symbol)),
-        );
-        return {
-            id: `file:${snapshot.uri.toString()}`,
+    return [
+        {
+            id: `current-file:${document.uri.toString()}`,
             nodeType: 'file',
-            label: snapshot.moduleName,
-            description: snapshot.relativePath,
-            tooltip: snapshot.uri.fsPath || snapshot.uri.toString(),
-            moduleName: snapshot.moduleName,
-            uri: snapshot.uri,
-            relativePath: snapshot.relativePath,
+            label: moduleName,
+            description: vscode.workspace.asRelativePath(document.uri, false),
+            tooltip: document.uri.fsPath || document.uri.toString(),
+            uri: document.uri,
             icon: new vscode.ThemeIcon('file'),
-            collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
-            command: createRangeCommand(snapshot.uri, snapshot.navigationRange),
+            collapsibleState: vscode.TreeItemCollapsibleState.Expanded,
+            command: createRangeCommand(document.uri, fileRange),
             children: [importsGroup, declarationsGroup],
-        };
-    }
-
-    private buildModuleRoot(snapshot: FileSnapshot): StructureNode {
-        return this.createModuleNode(snapshot, new Set<string>([snapshot.uri.toString()]), false);
-    }
-
-    private createModuleNode(
-        snapshot: FileSnapshot,
-        ancestry: Set<string>,
-        isRecursiveReference: boolean,
-    ): StructureNode {
-        if (isRecursiveReference) {
-            return {
-                id: `module:${snapshot.uri.toString()}:recursive`,
-                nodeType: 'module',
-                label: snapshot.moduleName,
-                description: `${snapshot.relativePath} (recursive)`,
-                tooltip: snapshot.uri.fsPath || snapshot.uri.toString(),
-                moduleName: snapshot.moduleName,
-                uri: snapshot.uri,
-                relativePath: snapshot.relativePath,
-                isRecursiveReference: true,
-                icon: new vscode.ThemeIcon('file-submodule'),
-                collapsibleState: vscode.TreeItemCollapsibleState.None,
-                command: createRangeCommand(snapshot.uri, snapshot.navigationRange),
-                children: [],
-            };
-        }
-
-        const declarationsGroup = createGroupNode(
-            `module:${snapshot.uri.toString()}:declarations`,
-            'Declarations',
-            snapshot.uri,
-            snapshot.relativePath,
-            snapshot.symbols.map((symbol) => createDeclarationNode(snapshot, symbol)),
-        );
-        const importChildren = snapshot.imports
-            .slice()
-            .sort((left, right) => compareStrings(left.moduleName, right.moduleName))
-            .map((entry) => this.createImportedModuleNode(snapshot, entry, ancestry));
-        return {
-            id: `module:${snapshot.uri.toString()}:${isRecursiveReference ? 'recursive' : 'node'}`,
-            nodeType: 'module',
-            label: snapshot.moduleName,
-            description: snapshot.relativePath,
-            tooltip: snapshot.uri.fsPath || snapshot.uri.toString(),
-            moduleName: snapshot.moduleName,
-            uri: snapshot.uri,
-            relativePath: snapshot.relativePath,
-            isRecursiveReference: false,
-            icon: new vscode.ThemeIcon('file-submodule'),
-            collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
-            command: createRangeCommand(snapshot.uri, snapshot.navigationRange),
-            children: [declarationsGroup, ...importChildren],
-        };
-    }
-
-    private createImportedModuleNode(
-        owner: FileSnapshot,
-        entry: ImportEntry,
-        ancestry: Set<string>,
-    ): StructureNode {
-        if (entry.builtinModule) {
-            return createBuiltinModuleNode(
-                owner,
-                entry.builtinModule,
-                entry.moduleName,
-                entry.range,
-                `module:${owner.uri.toString()}:builtin:${entry.moduleName}`,
-                entry.moduleName,
-                'builtin',
-            );
-        }
-
-        if (!entry.targetUri) {
-            return {
-                id: `module:${owner.uri.toString()}:external:${entry.moduleName}:${entry.range.start.line}:${entry.range.start.character}`,
-                nodeType: 'module',
-                label: entry.moduleName,
-                description: 'external',
-                tooltip: `${entry.moduleName} (external module)`,
-                moduleName: entry.moduleName,
-                uri: owner.uri,
-                relativePath: owner.relativePath,
-                isExternal: true,
-                icon: new vscode.ThemeIcon('package'),
-                collapsibleState: vscode.TreeItemCollapsibleState.None,
-                command: createDefinitionCommand(owner.uri, entry.range.start, entry.range),
-                children: [],
-            };
-        }
-
-        const target = this.snapshotByUri.get(entry.targetUri.toString());
-        if (!target) {
-            return {
-                id: `module:${owner.uri.toString()}:missing:${entry.moduleName}`,
-                nodeType: 'module',
-                label: entry.moduleName,
-                description: 'external',
-                tooltip: `${entry.moduleName} (unresolved module)`,
-                moduleName: entry.moduleName,
-                uri: owner.uri,
-                relativePath: owner.relativePath,
-                isExternal: true,
-                icon: new vscode.ThemeIcon('package'),
-                collapsibleState: vscode.TreeItemCollapsibleState.None,
-                command: createDefinitionCommand(owner.uri, entry.range.start, entry.range),
-                children: [],
-            };
-        }
-
-        const targetKey = target.uri.toString();
-        if (ancestry.has(targetKey)) {
-            return {
-                ...this.createModuleNode(target, ancestry, true),
-                id: `module:${owner.uri.toString()}:recursive:${targetKey}`,
-                isRecursiveReference: true,
-                description: `${target.relativePath} (recursive)`,
-            };
-        }
-
-        const nextAncestry = new Set(ancestry);
-        nextAncestry.add(targetKey);
-        return this.createModuleNode(target, nextAncestry, false);
-    }
-
-    private async revealActiveEditor(): Promise<void> {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor || editor.document.languageId !== 'zr') {
-            return;
-        }
-
-        const key = editor.document.uri.toString();
-        await revealNode(this.filesView, this.fileRootByUri.get(key));
-        await revealNode(this.importsView, this.importRootByUri.get(key));
-    }
+        },
+    ];
 }
 
-function createGroupNode(
-    id: string,
-    label: string,
-    uri: vscode.Uri,
-    relativePath: string,
-    children: StructureNode[],
-): StructureNode {
+async function buildProjectRoots(context: vscode.ExtensionContext): Promise<TreeNode[]> {
+    const selectedProject = await resolveSelectedWorkspaceProject(context, activeWorkspaceFolder(), false);
+    const actionNodes = [
+        createActionNode('project-action:select', 'Select Project', 'zr.selectProject', 'list-selection'),
+        createActionNode('project-action:run', 'Run Selected Project', 'zr.runSelectedProject', 'play'),
+        createActionNode('project-action:debug', 'Debug Selected Project', 'zr.debugSelectedProject', 'debug-alt-small'),
+    ];
+
+    if (!selectedProject) {
+        return [
+            ...actionNodes,
+            createInfoNode(
+                'project:empty',
+                'No selected ZR project. Use "Select Project".',
+            ),
+        ];
+    }
+
+    const summaries = await sendLanguageServerRequest<ProjectModuleSummaryPayload[]>('zr/projectModules', {
+        uri: selectedProject.uri.toString(),
+    }) ?? [];
+    const projectModuleNodes = summaries
+        .filter((summary) => isProjectSourceKind(summary.sourceKind))
+        .sort(compareProjectModuleSummary)
+        .map((summary) => createProjectModuleNode(summary));
+    const binaryModuleNodes = summaries
+        .filter((summary) => summary.sourceKind === 3)
+        .sort(compareProjectModuleSummary)
+        .map((summary) => createProjectModuleNode(summary));
+    const nativeModuleNodes = summaries
+        .filter((summary) => summary.sourceKind === 4 || summary.sourceKind === 5)
+        .sort(compareProjectModuleSummary)
+        .map((summary) => createProjectModuleNode(summary));
+
+    return [
+        ...actionNodes,
+        {
+            id: `project:${selectedProject.id}`,
+            nodeType: 'project',
+            label: selectedProject.label,
+            description: selectedProject.relativePath,
+            tooltip: selectedProject.uri.fsPath || selectedProject.uri.toString(),
+            uri: selectedProject.uri,
+            icon: new vscode.ThemeIcon('folder-library'),
+            collapsibleState: vscode.TreeItemCollapsibleState.Expanded,
+            command: createRangeCommand(selectedProject.uri, new vscode.Range(0, 0, 0, 0)),
+            children: [
+                createGroupNode('project:modules:source', 'Project Modules', projectModuleNodes),
+                createGroupNode('project:modules:native', 'Native Modules', nativeModuleNodes),
+                createGroupNode('project:modules:binary', 'Binary Modules', binaryModuleNodes),
+            ],
+        },
+    ];
+}
+
+function createInfoNode(id: string, label: string): TreeNode {
     return {
         id,
-        nodeType: label === 'Imports' ? 'imports' : 'declarations',
+        nodeType: 'info',
         label,
-        uri,
-        relativePath,
-        icon: new vscode.ThemeIcon('folder'),
-        collapsibleState: children.length > 0
-            ? vscode.TreeItemCollapsibleState.Expanded
-            : vscode.TreeItemCollapsibleState.None,
+        icon: new vscode.ThemeIcon('info'),
+        collapsibleState: vscode.TreeItemCollapsibleState.None,
+        children: [],
+    };
+}
+
+function createGroupNode(id: string, label: string, children: TreeNode[]): TreeNode {
+    return {
+        id,
+        nodeType: 'group',
+        label,
+        icon: new vscode.ThemeIcon('symbol-folder'),
+        collapsibleState: vscode.TreeItemCollapsibleState.Expanded,
         children,
     };
 }
 
-function createImportLeaf(snapshot: FileSnapshot, entry: ImportEntry): StructureNode {
-    const label = entry.alias ? `${entry.alias} -> ${entry.moduleName}` : entry.moduleName;
-    const builtinChildren = entry.builtinModule
-        ? createBuiltinChildren(
-            snapshot,
-            entry.builtinModule,
-            entry.range,
-            `import:${snapshot.uri.toString()}:${entry.moduleName}`,
-        )
-        : [];
+function createActionNode(
+    id: string,
+    label: string,
+    commandId: string,
+    iconId: string,
+): TreeNode {
     return {
-        id: `import:${snapshot.uri.toString()}:${entry.moduleName}:${entry.range.start.line}:${entry.range.start.character}`,
+        id,
+        nodeType: 'action',
+        label,
+        icon: new vscode.ThemeIcon(iconId),
+        collapsibleState: vscode.TreeItemCollapsibleState.None,
+        command: {
+            command: commandId,
+            title: label,
+        },
+        children: [],
+    };
+}
+
+function createImportNode(document: vscode.TextDocument, entry: ImportEntry): TreeNode {
+    return {
+        id: `import:${document.uri.toString()}:${entry.moduleName}:${entry.range.start.line}:${entry.range.start.character}`,
         nodeType: 'import',
-        label,
-        description: entry.builtinModule
-            ? 'builtin'
-            : entry.isExternal
-                ? 'external'
-                : undefined,
-        tooltip: `${entry.moduleName}${entry.alias ? ` (${entry.alias})` : ''}`,
-        moduleName: entry.moduleName,
-        uri: snapshot.uri,
-        relativePath: snapshot.relativePath,
-        isExternal: entry.isExternal,
-        icon: entry.builtinModule
-            ? new vscode.ThemeIcon('library')
-            : entry.isExternal
-                ? new vscode.ThemeIcon('package')
-                : new vscode.ThemeIcon('file-submodule'),
-        collapsibleState: builtinChildren.length > 0
-            ? vscode.TreeItemCollapsibleState.Collapsed
-            : vscode.TreeItemCollapsibleState.None,
-        command: createRangeCommand(snapshot.uri, entry.range),
-        children: builtinChildren,
-    };
-}
-
-function createBuiltinChildren(
-    snapshot: FileSnapshot,
-    builtinModule: BuiltinModuleSnapshot,
-    fallbackRange: vscode.Range,
-    baseId: string,
-): StructureNode[] {
-    const children: StructureNode[] = [];
-    const symbolNodes = (builtinModule.symbols ?? []).map((symbol) =>
-        createBuiltinSymbolNode(
-            snapshot,
-            symbol,
-            fallbackRange,
-            `${baseId}:symbol:${symbol.name}`,
-        ));
-    if (symbolNodes.length > 0) {
-        children.push(
-            createGroupNode(
-                `${baseId}:declarations`,
-                'Declarations',
-                snapshot.uri,
-                snapshot.relativePath,
-                symbolNodes,
-            ),
-        );
-    }
-
-    for (const moduleLink of builtinModule.modules ?? []) {
-        children.push(
-            createBuiltinModuleLinkNode(
-                snapshot,
-                moduleLink,
-                fallbackRange,
-                `${baseId}:module:${moduleLink.moduleName}`,
-            ),
-        );
-    }
-
-    return children;
-}
-
-function createBuiltinModuleNode(
-    snapshot: FileSnapshot,
-    builtinModule: BuiltinModuleSnapshot,
-    moduleName: string,
-    fallbackRange: vscode.Range,
-    id: string,
-    label: string,
-    description?: string,
-): StructureNode {
-    const children = createBuiltinChildren(snapshot, builtinModule, fallbackRange, id);
-    return {
-        id,
-        nodeType: 'module',
-        label,
-        description,
-        tooltip: builtinModule.detail ?? moduleName,
-        moduleName,
-        uri: snapshot.uri,
-        relativePath: snapshot.relativePath,
-        icon: new vscode.ThemeIcon('library'),
-        collapsibleState: children.length > 0
-            ? vscode.TreeItemCollapsibleState.Collapsed
-            : vscode.TreeItemCollapsibleState.None,
-        command: createRangeCommand(snapshot.uri, fallbackRange),
-        children,
-    };
-}
-
-function createBuiltinModuleLinkNode(
-    snapshot: FileSnapshot,
-    moduleLink: BuiltinModuleLinkSnapshot,
-    fallbackRange: vscode.Range,
-    id: string,
-): StructureNode {
-    const builtinModule = getBuiltinModuleSnapshot(moduleLink.moduleName);
-    if (builtinModule) {
-        return createBuiltinModuleNode(
-            snapshot,
-            builtinModule,
-            moduleLink.moduleName,
-            fallbackRange,
-            id,
-            moduleLink.name,
-            moduleLink.moduleName,
-        );
-    }
-
-    return {
-        id,
-        nodeType: 'module',
-        label: moduleLink.name,
-        description: moduleLink.moduleName,
-        tooltip: moduleLink.detail ?? moduleLink.moduleName,
-        moduleName: moduleLink.moduleName,
-        uri: snapshot.uri,
-        relativePath: snapshot.relativePath,
-        icon: new vscode.ThemeIcon('library'),
+        label: entry.moduleName,
+        description: entry.alias ? `as ${entry.alias}` : undefined,
+        tooltip: entry.alias ? `${entry.alias} = %import("${entry.moduleName}")` : `%import("${entry.moduleName}")`,
+        uri: document.uri,
+        icon: new vscode.ThemeIcon('package'),
         collapsibleState: vscode.TreeItemCollapsibleState.None,
-        command: createRangeCommand(snapshot.uri, fallbackRange),
+        command: createDefinitionCommand(document.uri, entry.moduleLiteralRange.start, entry.range),
         children: [],
     };
 }
 
-function createBuiltinSymbolNode(
-    snapshot: FileSnapshot,
-    symbol: BuiltinSymbolSnapshot,
-    fallbackRange: vscode.Range,
-    id: string,
-): StructureNode {
+function createDeclarationNode(document: vscode.TextDocument, symbol: vscode.DocumentSymbol): TreeNode {
+    const selectionRange = symbol.selectionRange ?? symbol.range;
     return {
-        id,
-        nodeType: 'declaration',
-        label: symbol.name,
-        description: symbol.detail ?? symbol.kind,
-        tooltip: symbol.detail ?? symbol.name,
-        moduleName: snapshot.moduleName,
-        uri: snapshot.uri,
-        relativePath: snapshot.relativePath,
-        icon: builtinSymbolThemeIcon(symbol.kind),
-        collapsibleState: vscode.TreeItemCollapsibleState.None,
-        command: createRangeCommand(snapshot.uri, fallbackRange),
-        children: [],
-    };
-}
-
-function createDeclarationNode(snapshot: FileSnapshot, symbol: vscode.DocumentSymbol): StructureNode {
-    const selectionRange = resolvedSymbolRange(snapshot.lines, symbol);
-    return {
-        id: `declaration:${snapshot.uri.toString()}:${symbol.name}:${symbol.selectionRange.start.line}:${symbol.selectionRange.start.character}`,
+        id: `declaration:${document.uri.toString()}:${symbol.name}:${selectionRange.start.line}:${selectionRange.start.character}`,
         nodeType: 'declaration',
         label: symbol.name,
         description: symbol.detail || undefined,
         tooltip: symbol.detail ? `${symbol.name}: ${symbol.detail}` : symbol.name,
-        uri: snapshot.uri,
-        relativePath: snapshot.relativePath,
+        uri: document.uri,
         icon: symbolThemeIcon(symbol.kind),
         collapsibleState: symbol.children.length > 0
             ? vscode.TreeItemCollapsibleState.Collapsed
             : vscode.TreeItemCollapsibleState.None,
-        command: createRangeCommand(snapshot.uri, selectionRange),
-        children: symbol.children.map((child) => createDeclarationNode(snapshot, child)),
+        command: createRangeCommand(document.uri, selectionRange),
+        children: symbol.children.map((child) => createDeclarationNode(document, child)),
+    };
+}
+
+function createProjectModuleNode(summary: ProjectModuleSummaryPayload): TreeNode {
+    const navigationUri = summary.navigationUri ? vscode.Uri.parse(summary.navigationUri) : undefined;
+    const range = summary.range ? deserializeRange(summary.range) : new vscode.Range(0, 0, 0, 0);
+    const description = summary.isEntry
+        ? summary.description
+            ? `entry, ${summary.description}`
+            : 'entry'
+        : summary.description;
+
+    return {
+        id: `project-module:${summary.sourceKind}:${summary.moduleName}`,
+        nodeType: 'module',
+        label: summary.displayName || summary.moduleName,
+        description,
+        tooltip: navigationUri ? navigationUri.toString() : summary.moduleName,
+        uri: navigationUri,
+        icon: projectModuleIcon(summary.sourceKind),
+        collapsibleState: vscode.TreeItemCollapsibleState.None,
+        command: navigationUri ? createRangeCommand(navigationUri, range) : undefined,
+        children: [],
     };
 }
 
@@ -757,91 +474,17 @@ function createDefinitionCommand(
     };
 }
 
-function serializeNode(node: StructureNode): SerializedStructureNode {
+function serializeNode(node: TreeNode): SerializedTreeNode {
     return {
         id: node.id,
         nodeType: node.nodeType,
         label: node.label,
         description: node.description,
-        moduleName: node.moduleName,
         uri: node.uri?.toString(),
-        relativePath: node.relativePath,
-        isExternal: node.isExternal,
-        isRecursiveReference: node.isRecursiveReference,
         commandId: node.command?.command,
         commandArguments: node.command?.arguments,
         children: node.children.map((child) => serializeNode(child)),
     };
-}
-
-function buildModuleIndex(snapshots: FileSnapshot[]): Map<string, FileSnapshot[]> {
-    const index = new Map<string, FileSnapshot[]>();
-    for (const snapshot of snapshots) {
-        for (const key of moduleLookupKeys(snapshot)) {
-            const bucket = index.get(key);
-            if (bucket) {
-                bucket.push(snapshot);
-            } else {
-                index.set(key, [snapshot]);
-            }
-        }
-    }
-
-    return index;
-}
-
-function resolveImportTargets(snapshots: FileSnapshot[], moduleIndex: Map<string, FileSnapshot[]>): void {
-    for (const snapshot of snapshots) {
-        for (const entry of snapshot.imports) {
-            const target = resolveModuleTarget(snapshot, entry.moduleName, moduleIndex);
-            entry.targetUri = target?.uri;
-            entry.builtinModule = getBuiltinModuleSnapshot(entry.moduleName);
-            entry.isExternal = target === undefined && entry.builtinModule === undefined;
-        }
-    }
-}
-
-function resolveModuleTarget(
-    owner: FileSnapshot,
-    moduleName: string,
-    moduleIndex: Map<string, FileSnapshot[]>,
-): FileSnapshot | undefined {
-    const candidates = uniqueSnapshots(moduleIndex.get(moduleName) ?? []);
-    if (candidates.length === 0) {
-        return undefined;
-    }
-
-    const sameFolder = candidates.filter((candidate) =>
-        candidate.workspaceFolder.uri.toString() === owner.workspaceFolder.uri.toString());
-    const scoped = sameFolder.length > 0 ? sameFolder : candidates;
-    scoped.sort((left, right) => compareStrings(left.relativePath, right.relativePath));
-    return scoped[0];
-}
-
-function uniqueSnapshots(snapshots: FileSnapshot[]): FileSnapshot[] {
-    const seen = new Set<string>();
-    const unique: FileSnapshot[] = [];
-    for (const snapshot of snapshots) {
-        const key = snapshot.uri.toString();
-        if (!seen.has(key)) {
-            seen.add(key);
-            unique.push(snapshot);
-        }
-    }
-
-    return unique;
-}
-
-function moduleLookupKeys(snapshot: FileSnapshot): string[] {
-    const relativeStem = removeExtension(snapshot.relativePath);
-    const fileStem = fileStemFromUri(snapshot.uri);
-    const keys = new Set<string>([
-        snapshot.moduleName,
-        snapshot.projectRelativeModulePath ?? '',
-        relativeStem,
-        fileStem,
-    ]);
-    return Array.from(keys).filter((value) => value.length > 0);
 }
 
 function parseModuleName(document: vscode.TextDocument): string {
@@ -850,7 +493,7 @@ function parseModuleName(document: vscode.TextDocument): string {
         return match[2];
     }
 
-    return fileStemFromUri(document.uri);
+    return removeExtension(lastPathSegment(document.uri.path));
 }
 
 function parseImports(document: vscode.TextDocument): ImportEntry[] {
@@ -864,27 +507,23 @@ function parseImports(document: vscode.TextDocument): ImportEntry[] {
             break;
         }
 
-        const start = document.positionAt(match.index);
-        const end = document.positionAt(match.index + match[0].length);
+        const fullStart = document.positionAt(match.index);
+        const fullEnd = document.positionAt(match.index + match[0].length);
+        const moduleLiteralStartOffset = match.index + match[0].lastIndexOf(match[3]);
+        const moduleLiteralEndOffset = moduleLiteralStartOffset + match[3].length;
+
         entries.push({
             alias: match[1] || undefined,
             moduleName: match[3],
-            range: new vscode.Range(start, end),
-            isExternal: true,
+            range: new vscode.Range(fullStart, fullEnd),
+            moduleLiteralRange: new vscode.Range(
+                document.positionAt(moduleLiteralStartOffset),
+                document.positionAt(moduleLiteralEndOffset),
+            ),
         });
     }
 
     return entries;
-}
-
-function filterImportAliasSymbols(symbols: vscode.DocumentSymbol[], imports: ImportEntry[]): vscode.DocumentSymbol[] {
-    return symbols.filter((symbol) => !isImportAliasSymbol(symbol, imports));
-}
-
-function isImportAliasSymbol(symbol: vscode.DocumentSymbol, imports: ImportEntry[]): boolean {
-    return imports.some((entry) =>
-        entry.alias === symbol.name &&
-        entry.range.start.line === symbol.range.start.line);
 }
 
 async function loadDocumentSymbols(uri: vscode.Uri): Promise<vscode.DocumentSymbol[]> {
@@ -915,123 +554,12 @@ function isDocumentSymbol(value: vscode.DocumentSymbol | vscode.SymbolInformatio
         (value as vscode.DocumentSymbol).selectionRange !== undefined;
 }
 
-function wrapProjectRoots(snapshots: FileSnapshot[], nodes: StructureNode[]): StructureNode[] {
-    const orderedProjects: Array<{ id: string; project?: WorkspaceProject; uri?: vscode.Uri; children: StructureNode[] }> = [];
-    const byProject = new Map<string, { project?: WorkspaceProject; uri?: vscode.Uri; children: StructureNode[] }>();
-
-    for (let index = 0; index < snapshots.length; index++) {
-        const snapshot = snapshots[index];
-        const node = nodes[index];
-        const projectKey = snapshot.project?.id ?? `unassigned:${snapshot.workspaceFolder.uri.toString()}`;
-        let bucket = byProject.get(projectKey);
-        if (!bucket) {
-            bucket = {
-                project: snapshot.project,
-                uri: snapshot.project?.uri ?? snapshot.workspaceFolder.uri,
-                children: [],
-            };
-            byProject.set(projectKey, bucket);
-            orderedProjects.push({ id: projectKey, ...bucket });
-        }
-        bucket.children.push(node);
+function firstNavigableRange(symbols: vscode.DocumentSymbol[]): vscode.Range {
+    if (symbols.length === 0) {
+        return new vscode.Range(0, 0, 0, 0);
     }
 
-    return orderedProjects.map((entry) => {
-        if (entry.project) {
-            return {
-                id: `project:${entry.project.id}`,
-                nodeType: 'project',
-                label: entry.project.label,
-                description: entry.project.relativePath,
-                tooltip: entry.project.uri.fsPath || entry.project.uri.toString(),
-                uri: entry.project.uri,
-                relativePath: entry.project.relativePath,
-                icon: new vscode.ThemeIcon('folder'),
-                collapsibleState: vscode.TreeItemCollapsibleState.Expanded,
-                command: createRangeCommand(entry.project.uri, new vscode.Range(0, 0, 0, 0)),
-                children: entry.children,
-            };
-        }
-
-        return {
-            id: `project:${entry.id}`,
-            nodeType: 'project',
-            label: 'Unassigned Files',
-            description: 'No matching .zrp source root',
-            tooltip: 'Files that do not belong to a discovered .zrp project',
-            uri: entry.uri,
-            icon: new vscode.ThemeIcon('warning'),
-            collapsibleState: vscode.TreeItemCollapsibleState.Expanded,
-            children: entry.children,
-        };
-    });
-}
-
-function wrapWorkspaceRoots(nodes: StructureNode[], singleWorkspace: boolean): StructureNode[] {
-    if (singleWorkspace) {
-        return nodes;
-    }
-
-    const byFolder = new Map<string, StructureNode[]>();
-    for (const node of nodes) {
-        const folder = node.uri ? vscode.workspace.getWorkspaceFolder(node.uri) : undefined;
-        const key = folder?.uri.toString() ?? '__unknown__';
-        const bucket = byFolder.get(key);
-        if (bucket) {
-            bucket.push(node);
-        } else {
-            byFolder.set(key, [node]);
-        }
-    }
-
-    const wrapped: StructureNode[] = [];
-    for (const [folderKey, children] of byFolder.entries()) {
-        const folder = vscode.workspace.workspaceFolders?.find((item) => item.uri.toString() === folderKey);
-        wrapped.push({
-            id: `workspace:${folderKey}`,
-            nodeType: 'workspace',
-            label: folder?.name ?? folderKey,
-            description: folder?.uri.fsPath || folderKey,
-            tooltip: folder?.uri.fsPath || folderKey,
-            uri: folder?.uri,
-            icon: new vscode.ThemeIcon('folder'),
-            collapsibleState: vscode.TreeItemCollapsibleState.Expanded,
-            children,
-        });
-    }
-
-    wrapped.sort((left, right) => compareStrings(left.label, right.label));
-    return wrapped;
-}
-
-function indexNodeParents(
-    parent: StructureNode | undefined,
-    nodes: StructureNode[],
-    parentById: Map<string, StructureNode>,
-): void {
-    for (const node of nodes) {
-        if (parent) {
-            parentById.set(node.id, parent);
-        }
-        if (node.children.length > 0) {
-            indexNodeParents(node, node.children, parentById);
-        }
-    }
-}
-
-function firstNavigableRange(symbols: vscode.DocumentSymbol[], lines: string[]): vscode.Range {
-    for (const symbol of symbols) {
-        const range = resolvedSymbolRange(lines, symbol);
-        if (range) {
-            return range;
-        }
-
-        if (symbol.children.length > 0) {
-            return firstNavigableRange(symbol.children, lines);
-        }
-    }
-
-    return new vscode.Range(0, 0, 0, 0);
+    return symbols[0].selectionRange ?? symbols[0].range;
 }
 
 async function openTarget(payload: OpenTargetPayload): Promise<void> {
@@ -1068,8 +596,8 @@ async function resolveDefinitionLocation(
     }
 
     const first = definition[0];
-    const targetUri = locationUri(first);
-    const targetRange = locationRange(first);
+    const targetUri = first?.uri ?? first?.targetUri ?? first?.location?.uri;
+    const targetRange = first?.range ?? first?.targetSelectionRange ?? first?.targetRange ?? first?.location?.range;
     if (!targetUri || !targetRange) {
         return undefined;
     }
@@ -1087,30 +615,6 @@ async function revealLocation(uri: vscode.Uri, range: vscode.Range): Promise<voi
     editor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
 }
 
-function locationUri(entry: any): vscode.Uri | undefined {
-    return entry?.uri ?? entry?.targetUri ?? entry?.location?.uri;
-}
-
-function locationRange(entry: any): vscode.Range | undefined {
-    return entry?.range ?? entry?.targetSelectionRange ?? entry?.targetRange ?? entry?.location?.range;
-}
-
-async function revealNode(view: vscode.TreeView<StructureNode>, node: StructureNode | undefined): Promise<void> {
-    if (!node) {
-        return;
-    }
-
-    try {
-        await view.reveal(node, {
-            select: false,
-            focus: false,
-            expand: true,
-        });
-    } catch {
-        // Ignore reveal failures when the view has not been rendered yet.
-    }
-}
-
 function symbolThemeIcon(kind: vscode.SymbolKind): vscode.ThemeIcon {
     switch (kind) {
         case vscode.SymbolKind.Class:
@@ -1125,49 +629,43 @@ function symbolThemeIcon(kind: vscode.SymbolKind): vscode.ThemeIcon {
         case vscode.SymbolKind.Enum:
         case vscode.SymbolKind.EnumMember:
             return new vscode.ThemeIcon('symbol-enum');
-        case vscode.SymbolKind.Constructor:
-            return new vscode.ThemeIcon('symbol-constructor');
-        case vscode.SymbolKind.Variable:
-            return new vscode.ThemeIcon('symbol-variable');
-        case vscode.SymbolKind.Module:
-            return new vscode.ThemeIcon('symbol-module');
         case vscode.SymbolKind.Interface:
             return new vscode.ThemeIcon('symbol-interface');
+        case vscode.SymbolKind.Variable:
+            return new vscode.ThemeIcon('symbol-variable');
         default:
             return new vscode.ThemeIcon('symbol-misc');
     }
 }
 
-function builtinSymbolThemeIcon(kind: BuiltinSymbolSnapshot['kind']): vscode.ThemeIcon {
-    switch (kind) {
-        case 'constant':
-            return new vscode.ThemeIcon('symbol-constant');
-        case 'function':
-            return new vscode.ThemeIcon('symbol-function');
-        case 'type':
-            return new vscode.ThemeIcon('symbol-class');
+function projectModuleIcon(sourceKind: number): vscode.ThemeIcon {
+    switch (sourceKind) {
+        case 1:
+        case 2:
+            return new vscode.ThemeIcon('symbol-file');
+        case 3:
+            return new vscode.ThemeIcon('package');
+        case 4:
+        case 5:
+            return new vscode.ThemeIcon('library');
         default:
             return new vscode.ThemeIcon('symbol-misc');
     }
 }
 
-function resolvedSymbolRange(lines: string[], symbol: vscode.DocumentSymbol): vscode.Range {
-    const fallback = symbol.selectionRange ?? symbol.range;
-    const lineText = lines[symbol.range.start.line] ?? '';
-    const lineStart = symbol.range.start.character;
-    const rawLineEnd = symbol.range.start.line === symbol.range.end.line
-        ? Math.min(symbol.range.end.character, lineText.length)
-        : lineText.length;
-    const lineEnd = rawLineEnd > lineStart ? rawLineEnd : lineText.length;
-    const visibleSegment = lineText.slice(lineStart, lineEnd);
-    const nameOffset = visibleSegment.indexOf(symbol.name);
-    if (nameOffset >= 0) {
-        const start = new vscode.Position(symbol.range.start.line, lineStart + nameOffset);
-        const end = start.translate(0, symbol.name.length);
-        return new vscode.Range(start, end);
+function isProjectSourceKind(sourceKind: number): boolean {
+    return sourceKind === 1 || sourceKind === 2;
+}
+
+function compareProjectModuleSummary(left: ProjectModuleSummaryPayload, right: ProjectModuleSummaryPayload): number {
+    if (left.isEntry && !right.isEntry) {
+        return -1;
+    }
+    if (!left.isEntry && right.isEntry) {
+        return 1;
     }
 
-    return fallback;
+    return (left.displayName || left.moduleName).localeCompare(right.displayName || right.moduleName);
 }
 
 function serializePosition(position: vscode.Position): SerializedPosition {
@@ -1195,54 +693,13 @@ function deserializeRange(range: SerializedRange): vscode.Range {
     );
 }
 
-function relativePathWithinFolder(workspaceFolder: vscode.WorkspaceFolder, uri: vscode.Uri): string {
-    const folderPath = normalizePath(workspaceFolder.uri.path);
-    const filePath = normalizePath(uri.path);
-    if (filePath.startsWith(`${folderPath}/`)) {
-        return filePath.slice(folderPath.length + 1);
-    }
-
-    return vscode.workspace.asRelativePath(uri, false);
-}
-
-function projectRelativeModulePath(project: WorkspaceProject | undefined, uri: vscode.Uri): string | undefined {
-    if (!project) {
-        return undefined;
-    }
-
-    const normalizedFilePath = normalizePath(uri.fsPath || uri.path);
-    const normalizedSourceRoot = normalizePath(project.sourceRootPath);
-    if (!normalizedFilePath.startsWith(`${normalizedSourceRoot}/`)) {
-        return undefined;
-    }
-
-    const relativePath = normalizedFilePath.slice(normalizedSourceRoot.length + 1);
-    return removeExtension(relativePath);
-}
-
-function fileStemFromUri(uri: vscode.Uri): string {
-    return removeExtension(lastPathSegment(uri.path));
-}
-
 function removeExtension(value: string): string {
     const lastDot = value.lastIndexOf('.');
     return lastDot > 0 ? value.slice(0, lastDot) : value;
 }
 
 function lastPathSegment(pathValue: string): string {
-    const normalized = normalizePath(pathValue);
+    const normalized = pathValue.replace(/[\\/]+/g, '/');
     const segments = normalized.split('/').filter((segment) => segment.length > 0);
     return segments[segments.length - 1] ?? normalized;
-}
-
-function normalizePath(pathValue: string): string {
-    return pathValue.replace(/[\\/]+/g, '/');
-}
-
-function compareStrings(left: string, right: string): number {
-    return left.localeCompare(right);
-}
-
-function isProjectDocument(document: vscode.TextDocument): boolean {
-    return isZrpDocument(document);
 }

@@ -846,12 +846,13 @@ static void test_ownership_shared_refcount_and_weak_null_on_release(void) {
     timer.startTime = clock();
 
     TEST_INFO("Ownership runtime release path",
-              "Testing unique-to-shared promotion, shared retain/release accounting, and weak expiration to null");
+              "Testing Rust-style shared retain/release accounting while GC ignore-registry state stays stable until the last strong owner drops");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
 
     {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
         SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
         SZrTypeValue uniqueValue;
         SZrTypeValue sharedValueA;
@@ -866,10 +867,25 @@ static void test_ownership_shared_refcount_and_weak_null_on_release(void) {
 
         TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(state, &uniqueValue, object));
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+        TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
+
+        ZrCore_GarbageCollector_AddDebtSpace(state->global, 4096);
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_TRUE(gc->gcLastStepWork > 0);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
         TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
 
         TEST_ASSERT_TRUE(ZrCore_Ownership_ShareValue(state, &sharedValueA, &uniqueValue));
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(uniqueValue.type));
+        TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+
+        ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
         TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
 
         ZrCore_Value_Copy(state, &sharedValueB, &sharedValueA);
@@ -881,10 +897,13 @@ static void test_ownership_shared_refcount_and_weak_null_on_release(void) {
         ZrCore_Ownership_ReleaseValue(state, &sharedValueA);
         TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
         TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
 
         ZrCore_Ownership_ReleaseValue(state, &sharedValueB);
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
     }
 
     destroyTestState(state);
@@ -902,12 +921,13 @@ static void test_ownership_unique_can_return_to_gc_control(void) {
     timer.startTime = clock();
 
     TEST_INFO("Ownership runtime GC handoff",
-              "Testing that a detached unique-owned object can be handed back to normal GC control explicitly");
+              "Testing that a detached unique-owned object survives GC while ignored and only rejoins normal GC control once explicitly detached");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
 
     {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
         SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
         SZrTypeValue uniqueValue;
         SZrTypeValue gcValue;
@@ -918,10 +938,22 @@ static void test_ownership_unique_can_return_to_gc_control(void) {
 
         TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(state, &uniqueValue, object));
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+
+        ZrCore_GarbageCollector_AddDebtSpace(state->global, 4096);
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_TRUE(gc->gcLastStepWork > 0);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+
+        ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
 
         TEST_ASSERT_TRUE(ZrCore_Ownership_ReturnToGcValue(state, &gcValue, &uniqueValue));
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(uniqueValue.type));
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
         TEST_ASSERT_EQUAL_UINT32(0, ZrCore_Ownership_GetStrongRefCount(object));
         TEST_ASSERT_EQUAL_PTR(object, gcValue.value.object);
     }
@@ -941,29 +973,45 @@ static void test_ownership_weak_expires_when_returned_object_is_released(void) {
     timer.startTime = clock();
 
     TEST_INFO("Ownership weak tracking across GC handoff",
-              "Testing that weak references stay valid after explicit return-to-GC and become null once the returned object enters release");
+              "Testing that weak references created from %shared survive the detach bridge back to GC world and only expire once the GC-side object is released");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
 
     {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
         SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
         SZrTypeValue uniqueValue;
+        SZrTypeValue sharedValue;
         SZrTypeValue weakValue;
         SZrTypeValue gcValue;
 
         TEST_ASSERT_NOT_NULL(object);
         ZrCore_Value_ResetAsNull(&uniqueValue);
+        ZrCore_Value_ResetAsNull(&sharedValue);
         ZrCore_Value_ResetAsNull(&weakValue);
         ZrCore_Value_ResetAsNull(&gcValue);
 
         TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(state, &uniqueValue, object));
-        TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(state, &weakValue, &uniqueValue));
+        TEST_ASSERT_TRUE(ZrCore_Ownership_ShareValue(state, &sharedValue, &uniqueValue));
+        TEST_ASSERT_TRUE(ZrCore_Ownership_WeakValue(state, &weakValue, &sharedValue));
         TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+        TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
 
-        TEST_ASSERT_TRUE(ZrCore_Ownership_ReturnToGcValue(state, &gcValue, &uniqueValue));
+        ZrCore_GarbageCollector_AddDebtSpace(state->global, 4096);
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_TRUE(gc->gcLastStepWork > 0);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+
+        TEST_ASSERT_TRUE(ZrCore_Ownership_ReturnToGcValue(state, &gcValue, &sharedValue));
         TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(weakValue.type));
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
+        TEST_ASSERT_EQUAL_UINT32(0, ZrCore_Ownership_GetStrongRefCount(object));
+        TEST_ASSERT_EQUAL_PTR(object, gcValue.value.object);
 
         ZrCore_Ownership_NotifyObjectReleased(state, object);
 

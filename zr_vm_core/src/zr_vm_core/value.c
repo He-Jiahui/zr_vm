@@ -201,7 +201,7 @@ SZrTypeValue *ZrCore_Value_GetStackOffsetValue(SZrState *state, TZrMemoryOffset 
 }
 
 
-void ZrCore_Value_Copy(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source) {
+void ZrCore_Value_CopySlow(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source) {
     ZrCore_Ownership_AssignValue(state, destination, source);
 }
 

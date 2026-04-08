@@ -22,8 +22,81 @@ static const TZrChar *kContainerSourceField = "__zr_source";
 static const TZrChar *kContainerIndexField = "__zr_index";
 static const TZrChar *kContainerNextNodeField = "__zr_nextNode";
 
+enum {
+    ZR_CONTAINER_FIELD_CACHE_CAPACITY = 48
+};
+
+typedef struct ZrContainerFieldStringCacheEntry {
+    const TZrChar *fieldName;
+    SZrString *fieldString;
+} ZrContainerFieldStringCacheEntry;
+
 static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state);
 static TZrInt64 zr_container_linked_list_iterator_move_next_native(SZrState *state);
+
+static SZrString *zr_container_cached_field_string(SZrState *state, const TZrChar *fieldName) {
+    static const SZrGlobalState *cachedGlobal = ZR_NULL;
+    static const void *cachedGarbageCollector = ZR_NULL;
+    static const void *cachedStringTable = ZR_NULL;
+    static ZrContainerFieldStringCacheEntry cache[ZR_CONTAINER_FIELD_CACHE_CAPACITY];
+
+    if (state == ZR_NULL || state->global == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (cachedGlobal != state->global ||
+        cachedGarbageCollector != state->global->garbageCollector ||
+        cachedStringTable != state->global->stringTable) {
+        cachedGlobal = state->global;
+        cachedGarbageCollector = state->global->garbageCollector;
+        cachedStringTable = state->global->stringTable;
+        memset(cache, 0, sizeof(cache));
+    }
+
+    for (TZrSize index = 0; index < ZR_CONTAINER_FIELD_CACHE_CAPACITY; index++) {
+        if (cache[index].fieldName != ZR_NULL && strcmp(cache[index].fieldName, fieldName) == 0) {
+            return cache[index].fieldString;
+        }
+    }
+
+    for (TZrSize index = 0; index < ZR_CONTAINER_FIELD_CACHE_CAPACITY; index++) {
+        SZrString *fieldString;
+
+        if (cache[index].fieldName != ZR_NULL) {
+            continue;
+        }
+
+        fieldString = ZrCore_String_Create(state, (TZrNativeString)fieldName, strlen(fieldName));
+        if (fieldString == ZR_NULL) {
+            return ZR_NULL;
+        }
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+
+        cache[index].fieldName = fieldName;
+        cache[index].fieldString = fieldString;
+        return fieldString;
+    }
+
+    ZR_ASSERT(ZR_FALSE);
+    return ZR_NULL;
+}
+
+static TZrBool zr_container_make_field_key(SZrState *state, const TZrChar *fieldName, SZrTypeValue *outKey) {
+    SZrString *fieldString;
+
+    if (state == ZR_NULL || fieldName == ZR_NULL || outKey == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fieldString = zr_container_cached_field_string(state, fieldName);
+    if (fieldString == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, outKey, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    outKey->type = ZR_VALUE_TYPE_STRING;
+    return ZR_TRUE;
+}
 
 static SZrObjectPrototype *zr_container_iterator_runtime_prototype(SZrState *state,
                                                                    FZrNativeFunction moveNextFunction) {
@@ -173,6 +246,35 @@ static void zr_container_set_value_field(SZrState *state,
     ZrLib_Object_SetFieldCString(state, object, fieldName, value);
 }
 
+static TZrBool zr_container_set_value_field_fast(SZrState *state,
+                                                 SZrObject *object,
+                                                 const TZrChar *fieldName,
+                                                 const SZrTypeValue *value) {
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL ||
+        !zr_container_make_field_key(state, fieldName, &key)) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Object_SetValue(state, object, &key, value);
+    return state->threadStatus == ZR_THREAD_STATUS_FINE;
+}
+
+static TZrBool zr_container_set_int_field_fast(SZrState *state,
+                                               SZrObject *object,
+                                               const TZrChar *fieldName,
+                                               TZrInt64 value) {
+    SZrTypeValue fieldValue;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsInt(state, &fieldValue, value);
+    return zr_container_set_value_field_fast(state, object, fieldName, &fieldValue);
+}
+
 static void zr_container_set_object_field(SZrState *state,
                                           SZrObject *object,
                                           const TZrChar *fieldName,
@@ -189,10 +291,13 @@ static void zr_container_set_object_field(SZrState *state,
 static const SZrTypeValue *zr_container_get_field_value(SZrState *state,
                                                         SZrObject *object,
                                                         const TZrChar *fieldName) {
-    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL ||
+        !zr_container_make_field_key(state, fieldName, &key)) {
         return ZR_NULL;
     }
-    return ZrLib_Object_GetFieldCString(state, object, fieldName);
+    return ZrCore_Object_GetValue(state, object, &key);
 }
 
 static SZrObject *zr_container_get_object_field(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
@@ -235,7 +340,7 @@ static TZrBool zr_container_call_method(SZrState *state,
         return ZR_FALSE;
     }
 
-    callable = ZrLib_Object_GetFieldCString(state, receiver, methodName);
+    callable = zr_container_get_field_value(state, receiver, methodName);
     if (callable == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -543,25 +648,6 @@ static TZrBool zr_container_set_find_index(SZrState *state,
     return ZR_FALSE;
 }
 
-static void zr_container_array_sync_shape(SZrState *state, SZrObject *arrayObject) {
-    TZrInt64 length;
-    TZrInt64 capacity;
-    SZrObject *items;
-
-    if (state == ZR_NULL || arrayObject == ZR_NULL) {
-        return;
-    }
-
-    items = zr_container_ensure_hidden_array(state, arrayObject, kContainerItemsField);
-    length = (TZrInt64)ZrLib_Array_Length(items);
-    capacity = zr_container_get_int_field(state, arrayObject, "capacity", 0);
-    if (capacity < length) {
-        capacity = length;
-    }
-    zr_container_set_int_field(state, arrayObject, "length", length);
-    zr_container_set_int_field(state, arrayObject, "capacity", capacity);
-}
-
 static TZrBool zr_container_array_ensure_capacity(SZrState *state, SZrObject *arrayObject, TZrSize requiredLength) {
     TZrInt64 capacity;
 
@@ -580,8 +666,7 @@ static TZrBool zr_container_array_ensure_capacity(SZrState *state, SZrObject *ar
     while ((TZrSize)capacity < requiredLength) {
         capacity *= ZR_CONTAINER_SEQUENCE_GROWTH_FACTOR;
     }
-    zr_container_set_int_field(state, arrayObject, "capacity", capacity);
-    return ZR_TRUE;
+    return zr_container_set_int_field_fast(state, arrayObject, "capacity", capacity);
 }
 
 static SZrObject *zr_container_iterator_make(SZrState *state,
@@ -832,8 +917,10 @@ static TZrBool zr_container_array_constructor(ZrLibCallContext *context, SZrType
     }
 
     zr_container_set_object_field(context->state, arrayObject, kContainerItemsField, items);
-    zr_container_set_int_field(context->state, arrayObject, "length", 0);
-    zr_container_set_int_field(context->state, arrayObject, "capacity", capacity);
+    if (!zr_container_set_int_field_fast(context->state, arrayObject, "length", 0) ||
+        !zr_container_set_int_field_fast(context->state, arrayObject, "capacity", capacity)) {
+        return ZR_FALSE;
+    }
     return zr_container_finish_object(context, result, arrayObject);
 }
 
@@ -851,11 +938,11 @@ static TZrBool zr_container_array_add(ZrLibCallContext *context, SZrTypeValue *r
     value = ZrLib_CallContext_Argument(context, 0);
     length = ZrLib_Array_Length(items);
     if (value == ZR_NULL || !zr_container_array_ensure_capacity(context->state, self, length + 1) ||
-        !ZrLib_Array_PushValue(context->state, items, value)) {
+        !zr_container_storage_set(context->state, items, length, value) ||
+        !zr_container_set_int_field_fast(context->state, self, "length", (TZrInt64)(length + 1))) {
         return ZR_FALSE;
     }
 
-    zr_container_array_sync_shape(context->state, self);
     ZrLib_Value_SetNull(result);
     return ZR_TRUE;
 }
@@ -876,11 +963,11 @@ static TZrBool zr_container_array_insert(ZrLibCallContext *context, SZrTypeValue
         ZrCore_Debug_RunError(context->state, "Array.insert index out of range");
     }
     if (!zr_container_array_ensure_capacity(context->state, self, length + 1) ||
-        !zr_container_storage_insert(context->state, items, (TZrSize)indexValue, ZrLib_CallContext_Argument(context, 1))) {
+        !zr_container_storage_insert(context->state, items, (TZrSize)indexValue, ZrLib_CallContext_Argument(context, 1)) ||
+        !zr_container_set_int_field_fast(context->state, self, "length", (TZrInt64)(length + 1))) {
         return ZR_FALSE;
     }
 
-    zr_container_array_sync_shape(context->state, self);
     ZrLib_Value_SetNull(result);
     return ZR_TRUE;
 }
@@ -899,7 +986,9 @@ static TZrBool zr_container_array_remove_at(ZrLibCallContext *context, SZrTypeVa
         ZrCore_Debug_RunError(context->state, "Array.removeAt index out of range");
     }
 
-    zr_container_array_sync_shape(context->state, self);
+    if (!zr_container_set_int_field_fast(context->state, self, "length", (TZrInt64)ZrLib_Array_Length(items))) {
+        return ZR_FALSE;
+    }
     ZrLib_Value_SetNull(result);
     return ZR_TRUE;
 }
@@ -918,7 +1007,9 @@ static TZrBool zr_container_array_clear(ZrLibCallContext *context, SZrTypeValue 
     }
 
     zr_container_set_object_field(context->state, self, kContainerItemsField, items);
-    zr_container_set_int_field(context->state, self, "length", 0);
+    if (!zr_container_set_int_field_fast(context->state, self, "length", 0)) {
+        return ZR_FALSE;
+    }
     ZrLib_Value_SetNull(result);
     return ZR_TRUE;
 }
@@ -1055,8 +1146,9 @@ static TZrBool zr_container_array_set_item(ZrLibCallContext *context, SZrTypeVal
         ZrCore_Debug_RunError(context->state, "Array index out of range");
     }
 
-    zr_container_storage_set(context->state, items, (TZrSize)indexValue, ZrLib_CallContext_Argument(context, 1));
-    zr_container_array_sync_shape(context->state, self);
+    if (!zr_container_storage_set(context->state, items, (TZrSize)indexValue, ZrLib_CallContext_Argument(context, 1))) {
+        return ZR_FALSE;
+    }
     ZrCore_Value_Copy(context->state, result, ZrLib_CallContext_Argument(context, 1));
     return ZR_TRUE;
 }

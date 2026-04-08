@@ -380,6 +380,24 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SetByIndex(struct SZrState *state,
                                                        TZrUInt32 receiverSlot,
                                                        TZrUInt32 keySlot);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArrayGetInt(struct SZrState *state,
+                                                             ZrAotGeneratedFrame *frame,
+                                                             TZrUInt32 destinationSlot,
+                                                             TZrUInt32 receiverSlot,
+                                                             TZrUInt32 keySlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArraySetInt(struct SZrState *state,
+                                                             ZrAotGeneratedFrame *frame,
+                                                             TZrUInt32 sourceSlot,
+                                                             TZrUInt32 receiverSlot,
+                                                             TZrUInt32 keySlot);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_SuperArrayAddInt(struct SZrState *state,
+                                                             ZrAotGeneratedFrame *frame,
+                                                             TZrUInt32 destinationSlot,
+                                                             TZrUInt32 receiverSlot,
+                                                             TZrUInt32 sourceSlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_IterInit(struct SZrState *state,
                                                      ZrAotGeneratedFrame *frame,
                                                      TZrUInt32 destinationSlot,

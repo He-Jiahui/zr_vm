@@ -228,6 +228,62 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     return ZR_FALSE;
 }
 
+static TZrBool function_constant_is_null(const SZrFunction *function, TZrUInt32 constantIndex) {
+    const SZrTypeValue *constant;
+
+    if (function == ZR_NULL || function->constantValueList == ZR_NULL || constantIndex >= function->constantValueLength) {
+        return ZR_FALSE;
+    }
+
+    constant = &function->constantValueList[constantIndex];
+    return constant != ZR_NULL && ZR_VALUE_IS_TYPE_NULL(constant->type);
+}
+
+static TZrUInt32 function_count_null_get_constant(const SZrFunction *function) {
+    TZrUInt32 count = 0;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return 0;
+    }
+
+    for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
+        const TZrInstruction *instruction = &function->instructionsList[i];
+        if ((EZrInstructionCode)instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT)) {
+            continue;
+        }
+
+        if (function_constant_is_null(function, (TZrUInt32)instruction->instruction.operand.operand2[0])) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static TZrUInt32 function_max_null_get_constant_streak(const SZrFunction *function) {
+    TZrUInt32 maxStreak = 0;
+    TZrUInt32 currentStreak = 0;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return 0;
+    }
+
+    for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
+        const TZrInstruction *instruction = &function->instructionsList[i];
+        if ((EZrInstructionCode)instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_CONSTANT) &&
+            function_constant_is_null(function, (TZrUInt32)instruction->instruction.operand.operand2[0])) {
+            currentStreak++;
+            if (currentStreak > maxStreak) {
+                maxStreak = currentStreak;
+            }
+        } else {
+            currentStreak = 0;
+        }
+    }
+
+    return maxStreak;
+}
+
 static TZrBool function_contains_native_helper_constant(const SZrFunction *function, TZrUInt64 helperId) {
     if (function == ZR_NULL || helperId == ZR_IO_NATIVE_HELPER_NONE || function->constantValueList == ZR_NULL) {
         return ZR_FALSE;
@@ -1681,9 +1737,9 @@ static void test_owned_field_metadata_serializes_into_prototype_data(void) {
 
     {
         const char *source =
-            "pub struct HandleBox { handle: %unique Resource; var count: int; }\n"
-            "pub class Holder { resource: %shared Resource; var version: int; }";
-        SZrString *sourceName = ZrCore_String_Create(state, "field_using_meta.zr", 19);
+            "pub struct HandleBox { var handle: %unique Resource; var count: int; }\n"
+            "pub class Holder { var resource: %shared Resource; var version: int; }";
+        SZrString *sourceName = ZrCore_String_Create(state, "owned_field_meta.zr", 19);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
         const SZrCompiledPrototypeInfoView *structProto;
@@ -1695,7 +1751,7 @@ static void test_owned_field_metadata_serializes_into_prototype_data(void) {
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse field-scoped using source");
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse owned field source");
             destroy_test_state(state);
             return;
         }
@@ -1703,7 +1759,7 @@ static void test_owned_field_metadata_serializes_into_prototype_data(void) {
         func = ZrParser_Compiler_Compile(state, ast);
         if (func == ZR_NULL) {
             timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile field-scoped using source");
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile owned field source");
             destroy_test_state(state);
             return;
         }
@@ -2200,6 +2256,80 @@ static void test_interface_plain_member_serializes_interface_contract_slot(void)
     TEST_DIVIDER();
 }
 
+static void test_name_matched_iterator_members_without_builtin_interface_do_not_bind_contract_roles(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Name Matched Iterator Members Without Builtin Interface Do Not Bind Contract Roles";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Iterator contract role isolation",
+              "Testing that getIterator moveNext and current only become iterator contracts when the class explicitly binds the builtin interfaces");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "class LooseIterator {\n"
+                "    pub var current: int;\n"
+                "    pub @constructor() { this.current = 0; }\n"
+                "    pub moveNext(): bool { return false; }\n"
+                "}\n"
+                "class LooseIterable {\n"
+                "    pub getIterator(): LooseIterator { return new LooseIterator(); }\n"
+                "}";
+        SZrString *sourceName = ZrCore_String_Create(state, "named_iterator_members_without_contracts.zr", 43);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        const SZrCompiledPrototypeInfoView *iteratorProto;
+        const SZrCompiledPrototypeInfoView *iterableProto;
+        const SZrCompiledMemberInfoView *currentField;
+        const SZrCompiledMemberInfoView *moveNextMethod;
+        const SZrCompiledMemberInfoView *getIteratorMethod;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse loose iterator source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile loose iterator source");
+            destroy_test_state(state);
+            return;
+        }
+
+        iteratorProto = find_compiled_prototype_by_name(state, func, "LooseIterator");
+        iterableProto = find_compiled_prototype_by_name(state, func, "LooseIterable");
+        TEST_ASSERT_NOT_NULL(iteratorProto);
+        TEST_ASSERT_NOT_NULL(iterableProto);
+
+        currentField = find_compiled_member_by_name(state, func, iteratorProto, "current");
+        moveNextMethod = find_compiled_member_by_name(state, func, iteratorProto, "moveNext");
+        getIteratorMethod = find_compiled_member_by_name(state, func, iterableProto, "getIterator");
+        TEST_ASSERT_NOT_NULL(currentField);
+        TEST_ASSERT_NOT_NULL(moveNextMethod);
+        TEST_ASSERT_NOT_NULL(getIteratorMethod);
+        TEST_ASSERT_EQUAL_UINT32(ZR_MEMBER_CONTRACT_ROLE_NONE, currentField->contractRole);
+        TEST_ASSERT_EQUAL_UINT32(ZR_MEMBER_CONTRACT_ROLE_NONE, moveNextMethod->contractRole);
+        TEST_ASSERT_EQUAL_UINT32(ZR_MEMBER_CONTRACT_ROLE_NONE, getIteratorMethod->contractRole);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 static void test_interface_missing_member_is_rejected_by_compiler(void) {
     SZrTestTimer timer;
     const char *testSummary = "Interface Missing Member Is Rejected By Compiler";
@@ -2265,17 +2395,9 @@ static void test_ownership_builtin_shared_expression_consumes_unique_owner(void)
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_builtin_shared_expr.zr",
                                                      strlen("ownership_builtin_shared_expr.zr"));
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
 
-        if (ast == ZR_NULL) {
-            timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership builtin source");
-            destroy_test_state(state);
-            return;
-        }
-
-        func = ZrParser_Compiler_Compile(state, ast);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership builtin source");
@@ -2315,24 +2437,18 @@ static void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
         const char *source =
             "class Box {}\n"
             "var owner = %unique new Box();\n"
-            "var loaned = %loan(owner);\n"
-            "var borrowed = %borrow(loaned);\n"
+            "var shared = %shared(owner);\n"
+            "var borrowed = %borrow(shared);\n"
+            "var loanSource = %unique new Box();\n"
+            "var loaned = %loan(loanSource);\n"
             "var detachSource = %unique new Box();\n"
             "var detached = %detach(detachSource);";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_borrow_loan_detach.zr",
                                                      strlen("ownership_borrow_loan_detach.zr"));
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
 
-        if (ast == ZR_NULL) {
-            timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership borrow/loan/detach source");
-            destroy_test_state(state);
-            return;
-        }
-
-        func = ZrParser_Compiler_Compile(state, ast);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership borrow/loan/detach source");
@@ -2382,19 +2498,10 @@ static void test_ownership_unique_share_runtime_moves_source_to_null(void) {
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_unique_share_runtime.zr",
                                                      strlen("ownership_unique_share_runtime.zr"));
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
         TZrInt64 result = 0;
 
-        if (ast == ZR_NULL) {
-            timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership unique/share runtime source");
-            destroy_test_state(state);
-            return;
-        }
-
-        func = ZrParser_Compiler_Compile(state, ast);
-        ZrParser_Ast_Free(state, ast);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership unique/share runtime source");
@@ -2421,7 +2528,7 @@ static void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contrac
     timer.startTime = clock();
     TEST_START(testSummary);
     TEST_INFO("Ownership runtime borrow/loan/detach",
-              "Testing that %loan(owner) nulls the source, %borrow(loaned) yields a live alias, and %detach(unique) returns a plain GC value while clearing the source");
+              "Testing that %shared(owner) + %borrow(shared) keep a live borrowed alias, %loan(owner) nulls the unique source, and %detach(unique) returns a plain GC value while clearing the source");
 
     SZrState *state = create_test_state();
     if (state == ZR_NULL) {
@@ -2434,30 +2541,29 @@ static void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contrac
         const char *source =
             "class Box {}\n"
             "var owner = %unique new Box();\n"
-            "var loaned = %loan(owner);\n"
-            "var borrowed = %borrow(loaned);\n"
+            "var shared = %shared(owner);\n"
+            "var borrowed = %borrow(shared);\n"
             "var borrowedAlive = borrowed != null;\n"
+            "var loanSource = %unique new Box();\n"
+            "var loaned = %loan(loanSource);\n"
             "var detachSource = %unique new Box();\n"
             "var detached = %detach(detachSource);\n"
-            "if (owner == null && loaned != null && borrowedAlive && detachSource == null && detached != null) {\n"
-                "    return 1;\n"
-            "}\n"
-            "return 0;\n";
+            "var mask = 0;\n"
+            "if (owner == null) { mask = mask + 1; }\n"
+            "if (shared != null) { mask = mask + 2; }\n"
+            "if (loanSource == null) { mask = mask + 4; }\n"
+            "if (loaned != null) { mask = mask + 8; }\n"
+            "if (borrowedAlive) { mask = mask + 16; }\n"
+            "if (detachSource == null) { mask = mask + 32; }\n"
+            "if (detached != null) { mask = mask + 64; }\n"
+            "return mask;\n";
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_borrow_loan_detach_runtime.zr",
                                                      strlen("ownership_borrow_loan_detach_runtime.zr"));
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
         TZrInt64 result = 0;
 
-        if (ast == ZR_NULL) {
-            timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership borrow/loan/detach runtime source");
-            destroy_test_state(state);
-            return;
-        }
-
-        func = ZrParser_Compiler_Compile(state, ast);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership borrow/loan/detach runtime source");
@@ -2469,7 +2575,7 @@ static void test_ownership_borrow_loan_and_detach_runtime_follow_surface_contrac
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_DETACH)));
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
-        TEST_ASSERT_EQUAL_INT64(1, result);
+        TEST_ASSERT_EQUAL_INT64(127, result);
 
         ZrCore_Function_Free(state, func);
     }
@@ -2510,19 +2616,10 @@ static void test_ownership_weak_runtime_expires_to_null_after_last_shared_releas
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_weak_runtime_expire.zr",
                                                      strlen("ownership_weak_runtime_expire.zr"));
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
         TZrInt64 result = 0;
 
-        if (ast == ZR_NULL) {
-            timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership weak runtime source");
-            destroy_test_state(state);
-            return;
-        }
-
-        func = ZrParser_Compiler_Compile(state, ast);
-        ZrParser_Ast_Free(state, ast);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership weak runtime source");
@@ -2577,19 +2674,10 @@ static void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract
         SZrString *sourceName = ZrCore_String_Create(state,
                                                      "ownership_upgrade_release_runtime.zr",
                                                      strlen("ownership_upgrade_release_runtime.zr"));
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *func;
         TZrInt64 result = 0;
 
-        if (ast == ZR_NULL) {
-            timer.endTime = clock();
-            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse ownership upgrade/release runtime source");
-            destroy_test_state(state);
-            return;
-        }
-
-        func = ZrParser_Compiler_Compile(state, ast);
-        ZrParser_Ast_Free(state, ast);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         if (func == ZR_NULL) {
             timer.endTime = clock();
             TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership upgrade/release runtime source");
@@ -2599,6 +2687,142 @@ static void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
+        TEST_ASSERT_EQUAL_INT64(1, result);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_ownership_builtin_compile_rejects_invalid_operands(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Builtin Compile Rejects Invalid Operands";
+    static const struct {
+        const char *label;
+        const char *source;
+        const char *sourceName;
+    } cases[] = {
+        {
+            "weak-from-unique",
+            "class Box {}\n"
+            "var owner = %unique new Box();\n"
+            "var watcher = %weak(owner);\n",
+            "ownership_invalid_weak_unique_compile.zr",
+        },
+        {
+            "upgrade-from-shared",
+            "class Box {}\n"
+            "var seed = %unique new Box();\n"
+            "var owner = %shared(seed);\n"
+            "var alias = %upgrade(owner);\n",
+            "ownership_invalid_upgrade_shared_compile.zr",
+        },
+        {
+            "loan-from-shared",
+            "class Box {}\n"
+            "var seed = %unique new Box();\n"
+            "var owner = %shared(seed);\n"
+            "var alias = %loan(owner);\n",
+            "ownership_invalid_loan_shared_compile.zr",
+        },
+        {
+            "release-borrowed",
+            "class Box {}\n"
+            "var seed = %unique new Box();\n"
+            "var owner = %shared(seed);\n"
+            "var borrowed = %borrow(owner);\n"
+            "var released = %release(borrowed);\n",
+            "ownership_invalid_release_borrowed_compile.zr",
+        },
+        {
+            "detach-weak",
+            "class Box {}\n"
+            "var seed = %unique new Box();\n"
+            "var owner = %shared(seed);\n"
+            "var watcher = %weak(owner);\n"
+            "var detached = %detach(watcher);\n",
+            "ownership_invalid_detach_weak_compile.zr",
+        },
+        {
+            "share-shared",
+            "class Box {}\n"
+            "var seed = %unique new Box();\n"
+            "var owner = %shared(seed);\n"
+            "var alias = %shared(owner);\n",
+            "ownership_invalid_share_shared_compile.zr",
+        },
+    };
+    TZrSize i;
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Ownership builtin invalid operand compilation",
+              "Testing that invalid Rust-first ownership builtin operands are rejected before opcode emission");
+
+    for (i = 0; i < ZR_ARRAY_COUNT(cases); i++) {
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *func;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, (TZrNativeString)cases[i].sourceName, strlen(cases[i].sourceName));
+        TEST_ASSERT_NOT_NULL(sourceName);
+        func = ZrParser_Source_Compile(state, cases[i].source, strlen(cases[i].source), sourceName);
+        TEST_ASSERT_NULL_MESSAGE(func, cases[i].label);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_ownership_detach_runtime_rejects_multi_owner_shared_value(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Detach Runtime Rejects Multi Owner Shared Value";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Ownership runtime multi-owner detach",
+              "Testing that %detach(shared) returns null and keeps the existing shared owners alive when strong count exceeds one");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Box {}\n"
+            "var seed = %unique new Box();\n"
+            "var owner = %shared(seed);\n"
+            "var alias = owner;\n"
+            "var detached = %detach(owner);\n"
+            "if (owner != null && alias != null && detached == null) {\n"
+            "    return 1;\n"
+            "}\n"
+            "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_detach_multi_owner_runtime.zr",
+                                                     strlen("ownership_detach_multi_owner_runtime.zr"));
+        SZrFunction *func;
+        TZrInt64 result = 0;
+
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile multi-owner detach runtime source");
+            destroy_test_state(state);
+            return;
+        }
+
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
         TEST_ASSERT_EQUAL_INT64(1, result);
 
@@ -2978,6 +3202,133 @@ static void test_fixed_array_lowering_does_not_emit_length_member_write(void) {
     TEST_DIVIDER();
 }
 
+static void test_compiler_optimizer_removes_dead_null_clear_streaks(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Compiler Optimizer Removes Dead Null Clear Streaks";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Dead null clear optimization",
+              "Testing that straight-line temp cleanup no longer leaves long GET_CONSTANT null streaks in compiled output");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "sum10(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int, j: int): int {\n"
+                "    return a + b + c + d + e + f + g + h + i + j;\n"
+                "}\n"
+                "work(seed: int): int {\n"
+                "    var total = sum10(seed + 1,\n"
+                "                      seed + 2,\n"
+                "                      seed + 3,\n"
+                "                      seed + 4,\n"
+                "                      seed + 5,\n"
+                "                      seed + 6,\n"
+                "                      seed + 7,\n"
+                "                      seed + 8,\n"
+                "                      seed + 9,\n"
+                "                      seed + 10);\n"
+                "    return total;\n"
+                "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "optimizer_dead_null_clear_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *wrapper;
+        SZrFunction *workFunction;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse optimizer null-clear source");
+            destroy_test_state(state);
+            return;
+        }
+
+        wrapper = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (wrapper == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile optimizer null-clear source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2, wrapper->childFunctionLength);
+        workFunction = &wrapper->childFunctionList[1];
+        TEST_ASSERT_LESS_OR_EQUAL_UINT32(2, function_max_null_get_constant_streak(workFunction));
+        TEST_ASSERT_LESS_OR_EQUAL_UINT32(4, function_count_null_get_constant(workFunction));
+
+        ZrCore_Function_Free(state, wrapper);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_compiler_optimizer_reuses_temp_slots_in_basic_blocks(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Compiler Optimizer Reuses Temp Slots In Basic Blocks";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Temp slot reuse",
+              "Testing that sequential temp-heavy statements reuse transient slots instead of monotonically inflating stackSize");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "work(input: int): int {\n"
+                "    var a = input + 1;\n"
+                "    var b = input + 2;\n"
+                "    var c = input + 3;\n"
+                "    var d = input + 4;\n"
+                "    return a + b + c + d;\n"
+                "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "optimizer_temp_slot_reuse_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *wrapper;
+        SZrFunction *workFunction;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse temp slot reuse source");
+            destroy_test_state(state);
+            return;
+        }
+
+        wrapper = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        if (wrapper == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile temp slot reuse source");
+            destroy_test_state(state);
+            return;
+        }
+
+        workFunction = get_single_compiled_child_function(wrapper);
+        TEST_ASSERT_LESS_OR_EQUAL_UINT32(workFunction->localVariableLength + 2u, workFunction->stackSize);
+
+        ZrCore_Function_Free(state, wrapper);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 static void test_foreach_emits_iterator_contract_opcodes(void) {
     SZrTestTimer timer;
     const char *testSummary = "Foreach Emits Iterator Contract Opcodes";
@@ -3197,6 +3548,8 @@ int main(void) {
     RUN_TEST(test_type_expression_compiles_to_typeof_opcode);
     RUN_TEST(test_intermediate_writer_emits_type_metadata_section);
     RUN_TEST(test_intermediate_writer_emits_compile_time_and_test_metadata);
+    RUN_TEST(test_compiler_optimizer_removes_dead_null_clear_streaks);
+    RUN_TEST(test_compiler_optimizer_reuses_temp_slots_in_basic_blocks);
     RUN_TEST(test_member_and_index_access_emit_split_opcodes);
     RUN_TEST(test_global_member_access_emits_get_member);
     RUN_TEST(test_fixed_array_lowering_does_not_emit_length_member_write);
@@ -3220,6 +3573,7 @@ int main(void) {
     RUN_TEST(test_inherited_same_name_requires_explicit_override_or_shadow);
     RUN_TEST(test_shadow_does_not_satisfy_abstract_base_member);
     RUN_TEST(test_interface_plain_member_serializes_interface_contract_slot);
+    RUN_TEST(test_name_matched_iterator_members_without_builtin_interface_do_not_bind_contract_roles);
     RUN_TEST(test_interface_missing_member_is_rejected_by_compiler);
     RUN_TEST(test_ownership_builtin_shared_expression_consumes_unique_owner);
     RUN_TEST(test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes);
@@ -3227,6 +3581,8 @@ int main(void) {
     RUN_TEST(test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract);
     RUN_TEST(test_ownership_weak_runtime_expires_to_null_after_last_shared_release);
     RUN_TEST(test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract);
+    RUN_TEST(test_ownership_builtin_compile_rejects_invalid_operands);
+    RUN_TEST(test_ownership_detach_runtime_rejects_multi_owner_shared_value);
 
     printf("\n");
     TEST_MODULE_DIVIDER();

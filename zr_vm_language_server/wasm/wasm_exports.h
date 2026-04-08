@@ -116,6 +116,12 @@ const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uri
 // 获取工作区符号
 const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int queryLen);
 
+// 获取 native 虚拟声明文档
+const char* wasm_ZrLspGetNativeDeclarationDocument(void* context, const char* uri, int uriLen);
+
+// 获取选定项目的模块摘要
+const char* wasm_ZrLspGetProjectModules(void* context, const char* projectUri, int projectUriLen);
+
 // 获取文档高亮
 const char* wasm_ZrLspGetDocumentHighlights(void* context, const char* uri, int uriLen,
                                       int line, int character);

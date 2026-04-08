@@ -478,12 +478,17 @@ static void compiler_class_bind_interface_contract_slot(const SZrTypeMemberInfo 
     if (!declaredInCurrentClass ||
         requiredMember == ZR_NULL ||
         implementation == ZR_NULL ||
-        requiredMember->interfaceContractSlot == compiler_member_interface_contract_slot_none() ||
         compiler_member_has_modifier(implementation, ZR_DECLARATION_MODIFIER_SHADOW)) {
         return;
     }
 
-    ((SZrTypeMemberInfo *)implementation)->interfaceContractSlot = requiredMember->interfaceContractSlot;
+    if (requiredMember->contractRole != ZR_MEMBER_CONTRACT_ROLE_NONE &&
+        implementation->contractRole == ZR_MEMBER_CONTRACT_ROLE_NONE) {
+        ((SZrTypeMemberInfo *)implementation)->contractRole = requiredMember->contractRole;
+    }
+    if (requiredMember->interfaceContractSlot != compiler_member_interface_contract_slot_none()) {
+        ((SZrTypeMemberInfo *)implementation)->interfaceContractSlot = requiredMember->interfaceContractSlot;
+    }
 }
 
 static TZrBool compiler_class_member_satisfies_requirement(SZrCompilerState *cs,
@@ -1150,20 +1155,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     memberInfo.accessModifier = field->access;
                     memberInfo.isStatic = field->isStatic; // class字段也有isStatic
                     memberInfo.isConst = field->isConst;
-                    memberInfo.isUsingManaged = field->isUsingManaged;
                     if (field->name != ZR_NULL) {
                         memberInfo.name = field->name->name;
-                    }
-
-                    if (field->isStatic && field->isUsingManaged) {
-                        ZrParser_CompileTime_Error(cs,
-                                           ZR_COMPILE_TIME_ERROR_ERROR,
-                                           "static %using fields are not supported",
-                                           member->location);
-                        cs->currentTypeName = oldTypeName;
-                        cs->currentTypePrototypeInfo = oldTypePrototypeInfo;
-                        cs->currentTypeNode = oldTypeNode;
-                        return;
                     }
                     // 处理字段类型信息
                     if (field->typeInfo != ZR_NULL) {
@@ -1208,9 +1201,7 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         memberInfo.fieldSize = sizeof(TZrPtr);
                     }
 
-                    if ((memberInfo.isUsingManaged &&
-                         memberInfo.ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_WEAK) ||
-                        memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+                    if (memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
                         memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED) {
                         memberInfo.callsClose = ZR_TRUE;
                         memberInfo.callsDestructor = ZR_TRUE;

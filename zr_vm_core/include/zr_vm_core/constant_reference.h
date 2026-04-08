@@ -65,7 +65,7 @@ typedef struct SZrCompiledMemberInfo {
     TZrUInt32 functionConstantIndex;        // 函数在常量池中的索引
     TZrUInt32 parameterCount;               // 参数数量
     TZrUInt32 returnTypeNameStringIndex;    // 返回类型名称字符串索引（如果为0表示无返回类型名）
-    TZrUInt32 isUsingManaged;               // TZrBool (0或1)
+    TZrUInt32 isUsingManaged;               // legacy field-scoped `%using` 元数据位
     TZrUInt32 ownershipQualifier;           // EZrOwnershipQualifier（跨模块时按数值传递）
     TZrUInt32 callsClose;                   // TZrBool (0或1)
     TZrUInt32 callsDestructor;              // TZrBool (0或1)

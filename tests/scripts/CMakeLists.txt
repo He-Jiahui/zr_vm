@@ -7,7 +7,6 @@ file(TO_CMAKE_PATH "${SCRIPTS_BINARY_DIR_NORMALIZED}" SCRIPTS_BINARY_DIR_NORMALI
 
 set(SCRIPTS_COMMON_SOURCES
     test_utils.c
-    ${CMAKE_SOURCE_DIR}/tests/test_support.c
 )
 
 function(zr_vm_configure_scripts_target target_name)

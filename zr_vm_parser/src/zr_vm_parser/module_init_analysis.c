@@ -52,6 +52,8 @@ typedef struct SZrParserSummaryPathBuffer {
 
 static SZrParserModuleInitCache *module_init_get_cache(SZrGlobalState *global, TZrBool createIfMissing);
 static SZrParserModuleInitSummary *module_init_find_summary_mutable(SZrGlobalState *global, SZrString *moduleName);
+static SZrParserModuleInitSummary *module_init_find_summary_by_ast_mutable(SZrGlobalState *global,
+                                                                           const SZrAstNode *ast);
 static void module_init_free_summary(SZrGlobalState *global, SZrParserModuleInitSummary *summary);
 static TZrBool module_init_reset_summary(SZrState *state,
                                          SZrParserModuleInitSummary *summary,
@@ -226,6 +228,31 @@ static SZrParserModuleInitSummary *module_init_find_summary_mutable(SZrGlobalSta
         if (summary != ZR_NULL &&
             summary->moduleName != ZR_NULL &&
             ZrCore_String_Equal(summary->moduleName, moduleName)) {
+            return summary;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrParserModuleInitSummary *module_init_find_summary_by_ast_mutable(SZrGlobalState *global,
+                                                                           const SZrAstNode *ast) {
+    SZrParserModuleInitCache *cache;
+    TZrSize index;
+
+    if (global == ZR_NULL || ast == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cache = module_init_get_cache(global, ZR_FALSE);
+    if (cache == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < cache->summaries.length; ++index) {
+        SZrParserModuleInitSummary *summary =
+                (SZrParserModuleInitSummary *)ZrCore_Array_Get(&cache->summaries, index);
+        if (summary != ZR_NULL && summary->astIdentity == ast) {
             return summary;
         }
     }
@@ -2081,8 +2108,16 @@ static TZrBool module_init_ensure_summary_analyzed(SZrCompilerState *cs, SZrStri
             !module_init_analyze_source_summary(cs, summary, (SZrAstNode *)summary->astIdentity)) {
             return ZR_FALSE;
         }
+        summary = module_init_find_summary_mutable(cs->state->global, moduleName);
+        if (summary == ZR_NULL || summary->state == ZR_PARSER_MODULE_INIT_SUMMARY_FAILED) {
+            return ZR_FALSE;
+        }
         if (summary->hasAnalysis && summary->state != ZR_PARSER_MODULE_INIT_SUMMARY_FAILED &&
             !summary->validating && !module_init_validate_summary(cs, summary)) {
+            return ZR_FALSE;
+        }
+        summary = module_init_find_summary_mutable(cs->state->global, moduleName);
+        if (summary == ZR_NULL || summary->state == ZR_PARSER_MODULE_INIT_SUMMARY_FAILED) {
             return ZR_FALSE;
         }
         if (summary->hasAnalysis) {
@@ -2106,8 +2141,16 @@ static TZrBool module_init_ensure_summary_analyzed(SZrCompilerState *cs, SZrStri
         !module_init_analyze_source_summary(cs, summary, (SZrAstNode *)summary->astIdentity)) {
         return ZR_FALSE;
     }
+    summary = module_init_find_summary_mutable(cs->state->global, moduleName);
+    if (summary == ZR_NULL || summary->state == ZR_PARSER_MODULE_INIT_SUMMARY_FAILED) {
+        return ZR_FALSE;
+    }
     if (summary->hasAnalysis && summary->state != ZR_PARSER_MODULE_INIT_SUMMARY_FAILED &&
         !summary->validating && !module_init_validate_summary(cs, summary)) {
+        return ZR_FALSE;
+    }
+    summary = module_init_find_summary_mutable(cs->state->global, moduleName);
+    if (summary == ZR_NULL) {
         return ZR_FALSE;
     }
 

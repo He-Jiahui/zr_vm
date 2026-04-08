@@ -166,10 +166,11 @@ class Person{
         return this._address;
     }
 }
+var builtin = %import("zr.builtin");
 var k = {{
     // out 会寻找最近的block表达式
     // j的类型在编译阶段就已经确定
-    if(Object.type(j) == "array"){
+    if(builtin.Object.type(j) == "array"){
         // out to block expression
         out j.toArray();
     }

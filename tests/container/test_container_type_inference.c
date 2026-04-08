@@ -114,7 +114,7 @@ static void test_container_type_inference_fixed_array_length_identity_and_mismat
 
 static void test_container_type_inference_fixed_arrays_satisfy_arraylike_and_iterable_constraints(void) {
     SZrTestTimer timer = {0};
-    const char *summary = "Container Type Inference - Fixed Arrays Satisfy ArrayLike And Iterable Constraints";
+    const char *summary = "Container Type Inference - Fixed Arrays Satisfy IArrayLike And IEnumerable Constraints";
     SZrState *state;
     SZrCompilerState *cs;
     SZrAstNode *ast;
@@ -324,7 +324,7 @@ static void test_container_type_inference_native_generic_constraints_accept_pair
     TEST_ASSERT_TRUE(cs->hasError);
     TEST_ASSERT_NOT_NULL(cs->errorMessage);
     TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Device"));
-    TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Hashable"));
+    TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "IHashable"));
     ZrParser_InferredType_Free(state, &result);
 
     ZrCore_Function_Free(state, cs->currentFunction);
@@ -570,6 +570,52 @@ static void test_container_type_inference_accepts_qualified_and_destructured_imp
     TEST_DIVIDER();
 }
 
+static void test_container_type_inference_alias_import_does_not_leak_type_values(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Type Inference - Alias Import Does Not Leak Type Values";
+    SZrState *state;
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "container.Array;\n"
+            "Array;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+    cs = ZrContainerTests_CreateCompilerState(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    ast = parse_test_ast(state, "container_alias_value_visibility_test.zr", source);
+    TEST_ASSERT_NOT_NULL(ast);
+
+    cs->scriptAst = ast;
+    cs->currentFunction = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+    ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[0]);
+    TEST_ASSERT_FALSE(cs->hasError);
+    ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[1]);
+    TEST_ASSERT_FALSE(cs->hasError);
+    ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[2]);
+    TEST_ASSERT_TRUE(cs->hasError);
+    TEST_ASSERT_NOT_NULL(cs->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Array"));
+    TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "zr.container.Array"));
+
+    ZrCore_Function_Free(state, cs->currentFunction);
+    cs->currentFunction = ZR_NULL;
+    ZrParser_Ast_Free(state, ast);
+    ZrContainerTests_DestroyCompilerState(cs);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 static void test_container_type_inference_rejects_invalid_computed_access_on_set_and_linked_list(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Type Inference - Rejects Invalid Computed Access On Set And LinkedList";
@@ -652,7 +698,7 @@ static void test_container_type_inference_rejects_invalid_computed_access_on_set
 
 static void test_reference_protocols_arraylike_indexable_fixture_binds_protocols_and_index_types(void) {
     SZrTestTimer timer = {0};
-    const char *summary = "Reference Protocol Fixture - ArrayLike Iterable And Indexing Compose";
+    const char *summary = "Reference Protocol Fixture - IArrayLike IEnumerable And Indexing Compose";
     SZrState *state;
     SZrCompilerState *cs;
     SZrAstNode *ast;
@@ -686,10 +732,12 @@ static void test_reference_protocols_arraylike_indexable_fixture_binds_protocols
     TEST_ASSERT_FALSE(cs->hasError);
     ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[2]);
     TEST_ASSERT_FALSE(cs->hasError);
+    ZrContainerTests_CompileTopLevelStatement(cs, ast->data.script.statements->nodes[3]);
+    TEST_ASSERT_FALSE(cs->hasError);
 
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs,
-                                                   ast->data.script.statements->nodes[3]->data.expressionStatement.expr,
+                                                   ast->data.script.statements->nodes[4]->data.expressionStatement.expr,
                                                    &result));
     TEST_ASSERT_NOT_NULL(result.typeName);
     TEST_ASSERT_EQUAL_STRING("NeedsArrayLike<int[3]>", ZrCore_String_GetNativeString(result.typeName));
@@ -697,7 +745,7 @@ static void test_reference_protocols_arraylike_indexable_fixture_binds_protocols
 
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs,
-                                                   ast->data.script.statements->nodes[4]->data.expressionStatement.expr,
+                                                   ast->data.script.statements->nodes[5]->data.expressionStatement.expr,
                                                    &result));
     TEST_ASSERT_NOT_NULL(result.typeName);
     TEST_ASSERT_EQUAL_STRING("NeedsIterable<int[3]>", ZrCore_String_GetNativeString(result.typeName));
@@ -705,7 +753,7 @@ static void test_reference_protocols_arraylike_indexable_fixture_binds_protocols
 
     ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs,
-                                                   ast->data.script.statements->nodes[5]->data.expressionStatement.expr,
+                                                   ast->data.script.statements->nodes[6]->data.expressionStatement.expr,
                                                    &result));
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
     ZrParser_InferredType_Free(state, &result);
@@ -737,6 +785,7 @@ int main(void) {
     RUN_TEST(test_container_type_inference_typed_function_returns_preserve_native_container_method_types);
     RUN_TEST(test_container_type_inference_requires_explicit_binding_for_imported_type_names);
     RUN_TEST(test_container_type_inference_accepts_qualified_and_destructured_imported_type_names);
+    RUN_TEST(test_container_type_inference_alias_import_does_not_leak_type_values);
     RUN_TEST(test_container_type_inference_rejects_invalid_computed_access_on_set_and_linked_list);
     RUN_TEST(test_reference_protocols_arraylike_indexable_fixture_binds_protocols_and_index_types);
     return UNITY_END();

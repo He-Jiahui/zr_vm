@@ -1,5 +1,7 @@
-class NeedsArrayLike<T> where T: ArrayLike<int> { var value: T; }
-class NeedsIterable<T> where T: Iterable<int> { var value: T; }
+var builtin = %import("zr.builtin");
+
+class NeedsArrayLike<T> where T: builtin.IArrayLike<int> { var value: T; }
+class NeedsIterable<T> where T: builtin.IEnumerable<int> { var value: T; }
 
 var xs: int[3] = [1, 2, 3];
 
