@@ -131,7 +131,22 @@ static void test_lsp_context_create_and_free(SZrState *state) {
         TEST_FAIL(timer, "LSP Context Creation and Free", "Parser is NULL");
         return;
     }
-    
+
+    if (context->uriToAnalyzerMap.pairPoolHead != ZR_NULL ||
+        context->uriToAnalyzerMap.pairPoolActive != ZR_NULL ||
+        context->uriToAnalyzerMap.pairPoolCapacity != 0 ||
+        context->uriToAnalyzerMap.pairPoolUsed != 0 ||
+        context->parser->uriToFileMap.pairPoolHead != ZR_NULL ||
+        context->parser->uriToFileMap.pairPoolActive != ZR_NULL ||
+        context->parser->uriToFileMap.pairPoolCapacity != 0 ||
+        context->parser->uriToFileMap.pairPoolUsed != 0) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Context Creation and Free",
+                  "Fresh hash sets must start with an empty pair-pool state");
+        return;
+    }
+     
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Context Creation and Free");
 }
@@ -4154,7 +4169,7 @@ static void test_lsp_project_source_bootstrap_indexes_open_file_symbols_and_modu
     if (!build_fixture_native_path("tests/fixtures/projects/import_basic/import_basic.zrp",
                                    projectPath,
                                    sizeof(projectPath)) ||
-        !build_fixture_native_path("tests/fixtures/projects/import_basic/src/lsp_smoke.zr",
+        !build_fixture_native_path("tests/fixtures/projects/import_basic/src/greet.zr",
                                    sourcePath,
                                    sizeof(sourcePath))) {
         TEST_FAIL(timer,
@@ -4167,13 +4182,43 @@ static void test_lsp_project_source_bootstrap_indexes_open_file_symbols_and_modu
     context = ZrLanguageServer_LspContext_New(state);
     sourceUri = create_percent_encoded_file_uri_from_native_path(state, sourcePath);
     projectUri = create_percent_encoded_file_uri_from_native_path(state, projectPath);
-    query = ZrCore_String_Create(state, "x", 1);
-    if (sourceContent == ZR_NULL || context == ZR_NULL || sourceUri == ZR_NULL || projectUri == ZR_NULL || query == ZR_NULL) {
+    query = ZrCore_String_Create(state, "greet", 5);
+    if (sourceContent == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "Failed to read the encoded bootstrap source fixture");
+        return;
+    }
+    if (context == ZR_NULL) {
+        free(sourceContent);
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "Failed to create the LSP context for the encoded bootstrap fixture");
+        return;
+    }
+    if (sourceUri == ZR_NULL) {
         free(sourceContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
-                  "Failed to prepare the encoded project bootstrap fixture");
+                  "Failed to create the percent-encoded source URI for the bootstrap fixture");
+        return;
+    }
+    if (projectUri == ZR_NULL) {
+        free(sourceContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "Failed to create the percent-encoded project URI for the bootstrap fixture");
+        return;
+    }
+    if (query == ZR_NULL) {
+        free(sourceContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
+                  "Failed to allocate the workspace-symbol query string for the bootstrap fixture");
         return;
     }
 
@@ -4197,15 +4242,15 @@ static void test_lsp_project_source_bootstrap_indexes_open_file_symbols_and_modu
         return;
     }
 
-    symbolInfo = find_symbol_information_by_name(&symbols, "x");
+    symbolInfo = find_symbol_information_by_name(&symbols, "greet");
     if (symbolInfo == ZR_NULL || symbolInfo->location.uri == ZR_NULL ||
-        !ZrLanguageServer_Lsp_StringsEqual(symbolInfo->location.uri, sourceUri)) {
+        !ZrCore_String_Equal(symbolInfo->location.uri, sourceUri)) {
         ZrCore_Array_Free(state, &symbols);
         free(sourceContent);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
-                  "Expected workspace symbols to include x from the encoded open project source file");
+                  "Expected workspace symbols to include greet from the encoded open project source file");
         return;
     }
     ZrCore_Array_Free(state, &symbols);
@@ -4234,10 +4279,10 @@ static void test_lsp_project_source_bootstrap_indexes_open_file_symbols_and_modu
         moduleNameText = test_string_ptr((*summaryPtr)->moduleName);
         navigationUriText = test_string_ptr((*summaryPtr)->navigationUri);
         if (moduleNameText != ZR_NULL &&
-            strcmp(moduleNameText, "lsp_smoke") == 0 &&
+            strcmp(moduleNameText, "greet") == 0 &&
             (*summaryPtr)->sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE &&
             navigationUriText != ZR_NULL &&
-            strstr(navigationUriText, "lsp_smoke.zr") != ZR_NULL) {
+            strstr(navigationUriText, "greet.zr") != ZR_NULL) {
             foundOpenSourceModule = ZR_TRUE;
             break;
         }
@@ -4250,7 +4295,7 @@ static void test_lsp_project_source_bootstrap_indexes_open_file_symbols_and_modu
     if (!foundOpenSourceModule) {
         TEST_FAIL(timer,
                   "LSP Project Source Bootstrap Indexes Open File Symbols And Modules",
-                  "Expected projectModules to reuse the semantic project and include the opened lsp_smoke source file");
+                  "Expected projectModules to reuse the semantic project and include the opened greet source file");
         return;
     }
 

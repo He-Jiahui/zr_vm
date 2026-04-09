@@ -11,6 +11,7 @@ internal static class BenchmarkSupport
     public static int ParseScale(string[] args, out string? error)
     {
         var tier = "core";
+        int? explicitScale = null;
         error = null;
 
         for (var index = 0; index < args.Length; index++)
@@ -19,7 +20,7 @@ internal static class BenchmarkSupport
             {
                 if (index + 1 >= args.Length)
                 {
-                    error = "--tier requires smoke, core, or stress";
+                    error = "--tier requires smoke, core, stress, or profile";
                     return 0;
                 }
 
@@ -27,8 +28,31 @@ internal static class BenchmarkSupport
                 continue;
             }
 
+            if (args[index] == "--scale")
+            {
+                if (index + 1 >= args.Length)
+                {
+                    error = "--scale requires a positive integer";
+                    return 0;
+                }
+
+                if (!int.TryParse(args[++index], out var parsedScale) || parsedScale < 1)
+                {
+                    error = "--scale requires a positive integer";
+                    return 0;
+                }
+
+                explicitScale = parsedScale;
+                continue;
+            }
+
             error = $"unknown argument: {args[index]}";
             return 0;
+        }
+
+        if (explicitScale.HasValue)
+        {
+            return explicitScale.Value;
         }
 
         if (tier == "smoke")
@@ -44,6 +68,11 @@ internal static class BenchmarkSupport
         if (tier == "stress")
         {
             return 16;
+        }
+
+        if (tier == "profile")
+        {
+            return 1;
         }
 
         error = $"unsupported tier: {tier}";

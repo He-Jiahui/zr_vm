@@ -1,0 +1,22 @@
+var benchConfig = %import("bench_config");
+
+func fib(n: int): int {
+    if (n <= 1) {
+        return n;
+    }
+    return fib(n - 1) + fib(n - 2);
+}
+
+var scale = benchConfig.scale();
+var rounds = 18 * scale;
+var checksum = 0;
+var index = 0;
+
+while (index <= rounds - 1) {
+    var n = 13 + index % 6;
+    var value = fib(n);
+    checksum = (checksum * 131 + value * (index + 3) + n) % 1000000007;
+    index = index + 1;
+}
+
+return "BENCH_FIB_RECURSIVE_PASS\n" + <string> checksum;

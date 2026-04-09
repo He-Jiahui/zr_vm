@@ -389,6 +389,11 @@ TZrSize ZrGarbageCollectorPropagateMark(SZrState *state) {
                 garbage_collector_mark_object(state,
                                               ZR_CAST_RAW_OBJECT_AS_SUPER(function->runtimeDecoratorDecorators));
             }
+            if (function->cachedStatelessClosure != ZR_NULL) {
+                garbage_collector_mark_object(state,
+                                              ZR_CAST_RAW_OBJECT_AS_SUPER(function->cachedStatelessClosure));
+                work++;
+            }
             if (function->sourceCodeList != ZR_NULL) {
                 garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function->sourceCodeList));
             }

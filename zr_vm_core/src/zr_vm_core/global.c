@@ -13,13 +13,20 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/profile.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_common/zr_type_conf.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+static TZrBool global_trace_enabled(void);
+static void global_trace(const TZrChar *format, ...);
 
 static SZrString *global_state_create_permanent_string(SZrState *state, const TZrChar *text) {
     SZrString *stringObject;
@@ -348,19 +355,24 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->isValid = ZR_FALSE;
     global->allocator = allocator;
     global->userAllocationArguments = userAllocationArguments;
+    global_trace("global new allocated global=%p unique=%llu", (void *)global, (unsigned long long)uniqueNumber);
     SZrState *newState = ZrCore_State_New(global);
     global->mainThreadState = newState;
+    global_trace("global new state created state=%p", (void *)newState);
     global->threadWithStackClosures = ZR_NULL;
     // todo: main thread cannot yield
 
     // todo:
     global->logFunction = ZR_NULL;
+    global->profileRuntime = ZR_NULL;
 
     // generate seed
     global->hashSeed = ZrCore_HashSeed_Create(global, uniqueNumber);
-
     // gc
     ZrCore_GarbageCollector_New(global);
+    ZrCore_Profile_GlobalInit(global);
+    ZrCore_Profile_SetCurrentState(newState);
+    global_trace("global new gc/profile ready gc=%p profile=%p", (void *)global->garbageCollector, (void *)global->profileRuntime);
 
     // io
     global->sourceLoader = ZR_NULL;
@@ -372,6 +384,7 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
 
     // init string table
     ZrCore_StringTable_New(global);
+    global_trace("global new string table=%p", (void *)global->stringTable);
 
     // init global module registry
     ZrCore_Value_ResetAsNull(&global->loadedModulesRegistry);
@@ -381,6 +394,11 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     ZrCore_Value_ResetAsNull(&global->zrObject);
     ZrCore_Array_Construct(&global->importCompileInfoStack);
     ZrCore_Array_Init(newState, &global->importCompileInfoStack, sizeof(SZrString *), 4);
+    global_trace("global new import stack head=%p capacity=%llu length=%llu valid=%d",
+                 (void *)global->importCompileInfoStack.head,
+                 (unsigned long long)global->importCompileInfoStack.capacity,
+                 (unsigned long long)global->importCompileInfoStack.length,
+                 (int)global->importCompileInfoStack.isValid);
 
     // exception
     global->panicHandlingFunction = ZR_NULL;
@@ -420,6 +438,7 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     }
     // launch new state with try-catch
     if (ZrCore_Exception_TryRun(newState, ZrCore_State_MainThreadLaunch, ZR_NULL) != ZR_THREAD_STATUS_FINE) {
+        global_trace("global new main thread launch failed status=%d", (int)newState->threadStatus);
         ZrCore_State_Exit(newState);
         ZrCore_GlobalState_Free(global);
         global = ZR_NULL;
@@ -490,15 +509,26 @@ void ZrCore_GlobalState_InitRegistry(SZrState *state, SZrGlobalState *global) {
     }
     state->global = global;
     global->mainThreadState = state;
+    global_trace("init registry enter state=%p global=%p", (void *)state, (void *)global);
 
     SZrObject *object = ZrCore_Object_New(state, ZR_NULL);
     ZrCore_Object_Init(state, object);  // 初始化对象的 nodeMap
+    global_trace("init registry loadedModules object=%p nodeMap{valid=%d buckets=%p capacity=%llu}",
+                 (void *)object,
+                 object != ZR_NULL ? (int)object->nodeMap.isValid : -1,
+                 object != ZR_NULL ? (void *)object->nodeMap.buckets : ZR_NULL,
+                 object != ZR_NULL ? (unsigned long long)object->nodeMap.capacity : 0ull);
     ZrCore_Value_InitAsRawObject(state, &global->loadedModulesRegistry, ZR_CAST_RAW_OBJECT(object));
 
     // 创建全局 zr 对象
     SZrObject *zrObject = ZrCore_Object_New(state, ZR_NULL);
     ZrCore_Object_Init(state, zrObject);
     ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(zrObject));
+    global_trace("init registry zrObject=%p nodeMap{valid=%d buckets=%p capacity=%llu}",
+                 (void *)zrObject,
+                 zrObject != ZR_NULL ? (int)zrObject->nodeMap.isValid : -1,
+                 zrObject != ZR_NULL ? (void *)zrObject->nodeMap.buckets : ZR_NULL,
+                 zrObject != ZR_NULL ? (unsigned long long)zrObject->nodeMap.capacity : 0ull);
 
     // 将 zr 对象存储到 global->zrObject 中，供 GET_GLOBAL 指令使用
     SZrTypeValue zrValue;
@@ -524,6 +554,7 @@ void ZrCore_GlobalState_InitRegistry(SZrState *state, SZrGlobalState *global) {
     // todo: register zr object to global scope
 
     global->registryInitialized = ZR_TRUE;
+    global_trace("init registry exit global=%p registryInitialized=%d", (void *)global, (int)global->registryInitialized);
 }
 
 // 设置 compileSource 函数指针（由 parser 模块调用）
@@ -580,7 +611,37 @@ void ZrCore_GlobalState_Free(SZrGlobalState *global) {
     ZrCore_GarbageCollector_Free(global, global->garbageCollector);
     global->garbageCollector = ZR_NULL;
 
+    ZrCore_Profile_GlobalShutdown(global);
+
     ZrCore_State_Free(global, global->mainThreadState);
     // free global at last
     allocator(global->userAllocationArguments, global, sizeof(SZrGlobalState), 0, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+}
+
+static TZrBool global_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_VM_TRACE_CORE_BOOTSTRAP");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void global_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!global_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    fprintf(stderr, "[zr-global] ");
+    vfprintf(stderr, format, arguments);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(arguments);
 }

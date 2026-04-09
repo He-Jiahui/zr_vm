@@ -55,34 +55,104 @@ static const TZrChar *backend_aot_llvm_binary_value_helper_name(TZrUInt32 opcode
             return "ZrLibrary_AotRuntime_LogicalNotEqual";
         case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED):
             return "ZrLibrary_AotRuntime_LogicalGreaterSigned";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED):
+            return "ZrLibrary_AotRuntime_LogicalGreaterUnsigned";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT):
+            return "ZrLibrary_AotRuntime_LogicalGreaterFloat";
         case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED):
             return "ZrLibrary_AotRuntime_LogicalLessSigned";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED):
+            return "ZrLibrary_AotRuntime_LogicalLessUnsigned";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
+            return "ZrLibrary_AotRuntime_LogicalLessFloat";
         case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED):
             return "ZrLibrary_AotRuntime_LogicalGreaterEqualSigned";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED):
+            return "ZrLibrary_AotRuntime_LogicalGreaterEqualUnsigned";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT):
+            return "ZrLibrary_AotRuntime_LogicalGreaterEqualFloat";
         case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED):
             return "ZrLibrary_AotRuntime_LogicalLessEqualSigned";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED):
+            return "ZrLibrary_AotRuntime_LogicalLessEqualUnsigned";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT):
+            return "ZrLibrary_AotRuntime_LogicalLessEqualFloat";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_AND):
+            return "ZrLibrary_AotRuntime_LogicalAnd";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_OR):
+            return "ZrLibrary_AotRuntime_LogicalOr";
         case ZR_INSTRUCTION_ENUM(ADD):
         case ZR_INSTRUCTION_ENUM(ADD_STRING):
             return "ZrLibrary_AotRuntime_Add";
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+            return "ZrLibrary_AotRuntime_AddFloat";
         case ZR_INSTRUCTION_ENUM(SUB):
             return "ZrLibrary_AotRuntime_Sub";
+        case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
+            return "ZrLibrary_AotRuntime_SubFloat";
         case ZR_INSTRUCTION_ENUM(MUL):
             return "ZrLibrary_AotRuntime_Mul";
         case ZR_INSTRUCTION_ENUM(ADD_INT):
             return "ZrLibrary_AotRuntime_AddInt";
+        case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
+            return "ZrLibrary_AotRuntime_AddIntConst";
         case ZR_INSTRUCTION_ENUM(SUB_INT):
             return "ZrLibrary_AotRuntime_SubInt";
+        case ZR_INSTRUCTION_ENUM(SUB_INT_CONST):
+            return "ZrLibrary_AotRuntime_SubIntConst";
+        case ZR_INSTRUCTION_ENUM(BITWISE_AND):
+            return "ZrLibrary_AotRuntime_BitwiseAnd";
+        case ZR_INSTRUCTION_ENUM(BITWISE_OR):
+            return "ZrLibrary_AotRuntime_BitwiseOr";
         case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
             return "ZrLibrary_AotRuntime_BitwiseXor";
+        case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT):
+            return "ZrLibrary_AotRuntime_BitwiseShiftLeft";
+        case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT):
+            return "ZrLibrary_AotRuntime_BitwiseShiftRight";
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
             return "ZrLibrary_AotRuntime_MulSigned";
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST):
+            return "ZrLibrary_AotRuntime_MulSignedConst";
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
+            return "ZrLibrary_AotRuntime_MulUnsigned";
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+            return "ZrLibrary_AotRuntime_MulFloat";
         case ZR_INSTRUCTION_ENUM(DIV):
             return "ZrLibrary_AotRuntime_Div";
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
             return "ZrLibrary_AotRuntime_DivSigned";
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
+            return "ZrLibrary_AotRuntime_DivSignedConst";
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
+            return "ZrLibrary_AotRuntime_DivUnsigned";
+        case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
+            return "ZrLibrary_AotRuntime_DivFloat";
         case ZR_INSTRUCTION_ENUM(MOD):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
             return "ZrLibrary_AotRuntime_Mod";
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
+            return "ZrLibrary_AotRuntime_ModSignedConst";
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
+            return "ZrLibrary_AotRuntime_ModUnsigned";
+        case ZR_INSTRUCTION_ENUM(MOD_FLOAT):
+            return "ZrLibrary_AotRuntime_ModFloat";
+        case ZR_INSTRUCTION_ENUM(POW):
+            return "ZrLibrary_AotRuntime_Pow";
+        case ZR_INSTRUCTION_ENUM(POW_SIGNED):
+            return "ZrLibrary_AotRuntime_PowSigned";
+        case ZR_INSTRUCTION_ENUM(POW_UNSIGNED):
+            return "ZrLibrary_AotRuntime_PowUnsigned";
+        case ZR_INSTRUCTION_ENUM(POW_FLOAT):
+            return "ZrLibrary_AotRuntime_PowFloat";
+        case ZR_INSTRUCTION_ENUM(SHIFT_LEFT):
+            return "ZrLibrary_AotRuntime_ShiftLeft";
+        case ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT):
+            return "ZrLibrary_AotRuntime_ShiftLeftInt";
+        case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT):
+            return "ZrLibrary_AotRuntime_ShiftRight";
+        case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT):
+            return "ZrLibrary_AotRuntime_ShiftRightInt";
         default:
             return ZR_NULL;
     }
@@ -92,6 +162,10 @@ static const TZrChar *backend_aot_llvm_unary_value_helper_name(TZrUInt32 opcode)
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(NEG):
             return "ZrLibrary_AotRuntime_Neg";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
+            return "ZrLibrary_AotRuntime_LogicalNot";
+        case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
+            return "ZrLibrary_AotRuntime_BitwiseNot";
         case ZR_INSTRUCTION_ENUM(TO_INT):
             return "ZrLibrary_AotRuntime_ToInt";
         case ZR_INSTRUCTION_ENUM(TO_STRING):

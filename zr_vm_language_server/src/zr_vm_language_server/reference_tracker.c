@@ -130,12 +130,7 @@ SZrReferenceTracker *ZrLanguageServer_ReferenceTracker_New(SZrState *state, SZrS
                       ZR_LSP_LARGE_ARRAY_INITIAL_CAPACITY);
     
     // 初始化哈希表（使用符号名称作为键）
-    tracker->symbolToReferencesMap.buckets = ZR_NULL;
-    tracker->symbolToReferencesMap.bucketSize = 0;
-    tracker->symbolToReferencesMap.elementCount = 0;
-    tracker->symbolToReferencesMap.capacity = 0;
-    tracker->symbolToReferencesMap.resizeThreshold = 0;
-    tracker->symbolToReferencesMap.isValid = ZR_FALSE;
+    ZrCore_HashSet_Construct(&tracker->symbolToReferencesMap);
     ZrCore_HashSet_Init(state, &tracker->symbolToReferencesMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
     
     return tracker;

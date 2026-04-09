@@ -7,7 +7,7 @@
 
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_common/zr_type_conf.h"
-// #define ZR_INSTRUCTION_USE_DISPATCH_TABLE
+#define ZR_INSTRUCTION_USE_DISPATCH_TABLE
 
 #if defined(ZR_COMPILER_GNU) || defined(ZR_COMPILER_CLANG)
 #define ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED 1
@@ -32,6 +32,9 @@
     Z(SUPER_ARRAY_GET_INT)                                                                                             \
     Z(SUPER_ARRAY_SET_INT)                                                                                             \
     Z(SUPER_ARRAY_ADD_INT)                                                                                             \
+    Z(SUPER_ARRAY_ADD_INT4)                                                                                            \
+    Z(SUPER_ARRAY_ADD_INT4_CONST)                                                                                      \
+    Z(SUPER_ARRAY_FILL_INT4_CONST)                                                                                     \
     Z(ITER_INIT)                                                                                                       \
     Z(ITER_MOVE_NEXT)                                                                                                  \
     Z(ITER_CURRENT)                                                                                                    \
@@ -44,22 +47,27 @@
     Z(TO_OBJECT)                                                                                                       \
     Z(ADD)                                                                                                             \
     Z(ADD_INT)                                                                                                         \
+    Z(ADD_INT_CONST)                                                                                                   \
     Z(ADD_FLOAT)                                                                                                       \
     Z(ADD_STRING)                                                                                                      \
     Z(SUB)                                                                                                             \
     Z(SUB_INT)                                                                                                         \
+    Z(SUB_INT_CONST)                                                                                                   \
     Z(SUB_FLOAT)                                                                                                       \
     Z(MUL)                                                                                                             \
     Z(MUL_SIGNED)                                                                                                      \
+    Z(MUL_SIGNED_CONST)                                                                                                \
     Z(MUL_UNSIGNED)                                                                                                    \
     Z(MUL_FLOAT)                                                                                                       \
     Z(NEG)                                                                                                             \
     Z(DIV)                                                                                                             \
     Z(DIV_SIGNED)                                                                                                      \
+    Z(DIV_SIGNED_CONST)                                                                                                \
     Z(DIV_UNSIGNED)                                                                                                    \
     Z(DIV_FLOAT)                                                                                                       \
     Z(MOD)                                                                                                             \
     Z(MOD_SIGNED)                                                                                                      \
+    Z(MOD_SIGNED_CONST)                                                                                                \
     Z(MOD_UNSIGNED)                                                                                                    \
     Z(MOD_FLOAT)                                                                                                       \
     Z(POW)                                                                                                             \
@@ -144,7 +152,8 @@
     Z(META_GET)                                                                                                        \
     Z(META_SET)                                                                                                        \
     Z(SUPER_META_GET_STATIC_CACHED)                                                                                    \
-    Z(SUPER_META_SET_STATIC_CACHED)
+    Z(SUPER_META_SET_STATIC_CACHED)                                                                                    \
+    Z(NOP)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

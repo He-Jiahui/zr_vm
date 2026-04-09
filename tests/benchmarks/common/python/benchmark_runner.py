@@ -8,11 +8,13 @@ TIER_SCALES = {
     "smoke": 1,
     "core": 4,
     "stress": 16,
+    "profile": 1,
 }
 
 
 def parse_scale(argv: list[str]) -> int:
     tier = "core"
+    explicit_scale: int | None = None
     index = 0
     while index < len(argv):
         arg = argv[index]
@@ -22,8 +24,21 @@ def parse_scale(argv: list[str]) -> int:
             tier = argv[index + 1]
             index += 2
             continue
+        if arg == "--scale":
+            if index + 1 >= len(argv):
+                raise SystemExit("--scale requires a positive integer")
+            try:
+                explicit_scale = int(argv[index + 1], 10)
+            except ValueError as exc:
+                raise SystemExit("--scale requires a positive integer") from exc
+            if explicit_scale < 1:
+                raise SystemExit("--scale requires a positive integer")
+            index += 2
+            continue
         raise SystemExit(f"unknown argument: {arg}")
 
+    if explicit_scale is not None:
+        return explicit_scale
     if tier not in TIER_SCALES:
         raise SystemExit(f"unsupported tier: {tier}")
     return TIER_SCALES[tier]
@@ -358,6 +373,236 @@ def map_object_access(scale: int) -> int:
     return checksum
 
 
+def fib_recursive_value(n: int) -> int:
+    if n <= 1:
+        return n
+    return fib_recursive_value(n - 1) + fib_recursive_value(n - 2)
+
+
+def fib_recursive(scale: int) -> int:
+    rounds = 18 * scale
+    checksum = 0
+
+    for index in range(rounds):
+        n = 13 + (index % 6)
+        value = fib_recursive_value(n)
+        checksum = (checksum * 131 + value * (index + 3) + n) % MOD
+
+    return checksum
+
+
+class PolyAdder:
+    def __init__(self, base: int) -> None:
+        self.base = base
+
+    def __call__(self, value: int, delta: int) -> int:
+        return (value + delta + self.base) % 100003
+
+
+class PolyMultiply:
+    def __init__(self, factor: int) -> None:
+        self.factor = factor
+
+    def __call__(self, value: int, delta: int) -> int:
+        return (value * (self.factor + 3) + delta + 7) % 100003
+
+
+class PolyXor:
+    def __init__(self, mask: int) -> None:
+        self.mask = mask
+
+    def __call__(self, value: int, delta: int) -> int:
+        return ((value ^ (delta + self.mask)) + self.mask * 5 + delta) % 100003
+
+
+def call_leaf(value: int, salt: int) -> int:
+    return (value * 17 + salt * 13 + 19) % 100003
+
+
+def call_chain_a(value: int, salt: int) -> int:
+    return call_leaf(value + 3, salt + 1)
+
+
+def call_chain_b(value: int, salt: int) -> int:
+    return call_leaf(call_chain_a(value + (salt % 5), salt + 7), salt + 11)
+
+
+def call_chain_c(value: int, salt: int) -> int:
+    return call_leaf(call_chain_b(value ^ salt, salt + 13), salt + 17)
+
+
+def tail_accumulate(steps: int, acc: int) -> int:
+    if steps == 0:
+        return acc
+    return tail_accumulate(steps - 1, (acc * 3 + steps + 5) % 100003)
+
+
+def dispatch_callable(callable_obj, value: int, delta: int) -> int:
+    return callable_obj(value, delta)
+
+
+def call_chain_polymorphic(scale: int) -> int:
+    rounds = 320 * scale
+    adder = PolyAdder(17)
+    multiply = PolyMultiply(23)
+    xor_call = PolyXor(31)
+    state = 17
+    checksum = 0
+
+    for outer in range(rounds):
+        delta = outer * 7 + (state % 13)
+        selector = outer % 3
+        if selector == 0:
+            state = dispatch_callable(adder, call_chain_a(state, delta), delta)
+        elif selector == 1:
+            state = dispatch_callable(multiply, call_chain_b(state, delta), delta)
+        else:
+            state = dispatch_callable(xor_call, call_chain_c(state, delta), delta)
+
+        checksum = (checksum + state * (selector + 1) + tail_accumulate((outer % 5) + 1, state)) % MOD
+
+    return checksum
+
+
+class HotRecord:
+    def __init__(self, seed: int) -> None:
+        self.a = seed
+        self.b = seed + 3
+        self.c = seed + 7
+        self.d = seed + 11
+
+
+def object_field_hot(scale: int) -> int:
+    rounds = 12000 * scale
+    record = HotRecord(5)
+    checksum = 0
+
+    for index in range(rounds):
+        record.a = (record.a + record.b + index) % 10007
+        record.b = (record.b + record.c + record.a + 3) % 10009
+        record.c = (record.c + record.d + record.b + (index % 7)) % 10037
+        record.d = (record.d + record.a + record.c + 5) % 10039
+        snapshot = record.a * 3 + record.b * 5 + record.c * 7 + record.d * 11
+        if snapshot % 2 == 0:
+            checksum = (checksum + snapshot + record.b) % MOD
+        else:
+            checksum = (checksum + snapshot + record.c) % MOD
+
+    return checksum
+
+
+def array_index_dense(scale: int) -> int:
+    length = 128 * scale
+    rounds = 48 * scale
+    values = [0] * length
+    checksum = 0
+
+    for index in range(length):
+        values[index] = (index * 13 + 7) % 997
+
+    for round_index in range(rounds):
+        for cursor in range(1, length - 1):
+            left = values[cursor - 1]
+            mid = values[cursor]
+            right = values[cursor + 1]
+            updated = (left + mid * 3 + right * 5 + round_index + cursor) % 1000003
+            values[cursor] = updated
+            checksum = (checksum + updated * (cursor + 1)) % MOD
+
+        checksum = (checksum + values[0] + values[length - 1] + round_index) % MOD
+
+    return checksum
+
+
+def branch_jump_dense(scale: int) -> int:
+    outer_limit = 180 * scale
+    inner_limit = 180
+    state = 23
+    checksum = 0
+
+    for outer in range(outer_limit):
+        for inner in range(inner_limit):
+            state = (state * 97 + outer * 13 + inner * 17 + 19) % 65521
+            if state % 11 == 0:
+                checksum += state // 11 + outer
+            elif state % 7 == 0:
+                checksum += state % 97 + inner * 3
+            elif state % 5 == 0:
+                checksum += (state // 5) % 89 + outer * 5
+            elif state % 3 == 0:
+                checksum += (state ^ (outer + inner)) + 17
+            else:
+                checksum += state % 31 + outer + inner
+
+            checksum %= MOD
+            if checksum % 2 == 0:
+                checksum = (checksum + state % 19) % MOD
+            else:
+                checksum = (checksum + state % 23) % MOD
+
+    return checksum
+
+
+class Service:
+    def __init__(self, weight: int, bias: int) -> None:
+        self.weight = weight
+        self.bias = bias
+
+    def handle(self, value: int, ticket: int) -> int:
+        self.bias = (self.bias + ticket + self.weight) % 10007
+        if (ticket + self.weight) % 2 == 0:
+            return (value * self.weight + self.bias + ticket) % 1000003
+        return (value + self.weight * 7 + self.bias + ticket * 3) % 1000003
+
+
+def route_service(service: Service, value: int, ticket: int) -> int:
+    return service.handle(value, ticket)
+
+
+def mixed_service_loop(scale: int) -> int:
+    length = 24 * scale
+    rounds = 320 * scale
+    counters = [0] * length
+    service0 = Service(3, 11)
+    service1 = Service(5, 17)
+    service2 = Service(7, 23)
+    checksum = 0
+    state = 31
+
+    for index in range(length):
+        counters[index] = (index * 19 + 5) % 257
+
+    for outer in range(rounds):
+        for inner in range(32):
+            slot = (outer + inner + state) % length
+            current = counters[slot]
+            selector = slot % 3
+            ticket = outer * 11 + inner * 7 + selector
+
+            if selector == 0:
+                state = route_service(service0, current + state, ticket)
+            elif selector == 1:
+                state = route_service(service1, current + state, ticket)
+            else:
+                state = route_service(service2, current + state, ticket)
+
+            counters[slot] = (current + state + selector + inner) % 1000003
+            if counters[slot] % 4 == 0:
+                checksum = (checksum + counters[slot] + state + current) % MOD
+            else:
+                checksum = (checksum + counters[slot] * (selector + 1) + state) % MOD
+
+    return (
+        checksum
+        + service0.bias
+        + service1.bias
+        + service2.bias
+        + counters[0]
+        + counters[length // 2]
+        + counters[length - 1]
+    ) % MOD
+
+
 CASE_HANDLERS = {
     "numeric_loops": ("BENCH_NUMERIC_LOOPS_PASS", numeric_loops),
     "dispatch_loops": ("BENCH_DISPATCH_LOOPS_PASS", dispatch_loops),
@@ -367,6 +612,12 @@ CASE_HANDLERS = {
     "matrix_add_2d": ("BENCH_MATRIX_ADD_2D_PASS", matrix_add_2d),
     "string_build": ("BENCH_STRING_BUILD_PASS", string_build),
     "map_object_access": ("BENCH_MAP_OBJECT_ACCESS_PASS", map_object_access),
+    "fib_recursive": ("BENCH_FIB_RECURSIVE_PASS", fib_recursive),
+    "call_chain_polymorphic": ("BENCH_CALL_CHAIN_POLYMORPHIC_PASS", call_chain_polymorphic),
+    "object_field_hot": ("BENCH_OBJECT_FIELD_HOT_PASS", object_field_hot),
+    "array_index_dense": ("BENCH_ARRAY_INDEX_DENSE_PASS", array_index_dense),
+    "branch_jump_dense": ("BENCH_BRANCH_JUMP_DENSE_PASS", branch_jump_dense),
+    "mixed_service_loop": ("BENCH_MIXED_SERVICE_LOOP_PASS", mixed_service_loop),
 }
 
 

@@ -287,6 +287,8 @@ static void io_read_function_local_variables(SZrIo *io, SZrIoFunctionLocalVariab
     // SZrGlobalState *global = io->state->global;
     for (TZrSize i = 0; i < count; i++) {
         SZrIoFunctionLocalVariable *variable = &variables[i];
+        variable->name = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, variable->stackSlot, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, variable->instructionStartIndex, TZrUInt64);
         ZR_IO_READ_NATIVE_TYPE(io, variable->instructionEndIndex, TZrUInt64);
         ZR_IO_READ_NATIVE_TYPE(io, variable->startLine, TZrUInt64);

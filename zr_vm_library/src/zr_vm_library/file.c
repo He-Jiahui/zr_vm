@@ -1615,6 +1615,7 @@ SZrLibrary_File_Reader *ZrLibrary_File_OpenRead(SZrGlobalState *global, TZrNativ
         return ZR_NULL;
     }
 
+    file_copy_text(reader->normalizedPath, sizeof(reader->normalizedPath), normalizedPath);
     fseek(reader->file, 0, SEEK_END);
     reader->size = (TZrSize)ftell(reader->file);
     fseek(reader->file, 0, SEEK_SET);

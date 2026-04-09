@@ -1,0 +1,223 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 18
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 6
+
+CONSTANTS (8):
+  [0] null
+  [1] native closure
+  [2] string: "core_semantics"
+  [3] native closure
+  [4] string: "oop_meta"
+  [5] native closure
+  [6] string: "async_native"
+  [7] function
+
+LOCAL_VARIABLES (4):
+  [0] runMatrix: offset_activate=0, offset_dead=17
+  [1] core: offset_activate=4, offset_dead=17
+  [2] meta: offset_activate=8, offset_dead=17
+  [3] native: offset_activate=12, offset_dead=17
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (4):
+    [0] runMatrix: function
+    [1] core: core_semantics
+    [2] meta: oop_meta
+    [3] native: async_native
+  EXPORTED_SYMBOLS (1):
+    fn runMatrix(): int [kind=function readiness=declaration child=0]
+  STATIC_IMPORTS (3):
+    import core_semantics
+    import oop_meta
+    import async_native
+  MODULE_ENTRY_EFFECTS (3):
+    IMPORT_CALL core_semantics.lambdaScore [kind=function readiness=declaration]
+    IMPORT_CALL async_native.nativeScore [kind=function readiness=declaration]
+    IMPORT_CALL oop_meta.combineVectors [kind=function readiness=declaration]
+  EXPORTED_CALLABLE_SUMMARIES (1):
+    fn runMatrix [child=4294967295 effects=3]
+      IMPORT_CALL core_semantics.lambdaScore [kind=function readiness=declaration]
+      IMPORT_CALL async_native.nativeScore [kind=function readiness=declaration]
+      IMPORT_CALL oop_meta.combineVectors [kind=function readiness=declaration]
+  TOP_LEVEL_CALLABLE_BINDINGS (1):
+    fn runMatrix [slot=0 child=0 kind=function readiness=declaration access=0]
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+INSTRUCTIONS (17):
+  [0] GET_CONSTANT (extra=2, operand=1)
+  [1] GET_CONSTANT (extra=3, operand=2)
+  [2] FUNCTION_CALL (extra=2, operand1=2, operand2=1)
+  [3] SET_STACK (extra=1, operand=2)
+  [4] GET_CONSTANT (extra=3, operand=3)
+  [5] GET_CONSTANT (extra=4, operand=4)
+  [6] FUNCTION_CALL (extra=3, operand1=3, operand2=1)
+  [7] SET_STACK (extra=2, operand=3)
+  [8] GET_CONSTANT (extra=4, operand=5)
+  [9] GET_CONSTANT (extra=5, operand=6)
+  [10] FUNCTION_CALL (extra=4, operand1=4, operand2=1)
+  [11] SET_STACK (extra=3, operand=4)
+  [12] CREATE_CLOSURE (extra=4)
+  [13] SET_STACK (extra=0, operand=4)
+  [14] GET_STACK (extra=5, operand=0)
+  [15] SUPER_FUNCTION_TAIL_CALL_NO_ARGS (extra=5, operand1=5, operand2=0)
+  [16] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+
+CHILD_FUNCTIONS (1):
+  [0] FUNCTION:
+    NAME: runMatrix
+    START_LINE: 5
+    END_LINE: 15
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 18
+
+    CONSTANTS (6):
+      [0] string: "SignalBox"
+      [1] int: 4
+      [2] null
+      [3] int: 1
+      [4] int: 3
+      [5] int: 2
+
+    LOCAL_VARIABLES (7):
+      [0] meter: offset_activate=7, offset_dead=49
+      [1] getterValue: offset_activate=10, offset_dead=49
+      [2] bumped: offset_activate=21, offset_dead=49
+      [3] callable: offset_activate=25, offset_dead=49
+      [4] lambdaScore: offset_activate=29, offset_dead=49
+      [5] builtinScore: offset_activate=33, offset_dead=49
+      [6] vectorScore: offset_activate=37, offset_dead=49
+
+    CLOSURE_VARIABLES (3):
+      [0] meta: in_stack=true, index=2, type=NULL
+      [1] core: in_stack=true, index=1, type=NULL
+      [2] native: in_stack=true, index=3, type=NULL
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (7):
+        [0] meter: SignalBox
+        [1] getterValue: int
+        [2] bumped: int
+        [3] callable: int
+        [4] lambdaScore: int
+        [5] builtinScore: int
+        [6] vectorScore: int
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (3):
+      [0] object
+      [1] SignalBox
+      [2] int
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (3):
+      [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
+      [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
+      [2] DYNAMIC_RUNTIME inst=2 from=0 to=0
+
+    BLOCK_GRAPH (1):
+      [0] block=0 first=0 count=3
+
+    SEMIR (3):
+      [0] META_GET exec=8 type=2 effect=0 dst=2 op0=2 op1=1 deopt=1
+      [1] META_SET exec=14 type=2 effect=1 dst=5 op0=5 op1=2 deopt=2
+      [2] META_CALL exec=23 type=2 effect=2 dst=4 op0=4 op1=1 deopt=3
+
+    DEOPT_MAP (3):
+      [0] deopt=1 exec=8
+      [1] deopt=2 exec=14
+      [2] deopt=3 exec=23
+
+    CALLSITE_CACHE_TABLE (3):
+      [0] kind=META_GET inst=8 member=1 deopt=1 args=0 hits=0 misses=0
+      [1] kind=META_SET inst=14 member=2 deopt=2 args=0 hits=0 misses=0
+      [2] kind=META_CALL inst=23 member=4294967295 deopt=3 args=1 hits=0 misses=0
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (49):
+      [0] CREATE_OBJECT (extra=1)
+      [1] OPCODE_24 (extra=1, operand2=1, operand1=1, operand1_1=0)
+      [2] OPCODE_8 (extra=2, operand1=1, operand2=0)
+      [3] SET_STACK (extra=3, operand=1)
+      [4] GET_CONSTANT (extra=4, operand=1)
+      [5] OPCODE_76 (extra=2, operand1=2, operand2=2)
+      [6] SET_STACK (extra=0, operand=1)
+      [7] GET_STACK (extra=2, operand=0)
+      [8] SUPER_META_GET_CACHED (extra=2, operand1=2, operand2=0)
+      [9] SET_STACK (extra=1, operand=2)
+      [10] GET_STACK (extra=2, operand=1)
+      [11] GET_CONSTANT (extra=3, operand=3)
+      [12] ADD_INT (extra=4, operand1=2, operand2=3)
+      [13] GET_STACK (extra=5, operand=0)
+      [14] SUPER_META_SET_CACHED (extra=5, operand1=4, operand2=1)
+      [15] GET_STACK (extra=3, operand=0)
+      [16] SET_STACK (extra=4, operand=3)
+      [17] OPCODE_8 (extra=3, operand1=3, operand2=3)
+      [18] GET_CONSTANT (extra=5, operand=4)
+      [19] OPCODE_76 (extra=3, operand1=3, operand2=2)
+      [20] SET_STACK (extra=2, operand=3)
+      [21] GET_STACK (extra=4, operand=0)
+      [22] GET_CONSTANT (extra=5, operand=5)
+      [23] SUPER_META_CALL_CACHED (extra=4, operand1=4, operand2=2)
+      [24] SET_STACK (extra=3, operand=4)
+      [25] OPCODE_6 (extra=5, operand2=1, operand1=1, operand1_1=0)
+      [26] OPCODE_8 (extra=5, operand1=5, operand2=4)
+      [27] SUPER_FUNCTION_CALL_NO_ARGS (extra=5, operand1=5, operand2=0)
+      [28] SET_STACK (extra=4, operand=5)
+      [29] OPCODE_6 (extra=6, operand2=2, operand1=2, operand1_1=0)
+      [30] OPCODE_8 (extra=6, operand1=6, operand2=5)
+      [31] SUPER_FUNCTION_CALL_NO_ARGS (extra=6, operand1=6, operand2=0)
+      [32] SET_STACK (extra=5, operand=6)
+      [33] OPCODE_6 (extra=7)
+      [34] OPCODE_8 (extra=7, operand1=7, operand2=6)
+      [35] SUPER_FUNCTION_CALL_NO_ARGS (extra=7, operand1=7, operand2=0)
+      [36] SET_STACK (extra=6, operand=7)
+      [37] GET_STACK (extra=7, operand=1)
+      [38] GET_STACK (extra=8, operand=2)
+      [39] ADD_INT (extra=9, operand1=7, operand2=8)
+      [40] GET_STACK (extra=10, operand=3)
+      [41] ADD_INT (extra=11, operand1=9, operand2=10)
+      [42] GET_STACK (extra=12, operand=4)
+      [43] ADD_INT (extra=13, operand1=11, operand2=12)
+      [44] GET_STACK (extra=14, operand=5)
+      [45] ADD_INT (extra=15, operand1=13, operand2=14)
+      [46] GET_STACK (extra=16, operand=6)
+      [47] ADD_INT (extra=17, operand1=15, operand2=16)
+      [48] FUNCTION_RETURN (extra=1, operand1=17, operand2=0)
+
+

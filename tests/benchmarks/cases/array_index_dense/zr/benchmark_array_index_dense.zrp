@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_array_index_dense",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

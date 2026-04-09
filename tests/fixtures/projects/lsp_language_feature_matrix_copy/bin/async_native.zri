@@ -1,0 +1,161 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 11
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 5
+
+CONSTANTS (6):
+  [0] null
+  [1] native closure
+  [2] string: "zr.math"
+  [3] native closure
+  [4] string: "zr.ffi"
+  [5] function
+
+LOCAL_VARIABLES (3):
+  [0] nativeScore: offset_activate=0, offset_dead=10
+  [1] math: offset_activate=4, offset_dead=10
+  [2] ffi: offset_activate=8, offset_dead=10
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (3):
+    [0] nativeScore: function
+    [1] math: zr.math
+    [2] ffi: zr.ffi
+  EXPORTED_SYMBOLS (1):
+    fn nativeScore(): int [kind=function readiness=declaration child=0]
+  STATIC_IMPORTS (2):
+    import zr.math
+    import zr.ffi
+  MODULE_ENTRY_EFFECTS (0):
+  EXPORTED_CALLABLE_SUMMARIES (1):
+    fn nativeScore [child=4294967295 effects=0]
+  TOP_LEVEL_CALLABLE_BINDINGS (1):
+    fn nativeScore [slot=0 child=0 kind=function readiness=declaration access=0]
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+INSTRUCTIONS (12):
+  [0] GET_CONSTANT (extra=2, operand=1)
+  [1] GET_CONSTANT (extra=3, operand=2)
+  [2] FUNCTION_CALL (extra=2, operand1=2, operand2=1)
+  [3] SET_STACK (extra=1, operand=2)
+  [4] GET_CONSTANT (extra=3, operand=3)
+  [5] GET_CONSTANT (extra=4, operand=4)
+  [6] FUNCTION_CALL (extra=3, operand1=3, operand2=1)
+  [7] SET_STACK (extra=2, operand=3)
+  [8] CREATE_CLOSURE (extra=3)
+  [9] SET_STACK (extra=0, operand=3)
+  [10] GET_CONSTANT (extra=4, operand=0)
+  [11] FUNCTION_RETURN (extra=1, operand1=4, operand2=0)
+
+CHILD_FUNCTIONS (1):
+  [0] FUNCTION:
+    NAME: nativeScore
+    START_LINE: 6
+    END_LINE: 10
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 8
+
+    CONSTANTS (7):
+      [0] string: "Vector3"
+      [1] float: 1.000000
+      [2] float: 2.000000
+      [3] float: 3.000000
+      [4] null
+      [5] int: 8
+      [6] int: 1
+
+    LOCAL_VARIABLES (2):
+      [0] vector: offset_activate=10, offset_dead=29
+      [1] handle: offset_activate=16, offset_dead=29
+
+    CLOSURE_VARIABLES (2):
+      [0] math: in_stack=true, index=1, type=NULL
+      [1] ffi: in_stack=true, index=2, type=NULL
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (2):
+        [0] vector: Vector3
+        [1] handle: BufferHandle
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (29):
+      [0] CREATE_OBJECT (extra=1)
+      [1] OPCODE_23 (extra=1, operand2=1, operand1=1, operand1_1=0)
+      [2] OPCODE_8 (extra=2, operand1=1, operand2=0)
+      [3] SET_STACK (extra=3, operand=1)
+      [4] GET_CONSTANT (extra=4, operand=1)
+      [5] GET_CONSTANT (extra=5, operand=2)
+      [6] GET_CONSTANT (extra=6, operand=3)
+      [7] OPCODE_76 (extra=2, operand1=2, operand2=4)
+      [8] SET_STACK (extra=1, operand=3)
+      [9] SET_STACK (extra=0, operand=1)
+      [10] OPCODE_6 (extra=2, operand2=1, operand1=1, operand1_1=0)
+      [11] OPCODE_8 (extra=2, operand1=2, operand2=1)
+      [12] OPCODE_8 (extra=2, operand1=2, operand2=2)
+      [13] GET_CONSTANT (extra=3, operand=5)
+      [14] OPCODE_76 (extra=2, operand1=2, operand2=1)
+      [15] SET_STACK (extra=1, operand=2)
+      [16] GET_STACK (extra=2, operand=1)
+      [17] GET_CONSTANT (extra=3, operand=4)
+      [18] OPCODE_62 (extra=4, operand1=2, operand2=3)
+      [19] OPCODE_82 (extra=4, operand=4)
+      [20] GET_CONSTANT (extra=7, operand=6)
+      [21] OPCODE_36 (extra=6, operand2=7, operand1=7, operand1_1=0)
+      [22] SET_STACK (extra=5, operand=6)
+      [23] OPCODE_81 (extra=0, operand=4)
+      [24] GET_STACK (extra=6, operand=0)
+      [25] OPCODE_8 (extra=6, operand1=6, operand2=3)
+      [26] OPCODE_19 (extra=7, operand2=6, operand1=6, operand1_1=0)
+      [27] SET_STACK (extra=5, operand=7)
+      [28] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+
+

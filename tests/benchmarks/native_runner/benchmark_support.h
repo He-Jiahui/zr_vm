@@ -17,5 +17,11 @@ ZrBenchInt zr_bench_run_prime_trial_division(int scale);
 ZrBenchInt zr_bench_run_matrix_add_2d(int scale);
 ZrBenchInt zr_bench_run_string_build(int scale);
 ZrBenchInt zr_bench_run_map_object_access(int scale);
+ZrBenchInt zr_bench_run_fib_recursive(int scale);
+ZrBenchInt zr_bench_run_call_chain_polymorphic(int scale);
+ZrBenchInt zr_bench_run_object_field_hot(int scale);
+ZrBenchInt zr_bench_run_array_index_dense(int scale);
+ZrBenchInt zr_bench_run_branch_jump_dense(int scale);
+ZrBenchInt zr_bench_run_mixed_service_loop(int scale);
 
 #endif

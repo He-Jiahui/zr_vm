@@ -39,6 +39,7 @@ TZrBool ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(SZrState *stat
                                                                   SZrLspProjectIndex *projectIndex,
                                                                   SZrString *moduleName,
                                                                   SZrIoSource **outSource);
+void ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(SZrGlobalState *global, SZrIoSource *source);
 TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryModuleUri(SZrState *state,
                                                                   SZrLspProjectIndex *projectIndex,
                                                                   SZrString *moduleName,

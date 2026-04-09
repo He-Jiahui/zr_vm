@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "7voPKyqdxHk=",
+  "dgSpecHash": "EbixO0y+Rms=",
   "success": true,
-  "projectFilePath": "E:\\Git\\zr_vm\\tests\\benchmarks\\dotnet_runner\\BenchmarkRunner.csproj",
+  "projectFilePath": "/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/BenchmarkRunner.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }

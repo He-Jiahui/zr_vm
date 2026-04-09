@@ -25,15 +25,29 @@ struct CaseDescriptor {
 
 fn parse_scale(args: &[String]) -> Result<i64, String> {
     let mut tier = "core";
+    let mut explicit_scale: Option<i64> = None;
     let mut index = 0;
 
     while index < args.len() {
         match args[index].as_str() {
             "--tier" => {
                 if index + 1 >= args.len() {
-                    return Err("--tier requires smoke, core, or stress".to_string());
+                    return Err("--tier requires smoke, core, stress, or profile".to_string());
                 }
                 tier = args[index + 1].as_str();
+                index += 2;
+            }
+            "--scale" => {
+                if index + 1 >= args.len() {
+                    return Err("--scale requires a positive integer".to_string());
+                }
+                let parsed = args[index + 1]
+                    .parse::<i64>()
+                    .map_err(|_| "--scale requires a positive integer".to_string())?;
+                if parsed < 1 {
+                    return Err("--scale requires a positive integer".to_string());
+                }
+                explicit_scale = Some(parsed);
                 index += 2;
             }
             arg => {
@@ -42,6 +56,9 @@ fn parse_scale(args: &[String]) -> Result<i64, String> {
         }
     }
 
+    if let Some(scale) = explicit_scale {
+        return Ok(scale);
+    }
     support::scale_from_tier(tier).ok_or_else(|| format!("unsupported tier: {tier}"))
 }
 
@@ -52,7 +69,7 @@ fn find_case<'a>(case_name: &str, cases: &'a [CaseDescriptor]) -> Option<&'a Cas
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut case_name: Option<String> = None;
-    let mut tier_args: Vec<String> = Vec::new();
+    let mut runner_args: Vec<String> = Vec::new();
     let mut index = 0;
 
     while index < args.len() {
@@ -67,11 +84,20 @@ fn main() {
             }
             "--tier" => {
                 if index + 1 >= args.len() {
-                    eprintln!("--tier requires smoke, core, or stress");
+                    eprintln!("--tier requires smoke, core, stress, or profile");
                     std::process::exit(1);
                 }
-                tier_args.push(args[index].clone());
-                tier_args.push(args[index + 1].clone());
+                runner_args.push(args[index].clone());
+                runner_args.push(args[index + 1].clone());
+                index += 2;
+            }
+            "--scale" => {
+                if index + 1 >= args.len() {
+                    eprintln!("--scale requires a positive integer");
+                    std::process::exit(1);
+                }
+                runner_args.push(args[index].clone());
+                runner_args.push(args[index + 1].clone());
                 index += 2;
             }
             arg => {
@@ -128,7 +154,7 @@ fn main() {
         eprintln!("--case is required");
         std::process::exit(1);
     };
-    let scale = match parse_scale(&tier_args) {
+    let scale = match parse_scale(&runner_args) {
         Ok(value) => value,
         Err(error) => {
             eprintln!("{error}");

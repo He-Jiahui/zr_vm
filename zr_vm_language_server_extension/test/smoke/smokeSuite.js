@@ -3,9 +3,12 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const vscode = require('vscode');
 
+const RICH_DEBUG_SOURCE = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', '..', 'tests', 'fixtures', 'projects', 'classes_properties', 'src', 'main.zr'),
+    'utf8',
+);
+
 const CLASSES_FULL_SMOKE_SOURCE = [
-    'module "classes_full";',
-    '',
     'class BaseHero {',
     '    pri var _hp: int = 0;',
     '',
@@ -60,15 +63,6 @@ const CLASSES_FULL_SMOKE_SOURCE = [
     '    ScoreBoard.bonus = boss.heal(5);',
     '    return boss.total() + ScoreBoard.bonus;',
     '}',
-    '',
-].join('\n');
-
-const CLASSES_FULL_DEBUG_SOURCE = [
-    CLASSES_FULL_SMOKE_SOURCE,
-    'var runtimeBoss = new BossHero(30);',
-    'runtimeBoss.hp = runtimeBoss.hp + 7;',
-    'ScoreBoard.bonus = runtimeBoss.heal(5);',
-    'return runtimeBoss.total() + ScoreBoard.bonus;',
     '',
 ].join('\n');
 
@@ -1219,10 +1213,10 @@ async function verifyRichDebugInspection(session, expectedSourcePath) {
 
     assert(topFrame, 'Expected rich inspection stack to expose a top frame');
     assert(normalizePath(topFrame?.source?.path ?? '') === normalizePath(expectedSourcePath),
-        'Expected rich inspection frame source path to match the hero module');
+        'Expected rich inspection frame source path to match the rich debug source');
     assert(String(topFrame?.name ?? '').includes('[method]'),
         'Expected rich inspection frame name to expose method call kind');
-    assert(String(topFrame?.name ?? '').includes('this.heal'),
+    assert(String(topFrame?.name ?? '').includes('this.bump'),
         'Expected rich inspection frame name to expose receiver and function name');
     assert(String(topFrame?.name ?? '').includes('@'),
         'Expected rich inspection frame name to include module information');
@@ -1233,8 +1227,8 @@ async function verifyRichDebugInspection(session, expectedSourcePath) {
     const globalsVariables = await readDebugScopeVariables(session, topFrame.id, 'Globals');
     const prototypeVariables = await readDebugScopeVariables(session, topFrame.id, 'Prototype');
 
-    assert(debugVariableByName(argumentsVariables, 'amount')?.value === '5',
-        'Expected method arguments scope to expose amount=5');
+    assert(debugVariableByName(argumentsVariables, 'delta')?.value === '3',
+        'Expected method arguments scope to expose delta=3');
     assert(debugVariableByName(globalsVariables, 'zrState')?.variablesReference > 0,
         'Expected globals scope to expose zrState');
     assert(debugVariableByName(globalsVariables, 'loadedModules')?.variablesReference > 0,
@@ -1249,12 +1243,12 @@ async function verifyRichDebugInspection(session, expectedSourcePath) {
         'Expected prototype scope to expose indexContract');
 
     const evaluateValue = await session.customRequest('evaluate', {
-        expression: 'amount + 1',
+        expression: 'delta + 1',
         frameId: topFrame.id,
         context: 'watch',
     });
-    assert(String(evaluateValue?.result ?? '') === '6',
-        'Expected paused readonly evaluate to compute amount + 1');
+    assert(String(evaluateValue?.result ?? '') === '4',
+        'Expected paused readonly evaluate to compute delta + 1');
 
     const evaluateThis = await session.customRequest('evaluate', {
         expression: 'this',
@@ -1627,7 +1621,7 @@ async function verifyDebugIntegration(workspaceRoot) {
     const richProjectRootUri = vscode.Uri.joinPath(workspaceRoot, '.debug_classes_full_smoke');
     const richProjectSrcUri = vscode.Uri.joinPath(richProjectRootUri, 'src');
     const richProjectUri = vscode.Uri.joinPath(richProjectRootUri, 'debug_classes_full_smoke.zrp');
-    const richSourceUri = vscode.Uri.joinPath(richProjectSrcUri, 'main.zr');
+    const richProjectMainUri = vscode.Uri.joinPath(richProjectSrcUri, 'main.zr');
     const sourceProjectRootUri = vscode.Uri.joinPath(workspaceRoot, '.debug_source_request_smoke');
     const sourceProjectSrcUri = vscode.Uri.joinPath(sourceProjectRootUri, 'src');
     const sourceProjectUri = vscode.Uri.joinPath(sourceProjectRootUri, 'debug_source_request_smoke.zrp');
@@ -1669,8 +1663,8 @@ async function verifyDebugIntegration(workspaceRoot) {
         }, null, 2) + '\n'),
     );
     await vscode.workspace.fs.writeFile(
-        richSourceUri,
-        new TextEncoder().encode(CLASSES_FULL_DEBUG_SOURCE),
+        richProjectMainUri,
+        new TextEncoder().encode(RICH_DEBUG_SOURCE),
     );
     await vscode.workspace.fs.writeFile(
         sourceProjectUri,
@@ -1693,9 +1687,9 @@ async function verifyDebugIntegration(workspaceRoot) {
             fs.readFileSync(path.join(networkProjectRootUri.fsPath, 'src', 'lib.zr'), 'utf8'),
         ),
     );
-    const classesFullDocument = await openDocument(richSourceUri);
+    const classesFullDocument = await openDocument(richProjectMainUri);
     const sourceRequestDocument = await openDocument(sourceProjectMainUri);
-    const richBreakpointPosition = findPositionBySubstring(classesFullDocument, 'this.hp = this.hp + amount;', 0);
+    const richBreakpointPosition = findPositionBySubstring(classesFullDocument, 'this.value = this.value + delta;', 0);
     const richBreakpoint = new vscode.SourceBreakpoint(
         new vscode.Location(classesFullDocument.uri, richBreakpointPosition),
     );

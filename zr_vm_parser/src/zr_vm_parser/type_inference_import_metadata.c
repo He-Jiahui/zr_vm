@@ -8,7 +8,12 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/io.h"
 
+#include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+static TZrBool import_metadata_trace_enabled(void);
+static void import_metadata_trace(const TZrChar *format, ...);
 
 static void io_typed_type_ref_to_inferred(SZrCompilerState *cs,
                                           const SZrIoFunctionTypedTypeRef *typeRef,
@@ -1280,26 +1285,33 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
         return ZR_FALSE;
     }
 
+    import_metadata_trace("ensure import compile info enter module=%p", (void *)moduleName);
+
     if (find_registered_type_prototype_inference_exact_only(cs, moduleName) != ZR_NULL) {
+        import_metadata_trace("ensure import compile info hit registered prototype");
         return ZR_TRUE;
     }
 
     if (ensure_native_module_compile_info(cs, moduleName)) {
+        import_metadata_trace("ensure import compile info satisfied by native module");
         return ZR_TRUE;
     }
 
     if (import_compile_info_stack_contains(cs->state->global, moduleName)) {
         const SZrParserModuleInitSummary *summary;
         if (!ZrParser_ModuleInitAnalysis_EnsureSummary(cs, moduleName)) {
+            import_metadata_trace("ensure import compile info cyclic summary ensure failed");
             report_import_compile_info_failure(cs, moduleName);
             return ZR_FALSE;
         }
         summary = ZrParser_ModuleInitAnalysis_FindSummary(cs->state->global, moduleName);
         if (summary == ZR_NULL) {
+            import_metadata_trace("ensure import compile info cyclic summary missing");
             report_import_compile_info_failure(cs, moduleName);
             return ZR_FALSE;
         }
         result = register_summary_import_metadata(cs, moduleName, summary);
+        import_metadata_trace("ensure import compile info cyclic summary register result=%d", (int)result);
         if (!result) {
             report_import_compile_info_failure(cs, moduleName);
         }
@@ -1316,17 +1328,29 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
 
     moduleNameText = import_metadata_string_text(moduleName);
     if (moduleNameText == ZR_NULL) {
+        import_metadata_trace("ensure import compile info module text missing");
         goto cleanup;
     }
+    import_metadata_trace("ensure import compile info module='%s'", moduleNameText);
     moduleNameLength = strlen(moduleNameText);
     ZrCore_Io_Init(cs->state, &io, ZR_NULL, ZR_NULL, ZR_NULL);
     loaderSuccess = global->sourceLoader(cs->state, moduleNameText, ZR_NULL, &io);
+    import_metadata_trace("ensure import compile info sourceLoader result=%d isBinary=%d",
+                          (int)loaderSuccess,
+                          (int)io.isBinary);
     if (!loaderSuccess) {
         goto cleanup;
     }
 
     if (io.isBinary) {
-        SZrIoSource *source = ZrCore_Io_ReadSourceNew(&io);
+        SZrIoSource *source = ZR_NULL;
+
+        if (!ZrParser_ModuleInitAnalysis_TryLoadBinaryMetadataSourceFromIo(cs->state, &io, &source)) {
+            if (io.close != ZR_NULL) {
+                io.close(cs->state, io.customData);
+            }
+            goto cleanup;
+        }
 
         if (io.close != ZR_NULL) {
             io.close(cs->state, io.customData);
@@ -1337,6 +1361,11 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
             source->modules != ZR_NULL &&
             source->modules[0].entryFunction != ZR_NULL) {
             result = register_binary_import_metadata(cs, moduleName, source->modules[0].entryFunction);
+            import_metadata_trace("ensure import compile info register binary result=%d", (int)result);
+        }
+
+        if (source != ZR_NULL) {
+            ZrParser_ModuleInitAnalysis_FreeBinaryMetadataSource(cs->state->global, source);
         }
 
         goto cleanup;
@@ -1352,6 +1381,8 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
         }
 
         if (sourceBuffer == ZR_NULL || sourceSize == 0) {
+            import_metadata_trace("ensure import compile info read source failed size=%llu",
+                                  (unsigned long long)sourceSize);
             if (sourceBuffer != ZR_NULL) {
                 ZrCore_Memory_RawFreeWithType(global,
                                               sourceBuffer,
@@ -1361,6 +1392,9 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
             goto cleanup;
         }
 
+        import_metadata_trace("ensure import compile info compileSource start module='%s' size=%llu",
+                              moduleNameText,
+                              (unsigned long long)sourceSize);
         compiledFunction = global->compileSource(cs->state,
                                                  (const TZrChar *)sourceBuffer,
                                                  sourceSize,
@@ -1370,10 +1404,14 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
                                       sourceSize + 1,
                                       ZR_MEMORY_NATIVE_TYPE_GLOBAL);
         if (compiledFunction == ZR_NULL) {
+            import_metadata_trace("ensure import compile info compileSource returned null");
             goto cleanup;
         }
 
         result = register_runtime_import_metadata(cs, moduleName, compiledFunction);
+        import_metadata_trace("ensure import compile info register runtime result=%d func=%p",
+                              (int)result,
+                              (void *)compiledFunction);
         ZrCore_Function_Free(cs->state, compiledFunction);
         goto cleanup;
     }
@@ -1389,5 +1427,34 @@ cleanup:
     if (!result) {
         report_import_compile_info_failure(cs, moduleName);
     }
+    import_metadata_trace("ensure import compile info exit result=%d", (int)result);
     return result;
+}
+
+static TZrBool import_metadata_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_VM_TRACE_PROJECT_STARTUP");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void import_metadata_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!import_metadata_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    fprintf(stderr, "[zr-import-meta] ");
+    vfprintf(stderr, format, arguments);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(arguments);
 }

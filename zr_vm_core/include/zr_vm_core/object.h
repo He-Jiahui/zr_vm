@@ -96,6 +96,7 @@ struct ZR_STRUCT_ALIGN SZrObject {
     EZrObjectInternalType internalType;
     TZrUInt32 memberVersion;
     SZrHashKeyValuePair *cachedHiddenItemsPair;
+    struct SZrObject *cachedHiddenItemsObject;
     SZrHashKeyValuePair *cachedLengthPair;
     SZrHashKeyValuePair *cachedCapacityPair;
 
@@ -248,6 +249,11 @@ ZR_CORE_API TZrBool ZrCore_Object_SuperArrayAddInt(struct SZrState *state,
                                                    SZrTypeValue *receiver,
                                                    const SZrTypeValue *value,
                                                    SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(struct SZrState *state,
+                                                                    TZrStackValuePointer receiverBase,
+                                                                    TZrInt64 repeatCount,
+                                                                    TZrInt64 value);
 
 ZR_CORE_API TZrBool ZrCore_Object_IterInit(struct SZrState *state,
                                            SZrTypeValue *iterableValue,

@@ -19,6 +19,8 @@ TZrBool execution_prepare_meta_call_target(SZrState *state, TZrStackValuePointer
         return ZR_FALSE;
     }
 
+    ZrCore_Profile_RecordSlowPathCurrent(ZR_PROFILE_SLOWPATH_META_CALL_PREPARE);
+
     for (p = state->stackTop.valuePointer; p > stackPointer; p--) {
         ZrCore_Stack_CopyValue(state, p, ZrCore_Stack_GetValue(p - 1));
     }

@@ -13,13 +13,19 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/module.h"
+#include "zr_vm_core/profile.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_common/zr_ast_constants.h"
+#include <stdarg.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
 #define ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS ((TZrUInt8)1)
+
+static TZrBool object_trace_enabled(void);
+static void object_trace(const TZrChar *format, ...);
 
 static const TZrChar *object_module_name_string(SZrState *state, const SZrObjectModule *module) {
     if (state == ZR_NULL || module == ZR_NULL) {
@@ -94,6 +100,59 @@ static TZrBool object_module_guard_pending_export(SZrState *state,
     return blocked;
 }
 
+static ZR_FORCE_INLINE TZrBool object_key_matches_known_field(SZrState *state,
+                                                              const SZrTypeValue *key,
+                                                              const TZrChar *literal) {
+    SZrString *knownField;
+    SZrString *keyString;
+
+    if (state == ZR_NULL || key == ZR_NULL || literal == ZR_NULL || key->type != ZR_VALUE_TYPE_STRING ||
+        key->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    knownField = ZrCore_Object_CachedKnownFieldString(state, literal);
+    if (knownField == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (key->value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(knownField)) {
+        return ZR_TRUE;
+    }
+
+    keyString = ZR_CAST_STRING(state, key->value.object);
+    return keyString != ZR_NULL && ZrCore_String_Equal(keyString, knownField);
+}
+
+static ZR_FORCE_INLINE TZrBool object_key_is_hidden_items_field(SZrState *state, const SZrTypeValue *key) {
+    return object_key_matches_known_field(state, key, ZR_OBJECT_HIDDEN_ITEMS_FIELD);
+}
+
+static void object_refresh_hidden_items_object_cache(SZrState *state,
+                                                     SZrObject *object,
+                                                     const SZrTypeValue *key,
+                                                     SZrHashKeyValuePair *pair) {
+    SZrObject *itemsObject;
+
+    if (object == ZR_NULL || !object_key_is_hidden_items_field(state, key)) {
+        return;
+    }
+
+    object->cachedHiddenItemsPair = pair;
+    object->cachedHiddenItemsObject = ZR_NULL;
+    if (pair == ZR_NULL) {
+        return;
+    }
+
+    if (pair->value.type != ZR_VALUE_TYPE_OBJECT && pair->value.type != ZR_VALUE_TYPE_ARRAY) {
+        return;
+    }
+
+    itemsObject = ZR_CAST_OBJECT(state, pair->value.value.object);
+    if (itemsObject != ZR_NULL && itemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        object->cachedHiddenItemsObject = itemsObject;
+    }
+}
+
 static TZrBool ensure_managed_field_capacity(SZrState *state, SZrObjectPrototype *prototype, TZrUInt32 minimumCapacity) {
     SZrManagedFieldInfo *newFields;
     TZrUInt32 newCapacity;
@@ -157,13 +216,21 @@ static const SZrManagedFieldInfo *object_prototype_find_managed_field(SZrObjectP
     return ZR_NULL;
 }
 
+static ZR_FORCE_INLINE void object_make_string_key_unchecked(SZrState *state, SZrString *name, SZrTypeValue *outKey) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(name != ZR_NULL);
+    ZR_ASSERT(outKey != ZR_NULL);
+
+    ZrCore_Value_InitAsRawObject(state, outKey, ZR_CAST_RAW_OBJECT_AS_SUPER(name));
+    outKey->type = ZR_VALUE_TYPE_STRING;
+}
+
 static TZrBool object_make_string_key(SZrState *state, SZrString *name, SZrTypeValue *outKey) {
     if (state == ZR_NULL || name == ZR_NULL || outKey == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    ZrCore_Value_InitAsRawObject(state, outKey, ZR_CAST_RAW_OBJECT_AS_SUPER(name));
-    outKey->type = ZR_VALUE_TYPE_STRING;
+    object_make_string_key_unchecked(state, name, outKey);
     return ZR_TRUE;
 }
 
@@ -232,6 +299,31 @@ static SZrObjectPrototype *object_value_resolve_prototype(SZrState *state, const
     return state->global->basicTypeObjectPrototype[value->type];
 }
 
+static ZR_FORCE_INLINE SZrObjectPrototype *object_value_resolve_prototype_unchecked(SZrState *state,
+                                                                                     const SZrTypeValue *value) {
+    SZrObject *object = ZR_NULL;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(value != ZR_NULL);
+    ZR_ASSERT((value->type == ZR_VALUE_TYPE_OBJECT ||
+               value->type == ZR_VALUE_TYPE_ARRAY ||
+               value->type == ZR_VALUE_TYPE_STRING) &&
+              value->value.object != ZR_NULL);
+
+    if (value->type == ZR_VALUE_TYPE_OBJECT || value->type == ZR_VALUE_TYPE_ARRAY) {
+        object = ZR_CAST_OBJECT(state, value->value.object);
+        if (object != ZR_NULL && object->prototype != ZR_NULL) {
+            return object->prototype;
+        }
+    }
+
+    if (state->global == ZR_NULL || value->type >= ZR_VALUE_TYPE_ENUM_MAX) {
+        return ZR_NULL;
+    }
+
+    return value->type < ZR_VALUE_TYPE_ENUM_MAX ? state->global->basicTypeObjectPrototype[value->type] : ZR_NULL;
+}
+
 static const SZrTypeValue *object_get_own_value(SZrState *state, SZrObject *object, const SZrTypeValue *key) {
     SZrHashKeyValuePair *pair;
 
@@ -243,12 +335,51 @@ static const SZrTypeValue *object_get_own_value(SZrState *state, SZrObject *obje
     return pair != ZR_NULL ? &pair->value : ZR_NULL;
 }
 
+static ZR_FORCE_INLINE const SZrTypeValue *object_get_own_value_unchecked(SZrState *state,
+                                                                          SZrObject *object,
+                                                                          const SZrTypeValue *key) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(object != ZR_NULL);
+    ZR_ASSERT(key != ZR_NULL);
+
+    if (!object_node_map_is_ready(object)) {
+        return ZR_NULL;
+    }
+
+    {
+        SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &object->nodeMap, key);
+        return pair != ZR_NULL ? &pair->value : ZR_NULL;
+    }
+}
+
 static const SZrTypeValue *object_get_prototype_value(SZrState *state,
                                                       SZrObjectPrototype *prototype,
                                                       const SZrTypeValue *key,
                                                       TZrBool includeInherited) {
     while (prototype != ZR_NULL) {
         const SZrTypeValue *value = object_get_own_value(state, &prototype->super, key);
+        if (value != ZR_NULL) {
+            return value;
+        }
+
+        if (!includeInherited) {
+            break;
+        }
+        prototype = prototype->superPrototype;
+    }
+
+    return ZR_NULL;
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *object_get_prototype_value_unchecked(SZrState *state,
+                                                                                SZrObjectPrototype *prototype,
+                                                                                const SZrTypeValue *key,
+                                                                                TZrBool includeInherited) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(key != ZR_NULL);
+
+    while (prototype != ZR_NULL) {
+        const SZrTypeValue *value = object_get_own_value_unchecked(state, &prototype->super, key);
         if (value != ZR_NULL) {
             return value;
         }
@@ -275,6 +406,11 @@ static TZrBool object_can_use_direct_index_fallback(const SZrObject *object) {
         return ZR_FALSE;
     }
 
+    return object->prototype == ZR_NULL || object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY;
+}
+
+static ZR_FORCE_INLINE TZrBool object_can_use_direct_index_fallback_unchecked(const SZrObject *object) {
+    ZR_ASSERT(object != ZR_NULL);
     return object->prototype == ZR_NULL || object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY;
 }
 
@@ -346,8 +482,23 @@ SZrObject *ZrCore_Object_NewCustomized(struct SZrState *state, TZrSize size, EZr
 }
 
 void ZrCore_Object_Init(struct SZrState *state, SZrObject *object) {
+    object_trace("object init enter object=%p state=%p global=%p internalType=%d nodeMap{valid=%d buckets=%p capacity=%llu}",
+                 (void *)object,
+                 (void *)state,
+                 state != ZR_NULL ? (void *)state->global : ZR_NULL,
+                 object != ZR_NULL ? (int)object->internalType : -1,
+                 object != ZR_NULL ? (int)object->nodeMap.isValid : -1,
+                 object != ZR_NULL ? (void *)object->nodeMap.buckets : ZR_NULL,
+                 object != ZR_NULL ? (unsigned long long)object->nodeMap.capacity : 0ull);
     object_reset_hot_field_pair_cache(object);
     ZrCore_HashSet_Init(state, &object->nodeMap, ZR_OBJECT_TABLE_INITIAL_SIZE_LOG2);
+    object_trace("object init exit object=%p nodeMap{valid=%d buckets=%p capacity=%llu threshold=%llu elementCount=%llu}",
+                 (void *)object,
+                 object != ZR_NULL ? (int)object->nodeMap.isValid : -1,
+                 object != ZR_NULL ? (void *)object->nodeMap.buckets : ZR_NULL,
+                 object != ZR_NULL ? (unsigned long long)object->nodeMap.capacity : 0ull,
+                 object != ZR_NULL ? (unsigned long long)object->nodeMap.resizeThreshold : 0ull,
+                 object != ZR_NULL ? (unsigned long long)object->nodeMap.elementCount : 0ull);
 }
 
 SZrObject *ZrCore_Object_CloneStruct(struct SZrState *state, const SZrObject *source) {
@@ -410,11 +561,27 @@ void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZr
         return;
     }
     if (!object_node_map_is_ready(object)) {
+        object_trace("set value nodeMap not ready object=%p state=%p keyType=%d keyObject=%p nodeMap{valid=%d buckets=%p capacity=%llu}",
+                     (void *)object,
+                     (void *)state,
+                     key != ZR_NULL ? (int)key->type : -1,
+                     key != ZR_NULL ? (void *)key->value.object : ZR_NULL,
+                     (int)object->nodeMap.isValid,
+                     (void *)object->nodeMap.buckets,
+                     (unsigned long long)object->nodeMap.capacity);
         if (state == ZR_NULL) {
             return;
         }
         ZrCore_Object_Init(state, object);
         if (!object_node_map_is_ready(object)) {
+            object_trace("set value init failed object=%p state=%p threadStatus=%d nodeMap{valid=%d buckets=%p capacity=%llu threshold=%llu}",
+                         (void *)object,
+                         (void *)state,
+                         state != ZR_NULL ? (int)state->threadStatus : -1,
+                         (int)object->nodeMap.isValid,
+                         (void *)object->nodeMap.buckets,
+                         (unsigned long long)object->nodeMap.capacity,
+                         (unsigned long long)object->nodeMap.resizeThreshold);
             ZrCore_Log_Error(state, "failed to initialize object storage");
             return;
         }
@@ -430,6 +597,35 @@ void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZr
     }
     ZrCore_Value_Copy(state, &pair->value, value);
     object->memberVersion++;
+    object_refresh_hidden_items_object_cache(state, object, key, pair);
+}
+
+static TZrBool object_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_VM_TRACE_CORE_BOOTSTRAP");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void object_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!object_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    fprintf(stderr, "[zr-object] ");
+    vfprintf(stderr, format, arguments);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(arguments);
 }
 
 const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key) {
@@ -736,35 +932,33 @@ TZrBool ZrCore_ObjectPrototype_AddMemberDescriptor(struct SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool ZrCore_Object_GetMember(struct SZrState *state,
-                                SZrTypeValue *receiver,
-                                struct SZrString *memberName,
-                                SZrTypeValue *result) {
+TZrBool ZrCore_Object_GetMemberWithKeyUnchecked(struct SZrState *state,
+                                                SZrTypeValue *receiver,
+                                                struct SZrString *memberName,
+                                                const SZrTypeValue *memberKey,
+                                                SZrTypeValue *result) {
     SZrObject *object;
     SZrObjectPrototype *prototype;
-    SZrTypeValue key;
     const SZrTypeValue *resolvedValue;
     const SZrMemberDescriptor *descriptor;
     TZrBool isPrototypeReceiver;
 
-    if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (receiver->type != ZR_VALUE_TYPE_OBJECT &&
-        receiver->type != ZR_VALUE_TYPE_ARRAY &&
-        receiver->type != ZR_VALUE_TYPE_STRING) {
-        return ZR_FALSE;
-    }
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_GET_MEMBER);
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(memberName != ZR_NULL);
+    ZR_ASSERT(memberKey != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+    ZR_ASSERT(receiver->type == ZR_VALUE_TYPE_OBJECT ||
+              receiver->type == ZR_VALUE_TYPE_ARRAY ||
+              receiver->type == ZR_VALUE_TYPE_STRING);
+    ZR_ASSERT(memberKey->type == ZR_VALUE_TYPE_STRING);
 
     object = (receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY)
                      ? ZR_CAST_OBJECT(state, receiver->value.object)
                      : ZR_NULL;
-    if (!object_make_string_key(state, memberName, &key)) {
-        return ZR_FALSE;
-    }
 
-    resolvedValue = object != ZR_NULL ? object_get_own_value(state, object, &key) : ZR_NULL;
+    resolvedValue = object != ZR_NULL ? object_get_own_value_unchecked(state, object, memberKey) : ZR_NULL;
     if (resolvedValue != ZR_NULL) {
         if (object != ZR_NULL && object_module_guard_pending_export(state, object, memberName)) {
             ZrCore_Value_ResetAsNull(result);
@@ -780,7 +974,7 @@ TZrBool ZrCore_Object_GetMember(struct SZrState *state,
 
     prototype = (object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE)
                          ? (SZrObjectPrototype *)object
-                         : object_value_resolve_prototype(state, receiver);
+                         : object_value_resolve_prototype_unchecked(state, receiver);
     descriptor = prototype != ZR_NULL
                          ? ZrCore_ObjectPrototype_FindMemberDescriptor(prototype, memberName, ZR_TRUE)
                          : ZR_NULL;
@@ -808,7 +1002,7 @@ TZrBool ZrCore_Object_GetMember(struct SZrState *state,
         }
     }
 
-    resolvedValue = prototype != ZR_NULL ? object_get_prototype_value(state, prototype, &key, ZR_TRUE) : ZR_NULL;
+    resolvedValue = prototype != ZR_NULL ? object_get_prototype_value_unchecked(state, prototype, memberKey, ZR_TRUE) : ZR_NULL;
     if (resolvedValue != ZR_NULL) {
         if (descriptor == ZR_NULL || !descriptor->isStatic || isPrototypeReceiver) {
             ZrCore_Value_Copy(state, result, resolvedValue);
@@ -821,43 +1015,155 @@ TZrBool ZrCore_Object_GetMember(struct SZrState *state,
     return ZR_FALSE;
 }
 
+TZrBool ZrCore_Object_TryGetMemberWithKeyFastUnchecked(struct SZrState *state,
+                                                       SZrTypeValue *receiver,
+                                                       struct SZrString *memberName,
+                                                       const SZrTypeValue *memberKey,
+                                                       SZrTypeValue *result,
+                                                       TZrBool *outHandled) {
+    SZrObject *object;
+    SZrObjectPrototype *prototype;
+    const SZrTypeValue *resolvedValue;
+    const SZrMemberDescriptor *descriptor;
+    TZrBool isPrototypeReceiver;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(memberName != ZR_NULL);
+    ZR_ASSERT(memberKey != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+    ZR_ASSERT(outHandled != ZR_NULL);
+    ZR_ASSERT(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
+    ZR_ASSERT(receiver->value.object != ZR_NULL);
+    ZR_ASSERT(memberKey->type == ZR_VALUE_TYPE_STRING);
+
+    *outHandled = ZR_FALSE;
+    object = ZR_CAST_OBJECT(state, receiver->value.object);
+    if (object == ZR_NULL || object->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+        return ZR_FALSE;
+    }
+
+    resolvedValue = object_get_own_value_unchecked(state, object, memberKey);
+    if (resolvedValue != ZR_NULL) {
+        ZrCore_Value_Copy(state, result, resolvedValue);
+        *outHandled = ZR_TRUE;
+        return ZR_TRUE;
+    }
+
+    prototype = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE
+                         ? (SZrObjectPrototype *)object
+                         : object_value_resolve_prototype_unchecked(state, receiver);
+    descriptor = prototype != ZR_NULL
+                         ? ZrCore_ObjectPrototype_FindMemberDescriptor(prototype, memberName, ZR_TRUE)
+                         : ZR_NULL;
+    isPrototypeReceiver = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE ? ZR_TRUE : ZR_FALSE;
+
+    if (descriptor != ZR_NULL) {
+        if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY &&
+            (descriptor->getterFunction != ZR_NULL ||
+             descriptor->contractRole == ZR_MEMBER_CONTRACT_ROLE_INDEX_LENGTH)) {
+            return ZR_FALSE;
+        }
+
+        if (descriptor->isStatic && !isPrototypeReceiver) {
+            *outHandled = ZR_TRUE;
+            return ZR_FALSE;
+        }
+    }
+
+    resolvedValue = prototype != ZR_NULL ? object_get_prototype_value_unchecked(state, prototype, memberKey, ZR_TRUE) : ZR_NULL;
+    if (resolvedValue != ZR_NULL) {
+        if (descriptor == ZR_NULL || !descriptor->isStatic || isPrototypeReceiver) {
+            ZrCore_Value_Copy(state, result, resolvedValue);
+            *outHandled = ZR_TRUE;
+            return ZR_TRUE;
+        }
+        *outHandled = ZR_TRUE;
+        return ZR_FALSE;
+    }
+
+    *outHandled = ZR_TRUE;
+    return ZR_FALSE;
+}
+
 TZrBool ZrCore_Object_SetMember(struct SZrState *state,
                                 SZrTypeValue *receiver,
                                 struct SZrString *memberName,
                                 const SZrTypeValue *value) {
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if ((receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+        receiver->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object_make_string_key_unchecked(state, memberName, &key);
+    return ZrCore_Object_SetMemberWithKeyUnchecked(state, receiver, memberName, &key, value);
+}
+
+TZrBool ZrCore_Object_GetMember(struct SZrState *state,
+                                SZrTypeValue *receiver,
+                                struct SZrString *memberName,
+                                SZrTypeValue *result) {
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if ((receiver->type != ZR_VALUE_TYPE_OBJECT &&
+         receiver->type != ZR_VALUE_TYPE_ARRAY &&
+         receiver->type != ZR_VALUE_TYPE_STRING) ||
+        receiver->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object_make_string_key_unchecked(state, memberName, &key);
+    return ZrCore_Object_GetMemberWithKeyUnchecked(state, receiver, memberName, &key, result);
+}
+
+TZrBool ZrCore_Object_SetMemberWithKeyUnchecked(struct SZrState *state,
+                                                SZrTypeValue *receiver,
+                                                struct SZrString *memberName,
+                                                const SZrTypeValue *memberKey,
+                                                const SZrTypeValue *value) {
     SZrObject *object;
     SZrObjectPrototype *prototype;
-    SZrTypeValue key;
     const SZrTypeValue *existingValue;
     const SZrMemberDescriptor *descriptor;
     const SZrManagedFieldInfo *managedField;
     const SZrTypeValue *prototypeValue;
     TZrBool isPrototypeReceiver;
 
-    if (state == ZR_NULL || receiver == ZR_NULL || memberName == ZR_NULL || value == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) {
-        return ZR_FALSE;
-    }
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_SET_MEMBER);
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(memberName != ZR_NULL);
+    ZR_ASSERT(memberKey != ZR_NULL);
+    ZR_ASSERT(value != ZR_NULL);
+    ZR_ASSERT(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
+    ZR_ASSERT(memberKey->type == ZR_VALUE_TYPE_STRING);
 
     object = ZR_CAST_OBJECT(state, receiver->value.object);
-    if (object == ZR_NULL || !object_make_string_key(state, memberName, &key)) {
+    if (object == ZR_NULL) {
         return ZR_FALSE;
     }
 
     prototype = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE
                          ? (SZrObjectPrototype *)object
-                         : object_value_resolve_prototype(state, receiver);
-    existingValue = object_get_own_value(state, object, &key);
+                         : object_value_resolve_prototype_unchecked(state, receiver);
+    existingValue = object_get_own_value_unchecked(state, object, memberKey);
     descriptor = prototype != ZR_NULL
                          ? ZrCore_ObjectPrototype_FindMemberDescriptor(prototype, memberName, ZR_TRUE)
                          : ZR_NULL;
     managedField = prototype != ZR_NULL
                            ? object_prototype_find_managed_field(prototype, memberName, ZR_TRUE)
                            : ZR_NULL;
-    prototypeValue = prototype != ZR_NULL ? object_get_prototype_value(state, prototype, &key, ZR_TRUE) : ZR_NULL;
+    prototypeValue = prototype != ZR_NULL ? object_get_prototype_value_unchecked(state, prototype, memberKey, ZR_TRUE) : ZR_NULL;
     isPrototypeReceiver = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE ? ZR_TRUE : ZR_FALSE;
 
     if (descriptor != ZR_NULL) {
@@ -884,14 +1190,14 @@ TZrBool ZrCore_Object_SetMember(struct SZrState *state,
 
             ZrCore_Object_SetValue(state,
                                    descriptor->isStatic && prototype != ZR_NULL ? &prototype->super : object,
-                                   &key,
+                                   memberKey,
                                    value);
             return ZR_TRUE;
         }
     }
 
     if (managedField != ZR_NULL || existingValue != ZR_NULL) {
-        ZrCore_Object_SetValue(state, object, &key, value);
+        ZrCore_Object_SetValue(state, object, memberKey, value);
         return ZR_TRUE;
     }
 
@@ -903,7 +1209,97 @@ TZrBool ZrCore_Object_SetMember(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrCore_Object_SetValue(state, object, &key, value);
+    ZrCore_Object_SetValue(state, object, memberKey, value);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Object_TrySetMemberWithKeyFastUnchecked(struct SZrState *state,
+                                                       SZrTypeValue *receiver,
+                                                       struct SZrString *memberName,
+                                                       const SZrTypeValue *memberKey,
+                                                       const SZrTypeValue *value,
+                                                       TZrBool *outHandled) {
+    SZrObject *object;
+    SZrObjectPrototype *prototype;
+    const SZrTypeValue *existingValue;
+    const SZrMemberDescriptor *descriptor;
+    const SZrManagedFieldInfo *managedField;
+    const SZrTypeValue *prototypeValue;
+    TZrBool isPrototypeReceiver;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(memberName != ZR_NULL);
+    ZR_ASSERT(memberKey != ZR_NULL);
+    ZR_ASSERT(value != ZR_NULL);
+    ZR_ASSERT(outHandled != ZR_NULL);
+    ZR_ASSERT(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
+    ZR_ASSERT(receiver->value.object != ZR_NULL);
+    ZR_ASSERT(memberKey->type == ZR_VALUE_TYPE_STRING);
+
+    *outHandled = ZR_FALSE;
+    object = ZR_CAST_OBJECT(state, receiver->value.object);
+    if (object == ZR_NULL || object->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+        return ZR_FALSE;
+    }
+
+    prototype = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE
+                         ? (SZrObjectPrototype *)object
+                         : object_value_resolve_prototype_unchecked(state, receiver);
+    existingValue = object_get_own_value_unchecked(state, object, memberKey);
+    descriptor = prototype != ZR_NULL
+                         ? ZrCore_ObjectPrototype_FindMemberDescriptor(prototype, memberName, ZR_TRUE)
+                         : ZR_NULL;
+    managedField = prototype != ZR_NULL
+                           ? object_prototype_find_managed_field(prototype, memberName, ZR_TRUE)
+                           : ZR_NULL;
+    prototypeValue = prototype != ZR_NULL ? object_get_prototype_value_unchecked(state, prototype, memberKey, ZR_TRUE) : ZR_NULL;
+    isPrototypeReceiver = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE ? ZR_TRUE : ZR_FALSE;
+
+    if (descriptor != ZR_NULL) {
+        if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY && descriptor->setterFunction != ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        if (descriptor->isStatic && !isPrototypeReceiver) {
+            *outHandled = ZR_TRUE;
+            return ZR_FALSE;
+        }
+
+        if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_FIELD ||
+            descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_STATIC_MEMBER) {
+            if (!descriptor->isWritable) {
+                *outHandled = ZR_TRUE;
+                return ZR_FALSE;
+            }
+
+            ZrCore_Object_SetValue(state,
+                                   descriptor->isStatic && prototype != ZR_NULL ? &prototype->super : object,
+                                   memberKey,
+                                   value);
+            *outHandled = ZR_TRUE;
+            return ZR_TRUE;
+        }
+    }
+
+    if (managedField != ZR_NULL || existingValue != ZR_NULL) {
+        ZrCore_Object_SetValue(state, object, memberKey, value);
+        *outHandled = ZR_TRUE;
+        return ZR_TRUE;
+    }
+
+    if (prototypeValue != ZR_NULL) {
+        *outHandled = ZR_TRUE;
+        return ZR_FALSE;
+    }
+
+    if (!object_allows_dynamic_member_write(object)) {
+        *outHandled = ZR_TRUE;
+        return ZR_FALSE;
+    }
+
+    ZrCore_Object_SetValue(state, object, memberKey, value);
+    *outHandled = ZR_TRUE;
     return ZR_TRUE;
 }
 
@@ -1042,22 +1438,21 @@ TZrBool ZrCore_Object_InvokeResolvedFunction(struct SZrState *state,
                                                   result);
 }
 
-TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
-                                 SZrTypeValue *receiver,
-                                 const SZrTypeValue *key,
-                                 SZrTypeValue *result) {
+TZrBool ZrCore_Object_GetByIndexUnchecked(struct SZrState *state,
+                                          SZrTypeValue *receiver,
+                                          const SZrTypeValue *key,
+                                          SZrTypeValue *result) {
     SZrObject *object;
     SZrObjectPrototype *prototype;
     const SZrTypeValue *resolvedValue;
     TZrBool superArrayApplicable = ZR_FALSE;
 
-    if (state == ZR_NULL || receiver == ZR_NULL || key == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) {
-        return ZR_FALSE;
-    }
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_GET_BY_INDEX);
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(key != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+    ZR_ASSERT(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
 
     object = ZR_CAST_OBJECT(state, receiver->value.object);
     if (object == ZR_NULL) {
@@ -1071,7 +1466,7 @@ TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
         return ZR_TRUE;
     }
 
-    prototype = object_value_resolve_prototype(state, receiver);
+    prototype = object_value_resolve_prototype_unchecked(state, receiver);
     if (prototype != ZR_NULL && prototype->indexContract.getByIndexFunction != ZR_NULL) {
         return ZrCore_Object_CallFunctionWithReceiver(state,
                                                       prototype->indexContract.getByIndexFunction,
@@ -1081,11 +1476,11 @@ TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
                                                       result);
     }
 
-    if (!object_can_use_direct_index_fallback(object)) {
+    if (!object_can_use_direct_index_fallback_unchecked(object)) {
         return ZR_FALSE;
     }
 
-    resolvedValue = object_get_own_value(state, object, key);
+    resolvedValue = object_get_own_value_unchecked(state, object, key);
     if (resolvedValue == ZR_NULL) {
         if (key->type == ZR_VALUE_TYPE_STRING && key->value.object != ZR_NULL) {
             if (object_module_guard_pending_export(state, object, ZR_CAST_STRING(state, key->value.object))) {
@@ -1107,17 +1502,48 @@ TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
                                  SZrTypeValue *receiver,
                                  const SZrTypeValue *key,
                                  const SZrTypeValue *value) {
-    SZrObject *object;
-    SZrObjectPrototype *prototype;
-    TZrBool superArrayApplicable = ZR_FALSE;
-
     if (state == ZR_NULL || receiver == ZR_NULL || key == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    if (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) {
+    if ((receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+        receiver->value.object == ZR_NULL) {
         return ZR_FALSE;
     }
+
+    return ZrCore_Object_SetByIndexUnchecked(state, receiver, key, value);
+}
+
+TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
+                                 SZrTypeValue *receiver,
+                                 const SZrTypeValue *key,
+                                 SZrTypeValue *result) {
+    if (state == ZR_NULL || receiver == ZR_NULL || key == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if ((receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+        receiver->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_Object_GetByIndexUnchecked(state, receiver, key, result);
+}
+
+TZrBool ZrCore_Object_SetByIndexUnchecked(struct SZrState *state,
+                                          SZrTypeValue *receiver,
+                                          const SZrTypeValue *key,
+                                          const SZrTypeValue *value) {
+    SZrObject *object;
+    SZrObjectPrototype *prototype;
+    TZrBool superArrayApplicable = ZR_FALSE;
+
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_SET_BY_INDEX);
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(key != ZR_NULL);
+    ZR_ASSERT(value != ZR_NULL);
+    ZR_ASSERT(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
 
     object = ZR_CAST_OBJECT(state, receiver->value.object);
     if (object == ZR_NULL) {
@@ -1131,7 +1557,7 @@ TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
         return ZR_TRUE;
     }
 
-    prototype = object_value_resolve_prototype(state, receiver);
+    prototype = object_value_resolve_prototype_unchecked(state, receiver);
     if (prototype != ZR_NULL && prototype->indexContract.setByIndexFunction != ZR_NULL) {
         SZrTypeValue arguments[2];
         SZrTypeValue ignoredResult;
@@ -1145,7 +1571,7 @@ TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
                                                       &ignoredResult);
     }
 
-    if (!object_can_use_direct_index_fallback(object)) {
+    if (!object_can_use_direct_index_fallback_unchecked(object)) {
         return ZR_FALSE;
     }
 

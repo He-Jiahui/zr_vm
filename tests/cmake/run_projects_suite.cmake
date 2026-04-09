@@ -664,6 +664,7 @@ register_project_case("network_loopback" "network_loopback/network_loopback.zrp"
 register_project_case("network_loopback_binary" "network_loopback/network_loopback.zrp" "NETWORK_LOOPBACK_PASS ping pong echo" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("hello_world_aot_c" "hello_world/hello_world.zrp" "hello world" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("import_basic_aot_c" "import_basic/import_basic.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "" "" "" "")
+register_project_case("benchmark_string_build_aot_c" "benchmark_string_build/benchmark_string_build.zrp" "BENCH_STRING_BUILD_PASS[\\r\\n]+353247225" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("aot_module_graph_pipeline" "aot_module_graph_pipeline/aot_module_graph_pipeline.zrp" "AOT_MODULE_GRAPH_PIPELINE_PASS[\n]+102" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "aot_module_graph_pipeline/fixtures/graph_binary_stage_source.zr" "aot_module_graph_pipeline/bin/graph_binary_stage.zro" "" "")
 register_project_case("aot_dynamic_meta_ownership_lab" "aot_dynamic_meta_ownership_lab/aot_dynamic_meta_ownership_lab.zrp" "AOT_DYNAMIC_META_OWNERSHIP_LAB_PASS[\n]+29" "${COMMON_FAIL_REGEX}|Function value is NULL" "" "" "" "")
 register_project_case("aot_eh_tail_gc_stress" "aot_eh_tail_gc_stress/aot_eh_tail_gc_stress.zrp" "AOT_EH_TAIL_GC_STRESS_PASS[\n]+31" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
@@ -708,6 +709,7 @@ set_project_case_metadata("network_loopback_binary" "core;stress" "" "OFF")
 set_project_case_metadata("aot_module_graph_pipeline" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("aot_dynamic_meta_ownership_lab" "core;stress" "" "OFF")
 set_project_case_metadata("aot_eh_tail_gc_stress" "stress" "" "OFF")
+set_project_case_metadata("benchmark_string_build_aot_c" "core;stress" "executed_via=aot_c" "ON")
 
 register_project_case("aot_module_graph_pipeline_aot_c" "aot_module_graph_pipeline/aot_module_graph_pipeline.zrp" "AOT_MODULE_GRAPH_PIPELINE_PASS[
 \n]+102" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "aot_module_graph_pipeline/fixtures/graph_binary_stage_source.zr" "aot_module_graph_pipeline/bin/graph_binary_stage.zro" "" "")
@@ -724,21 +726,25 @@ set_project_case_metadata("hello_world_aot_c" "smoke;core;stress" "executed_via=
 set_project_case_metadata("import_basic_aot_c" "smoke;core;stress" "executed_via=aot_c" "ON")
 set_project_case_execution("hello_world_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "OFF" "OFF")
 set_project_case_execution("import_basic_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "OFF" "OFF")
+set_project_case_execution("benchmark_string_build_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "OFF" "OFF")
 set_project_case_execution("decorator_compile_time_import_aot_c" "--emit-aot-c" "--execution-mode;aot_c;--require-aot-path;--emit-executed-via" "OFF" "OFF")
 set_project_case_execution("network_loopback_binary" "" "--execution-mode;binary" "OFF" "OFF")
 
 if (PROJECT_AOT_LLVM_HOST_AVAILABLE)
     register_project_case("hello_world_aot_llvm" "hello_world/hello_world.zrp" "hello world" "${COMMON_FAIL_REGEX}" "" "" "" "")
     register_project_case("import_basic_aot_llvm" "import_basic/import_basic.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "" "" "" "")
+    register_project_case("benchmark_string_build_aot_llvm" "benchmark_string_build/benchmark_string_build.zrp" "BENCH_STRING_BUILD_PASS[\\r\\n]+353247225" "${COMMON_FAIL_REGEX}" "" "" "" "")
     register_project_case("decorator_compile_time_import_aot_llvm" "decorator_compile_time_import/decorator_compile_time_import.zrp" "31" "${COMMON_FAIL_REGEX}" "" "" "" "")
     register_project_case("aot_module_graph_pipeline_aot_llvm" "aot_module_graph_pipeline/aot_module_graph_pipeline.zrp" "AOT_MODULE_GRAPH_PIPELINE_PASS[
 \n]+102" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "aot_module_graph_pipeline/fixtures/graph_binary_stage_source.zr" "aot_module_graph_pipeline/bin/graph_binary_stage.zro" "" "")
     set_project_case_metadata("hello_world_aot_llvm" "smoke;core;stress" "executed_via=aot_llvm" "ON")
     set_project_case_metadata("import_basic_aot_llvm" "smoke;core;stress" "executed_via=aot_llvm" "ON")
+    set_project_case_metadata("benchmark_string_build_aot_llvm" "core;stress" "executed_via=aot_llvm" "ON")
     set_project_case_metadata("decorator_compile_time_import_aot_llvm" "smoke;core;stress" "executed_via=aot_llvm" "ON")
     set_project_case_metadata("aot_module_graph_pipeline_aot_llvm" "smoke;core;stress" "executed_via=aot_llvm" "ON")
     set_project_case_execution("hello_world_aot_llvm" "--emit-aot-llvm" "--execution-mode;aot_llvm;--require-aot-path;--emit-executed-via" "OFF" "OFF")
     set_project_case_execution("import_basic_aot_llvm" "--emit-aot-llvm" "--execution-mode;aot_llvm;--require-aot-path;--emit-executed-via" "OFF" "OFF")
+    set_project_case_execution("benchmark_string_build_aot_llvm" "--emit-aot-llvm" "--execution-mode;aot_llvm;--require-aot-path;--emit-executed-via" "OFF" "OFF")
     set_project_case_execution("decorator_compile_time_import_aot_llvm" "--emit-aot-llvm" "--execution-mode;aot_llvm;--require-aot-path;--emit-executed-via" "OFF" "OFF")
     set_project_case_execution("aot_module_graph_pipeline_aot_llvm" "--emit-aot-llvm" "--execution-mode;aot_llvm;--require-aot-path;--emit-executed-via" "OFF" "ON")
     register_project_case("aot_dynamic_meta_ownership_lab_aot_llvm" "aot_dynamic_meta_ownership_lab/aot_dynamic_meta_ownership_lab.zrp" "AOT_DYNAMIC_META_OWNERSHIP_LAB_PASS" "${COMMON_FAIL_REGEX}|Function value is NULL" "" "" "" "")

@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_branch_jump_dense",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

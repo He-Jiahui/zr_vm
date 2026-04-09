@@ -4,6 +4,17 @@
 
 #include "semantic_analyzer_internal.h"
 
+SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
+void free_resolved_call_signature(SZrState *state, SZrResolvedCallSignature *signature);
+static void semantic_type_from_ast(SZrState *state,
+                                   SZrSemanticAnalyzer *analyzer,
+                                   const SZrType *typeNode,
+                                   SZrInferredType *result);
+static TZrBool semantic_infer_node_type(SZrState *state,
+                                        SZrSemanticAnalyzer *analyzer,
+                                        SZrAstNode *node,
+                                        SZrInferredType *result);
+
 static const TZrChar *semantic_identifier_node_text(SZrAstNode *node) {
     if (node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL || node->data.identifier.name == ZR_NULL) {
         return ZR_NULL;
@@ -23,6 +34,179 @@ static const TZrChar *semantic_member_property_text(SZrAstNode *node) {
 
 static TZrBool semantic_text_equals(const TZrChar *value, const TZrChar *expected) {
     return value != ZR_NULL && expected != ZR_NULL && strcmp(value, expected) == 0;
+}
+
+typedef struct SZrSemanticTypecheckContextSnapshot {
+    SZrTypePrototypeInfo *typePrototype;
+    SZrAstNode *typeNode;
+    SZrString *typeName;
+    SZrAstNode *functionNode;
+} SZrSemanticTypecheckContextSnapshot;
+
+static SZrTypeEnvironment *semantic_typecheck_push_runtime_type_binding_scope(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer) {
+    SZrTypeEnvironment *savedEnv;
+    SZrTypeEnvironment *newEnv;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    savedEnv = analyzer->compilerState->typeEnv;
+    newEnv = ZrParser_TypeEnvironment_New(state);
+    if (newEnv == ZR_NULL) {
+        return savedEnv;
+    }
+
+    newEnv->parent = savedEnv;
+    newEnv->semanticContext =
+        savedEnv != ZR_NULL ? savedEnv->semanticContext : analyzer->compilerState->semanticContext;
+    analyzer->compilerState->typeEnv = newEnv;
+    return savedEnv;
+}
+
+static void semantic_typecheck_pop_runtime_type_binding_scope(SZrState *state,
+                                                              SZrSemanticAnalyzer *analyzer,
+                                                              SZrTypeEnvironment *savedEnv) {
+    SZrTypeEnvironment *currentEnv;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL) {
+        return;
+    }
+
+    currentEnv = analyzer->compilerState->typeEnv;
+    if (currentEnv == savedEnv) {
+        return;
+    }
+
+    analyzer->compilerState->typeEnv = savedEnv;
+    if (currentEnv != ZR_NULL) {
+        ZrParser_TypeEnvironment_Free(state, currentEnv);
+    }
+}
+
+static void semantic_typecheck_register_variable_binding(SZrState *state,
+                                                         SZrSemanticAnalyzer *analyzer,
+                                                         SZrString *name,
+                                                         const SZrType *typeNode,
+                                                         SZrAstNode *valueNode) {
+    SZrInferredType bindingType;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
+        analyzer->compilerState->typeEnv == ZR_NULL || name == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(state, &bindingType, ZR_VALUE_TYPE_OBJECT);
+    if (typeNode != ZR_NULL) {
+        semantic_type_from_ast(state, analyzer, typeNode, &bindingType);
+    } else if (valueNode != ZR_NULL) {
+        semantic_infer_node_type(state, analyzer, valueNode, &bindingType);
+    }
+
+    ZrParser_TypeEnvironment_RegisterVariable(state, analyzer->compilerState->typeEnv, name, &bindingType);
+    ZrParser_InferredType_Free(state, &bindingType);
+}
+
+static void semantic_typecheck_register_parameter_bindings(SZrState *state,
+                                                           SZrSemanticAnalyzer *analyzer,
+                                                           SZrAstNodeArray *params) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || params == ZR_NULL || params->nodes == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < params->count; index++) {
+        SZrAstNode *paramNode = params->nodes[index];
+        SZrParameter *param;
+
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        param = &paramNode->data.parameter;
+        semantic_typecheck_register_variable_binding(state,
+                                                     analyzer,
+                                                     param->name != ZR_NULL ? param->name->name : ZR_NULL,
+                                                     param->typeInfo,
+                                                     ZR_NULL);
+    }
+}
+
+static SZrString *semantic_typecheck_extract_owner_type_name(SZrAstNode *ownerTypeNode) {
+    if (ownerTypeNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (ownerTypeNode->type) {
+        case ZR_AST_CLASS_DECLARATION:
+            return ownerTypeNode->data.classDeclaration.name != ZR_NULL
+                       ? ownerTypeNode->data.classDeclaration.name->name
+                       : ZR_NULL;
+
+        case ZR_AST_STRUCT_DECLARATION:
+            return ownerTypeNode->data.structDeclaration.name != ZR_NULL
+                       ? ownerTypeNode->data.structDeclaration.name->name
+                       : ZR_NULL;
+
+        case ZR_AST_INTERFACE_DECLARATION:
+            return ownerTypeNode->data.interfaceDeclaration.name != ZR_NULL
+                       ? ownerTypeNode->data.interfaceDeclaration.name->name
+                       : ZR_NULL;
+
+        default:
+            return ZR_NULL;
+    }
+}
+
+static void semantic_typecheck_push_compiler_context(SZrSemanticAnalyzer *analyzer,
+                                                     SZrAstNode *ownerTypeNode,
+                                                     SZrAstNode *functionNode,
+                                                     SZrSemanticTypecheckContextSnapshot *snapshot) {
+    SZrCompilerState *compilerState;
+    SZrString *typeName;
+
+    if (snapshot != ZR_NULL) {
+        memset(snapshot, 0, sizeof(*snapshot));
+    }
+
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || snapshot == ZR_NULL) {
+        return;
+    }
+
+    compilerState = analyzer->compilerState;
+    snapshot->typePrototype = compilerState->currentTypePrototypeInfo;
+    snapshot->typeNode = compilerState->currentTypeNode;
+    snapshot->typeName = compilerState->currentTypeName;
+    snapshot->functionNode = compilerState->currentFunctionNode;
+
+    typeName = semantic_typecheck_extract_owner_type_name(ownerTypeNode);
+    if (typeName != ZR_NULL) {
+        compilerState->currentTypeNode = ownerTypeNode;
+        compilerState->currentTypeName = typeName;
+        compilerState->currentTypePrototypeInfo =
+            find_compiler_type_prototype_inference(compilerState, typeName);
+    }
+
+    if (functionNode != ZR_NULL) {
+        compilerState->currentFunctionNode = functionNode;
+    }
+}
+
+static void semantic_typecheck_pop_compiler_context(
+        SZrSemanticAnalyzer *analyzer,
+        const SZrSemanticTypecheckContextSnapshot *snapshot) {
+    SZrCompilerState *compilerState;
+
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || snapshot == ZR_NULL) {
+        return;
+    }
+
+    compilerState = analyzer->compilerState;
+    compilerState->currentTypePrototypeInfo = snapshot->typePrototype;
+    compilerState->currentTypeNode = snapshot->typeNode;
+    compilerState->currentTypeName = snapshot->typeName;
+    compilerState->currentFunctionNode = snapshot->functionNode;
 }
 
 static TZrBool semantic_extract_ffi_decorator(SZrAstNode *decoratorNode,
@@ -1048,46 +1232,105 @@ static TZrBool semantic_call_matches_parameters(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool semantic_resolve_named_function_call_in_env(SZrState *state,
+                                                           SZrCompilerState *compilerState,
+                                                           SZrTypeEnvironment *typeEnv,
+                                                           SZrString *name,
+                                                           SZrFunctionCall *call,
+                                                           SZrFileRange location,
+                                                           TZrBool *outHasCandidate) {
+    SZrFunctionTypeInfo *resolvedFunction = ZR_NULL;
+    SZrResolvedCallSignature resolvedSignature;
+    TZrBool compatible;
+
+    if (outHasCandidate != ZR_NULL) {
+        *outHasCandidate = ZR_FALSE;
+    }
+
+    if (state == ZR_NULL || compilerState == ZR_NULL || typeEnv == ZR_NULL ||
+        name == ZR_NULL || call == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrParser_TypeEnvironment_LookupFunction(typeEnv, name, &resolvedFunction)) {
+        return ZR_FALSE;
+    }
+
+    if (outHasCandidate != ZR_NULL) {
+        *outHasCandidate = ZR_TRUE;
+    }
+
+    memset(&resolvedSignature, 0, sizeof(resolvedSignature));
+    ZrParser_InferredType_Init(state, &resolvedSignature.returnType, ZR_VALUE_TYPE_OBJECT);
+    ZrCore_Array_Construct(&resolvedSignature.parameterTypes);
+    ZrCore_Array_Construct(&resolvedSignature.parameterPassingModes);
+
+    if (!ZrParser_FunctionCallOverload_Resolve(compilerState,
+                                               typeEnv,
+                                               name,
+                                               call,
+                                               location,
+                                               &resolvedFunction,
+                                               &resolvedSignature)) {
+        compilerState->hasError = ZR_FALSE;
+        free_resolved_call_signature(state, &resolvedSignature);
+        return ZR_FALSE;
+    }
+
+    compatible = ZrParser_FunctionCallCompatibility_Check(compilerState,
+                                                          typeEnv,
+                                                          name,
+                                                          call,
+                                                          resolvedFunction,
+                                                          &resolvedSignature,
+                                                          location);
+    compilerState->hasError = ZR_FALSE;
+    free_resolved_call_signature(state, &resolvedSignature);
+    return compatible;
+}
+
 static void semantic_check_named_function_call(SZrState *state,
                                                SZrSemanticAnalyzer *analyzer,
                                                SZrString *name,
                                                SZrFunctionCall *call,
                                                SZrFileRange location) {
-    SZrArray candidates;
-    TZrBool sawCandidate = ZR_FALSE;
-    TZrBool matchedCandidate = ZR_FALSE;
+    SZrCompilerState *compilerState;
+    TZrBool hasRuntimeFunction = ZR_FALSE;
+    TZrBool hasCompileTimeFunction = ZR_FALSE;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || name == ZR_NULL || call == ZR_NULL) {
         return;
     }
 
-    ZrCore_Array_Construct(&candidates);
-    if (!ZrLanguageServer_SymbolTable_LookupAll(state, analyzer->symbolTable, name, ZR_NULL, &candidates)) {
+    compilerState = analyzer->compilerState;
+    if (compilerState == ZR_NULL) {
         return;
     }
 
-    for (TZrSize index = 0; index < candidates.length; index++) {
-        SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&candidates, index);
-        if (symbolPtr == ZR_NULL || *symbolPtr == ZR_NULL) {
-            continue;
-        }
-
-        if ((*symbolPtr)->type == ZR_SYMBOL_FUNCTION &&
-            (*symbolPtr)->astNode != ZR_NULL &&
-            (*symbolPtr)->astNode->type == ZR_AST_FUNCTION_DECLARATION) {
-            sawCandidate = ZR_TRUE;
-            if (semantic_call_matches_parameters(state,
-                                                 analyzer,
-                                                 (*symbolPtr)->astNode->data.functionDeclaration.params,
-                                                 call)) {
-                matchedCandidate = ZR_TRUE;
-                break;
-            }
-        }
+    if (semantic_resolve_named_function_call_in_env(state,
+                                                    compilerState,
+                                                    compilerState->typeEnv,
+                                                    name,
+                                                    call,
+                                                    location,
+                                                    &hasRuntimeFunction)) {
+        return;
+    }
+    if (hasRuntimeFunction) {
+        semantic_add_type_mismatch_diagnostic(state, analyzer, location, "Type mismatch in function call");
+        return;
     }
 
-    ZrCore_Array_Free(state, &candidates);
-    if (sawCandidate && !matchedCandidate) {
+    if (semantic_resolve_named_function_call_in_env(state,
+                                                    compilerState,
+                                                    compilerState->compileTimeTypeEnv,
+                                                    name,
+                                                    call,
+                                                    location,
+                                                    &hasCompileTimeFunction)) {
+        return;
+    }
+    if (hasCompileTimeFunction) {
         semantic_add_type_mismatch_diagnostic(state, analyzer, location, "Type mismatch in function call");
     }
 }
@@ -1519,6 +1762,8 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         
         case ZR_AST_BLOCK: {
             SZrBlock *block = &node->data.block;
+            SZrTypeEnvironment *savedTypeEnv =
+                semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
             TZrBool terminated = ZR_FALSE;
             if (block->body != ZR_NULL && block->body->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < block->body->count; i++) {
@@ -1538,6 +1783,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                     }
                 }
             }
+            semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
             break;
         }
         
@@ -1590,6 +1836,12 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             SZrVariableDeclaration *varDecl = &node->data.variableDeclaration;
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, varDecl->pattern);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, varDecl->value);
+            semantic_typecheck_register_variable_binding(
+                    state,
+                    analyzer,
+                    ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(state, varDecl->pattern),
+                    varDecl->typeInfo,
+                    varDecl->value);
             break;
         }
 
@@ -1640,6 +1892,12 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         
         case ZR_AST_FUNCTION_DECLARATION: {
             SZrFunctionDeclaration *funcDecl = &node->data.functionDeclaration;
+            SZrSemanticTypecheckContextSnapshot contextSnapshot;
+            SZrTypeEnvironment *savedTypeEnv;
+
+            semantic_typecheck_push_compiler_context(analyzer, ZR_NULL, node, &contextSnapshot);
+            savedTypeEnv = semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
+            semantic_typecheck_register_parameter_bindings(state, analyzer, funcDecl->params);
             if (funcDecl->params != ZR_NULL && funcDecl->params->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < funcDecl->params->count; i++) {
                     if (funcDecl->params->nodes[i] != ZR_NULL) {
@@ -1648,11 +1906,19 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                 }
             }
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, funcDecl->body);
+            semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+            semantic_typecheck_pop_compiler_context(analyzer, &contextSnapshot);
             break;
         }
 
         case ZR_AST_EXTERN_FUNCTION_DECLARATION: {
             SZrExternFunctionDeclaration *funcDecl = &node->data.externFunctionDeclaration;
+            SZrSemanticTypecheckContextSnapshot contextSnapshot;
+            SZrTypeEnvironment *savedTypeEnv;
+
+            semantic_typecheck_push_compiler_context(analyzer, ZR_NULL, node, &contextSnapshot);
+            savedTypeEnv = semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
+            semantic_typecheck_register_parameter_bindings(state, analyzer, funcDecl->params);
             if (funcDecl->params != ZR_NULL && funcDecl->params->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < funcDecl->params->count; i++) {
                     if (funcDecl->params->nodes[i] != ZR_NULL) {
@@ -1660,6 +1926,8 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                     }
                 }
             }
+            semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+            semantic_typecheck_pop_compiler_context(analyzer, &contextSnapshot);
             break;
         }
 

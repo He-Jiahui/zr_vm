@@ -10,6 +10,7 @@
 
 #include "zr_vm_parser/type_inference.h"
 #include "../../../zr_vm_parser/src/zr_vm_parser/type_inference_internal.h"
+#include "zr_vm_library/file.h"
 
 static TZrBool symbol_name_matches(SZrSymbol *symbol, SZrString *name);
 static TZrInt32 completion_metadata_symbol_priority(SZrSymbol *symbol);
@@ -51,6 +52,43 @@ static TZrBool receiver_type_text_is_specific(const TZrChar *text) {
     return text != ZR_NULL && text[0] != '\0' &&
            strcmp(text, "object") != 0 &&
            strcmp(text, "unknown") != 0;
+}
+
+static void lsp_interface_support_normalize_path_for_compare(const TZrChar *path,
+                                                             TZrChar *buffer,
+                                                             TZrSize bufferSize) {
+    TZrChar normalizedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *source = path;
+    TZrSize writeIndex = 0;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (path == ZR_NULL) {
+        return;
+    }
+
+    if (ZrLibrary_File_NormalizePath((TZrNativeString)path, normalizedPath, sizeof(normalizedPath))) {
+        source = normalizedPath;
+    }
+
+    for (TZrSize index = 0; source[index] != '\0' && writeIndex + 1 < bufferSize; index++) {
+        TZrChar current = source[index];
+        if (current == '\\') {
+            current = '/';
+        }
+#ifdef ZR_VM_PLATFORM_IS_WIN
+        current = (TZrChar)tolower((unsigned char)current);
+#endif
+        buffer[writeIndex++] = current;
+    }
+
+    while (writeIndex > 1 && buffer[writeIndex - 1] == '/') {
+        writeIndex--;
+    }
+    buffer[writeIndex] = '\0';
 }
 
 static TZrBool lsp_interface_support_file_range_contains_range(SZrFileRange outer, SZrFileRange inner) {
@@ -203,6 +241,58 @@ TZrBool ZrLanguageServer_Lsp_StringsEqual(SZrString *left, SZrString *right) {
     }
 
     return leftLength == rightLength && memcmp(leftText, rightText, leftLength) == 0;
+}
+
+TZrBool ZrLanguageServer_Lsp_UrisResolveToSameNativePath(SZrString *left, SZrString *right) {
+    TZrChar leftPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar rightPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar normalizedLeft[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar normalizedRight[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrLanguageServer_Lsp_StringsEqual(left, right)) {
+        return ZR_TRUE;
+    }
+
+    if (!ZrLanguageServer_Lsp_FileUriToNativePath(left, leftPath, sizeof(leftPath)) ||
+        !ZrLanguageServer_Lsp_FileUriToNativePath(right, rightPath, sizeof(rightPath))) {
+        return ZR_FALSE;
+    }
+
+    lsp_interface_support_normalize_path_for_compare(leftPath, normalizedLeft, sizeof(normalizedLeft));
+    lsp_interface_support_normalize_path_for_compare(rightPath, normalizedRight, sizeof(normalizedRight));
+    return normalizedLeft[0] != '\0' && strcmp(normalizedLeft, normalizedRight) == 0;
+}
+
+SZrHashKeyValuePair *ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(SZrState *state,
+                                                                   SZrHashSet *set,
+                                                                   SZrString *uri) {
+    TZrSize bucketIndex;
+
+    ZR_UNUSED_PARAMETER(state);
+
+    if (set == ZR_NULL || uri == ZR_NULL || !set->isValid || set->buckets == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (bucketIndex = 0; bucketIndex < set->capacity; bucketIndex++) {
+        SZrHashKeyValuePair *pair = set->buckets[bucketIndex];
+        while (pair != ZR_NULL) {
+            SZrRawObject *rawObject = ZrCore_Value_GetRawObject(&pair->key);
+            SZrString *storedUri = rawObject != ZR_NULL ? (SZrString *)rawObject : ZR_NULL;
+
+            if (storedUri != ZR_NULL && ZrLanguageServer_Lsp_UrisResolveToSameNativePath(storedUri, uri)) {
+                return pair;
+            }
+
+            pair = pair->next;
+        }
+    }
+
+    return ZR_NULL;
 }
 
 TZrBool ZrLanguageServer_Lsp_StringContainsCaseInsensitive(SZrString *haystack, SZrString *needle) {

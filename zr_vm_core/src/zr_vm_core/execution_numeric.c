@@ -4,6 +4,35 @@
 
 #include "execution_internal.h"
 
+static TZrBool execution_value_points_into_stack(const SZrState *state, const SZrTypeValue *value) {
+    TZrStackValuePointer stackPointer;
+
+    if (state == ZR_NULL || value == ZR_NULL || state->stackBase.valuePointer == ZR_NULL ||
+        state->stackTail.valuePointer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stackPointer = ZR_CAST_STACK_VALUE((TZrPtr)value);
+    return stackPointer >= state->stackBase.valuePointer && stackPointer < state->stackTail.valuePointer;
+}
+
+static SZrTypeValue *execution_restore_stack_destination(SZrState *state,
+                                                         const SZrFunctionStackAnchor *anchor,
+                                                         TZrBool hasAnchor,
+                                                         SZrTypeValue *destination) {
+    TZrStackValuePointer destinationPointer;
+
+    if (!hasAnchor) {
+        return destination;
+    }
+    if (state == ZR_NULL || anchor == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    destinationPointer = ZrCore_Function_StackAnchorRestore(state, anchor);
+    return destinationPointer != ZR_NULL ? ZrCore_Stack_GetValue(destinationPointer) : ZR_NULL;
+}
+
 static TZrBool execution_extract_numeric_double(const SZrTypeValue *value, TZrFloat64 *outValue) {
     if (value == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
@@ -337,6 +366,126 @@ TZrBool try_builtin_add(SZrState *state,
     return ZR_FALSE;
 }
 
+TZrBool execution_try_builtin_sub(SZrState *state,
+                                  SZrTypeValue *outResult,
+                                  const SZrTypeValue *opA,
+                                  const SZrTypeValue *opB) {
+    ZR_UNUSED_PARAMETER(state);
+
+    if (outResult == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type)) {
+        TZrBool result = opA->value.nativeObject.nativeBool && opB->value.nativeObject.nativeBool;
+        ZR_VALUE_FAST_SET(outResult, nativeBool, result, ZR_VALUE_TYPE_BOOL);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type)) {
+        TZrInt64 result = opA->value.nativeObject.nativeInt64 - opB->value.nativeObject.nativeInt64;
+        ZrCore_Value_InitAsInt(state, outResult, result);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {
+        TZrUInt64 result = opA->value.nativeObject.nativeUInt64 - opB->value.nativeObject.nativeUInt64;
+        ZrCore_Value_InitAsUInt(state, outResult, result);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type)) {
+        TZrFloat64 result = opA->value.nativeObject.nativeDouble - opB->value.nativeObject.nativeDouble;
+        ZrCore_Value_InitAsFloat(state, outResult, result);
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool execution_try_builtin_mul(SZrState *state,
+                                  SZrTypeValue *outResult,
+                                  const SZrTypeValue *opA,
+                                  const SZrTypeValue *opB) {
+    ZR_UNUSED_PARAMETER(state);
+
+    if (outResult == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_BOOL(opA->type) && ZR_VALUE_IS_TYPE_BOOL(opB->type)) {
+        TZrBool result = opA->value.nativeObject.nativeBool != opB->value.nativeObject.nativeBool;
+        ZR_VALUE_FAST_SET(outResult, nativeBool, result, ZR_VALUE_TYPE_BOOL);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type)) {
+        TZrInt64 result = opA->value.nativeObject.nativeInt64 * opB->value.nativeObject.nativeInt64;
+        ZrCore_Value_InitAsInt(state, outResult, result);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {
+        TZrUInt64 result = opA->value.nativeObject.nativeUInt64 * opB->value.nativeObject.nativeUInt64;
+        ZrCore_Value_InitAsUInt(state, outResult, result);
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type)) {
+        TZrFloat64 result = opA->value.nativeObject.nativeDouble * opB->value.nativeObject.nativeDouble;
+        ZrCore_Value_InitAsFloat(state, outResult, result);
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool execution_try_builtin_div(SZrState *state,
+                                  SZrTypeValue *outResult,
+                                  const SZrTypeValue *opA,
+                                  const SZrTypeValue *opB) {
+    ZR_UNUSED_PARAMETER(state);
+
+    if (outResult == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type)) {
+        TZrInt64 divisor = opB->value.nativeObject.nativeInt64;
+        if (divisor == 0) {
+            ZrCore_Value_ResetAsNull(outResult);
+        } else {
+            TZrInt64 result = opA->value.nativeObject.nativeInt64 / divisor;
+            ZrCore_Value_InitAsInt(state, outResult, result);
+        }
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {
+        TZrUInt64 divisor = opB->value.nativeObject.nativeUInt64;
+        if (divisor == 0) {
+            ZrCore_Value_ResetAsNull(outResult);
+        } else {
+            TZrUInt64 result = opA->value.nativeObject.nativeUInt64 / divisor;
+            ZrCore_Value_InitAsUInt(state, outResult, result);
+        }
+        return ZR_TRUE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_FLOAT(opA->type) && ZR_VALUE_IS_TYPE_FLOAT(opB->type)) {
+        TZrFloat64 divisor = opB->value.nativeObject.nativeDouble;
+        if (divisor == 0.0) {
+            ZrCore_Value_ResetAsNull(outResult);
+        } else {
+            TZrFloat64 result = opA->value.nativeObject.nativeDouble / divisor;
+            ZrCore_Value_InitAsFloat(state, outResult, result);
+        }
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 TZrBool ZrCore_Execution_Add(SZrState *state,
                              SZrCallInfo *callInfo,
                              SZrTypeValue *destination,
@@ -344,21 +493,37 @@ TZrBool ZrCore_Execution_Add(SZrState *state,
                              const SZrTypeValue *opB) {
     SZrTypeValue builtinResult;
     SZrTypeValue stableLeft;
+    SZrFunctionStackAnchor destinationAnchor;
     SZrMeta *meta;
     TZrStackValuePointer savedStackTop;
     TZrStackValuePointer metaBase = ZR_NULL;
     TZrStackValuePointer restoredStackTop = ZR_NULL;
     SZrCallInfo *savedCallInfo;
+    TZrBool hasDestinationAnchor = ZR_FALSE;
     TZrBool metaCallSucceeded;
 
     if (state == ZR_NULL || destination == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
         return ZR_FALSE;
     }
 
+    if (execution_value_points_into_stack(state, destination)) {
+        ZrCore_Function_StackAnchorInit(state, ZR_CAST_STACK_VALUE((TZrPtr)destination), &destinationAnchor);
+        hasDestinationAnchor = ZR_TRUE;
+    }
+
     ZrCore_Value_ResetAsNull(&builtinResult);
     if (try_builtin_add(state, &builtinResult, opA, opB)) {
+        destination = execution_restore_stack_destination(state, &destinationAnchor, hasDestinationAnchor, destination);
+        if (destination == ZR_NULL) {
+            return ZR_FALSE;
+        }
         ZrCore_Value_Copy(state, destination, &builtinResult);
         return ZR_TRUE;
+    }
+
+    destination = execution_restore_stack_destination(state, &destinationAnchor, hasDestinationAnchor, destination);
+    if (destination == ZR_NULL) {
+        return ZR_FALSE;
     }
 
     stableLeft = *opA;
@@ -384,6 +549,10 @@ TZrBool ZrCore_Execution_Add(SZrState *state,
 
     state->stackTop.valuePointer = restoredStackTop;
     state->callInfoList = savedCallInfo;
+    destination = execution_restore_stack_destination(state, &destinationAnchor, hasDestinationAnchor, destination);
+    if (destination == ZR_NULL) {
+        return ZR_FALSE;
+    }
 
     if (!metaCallSucceeded) {
         if (state->threadStatus != ZR_THREAD_STATUS_FINE) {

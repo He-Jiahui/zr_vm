@@ -8,8 +8,11 @@
 #include "test_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/object.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_library/native_binding.h"
 #include "zr_vm_parser/parser.h"
 
 typedef struct SZrTestTimer {
@@ -89,6 +92,118 @@ static TZrUInt32 count_instruction_opcode_recursive(const SZrFunction *function,
     }
 
     return count;
+}
+
+static TZrBool execute_array_factory_and_root(SZrState *state,
+                                              SZrFunction *factoryFunction,
+                                              ZrLibTempValueRoot *root) {
+    SZrTypeValue resultValue;
+
+    if (state == ZR_NULL || factoryFunction == ZR_NULL || root == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLib_TempValueRoot_Begin(state, root)) {
+        return ZR_FALSE;
+    }
+    if (!ZrTests_Runtime_Function_Execute(state, factoryFunction, &resultValue) ||
+        !ZrLib_TempValueRoot_SetValue(root, &resultValue)) {
+        ZrLib_TempValueRoot_End(root);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static void super_array_add_int_expect_ok(SZrState *state, SZrTypeValue *receiver, TZrInt64 value) {
+    SZrTypeValue inputValue;
+    SZrTypeValue resultValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(receiver);
+    ZrCore_Value_InitAsInt(state, &inputValue, value);
+    ZrCore_Value_ResetAsNull(&resultValue);
+    TEST_ASSERT_TRUE(ZrCore_Object_SuperArrayAddInt(state, receiver, &inputValue, &resultValue));
+}
+
+static void assert_super_array_int_equals(SZrState *state,
+                                          SZrTypeValue *receiver,
+                                          TZrInt64 indexValue,
+                                          TZrInt64 expectedValue) {
+    SZrTypeValue keyValue;
+    SZrTypeValue resultValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(receiver);
+    ZrCore_Value_InitAsInt(state, &keyValue, indexValue);
+    ZrCore_Value_ResetAsNull(&resultValue);
+    TEST_ASSERT_TRUE(ZrCore_Object_SuperArrayGetInt(state, receiver, &keyValue, &resultValue));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(resultValue.type));
+    TEST_ASSERT_EQUAL_INT64(expectedValue, resultValue.value.nativeObject.nativeInt64);
+}
+
+static void assert_super_array_length_equals(SZrState *state, SZrTypeValue *receiver, TZrInt64 expectedLength) {
+    SZrObject *receiverObject;
+    const SZrTypeValue *lengthValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(receiver);
+    TEST_ASSERT_TRUE(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(receiver->value.object);
+
+    receiverObject = ZR_CAST_OBJECT(state, receiver->value.object);
+    TEST_ASSERT_NOT_NULL(receiverObject);
+    lengthValue = ZrContainerTests_GetObjectFieldValue(state, receiverObject, "length");
+    TEST_ASSERT_NOT_NULL(lengthValue);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(lengthValue->type));
+    TEST_ASSERT_EQUAL_INT64(expectedLength, lengthValue->value.nativeObject.nativeInt64);
+}
+
+static void assert_super_array_dense_bucket_capacity_equals(SZrState *state,
+                                                            SZrTypeValue *receiver,
+                                                            TZrSize expectedCapacity) {
+    SZrObject *receiverObject;
+    SZrObject *itemsObject;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(receiver);
+    TEST_ASSERT_TRUE(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(receiver->value.object);
+
+    receiverObject = ZR_CAST_OBJECT(state, receiver->value.object);
+    TEST_ASSERT_NOT_NULL(receiverObject);
+    TEST_ASSERT_NOT_NULL_MESSAGE(receiverObject->cachedHiddenItemsObject,
+                                 "super-array receiver must cache the hidden items object");
+    TEST_ASSERT_NOT_NULL_MESSAGE(receiverObject->cachedCapacityPair,
+                                 "super-array receiver must cache the capacity pair");
+
+    itemsObject = receiverObject->cachedHiddenItemsObject;
+    TEST_ASSERT_EQUAL_INT(ZR_OBJECT_INTERNAL_TYPE_ARRAY, itemsObject->internalType);
+    TEST_ASSERT_EQUAL_UINT64(expectedCapacity, (TZrUInt64)itemsObject->nodeMap.capacity);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(receiverObject->cachedCapacityPair->value.type));
+    TEST_ASSERT_EQUAL_INT64((TZrInt64)expectedCapacity,
+                            receiverObject->cachedCapacityPair->value.value.nativeObject.nativeInt64);
+}
+
+static void assert_super_array_pair_pool_capacity_equals(SZrState *state,
+                                                         SZrTypeValue *receiver,
+                                                         TZrSize expectedCapacity) {
+    SZrObject *receiverObject;
+    SZrObject *itemsObject;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(receiver);
+    TEST_ASSERT_TRUE(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(receiver->value.object);
+
+    receiverObject = ZR_CAST_OBJECT(state, receiver->value.object);
+    TEST_ASSERT_NOT_NULL(receiverObject);
+    TEST_ASSERT_NOT_NULL_MESSAGE(receiverObject->cachedHiddenItemsObject,
+                                 "super-array receiver must cache the hidden items object");
+
+    itemsObject = receiverObject->cachedHiddenItemsObject;
+    TEST_ASSERT_EQUAL_INT(ZR_OBJECT_INTERNAL_TYPE_ARRAY, itemsObject->internalType);
+    TEST_ASSERT_EQUAL_UINT64(expectedCapacity, (TZrUInt64)itemsObject->nodeMap.pairPoolCapacity);
 }
 
 static void test_container_fixed_array_runtime_supports_mutation_and_iteration(void) {
@@ -288,6 +403,251 @@ static void test_container_array_runtime_supports_capacity_growth_and_structural
     TEST_DIVIDER();
 }
 
+static void test_container_array_runtime_constructor_populates_hidden_items_cache_for_direct_execution(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Array Constructor Populates Hidden Items Cache For Direct Execution";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue resultValue;
+    SZrObject *arrayObject;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "return new container.Array<int>(2);\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_array_hidden_items_cache_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &resultValue));
+    TEST_ASSERT_TRUE(resultValue.type == ZR_VALUE_TYPE_OBJECT || resultValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(resultValue.value.object);
+
+    arrayObject = ZR_CAST_OBJECT(state, resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(arrayObject);
+    TEST_ASSERT_NOT_NULL_MESSAGE(arrayObject->cachedHiddenItemsPair,
+                                 "direct constructor execution must cache the hidden items pair");
+    TEST_ASSERT_NOT_NULL_MESSAGE(arrayObject->cachedHiddenItemsObject,
+                                 "direct constructor execution must cache the hidden items array");
+    TEST_ASSERT_EQUAL_INT(ZR_OBJECT_INTERNAL_TYPE_ARRAY, arrayObject->cachedHiddenItemsObject->internalType);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_array_runtime_bulk_super_array_helpers_preserve_existing_prefixes(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Bulk Super Array Helpers Preserve Existing Prefixes";
+    SZrState *state;
+    SZrFunction *factoryFunction;
+    ZrLibTempValueRoot roots[4];
+    SZrTypeValueOnStack receiverSlots[4];
+    SZrTypeValue *receivers[4];
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "return new container.Array<int>();\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+    memset(roots, 0, sizeof(roots));
+    memset(receiverSlots, 0, sizeof(receiverSlots));
+    memset(receivers, 0, sizeof(receivers));
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    factoryFunction = compile_test_script(state, "container_array_super_array_helper_factory.zr", source);
+    TEST_ASSERT_NOT_NULL(factoryFunction);
+
+    for (TZrSize index = 0; index < 4; index++) {
+        TEST_ASSERT_TRUE(execute_array_factory_and_root(state, factoryFunction, &roots[index]));
+        receivers[index] = ZrLib_TempValueRoot_Value(&roots[index]);
+        TEST_ASSERT_NOT_NULL(receivers[index]);
+        TEST_ASSERT_TRUE(receivers[index]->type == ZR_VALUE_TYPE_OBJECT || receivers[index]->type == ZR_VALUE_TYPE_ARRAY);
+        receiverSlots[index].value = *receivers[index];
+        receiverSlots[index].toBeClosedValueOffset = 0;
+    }
+
+    super_array_add_int_expect_ok(state, receivers[0], 10);
+    super_array_add_int_expect_ok(state, receivers[1], 20);
+    super_array_add_int_expect_ok(state, receivers[1], 21);
+    super_array_add_int_expect_ok(state, receivers[2], 30);
+    super_array_add_int_expect_ok(state, receivers[2], 31);
+    super_array_add_int_expect_ok(state, receivers[2], 32);
+    super_array_add_int_expect_ok(state, receivers[3], 40);
+    super_array_add_int_expect_ok(state, receivers[3], 41);
+    super_array_add_int_expect_ok(state, receivers[3], 42);
+    super_array_add_int_expect_ok(state, receivers[3], 43);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[0], 4);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[1], 4);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[2], 4);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[3], 4);
+
+    TEST_ASSERT_TRUE(
+            ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(state, receiverSlots, 3, 7));
+
+    assert_super_array_length_equals(state, receivers[0], 4);
+    assert_super_array_length_equals(state, receivers[1], 5);
+    assert_super_array_length_equals(state, receivers[2], 6);
+    assert_super_array_length_equals(state, receivers[3], 7);
+    assert_super_array_int_equals(state, receivers[0], 0, 10);
+    assert_super_array_int_equals(state, receivers[0], 3, 7);
+    assert_super_array_int_equals(state, receivers[1], 0, 20);
+    assert_super_array_int_equals(state, receivers[1], 1, 21);
+    assert_super_array_int_equals(state, receivers[1], 4, 7);
+    assert_super_array_int_equals(state, receivers[2], 2, 32);
+    assert_super_array_int_equals(state, receivers[2], 5, 7);
+    assert_super_array_int_equals(state, receivers[3], 3, 43);
+    assert_super_array_int_equals(state, receivers[3], 6, 7);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[0], 4);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[1], 8);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[2], 8);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[3], 8);
+
+    super_array_add_int_expect_ok(state, receivers[0], 9);
+    super_array_add_int_expect_ok(state, receivers[1], 9);
+    super_array_add_int_expect_ok(state, receivers[2], 9);
+    super_array_add_int_expect_ok(state, receivers[3], 9);
+
+    assert_super_array_length_equals(state, receivers[0], 5);
+    assert_super_array_length_equals(state, receivers[1], 6);
+    assert_super_array_length_equals(state, receivers[2], 7);
+    assert_super_array_length_equals(state, receivers[3], 8);
+    assert_super_array_int_equals(state, receivers[0], 4, 9);
+    assert_super_array_int_equals(state, receivers[1], 5, 9);
+    assert_super_array_int_equals(state, receivers[2], 6, 9);
+    assert_super_array_int_equals(state, receivers[3], 7, 9);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[0], 8);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[1], 8);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[2], 8);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[3], 8);
+
+    for (TZrInt32 index = 3; index >= 0; index--) {
+        ZrLib_TempValueRoot_End(&roots[index]);
+    }
+    ZrCore_Function_Free(state, factoryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_array_runtime_bulk_super_array_fill_keeps_dense_bucket_capacity_aligned_with_cached_capacity(
+        void) {
+    SZrTestTimer timer = {0};
+    const char *summary =
+            "Container Runtime - Bulk Super Array Fill Keeps Dense Bucket Capacity Aligned With Cached Capacity";
+    SZrState *state;
+    SZrFunction *factoryFunction;
+    ZrLibTempValueRoot roots[4];
+    SZrTypeValueOnStack receiverSlots[4];
+    SZrTypeValue *receivers[4];
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "return new container.Array<int>();\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+    memset(roots, 0, sizeof(roots));
+    memset(receiverSlots, 0, sizeof(receiverSlots));
+    memset(receivers, 0, sizeof(receivers));
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    factoryFunction = compile_test_script(state, "container_array_super_array_fill_capacity_factory.zr", source);
+    TEST_ASSERT_NOT_NULL(factoryFunction);
+
+    for (TZrSize index = 0; index < 4; index++) {
+        TEST_ASSERT_TRUE(execute_array_factory_and_root(state, factoryFunction, &roots[index]));
+        receivers[index] = ZrLib_TempValueRoot_Value(&roots[index]);
+        TEST_ASSERT_NOT_NULL(receivers[index]);
+        TEST_ASSERT_TRUE(receivers[index]->type == ZR_VALUE_TYPE_OBJECT || receivers[index]->type == ZR_VALUE_TYPE_ARRAY);
+        receiverSlots[index].value = *receivers[index];
+        receiverSlots[index].toBeClosedValueOffset = 0;
+    }
+
+    TEST_ASSERT_TRUE(ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(state, receiverSlots, 8, 5));
+
+    for (TZrSize index = 0; index < 4; index++) {
+        assert_super_array_length_equals(state, receivers[index], 8);
+        assert_super_array_dense_bucket_capacity_equals(state, receivers[index], 8);
+    }
+
+    for (TZrInt32 index = 3; index >= 0; index--) {
+        ZrLib_TempValueRoot_End(&roots[index]);
+    }
+    ZrCore_Function_Free(state, factoryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_array_runtime_bulk_super_array_fill_grows_pair_pool_to_length_before_bucket_capacity(void) {
+    SZrTestTimer timer = {0};
+    const char *summary =
+            "Container Runtime - Bulk Super Array Fill Grows Pair Pool To Length Before Bucket Capacity";
+    SZrState *state;
+    SZrFunction *factoryFunction;
+    ZrLibTempValueRoot roots[4];
+    SZrTypeValueOnStack receiverSlots[4];
+    SZrTypeValue *receivers[4];
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "return new container.Array<int>();\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+    memset(roots, 0, sizeof(roots));
+    memset(receiverSlots, 0, sizeof(receiverSlots));
+    memset(receivers, 0, sizeof(receivers));
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    factoryFunction = compile_test_script(state, "container_array_pair_pool_capacity_factory.zr", source);
+    TEST_ASSERT_NOT_NULL(factoryFunction);
+
+    for (TZrSize index = 0; index < 4; index++) {
+        TEST_ASSERT_TRUE(execute_array_factory_and_root(state, factoryFunction, &roots[index]));
+        receivers[index] = ZrLib_TempValueRoot_Value(&roots[index]);
+        TEST_ASSERT_NOT_NULL(receivers[index]);
+        receiverSlots[index].value = *receivers[index];
+        receiverSlots[index].toBeClosedValueOffset = 0;
+    }
+
+    TEST_ASSERT_TRUE(ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(state, receiverSlots, 6, 5));
+    assert_super_array_length_equals(state, receivers[0], 6);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[0], 8);
+    assert_super_array_pair_pool_capacity_equals(state, receivers[0], 6);
+
+    super_array_add_int_expect_ok(state, receivers[0], 9);
+    assert_super_array_length_equals(state, receivers[0], 7);
+    assert_super_array_dense_bucket_capacity_equals(state, receivers[0], 8);
+    assert_super_array_pair_pool_capacity_equals(state, receivers[0], 8);
+    assert_super_array_int_equals(state, receivers[0], 6, 9);
+
+    for (TZrInt32 index = 3; index >= 0; index--) {
+        ZrLib_TempValueRoot_End(&roots[index]);
+    }
+    ZrCore_Function_Free(state, factoryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 static void test_container_array_runtime_clear_preserves_capacity_and_missing_item_returns_null(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Array Clear Preserves Capacity And Missing Item Returns Null";
@@ -335,7 +695,7 @@ static void test_container_array_runtime_set_item_preserves_object_payloads(void
     TZrInt64 result = 0;
     const char *source =
             "var container = %import(\"zr.container\");\n"
-            "var {Pair} = %import(\"zr.container\");\n"
+            "var {Array, Pair} = %import(\"zr.container\");\n"
             "var xs = new container.Array<Pair<int, string>>();\n"
             "xs.add(new container.Pair<int, string>(1, \"a\"));\n"
             "xs.add(new container.Pair<int, string>(2, \"b\"));\n"
@@ -842,6 +1202,54 @@ static void test_container_set_to_map_runtime_preserves_bucket_values_in_fresh_s
     TEST_DIVIDER();
 }
 
+static void test_container_array_runtime_inline_pair_constructor_argument_preserves_payload(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Inline Pair Constructor Argument Preserves Payload";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var {Pair} = %import(\"zr.container\");\n"
+            "var xs = new container.Array<Pair<int, string>>();\n"
+            "xs.add(new container.Pair<int, string>(2, \"even\"));\n"
+            "xs.add(new container.Pair<int, string>(4, \"even\"));\n"
+            "var first: Pair<int, string> = xs[0];\n"
+            "var second: Pair<int, string> = xs[1];\n"
+            "var score = 0;\n"
+            "if (first.first == 2) {\n"
+            "    score = score + 1000;\n"
+            "}\n"
+            "if (first.second == \"even\") {\n"
+            "    score = score + 100;\n"
+            "}\n"
+            "if (second.first == 4) {\n"
+            "    score = score + 10;\n"
+            "}\n"
+            "if (second.second == \"even\") {\n"
+            "    score = score + 1;\n"
+            "}\n"
+            "return score;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_array_inline_pair_argument_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(1111, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 static void test_container_linked_set_map_runtime_preserves_native_call_arguments_in_fresh_state(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Linked Set Map Composite Preserves Native Call Arguments";
@@ -1281,6 +1689,69 @@ static void test_reference_protocols_comparable_hashable_fixture_preserves_conta
     TEST_DIVIDER();
 }
 
+static void test_container_native_binding_temp_roots_preserve_gc_object_values_without_extra_pin_scope(void) {
+    SZrTestTimer timer = {0};
+    const char *summary =
+            "Container Runtime - Native Binding Temp Roots Preserve GC Object Values Without Extra Pin Scope";
+    SZrState *state;
+    ZrLibTempValueRoot targetObjectRoot;
+    ZrLibTempValueRoot targetArrayRoot;
+    SZrObject *targetObject;
+    SZrObject *targetArray;
+    SZrObject *fieldObject;
+    SZrObject *entryObject;
+    SZrTypeValue fieldValue;
+    SZrTypeValue entryValue;
+    const SZrTypeValue *capturedField;
+    const SZrTypeValue *capturedEntry;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+    memset(&targetObjectRoot, 0, sizeof(targetObjectRoot));
+    memset(&targetArrayRoot, 0, sizeof(targetArrayRoot));
+    ZrCore_Value_ResetAsNull(&fieldValue);
+    ZrCore_Value_ResetAsNull(&entryValue);
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    targetObject = ZrLib_Object_New(state);
+    targetArray = ZrLib_Array_New(state);
+    TEST_ASSERT_NOT_NULL(targetObject);
+    TEST_ASSERT_NOT_NULL(targetArray);
+    TEST_ASSERT_TRUE(ZrLib_TempValueRoot_Begin(state, &targetObjectRoot));
+    TEST_ASSERT_TRUE(ZrLib_TempValueRoot_SetObject(&targetObjectRoot, targetObject, ZR_VALUE_TYPE_OBJECT));
+    TEST_ASSERT_TRUE(ZrLib_TempValueRoot_Begin(state, &targetArrayRoot));
+    TEST_ASSERT_TRUE(ZrLib_TempValueRoot_SetObject(&targetArrayRoot, targetArray, ZR_VALUE_TYPE_ARRAY));
+
+    fieldObject = ZrLib_Object_New(state);
+    entryObject = ZrLib_Object_New(state);
+    TEST_ASSERT_NOT_NULL(fieldObject);
+    TEST_ASSERT_NOT_NULL(entryObject);
+
+    ZrLib_Value_SetObject(state, &fieldValue, fieldObject, ZR_VALUE_TYPE_OBJECT);
+    ZrLib_Object_SetFieldCString(state, targetObject, "captured", &fieldValue);
+    capturedField = ZrLib_Object_GetFieldCString(state, targetObject, "captured");
+    TEST_ASSERT_NOT_NULL(capturedField);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, capturedField->type);
+    TEST_ASSERT_EQUAL_PTR(fieldObject, ZR_CAST_OBJECT(state, capturedField->value.object));
+
+    ZrLib_Value_SetObject(state, &entryValue, entryObject, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrLib_Array_PushValue(state, targetArray, &entryValue));
+    capturedEntry = ZrLib_Array_Get(state, targetArray, 0);
+    TEST_ASSERT_NOT_NULL(capturedEntry);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, capturedEntry->type);
+    TEST_ASSERT_EQUAL_PTR(entryObject, ZR_CAST_OBJECT(state, capturedEntry->value.object));
+
+    ZrLib_TempValueRoot_End(&targetArrayRoot);
+    ZrLib_TempValueRoot_End(&targetObjectRoot);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -1292,6 +1763,7 @@ int main(void) {
     RUN_TEST(test_container_fixed_array_runtime_supports_nested_independent_managed_iterators);
     RUN_TEST(test_container_fixed_array_runtime_preserves_numeric_items_across_helper_calls);
     RUN_TEST(test_container_array_runtime_supports_capacity_growth_and_structural_equality);
+    RUN_TEST(test_container_array_runtime_constructor_populates_hidden_items_cache_for_direct_execution);
     RUN_TEST(test_container_array_runtime_clear_preserves_capacity_and_missing_item_returns_null);
     RUN_TEST(test_container_array_runtime_set_item_preserves_object_payloads);
     RUN_TEST(test_container_array_runtime_accepts_unary_negation_in_constructor_arguments);
@@ -1306,6 +1778,7 @@ int main(void) {
     RUN_TEST(test_container_linked_list_runtime_empty_removals_return_null);
     RUN_TEST(test_container_linked_list_runtime_remove_first_preserves_pair_values_across_typed_function_boundary);
     RUN_TEST(test_container_set_to_map_runtime_preserves_bucket_values_in_fresh_state);
+    RUN_TEST(test_container_array_runtime_inline_pair_constructor_argument_preserves_payload);
     RUN_TEST(test_container_linked_set_map_runtime_preserves_native_call_arguments_in_fresh_state);
     RUN_TEST(test_reference_object_member_vs_string_index_fixture_separates_member_and_index_contracts);
     RUN_TEST(test_reference_object_missing_member_vs_missing_key_fixture_preserves_member_error_boundary);
@@ -1316,5 +1789,9 @@ int main(void) {
     RUN_TEST(test_reference_protocols_singleton_iterator_fixture_yields_once_per_pass);
     RUN_TEST(test_reference_protocols_nested_foreach_fixture_keeps_iterators_independent);
     RUN_TEST(test_reference_protocols_comparable_hashable_fixture_preserves_container_consistency);
+    RUN_TEST(test_container_native_binding_temp_roots_preserve_gc_object_values_without_extra_pin_scope);
+    RUN_TEST(test_container_array_runtime_bulk_super_array_helpers_preserve_existing_prefixes);
+    RUN_TEST(test_container_array_runtime_bulk_super_array_fill_keeps_dense_bucket_capacity_aligned_with_cached_capacity);
+    RUN_TEST(test_container_array_runtime_bulk_super_array_fill_grows_pair_pool_to_length_before_bucket_capacity);
     return UNITY_END();
 }

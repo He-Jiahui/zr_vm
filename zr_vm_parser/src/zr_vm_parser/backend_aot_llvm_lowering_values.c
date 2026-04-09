@@ -6,6 +6,10 @@ TZrBool backend_aot_llvm_lower_value_instruction(const SZrAotLlvmLoweringContext
         return ZR_FALSE;
     }
 
+    if (instruction->opcode == ZR_INSTRUCTION_ENUM(NOP)) {
+        return ZR_TRUE;
+    }
+
     if (backend_aot_llvm_lower_constant_value_family(context, instruction)) {
         return ZR_TRUE;
     }

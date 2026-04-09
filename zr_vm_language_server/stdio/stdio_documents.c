@@ -408,7 +408,6 @@ int update_document_contents(SZrStdioServer *server,
             version)) {
         return 0;
     }
-
     publish_diagnostics(server, uri);
     return 1;
 }
@@ -426,13 +425,32 @@ int update_document_contents_from_disk(SZrStdioServer *server, SZrString *uri) {
         return 0;
     }
 
+    fileVersion = get_file_version_for_uri(server, uri);
+    version = fileVersion != ZR_NULL ? fileVersion->version + 1 : 0;
+    if (server->context != ZR_NULL) {
+        SZrTypeValue key;
+        SZrHashKeyValuePair *pair;
+
+        ZrCore_Value_InitAsRawObject(server->state, &key, &uri->super);
+        pair = ZrCore_HashSet_Find(server->state, &server->context->uriToAnalyzerMap, &key);
+        if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+            SZrSemanticAnalyzer *analyzer = (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+            if (analyzer != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_Free(server->state, analyzer);
+            }
+        }
+        ZrCore_HashSet_Remove(server->state, &server->context->uriToAnalyzerMap, &key);
+
+        if (server->context->parser != ZR_NULL) {
+            ZrLanguageServer_IncrementalParser_RemoveFile(server->state, server->context->parser, uri);
+        }
+    }
+
     sourceCode = stdio_read_all_text(nativePath, &sourceLength);
     if (sourceCode == ZR_NULL) {
         return 0;
     }
 
-    fileVersion = get_file_version_for_uri(server, uri);
-    version = fileVersion != ZR_NULL ? fileVersion->version + 1 : 0;
     success = update_document_contents(server, uri, sourceCode, sourceLength, version);
     free(sourceCode);
     return success;

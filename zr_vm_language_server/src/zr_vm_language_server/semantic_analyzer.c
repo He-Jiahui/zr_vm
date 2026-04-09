@@ -716,6 +716,164 @@ static TZrSize semantic_buffer_append(TZrChar *buffer,
     return offset + (TZrSize)written;
 }
 
+static TZrBool semantic_append_ast_type_decl(SZrType *typeInfo,
+                                             TZrChar *buffer,
+                                             TZrSize bufferSize,
+                                             TZrSize *offset);
+
+static const TZrChar *semantic_ast_ownership_prefix(EZrOwnershipQualifier ownershipQualifier) {
+    switch (ownershipQualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+            return "%unique ";
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+            return "%shared ";
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+            return "%weak ";
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+            return "%borrowed ";
+        case ZR_OWNERSHIP_QUALIFIER_LOANED:
+            return "%loaned ";
+        default:
+            return "";
+    }
+}
+
+static TZrBool semantic_append_ast_generic_argument_decl(SZrAstNode *node,
+                                                         TZrChar *buffer,
+                                                         TZrSize bufferSize,
+                                                         TZrSize *offset) {
+    TZrSize nextOffset;
+
+    if (node == ZR_NULL || buffer == ZR_NULL || offset == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nextOffset = *offset;
+    switch (node->type) {
+        case ZR_AST_TYPE:
+            if (!semantic_append_ast_type_decl(&node->data.type, buffer, bufferSize, &nextOffset)) {
+                return ZR_FALSE;
+            }
+            break;
+
+        case ZR_AST_IDENTIFIER_LITERAL:
+            nextOffset = semantic_buffer_append(buffer,
+                                                bufferSize,
+                                                nextOffset,
+                                                "%s",
+                                                semantic_string_native(node->data.identifier.name));
+            break;
+
+        case ZR_AST_INTEGER_LITERAL:
+            nextOffset = semantic_buffer_append(buffer,
+                                                bufferSize,
+                                                nextOffset,
+                                                "%lld",
+                                                (long long)node->data.integerLiteral.value);
+            break;
+
+        default:
+            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "?");
+            break;
+    }
+
+    *offset = nextOffset;
+    return ZR_TRUE;
+}
+
+static TZrBool semantic_append_ast_type_decl(SZrType *typeInfo,
+                                             TZrChar *buffer,
+                                             TZrSize bufferSize,
+                                             TZrSize *offset) {
+    TZrSize nextOffset;
+    const TZrChar *ownershipPrefix;
+
+    if (typeInfo == ZR_NULL || typeInfo->name == ZR_NULL || buffer == ZR_NULL || offset == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nextOffset = *offset;
+    ownershipPrefix = semantic_ast_ownership_prefix(typeInfo->ownershipQualifier);
+    if (ownershipPrefix[0] != '\0') {
+        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "%s", ownershipPrefix);
+    }
+
+    switch (typeInfo->name->type) {
+        case ZR_AST_IDENTIFIER_LITERAL:
+            nextOffset = semantic_buffer_append(buffer,
+                                                bufferSize,
+                                                nextOffset,
+                                                "%s",
+                                                semantic_string_native(typeInfo->name->data.identifier.name));
+            break;
+
+        case ZR_AST_GENERIC_TYPE: {
+            SZrGenericType *genericType = &typeInfo->name->data.genericType;
+
+            nextOffset = semantic_buffer_append(buffer,
+                                                bufferSize,
+                                                nextOffset,
+                                                "%s<",
+                                                semantic_string_native(genericType->name != ZR_NULL
+                                                                           ? genericType->name->name
+                                                                           : ZR_NULL));
+            if (genericType->params != ZR_NULL) {
+                for (TZrSize index = 0; index < genericType->params->count; index++) {
+                    if (index > 0) {
+                        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ", ");
+                    }
+                    if (!semantic_append_ast_generic_argument_decl(genericType->params->nodes[index],
+                                                                   buffer,
+                                                                   bufferSize,
+                                                                   &nextOffset)) {
+                        return ZR_FALSE;
+                    }
+                }
+            }
+            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ">");
+            break;
+        }
+
+        case ZR_AST_TUPLE_TYPE: {
+            SZrTupleType *tupleType = &typeInfo->name->data.tupleType;
+
+            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "(");
+            if (tupleType->elements != ZR_NULL) {
+                for (TZrSize index = 0; index < tupleType->elements->count; index++) {
+                    if (index > 0) {
+                        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ", ");
+                    }
+                    if (!semantic_append_ast_generic_argument_decl(tupleType->elements->nodes[index],
+                                                                   buffer,
+                                                                   bufferSize,
+                                                                   &nextOffset)) {
+                        return ZR_FALSE;
+                    }
+                }
+            }
+            nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ")");
+            break;
+        }
+
+        default:
+            return ZR_FALSE;
+    }
+
+    if (typeInfo->subType != ZR_NULL) {
+        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, ".");
+        if (!semantic_append_ast_type_decl(typeInfo->subType, buffer, bufferSize, &nextOffset)) {
+            return ZR_FALSE;
+        }
+    }
+
+    for (TZrInt32 dimension = 0; dimension < typeInfo->dimensions; dimension++) {
+        nextOffset = semantic_buffer_append(buffer, bufferSize, nextOffset, "[]");
+    }
+
+    *offset = nextOffset;
+    return ZR_TRUE;
+}
+
 static const TZrChar *semantic_identifier_node_text(SZrAstNode *node) {
     if (node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL || node->data.identifier.name == ZR_NULL) {
         return ZR_NULL;
@@ -941,8 +1099,16 @@ static void semantic_format_type_from_ast(SZrState *state,
                                           TZrChar *buffer,
                                           TZrSize bufferSize) {
     SZrInferredType inferredType;
+    TZrSize offset = 0;
 
     if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (typeNode != ZR_NULL &&
+        semantic_append_ast_type_decl(typeNode, buffer, bufferSize, &offset) &&
+        buffer[0] != '\0') {
         return;
     }
 

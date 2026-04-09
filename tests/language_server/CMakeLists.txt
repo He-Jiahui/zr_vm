@@ -191,4 +191,11 @@ if (NODE_EXECUTABLE AND TARGET zr_vm_language_server_stdio)
             ${CMAKE_CURRENT_SOURCE_DIR}/stdio_smoke.js
             $<TARGET_FILE:zr_vm_language_server_stdio>
     )
+    add_test(
+        NAME language_server_stdio_minimal_open_smoke
+        COMMAND
+            ${NODE_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/stdio_minimal_open_smoke.js
+            $<TARGET_FILE:zr_vm_language_server_stdio>
+    )
 endif()

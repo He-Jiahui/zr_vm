@@ -1,0 +1,492 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 57
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 3
+
+CONSTANTS (20):
+  [0] null
+  [1] function
+  [2] function
+  [3] function
+  [4] function
+  [5] function
+  [6] string: "ScoreReadable"
+  [7] string: "read"
+  [8] string: "int"
+  [9] string: "Counter"
+  [10] string: "zr.builtin.Object"
+  [11] string: "current"
+  [12] string: "constructor"
+  [13] string: "Pair"
+  [14] string: "left"
+  [15] string: "right"
+  [16] string: "Mode"
+  [17] unknown type: 18
+  [18] string: "Idle"
+  [19] string: "Hot"
+
+LOCAL_VARIABLES (2):
+  [0] makeEscaping: offset_activate=0, offset_dead=4
+  [1] lambdaScore: offset_activate=0, offset_dead=4
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (2):
+    [0] makeEscaping: function
+    [1] lambdaScore: function
+  EXPORTED_SYMBOLS (2):
+    fn makeEscaping(int): object [kind=function readiness=declaration child=0]
+    fn lambdaScore(): int [kind=function readiness=declaration child=1]
+  STATIC_IMPORTS (0):
+  MODULE_ENTRY_EFFECTS (0):
+  EXPORTED_CALLABLE_SUMMARIES (2):
+    fn makeEscaping [child=4294967295 effects=0]
+    fn lambdaScore [child=4294967295 effects=0]
+  TOP_LEVEL_CALLABLE_BINDINGS (2):
+    fn makeEscaping [slot=0 child=0 kind=function readiness=declaration access=0]
+    fn lambdaScore [slot=1 child=1 kind=function readiness=declaration access=0]
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+PROTOTYPES (4):
+// ========== PROTOTYPES FROM DATA (count: 4) ==========
+// --- Prototype 1 ---
+interface ScoreReadable {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_METHOD (18),
+      name: "read",
+      access: private (1),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+class Counter : ScoreReadable, zr.builtin.Object {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "current",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 1,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "read",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 2,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
+struct Pair {
+  access: public (0),
+  members: [
+    {
+      type: STRUCT_FIELD (14),
+      name: "left",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: STRUCT_FIELD (14),
+      name: "right",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 32,
+      fieldSize: 8
+    },
+    {
+      type: STRUCT_META_FUNCTION (16),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 3,
+      parameterCount: 2,
+      returnType: "<void>"
+    }
+  ]
+}
+
+// --- Prototype 4 ---
+enum Mode {
+  access: public (0),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "Idle",
+      access: public (0),
+      static: true,
+      fieldType: "Mode",
+      fieldOffset: 0,
+      fieldSize: 0
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "Hot",
+      access: public (0),
+      static: true,
+      fieldType: "Mode",
+      fieldOffset: 0,
+      fieldSize: 0
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (6):
+  [0] CREATE_CLOSURE (extra=2)
+  [1] SET_STACK (extra=0, operand=2)
+  [2] CREATE_CLOSURE (extra=2)
+  [3] SET_STACK (extra=1, operand=2)
+  [4] GET_CONSTANT (extra=2, operand=0)
+  [5] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
+
+CHILD_FUNCTIONS (2):
+  [0] FUNCTION:
+    NAME: makeEscaping
+    START_LINE: 34
+    END_LINE: 39
+    PARAMETERS: 1
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 3
+
+    CONSTANTS (2):
+      [0] function
+      [1] null
+
+    LOCAL_VARIABLES (2):
+      [0] offset: offset_activate=0, offset_dead=4
+      [1] callback: offset_activate=2, offset_dead=4
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (2):
+        [0] offset: int
+        [1] callback: %func(int)->int
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (4):
+      [0] OPCODE_83 (extra=2)
+      [1] SET_STACK (extra=1, operand=2)
+      [2] GET_STACK (extra=2, operand=1)
+      [3] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
+
+    CHILD_FUNCTIONS (1):
+      [0] FUNCTION:
+        NAME: <anonymous>
+        START_LINE: 35
+        END_LINE: 38
+        PARAMETERS: 1
+        HAS_VAR_ARGS: false
+        STACK_SIZE: 4
+
+        CONSTANTS (0):
+
+        LOCAL_VARIABLES (1):
+          [0] value: offset_activate=0, offset_dead=4
+
+        CLOSURE_VARIABLES (1):
+          [0] offset: in_stack=true, index=0, type=NULL
+
+        TYPE_METADATA:
+          LOCAL_BINDINGS (1):
+            [0] value: int
+          EXPORTED_SYMBOLS (0):
+          STATIC_IMPORTS (0):
+          MODULE_ENTRY_EFFECTS (0):
+          EXPORTED_CALLABLE_SUMMARIES (0):
+          TOP_LEVEL_CALLABLE_BINDINGS (0):
+          COMPILE_TIME_VARIABLES (0):
+          COMPILE_TIME_FUNCTIONS (0):
+          TESTS (0):
+
+        TYPE_TABLE (0):
+
+        OWNERSHIP_TABLE (0):
+
+        EFFECT_TABLE (0):
+
+        BLOCK_GRAPH (0):
+
+        SEMIR (0):
+
+        DEOPT_MAP (0):
+
+        CALLSITE_CACHE_TABLE (0):
+
+        EH_TABLE (0):
+
+        INSTRUCTIONS (4):
+          [0] GET_STACK (extra=1, operand=0)
+          [1] OPCODE_6 (extra=2)
+          [2] ADD_INT (extra=3, operand1=1, operand2=2)
+          [3] FUNCTION_RETURN (extra=1, operand1=3, operand2=0)
+
+
+  [1] FUNCTION:
+    NAME: lambdaScore
+    START_LINE: 41
+    END_LINE: 56
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 14
+
+    CONSTANTS (10):
+      [0] int: 4
+      [1] null
+      [2] function
+      [3] int: 3
+      [4] int: 5
+      [5] string: "Pair"
+      [6] int: 1
+      [7] int: 2
+      [8] string: "Counter"
+      [9] int: 8
+
+    LOCAL_VARIABLES (6):
+      [0] captured: offset_activate=2, offset_dead=53
+      [1] direct: offset_activate=6, offset_dead=53
+      [2] escaped: offset_activate=10, offset_dead=53
+      [3] pair: offset_activate=19, offset_dead=53
+      [4] mode: offset_activate=23, offset_dead=53
+      [5] counter: offset_activate=30, offset_dead=53
+
+    CLOSURE_VARIABLES (1):
+      [0] makeEscaping: in_stack=true, index=0, type=NULL
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (6):
+        [0] captured: int
+        [1] direct: object
+        [2] escaped: object
+        [3] pair: Pair
+        [4] mode: Mode
+        [5] counter: Counter
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (5):
+      [0] object
+      [1] int
+      [2] Pair
+      [3] Mode
+      [4] Counter
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (2):
+      [0] DYNAMIC_RUNTIME inst=0 from=0 to=0
+      [1] DYNAMIC_RUNTIME inst=1 from=0 to=0
+
+    BLOCK_GRAPH (1):
+      [0] block=0 first=0 count=2
+
+    SEMIR (2):
+      [0] DYN_CALL exec=4 type=0 effect=0 dst=2 op0=2 op1=1 deopt=1
+      [1] DYN_CALL exec=45 type=0 effect=1 dst=10 op0=10 op1=1 deopt=2
+
+    DEOPT_MAP (2):
+      [0] deopt=1 exec=4
+      [1] deopt=2 exec=45
+
+    CALLSITE_CACHE_TABLE (2):
+      [0] kind=DYN_CALL inst=4 member=4294967295 deopt=1 args=1 hits=0 misses=0
+      [1] kind=DYN_CALL inst=45 member=4294967295 deopt=2 args=1 hits=0 misses=0
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (53):
+      [0] GET_CONSTANT (extra=1, operand=0)
+      [1] SET_STACK (extra=0, operand=1)
+      [2] OPCODE_83 (extra=2)
+      [3] GET_CONSTANT (extra=3, operand=3)
+      [4] SUPER_DYN_CALL_CACHED (extra=2, operand1=2, operand2=0)
+      [5] SET_STACK (extra=1, operand=2)
+      [6] OPCODE_6 (extra=3)
+      [7] GET_CONSTANT (extra=4, operand=4)
+      [8] OPCODE_76 (extra=3, operand1=3, operand2=1)
+      [9] SET_STACK (extra=2, operand=3)
+      [10] CREATE_OBJECT (extra=4)
+      [11] OPCODE_23 (extra=4, operand2=327684, operand1=4, operand1_1=5)
+      [12] OPCODE_8 (extra=5, operand1=4, operand2=0)
+      [13] SET_STACK (extra=6, operand=4)
+      [14] GET_CONSTANT (extra=7, operand=6)
+      [15] GET_CONSTANT (extra=8, operand=7)
+      [16] OPCODE_76 (extra=5, operand1=5, operand2=3)
+      [17] SET_STACK (extra=4, operand=6)
+      [18] SET_STACK (extra=3, operand=4)
+      [19] OPCODE_79 (extra=5, operand=0)
+      [20] OPCODE_8 (extra=5, operand1=5, operand2=1)
+      [21] OPCODE_8 (extra=5, operand1=5, operand2=2)
+      [22] SET_STACK (extra=4, operand=5)
+      [23] CREATE_OBJECT (extra=6)
+      [24] OPCODE_24 (extra=6, operand2=524294, operand1=6, operand1_1=8)
+      [25] OPCODE_8 (extra=7, operand1=6, operand2=0)
+      [26] SET_STACK (extra=8, operand=6)
+      [27] GET_CONSTANT (extra=9, operand=9)
+      [28] OPCODE_76 (extra=7, operand1=7, operand2=2)
+      [29] SET_STACK (extra=5, operand=6)
+      [30] GET_STACK (extra=6, operand=4)
+      [31] OPCODE_79 (extra=7, operand=0)
+      [32] OPCODE_8 (extra=7, operand1=7, operand2=1)
+      [33] OPCODE_8 (extra=7, operand1=7, operand2=2)
+      [34] OPCODE_62 (extra=8, operand1=6, operand2=7)
+      [35] OPCODE_82 (extra=8, operand=5)
+      [36] GET_STACK (extra=9, operand=1)
+      [37] GET_CONSTANT (extra=10, operand=6)
+      [38] OPCODE_25 (extra=11, operand2=655369, operand1=9, operand1_1=10)
+      [39] SET_STACK (extra=1, operand=11)
+      [40] OPCODE_81 (extra=0, operand=0)
+      [41] GET_STACK (extra=9, operand=1)
+      [42] GET_STACK (extra=10, operand=2)
+      [43] GET_STACK (extra=11, operand=3)
+      [44] OPCODE_8 (extra=11, operand1=11, operand2=3)
+      [45] SUPER_DYN_CALL_CACHED (extra=10, operand1=10, operand2=1)
+      [46] OPCODE_25 (extra=11, operand2=655369, operand1=9, operand1_1=10)
+      [47] GET_STACK (extra=12, operand=5)
+      [48] SET_STACK (extra=13, operand=12)
+      [49] OPCODE_8 (extra=12, operand1=12, operand2=4)
+      [50] OPCODE_76 (extra=12, operand1=12, operand2=1)
+      [51] OPCODE_25 (extra=13, operand2=786443, operand1=11, operand1_1=12)
+      [52] FUNCTION_RETURN (extra=1, operand1=13, operand2=0)
+
+    CHILD_FUNCTIONS (1):
+      [0] FUNCTION:
+        NAME: <anonymous>
+        START_LINE: 43
+        END_LINE: 45
+        PARAMETERS: 1
+        HAS_VAR_ARGS: false
+        STACK_SIZE: 4
+
+        CONSTANTS (0):
+
+        LOCAL_VARIABLES (1):
+          [0] delta: offset_activate=0, offset_dead=4
+
+        CLOSURE_VARIABLES (1):
+          [0] captured: in_stack=true, index=0, type=NULL
+
+        TYPE_METADATA:
+          LOCAL_BINDINGS (1):
+            [0] delta: int
+          EXPORTED_SYMBOLS (0):
+          STATIC_IMPORTS (0):
+          MODULE_ENTRY_EFFECTS (0):
+          EXPORTED_CALLABLE_SUMMARIES (0):
+          TOP_LEVEL_CALLABLE_BINDINGS (0):
+          COMPILE_TIME_VARIABLES (0):
+          COMPILE_TIME_FUNCTIONS (0):
+          TESTS (0):
+
+        TYPE_TABLE (0):
+
+        OWNERSHIP_TABLE (0):
+
+        EFFECT_TABLE (0):
+
+        BLOCK_GRAPH (0):
+
+        SEMIR (0):
+
+        DEOPT_MAP (0):
+
+        CALLSITE_CACHE_TABLE (0):
+
+        EH_TABLE (0):
+
+        INSTRUCTIONS (4):
+          [0] OPCODE_6 (extra=1)
+          [1] GET_STACK (extra=2, operand=0)
+          [2] ADD_INT (extra=3, operand1=1, operand2=2)
+          [3] FUNCTION_RETURN (extra=1, operand1=3, operand2=0)
+
+
+

@@ -4,6 +4,9 @@
 
 #include "module_internal.h"
 
+#include <stdio.h>
+#include <string.h>
+
 struct SZrObjectModule *ZrCore_Module_Create(SZrState *state) {
     SZrObject *object;
     struct SZrObjectModule *module;

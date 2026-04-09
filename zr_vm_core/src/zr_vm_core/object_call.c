@@ -12,6 +12,13 @@
 #include "zr_vm_core/state.h"
 #include <string.h>
 
+/*
+ * Object-call scratch setup is internal runtime machinery; avoid helper-profile
+ * bookkeeping for its repeated value copies and null initialization.
+ */
+#define ZrCore_Value_Copy ZrCore_Value_CopyNoProfile
+#define ZrCore_Value_ResetAsNull ZrCore_Value_ResetAsNullNoProfile
+
 static TZrStackValuePointer object_resolve_call_scratch_base(TZrStackValuePointer stackTop,
                                                              const SZrCallInfo *callInfo) {
     TZrStackValuePointer base = stackTop;

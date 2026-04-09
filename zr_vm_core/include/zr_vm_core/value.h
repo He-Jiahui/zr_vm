@@ -6,6 +6,7 @@
 #define ZR_VM_CORE_VALUE_H
 
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/profile.h"
 #include "zr_vm_core/raw_object.h"
 
 struct SZrState;
@@ -82,38 +83,67 @@ ZR_CORE_API void ZrCore_Value_CopySlow(struct SZrState *state,
                                        SZrTypeValue *destination,
                                        const SZrTypeValue *source);
 
-static ZR_FORCE_INLINE TZrBool ZrCore_Value_CanFastCopyPrimitive(const SZrTypeValue *destination,
-                                                                 const SZrTypeValue *source) {
-    ZR_ASSERT(destination != ZR_NULL);
-    ZR_ASSERT(source != ZR_NULL);
-    ZR_ASSERT(source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
-              (source->ownershipControl == ZR_NULL && source->ownershipWeakRef == ZR_NULL));
-    ZR_ASSERT(destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
-              (destination->ownershipControl == ZR_NULL && destination->ownershipWeakRef == ZR_NULL));
-
-    return destination != source && !source->isGarbageCollectable &&
-           source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
-           source->ownershipControl == ZR_NULL &&
-           source->ownershipWeakRef == ZR_NULL &&
-           destination->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
-           destination->ownershipControl == ZR_NULL &&
-           destination->ownershipWeakRef == ZR_NULL;
+static ZR_FORCE_INLINE void ZrCore_Value_ResetAsNullNoProfile(SZrTypeValue *value) {
+    ZR_ASSERT(value != ZR_NULL);
+    value->type = ZR_VALUE_TYPE_NULL;
+    value->value.nativeObject.nativeUInt64 = 0;
+    value->isGarbageCollectable = ZR_FALSE;
+    value->isNative = ZR_TRUE;
+    value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+    value->ownershipControl = ZR_NULL;
+    value->ownershipWeakRef = ZR_NULL;
 }
 
-static ZR_FORCE_INLINE void ZrCore_Value_CopyPrimitiveUnchecked(SZrTypeValue *destination,
-                                                                const SZrTypeValue *source) {
-    *destination = *source;
+static ZR_FORCE_INLINE void ZrCore_Value_CopyNoProfile(struct SZrState *state,
+                                                       SZrTypeValue *destination,
+                                                       const SZrTypeValue *source);
+
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_HasNormalizedNoOwnership(const SZrTypeValue *value) {
+    ZR_ASSERT(value != ZR_NULL);
+    ZR_ASSERT(value->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+              (value->ownershipControl == ZR_NULL && value->ownershipWeakRef == ZR_NULL));
+    return value->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE;
+}
+
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_CanFastCopyPlainValue(const SZrTypeValue *destination,
+                                                                  const SZrTypeValue *source) {
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(source != ZR_NULL);
+    return ZrCore_Value_HasNormalizedNoOwnership(source) &&
+           ZrCore_Value_HasNormalizedNoOwnership(destination) &&
+           (!source->isGarbageCollectable || source->type != ZR_VALUE_TYPE_OBJECT);
+}
+
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_TryCopyFastNoProfile(struct SZrState *state,
+                                                                 SZrTypeValue *destination,
+                                                                 const SZrTypeValue *source) {
+    ZR_UNUSED_PARAMETER(state);
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(source != ZR_NULL);
+
+    if (destination == source) {
+        return ZR_TRUE;
+    }
+
+    if (ZR_LIKELY(ZrCore_Value_CanFastCopyPlainValue(destination, source))) {
+        *destination = *source;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
 }
 
 static ZR_FORCE_INLINE void ZrCore_Value_Copy(struct SZrState *state,
                                               SZrTypeValue *destination,
                                               const SZrTypeValue *source) {
-    if (ZR_LIKELY(ZrCore_Value_CanFastCopyPrimitive(destination, source))) {
-        ZrCore_Value_CopyPrimitiveUnchecked(destination, source);
-        return;
-    }
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_COPY);
+    ZrCore_Value_CopyNoProfile(state, destination, source);
+}
 
-    if (destination == source) {
+static ZR_FORCE_INLINE void ZrCore_Value_CopyNoProfile(struct SZrState *state,
+                                                       SZrTypeValue *destination,
+                                                       const SZrTypeValue *source) {
+    if (ZR_LIKELY(ZrCore_Value_TryCopyFastNoProfile(state, destination, source))) {
         return;
     }
 

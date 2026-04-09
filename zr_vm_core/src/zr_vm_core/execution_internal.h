@@ -23,6 +23,7 @@
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/ownership.h"
+#include "zr_vm_core/profile.h"
 #include "zr_vm_core/reflection.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
@@ -75,6 +76,18 @@ TZrBool try_builtin_add(SZrState *state,
                         SZrTypeValue *outResult,
                         const SZrTypeValue *opA,
                         const SZrTypeValue *opB);
+TZrBool execution_try_builtin_sub(SZrState *state,
+                                  SZrTypeValue *outResult,
+                                  const SZrTypeValue *opA,
+                                  const SZrTypeValue *opB);
+TZrBool execution_try_builtin_mul(SZrState *state,
+                                  SZrTypeValue *outResult,
+                                  const SZrTypeValue *opA,
+                                  const SZrTypeValue *opB);
+TZrBool execution_try_builtin_div(SZrState *state,
+                                  SZrTypeValue *outResult,
+                                  const SZrTypeValue *opA,
+                                  const SZrTypeValue *opB);
 
 void execution_apply_binary_numeric_float_or_raise(SZrState *state,
                                                    EZrExecutionNumericFallbackOp operation,

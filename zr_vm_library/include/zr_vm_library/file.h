@@ -40,6 +40,7 @@ typedef enum EZrLibrary_File_Mode EZrLibrary_File_Mode;
 struct ZR_STRUCT_ALIGN SZrLibrary_File_Reader {
     TZrSize size;
     TZrLibrary_File_Ptr file;
+    TZrChar normalizedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar buffer[ZR_LIBRARY_FILE_BUFFER_SIZE];
 };
 

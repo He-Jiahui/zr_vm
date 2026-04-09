@@ -669,6 +669,23 @@ static TZrBool zr_container_array_ensure_capacity(SZrState *state, SZrObject *ar
     return zr_container_set_int_field_fast(state, arrayObject, "capacity", capacity);
 }
 
+static TZrBool zr_container_array_prepare_backing_storage(SZrState *state,
+                                                          SZrObject *itemsObject,
+                                                          TZrSize requiredCapacity) {
+    if (state == ZR_NULL || itemsObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (requiredCapacity == 0) {
+        return ZR_TRUE;
+    }
+
+    if (!ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacity(state, &itemsObject->nodeMap, requiredCapacity)) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_HashSet_EnsurePairPoolForElementCount(state, &itemsObject->nodeMap, requiredCapacity);
+}
+
 static SZrObject *zr_container_iterator_make(SZrState *state,
                                              SZrObject *source,
                                              EZrValueType sourceType,
@@ -913,6 +930,9 @@ static TZrBool zr_container_array_constructor(ZrLibCallContext *context, SZrType
 
     items = ZrLib_Array_New(context->state);
     if (items == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!zr_container_array_prepare_backing_storage(context->state, items, capacity > 0 ? (TZrSize)capacity : 0)) {
         return ZR_FALSE;
     }
 

@@ -36,6 +36,11 @@ typedef struct {
     TZrUInt32 lines[8];
 } SZrAotDebugHookCapture;
 
+typedef struct {
+    const char *opcodeName;
+    const char *runtimeHelperName;
+} SZrAotSourceSyncExpectation;
+
 static SZrAotDebugHookCapture g_aotDebugHookCapture;
 
 static void aot_debug_hook_capture_reset(void) {
@@ -70,6 +75,8 @@ static SZrFunction *compile_cached_meta_and_dynamic_callsite_fixture(SZrState *s
 static SZrFunction *compile_fixed_array_helper_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_container_matrix_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_array_int_index_quickening_fixture(SZrState *state);
+static SZrFunction *compile_array_int_add_burst_fixture(SZrState *state);
+static SZrFunction *compile_array_int_fill_loop_fixture(SZrState *state);
 static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state);
@@ -173,6 +180,99 @@ static TZrBool aot_llvm_text_contains_unsupported_opcode(const char *text, TZrUI
     return ZR_FALSE;
 }
 
+static TZrBool aot_c_text_contains_unsupported_opcode(const char *text, TZrUInt32 opcode) {
+    const char *unsupportedPrefix = "return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state,";
+    const char *cursor = text;
+    char opcodeSuffix[32];
+
+    if (text == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    snprintf(opcodeSuffix, sizeof(opcodeSuffix), ", %u);", (unsigned)opcode);
+    while ((cursor = strstr(cursor, unsupportedPrefix)) != ZR_NULL) {
+        const char *lineEnd = strchr(cursor, '\n');
+        const char *suffix = strstr(cursor, opcodeSuffix);
+        if (suffix != ZR_NULL && (lineEnd == ZR_NULL || suffix < lineEnd)) {
+            return ZR_TRUE;
+        }
+        cursor += strlen(unsupportedPrefix);
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrInstruction make_instruction_no_operands(EZrInstructionCode opcode, TZrUInt16 operandExtra) {
+    TZrInstruction instruction;
+
+    memset(&instruction, 0, sizeof(instruction));
+    instruction.instruction.operationCode = (TZrUInt16)opcode;
+    instruction.instruction.operandExtra = operandExtra;
+    return instruction;
+}
+
+static TZrInstruction make_instruction_constant_operand(EZrInstructionCode opcode,
+                                                        TZrUInt16 operandExtra,
+                                                        TZrInt32 operandA2) {
+    TZrInstruction instruction = make_instruction_no_operands(opcode, operandExtra);
+
+    instruction.instruction.operand.operand2[0] = operandA2;
+    return instruction;
+}
+
+static TZrInstruction make_instruction_slot_operands(EZrInstructionCode opcode,
+                                                     TZrUInt16 operandExtra,
+                                                     TZrUInt16 operandA1,
+                                                     TZrUInt16 operandB1) {
+    TZrInstruction instruction = make_instruction_no_operands(opcode, operandExtra);
+
+    instruction.instruction.operand.operand1[0] = operandA1;
+    instruction.instruction.operand.operand1[1] = operandB1;
+    return instruction;
+}
+
+static TZrInstruction make_instruction_return(TZrUInt16 sourceSlot) {
+    return make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 0, sourceSlot, 0);
+}
+
+static void init_manual_test_function(SZrFunction *function,
+                                      TZrInstruction *instructions,
+                                      TZrUInt32 instructionCount,
+                                      SZrTypeValue *constants,
+                                      TZrUInt32 constantCount,
+                                      SZrFunction *childFunctions,
+                                      TZrUInt32 childFunctionCount,
+                                      TZrUInt32 stackSize) {
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(function, 0, sizeof(*function));
+    function->instructionsList = instructions;
+    function->instructionsLength = instructionCount;
+    function->constantValueList = constants;
+    function->constantValueLength = constantCount;
+    function->childFunctionList = childFunctions;
+    function->childFunctionLength = childFunctionCount;
+    function->stackSize = stackSize;
+    function->lineInSourceStart = 1;
+    function->lineInSourceEnd = 1;
+}
+
+static void assert_generated_aot_texts_do_not_report_unsupported_opcodes(const char *cText,
+                                                                         const char *llvmText,
+                                                                         const EZrInstructionCode *opcodes,
+                                                                         TZrSize opcodeCount) {
+    TZrSize index;
+
+    TEST_ASSERT_NOT_NULL(cText);
+    TEST_ASSERT_NOT_NULL(llvmText);
+    TEST_ASSERT_NOT_NULL(opcodes);
+
+    for (index = 0; index < opcodeCount; index++) {
+        TEST_ASSERT_FALSE(aot_c_text_contains_unsupported_opcode(cText, (TZrUInt32)opcodes[index]));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, (TZrUInt32)opcodes[index]));
+    }
+}
+
 static char *read_reference_file(const char *relativePath, size_t *outSize) {
     return ZrTests_Reference_ReadFixture(relativePath, outSize);
 }
@@ -186,6 +286,72 @@ static char *read_repo_file_owned(const char *repoRelativePath) {
 
     snprintf(pathBuffer, sizeof(pathBuffer), "%s/../%s", ZR_VM_TESTS_SOURCE_DIR, repoRelativePath);
     return read_text_file_owned(pathBuffer);
+}
+
+static TZrUInt32 count_substring_occurrences(const char *text, const char *needle) {
+    TZrUInt32 count = 0;
+    const char *cursor;
+    size_t needleLength;
+
+    if (text == ZR_NULL || needle == ZR_NULL || needle[0] == '\0') {
+        return 0;
+    }
+
+    needleLength = strlen(needle);
+    cursor = text;
+    while ((cursor = strstr(cursor, needle)) != ZR_NULL) {
+        count++;
+        cursor += needleLength;
+    }
+
+    return count;
+}
+
+static char *join_repo_files_owned(const char *const *repoRelativePaths, TZrSize pathCount) {
+    TZrSize index;
+    size_t totalLength = 1;
+    char *joinedText;
+    char *writeCursor;
+
+    if (repoRelativePaths == ZR_NULL || pathCount == 0) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < pathCount; index++) {
+        char *fileText = read_repo_file_owned(repoRelativePaths[index]);
+
+        if (fileText == ZR_NULL) {
+            free(fileText);
+            return ZR_NULL;
+        }
+        totalLength += strlen(fileText) + 1;
+        free(fileText);
+    }
+
+    joinedText = (char *)malloc(totalLength);
+    if (joinedText == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    writeCursor = joinedText;
+    for (index = 0; index < pathCount; index++) {
+        char *fileText = read_repo_file_owned(repoRelativePaths[index]);
+        size_t fileLength;
+
+        if (fileText == ZR_NULL) {
+            free(joinedText);
+            return ZR_NULL;
+        }
+
+        fileLength = strlen(fileText);
+        memcpy(writeCursor, fileText, fileLength);
+        writeCursor += fileLength;
+        *writeCursor++ = '\n';
+        free(fileText);
+    }
+
+    *writeCursor = '\0';
+    return joinedText;
 }
 
 static TZrByte *read_binary_file_owned(const TZrChar *path, TZrSize *outLength) {
@@ -5393,6 +5559,86 @@ static SZrFunction *compile_array_int_index_quickening_fixture(SZrState *state) 
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+static SZrFunction *compile_array_int_add_burst_fixture(SZrState *state) {
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var a = new container.Array<int>();\n"
+            "var b = new container.Array<int>();\n"
+            "var c = new container.Array<int>();\n"
+            "var d = new container.Array<int>();\n"
+            "a.add(0);\n"
+            "b.add(0);\n"
+            "c.add(0);\n"
+            "d.add(0);\n"
+            "a[0] = 10;\n"
+            "b[0] = 20;\n"
+            "c[0] = 30;\n"
+            "d[0] = 40;\n"
+            "return a[0] + b[0] + c[0] + d[0];\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (state->global == ZR_NULL || !ZrVmLibContainer_Register(state->global) || !ZrVmLibMath_Register(state->global) ||
+        !ZrVmLibSystem_Register(state->global) || !ZrVmLibFfi_Register(state->global)) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "array_int_add_burst_fixture.zr",
+                                      strlen("array_int_add_burst_fixture.zr"));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_array_int_fill_loop_fixture(SZrState *state) {
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var a = new container.Array<int>();\n"
+            "var b = new container.Array<int>();\n"
+            "var c = new container.Array<int>();\n"
+            "var d = new container.Array<int>();\n"
+            "var count = 6;\n"
+            "var index = 0;\n"
+            "while (index <= count - 1) {\n"
+            "    a.add(0);\n"
+            "    b.add(0);\n"
+            "    c.add(0);\n"
+            "    d.add(0);\n"
+            "    index = index + 1;\n"
+            "}\n"
+            "index = 0;\n"
+            "a[0] = 1;\n"
+            "b[5] = 2;\n"
+            "c[3] = 4;\n"
+            "d[2] = 8;\n"
+            "return a.length + b.length + c.length + d.length + a[0] + b[5] + c[3] + d[2];\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (state->global == ZR_NULL || !ZrVmLibContainer_Register(state->global) || !ZrVmLibMath_Register(state->global) ||
+        !ZrVmLibSystem_Register(state->global) || !ZrVmLibFfi_Register(state->global)) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "array_int_fill_loop_fixture.zr",
+                                      strlen("array_int_fill_loop_fixture.zr"));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
 static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state) {
     const char *source =
             "var container = %import(\"zr.container\");\n"
@@ -6238,6 +6484,202 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
     ZR_TEST_DIVIDER();
 }
 
+static void test_execbc_quickens_array_int_add_bursts_to_dedicated_dispatch_opcode(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "ExecBC Quickens Consecutive Array Int Adds To Burst Opcode And AOT Lowers The Helper";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("array int add burst quickening",
+                 "Testing that four consecutive container.Array<int>.add(value) sites sharing one payload quicken into SUPER_ARRAY_ADD_INT4 and that binary plus AOT outputs preserve the burst helper");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *intermediatePath = "array_int_add_burst_test.zri";
+        const char *cPath = "array_int_add_burst_test.c";
+        const char *llvmPath = "array_int_add_burst_test.ll";
+        const char *binaryPath = "array_int_add_burst_test.zro";
+        SZrFunction *function;
+        char *intermediateText;
+        char *cText;
+        char *llvmText;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_array_int_add_burst_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4)) ||
+                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4_CONST)));
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFile(state, function, cPath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFile(state, function, llvmPath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+
+        intermediateText = read_text_file_owned(intermediatePath);
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_ARRAY_ADD_INT4"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SuperArrayAddInt4"));
+        TEST_ASSERT_TRUE(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArrayAddInt4(") != ZR_NULL ||
+                         strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArrayAddInt4Const(") != ZR_NULL);
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText,
+                                                                    ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4_CONST)));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(100, result);
+
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4)) ||
+                         function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4_CONST)));
+
+        result = 0;
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(100, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        free(intermediateText);
+        free(cText);
+        free(llvmText);
+        remove(intermediatePath);
+        remove(cPath);
+        remove(llvmPath);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_execbc_quickens_array_int_fill_loops_to_bulk_dispatch_opcode(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "ExecBC Quickens Array Int Fill Loops To Bulk Opcode And AOT Lowers The Helper";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("array int fill loop quickening",
+                 "Testing that counted loops which append the same int constant into four container.Array<int> values quicken into SUPER_ARRAY_FILL_INT4_CONST and that binary plus AOT outputs preserve the bulk helper");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *intermediatePath = "array_int_fill_loop_test.zri";
+        const char *cPath = "array_int_fill_loop_test.c";
+        const char *llvmPath = "array_int_fill_loop_test.ll";
+        const char *binaryPath = "array_int_fill_loop_test.zro";
+        SZrFunction *function;
+        char *intermediateText;
+        char *cText;
+        char *llvmText;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_array_int_fill_loop_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_FILL_INT4_CONST)));
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotCFile(state, function, cPath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteAotLlvmFile(state, function, llvmPath));
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+
+        intermediateText = read_text_file_owned(intermediatePath);
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_ARRAY_FILL_INT4_CONST"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SuperArrayFillInt4Const"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SuperArrayFillInt4Const("));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText,
+                                                                    ZR_INSTRUCTION_ENUM(SUPER_ARRAY_FILL_INT4_CONST)));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(39, result);
+
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_FILL_INT4_CONST)));
+
+        result = 0;
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(39, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        free(intermediateText);
+        free(cText);
+        free(llvmText);
+        remove(intermediatePath);
+        remove(cPath);
+        remove(llvmPath);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
 static void test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicated_opcodes(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "Ownership Borrow Loan Detach Upgrade Release SemIR And True AOT C Preserve Dedicated Opcodes";
@@ -6387,6 +6829,399 @@ static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(voi
     ZR_TEST_DIVIDER();
 }
 
+static void test_aot_backends_lower_manual_extended_numeric_opcode_fixture(void) {
+    static const EZrInstructionCode coveredOpcodes[] = {
+            ZR_INSTRUCTION_ENUM(TO_BOOL),
+            ZR_INSTRUCTION_ENUM(TO_UINT),
+            ZR_INSTRUCTION_ENUM(TO_FLOAT),
+            ZR_INSTRUCTION_ENUM(ADD_INT_CONST),
+            ZR_INSTRUCTION_ENUM(ADD_FLOAT),
+            ZR_INSTRUCTION_ENUM(SUB_INT_CONST),
+            ZR_INSTRUCTION_ENUM(SUB_FLOAT),
+            ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST),
+            ZR_INSTRUCTION_ENUM(MUL_UNSIGNED),
+            ZR_INSTRUCTION_ENUM(MUL_FLOAT),
+            ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST),
+            ZR_INSTRUCTION_ENUM(DIV_UNSIGNED),
+            ZR_INSTRUCTION_ENUM(DIV_FLOAT),
+            ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST),
+            ZR_INSTRUCTION_ENUM(MOD_UNSIGNED),
+            ZR_INSTRUCTION_ENUM(MOD_FLOAT),
+            ZR_INSTRUCTION_ENUM(POW),
+            ZR_INSTRUCTION_ENUM(POW_SIGNED),
+            ZR_INSTRUCTION_ENUM(POW_UNSIGNED),
+            ZR_INSTRUCTION_ENUM(POW_FLOAT),
+            ZR_INSTRUCTION_ENUM(SHIFT_LEFT),
+            ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT),
+            ZR_INSTRUCTION_ENUM(SHIFT_RIGHT),
+            ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT),
+            ZR_INSTRUCTION_ENUM(LOGICAL_NOT),
+            ZR_INSTRUCTION_ENUM(LOGICAL_AND),
+            ZR_INSTRUCTION_ENUM(LOGICAL_OR),
+            ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED),
+            ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT),
+            ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED),
+            ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT),
+            ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED),
+            ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT),
+            ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED),
+            ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT),
+            ZR_INSTRUCTION_ENUM(BITWISE_NOT),
+            ZR_INSTRUCTION_ENUM(BITWISE_AND),
+            ZR_INSTRUCTION_ENUM(BITWISE_OR),
+            ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT),
+            ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT)};
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Backends Lower Manual Extended Numeric Opcode Fixture";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot extended numeric lowering",
+                 "Testing that strict AOT C and LLVM both lower the expanded numeric, conversion, logical, and bitwise opcode families from a manual function fixture without reporting unsupported instructions");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrFunction function;
+        SZrTypeValue constants[4];
+        TZrInstruction instructions[45];
+        const char *cPath = "execbc_aot_manual_extended_numeric_fixture.c";
+        const char *llvmPath = "execbc_aot_manual_extended_numeric_fixture.ll";
+        char *cText;
+        char *llvmText;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        ZrCore_Value_InitAsInt(state, &constants[0], 9);
+        ZrCore_Value_InitAsInt(state, &constants[1], 4);
+        ZrCore_Value_InitAsFloat(state, &constants[2], 2.5);
+        ZrCore_Value_InitAsFloat(state, &constants[3], 1.5);
+
+        instructions[0] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[3] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 3);
+        instructions[4] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(TO_BOOL), 4, 0, 0);
+        instructions[5] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(TO_UINT), 5, 0, 0);
+        instructions[6] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(TO_FLOAT), 6, 0, 0);
+        instructions[7] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(ADD_FLOAT), 7, 2, 3);
+        instructions[8] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(SUB_FLOAT), 8, 2, 3);
+        instructions[9] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(MUL_UNSIGNED), 9, 0, 1);
+        instructions[10] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(MUL_FLOAT), 10, 2, 3);
+        instructions[11] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(DIV_UNSIGNED), 11, 0, 1);
+        instructions[12] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(DIV_FLOAT), 12, 2, 3);
+        instructions[13] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(MOD_UNSIGNED), 13, 0, 1);
+        instructions[14] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(MOD_FLOAT), 14, 2, 3);
+        instructions[15] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(POW), 15, 0, 1);
+        instructions[16] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(POW_SIGNED), 16, 0, 1);
+        instructions[17] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(POW_UNSIGNED), 17, 0, 1);
+        instructions[18] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(POW_FLOAT), 18, 2, 3);
+        instructions[19] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(SHIFT_LEFT), 19, 0, 1);
+        instructions[20] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT), 20, 0, 1);
+        instructions[21] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(SHIFT_RIGHT), 21, 0, 1);
+        instructions[22] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT), 22, 0, 1);
+        instructions[23] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_NOT), 23, 4, 0);
+        instructions[24] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_AND), 24, 4, 4);
+        instructions[25] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_OR), 25, 4, 4);
+        instructions[26] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED), 26, 0, 1);
+        instructions[27] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT), 27, 2, 3);
+        instructions[28] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED), 28, 0, 1);
+        instructions[29] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT), 29, 2, 3);
+        instructions[30] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED), 30, 0, 1);
+        instructions[31] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT), 31, 2, 3);
+        instructions[32] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED), 32, 0, 1);
+        instructions[33] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT), 33, 2, 3);
+        instructions[34] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(BITWISE_NOT), 34, 0, 0);
+        instructions[35] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(BITWISE_AND), 35, 0, 1);
+        instructions[36] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(BITWISE_OR), 36, 0, 1);
+        instructions[37] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT), 37, 0, 1);
+        instructions[38] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT), 38, 0, 1);
+        instructions[39] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(ADD_INT_CONST), 39, 0, 1);
+        instructions[40] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(SUB_INT_CONST), 40, 0, 1);
+        instructions[41] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST), 41, 0, 1);
+        instructions[42] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST), 42, 0, 1);
+        instructions[43] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST), 43, 0, 1);
+        instructions[44] = make_instruction_return(43);
+        init_manual_test_function(&function,
+                                  instructions,
+                                  (TZrUInt32)(sizeof(instructions) / sizeof(instructions[0])),
+                                  constants,
+                                  (TZrUInt32)(sizeof(constants) / sizeof(constants[0])),
+                                  ZR_NULL,
+                                  0,
+                                  44);
+
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            &function,
+                                                            "execbc_aot_manual_extended_numeric_fixture",
+                                                            cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               &function,
+                                                               "execbc_aot_manual_extended_numeric_fixture",
+                                                               llvmPath));
+
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+        TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ToBool"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ToUInt"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ToFloat"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_AddIntConst"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_AddFloat"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SubIntConst"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MulSignedConst"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_DivSignedConst"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_ModSignedConst"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PowFloat"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_LogicalOr"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BitwiseShiftRight"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_ToBool("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_ToUInt("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddIntConst("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddFloat("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SubIntConst("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_MulSignedConst("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_DivSignedConst("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_ModSignedConst("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_PowFloat("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_LogicalOr("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_BitwiseShiftRight("));
+        assert_generated_aot_texts_do_not_report_unsupported_opcodes(cText,
+                                                                      llvmText,
+                                                                      coveredOpcodes,
+                                                                      sizeof(coveredOpcodes) /
+                                                                              sizeof(coveredOpcodes[0]));
+
+        free(cText);
+        free(llvmText);
+        remove(cPath);
+        remove(llvmPath);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_backends_lower_manual_state_and_scope_opcode_fixture(void) {
+    static const EZrInstructionCode coveredOpcodes[] = {
+            ZR_INSTRUCTION_ENUM(SET_CONSTANT),
+            ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION),
+            ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED),
+            ZR_INSTRUCTION_ENUM(CLOSE_SCOPE)};
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Backends Lower Manual State And Scope Opcode Fixture";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot state and scope lowering",
+                 "Testing that strict AOT C and LLVM both lower SET_CONSTANT, GET_SUB_FUNCTION, and using-scope cleanup opcodes from a manual function tree, including static direct-call provenance from GET_SUB_FUNCTION");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrFunction rootFunction;
+        SZrFunction childFunctions[1];
+        SZrTypeValue rootConstants[2];
+        SZrTypeValue childConstants[1];
+        TZrInstruction rootInstructions[7];
+        TZrInstruction childInstructions[2];
+        const char *cPath = "execbc_aot_manual_state_scope_fixture.c";
+        const char *llvmPath = "execbc_aot_manual_state_scope_fixture.ll";
+        char *cText;
+        char *llvmText;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        ZrCore_Value_InitAsInt(state, &rootConstants[0], 5);
+        ZrCore_Value_InitAsInt(state, &rootConstants[1], 0);
+        ZrCore_Value_InitAsInt(state, &childConstants[0], 42);
+
+        childInstructions[0] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        childInstructions[1] = make_instruction_return(0);
+        init_manual_test_function(&childFunctions[0], childInstructions, 2, childConstants, 1, ZR_NULL, 0, 1);
+
+        rootInstructions[0] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        rootInstructions[1] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(SET_CONSTANT), 0, 1);
+        rootInstructions[2] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION), 1, 0, 0);
+        rootInstructions[3] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 2, 1, 0);
+        rootInstructions[4] = make_instruction_no_operands(ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED), 0);
+        rootInstructions[5] = make_instruction_no_operands(ZR_INSTRUCTION_ENUM(CLOSE_SCOPE), 1);
+        rootInstructions[6] = make_instruction_return(2);
+        init_manual_test_function(&rootFunction,
+                                  rootInstructions,
+                                  (TZrUInt32)(sizeof(rootInstructions) / sizeof(rootInstructions[0])),
+                                  rootConstants,
+                                  (TZrUInt32)(sizeof(rootConstants) / sizeof(rootConstants[0])),
+                                  childFunctions,
+                                  (TZrUInt32)(sizeof(childFunctions) / sizeof(childFunctions[0])),
+                                  3);
+
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            &rootFunction,
+                                                            "execbc_aot_manual_state_scope_fixture",
+                                                            cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               &rootFunction,
+                                                               "execbc_aot_manual_state_scope_fixture",
+                                                               llvmPath));
+
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+        TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SetConstant"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_GetSubFunction"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MarkToBeClosed"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CloseScope"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_AOT_C_GUARD(zr_aot_fn_1(state));"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SetConstant("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_GetSubFunction("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_MarkToBeClosed("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CloseScope("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_PrepareStaticDirectCall("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i64 @zr_aot_fn_1(ptr %state)"));
+        assert_generated_aot_texts_do_not_report_unsupported_opcodes(cText,
+                                                                      llvmText,
+                                                                      coveredOpcodes,
+                                                                      sizeof(coveredOpcodes) /
+                                                                              sizeof(coveredOpcodes[0]));
+
+        free(cText);
+        free(llvmText);
+        remove(cPath);
+        remove(llvmPath);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_source_sync_keeps_extended_opcode_surfaces_aligned(void) {
+    static const SZrAotSourceSyncExpectation expectations[] = {
+            {"SET_CONSTANT", "ZrLibrary_AotRuntime_SetConstant"},
+            {"GET_SUB_FUNCTION", "ZrLibrary_AotRuntime_GetSubFunction"},
+            {"TO_BOOL", "ZrLibrary_AotRuntime_ToBool"},
+            {"TO_UINT", "ZrLibrary_AotRuntime_ToUInt"},
+            {"TO_FLOAT", "ZrLibrary_AotRuntime_ToFloat"},
+            {"ADD_INT_CONST", "ZrLibrary_AotRuntime_AddIntConst"},
+            {"ADD_FLOAT", "ZrLibrary_AotRuntime_AddFloat"},
+            {"SUB_INT_CONST", "ZrLibrary_AotRuntime_SubIntConst"},
+            {"SUB_FLOAT", "ZrLibrary_AotRuntime_SubFloat"},
+            {"MUL_SIGNED_CONST", "ZrLibrary_AotRuntime_MulSignedConst"},
+            {"MUL_UNSIGNED", "ZrLibrary_AotRuntime_MulUnsigned"},
+            {"MUL_FLOAT", "ZrLibrary_AotRuntime_MulFloat"},
+            {"DIV_SIGNED_CONST", "ZrLibrary_AotRuntime_DivSignedConst"},
+            {"DIV_UNSIGNED", "ZrLibrary_AotRuntime_DivUnsigned"},
+            {"DIV_FLOAT", "ZrLibrary_AotRuntime_DivFloat"},
+            {"MOD_SIGNED_CONST", "ZrLibrary_AotRuntime_ModSignedConst"},
+            {"MOD_UNSIGNED", "ZrLibrary_AotRuntime_ModUnsigned"},
+            {"MOD_FLOAT", "ZrLibrary_AotRuntime_ModFloat"},
+            {"POW", "ZrLibrary_AotRuntime_Pow"},
+            {"POW_SIGNED", "ZrLibrary_AotRuntime_PowSigned"},
+            {"POW_UNSIGNED", "ZrLibrary_AotRuntime_PowUnsigned"},
+            {"POW_FLOAT", "ZrLibrary_AotRuntime_PowFloat"},
+            {"SHIFT_LEFT", "ZrLibrary_AotRuntime_ShiftLeft"},
+            {"SHIFT_LEFT_INT", "ZrLibrary_AotRuntime_ShiftLeftInt"},
+            {"SHIFT_RIGHT", "ZrLibrary_AotRuntime_ShiftRight"},
+            {"SHIFT_RIGHT_INT", "ZrLibrary_AotRuntime_ShiftRightInt"},
+            {"LOGICAL_NOT", "ZrLibrary_AotRuntime_LogicalNot"},
+            {"LOGICAL_AND", "ZrLibrary_AotRuntime_LogicalAnd"},
+            {"LOGICAL_OR", "ZrLibrary_AotRuntime_LogicalOr"},
+            {"LOGICAL_GREATER_UNSIGNED", "ZrLibrary_AotRuntime_LogicalGreaterUnsigned"},
+            {"LOGICAL_GREATER_FLOAT", "ZrLibrary_AotRuntime_LogicalGreaterFloat"},
+            {"LOGICAL_LESS_UNSIGNED", "ZrLibrary_AotRuntime_LogicalLessUnsigned"},
+            {"LOGICAL_LESS_FLOAT", "ZrLibrary_AotRuntime_LogicalLessFloat"},
+            {"LOGICAL_GREATER_EQUAL_UNSIGNED", "ZrLibrary_AotRuntime_LogicalGreaterEqualUnsigned"},
+            {"LOGICAL_GREATER_EQUAL_FLOAT", "ZrLibrary_AotRuntime_LogicalGreaterEqualFloat"},
+            {"LOGICAL_LESS_EQUAL_UNSIGNED", "ZrLibrary_AotRuntime_LogicalLessEqualUnsigned"},
+            {"LOGICAL_LESS_EQUAL_FLOAT", "ZrLibrary_AotRuntime_LogicalLessEqualFloat"},
+            {"BITWISE_NOT", "ZrLibrary_AotRuntime_BitwiseNot"},
+            {"BITWISE_AND", "ZrLibrary_AotRuntime_BitwiseAnd"},
+            {"BITWISE_OR", "ZrLibrary_AotRuntime_BitwiseOr"},
+            {"BITWISE_SHIFT_LEFT", "ZrLibrary_AotRuntime_BitwiseShiftLeft"},
+            {"BITWISE_SHIFT_RIGHT", "ZrLibrary_AotRuntime_BitwiseShiftRight"},
+            {"MARK_TO_BE_CLOSED", "ZrLibrary_AotRuntime_MarkToBeClosed"},
+            {"CLOSE_SCOPE", "ZrLibrary_AotRuntime_CloseScope"}};
+    static const char *const llvmLoweringPaths[] = {
+            "zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_constants.c",
+            "zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_closures.c",
+            "zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_type_conversions.c",
+            "zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_arithmetic.c",
+            "zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_control.c"};
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Source Sync Keeps Extended Opcode Surfaces Aligned";
+    char *backendSupportText;
+    char *cLoweringText;
+    char *llvmLoweringText;
+    char *llvmPreludeText;
+    char *runtimeHeaderText;
+    char *runtimeSourceText;
+    TZrSize index;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot source sync guard",
+                 "Testing that the expanded opcode sync stays aligned across backend_aot support tables, C lowering, LLVM lowering, and runtime helper declarations so future opcode growth cannot silently strand true AOT behind older source maps");
+
+    backendSupportText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot.c");
+    cLoweringText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_c_function_body.c");
+    llvmLoweringText = join_repo_files_owned(llvmLoweringPaths,
+                                             (TZrSize)(sizeof(llvmLoweringPaths) / sizeof(llvmLoweringPaths[0])));
+    llvmPreludeText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_prelude.c");
+    runtimeHeaderText = read_repo_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
+    runtimeSourceText = read_repo_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
+
+    TEST_ASSERT_NOT_NULL(backendSupportText);
+    TEST_ASSERT_NOT_NULL(cLoweringText);
+    TEST_ASSERT_NOT_NULL(llvmLoweringText);
+    TEST_ASSERT_NOT_NULL(llvmPreludeText);
+    TEST_ASSERT_NOT_NULL(runtimeHeaderText);
+    TEST_ASSERT_NOT_NULL(runtimeSourceText);
+
+    for (index = 0; index < (TZrSize)(sizeof(expectations) / sizeof(expectations[0])); index++) {
+        char opcodeToken[96];
+
+        snprintf(opcodeToken,
+                 sizeof(opcodeToken),
+                 "ZR_INSTRUCTION_ENUM(%s)",
+                 expectations[index].opcodeName);
+        TEST_ASSERT_TRUE_MESSAGE(count_substring_occurrences(backendSupportText, opcodeToken) >= 2, opcodeToken);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cLoweringText, opcodeToken), opcodeToken);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(llvmLoweringText, opcodeToken), opcodeToken);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(llvmPreludeText, expectations[index].runtimeHelperName),
+                                     expectations[index].runtimeHelperName);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(runtimeHeaderText, expectations[index].runtimeHelperName),
+                                     expectations[index].runtimeHelperName);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(runtimeSourceText, expectations[index].runtimeHelperName),
+                                     expectations[index].runtimeHelperName);
+    }
+
+    TEST_ASSERT_NOT_NULL(strstr(cLoweringText, "backend_aot_find_function_table_index"));
+    TEST_ASSERT_NOT_NULL(strstr(llvmLoweringText, "backend_aot_find_function_table_index"));
+
+    free(backendSupportText);
+    free(cLoweringText);
+    free(llvmLoweringText);
+    free(llvmPreludeText);
+    free(runtimeHeaderText);
+    free(runtimeSourceText);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -6462,6 +7297,8 @@ int main(void) {
     RUN_TEST(test_benchmark_string_build_binary_roundtrip_loads_runtime_entry);
     RUN_TEST(test_execbc_quickens_zero_arg_tail_call_sites_without_changing_semir_contracts);
     RUN_TEST(test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_specialized_helpers);
+    RUN_TEST(test_execbc_quickens_array_int_add_bursts_to_dedicated_dispatch_opcode);
+    RUN_TEST(test_execbc_quickens_array_int_fill_loops_to_bulk_dispatch_opcode);
     RUN_TEST(test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_set_opcodes);
     RUN_TEST(test_static_meta_access_quickens_to_static_callsite_cache_variants);
     RUN_TEST(test_super_member_dispatch_uses_direct_base_lookup_for_methods_properties_and_meta_calls);
@@ -6469,5 +7306,8 @@ int main(void) {
     RUN_TEST(test_reference_member_index_fixture_preserves_split_access_artifacts);
     RUN_TEST(test_reference_foreach_fixture_preserves_iter_contract_artifacts);
     RUN_TEST(test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicated_opcodes);
+    RUN_TEST(test_aot_backends_lower_manual_extended_numeric_opcode_fixture);
+    RUN_TEST(test_aot_backends_lower_manual_state_and_scope_opcode_fixture);
+    RUN_TEST(test_aot_source_sync_keeps_extended_opcode_surfaces_aligned);
     return UNITY_END();
 }

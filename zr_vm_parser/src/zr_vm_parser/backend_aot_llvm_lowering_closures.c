@@ -19,6 +19,35 @@ static TZrBool backend_aot_llvm_lower_closure_index_call(const SZrAotLlvmLowerin
     return ZR_TRUE;
 }
 
+static TZrBool backend_aot_llvm_lower_get_sub_function_instruction(const SZrAotLlvmLoweringContext *context,
+                                                                   const SZrAotLlvmInstructionContext *instruction) {
+    TZrUInt32 callableFlatIndex = ZR_AOT_INVALID_FUNCTION_INDEX;
+    TZrChar argsBuffer[256];
+
+    snprintf(argsBuffer,
+             sizeof(argsBuffer),
+             "ptr %%state, ptr %%frame, i32 %u, i32 %u",
+             (unsigned)instruction->destinationSlot,
+             (unsigned)instruction->operandA1);
+    backend_aot_llvm_write_guarded_call_text(context->file,
+                                             context->tempCounter,
+                                             "ZrLibrary_AotRuntime_GetSubFunction",
+                                             argsBuffer,
+                                             instruction->nextLabel,
+                                             context->failLabel);
+    if (context->entry->function->childFunctionList != ZR_NULL &&
+        instruction->operandA1 < context->entry->function->childFunctionLength) {
+        callableFlatIndex =
+                backend_aot_find_function_table_index(context->functionTable,
+                                                      &context->entry->function->childFunctionList[instruction->operandA1]);
+    }
+    backend_aot_set_callable_slot_function_index(context->callableSlotFunctionIndices,
+                                                 context->entry->function,
+                                                 instruction->destinationSlot,
+                                                 callableFlatIndex);
+    return ZR_TRUE;
+}
+
 static TZrBool backend_aot_llvm_lower_create_closure_instruction(const SZrAotLlvmLoweringContext *context,
                                                                  const SZrAotLlvmInstructionContext *instruction) {
     TZrUInt32 callableFlatIndex = ZR_AOT_INVALID_FUNCTION_INDEX;
@@ -85,6 +114,8 @@ TZrBool backend_aot_llvm_lower_closure_value_subfamily(const SZrAotLlvmLoweringC
     switch (instruction->opcode) {
         case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
             return backend_aot_llvm_lower_create_closure_instruction(context, instruction);
+        case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
+            return backend_aot_llvm_lower_get_sub_function_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
             backend_aot_set_callable_slot_function_index(context->callableSlotFunctionIndices,
                                                          context->entry->function,

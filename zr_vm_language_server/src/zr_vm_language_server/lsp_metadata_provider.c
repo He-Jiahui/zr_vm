@@ -1658,7 +1658,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_ResolveImportedMember(SZrLspMetadat
     }
 
     if (binarySource != ZR_NULL) {
-        ZrCore_Io_ReadSourceFree(provider->state->global, binarySource);
+        ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(provider->state->global, binarySource);
     }
 
     if (outResolved->module.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA &&
@@ -2028,7 +2028,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_AppendImportedModuleCompletions(
     }
 
     if (binarySource != ZR_NULL) {
-        ZrCore_Io_ReadSourceFree(provider->state->global, binarySource);
+        ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(provider->state->global, binarySource);
     }
     return result->length > 0;
 }

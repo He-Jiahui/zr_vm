@@ -24,6 +24,19 @@ file(TO_CMAKE_PATH "${NATIVE_BENCHMARK_EXE}" NATIVE_BENCHMARK_EXE)
 file(TO_CMAKE_PATH "${BENCHMARKS_DIR}" BENCHMARKS_DIR)
 file(TO_CMAKE_PATH "${GENERATED_DIR}" GENERATED_DIR)
 
+if (NOT EXISTS "${CLI_EXE}")
+    message(FATAL_ERROR "CLI executable does not exist: ${CLI_EXE}. Build target zr_vm_cli_executable first.")
+endif ()
+if (NOT EXISTS "${PERF_RUNNER_EXE}")
+    message(FATAL_ERROR "Performance runner does not exist: ${PERF_RUNNER_EXE}. Build target zr_vm_perf_runner first.")
+endif ()
+if (NOT EXISTS "${NATIVE_BENCHMARK_EXE}")
+    message(FATAL_ERROR "Native benchmark runner does not exist: ${NATIVE_BENCHMARK_EXE}. Build target zr_vm_native_benchmark_runner first.")
+endif ()
+if (NOT IS_DIRECTORY "${BENCHMARKS_DIR}")
+    message(FATAL_ERROR "Benchmarks directory does not exist: ${BENCHMARKS_DIR}")
+endif ()
+
 include("${BENCHMARKS_DIR}/registry.cmake")
 
 if (DEFINED TIER AND NOT TIER STREQUAL "")
@@ -36,13 +49,17 @@ endif ()
 
 if (NOT PERF_REQUESTED_TIER STREQUAL "smoke" AND
         NOT PERF_REQUESTED_TIER STREQUAL "core" AND
-        NOT PERF_REQUESTED_TIER STREQUAL "stress")
+        NOT PERF_REQUESTED_TIER STREQUAL "stress" AND
+        NOT PERF_REQUESTED_TIER STREQUAL "profile")
     message(FATAL_ERROR "Unsupported performance tier: ${PERF_REQUESTED_TIER}")
 endif ()
 
 if (PERF_REQUESTED_TIER STREQUAL "stress")
     set(PERF_DEFAULT_WARMUP 1)
     set(PERF_DEFAULT_ITERATIONS 2)
+elseif (PERF_REQUESTED_TIER STREQUAL "profile")
+    set(PERF_DEFAULT_WARMUP 0)
+    set(PERF_DEFAULT_ITERATIONS 1)
 else ()
     set(PERF_DEFAULT_WARMUP 1)
     set(PERF_DEFAULT_ITERATIONS 1)
@@ -60,17 +77,12 @@ else ()
     set(PERF_ITERATIONS "${PERF_DEFAULT_ITERATIONS}")
 endif ()
 
-if (NOT PERF_WARMUP MATCHES "^[0-9]+$" OR PERF_WARMUP LESS 1)
+if (NOT PERF_WARMUP MATCHES "^[0-9]+$" OR PERF_WARMUP LESS 0)
     message(FATAL_ERROR "Invalid PERF_WARMUP: ${PERF_WARMUP}")
 endif ()
 
 if (NOT PERF_ITERATIONS MATCHES "^[0-9]+$" OR PERF_ITERATIONS LESS 1)
     message(FATAL_ERROR "Invalid PERF_ITERATIONS: ${PERF_ITERATIONS}")
-endif ()
-
-set(PERF_SCALE "${ZR_VM_BENCHMARK_TIER_SCALE_${PERF_REQUESTED_TIER}}")
-if (NOT PERF_SCALE)
-    message(FATAL_ERROR "Missing scale for tier ${PERF_REQUESTED_TIER}")
 endif ()
 
 set(PERF_SUITE_ROOT "${GENERATED_DIR}/performance_suite")
@@ -184,11 +196,36 @@ function(perf_case_matches_tier case_name out_var)
     endif ()
 endfunction()
 
+function(perf_case_scale case_name out_var)
+    if (PERF_REQUESTED_TIER STREQUAL "profile")
+        set(case_scale "${ZR_VM_BENCHMARK_PROFILE_SCALE_${case_name}}")
+    else ()
+        set(case_scale "${ZR_VM_BENCHMARK_TIER_SCALE_${PERF_REQUESTED_TIER}}")
+    endif ()
+
+    if (NOT case_scale)
+        message(FATAL_ERROR "Missing scale for case ${case_name} tier ${PERF_REQUESTED_TIER}")
+    endif ()
+
+    set(${out_var} "${case_scale}" PARENT_SCOPE)
+endfunction()
+
+function(perf_implementation_is_core_gated case_name implementation_id out_var)
+    set(core_implementations "${ZR_VM_BENCHMARK_CORE_IMPLEMENTATIONS_${case_name}}")
+    list(FIND core_implementations "${implementation_id}" implementation_index)
+    if (implementation_index EQUAL -1)
+        set(${out_var} FALSE PARENT_SCOPE)
+    else ()
+        set(${out_var} TRUE PARENT_SCOPE)
+    endif ()
+endfunction()
+
 function(perf_prepare_zr_case case_name out_project_dir_var out_project_file_var)
     set(source_dir "${BENCHMARKS_DIR}/cases/${case_name}/zr")
     set(destination_dir "${PERF_SUITE_ROOT}/cases/${case_name}/zr")
     set(project_file "${destination_dir}/benchmark_${case_name}.zrp")
 
+    perf_case_scale("${case_name}" case_scale)
     file(REMOVE_RECURSE "${destination_dir}")
     file(MAKE_DIRECTORY "${destination_dir}")
     file(COPY "${source_dir}/src" DESTINATION "${destination_dir}")
@@ -204,7 +241,7 @@ function(perf_prepare_zr_case case_name out_project_dir_var out_project_file_var
     file(WRITE
             "${destination_dir}/src/bench_config.zr"
             "pub scale(): int {\n"
-            "    return ${PERF_SCALE};\n"
+            "    return ${case_scale};\n"
             "}\n")
 
     set(${out_project_dir_var} "${destination_dir}" PARENT_SCOPE)
@@ -220,11 +257,108 @@ function(perf_append_note kind case_name implementation_name note)
     endif ()
 endfunction()
 
-find_program(PERF_PYTHON_EXE NAMES python python3)
-find_program(PERF_NODE_EXE NAMES node)
-find_program(PERF_CARGO_EXE NAMES cargo)
-find_program(PERF_DOTNET_EXE NAMES dotnet)
-find_program(PERF_LLVM_HOST_TOOL NAMES clang-cl clang)
+function(perf_probe_program candidate out_var)
+    if (NOT candidate)
+        set(${out_var} "" PARENT_SCOPE)
+        return()
+    endif ()
+
+    execute_process(
+            COMMAND "${candidate}" ${ARGN}
+            RESULT_VARIABLE probe_result
+            OUTPUT_QUIET
+            ERROR_QUIET
+            TIMEOUT 15)
+    if (probe_result EQUAL 0)
+        set(${out_var} "${candidate}" PARENT_SCOPE)
+    else ()
+        set(${out_var} "" PARENT_SCOPE)
+    endif ()
+endfunction()
+
+function(perf_translate_path_for_executable executable_path input_path out_var)
+    if (input_path STREQUAL "")
+        set(${out_var} "" PARENT_SCOPE)
+        return()
+    endif ()
+
+    if (UNIX AND executable_path MATCHES "\\.exe$")
+        execute_process(
+                COMMAND wslpath -w "${input_path}"
+                RESULT_VARIABLE translate_result
+                OUTPUT_VARIABLE translated_path
+                ERROR_VARIABLE translate_stderr
+                TIMEOUT 15)
+        if (NOT translate_result EQUAL 0)
+            message(FATAL_ERROR
+                    "Failed to translate Linux path for Windows executable '${executable_path}': ${input_path}\n${translate_stderr}")
+        endif ()
+        perf_normalize_output("${translated_path}" translated_path)
+        set(${out_var} "${translated_path}" PARENT_SCOPE)
+    else ()
+        set(${out_var} "${input_path}" PARENT_SCOPE)
+    endif ()
+endfunction()
+
+function(perf_case_is_hotspot_representative case_name out_var)
+    if (PERF_REQUESTED_TIER STREQUAL "profile")
+        list(FIND PERF_HOTSPOT_REPRESENTATIVE_CASES "${case_name}" representative_index)
+        if (NOT representative_index EQUAL -1)
+            set(${out_var} TRUE PARENT_SCOPE)
+            return()
+        endif ()
+    endif ()
+
+    set(${out_var} FALSE PARENT_SCOPE)
+endfunction()
+
+find_program(PERF_PYTHON_EXE_CANDIDATE NAMES python python3)
+find_program(PERF_NODE_EXE_CANDIDATE NAMES node)
+find_program(PERF_QJS_EXE_CANDIDATE NAMES qjs quickjs)
+find_program(PERF_LUA_EXE_CANDIDATE NAMES lua lua54 lua5.4 luajit)
+find_program(PERF_CARGO_EXE_CANDIDATE NAMES cargo)
+find_program(PERF_DOTNET_EXE_CANDIDATE NAMES dotnet)
+if (DEFINED ENV{ZR_VM_JAVA_EXE} AND NOT "$ENV{ZR_VM_JAVA_EXE}" STREQUAL "")
+    set(PERF_JAVA_EXE_CANDIDATE "$ENV{ZR_VM_JAVA_EXE}")
+else ()
+    find_program(PERF_JAVA_EXE_CANDIDATE NAMES java)
+endif ()
+if (DEFINED ENV{ZR_VM_JAVAC_EXE} AND NOT "$ENV{ZR_VM_JAVAC_EXE}" STREQUAL "")
+    set(PERF_JAVAC_EXE_CANDIDATE "$ENV{ZR_VM_JAVAC_EXE}")
+else ()
+    find_program(PERF_JAVAC_EXE_CANDIDATE NAMES javac)
+endif ()
+find_program(PERF_LLVM_HOST_TOOL_CANDIDATE NAMES clang-cl clang)
+find_program(PERF_VALGRIND_EXE_CANDIDATE NAMES valgrind)
+find_program(PERF_CALLGRIND_ANNOTATE_EXE_CANDIDATE NAMES callgrind_annotate)
+
+perf_probe_program("${PERF_PYTHON_EXE_CANDIDATE}" PERF_PYTHON_EXE -c "print(0)")
+perf_probe_program("${PERF_NODE_EXE_CANDIDATE}" PERF_NODE_EXE -e "process.exit(0)")
+perf_probe_program("${PERF_QJS_EXE_CANDIDATE}" PERF_QJS_EXE -e "0;")
+perf_probe_program("${PERF_LUA_EXE_CANDIDATE}" PERF_LUA_EXE -e "os.exit(0)")
+perf_probe_program("${PERF_CARGO_EXE_CANDIDATE}" PERF_CARGO_EXE --version)
+perf_probe_program("${PERF_DOTNET_EXE_CANDIDATE}" PERF_DOTNET_EXE --version)
+perf_probe_program("${PERF_JAVA_EXE_CANDIDATE}" PERF_JAVA_EXE -version)
+perf_probe_program("${PERF_JAVAC_EXE_CANDIDATE}" PERF_JAVAC_EXE -version)
+perf_probe_program("${PERF_LLVM_HOST_TOOL_CANDIDATE}" PERF_LLVM_HOST_TOOL --version)
+perf_probe_program("${PERF_VALGRIND_EXE_CANDIDATE}" PERF_VALGRIND_EXE --version)
+perf_probe_program("${PERF_CALLGRIND_ANNOTATE_EXE_CANDIDATE}" PERF_CALLGRIND_ANNOTATE_EXE --version)
+if (NOT PERF_VALGRIND_EXE AND PERF_VALGRIND_EXE_CANDIDATE)
+    set(PERF_VALGRIND_EXE "${PERF_VALGRIND_EXE_CANDIDATE}")
+endif ()
+if (NOT PERF_CALLGRIND_ANNOTATE_EXE AND PERF_CALLGRIND_ANNOTATE_EXE_CANDIDATE)
+    set(PERF_CALLGRIND_ANNOTATE_EXE "${PERF_CALLGRIND_ANNOTATE_EXE_CANDIDATE}")
+endif ()
+
+set(PERF_HOTSPOT_REPRESENTATIVE_CASES
+        "numeric_loops"
+        "dispatch_loops"
+        "matrix_add_2d"
+        "map_object_access")
+set(PERF_HOTSPOT_SUMMARY_SCRIPT "${BENCHMARKS_DIR}/scripts/hotspot_summary.py")
+if (NOT EXISTS "${PERF_HOTSPOT_SUMMARY_SCRIPT}")
+    message(FATAL_ERROR "Missing hotspot summary script: ${PERF_HOTSPOT_SUMMARY_SCRIPT}")
+endif ()
 
 set(PERF_RUST_RUNNER_EXE "")
 if (PERF_CARGO_EXE)
@@ -243,8 +377,17 @@ endif ()
 set(PERF_DOTNET_RUNNER_DLL "")
 if (PERF_DOTNET_EXE)
     set(PERF_DOTNET_OUTPUT_DIR "${PERF_TOOLCHAIN_DIR}/dotnet")
+    set(PERF_DOTNET_INTERMEDIATE_DIR "${PERF_TOOLCHAIN_DIR}/dotnet_intermediate")
+    file(MAKE_DIRECTORY "${PERF_DOTNET_OUTPUT_DIR}")
+    file(MAKE_DIRECTORY "${PERF_DOTNET_INTERMEDIATE_DIR}/obj")
     execute_process(
-            COMMAND "${PERF_DOTNET_EXE}" build "${BENCHMARKS_DIR}/dotnet_runner/BenchmarkRunner.csproj" -c Release -o "${PERF_DOTNET_OUTPUT_DIR}"
+            COMMAND
+            "${PERF_DOTNET_EXE}" build "${BENCHMARKS_DIR}/dotnet_runner/BenchmarkRunner.csproj"
+            -c Release
+            -o "${PERF_DOTNET_OUTPUT_DIR}"
+            "--disable-build-servers"
+            "-p:BaseIntermediateOutputPath=${PERF_DOTNET_INTERMEDIATE_DIR}/obj/"
+            "-p:MSBuildProjectExtensionsPath=${PERF_DOTNET_INTERMEDIATE_DIR}/obj/"
             RESULT_VARIABLE dotnet_build_result
             OUTPUT_VARIABLE dotnet_build_stdout
             ERROR_VARIABLE dotnet_build_stderr)
@@ -254,10 +397,38 @@ if (PERF_DOTNET_EXE)
     set(PERF_DOTNET_RUNNER_DLL "${PERF_DOTNET_OUTPUT_DIR}/BenchmarkRunner.dll")
 endif ()
 
+set(PERF_JAVA_CLASSES_DIR "")
+if (PERF_JAVA_EXE AND PERF_JAVAC_EXE)
+    set(PERF_JAVA_OUTPUT_DIR "${PERF_TOOLCHAIN_DIR}/java")
+    set(PERF_JAVA_CLASSES_DIR "${PERF_JAVA_OUTPUT_DIR}/classes")
+    file(REMOVE_RECURSE "${PERF_JAVA_OUTPUT_DIR}")
+    file(MAKE_DIRECTORY "${PERF_JAVA_CLASSES_DIR}")
+    file(GLOB_RECURSE PERF_JAVA_SOURCE_FILES
+            "${BENCHMARKS_DIR}/java_runner/src/*.java"
+            "${BENCHMARKS_DIR}/cases/*/java/*.java")
+    list(SORT PERF_JAVA_SOURCE_FILES)
+    if (PERF_JAVA_SOURCE_FILES STREQUAL "")
+        message(FATAL_ERROR "Java toolchain is available but no Java benchmark sources were found.")
+    endif ()
+    perf_translate_path_for_executable("${PERF_JAVAC_EXE}" "${PERF_JAVA_CLASSES_DIR}" PERF_JAVA_CLASSES_DIR_ARG)
+    set(PERF_JAVA_COMPILE_SOURCE_FILES "")
+    foreach (java_source_file IN LISTS PERF_JAVA_SOURCE_FILES)
+        perf_translate_path_for_executable("${PERF_JAVAC_EXE}" "${java_source_file}" java_source_file_arg)
+        list(APPEND PERF_JAVA_COMPILE_SOURCE_FILES "${java_source_file_arg}")
+    endforeach ()
+    execute_process(
+            COMMAND "${PERF_JAVAC_EXE}" -d "${PERF_JAVA_CLASSES_DIR_ARG}" ${PERF_JAVA_COMPILE_SOURCE_FILES}
+            RESULT_VARIABLE java_build_result
+            OUTPUT_VARIABLE java_build_stdout
+            ERROR_VARIABLE java_build_stderr)
+    if (NOT java_build_result EQUAL 0)
+        message(FATAL_ERROR "Failed to build Java benchmark runner.\n${java_build_stdout}${java_build_stderr}")
+    endif ()
+endif ()
+
 message("==========")
 message("Running suite: performance_report")
 message("Tier: ${PERF_REQUESTED_TIER}")
-message("Scale: ${PERF_SCALE}")
 message("Warmup iterations: ${PERF_WARMUP}")
 message("Measured iterations: ${PERF_ITERATIONS}")
 message("Benchmarks root: ${BENCHMARKS_DIR}")
@@ -269,6 +440,12 @@ set(PERF_JSON_CASES "")
 set(PERF_SKIP_NOTES "")
 set(PERF_FAILURE_NOTES "")
 set(PERF_HARD_FAILURE FALSE)
+set(PERF_COMPARISON_MARKDOWN_ROWS "")
+set(PERF_COMPARISON_JSON_CASES "")
+set(PERF_INSTRUCTION_MARKDOWN_ROWS "")
+set(PERF_INSTRUCTION_JSON_CASES "")
+set(PERF_HOTSPOT_MARKDOWN_CASES "")
+set(PERF_HOTSPOT_JSON_CASES "")
 
 foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
     perf_case_matches_tier("${case_name}" case_enabled)
@@ -278,13 +455,29 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
 
     math(EXPR PERF_CASE_COUNT "${PERF_CASE_COUNT} + 1")
     perf_prepare_zr_case("${case_name}" zr_project_dir zr_project_file)
+    perf_case_scale("${case_name}" case_scale)
 
     set(case_description "${ZR_VM_BENCHMARK_DESCRIPTION_${case_name}}")
     set(case_banner "${ZR_VM_BENCHMARK_PASS_BANNER_${case_name}}")
     set(case_checksum "${ZR_VM_BENCHMARK_CHECKSUM_${case_name}_${PERF_REQUESTED_TIER}}")
+    if (case_checksum STREQUAL "")
+        set(case_checksum "${ZR_VM_BENCHMARK_CHECKSUM_${case_name}_core}")
+    endif ()
     set(case_expected_output "${case_banner}\n${case_checksum}")
     set(case_impl_jsons "")
     set(case_c_baseline_mean "")
+    set(case_interp_mean "")
+    set(case_python_mean "")
+    set(case_node_mean "")
+    set(case_qjs_mean "")
+    set(case_lua_mean "")
+    set(case_rust_mean "")
+    set(case_dotnet_mean "")
+    set(case_java_mean "")
+    set(case_profile_report_path "")
+    set(case_interp_command_list "")
+    set(case_interp_working_directory "")
+    set(case_interp_ready FALSE)
 
     foreach (implementation_id IN LISTS ZR_VM_BENCHMARK_IMPLEMENTATIONS_${case_name})
         set(implementation_name "")
@@ -312,6 +505,9 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
             set(language "C")
             set(mode "native")
             set(command_list "${NATIVE_BENCHMARK_EXE};--case;${case_name};--tier;${PERF_REQUESTED_TIER}")
+            if (PERF_REQUESTED_TIER STREQUAL "profile")
+                list(APPEND command_list "--scale" "${case_scale}")
+            endif ()
             set(working_directory "${BENCHMARKS_DIR}")
             set(should_measure TRUE)
         elseif (implementation_id STREQUAL "zr_interp")
@@ -355,10 +551,13 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
             set(mode "script")
             if (PERF_PYTHON_EXE)
                 set(command_list "${PERF_PYTHON_EXE};${BENCHMARKS_DIR}/cases/${case_name}/python/main.py;--tier;${PERF_REQUESTED_TIER}")
+                if (PERF_REQUESTED_TIER STREQUAL "profile")
+                    list(APPEND command_list "--scale" "${case_scale}")
+                endif ()
                 set(working_directory "${BENCHMARKS_DIR}/cases/${case_name}/python")
                 set(should_measure TRUE)
             else ()
-                set(note "Python executable not found")
+                set(note "Python executable unavailable")
             endif ()
         elseif (implementation_id STREQUAL "node")
             set(implementation_name "Node.js")
@@ -366,10 +565,41 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
             set(mode "script")
             if (PERF_NODE_EXE)
                 set(command_list "${PERF_NODE_EXE};${BENCHMARKS_DIR}/cases/${case_name}/node/main.js;--tier;${PERF_REQUESTED_TIER}")
+                if (PERF_REQUESTED_TIER STREQUAL "profile")
+                    list(APPEND command_list "--scale" "${case_scale}")
+                endif ()
                 set(working_directory "${BENCHMARKS_DIR}/cases/${case_name}/node")
                 set(should_measure TRUE)
             else ()
-                set(note "Node.js executable not found")
+                set(note "Node.js executable unavailable")
+            endif ()
+        elseif (implementation_id STREQUAL "qjs")
+            set(implementation_name "QuickJS")
+            set(language "QuickJS")
+            set(mode "script")
+            if (PERF_QJS_EXE)
+                set(command_list "${PERF_QJS_EXE};-m;${BENCHMARKS_DIR}/cases/${case_name}/qjs/main.js;--tier;${PERF_REQUESTED_TIER}")
+                if (PERF_REQUESTED_TIER STREQUAL "profile")
+                    list(APPEND command_list "--scale" "${case_scale}")
+                endif ()
+                set(working_directory "${BENCHMARKS_DIR}/cases/${case_name}/qjs")
+                set(should_measure TRUE)
+            else ()
+                set(note "QuickJS executable unavailable")
+            endif ()
+        elseif (implementation_id STREQUAL "lua")
+            set(implementation_name "Lua")
+            set(language "Lua")
+            set(mode "script")
+            if (PERF_LUA_EXE)
+                set(command_list "${PERF_LUA_EXE};${BENCHMARKS_DIR}/cases/${case_name}/lua/main.lua;--tier;${PERF_REQUESTED_TIER}")
+                if (PERF_REQUESTED_TIER STREQUAL "profile")
+                    list(APPEND command_list "--scale" "${case_scale}")
+                endif ()
+                set(working_directory "${BENCHMARKS_DIR}/cases/${case_name}/lua")
+                set(should_measure TRUE)
+            else ()
+                set(note "Lua executable unavailable")
             endif ()
         elseif (implementation_id STREQUAL "rust")
             set(implementation_name "Rust")
@@ -377,10 +607,13 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
             set(mode "native")
             if (PERF_RUST_RUNNER_EXE)
                 set(command_list "${PERF_RUST_RUNNER_EXE};--case;${case_name};--tier;${PERF_REQUESTED_TIER}")
+                if (PERF_REQUESTED_TIER STREQUAL "profile")
+                    list(APPEND command_list "--scale" "${case_scale}")
+                endif ()
                 set(working_directory "${BENCHMARKS_DIR}")
                 set(should_measure TRUE)
             else ()
-                set(note "Rust toolchain not found")
+                set(note "Rust toolchain unavailable")
             endif ()
         elseif (implementation_id STREQUAL "dotnet")
             set(implementation_name "C#/.NET")
@@ -388,13 +621,42 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
             set(mode "native")
             if (PERF_DOTNET_RUNNER_DLL)
                 set(command_list "${PERF_DOTNET_EXE};${PERF_DOTNET_RUNNER_DLL};--case;${case_name};--tier;${PERF_REQUESTED_TIER}")
+                if (PERF_REQUESTED_TIER STREQUAL "profile")
+                    list(APPEND command_list "--scale" "${case_scale}")
+                endif ()
                 set(working_directory "${BENCHMARKS_DIR}")
                 set(should_measure TRUE)
             else ()
-                set(note ".NET SDK not found")
+                set(note ".NET SDK unavailable")
+            endif ()
+        elseif (implementation_id STREQUAL "java")
+            set(implementation_name "Java")
+            set(language "Java")
+            set(mode "managed")
+            if (PERF_JAVA_CLASSES_DIR)
+                perf_translate_path_for_executable("${PERF_JAVA_EXE}" "${PERF_JAVA_CLASSES_DIR}" java_classpath_arg)
+                set(command_list "${PERF_JAVA_EXE};-cp;${java_classpath_arg};BenchmarkRunner;--case;${case_name};--tier;${PERF_REQUESTED_TIER}")
+                if (PERF_REQUESTED_TIER STREQUAL "profile")
+                    list(APPEND command_list "--scale" "${case_scale}")
+                endif ()
+                set(working_directory "${BENCHMARKS_DIR}")
+                set(should_measure TRUE)
+            else ()
+                set(note "Java toolchain unavailable")
             endif ()
         else ()
             message(FATAL_ERROR "Unknown implementation id in registry: ${implementation_id}")
+        endif ()
+
+        perf_implementation_is_core_gated("${case_name}" "${implementation_id}" implementation_is_core_gated)
+        set(profile_report_path "")
+        if (PERF_REQUESTED_TIER STREQUAL "profile" AND implementation_id STREQUAL "zr_interp")
+            set(profile_report_path "${PERF_REPORT_DIR}/${case_name}__${implementation_id}.profile.json")
+        endif ()
+        if (implementation_id STREQUAL "zr_interp")
+            set(case_interp_command_list ${command_list})
+            set(case_interp_working_directory "${working_directory}")
+            set(case_interp_ready TRUE)
         endif ()
 
         if (should_measure)
@@ -414,6 +676,13 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
                         set(status "SKIP")
                         set(note "AOT lowering unsupported for this benchmark")
                         perf_append_note("skip" "${case_name}" "${implementation_name}" "${note}")
+                    elseif (NOT implementation_is_core_gated)
+                        set(status "SKIP")
+                        set(note "out-of-scope follow-up debt: prepare step failed")
+                        perf_append_note("skip"
+                                "${case_name}"
+                                "${implementation_name}"
+                                "follow-up debt: prepare step failed.\n${prepare_output}")
                     else ()
                         set(status "FAIL")
                         set(note "prepare step failed")
@@ -434,59 +703,116 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
                         OUTPUT_VARIABLE correctness_stdout
                         ERROR_VARIABLE correctness_stderr
                         TIMEOUT 600)
-                perf_normalize_output("${correctness_stdout}${correctness_stderr}" correctness_output)
+                perf_normalize_output("${correctness_stdout}" correctness_output)
                 perf_strip_contract_noise("${correctness_output}" correctness_output)
+                perf_normalize_output("${correctness_stderr}" correctness_error_output)
+                if (correctness_output STREQUAL "")
+                    set(correctness_combined_output "${correctness_error_output}")
+                elseif (correctness_error_output STREQUAL "")
+                    set(correctness_combined_output "${correctness_output}")
+                else ()
+                    set(correctness_combined_output "${correctness_output}\n${correctness_error_output}")
+                endif ()
                 perf_normalize_output("${case_expected_output}" expected_output_normalized)
                 if (NOT correctness_result EQUAL 0)
-                    if (implementation_id STREQUAL "zr_binary" AND correctness_output MATCHES "failed to load project entry") 
+                    if (implementation_id STREQUAL "zr_binary" AND correctness_combined_output MATCHES "failed to load project entry") 
                         set(status "SKIP")
                         set(note "binary entry loader unavailable for this benchmark")
                         perf_append_note("skip" "${case_name}" "${implementation_name}" "${note}")
+                    elseif (NOT implementation_is_core_gated)
+                        set(status "SKIP")
+                        set(note "out-of-scope follow-up debt: correctness run failed")
+                        perf_append_note("skip"
+                                "${case_name}"
+                                "${implementation_name}"
+                                "follow-up debt: correctness run failed with exit code ${correctness_result}.\n${correctness_combined_output}")
                     else ()
                         set(status "FAIL")
                         set(note "correctness run failed")
                         perf_append_note("failure"
                                 "${case_name}"
                                 "${implementation_name}"
-                                "correctness run failed with exit code ${correctness_result}.\n${correctness_output}")
+                                "correctness run failed with exit code ${correctness_result}.\n${correctness_combined_output}")
                         set(PERF_HARD_FAILURE TRUE)
                     endif ()
                 elseif (NOT correctness_output STREQUAL expected_output_normalized)
-                    set(status "FAIL")
-                    set(note "correctness output mismatch")
-                    perf_append_note("failure"
-                            "${case_name}"
-                            "${implementation_name}"
-                            "expected `${expected_output_normalized}` but got `${correctness_output}`")
-                    set(PERF_HARD_FAILURE TRUE)
+                    if (NOT implementation_is_core_gated)
+                        set(status "SKIP")
+                        set(note "out-of-scope follow-up debt: correctness output mismatch")
+                        perf_append_note("skip"
+                                "${case_name}"
+                                "${implementation_name}"
+                                "follow-up debt: expected `${expected_output_normalized}` but got `${correctness_output}`")
+                    else ()
+                        set(status "FAIL")
+                        set(note "correctness output mismatch")
+                        perf_append_note("failure"
+                                "${case_name}"
+                                "${implementation_name}"
+                                "expected `${expected_output_normalized}` but got `${correctness_output}`")
+                        set(PERF_HARD_FAILURE TRUE)
+                    endif ()
                 endif ()
             endif ()
 
             if (NOT status STREQUAL "FAIL" AND NOT status STREQUAL "SKIP")
                 set(perf_json_path "${PERF_REPORT_DIR}/${case_name}__${implementation_id}.json")
-                execute_process(
-                        COMMAND
-                        "${PERF_RUNNER_EXE}"
-                        "--name" "${implementation_name}"
-                        "--iterations" "${PERF_ITERATIONS}"
-                        "--warmup" "${PERF_WARMUP}"
-                        "--json-out" "${perf_json_path}"
-                        "--working-directory" "${working_directory}"
-                        "--"
-                        ${command_list}
-                        RESULT_VARIABLE perf_runner_result
-                        OUTPUT_VARIABLE perf_runner_stdout
-                        ERROR_VARIABLE perf_runner_stderr
-                        TIMEOUT 1800)
+                if (profile_report_path STREQUAL "")
+                    execute_process(
+                            COMMAND
+                            "${PERF_RUNNER_EXE}"
+                            "--name" "${implementation_name}"
+                            "--iterations" "${PERF_ITERATIONS}"
+                            "--warmup" "${PERF_WARMUP}"
+                            "--json-out" "${perf_json_path}"
+                            "--working-directory" "${working_directory}"
+                            "--"
+                            ${command_list}
+                            RESULT_VARIABLE perf_runner_result
+                            OUTPUT_VARIABLE perf_runner_stdout
+                            ERROR_VARIABLE perf_runner_stderr
+                            TIMEOUT 1800)
+                else ()
+                    execute_process(
+                            COMMAND
+                            "${CMAKE_COMMAND}" -E env
+                            "ZR_VM_PROFILE_INSTRUCTIONS=1"
+                            "ZR_VM_PROFILE_SLOWPATHS=1"
+                            "ZR_VM_PROFILE_HELPERS=1"
+                            "ZR_VM_PROFILE_OUT=${profile_report_path}"
+                            "ZR_VM_PROFILE_CASE=${case_name}"
+                            "ZR_VM_PROFILE_MODE=${mode}"
+                            "${PERF_RUNNER_EXE}"
+                            "--name" "${implementation_name}"
+                            "--iterations" "${PERF_ITERATIONS}"
+                            "--warmup" "${PERF_WARMUP}"
+                            "--json-out" "${perf_json_path}"
+                            "--working-directory" "${working_directory}"
+                            "--"
+                            ${command_list}
+                            RESULT_VARIABLE perf_runner_result
+                            OUTPUT_VARIABLE perf_runner_stdout
+                            ERROR_VARIABLE perf_runner_stderr
+                            TIMEOUT 1800)
+                endif ()
                 set(perf_runner_output "${perf_runner_stdout}${perf_runner_stderr}")
                 if (NOT perf_runner_result EQUAL 0)
-                    set(status "FAIL")
-                    set(note "measurement failed")
-                    perf_append_note("failure"
-                            "${case_name}"
-                            "${implementation_name}"
-                            "perf runner failed.\n${perf_runner_output}")
-                    set(PERF_HARD_FAILURE TRUE)
+                    if (NOT implementation_is_core_gated)
+                        set(status "SKIP")
+                        set(note "out-of-scope follow-up debt: measurement failed")
+                        perf_append_note("skip"
+                                "${case_name}"
+                                "${implementation_name}"
+                                "follow-up debt: perf runner failed.\n${perf_runner_output}")
+                    else ()
+                        set(status "FAIL")
+                        set(note "measurement failed")
+                        perf_append_note("failure"
+                                "${case_name}"
+                                "${implementation_name}"
+                                "perf runner failed.\n${perf_runner_output}")
+                        set(PERF_HARD_FAILURE TRUE)
+                    endif ()
                 else ()
                     set(status "PASS")
                     perf_extract_metric("${perf_runner_output}" "mean_wall_ms" mean_wall_ms)
@@ -498,6 +824,23 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
                     perf_extract_metric("${perf_runner_output}" "max_peak_mib" max_peak_mib)
                     if (implementation_id STREQUAL "c")
                         set(case_c_baseline_mean "${mean_wall_ms}")
+                    elseif (implementation_id STREQUAL "zr_interp")
+                        set(case_interp_mean "${mean_wall_ms}")
+                        set(case_profile_report_path "${profile_report_path}")
+                    elseif (implementation_id STREQUAL "python")
+                        set(case_python_mean "${mean_wall_ms}")
+                    elseif (implementation_id STREQUAL "node")
+                        set(case_node_mean "${mean_wall_ms}")
+                    elseif (implementation_id STREQUAL "qjs")
+                        set(case_qjs_mean "${mean_wall_ms}")
+                    elseif (implementation_id STREQUAL "lua")
+                        set(case_lua_mean "${mean_wall_ms}")
+                    elseif (implementation_id STREQUAL "rust")
+                        set(case_rust_mean "${mean_wall_ms}")
+                    elseif (implementation_id STREQUAL "dotnet")
+                        set(case_dotnet_mean "${mean_wall_ms}")
+                    elseif (implementation_id STREQUAL "java")
+                        set(case_java_mean "${mean_wall_ms}")
                     endif ()
                 endif ()
             endif ()
@@ -585,13 +928,223 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
     perf_escape_json_string("${case_name}" json_case_name)
     perf_escape_json_string("${case_description}" json_case_description)
     perf_escape_json_string("${case_banner}" json_case_banner)
+    perf_escape_json_string("${ZR_VM_BENCHMARK_WORKLOAD_TAG_${case_name}}" json_case_workload_tag)
+
+    if (NOT case_interp_mean STREQUAL "")
+        perf_relative_to_c("${case_interp_mean}" "${case_c_baseline_mean}" ratio_to_c)
+        perf_relative_to_c("${case_interp_mean}" "${case_lua_mean}" ratio_to_lua)
+        perf_relative_to_c("${case_interp_mean}" "${case_qjs_mean}" ratio_to_qjs)
+        perf_relative_to_c("${case_interp_mean}" "${case_node_mean}" ratio_to_node)
+        perf_relative_to_c("${case_interp_mean}" "${case_python_mean}" ratio_to_python)
+        perf_relative_to_c("${case_interp_mean}" "${case_dotnet_mean}" ratio_to_dotnet)
+        perf_relative_to_c("${case_interp_mean}" "${case_java_mean}" ratio_to_java)
+        perf_relative_to_c("${case_interp_mean}" "${case_rust_mean}" ratio_to_rust)
+        foreach (ratio_var IN ITEMS ratio_to_c ratio_to_lua ratio_to_qjs ratio_to_node ratio_to_python ratio_to_dotnet ratio_to_java ratio_to_rust)
+            if (${ratio_var} STREQUAL "null")
+                set(${ratio_var} "-")
+            endif ()
+        endforeach ()
+
+        string(APPEND PERF_COMPARISON_MARKDOWN_ROWS
+                "| ${case_name} | ${ZR_VM_BENCHMARK_WORKLOAD_TAG_${case_name}} | ${ratio_to_c} | ${ratio_to_lua} | ${ratio_to_qjs} | ${ratio_to_node} | ${ratio_to_python} | ${ratio_to_dotnet} | ${ratio_to_java} | ${ratio_to_rust} |\n")
+        string(CONCAT comparison_case_json
+                "    {\n"
+                "      \"name\": \"${json_case_name}\",\n"
+                "      \"workload_tag\": \"${json_case_workload_tag}\",\n"
+                "      \"relative_to\": {\n"
+                "        \"c\": \"${ratio_to_c}\",\n"
+                "        \"lua\": \"${ratio_to_lua}\",\n"
+                "        \"qjs\": \"${ratio_to_qjs}\",\n"
+                "        \"node\": \"${ratio_to_node}\",\n"
+                "        \"python\": \"${ratio_to_python}\",\n"
+                "        \"dotnet\": \"${ratio_to_dotnet}\",\n"
+                "        \"java\": \"${ratio_to_java}\",\n"
+                "        \"rust\": \"${ratio_to_rust}\"\n"
+                "      }\n"
+                "    }")
+        if (PERF_COMPARISON_JSON_CASES STREQUAL "")
+            set(PERF_COMPARISON_JSON_CASES "${comparison_case_json}")
+        else ()
+            set(PERF_COMPARISON_JSON_CASES "${PERF_COMPARISON_JSON_CASES},\n${comparison_case_json}")
+        endif ()
+    endif ()
+
+    perf_case_is_hotspot_representative("${case_name}" case_hotspot_representative)
+
+    if (NOT case_profile_report_path STREQUAL "" AND EXISTS "${case_profile_report_path}")
+        string(APPEND PERF_INSTRUCTION_MARKDOWN_ROWS
+                "| ${case_name} | available | `${case_profile_report_path}` |\n")
+        file(READ "${case_profile_report_path}" case_profile_json_text)
+        string(STRIP "${case_profile_json_text}" case_profile_json_text)
+        if (PERF_INSTRUCTION_JSON_CASES STREQUAL "")
+            set(PERF_INSTRUCTION_JSON_CASES "${case_profile_json_text}")
+        else ()
+            set(PERF_INSTRUCTION_JSON_CASES "${PERF_INSTRUCTION_JSON_CASES},\n${case_profile_json_text}")
+        endif ()
+        if (case_hotspot_representative AND
+                PERF_VALGRIND_EXE AND
+                PERF_CALLGRIND_ANNOTATE_EXE AND
+                PERF_PYTHON_EXE AND
+                case_interp_ready AND
+                NOT case_interp_working_directory STREQUAL "")
+            set(case_callgrind_out_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.callgrind.out")
+            set(case_callgrind_annotate_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.callgrind.annotate.txt")
+            set(case_hotspot_summary_json_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.hotspot.json")
+            set(case_hotspot_summary_md_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.hotspot.md")
+            execute_process(
+                    COMMAND
+                    "${PERF_VALGRIND_EXE}"
+                    "--tool=callgrind"
+                    "--trace-children=no"
+                    "--callgrind-out-file=${case_callgrind_out_path}"
+                    ${case_interp_command_list}
+                    WORKING_DIRECTORY "${case_interp_working_directory}"
+                    RESULT_VARIABLE case_callgrind_result
+                    OUTPUT_VARIABLE case_callgrind_stdout
+                    ERROR_VARIABLE case_callgrind_stderr
+                    TIMEOUT 3600)
+            if (NOT case_callgrind_result EQUAL 0 OR NOT EXISTS "${case_callgrind_out_path}")
+                string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
+                        "### ${case_name}\n"
+                        "- Instruction profile: `${case_profile_report_path}`\n"
+                        "- Callgrind: failed during representative workload capture\n\n")
+                string(CONCAT hotspot_case_json
+                        "    {\n"
+                        "      \"name\": \"${json_case_name}\",\n"
+                        "      \"status\": \"callgrind_failed\",\n"
+                        "      \"instruction_profile\": \"${case_profile_report_path}\",\n"
+                        "      \"callgrind\": null\n"
+                        "    }")
+                perf_append_note("failure"
+                        "${case_name}"
+                        "ZR interp hotspot"
+                        "callgrind capture failed.\n${case_callgrind_stdout}${case_callgrind_stderr}")
+                set(PERF_HARD_FAILURE TRUE)
+            else ()
+                execute_process(
+                        COMMAND
+                        "${PERF_CALLGRIND_ANNOTATE_EXE}"
+                        "--auto=no"
+                        "--threshold=99"
+                        "${case_callgrind_out_path}"
+                        RESULT_VARIABLE case_annotate_result
+                        OUTPUT_VARIABLE case_annotate_stdout
+                        ERROR_VARIABLE case_annotate_stderr
+                        TIMEOUT 600)
+                if (NOT case_annotate_result EQUAL 0)
+                    string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
+                            "### ${case_name}\n"
+                            "- Instruction profile: `${case_profile_report_path}`\n"
+                            "- Callgrind: annotate step failed\n\n")
+                    string(CONCAT hotspot_case_json
+                            "    {\n"
+                            "      \"name\": \"${json_case_name}\",\n"
+                            "      \"status\": \"callgrind_annotate_failed\",\n"
+                            "      \"instruction_profile\": \"${case_profile_report_path}\",\n"
+                            "      \"callgrind\": null\n"
+                            "    }")
+                    perf_append_note("failure"
+                            "${case_name}"
+                            "ZR interp hotspot"
+                            "callgrind annotate failed.\n${case_annotate_stdout}${case_annotate_stderr}")
+                    set(PERF_HARD_FAILURE TRUE)
+                else ()
+                    file(WRITE "${case_callgrind_annotate_path}" "${case_annotate_stdout}${case_annotate_stderr}")
+                    execute_process(
+                            COMMAND
+                            "${PERF_PYTHON_EXE}"
+                            "${PERF_HOTSPOT_SUMMARY_SCRIPT}"
+                            "--case" "${case_name}"
+                            "--instruction-profile" "${case_profile_report_path}"
+                            "--callgrind-out" "${case_callgrind_out_path}"
+                            "--callgrind-annotate" "${case_callgrind_annotate_path}"
+                            "--json-out" "${case_hotspot_summary_json_path}"
+                            "--markdown-out" "${case_hotspot_summary_md_path}"
+                            RESULT_VARIABLE case_hotspot_summary_result
+                            OUTPUT_VARIABLE case_hotspot_summary_stdout
+                            ERROR_VARIABLE case_hotspot_summary_stderr
+                            TIMEOUT 120)
+                    if (NOT case_hotspot_summary_result EQUAL 0 OR
+                            NOT EXISTS "${case_hotspot_summary_json_path}" OR
+                            NOT EXISTS "${case_hotspot_summary_md_path}")
+                        string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
+                                "### ${case_name}\n"
+                                "- Instruction profile: `${case_profile_report_path}`\n"
+                                "- Callgrind: summary generation failed\n\n")
+                        string(CONCAT hotspot_case_json
+                                "    {\n"
+                                "      \"name\": \"${json_case_name}\",\n"
+                                "      \"status\": \"hotspot_summary_failed\",\n"
+                                "      \"instruction_profile\": \"${case_profile_report_path}\",\n"
+                                "      \"callgrind\": null\n"
+                                "    }")
+                        perf_append_note("failure"
+                                "${case_name}"
+                                "ZR interp hotspot"
+                                "hotspot summary generation failed.\n${case_hotspot_summary_stdout}${case_hotspot_summary_stderr}")
+                        set(PERF_HARD_FAILURE TRUE)
+                    else ()
+                        file(READ "${case_hotspot_summary_md_path}" case_hotspot_markdown_text)
+                        file(READ "${case_hotspot_summary_json_path}" hotspot_case_json)
+                        string(STRIP "${case_hotspot_markdown_text}" case_hotspot_markdown_text)
+                        string(APPEND PERF_HOTSPOT_MARKDOWN_CASES "${case_hotspot_markdown_text}\n\n")
+                    endif ()
+                endif ()
+            endif ()
+        elseif (case_hotspot_representative)
+            string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
+                    "### ${case_name}\n"
+                    "- Instruction profile: `${case_profile_report_path}`\n"
+                    "- Callgrind: unavailable (missing valgrind, callgrind_annotate, python, or interp command)\n\n")
+            string(CONCAT hotspot_case_json
+                    "    {\n"
+                    "      \"name\": \"${json_case_name}\",\n"
+                    "      \"status\": \"instruction_profile_available\",\n"
+                    "      \"instruction_profile\": \"${case_profile_report_path}\",\n"
+                    "      \"callgrind\": null\n"
+                    "    }")
+        else ()
+            string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
+                    "### ${case_name}\n"
+                    "- Instruction profile: `${case_profile_report_path}`\n"
+                    "- Callgrind: not captured in this tier (representative profile cases only)\n\n")
+            string(CONCAT hotspot_case_json
+                    "    {\n"
+                    "      \"name\": \"${json_case_name}\",\n"
+                    "      \"status\": \"instruction_profile_available\",\n"
+                    "      \"instruction_profile\": \"${case_profile_report_path}\",\n"
+                    "      \"callgrind\": null\n"
+                    "    }")
+        endif ()
+    else ()
+        string(APPEND PERF_INSTRUCTION_MARKDOWN_ROWS
+                "| ${case_name} | missing | - |\n")
+        string(APPEND PERF_HOTSPOT_MARKDOWN_CASES
+                "### ${case_name}\n"
+                "- Instruction profile: unavailable\n"
+                "- Callgrind: unavailable in this run\n\n")
+        string(CONCAT hotspot_case_json
+                "    {\n"
+                "      \"name\": \"${json_case_name}\",\n"
+                "      \"status\": \"unavailable\",\n"
+                "      \"instruction_profile\": null,\n"
+                "      \"callgrind\": null\n"
+                "    }")
+    endif ()
+    if (PERF_HOTSPOT_JSON_CASES STREQUAL "")
+        set(PERF_HOTSPOT_JSON_CASES "${hotspot_case_json}")
+    else ()
+        set(PERF_HOTSPOT_JSON_CASES "${PERF_HOTSPOT_JSON_CASES},\n${hotspot_case_json}")
+    endif ()
+
     string(CONCAT case_json
             "    {\n"
             "      \"name\": \"${json_case_name}\",\n"
             "      \"description\": \"${json_case_description}\",\n"
+            "      \"workload_tag\": \"${json_case_workload_tag}\",\n"
             "      \"pass_banner\": \"${json_case_banner}\",\n"
             "      \"tier\": \"${PERF_REQUESTED_TIER}\",\n"
-            "      \"scale\": ${PERF_SCALE},\n"
+            "      \"scale\": ${case_scale},\n"
             "      \"expected_checksum\": ${case_checksum},\n"
             "      \"implementations\": [\n${case_impl_jsons}\n      ]\n"
             "    }")
@@ -610,12 +1163,18 @@ endif ()
 string(TIMESTAMP PERF_GENERATED_AT_UTC "%Y-%m-%dT%H:%M:%SZ" UTC)
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/benchmark_report.md" PERF_MARKDOWN_PATH_NORMALIZED)
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/benchmark_report.json" PERF_JSON_PATH_NORMALIZED)
+file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/comparison_report.md" PERF_COMPARISON_MARKDOWN_PATH_NORMALIZED)
+file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/comparison_report.json" PERF_COMPARISON_JSON_PATH_NORMALIZED)
+file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/instruction_report.md" PERF_INSTRUCTION_MARKDOWN_PATH_NORMALIZED)
+file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/instruction_report.json" PERF_INSTRUCTION_JSON_PATH_NORMALIZED)
+file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/hotspot_report.md" PERF_HOTSPOT_MARKDOWN_PATH_NORMALIZED)
+file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/hotspot_report.json" PERF_HOTSPOT_JSON_PATH_NORMALIZED)
 
 string(CONCAT PERF_MARKDOWN_REPORT
         "# ZR VM Performance Report\n\n"
         "- Generated At (UTC): ${PERF_GENERATED_AT_UTC}\n"
         "- Tier: ${PERF_REQUESTED_TIER}\n"
-        "- Scale: ${PERF_SCALE}\n"
+        "- Scale Policy: registry tier scale (profile uses per-case profile scale)\n"
         "- Warmup Iterations Per Implementation: ${PERF_WARMUP}\n"
         "- Measured Iterations Per Implementation: ${PERF_ITERATIONS}\n"
         "- Benchmarks Root: `${BENCHMARKS_DIR}`\n"
@@ -635,7 +1194,10 @@ endif ()
 string(APPEND PERF_MARKDOWN_REPORT
         "\n## Artifacts\n\n"
         "- Markdown Report: `${PERF_MARKDOWN_PATH_NORMALIZED}`\n"
-        "- JSON Report: `${PERF_JSON_PATH_NORMALIZED}`\n")
+        "- JSON Report: `${PERF_JSON_PATH_NORMALIZED}`\n"
+        "- Comparison Report: `${PERF_COMPARISON_MARKDOWN_PATH_NORMALIZED}`\n"
+        "- Instruction Report: `${PERF_INSTRUCTION_MARKDOWN_PATH_NORMALIZED}`\n"
+        "- Hotspot Report: `${PERF_HOTSPOT_MARKDOWN_PATH_NORMALIZED}`\n")
 
 file(WRITE "${PERF_REPORT_DIR}/benchmark_report.md" "${PERF_MARKDOWN_REPORT}")
 file(WRITE
@@ -644,14 +1206,72 @@ file(WRITE
         "  \"suite\": \"performance_report\",\n"
         "  \"generated_at_utc\": \"${PERF_GENERATED_AT_UTC}\",\n"
         "  \"tier\": \"${PERF_REQUESTED_TIER}\",\n"
-        "  \"scale\": ${PERF_SCALE},\n"
+        "  \"scale_policy\": \"tier_default_or_case_profile\",\n"
         "  \"warmup\": ${PERF_WARMUP},\n"
         "  \"iterations\": ${PERF_ITERATIONS},\n"
         "  \"cases\": [\n${PERF_JSON_CASES}\n  ]\n"
         "}\n")
 
+if (PERF_COMPARISON_MARKDOWN_ROWS STREQUAL "")
+    set(PERF_COMPARISON_MARKDOWN_ROWS "| none | none | - | - | - | - | - | - | - |\n")
+endif ()
+if (PERF_COMPARISON_JSON_CASES STREQUAL "")
+    set(PERF_COMPARISON_JSON_CASES "")
+endif ()
+file(WRITE
+        "${PERF_REPORT_DIR}/comparison_report.md"
+        "# ZR VM Comparison Report\n\n"
+        "- Generated At (UTC): ${PERF_GENERATED_AT_UTC}\n"
+        "- Tier: ${PERF_REQUESTED_TIER}\n\n"
+        "| case | workload | vs C | vs Lua | vs QuickJS | vs Node.js | vs Python | vs .NET | vs Java | vs Rust |\n"
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+        "${PERF_COMPARISON_MARKDOWN_ROWS}")
+file(WRITE
+        "${PERF_REPORT_DIR}/comparison_report.json"
+        "{\n"
+        "  \"suite\": \"comparison_report\",\n"
+        "  \"generated_at_utc\": \"${PERF_GENERATED_AT_UTC}\",\n"
+        "  \"tier\": \"${PERF_REQUESTED_TIER}\",\n"
+        "  \"cases\": [\n${PERF_COMPARISON_JSON_CASES}\n  ]\n"
+        "}\n")
+
+file(WRITE
+        "${PERF_REPORT_DIR}/instruction_report.md"
+        "# ZR VM Instruction Report\n\n"
+        "- Generated At (UTC): ${PERF_GENERATED_AT_UTC}\n"
+        "- Tier: ${PERF_REQUESTED_TIER}\n\n"
+        "| case | status | profile artifact |\n"
+        "| --- | --- | --- |\n"
+        "${PERF_INSTRUCTION_MARKDOWN_ROWS}")
+file(WRITE
+        "${PERF_REPORT_DIR}/instruction_report.json"
+        "{\n"
+        "  \"suite\": \"instruction_report\",\n"
+        "  \"generated_at_utc\": \"${PERF_GENERATED_AT_UTC}\",\n"
+        "  \"tier\": \"${PERF_REQUESTED_TIER}\",\n"
+        "  \"cases\": [\n${PERF_INSTRUCTION_JSON_CASES}\n  ]\n"
+        "}\n")
+
+file(WRITE
+        "${PERF_REPORT_DIR}/hotspot_report.md"
+        "# ZR VM Hotspot Report\n\n"
+        "- Generated At (UTC): ${PERF_GENERATED_AT_UTC}\n"
+        "- Tier: ${PERF_REQUESTED_TIER}\n\n"
+        "${PERF_HOTSPOT_MARKDOWN_CASES}")
+file(WRITE
+        "${PERF_REPORT_DIR}/hotspot_report.json"
+        "{\n"
+        "  \"suite\": \"hotspot_report\",\n"
+        "  \"generated_at_utc\": \"${PERF_GENERATED_AT_UTC}\",\n"
+        "  \"tier\": \"${PERF_REQUESTED_TIER}\",\n"
+        "  \"cases\": [\n${PERF_HOTSPOT_JSON_CASES}\n  ]\n"
+        "}\n")
+
 message("Performance markdown report: ${PERF_REPORT_DIR}/benchmark_report.md")
 message("Performance json report: ${PERF_REPORT_DIR}/benchmark_report.json")
+message("Comparison markdown report: ${PERF_REPORT_DIR}/comparison_report.md")
+message("Instruction markdown report: ${PERF_REPORT_DIR}/instruction_report.md")
+message("Hotspot markdown report: ${PERF_REPORT_DIR}/hotspot_report.md")
 
 if (PERF_HARD_FAILURE)
     message(FATAL_ERROR "performance_report encountered benchmark failures. See generated report for details.")

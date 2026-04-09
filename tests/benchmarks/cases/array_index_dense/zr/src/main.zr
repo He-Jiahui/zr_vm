@@ -1,0 +1,33 @@
+var benchConfig = %import("bench_config");
+var {Array} = %import("zr.container");
+
+var scale = benchConfig.scale();
+var length = 128 * scale;
+var rounds = 48 * scale;
+var values = new Array<int>();
+var checksum = 0;
+var index = 0;
+
+while (index <= length - 1) {
+    values.add((index * 13 + 7) % 997);
+    index = index + 1;
+}
+
+var roundIndex = 0;
+while (roundIndex <= rounds - 1) {
+    var cursor = 1;
+    while (cursor <= length - 2) {
+        var left = values[cursor - 1] + 0;
+        var mid = values[cursor] + 0;
+        var right = values[cursor + 1] + 0;
+        var updated = (left + mid * 3 + right * 5 + roundIndex + cursor) % 1000003;
+        values[cursor] = updated;
+        checksum = (checksum + updated * (cursor + 1)) % 1000000007;
+        cursor = cursor + 1;
+    }
+
+    checksum = (checksum + values[0] + values[length - 1] + roundIndex) % 1000000007;
+    roundIndex = roundIndex + 1;
+}
+
+return "BENCH_ARRAY_INDEX_DENSE_PASS\n" + <string> checksum;

@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_fib_recursive",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

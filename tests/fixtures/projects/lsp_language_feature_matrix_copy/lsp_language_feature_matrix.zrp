@@ -3,6 +3,6 @@
   "source": "src",
   "binary": "bin",
   "entry": "main",
-  "supportMultithread": true,
-  "autoCoroutine": true
+  "supportMultithread": false,
+  "autoCoroutine": false
 }

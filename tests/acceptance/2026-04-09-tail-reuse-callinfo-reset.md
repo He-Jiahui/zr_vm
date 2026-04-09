@@ -1,0 +1,141 @@
+# Tail Reuse CallInfo Reset
+
+## Scope
+- Continued the `PreCall/callInfo` hot-path work with a focused tail-call reuse slice in [`/mnt/e/Git/zr_vm/zr_vm_core/src/zr_vm_core/function.c`](/mnt/e/Git/zr_vm/zr_vm_core/src/zr_vm_core/function.c).
+- Added a regression test for reused VM `callInfo` state during `ZrCore_Function_TryReuseTailVmCall(...)`:
+  - [`/mnt/e/Git/zr_vm/tests/core/test_tail_reuse_callinfo_reset.c`](/mnt/e/Git/zr_vm/tests/core/test_tail_reuse_callinfo_reset.c)
+- Refactored VM call-info initialization into shared runtime-state reset helpers so normal VM precall and tail-call frame reuse both reinitialize:
+  - `programCounter`
+  - `trap`
+  - `variableArgumentCount`
+  - `yieldContext`
+  - `returnDestination` metadata
+- Kept `callStatus` preservation conservative after proving that over-trimming it breaks the runtime tail-call pipeline.
+- Affected layers:
+  - core runtime call setup / tail-call frame reuse
+  - focused core tests
+  - parser-to-runtime tail-call pipeline validation
+  - WSL benchmark/report harness acceptance
+
+## Baseline
+- New red test before the fix:
+  - `./build/codex-wsl-current-gcc-debug-make/bin/zr_vm_tail_reuse_callinfo_reset_test`
+  - failure:
+    - `Expected 0 Was 4`
+    - failing assertion: reused tail-call `callInfo->context.context.trap` was not reset
+- Existing accepted nearby slices already in tree and still relevant:
+  - stateless zero-capture closure cache
+  - frame slot whole-slot null reset
+- Existing repository caveat carried forward from earlier validation:
+  - full workspace is not claimed green
+  - prior dirty-worktree baseline still includes unrelated runtime instability around broader `core_runtime` / `zr_vm_instructions_test`, and that suite was not re-accepted here
+- Previous stable profile reference used for comparison in this slice:
+  - `fib_recursive`: `43.927x` vs C
+  - `call_chain_polymorphic`: `23.936x` vs C
+  - `mixed_service_loop`: `28.528x` vs C
+  - `matrix_add_2d`: `25.362x` vs C
+  - `dispatch_loops`: `69.259x` vs C
+  - `map_object_access`: `32.537x` vs C
+
+## Test Inventory
+- Focused red/green unit coverage:
+  - `zr_vm_tail_reuse_callinfo_reset_test`
+  - `zr_vm_precall_frame_slot_reset_test`
+  - `zr_vm_value_copy_fast_paths_test`
+  - `zr_vm_stateless_function_closure_cache_test`
+- Tail-call integration coverage:
+  - `zr_vm_tail_call_pipeline_test`
+- Registry / harness contract coverage:
+  - `benchmark_registry`
+- CLI smoke:
+  - WSL gcc `zr_vm_cli hello_world`
+  - WSL clang `zr_vm_cli hello_world`
+  - Windows MSVC `zr_vm_cli.exe hello_world`
+- Benchmark/report evidence:
+  - WSL gcc `performance_report` with `ZR_VM_TEST_TIER=profile`
+
+## Tooling Evidence
+- Tool: WSL gcc configure/build
+  - Command:
+    - `wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake -S . -B build/codex-wsl-current-gcc-debug-make"`
+    - `wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build/codex-wsl-current-gcc-debug-make --target zr_vm_tail_reuse_callinfo_reset_test zr_vm_precall_frame_slot_reset_test zr_vm_value_copy_fast_paths_test zr_vm_stateless_function_closure_cache_test zr_vm_benchmark_registry_test zr_vm_tail_call_pipeline_test zr_vm_cli_executable zr_vm_perf_runner zr_vm_native_benchmark_runner -j 8"`
+- Tool: WSL clang configure/build
+  - Command:
+    - `wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake -S . -B build/codex-wsl-current-clang-debug-make"`
+    - `wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build/codex-wsl-current-clang-debug-make --target zr_vm_tail_reuse_callinfo_reset_test zr_vm_precall_frame_slot_reset_test zr_vm_value_copy_fast_paths_test zr_vm_stateless_function_closure_cache_test zr_vm_benchmark_registry_test zr_vm_tail_call_pipeline_test zr_vm_cli_executable -j 8"`
+- Tool: focused WSL gcc runtime checks
+  - Command:
+    - `wsl bash -lc "cd /mnt/e/Git/zr_vm && ./build/codex-wsl-current-gcc-debug-make/bin/zr_vm_tail_reuse_callinfo_reset_test && ./build/codex-wsl-current-gcc-debug-make/bin/zr_vm_precall_frame_slot_reset_test && ./build/codex-wsl-current-gcc-debug-make/bin/zr_vm_value_copy_fast_paths_test && ./build/codex-wsl-current-gcc-debug-make/bin/zr_vm_stateless_function_closure_cache_test && ctest --test-dir build/codex-wsl-current-gcc-debug-make -R '^benchmark_registry$' --output-on-failure && ./build/codex-wsl-current-gcc-debug-make/bin/zr_vm_tail_call_pipeline_test && ./build/codex-wsl-current-gcc-debug-make/bin/zr_vm_cli ./tests/fixtures/projects/hello_world/hello_world.zrp"`
+- Tool: focused WSL clang runtime checks
+  - Command:
+    - `wsl bash -lc "cd /mnt/e/Git/zr_vm && ./build/codex-wsl-current-clang-debug-make/bin/zr_vm_tail_reuse_callinfo_reset_test && ./build/codex-wsl-current-clang-debug-make/bin/zr_vm_precall_frame_slot_reset_test && ./build/codex-wsl-current-clang-debug-make/bin/zr_vm_value_copy_fast_paths_test && ./build/codex-wsl-current-clang-debug-make/bin/zr_vm_stateless_function_closure_cache_test && ctest --test-dir build/codex-wsl-current-clang-debug-make -R '^benchmark_registry$' --output-on-failure && ./build/codex-wsl-current-clang-debug-make/bin/zr_vm_tail_call_pipeline_test && ./build/codex-wsl-current-clang-debug-make/bin/zr_vm_cli ./tests/fixtures/projects/hello_world/hello_world.zrp"`
+- Tool: WSL gdb
+  - Why: an intermediate attempt that over-trimmed tail-reuse `callStatus` caused `zr_vm_tail_call_pipeline_test` to segfault
+  - Commands:
+    - `gdb -q -x /mnt/e/Git/zr_vm/tmp_tail_call_pipeline_crash.gdb --args ./build/codex-wsl-current-gcc-debug-make/bin/zr_vm_tail_call_pipeline_test`
+    - follow-up breakpoint traces on `function.c` tail-reuse lines confirmed the frame contents were valid before returning to `execution_dispatch`, which narrowed the regression to `callStatus` semantics rather than slot copy/reset
+- Tool: WSL formal benchmark/report run
+  - Command:
+    - `wsl bash -lc "cd /mnt/e/Git/zr_vm && ZR_VM_TEST_TIER=profile ctest --test-dir build/codex-wsl-current-gcc-debug-make -R '^performance_report$' --output-on-failure"`
+- Tool: Windows MSVC CLI smoke
+  - Command:
+    - `cmake --build build\\codex-msvc-cli-debug-current --config Debug --target zr_vm_cli_executable --parallel 8`
+    - `./build/codex-msvc-cli-debug-current/bin/Debug/zr_vm_cli.exe ./tests/fixtures/projects/hello_world/hello_world.zrp`
+
+## Results
+- Red -> green:
+  - `zr_vm_tail_reuse_callinfo_reset_test` now passes
+  - reused tail-call VM frames now reset stale `trap` and `yieldContext` state
+- First implementation attempt was intentionally rejected:
+  - trimming tail-reuse `callStatus` down to only `ZR_CALL_STATUS_TAIL_CALL` made `zr_vm_tail_call_pipeline_test` crash in `execution_dispatch.c`
+  - the stabilized version preserves runtime `callStatus` and only reinitializes the VM fields that actually must be refreshed for the next callable
+- WSL gcc passed:
+  - `zr_vm_tail_reuse_callinfo_reset_test`
+  - `zr_vm_precall_frame_slot_reset_test`
+  - `zr_vm_value_copy_fast_paths_test`
+  - `zr_vm_stateless_function_closure_cache_test`
+  - `benchmark_registry`
+  - `zr_vm_tail_call_pipeline_test`
+  - CLI `hello_world`
+- WSL clang passed the same focused set.
+- Windows MSVC CLI smoke passed and printed `hello world`.
+- Formal report chain:
+  - `performance_report` with `ZR_VM_TEST_TIER=profile` passed successfully on WSL gcc
+  - report snapshot timestamp: `2026-04-09T03:55:55Z`
+  - all 14 `ZR interp` cases produced real profile artifacts in [`/mnt/e/Git/zr_vm/build/codex-wsl-current-gcc-debug-make/tests_generated/performance/instruction_report.md`](/mnt/e/Git/zr_vm/build/codex-wsl-current-gcc-debug-make/tests_generated/performance/instruction_report.md)
+- Current profile ratios from [`/mnt/e/Git/zr_vm/build/codex-wsl-current-gcc-debug-make/tests_generated/performance/comparison_report.md`](/mnt/e/Git/zr_vm/build/codex-wsl-current-gcc-debug-make/tests_generated/performance/comparison_report.md):
+  - `fib_recursive`: `28.833x` vs C
+  - `call_chain_polymorphic`: `23.479x` vs C
+  - `mixed_service_loop`: `25.537x` vs C
+  - `matrix_add_2d`: `20.009x` vs C
+  - `dispatch_loops`: `70.128x` vs C
+  - `map_object_access`: `39.978x` vs C
+- Delta vs the prior stable profile snapshot used for comparison:
+  - `fib_recursive`: `43.927x -> 28.833x` (`-34.36%`)
+  - `call_chain_polymorphic`: `23.936x -> 23.479x` (`-1.91%`)
+  - `mixed_service_loop`: `28.528x -> 25.537x` (`-10.48%`)
+  - `matrix_add_2d`: `25.362x -> 20.009x` (`-21.11%`)
+  - `dispatch_loops`: `69.259x -> 70.128x` (`+1.25%`)
+  - `map_object_access`: `32.537x -> 39.978x` (`+22.87%`)
+- Current hotspot snapshot from [`/mnt/e/Git/zr_vm/build/codex-wsl-current-gcc-debug-make/tests_generated/performance/hotspot_report.md`](/mnt/e/Git/zr_vm/build/codex-wsl-current-gcc-debug-make/tests_generated/performance/hotspot_report.md):
+  - `dispatch_loops`
+    - total Ir: `2,274,030,693`
+    - `ZrCore_Function_PreCallKnownValue`: `86,199,489 Ir` (`3.79%`)
+  - `map_object_access`
+    - total Ir: `386,417,217`
+    - `ZrCore_Function_PreCallKnownValue`: `12,519,048 Ir` (`3.24%`)
+
+## Acceptance Decision
+- Accepted for this slice.
+- Reason:
+  - tail-call frame reuse no longer carries stale VM `trap/yield` state into the next callable
+  - the fix is covered by a focused red/green regression test
+  - the stabilized implementation survived the direct tail-call runtime pipeline on both WSL compilers
+  - the formal WSL `profile` report chain completed successfully and refreshed the canonical benchmark artifacts
+- Remaining risks / next slice:
+  - `ZrCore_Function_PreCallKnownValue` is still a first-order hotspot in `dispatch_loops` and `map_object_access`
+  - this slice primarily repaired and regularized call-info state reuse; it did not materially reduce `dispatch_loops` PreCall Ir on its own
+  - the next performance slice should go back to the main `PreCall` body itself:
+    - reduce direct dispatch overhead for already-resolved callable values
+    - trim fixed per-call field writes further without disturbing tail-call semantics
+    - keep using `profile` report + hotspot report as the acceptance gate before attempting any larger instruction-merging work

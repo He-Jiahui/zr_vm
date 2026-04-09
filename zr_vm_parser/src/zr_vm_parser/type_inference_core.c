@@ -804,6 +804,14 @@ static SZrAstNode *find_type_declaration_in_array_inference(SZrAstNodeArray *dec
                 }
                 break;
 
+            case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+                if (declaration->data.externDelegateDeclaration.name != ZR_NULL &&
+                    declaration->data.externDelegateDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.externDelegateDeclaration.name->name, typeName)) {
+                    return declaration;
+                }
+                break;
+
             default:
                 break;
         }

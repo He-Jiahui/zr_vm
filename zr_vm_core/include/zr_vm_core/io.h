@@ -67,6 +67,8 @@ typedef struct SZrIoReference SZrIoReference;
 struct SZrIoFunction;
 
 struct SZrIoFunctionLocalVariable {
+    struct SZrString *name;
+    TZrUInt32 stackSlot;
     TZrUInt64 instructionStartIndex;
     TZrUInt64 instructionEndIndex;
     TZrUInt64 startLine; // debug

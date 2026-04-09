@@ -3,6 +3,7 @@
 
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
+#include "../../../zr_vm_parser/src/zr_vm_parser/module_init_analysis.h"
 
 #include <string.h>
 
@@ -446,7 +447,6 @@ TZrBool ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(SZrState *stat
                                                                   SZrString *moduleName,
                                                                   SZrIoSource **outSource) {
     TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    SZrIo io;
 
     if (outSource != ZR_NULL) {
         *outSource = ZR_NULL;
@@ -462,17 +462,11 @@ TZrBool ZrLanguageServer_LspModuleMetadata_LoadBinaryModuleSource(SZrState *stat
         return ZR_FALSE;
     }
 
-    ZrCore_Io_Init(state, &io, ZR_NULL, ZR_NULL, ZR_NULL);
-    if (!ZrLibrary_File_SourceLoadImplementation(state, binaryPath, ZR_NULL, &io)) {
-        return ZR_FALSE;
-    }
+    return ZrParser_ModuleInitAnalysis_TryLoadBinaryMetadataSourceFromPath(state, binaryPath, outSource);
+}
 
-    *outSource = ZrCore_Io_ReadSourceNew(&io);
-    if (io.close != ZR_NULL) {
-        io.close(state, io.customData);
-    }
-
-    return *outSource != ZR_NULL;
+void ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(SZrGlobalState *global, SZrIoSource *source) {
+    ZrParser_ModuleInitAnalysis_FreeBinaryMetadataSource(global, source);
 }
 
 static const SZrIoFunctionTypedExportSymbol *module_metadata_find_binary_export_symbol(
@@ -561,7 +555,7 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryExportDeclaration(SZrSta
         source == ZR_NULL || source->modulesLength == 0 || source->modules == ZR_NULL ||
         source->modules[0].entryFunction == ZR_NULL) {
         if (source != ZR_NULL) {
-            ZrCore_Io_ReadSourceFree(state->global, source);
+            ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(state->global, source);
         }
         return ZR_FALSE;
     }
@@ -572,7 +566,7 @@ TZrBool ZrLanguageServer_LspModuleMetadata_ResolveBinaryExportDeclaration(SZrSta
         resolved = ZR_TRUE;
     }
 
-    ZrCore_Io_ReadSourceFree(state->global, source);
+    ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(state->global, source);
     return resolved;
 }
 

@@ -5,6 +5,7 @@
 #ifndef ZR_VM_CORE_STACK_H
 #define ZR_VM_CORE_STACK_H
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/profile.h"
 #include "zr_vm_core/value.h"
 
 struct ZR_STRUCT_ALIGN SZrTypeValueOnStack {
@@ -47,7 +48,14 @@ ZR_FORCE_INLINE TZrSize ZrCore_Stack_UsedSize(TZrStackPointer *stackBase, TZrSta
     return (TZrSize) (stackTop->valuePointer - stackBase->valuePointer);
 }
 
-ZR_FORCE_INLINE SZrTypeValue *ZrCore_Stack_GetValue(SZrTypeValueOnStack *valueOnStack) { return &valueOnStack->value; }
+static ZR_FORCE_INLINE SZrTypeValue *ZrCore_Stack_GetValueNoProfile(SZrTypeValueOnStack *valueOnStack) {
+    return &valueOnStack->value;
+}
+
+static ZR_FORCE_INLINE SZrTypeValue *ZrCore_Stack_GetValue(SZrTypeValueOnStack *valueOnStack) {
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_STACK_GET_VALUE);
+    return ZrCore_Stack_GetValueNoProfile(valueOnStack);
+}
 
 ZR_CORE_API void ZrCore_Stack_SetRawObjectValue(struct SZrState *state, SZrTypeValueOnStack *destination,
                                           SZrRawObject *object);

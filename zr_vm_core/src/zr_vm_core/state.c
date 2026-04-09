@@ -12,7 +12,15 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/meta.h"
+#include "zr_vm_core/profile.h"
 #include "zr_vm_core/string.h"
+
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+static TZrBool state_trace_enabled(void);
+static void state_trace(const TZrChar *format, ...);
 
 /*
  * ===== State Stack Functions =====
@@ -116,18 +124,30 @@ void ZrCore_State_Init(SZrState *state, SZrGlobalState *global) {
     // thread
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     state->previousProgramCounter = 0;
+    ZrCore_Profile_SetCurrentState(state);
 }
 
 void ZrCore_State_MainThreadLaunch(SZrState *state, TZrPtr arguments) {
     ZR_UNUSED_PARAMETER(arguments);
     SZrGlobalState *global = state->global;
+    state_trace("main thread launch enter state=%p global=%p", (void *)state, (void *)global);
     state_stack_init(state, global->mainThreadState);
+    state_trace("main thread after stack init stackBase=%p stackTop=%p stackTail=%p",
+                (void *)state->stackBase.valuePointer,
+                (void *)state->stackTop.valuePointer,
+                (void *)state->stackTail.valuePointer);
     // string table init (必须在 ZrCore_GlobalState_InitRegistry 之前，因为后者会创建字符串)
     ZrCore_StringTable_Init(state);
+    state_trace("main thread after string table init stringTable=%p memoryError=%p",
+                global != ZR_NULL ? (void *)global->stringTable : ZR_NULL,
+                global != ZR_NULL ? (void *)global->memoryErrorMessage : ZR_NULL);
     // global registry module init
     ZrCore_GlobalState_InitRegistry(state, global);
+    state_trace("main thread after registry init zrObjectType=%d",
+                global != ZR_NULL ? (int)global->zrObject.type : -1);
     // meta name init
     ZrCore_Meta_GlobalStaticsInit(state);
+    state_trace("main thread after meta init");
     // maybe we can create a lexer
 
     // allow gc to run
@@ -230,4 +250,32 @@ EZrThreadStatus ZrCore_State_DoRun(SZrState *state, TZrNativeString entry) {
     // todo: convert source to object
 
     return ZR_THREAD_STATUS_FINE;
+}
+
+static TZrBool state_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_VM_TRACE_CORE_BOOTSTRAP");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void state_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!state_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    fprintf(stderr, "[zr-state] ");
+    vfprintf(stderr, format, arguments);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(arguments);
 }

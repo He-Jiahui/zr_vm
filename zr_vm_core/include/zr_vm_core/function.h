@@ -14,6 +14,7 @@ struct SZrTypeValueOnStack;
 struct SZrString;
 struct SZrObject;
 struct SZrObjectPrototype;
+struct SZrClosure;
 
 typedef enum EZrFunctionMemberEntryKind {
     ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL = 0,
@@ -433,6 +434,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 callSiteCacheLength;
     struct SZrObject *runtimeDecoratorMetadata;
     struct SZrObject *runtimeDecoratorDecorators;
+    struct SZrClosure *cachedStatelessClosure;
 };
 
 typedef struct SZrFunction SZrFunction;
@@ -505,6 +507,12 @@ ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldAndRestoreAncho
 
 ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, TZrStackValuePointer stackPointer,
                                                   TZrSize resultCount, TZrStackValuePointer returnDestination);
+
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownValue(struct SZrState *state,
+                                                            TZrStackValuePointer stackPointer,
+                                                            struct SZrTypeValue *callableValue,
+                                                            TZrSize resultCount,
+                                                            TZrStackValuePointer returnDestination);
 
 ZR_CORE_API TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
                                                  struct SZrCallInfo *callInfo,

@@ -1,5 +1,6 @@
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "benchmark_case.h"
@@ -12,11 +13,17 @@ extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_prime_trial_division
 extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_matrix_add_2d;
 extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_string_build;
 extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_map_object_access;
+extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_fib_recursive;
+extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_call_chain_polymorphic;
+extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_object_field_hot;
+extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_array_index_dense;
+extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_branch_jump_dense;
+extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_mixed_service_loop;
 
 static void zr_bench_print_usage(const char *executable) {
     fprintf(stderr,
             "Usage:\n"
-            "  %s --case <name> --tier <smoke|core|stress>\n",
+            "  %s --case <name> --tier <smoke|core|stress|profile> [--scale <positive-int>]\n",
             executable);
 }
 
@@ -29,7 +36,13 @@ static const ZrBenchCaseDescriptor *zr_bench_find_case(const char *caseName) {
             &zr_bench_case_descriptor_prime_trial_division,
             &zr_bench_case_descriptor_matrix_add_2d,
             &zr_bench_case_descriptor_string_build,
-            &zr_bench_case_descriptor_map_object_access
+            &zr_bench_case_descriptor_map_object_access,
+            &zr_bench_case_descriptor_fib_recursive,
+            &zr_bench_case_descriptor_call_chain_polymorphic,
+            &zr_bench_case_descriptor_object_field_hot,
+            &zr_bench_case_descriptor_array_index_dense,
+            &zr_bench_case_descriptor_branch_jump_dense,
+            &zr_bench_case_descriptor_mixed_service_loop
     };
     int index;
 
@@ -47,6 +60,7 @@ int main(int argc, char **argv) {
     const char *tier = NULL;
     const ZrBenchCaseDescriptor *descriptor = NULL;
     int scale = 0;
+    int explicitScale = 0;
     int index;
 
     for (index = 1; index < argc; index++) {
@@ -56,6 +70,10 @@ int main(int argc, char **argv) {
         }
         if (strcmp(argv[index], "--tier") == 0 && index + 1 < argc) {
             tier = argv[++index];
+            continue;
+        }
+        if (strcmp(argv[index], "--scale") == 0 && index + 1 < argc) {
+            explicitScale = atoi(argv[++index]);
             continue;
         }
 
@@ -75,9 +93,13 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    scale = zr_bench_scale_from_tier(tier);
+    if (explicitScale > 0) {
+        scale = explicitScale;
+    } else {
+        scale = zr_bench_scale_from_tier(tier);
+    }
     if (scale == 0) {
-        fprintf(stderr, "Unsupported tier: %s\n", tier);
+        fprintf(stderr, "Unsupported tier or scale\n");
         return 1;
     }
 

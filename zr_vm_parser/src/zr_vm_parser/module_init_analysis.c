@@ -3,8 +3,12 @@
 #include "type_inference_internal.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_library/file.h"
 
+#include <stddef.h>
 #include <stdio.h>
+#include <stdarg.h>
+#include <stdlib.h>
 
 typedef enum EZrParserInitBindingKind {
     ZR_PARSER_INIT_BINDING_LOCAL = 0,
@@ -39,6 +43,7 @@ typedef struct SZrParserInitCallableInfo {
 typedef struct SZrParserInitAnalysisContext {
     SZrCompilerState *cs;
     SZrParserModuleInitSummary *summary;
+    SZrString *moduleName;
     SZrAstNode *scriptAst;
     SZrArray callables;
     SZrArray bindings;
@@ -50,10 +55,33 @@ typedef struct SZrParserSummaryPathBuffer {
     TZrUInt32 length;
 } SZrParserSummaryPathBuffer;
 
+typedef enum EZrBinaryMetadataSection {
+    ZR_BINARY_METADATA_SECTION_NONE = 0,
+    ZR_BINARY_METADATA_SECTION_LOCAL_BINDINGS = 1,
+    ZR_BINARY_METADATA_SECTION_EXPORTED_SYMBOLS = 2,
+    ZR_BINARY_METADATA_SECTION_STATIC_IMPORTS = 3,
+    ZR_BINARY_METADATA_SECTION_MODULE_ENTRY_EFFECTS = 4,
+    ZR_BINARY_METADATA_SECTION_EXPORTED_CALLABLE_SUMMARIES = 5,
+    ZR_BINARY_METADATA_SECTION_TOP_LEVEL_CALLABLE_BINDINGS = 6
+} EZrBinaryMetadataSection;
+
+typedef struct SZrBinaryMetadataCallableBuilder {
+    TZrBool active;
+    SZrIoFunctionCallableSummary summary;
+    SZrArray effects;
+} SZrBinaryMetadataCallableBuilder;
+
+typedef struct SZrBinaryMetadataSyntheticSource {
+    SZrIoSource source;
+    SZrIoModule module;
+    SZrIoFunction function;
+} SZrBinaryMetadataSyntheticSource;
+
 static SZrParserModuleInitCache *module_init_get_cache(SZrGlobalState *global, TZrBool createIfMissing);
 static SZrParserModuleInitSummary *module_init_find_summary_mutable(SZrGlobalState *global, SZrString *moduleName);
 static SZrParserModuleInitSummary *module_init_find_summary_by_ast_mutable(SZrGlobalState *global,
                                                                            const SZrAstNode *ast);
+static SZrParserModuleInitSummary *module_init_context_summary_mutable(SZrParserInitAnalysisContext *context);
 static void module_init_free_summary(SZrGlobalState *global, SZrParserModuleInitSummary *summary);
 static TZrBool module_init_reset_summary(SZrState *state,
                                          SZrParserModuleInitSummary *summary,
@@ -82,6 +110,42 @@ static TZrBool module_init_analyze_binary_summary(SZrCompilerState *cs,
                                                   const SZrIoFunction *function);
 static TZrBool module_init_validate_summary(SZrCompilerState *cs, SZrParserModuleInitSummary *summary);
 static TZrBool module_init_ensure_summary_analyzed(SZrCompilerState *cs, SZrString *moduleName);
+static TZrBool module_init_binary_metadata_build_sidecar_path(const TZrChar *binaryPath,
+                                                              TZrChar *buffer,
+                                                              TZrSize bufferSize);
+static void module_init_binary_metadata_free_symbol_array_buffers(SZrGlobalState *global, SZrArray *symbols);
+static void module_init_binary_metadata_free_callable_summary_array_buffers(SZrGlobalState *global,
+                                                                           SZrArray *summaries);
+static void module_init_binary_metadata_release_synthetic_source(SZrGlobalState *global,
+                                                                 SZrBinaryMetadataSyntheticSource *synthetic);
+
+static TZrBool module_init_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_VM_TRACE_PROJECT_STARTUP");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void module_init_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!module_init_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    fprintf(stderr, "[zr-module-init] ");
+    vfprintf(stderr, format, arguments);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(arguments);
+}
 
 static EZrValueType module_init_base_type_from_name(SZrString *typeName) {
     const TZrChar *text;
@@ -174,6 +238,1186 @@ static void module_init_fill_type_ref_from_type_node(SZrFunctionTypedTypeRef *ou
     }
 }
 
+static TZrSize module_init_binary_metadata_count_indent(const TZrChar *line) {
+    TZrSize indent = 0;
+
+    if (line == ZR_NULL) {
+        return 0;
+    }
+
+    while (line[indent] == ' ') {
+        indent++;
+    }
+    return indent;
+}
+
+static TZrBool module_init_binary_metadata_copy_trimmed_slice(const TZrChar *start,
+                                                              TZrSize length,
+                                                              TZrChar *buffer,
+                                                              TZrSize bufferSize) {
+    TZrSize trimmedStart = 0;
+    TZrSize trimmedLength = length;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    buffer[0] = '\0';
+    if (start == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    while (trimmedStart < length &&
+           (start[trimmedStart] == ' ' || start[trimmedStart] == '\t' || start[trimmedStart] == '\r')) {
+        trimmedStart++;
+    }
+    while (trimmedLength > trimmedStart &&
+           (start[trimmedLength - 1] == ' ' || start[trimmedLength - 1] == '\t' ||
+            start[trimmedLength - 1] == '\r')) {
+        trimmedLength--;
+    }
+
+    if (trimmedLength <= trimmedStart) {
+        return ZR_TRUE;
+    }
+
+    trimmedLength -= trimmedStart;
+    if (trimmedLength + 1 > bufferSize) {
+        return ZR_FALSE;
+    }
+
+    memcpy(buffer, start + trimmedStart, trimmedLength);
+    buffer[trimmedLength] = '\0';
+    return ZR_TRUE;
+}
+
+static TZrBool module_init_binary_metadata_copy_trimmed_text(const TZrChar *text,
+                                                             TZrChar *buffer,
+                                                             TZrSize bufferSize) {
+    return text != ZR_NULL
+               ? module_init_binary_metadata_copy_trimmed_slice(text, strlen(text), buffer, bufferSize)
+               : ZR_FALSE;
+}
+
+static SZrString *module_init_binary_metadata_create_string(SZrState *state, const TZrChar *text) {
+    return (state != ZR_NULL && text != ZR_NULL && text[0] != '\0')
+               ? ZrCore_String_Create(state, (TZrNativeString)text, strlen(text))
+               : ZR_NULL;
+}
+
+static void module_init_binary_metadata_fill_line_span(const TZrChar *line,
+                                                       TZrUInt32 lineNumber,
+                                                       TZrUInt32 *outStartLine,
+                                                       TZrUInt32 *outStartColumn,
+                                                       TZrUInt32 *outEndLine,
+                                                       TZrUInt32 *outEndColumn) {
+    TZrSize indent = module_init_binary_metadata_count_indent(line);
+    TZrSize length = line != ZR_NULL ? strlen(line) : 0;
+
+    if (outStartLine != ZR_NULL) {
+        *outStartLine = lineNumber;
+    }
+    if (outStartColumn != ZR_NULL) {
+        *outStartColumn = (TZrUInt32)indent + 1;
+    }
+    if (outEndLine != ZR_NULL) {
+        *outEndLine = lineNumber;
+    }
+    if (outEndColumn != ZR_NULL) {
+        *outEndColumn = (TZrUInt32)(length > indent ? length + 1 : indent + 1);
+    }
+}
+
+static TZrBool module_init_binary_metadata_find_suffix_value(const TZrChar *line,
+                                                             const TZrChar *key,
+                                                             TZrChar *buffer,
+                                                             TZrSize bufferSize) {
+    const TZrChar *open;
+    const TZrChar *close;
+    const TZrChar *found;
+    TZrSize length;
+
+    if (buffer != ZR_NULL && bufferSize > 0) {
+        buffer[0] = '\0';
+    }
+    if (line == ZR_NULL || key == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    open = strchr(line, '[');
+    close = open != ZR_NULL ? strrchr(open, ']') : ZR_NULL;
+    if (open == ZR_NULL || close == ZR_NULL || close <= open) {
+        return ZR_FALSE;
+    }
+
+    found = strstr(open, key);
+    if (found == ZR_NULL || found >= close) {
+        return ZR_FALSE;
+    }
+
+    found += strlen(key);
+    length = 0;
+    while (found + length < close && found[length] != ' ' && found[length] != ']') {
+        length++;
+    }
+    return module_init_binary_metadata_copy_trimmed_slice(found, length, buffer, bufferSize);
+}
+
+static TZrUInt32 module_init_binary_metadata_suffix_uint(const TZrChar *line,
+                                                         const TZrChar *key,
+                                                         TZrUInt32 defaultValue) {
+    TZrChar valueBuffer[32];
+    char *end = ZR_NULL;
+    unsigned long value;
+
+    if (!module_init_binary_metadata_find_suffix_value(line, key, valueBuffer, sizeof(valueBuffer)) ||
+        valueBuffer[0] == '\0') {
+        return defaultValue;
+    }
+
+    value = strtoul(valueBuffer, &end, 10);
+    return end != ZR_NULL && *end == '\0' ? (TZrUInt32)value : defaultValue;
+}
+
+static TZrUInt8 module_init_binary_metadata_export_kind_from_text(const TZrChar *text, TZrUInt8 defaultKind) {
+    if (text == ZR_NULL || text[0] == '\0') {
+        return defaultKind;
+    }
+    if (strcmp(text, "value") == 0) {
+        return ZR_MODULE_EXPORT_KIND_VALUE;
+    }
+    if (strcmp(text, "function") == 0) {
+        return ZR_MODULE_EXPORT_KIND_FUNCTION;
+    }
+    if (strcmp(text, "type") == 0) {
+        return ZR_MODULE_EXPORT_KIND_TYPE;
+    }
+    return defaultKind;
+}
+
+static TZrUInt8 module_init_binary_metadata_readiness_from_text(const TZrChar *text, TZrUInt8 defaultReadiness) {
+    if (text == ZR_NULL || text[0] == '\0') {
+        return defaultReadiness;
+    }
+    if (strcmp(text, "declaration") == 0) {
+        return ZR_MODULE_EXPORT_READY_DECLARATION;
+    }
+    if (strcmp(text, "entry") == 0) {
+        return ZR_MODULE_EXPORT_READY_ENTRY;
+    }
+    return defaultReadiness;
+}
+
+static TZrUInt8 module_init_binary_metadata_effect_kind_from_text(const TZrChar *text) {
+    if (text == ZR_NULL || text[0] == '\0') {
+        return ZR_MODULE_ENTRY_EFFECT_DYNAMIC_UNKNOWN;
+    }
+    if (strcmp(text, "IMPORT_REF") == 0) {
+        return ZR_MODULE_ENTRY_EFFECT_IMPORT_REF;
+    }
+    if (strcmp(text, "IMPORT_READ") == 0) {
+        return ZR_MODULE_ENTRY_EFFECT_IMPORT_READ;
+    }
+    if (strcmp(text, "IMPORT_CALL") == 0) {
+        return ZR_MODULE_ENTRY_EFFECT_IMPORT_CALL;
+    }
+    if (strcmp(text, "LOCAL_CALL") == 0) {
+        return ZR_MODULE_ENTRY_EFFECT_LOCAL_CALL;
+    }
+    if (strcmp(text, "LOCAL_ENTRY_BINDING_READ") == 0) {
+        return ZR_MODULE_ENTRY_EFFECT_LOCAL_ENTRY_BINDING_READ;
+    }
+    return ZR_MODULE_ENTRY_EFFECT_DYNAMIC_UNKNOWN;
+}
+
+static void module_init_binary_metadata_parse_type_ref(SZrState *state,
+                                                       const TZrChar *text,
+                                                       SZrIoFunctionTypedTypeRef *outType) {
+    TZrChar typeBuffer[256];
+    TZrSize length;
+
+    if (outType == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Memory_RawSet(outType, 0, sizeof(*outType));
+    outType->baseType = ZR_VALUE_TYPE_OBJECT;
+    outType->elementBaseType = ZR_VALUE_TYPE_OBJECT;
+
+    if (!module_init_binary_metadata_copy_trimmed_text(text, typeBuffer, sizeof(typeBuffer)) ||
+        typeBuffer[0] == '\0') {
+        return;
+    }
+
+    length = strlen(typeBuffer);
+    if (length >= 2 && typeBuffer[length - 2] == '[' && typeBuffer[length - 1] == ']') {
+        typeBuffer[length - 2] = '\0';
+        outType->isArray = ZR_TRUE;
+        outType->baseType = ZR_VALUE_TYPE_ARRAY;
+        outType->elementTypeName = module_init_binary_metadata_create_string(state, typeBuffer);
+        outType->elementBaseType = module_init_base_type_from_name(outType->elementTypeName);
+        if (outType->elementBaseType != ZR_VALUE_TYPE_OBJECT) {
+            outType->elementTypeName = ZR_NULL;
+        }
+        return;
+    }
+
+    outType->typeName = module_init_binary_metadata_create_string(state, typeBuffer);
+    outType->baseType = module_init_base_type_from_name(outType->typeName);
+    if (outType->baseType != ZR_VALUE_TYPE_OBJECT) {
+        outType->typeName = ZR_NULL;
+    }
+}
+
+static TZrBool module_init_binary_metadata_parse_parameter_types(SZrState *state,
+                                                                 const TZrChar *text,
+                                                                 SZrIoFunctionTypedTypeRef **outTypes,
+                                                                 TZrSize *outCount) {
+    SZrArray parameters;
+    const TZrChar *cursor = text;
+    const TZrChar *segmentStart = text;
+    TZrInt32 genericDepth = 0;
+
+    if (outTypes != ZR_NULL) {
+        *outTypes = ZR_NULL;
+    }
+    if (outCount != ZR_NULL) {
+        *outCount = 0;
+    }
+    if (state == ZR_NULL || text == ZR_NULL || outTypes == ZR_NULL || outCount == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Construct(&parameters);
+    if (*text == '\0') {
+        return ZR_TRUE;
+    }
+
+    ZrCore_Array_Init(state,
+                      &parameters,
+                      sizeof(SZrIoFunctionTypedTypeRef),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    while (cursor != ZR_NULL && *cursor != '\0') {
+        if (*cursor == '<') {
+            genericDepth++;
+        } else if (*cursor == '>' && genericDepth > 0) {
+            genericDepth--;
+        } else if (*cursor == ',' && genericDepth == 0) {
+            SZrIoFunctionTypedTypeRef parameterType;
+
+            module_init_binary_metadata_parse_type_ref(state, segmentStart, &parameterType);
+            ZrCore_Array_Push(state, &parameters, &parameterType);
+            segmentStart = cursor + 1;
+        }
+        cursor++;
+    }
+
+    if (segmentStart != ZR_NULL && *segmentStart != '\0') {
+        SZrIoFunctionTypedTypeRef parameterType;
+
+        module_init_binary_metadata_parse_type_ref(state, segmentStart, &parameterType);
+        ZrCore_Array_Push(state, &parameters, &parameterType);
+    }
+
+    if (parameters.length > 0) {
+        *outTypes = (SZrIoFunctionTypedTypeRef *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrIoFunctionTypedTypeRef) * parameters.length,
+            ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        if (*outTypes == ZR_NULL) {
+            ZrCore_Array_Free(state, &parameters);
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawCopy(*outTypes,
+                              parameters.head,
+                              sizeof(SZrIoFunctionTypedTypeRef) * parameters.length);
+        *outCount = parameters.length;
+    }
+
+    ZrCore_Array_Free(state, &parameters);
+    return ZR_TRUE;
+}
+
+static TZrBool module_init_binary_metadata_parse_export_symbol_line(SZrState *state,
+                                                                    const TZrChar *line,
+                                                                    TZrUInt32 lineNumber,
+                                                                    SZrIoFunctionTypedExportSymbol *outSymbol) {
+    const TZrChar *trimmed;
+    TZrChar suffixBuffer[32];
+
+    if (outSymbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(outSymbol, 0, sizeof(*outSymbol));
+    outSymbol->accessModifier = ZR_ACCESS_PUBLIC;
+    outSymbol->callableChildIndex = ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE;
+    module_init_binary_metadata_fill_line_span(line,
+                                               lineNumber,
+                                               &outSymbol->lineInSourceStart,
+                                               &outSymbol->columnInSourceStart,
+                                               &outSymbol->lineInSourceEnd,
+                                               &outSymbol->columnInSourceEnd);
+
+    trimmed = line != ZR_NULL ? line + module_init_binary_metadata_count_indent(line) : ZR_NULL;
+    if (trimmed == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (strncmp(trimmed, "fn ", 3) == 0) {
+        const TZrChar *nameStart = trimmed + 3;
+        const TZrChar *openParen = strchr(nameStart, '(');
+        const TZrChar *closeParen = openParen != ZR_NULL ? strchr(openParen, ')') : ZR_NULL;
+        const TZrChar *colon = closeParen != ZR_NULL ? strchr(closeParen, ':') : ZR_NULL;
+        const TZrChar *suffixStart;
+        TZrChar nameBuffer[256];
+        TZrChar returnTypeBuffer[256];
+        TZrChar parameterBuffer[256];
+
+        if (openParen == ZR_NULL || closeParen == ZR_NULL || colon == ZR_NULL ||
+            !module_init_binary_metadata_copy_trimmed_slice(nameStart,
+                                                            (TZrSize)(openParen - nameStart),
+                                                            nameBuffer,
+                                                            sizeof(nameBuffer)) ||
+            !module_init_binary_metadata_copy_trimmed_slice(openParen + 1,
+                                                            (TZrSize)(closeParen - openParen - 1),
+                                                            parameterBuffer,
+                                                            sizeof(parameterBuffer))) {
+            return ZR_FALSE;
+        }
+
+        suffixStart = strchr(colon + 1, '[');
+        if (!module_init_binary_metadata_copy_trimmed_slice(colon + 1,
+                                                            suffixStart != ZR_NULL
+                                                                ? (TZrSize)(suffixStart - (colon + 1))
+                                                                : strlen(colon + 1),
+                                                            returnTypeBuffer,
+                                                            sizeof(returnTypeBuffer))) {
+            return ZR_FALSE;
+        }
+
+        outSymbol->name = module_init_binary_metadata_create_string(state, nameBuffer);
+        outSymbol->symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
+        outSymbol->exportKind = ZR_MODULE_EXPORT_KIND_FUNCTION;
+        outSymbol->readiness = ZR_MODULE_EXPORT_READY_DECLARATION;
+        module_init_binary_metadata_parse_type_ref(state, returnTypeBuffer, &outSymbol->valueType);
+        if (!module_init_binary_metadata_parse_parameter_types(state,
+                                                              parameterBuffer,
+                                                              &outSymbol->parameterTypes,
+                                                              &outSymbol->parameterCount)) {
+            return ZR_FALSE;
+        }
+    } else if (strncmp(trimmed, "var ", 4) == 0) {
+        const TZrChar *nameStart = trimmed + 4;
+        const TZrChar *colon = strchr(nameStart, ':');
+        const TZrChar *suffixStart;
+        TZrChar nameBuffer[256];
+        TZrChar valueTypeBuffer[256];
+
+        if (colon == ZR_NULL ||
+            !module_init_binary_metadata_copy_trimmed_slice(nameStart,
+                                                            (TZrSize)(colon - nameStart),
+                                                            nameBuffer,
+                                                            sizeof(nameBuffer))) {
+            return ZR_FALSE;
+        }
+
+        suffixStart = strchr(colon + 1, '[');
+        if (!module_init_binary_metadata_copy_trimmed_slice(colon + 1,
+                                                            suffixStart != ZR_NULL
+                                                                ? (TZrSize)(suffixStart - (colon + 1))
+                                                                : strlen(colon + 1),
+                                                            valueTypeBuffer,
+                                                            sizeof(valueTypeBuffer))) {
+            return ZR_FALSE;
+        }
+
+        outSymbol->name = module_init_binary_metadata_create_string(state, nameBuffer);
+        outSymbol->symbolKind = ZR_FUNCTION_TYPED_SYMBOL_VARIABLE;
+        outSymbol->exportKind = ZR_MODULE_EXPORT_KIND_VALUE;
+        outSymbol->readiness = ZR_MODULE_EXPORT_READY_ENTRY;
+        module_init_binary_metadata_parse_type_ref(state, valueTypeBuffer, &outSymbol->valueType);
+    } else {
+        return ZR_FALSE;
+    }
+
+    if (module_init_binary_metadata_find_suffix_value(trimmed, "kind=", suffixBuffer, sizeof(suffixBuffer))) {
+        outSymbol->exportKind = module_init_binary_metadata_export_kind_from_text(suffixBuffer, outSymbol->exportKind);
+    }
+    if (module_init_binary_metadata_find_suffix_value(trimmed, "readiness=", suffixBuffer, sizeof(suffixBuffer))) {
+        outSymbol->readiness =
+            module_init_binary_metadata_readiness_from_text(suffixBuffer, outSymbol->readiness);
+    }
+    outSymbol->callableChildIndex =
+        module_init_binary_metadata_suffix_uint(trimmed, "child=", outSymbol->callableChildIndex);
+    return outSymbol->name != ZR_NULL;
+}
+
+static TZrBool module_init_binary_metadata_parse_effect_line(SZrState *state,
+                                                             const TZrChar *line,
+                                                             TZrUInt32 lineNumber,
+                                                             SZrIoFunctionModuleEffect *outEffect) {
+    const TZrChar *trimmed;
+    const TZrChar *firstSpace;
+    const TZrChar *suffixStart;
+    const TZrChar *lastDot;
+    TZrChar kindBuffer[64];
+    TZrChar targetBuffer[256];
+    TZrChar moduleBuffer[256];
+    TZrChar symbolBuffer[256];
+    TZrChar suffixBuffer[32];
+
+    if (outEffect == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(outEffect, 0, sizeof(*outEffect));
+    module_init_binary_metadata_fill_line_span(line,
+                                               lineNumber,
+                                               &outEffect->lineInSourceStart,
+                                               &outEffect->columnInSourceStart,
+                                               &outEffect->lineInSourceEnd,
+                                               &outEffect->columnInSourceEnd);
+
+    trimmed = line != ZR_NULL ? line + module_init_binary_metadata_count_indent(line) : ZR_NULL;
+    if (trimmed == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    firstSpace = strchr(trimmed, ' ');
+    if (firstSpace == ZR_NULL ||
+        !module_init_binary_metadata_copy_trimmed_slice(trimmed,
+                                                        (TZrSize)(firstSpace - trimmed),
+                                                        kindBuffer,
+                                                        sizeof(kindBuffer))) {
+        return ZR_FALSE;
+    }
+
+    suffixStart = strchr(firstSpace + 1, '[');
+    if (!module_init_binary_metadata_copy_trimmed_slice(firstSpace + 1,
+                                                        suffixStart != ZR_NULL
+                                                            ? (TZrSize)(suffixStart - (firstSpace + 1))
+                                                            : strlen(firstSpace + 1),
+                                                        targetBuffer,
+                                                        sizeof(targetBuffer))) {
+        return ZR_FALSE;
+    }
+
+    lastDot = strrchr(targetBuffer, '.');
+    if (lastDot == ZR_NULL ||
+        !module_init_binary_metadata_copy_trimmed_slice(targetBuffer,
+                                                        (TZrSize)(lastDot - targetBuffer),
+                                                        moduleBuffer,
+                                                        sizeof(moduleBuffer)) ||
+        !module_init_binary_metadata_copy_trimmed_text(lastDot + 1, symbolBuffer, sizeof(symbolBuffer))) {
+        return ZR_FALSE;
+    }
+
+    outEffect->kind = module_init_binary_metadata_effect_kind_from_text(kindBuffer);
+    outEffect->exportKind = ZR_MODULE_EXPORT_KIND_VALUE;
+    outEffect->readiness = ZR_MODULE_EXPORT_READY_ENTRY;
+    outEffect->moduleName = module_init_binary_metadata_create_string(state, moduleBuffer);
+    outEffect->symbolName = module_init_binary_metadata_create_string(state, symbolBuffer);
+
+    if (module_init_binary_metadata_find_suffix_value(trimmed, "kind=", suffixBuffer, sizeof(suffixBuffer))) {
+        outEffect->exportKind = module_init_binary_metadata_export_kind_from_text(suffixBuffer, outEffect->exportKind);
+    }
+    if (module_init_binary_metadata_find_suffix_value(trimmed, "readiness=", suffixBuffer, sizeof(suffixBuffer))) {
+        outEffect->readiness =
+            module_init_binary_metadata_readiness_from_text(suffixBuffer, outEffect->readiness);
+    }
+    return outEffect->moduleName != ZR_NULL && outEffect->symbolName != ZR_NULL;
+}
+
+static void module_init_binary_metadata_callable_builder_reset(SZrBinaryMetadataCallableBuilder *builder) {
+    if (builder == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Memory_RawSet(builder, 0, sizeof(*builder));
+    ZrCore_Array_Construct(&builder->effects);
+}
+
+static TZrBool module_init_binary_metadata_finalize_callable_builder(SZrState *state,
+                                                                     SZrBinaryMetadataCallableBuilder *builder,
+                                                                     SZrArray *summaries) {
+    if (builder == ZR_NULL || summaries == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!builder->active) {
+        return ZR_TRUE;
+    }
+
+    builder->summary.effectCount = builder->effects.length;
+    if (builder->effects.length > 0) {
+        builder->summary.effects = (SZrIoFunctionModuleEffect *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrIoFunctionModuleEffect) * builder->effects.length,
+            ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        if (builder->summary.effects == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawCopy(builder->summary.effects,
+                              builder->effects.head,
+                              sizeof(SZrIoFunctionModuleEffect) * builder->effects.length);
+    }
+
+    ZrCore_Array_Push(state, summaries, &builder->summary);
+    ZrCore_Array_Free(state, &builder->effects);
+    module_init_binary_metadata_callable_builder_reset(builder);
+    return ZR_TRUE;
+}
+
+static TZrBool module_init_binary_metadata_parse_callable_summary_header(
+    SZrState *state,
+    const TZrChar *line,
+    SZrIoFunctionCallableSummary *outSummary) {
+    const TZrChar *trimmed;
+    const TZrChar *suffixStart;
+    TZrChar nameBuffer[256];
+
+    if (outSummary == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(outSummary, 0, sizeof(*outSummary));
+    trimmed = line != ZR_NULL ? line + module_init_binary_metadata_count_indent(line) : ZR_NULL;
+    if (trimmed == ZR_NULL || strncmp(trimmed, "fn ", 3) != 0) {
+        return ZR_FALSE;
+    }
+
+    suffixStart = strchr(trimmed + 3, '[');
+    if (!module_init_binary_metadata_copy_trimmed_slice(trimmed + 3,
+                                                        suffixStart != ZR_NULL
+                                                            ? (TZrSize)(suffixStart - (trimmed + 3))
+                                                            : strlen(trimmed + 3),
+                                                        nameBuffer,
+                                                        sizeof(nameBuffer))) {
+        return ZR_FALSE;
+    }
+
+    outSummary->name = module_init_binary_metadata_create_string(state, nameBuffer);
+    outSummary->callableChildIndex =
+        module_init_binary_metadata_suffix_uint(trimmed, "child=", ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE);
+    return outSummary->name != ZR_NULL;
+}
+
+static TZrBool module_init_binary_metadata_parse_top_level_binding_line(
+    SZrState *state,
+    const TZrChar *line,
+    SZrIoFunctionTopLevelCallableBinding *outBinding) {
+    const TZrChar *trimmed;
+    const TZrChar *suffixStart;
+    TZrChar nameBuffer[256];
+    TZrChar suffixBuffer[32];
+
+    if (outBinding == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(outBinding, 0, sizeof(*outBinding));
+    outBinding->accessModifier = ZR_ACCESS_PUBLIC;
+    outBinding->exportKind = ZR_MODULE_EXPORT_KIND_FUNCTION;
+    outBinding->readiness = ZR_MODULE_EXPORT_READY_DECLARATION;
+    outBinding->callableChildIndex = ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE;
+
+    trimmed = line != ZR_NULL ? line + module_init_binary_metadata_count_indent(line) : ZR_NULL;
+    if (trimmed == ZR_NULL || strncmp(trimmed, "fn ", 3) != 0) {
+        return ZR_FALSE;
+    }
+
+    suffixStart = strchr(trimmed + 3, '[');
+    if (!module_init_binary_metadata_copy_trimmed_slice(trimmed + 3,
+                                                        suffixStart != ZR_NULL
+                                                            ? (TZrSize)(suffixStart - (trimmed + 3))
+                                                            : strlen(trimmed + 3),
+                                                        nameBuffer,
+                                                        sizeof(nameBuffer))) {
+        return ZR_FALSE;
+    }
+
+    outBinding->name = module_init_binary_metadata_create_string(state, nameBuffer);
+    outBinding->stackSlot = module_init_binary_metadata_suffix_uint(trimmed, "slot=", 0);
+    outBinding->callableChildIndex =
+        module_init_binary_metadata_suffix_uint(trimmed, "child=", outBinding->callableChildIndex);
+    outBinding->accessModifier =
+        (TZrUInt8)module_init_binary_metadata_suffix_uint(trimmed, "access=", outBinding->accessModifier);
+
+    if (module_init_binary_metadata_find_suffix_value(trimmed, "kind=", suffixBuffer, sizeof(suffixBuffer))) {
+        outBinding->exportKind = module_init_binary_metadata_export_kind_from_text(suffixBuffer, outBinding->exportKind);
+    }
+    if (module_init_binary_metadata_find_suffix_value(trimmed, "readiness=", suffixBuffer, sizeof(suffixBuffer))) {
+        outBinding->readiness =
+            module_init_binary_metadata_readiness_from_text(suffixBuffer, outBinding->readiness);
+    }
+    return outBinding->name != ZR_NULL;
+}
+
+static EZrBinaryMetadataSection module_init_binary_metadata_section_from_line(const TZrChar *line) {
+    if (line == ZR_NULL) {
+        return ZR_BINARY_METADATA_SECTION_NONE;
+    }
+    if (strncmp(line, "LOCAL_BINDINGS ", 15) == 0) {
+        return ZR_BINARY_METADATA_SECTION_LOCAL_BINDINGS;
+    }
+    if (strncmp(line, "EXPORTED_SYMBOLS ", 17) == 0) {
+        return ZR_BINARY_METADATA_SECTION_EXPORTED_SYMBOLS;
+    }
+    if (strncmp(line, "STATIC_IMPORTS ", 15) == 0) {
+        return ZR_BINARY_METADATA_SECTION_STATIC_IMPORTS;
+    }
+    if (strncmp(line, "MODULE_ENTRY_EFFECTS ", 21) == 0) {
+        return ZR_BINARY_METADATA_SECTION_MODULE_ENTRY_EFFECTS;
+    }
+    if (strncmp(line, "EXPORTED_CALLABLE_SUMMARIES ", 28) == 0) {
+        return ZR_BINARY_METADATA_SECTION_EXPORTED_CALLABLE_SUMMARIES;
+    }
+    if (strncmp(line, "TOP_LEVEL_CALLABLE_BINDINGS ", 28) == 0) {
+        return ZR_BINARY_METADATA_SECTION_TOP_LEVEL_CALLABLE_BINDINGS;
+    }
+    return ZR_BINARY_METADATA_SECTION_NONE;
+}
+
+static TZrBool module_init_binary_metadata_has_synthetic_marker(const SZrIoSource *source) {
+    return source != ZR_NULL &&
+           source->optional[0] == 'Z' &&
+           source->optional[1] == 'R' &&
+           source->optional[2] == 'I';
+}
+
+static TZrBool module_init_binary_metadata_build_sidecar_path(const TZrChar *binaryPath,
+                                                              TZrChar *buffer,
+                                                              TZrSize bufferSize) {
+    TZrSize length;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    buffer[0] = '\0';
+    if (binaryPath == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    length = strlen(binaryPath);
+    if (length >= ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION_LENGTH &&
+        strcmp(binaryPath + length - ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION_LENGTH,
+               ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION) == 0) {
+        if (length + 1 > bufferSize) {
+            return ZR_FALSE;
+        }
+        memcpy(buffer, binaryPath, length + 1);
+        return ZR_TRUE;
+    }
+
+    if (length < ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH ||
+        strcmp(binaryPath + length - ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH,
+               ZR_VM_BINARY_MODULE_FILE_EXTENSION) != 0 ||
+        length + 1 > bufferSize) {
+        return ZR_FALSE;
+    }
+
+    memcpy(buffer, binaryPath, length + 1);
+    memcpy(buffer + length - ZR_VM_BINARY_MODULE_FILE_EXTENSION_LENGTH,
+           ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION,
+           ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION_LENGTH + 1);
+    return ZR_TRUE;
+}
+
+static void module_init_binary_metadata_free_symbol_array_buffers(SZrGlobalState *global, SZrArray *symbols) {
+    TZrSize index;
+
+    if (global == ZR_NULL || symbols == ZR_NULL || !symbols->isValid) {
+        return;
+    }
+
+    for (index = 0; index < symbols->length; index++) {
+        SZrIoFunctionTypedExportSymbol *symbol =
+            (SZrIoFunctionTypedExportSymbol *)ZrCore_Array_Get(symbols, index);
+        if (symbol != ZR_NULL && symbol->parameterTypes != ZR_NULL && symbol->parameterCount > 0) {
+            ZrCore_Memory_RawFreeWithType(global,
+                                          symbol->parameterTypes,
+                                          sizeof(SZrIoFunctionTypedTypeRef) * symbol->parameterCount,
+                                          ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            symbol->parameterTypes = ZR_NULL;
+            symbol->parameterCount = 0;
+        }
+    }
+
+    if (global->mainThreadState != ZR_NULL) {
+        ZrCore_Array_Free(global->mainThreadState, symbols);
+    }
+}
+
+static void module_init_binary_metadata_free_callable_summary_array_buffers(SZrGlobalState *global,
+                                                                           SZrArray *summaries) {
+    TZrSize index;
+
+    if (global == ZR_NULL || summaries == ZR_NULL || !summaries->isValid) {
+        return;
+    }
+
+    for (index = 0; index < summaries->length; index++) {
+        SZrIoFunctionCallableSummary *summary =
+            (SZrIoFunctionCallableSummary *)ZrCore_Array_Get(summaries, index);
+        if (summary != ZR_NULL && summary->effects != ZR_NULL && summary->effectCount > 0) {
+            ZrCore_Memory_RawFreeWithType(global,
+                                          summary->effects,
+                                          sizeof(SZrIoFunctionModuleEffect) * summary->effectCount,
+                                          ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            summary->effects = ZR_NULL;
+            summary->effectCount = 0;
+        }
+    }
+
+    if (global->mainThreadState != ZR_NULL) {
+        ZrCore_Array_Free(global->mainThreadState, summaries);
+    }
+}
+
+static void module_init_binary_metadata_release_synthetic_source(SZrGlobalState *global,
+                                                                 SZrBinaryMetadataSyntheticSource *synthetic) {
+    SZrIoFunction *function;
+    TZrSize index;
+
+    if (global == ZR_NULL || synthetic == ZR_NULL) {
+        return;
+    }
+
+    function = &synthetic->function;
+    if (function->typedExportedSymbols != ZR_NULL) {
+        for (index = 0; index < function->typedExportedSymbolsLength; index++) {
+            if (function->typedExportedSymbols[index].parameterTypes != ZR_NULL &&
+                function->typedExportedSymbols[index].parameterCount > 0) {
+                ZrCore_Memory_RawFreeWithType(global,
+                                              function->typedExportedSymbols[index].parameterTypes,
+                                              sizeof(SZrIoFunctionTypedTypeRef) *
+                                                  function->typedExportedSymbols[index].parameterCount,
+                                              ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            }
+        }
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->typedExportedSymbols,
+                                      sizeof(SZrIoFunctionTypedExportSymbol) * function->typedExportedSymbolsLength,
+                                      ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    }
+
+    if (function->staticImports != ZR_NULL && function->staticImportsLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->staticImports,
+                                      sizeof(SZrString *) * function->staticImportsLength,
+                                      ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    }
+
+    if (function->moduleEntryEffects != ZR_NULL && function->moduleEntryEffectsLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->moduleEntryEffects,
+                                      sizeof(SZrIoFunctionModuleEffect) * function->moduleEntryEffectsLength,
+                                      ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    }
+
+    if (function->exportedCallableSummaries != ZR_NULL) {
+        for (index = 0; index < function->exportedCallableSummariesLength; index++) {
+            if (function->exportedCallableSummaries[index].effects != ZR_NULL &&
+                function->exportedCallableSummaries[index].effectCount > 0) {
+                ZrCore_Memory_RawFreeWithType(global,
+                                              function->exportedCallableSummaries[index].effects,
+                                              sizeof(SZrIoFunctionModuleEffect) *
+                                                  function->exportedCallableSummaries[index].effectCount,
+                                              ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            }
+        }
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->exportedCallableSummaries,
+                                      sizeof(SZrIoFunctionCallableSummary) *
+                                          function->exportedCallableSummariesLength,
+                                      ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    }
+
+    if (function->topLevelCallableBindings != ZR_NULL && function->topLevelCallableBindingsLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->topLevelCallableBindings,
+                                      sizeof(SZrIoFunctionTopLevelCallableBinding) *
+                                          function->topLevelCallableBindingsLength,
+                                      ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    }
+
+    ZrCore_Memory_RawFreeWithType(global,
+                                  synthetic,
+                                  sizeof(SZrBinaryMetadataSyntheticSource),
+                                  ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+}
+
+TZrBool ZrParser_ModuleInitAnalysis_TryLoadBinaryMetadataSourceFromPath(SZrState *state,
+                                                                        const TZrChar *binaryPath,
+                                                                        SZrIoSource **outSource) {
+    TZrChar metadataPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar *metadataText = ZR_NULL;
+    TZrSize metadataLength = 0;
+    const TZrChar *cursor;
+    TZrUInt32 lineNumber = 0;
+    TZrBool rootFound = ZR_FALSE;
+    EZrBinaryMetadataSection currentSection = ZR_BINARY_METADATA_SECTION_NONE;
+    SZrArray exports;
+    SZrArray staticImports;
+    SZrArray entryEffects;
+    SZrArray callableSummaries;
+    SZrArray topLevelCallableBindings;
+    SZrBinaryMetadataCallableBuilder callableBuilder;
+    SZrBinaryMetadataSyntheticSource *synthetic = ZR_NULL;
+
+    ZrCore_Array_Construct(&exports);
+    ZrCore_Array_Construct(&staticImports);
+    ZrCore_Array_Construct(&entryEffects);
+    ZrCore_Array_Construct(&callableSummaries);
+    ZrCore_Array_Construct(&topLevelCallableBindings);
+    module_init_binary_metadata_callable_builder_reset(&callableBuilder);
+
+    if (outSource != ZR_NULL) {
+        *outSource = ZR_NULL;
+    }
+    if (state == ZR_NULL || state->global == ZR_NULL || binaryPath == ZR_NULL || outSource == ZR_NULL ||
+        !module_init_binary_metadata_build_sidecar_path(binaryPath, metadataPath, sizeof(metadataPath))) {
+        return ZR_FALSE;
+    }
+
+    metadataText = ZrLibrary_File_ReadAll(state->global, metadataPath);
+    if (metadataText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    metadataLength = strlen(metadataText);
+    cursor = metadataText;
+    ZrCore_Array_Init(state, &exports, sizeof(SZrIoFunctionTypedExportSymbol), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state, &staticImports, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state, &entryEffects, sizeof(SZrIoFunctionModuleEffect), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &callableSummaries,
+                      sizeof(SZrIoFunctionCallableSummary),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    ZrCore_Array_Init(state,
+                      &topLevelCallableBindings,
+                      sizeof(SZrIoFunctionTopLevelCallableBinding),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
+
+    while (cursor != ZR_NULL && *cursor != '\0') {
+        const TZrChar *lineStart = cursor;
+        TZrSize lineLength = 0;
+        TZrSize rawLineLength = 0;
+        TZrSize indent;
+        TZrChar lineBuffer[1024];
+        TZrChar *trimmedLine;
+
+        while (cursor[rawLineLength] != '\0' && cursor[rawLineLength] != '\n') {
+            rawLineLength++;
+        }
+        lineLength = rawLineLength;
+        if (lineLength >= sizeof(lineBuffer)) {
+            lineLength = sizeof(lineBuffer) - 1;
+        }
+
+        memcpy(lineBuffer, lineStart, lineLength);
+        lineBuffer[lineLength] = '\0';
+        while (lineLength > 0 && lineBuffer[lineLength - 1] == '\r') {
+            lineBuffer[--lineLength] = '\0';
+        }
+
+        cursor += lineStart[rawLineLength] == '\n' ? rawLineLength + 1 : rawLineLength;
+        lineNumber++;
+        indent = module_init_binary_metadata_count_indent(lineBuffer);
+        trimmedLine = lineBuffer + indent;
+
+        if (!rootFound) {
+            if (indent == 0 && strcmp(trimmedLine, "TYPE_METADATA:") == 0) {
+                rootFound = ZR_TRUE;
+            }
+            continue;
+        }
+
+        if (indent == 0) {
+            if (trimmedLine[0] != '\0') {
+                break;
+            }
+            continue;
+        }
+
+        if (indent == 2) {
+            if (!module_init_binary_metadata_finalize_callable_builder(state, &callableBuilder, &callableSummaries)) {
+                goto cleanup;
+            }
+            currentSection = module_init_binary_metadata_section_from_line(trimmedLine);
+            continue;
+        }
+
+        if (currentSection == ZR_BINARY_METADATA_SECTION_EXPORTED_CALLABLE_SUMMARIES &&
+            indent >= 6 &&
+            callableBuilder.active) {
+            SZrIoFunctionModuleEffect effect;
+
+            if (!module_init_binary_metadata_parse_effect_line(state, lineBuffer, lineNumber, &effect)) {
+                goto cleanup;
+            }
+            ZrCore_Array_Push(state, &callableBuilder.effects, &effect);
+            continue;
+        }
+
+        if (indent < 4) {
+            continue;
+        }
+
+        switch (currentSection) {
+            case ZR_BINARY_METADATA_SECTION_EXPORTED_SYMBOLS: {
+                SZrIoFunctionTypedExportSymbol symbol;
+                if (!module_init_binary_metadata_parse_export_symbol_line(state, lineBuffer, lineNumber, &symbol)) {
+                    goto cleanup;
+                }
+                ZrCore_Array_Push(state, &exports, &symbol);
+                break;
+            }
+            case ZR_BINARY_METADATA_SECTION_STATIC_IMPORTS: {
+                if (strncmp(trimmedLine, "import ", 7) == 0) {
+                    TZrChar moduleBuffer[256];
+                    SZrString *importName;
+
+                    if (!module_init_binary_metadata_copy_trimmed_text(trimmedLine + 7,
+                                                                       moduleBuffer,
+                                                                       sizeof(moduleBuffer))) {
+                        goto cleanup;
+                    }
+                    importName = module_init_binary_metadata_create_string(state, moduleBuffer);
+                    ZrCore_Array_Push(state, &staticImports, &importName);
+                }
+                break;
+            }
+            case ZR_BINARY_METADATA_SECTION_MODULE_ENTRY_EFFECTS: {
+                SZrIoFunctionModuleEffect effect;
+                if (!module_init_binary_metadata_parse_effect_line(state, lineBuffer, lineNumber, &effect)) {
+                    goto cleanup;
+                }
+                ZrCore_Array_Push(state, &entryEffects, &effect);
+                break;
+            }
+            case ZR_BINARY_METADATA_SECTION_EXPORTED_CALLABLE_SUMMARIES: {
+                if (!module_init_binary_metadata_finalize_callable_builder(state, &callableBuilder, &callableSummaries) ||
+                    !module_init_binary_metadata_parse_callable_summary_header(state,
+                                                                              lineBuffer,
+                                                                              &callableBuilder.summary)) {
+                    goto cleanup;
+                }
+                callableBuilder.active = ZR_TRUE;
+                ZrCore_Array_Init(state,
+                                  &callableBuilder.effects,
+                                  sizeof(SZrIoFunctionModuleEffect),
+                                  ZR_PARSER_INITIAL_CAPACITY_SMALL);
+                break;
+            }
+            case ZR_BINARY_METADATA_SECTION_TOP_LEVEL_CALLABLE_BINDINGS: {
+                SZrIoFunctionTopLevelCallableBinding binding;
+                if (!module_init_binary_metadata_parse_top_level_binding_line(state, lineBuffer, &binding)) {
+                    goto cleanup;
+                }
+                ZrCore_Array_Push(state, &topLevelCallableBindings, &binding);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    if (!rootFound ||
+        !module_init_binary_metadata_finalize_callable_builder(state, &callableBuilder, &callableSummaries)) {
+        goto cleanup;
+    }
+
+    synthetic = (SZrBinaryMetadataSyntheticSource *)ZrCore_Memory_RawMallocWithType(
+        state->global,
+        sizeof(SZrBinaryMetadataSyntheticSource),
+        ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    if (synthetic == ZR_NULL) {
+        goto cleanup;
+    }
+
+    ZrCore_Memory_RawSet(synthetic, 0, sizeof(*synthetic));
+    memcpy(synthetic->source.signature, "ZRI", 4);
+    synthetic->source.optional[0] = 'Z';
+    synthetic->source.optional[1] = 'R';
+    synthetic->source.optional[2] = 'I';
+    synthetic->source.modulesLength = 1;
+    synthetic->source.modules = &synthetic->module;
+    synthetic->module.entryFunction = &synthetic->function;
+
+    if (exports.length > 0) {
+        synthetic->function.typedExportedSymbols =
+            (SZrIoFunctionTypedExportSymbol *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrIoFunctionTypedExportSymbol) * exports.length,
+                ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        if (synthetic->function.typedExportedSymbols == ZR_NULL) {
+            goto cleanup;
+        }
+
+        ZrCore_Memory_RawCopy(synthetic->function.typedExportedSymbols,
+                              exports.head,
+                              sizeof(SZrIoFunctionTypedExportSymbol) * exports.length);
+        synthetic->function.typedExportedSymbolsLength = exports.length;
+        ZrCore_Array_Free(state, &exports);
+    }
+
+    if (staticImports.length > 0) {
+        synthetic->function.staticImports = (SZrString **)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrString *) * staticImports.length,
+            ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        if (synthetic->function.staticImports == ZR_NULL) {
+            goto cleanup;
+        }
+
+        ZrCore_Memory_RawCopy(synthetic->function.staticImports,
+                              staticImports.head,
+                              sizeof(SZrString *) * staticImports.length);
+        synthetic->function.staticImportsLength = staticImports.length;
+        ZrCore_Array_Free(state, &staticImports);
+    }
+
+    if (entryEffects.length > 0) {
+        synthetic->function.moduleEntryEffects = (SZrIoFunctionModuleEffect *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrIoFunctionModuleEffect) * entryEffects.length,
+            ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        if (synthetic->function.moduleEntryEffects == ZR_NULL) {
+            goto cleanup;
+        }
+
+        ZrCore_Memory_RawCopy(synthetic->function.moduleEntryEffects,
+                              entryEffects.head,
+                              sizeof(SZrIoFunctionModuleEffect) * entryEffects.length);
+        synthetic->function.moduleEntryEffectsLength = entryEffects.length;
+        ZrCore_Array_Free(state, &entryEffects);
+    }
+
+    if (callableSummaries.length > 0) {
+        synthetic->function.exportedCallableSummaries =
+            (SZrIoFunctionCallableSummary *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrIoFunctionCallableSummary) * callableSummaries.length,
+                ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        if (synthetic->function.exportedCallableSummaries == ZR_NULL) {
+            goto cleanup;
+        }
+
+        ZrCore_Memory_RawCopy(synthetic->function.exportedCallableSummaries,
+                              callableSummaries.head,
+                              sizeof(SZrIoFunctionCallableSummary) * callableSummaries.length);
+        synthetic->function.exportedCallableSummariesLength = callableSummaries.length;
+        ZrCore_Array_Free(state, &callableSummaries);
+    }
+
+    if (topLevelCallableBindings.length > 0) {
+        synthetic->function.topLevelCallableBindings =
+            (SZrIoFunctionTopLevelCallableBinding *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrIoFunctionTopLevelCallableBinding) * topLevelCallableBindings.length,
+                ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        if (synthetic->function.topLevelCallableBindings == ZR_NULL) {
+            goto cleanup;
+        }
+
+        ZrCore_Memory_RawCopy(synthetic->function.topLevelCallableBindings,
+                              topLevelCallableBindings.head,
+                              sizeof(SZrIoFunctionTopLevelCallableBinding) * topLevelCallableBindings.length);
+        synthetic->function.topLevelCallableBindingsLength = topLevelCallableBindings.length;
+        ZrCore_Array_Free(state, &topLevelCallableBindings);
+    }
+
+    *outSource = &synthetic->source;
+    ZrCore_Memory_RawFreeWithType(state->global,
+                                  metadataText,
+                                  metadataLength + 1,
+                                  ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    return ZR_TRUE;
+
+cleanup:
+    if (synthetic != ZR_NULL) {
+        module_init_binary_metadata_release_synthetic_source(state->global, synthetic);
+    }
+    if (callableBuilder.effects.isValid) {
+        ZrCore_Array_Free(state, &callableBuilder.effects);
+    }
+    module_init_binary_metadata_free_symbol_array_buffers(state->global, &exports);
+    module_init_binary_metadata_free_callable_summary_array_buffers(state->global, &callableSummaries);
+    if (staticImports.isValid) {
+        ZrCore_Array_Free(state, &staticImports);
+    }
+    if (entryEffects.isValid) {
+        ZrCore_Array_Free(state, &entryEffects);
+    }
+    if (topLevelCallableBindings.isValid) {
+        ZrCore_Array_Free(state, &topLevelCallableBindings);
+    }
+    if (metadataText != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      metadataText,
+                                      metadataLength + 1,
+                                      ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    }
+    return ZR_FALSE;
+}
+
+TZrBool ZrParser_ModuleInitAnalysis_TryLoadBinaryMetadataSourceFromIo(SZrState *state,
+                                                                      const SZrIo *io,
+                                                                      SZrIoSource **outSource) {
+    const SZrLibrary_File_Reader *reader = ZR_NULL;
+    SZrIo directIo;
+
+    if (outSource != ZR_NULL) {
+        *outSource = ZR_NULL;
+    }
+    if (state == ZR_NULL || io == ZR_NULL || outSource == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (io->read == ZrLibrary_File_SourceReadImplementation &&
+        io->close == ZrLibrary_File_SourceCloseImplementation &&
+        io->customData != ZR_NULL) {
+        reader = (const SZrLibrary_File_Reader *)io->customData;
+        if (reader->normalizedPath[0] != '\0' &&
+            ZrParser_ModuleInitAnalysis_TryLoadBinaryMetadataSourceFromPath(state,
+                                                                            reader->normalizedPath,
+                                                                            outSource)) {
+            return ZR_TRUE;
+        }
+        if (reader->normalizedPath[0] != '\0') {
+            module_init_trace("binary metadata sidecar missing or invalid for '%s', falling back to direct .zro read",
+                              reader->normalizedPath);
+        }
+    }
+
+    if (io->read == ZR_NULL && io->remained == 0) {
+        return ZR_FALSE;
+    }
+
+    directIo = *io;
+    directIo.state = state;
+    *outSource = ZrCore_Io_ReadSourceNew(&directIo);
+    module_init_trace("direct binary metadata read result=%p", (void *)*outSource);
+    return *outSource != ZR_NULL;
+}
+
+void ZrParser_ModuleInitAnalysis_FreeBinaryMetadataSource(SZrGlobalState *global, SZrIoSource *source) {
+    if (!module_init_binary_metadata_has_synthetic_marker(source)) {
+        ZrCore_Io_ReadSourceFree(global, source);
+        return;
+    }
+
+    module_init_binary_metadata_release_synthetic_source(
+        global,
+        (SZrBinaryMetadataSyntheticSource *)((TZrBytePtr)source -
+                                            offsetof(SZrBinaryMetadataSyntheticSource, source)));
+}
+
 static SZrParserModuleInitCache *module_init_get_cache(SZrGlobalState *global, TZrBool createIfMissing) {
     SZrState *state;
     SZrParserModuleInitCache *cache;
@@ -258,6 +1502,20 @@ static SZrParserModuleInitSummary *module_init_find_summary_by_ast_mutable(SZrGl
     }
 
     return ZR_NULL;
+}
+
+static SZrParserModuleInitSummary *module_init_context_summary_mutable(SZrParserInitAnalysisContext *context) {
+    if (context == ZR_NULL || context->cs == ZR_NULL || context->cs->state == ZR_NULL ||
+        context->cs->state->global == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (context->moduleName == ZR_NULL) {
+        return context->summary;
+    }
+
+    context->summary = module_init_find_summary_mutable(context->cs->state->global, context->moduleName);
+    return context->summary;
 }
 
 static void module_init_free_summary(SZrGlobalState *global, SZrParserModuleInitSummary *summary) {
@@ -1243,14 +2501,19 @@ static void module_init_record_local_entry_binding_read(SZrParserInitAnalysisCon
                                                         SZrString *name,
                                                         const SZrFileRange *location) {
     SZrFunctionModuleEffect effect;
+    SZrParserModuleInitSummary *summary;
 
     if (context == ZR_NULL || effects == ZR_NULL || name == ZR_NULL) {
+        return;
+    }
+    summary = module_init_context_summary_mutable(context);
+    if (summary == ZR_NULL) {
         return;
     }
 
     module_init_init_effect(&effect,
                             ZR_MODULE_ENTRY_EFFECT_LOCAL_ENTRY_BINDING_READ,
-                            context->summary->moduleName,
+                            summary->moduleName,
                             name,
                             ZR_MODULE_EXPORT_KIND_VALUE,
                             ZR_MODULE_EXPORT_READY_ENTRY,
@@ -1316,14 +2579,19 @@ static void module_init_register_import_binding_from_variable(SZrParserInitAnaly
 
     if (declaration->pattern->type == ZR_AST_IDENTIFIER_LITERAL &&
         declaration->pattern->data.identifier.name != ZR_NULL) {
+        SZrParserModuleInitSummary *summary = module_init_context_summary_mutable(context);
         const SZrModuleInitBindingInfo *bindingInfo =
-                module_init_find_binding_info(context->summary, declaration->pattern->data.identifier.name);
+                module_init_find_binding_info(summary, declaration->pattern->data.identifier.name);
         EZrParserInitBindingKind kind = ZR_PARSER_INIT_BINDING_LOCAL;
         EZrModuleExportKind exportKind = ZR_MODULE_EXPORT_KIND_VALUE;
         EZrModuleExportReadiness readiness = ZR_MODULE_EXPORT_READY_ENTRY;
-        SZrString *moduleName = context->summary->moduleName;
+        SZrString *moduleName = summary != ZR_NULL ? summary->moduleName : ZR_NULL;
         SZrString *symbolName = ZR_NULL;
         TZrUInt32 callableIndex = ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE;
+
+        if (summary == ZR_NULL) {
+            return;
+        }
 
         if (bindingInfo != ZR_NULL) {
             kind = (EZrParserInitBindingKind)bindingInfo->kind;
@@ -1761,15 +3029,21 @@ static TZrBool module_init_analyze_statement(SZrParserInitAnalysisContext *conte
 
 static TZrBool module_init_build_source_callable_catalog(SZrParserInitAnalysisContext *context) {
     TZrSize index;
+    SZrParserModuleInitSummary *summary;
 
     if (context == ZR_NULL || context->scriptAst == ZR_NULL || context->scriptAst->type != ZR_AST_SCRIPT ||
         context->scriptAst->data.script.statements == ZR_NULL) {
         return ZR_TRUE;
     }
 
-    for (index = 0; index < context->summary->bindings.length; ++index) {
+    summary = module_init_context_summary_mutable(context);
+    if (summary == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < summary->bindings.length; ++index) {
         const SZrModuleInitBindingInfo *binding =
-                (const SZrModuleInitBindingInfo *)ZrCore_Array_Get(&context->summary->bindings, index);
+                (const SZrModuleInitBindingInfo *)ZrCore_Array_Get(&summary->bindings, index);
         if (binding != ZR_NULL && binding->name != ZR_NULL) {
             module_init_push_binding_from_info(context->cs->state, &context->bindings, binding);
         }
@@ -1785,7 +3059,12 @@ static TZrBool module_init_build_source_callable_catalog(SZrParserInitAnalysisCo
             continue;
         }
 
-        if (!module_init_find_export(context->summary,
+        summary = module_init_context_summary_mutable(context);
+        if (summary == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        if (!module_init_find_export(summary,
                                      statement->data.functionDeclaration.name->name,
                                      &exportInfo)) {
             continue;
@@ -1858,11 +3137,16 @@ static TZrBool module_init_analyze_source_summary(SZrCompilerState *cs,
                                                   SZrParserModuleInitSummary *summary,
                                                   SZrAstNode *ast) {
     SZrParserInitAnalysisContext context;
+    SZrParserModuleInitSummary *currentSummary;
     TZrSize index;
 
     if (cs == ZR_NULL || summary == ZR_NULL || ast == ZR_NULL || ast->type != ZR_AST_SCRIPT) {
         return ZR_FALSE;
     }
+    module_init_trace("analyze source summary '%s' summary=%p ast=%p",
+                      summary->moduleName != ZR_NULL ? ZrCore_String_GetNativeString(summary->moduleName) : "<null>",
+                      (void *)summary,
+                      (void *)ast);
 
     if (summary->hasAnalysis) {
         return ZR_TRUE;
@@ -1871,6 +3155,7 @@ static TZrBool module_init_analyze_source_summary(SZrCompilerState *cs,
     ZrCore_Memory_RawSet(&context, 0, sizeof(context));
     context.cs = cs;
     context.summary = summary;
+    context.moduleName = summary->moduleName;
     context.scriptAst = ast;
     ZrCore_Array_Init(cs->state, &context.callables, sizeof(SZrParserInitCallableInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     ZrCore_Array_Init(cs->state, &context.bindings, sizeof(SZrParserInitBinding), ZR_PARSER_INITIAL_CAPACITY_SMALL);
@@ -1896,7 +3181,9 @@ static TZrBool module_init_analyze_source_summary(SZrCompilerState *cs,
                 continue;
             }
 
-            if (!module_init_analyze_statement(&context, statement, &summary->entryEffects)) {
+            currentSummary = module_init_context_summary_mutable(&context);
+            if (currentSummary == ZR_NULL ||
+                !module_init_analyze_statement(&context, statement, &currentSummary->entryEffects)) {
                 module_init_free_callable_catalog(cs->state, &context.callables);
                 ZrCore_Array_Free(cs->state, &context.bindings);
                 return ZR_FALSE;
@@ -1930,12 +3217,27 @@ static TZrBool module_init_analyze_source_summary(SZrCompilerState *cs,
                 ZrCore_Array_Free(cs->state, &context.bindings);
                 return ZR_FALSE;
             }
-            ZrCore_Array_Push(cs->state, &summary->exportedCallableSummaries, &exportedSummary);
+            currentSummary = module_init_context_summary_mutable(&context);
+            if (currentSummary == ZR_NULL) {
+                module_init_free_callable_catalog(cs->state, &context.callables);
+                ZrCore_Array_Free(cs->state, &context.bindings);
+                return ZR_FALSE;
+            }
+            ZrCore_Array_Push(cs->state, &currentSummary->exportedCallableSummaries, &exportedSummary);
         }
     }
 
-    summary->hasAnalysis = ZR_TRUE;
-    summary->state = ZR_PARSER_MODULE_INIT_SUMMARY_READY;
+    currentSummary = module_init_context_summary_mutable(&context);
+    if (currentSummary == ZR_NULL) {
+        module_init_free_callable_catalog(cs->state, &context.callables);
+        ZrCore_Array_Free(cs->state, &context.bindings);
+        return ZR_FALSE;
+    }
+    currentSummary->hasAnalysis = ZR_TRUE;
+    currentSummary->state = ZR_PARSER_MODULE_INIT_SUMMARY_READY;
+    module_init_trace("analyze source summary done '%s' summary=%p",
+                      currentSummary->moduleName != ZR_NULL ? ZrCore_String_GetNativeString(currentSummary->moduleName) : "<null>",
+                      (void *)currentSummary);
     module_init_free_callable_catalog(cs->state, &context.callables);
     ZrCore_Array_Free(cs->state, &context.bindings);
     return ZR_TRUE;
@@ -2520,24 +3822,34 @@ static TZrBool module_init_validate_summary(SZrCompilerState *cs, SZrParserModul
     TZrSize index;
     SZrArray visiting;
     TZrBool validationResult = ZR_TRUE;
+    SZrString *summaryModuleName;
+    SZrParserModuleInitSummary *currentSummary;
 
     if (cs == ZR_NULL || summary == ZR_NULL) {
         return ZR_FALSE;
     }
+    summaryModuleName = summary->moduleName;
+    module_init_trace("validate summary '%s' summary=%p",
+                      summaryModuleName != ZR_NULL ? ZrCore_String_GetNativeString(summaryModuleName) : "<null>",
+                      (void *)summary);
 
-    if (summary->state == ZR_PARSER_MODULE_INIT_SUMMARY_FAILED) {
+    currentSummary = module_init_find_summary_mutable(cs->state->global, summaryModuleName);
+    if (currentSummary == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    if (summary->validating) {
+    if (currentSummary->state == ZR_PARSER_MODULE_INIT_SUMMARY_FAILED) {
+        return ZR_FALSE;
+    }
+
+    if (currentSummary->validating) {
         return ZR_TRUE;
     }
 
-    summary->validating = ZR_TRUE;
+    currentSummary->validating = ZR_TRUE;
     ZrCore_Array_Init(cs->state, &visiting, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
-    for (index = 0; index < summary->entryEffects.length; ++index) {
-        const SZrFunctionModuleEffect *effect =
-                (const SZrFunctionModuleEffect *)ZrCore_Array_Get(&summary->entryEffects, index);
+    for (index = 0;; ++index) {
+        const SZrFunctionModuleEffect *effect;
         SZrParserSummaryPathBuffer forwardPath;
         SZrParserSummaryPathBuffer backwardPath;
         TZrChar cyclePath[256];
@@ -2546,8 +3858,18 @@ static TZrBool module_init_validate_summary(SZrCompilerState *cs, SZrParserModul
         const TZrChar *symbolNameText;
         SZrFileRange location;
 
+        currentSummary = module_init_find_summary_mutable(cs->state->global, summaryModuleName);
+        if (currentSummary == ZR_NULL) {
+            validationResult = ZR_FALSE;
+            break;
+        }
+        if (index >= currentSummary->entryEffects.length) {
+            break;
+        }
+        effect = (const SZrFunctionModuleEffect *)ZrCore_Array_Get(&currentSummary->entryEffects, index);
+
         if (effect == ZR_NULL || effect->moduleName == ZR_NULL ||
-            !module_init_modules_are_same_scc(cs, summary->moduleName, effect->moduleName)) {
+            !module_init_modules_are_same_scc(cs, currentSummary->moduleName, effect->moduleName)) {
             continue;
         }
 
@@ -2558,8 +3880,8 @@ static TZrBool module_init_validate_summary(SZrCompilerState *cs, SZrParserModul
         location.end.column = effect->columnInSourceEnd;
         ZrCore_Memory_RawSet(&forwardPath, 0, sizeof(forwardPath));
         ZrCore_Memory_RawSet(&backwardPath, 0, sizeof(backwardPath));
-        (void)module_init_module_reaches_internal(cs, summary->moduleName, effect->moduleName, &forwardPath, 0);
-        (void)module_init_module_reaches_internal(cs, effect->moduleName, summary->moduleName, &backwardPath, 0);
+        (void)module_init_module_reaches_internal(cs, currentSummary->moduleName, effect->moduleName, &forwardPath, 0);
+        (void)module_init_module_reaches_internal(cs, effect->moduleName, currentSummary->moduleName, &backwardPath, 0);
         module_init_format_cycle_path(&forwardPath, &backwardPath, cyclePath, sizeof(cyclePath));
         moduleNameText = ZrCore_String_GetNativeString(effect->moduleName);
         symbolNameText = ZrCore_String_GetNativeString(effect->symbolName);
@@ -2568,11 +3890,11 @@ static TZrBool module_init_validate_summary(SZrCompilerState *cs, SZrParserModul
             snprintf(detail,
                      sizeof(detail),
                      "circular import initialization: module '%s' reads entry-initialized export '%s.%s' while SCC '%s' is still in __entry__",
-                     summary->moduleName != ZR_NULL ? ZrCore_String_GetNativeString(summary->moduleName) : "<module>",
+                     currentSummary->moduleName != ZR_NULL ? ZrCore_String_GetNativeString(currentSummary->moduleName) : "<module>",
                      moduleNameText != ZR_NULL ? moduleNameText : "<module>",
                      symbolNameText != ZR_NULL ? symbolNameText : "<symbol>",
                      cyclePath);
-            module_init_summary_set_error(summary, &location, detail);
+            module_init_summary_set_error(currentSummary, &location, detail);
             validationResult = ZR_FALSE;
             break;
         }
@@ -2588,9 +3910,14 @@ static TZrBool module_init_validate_summary(SZrCompilerState *cs, SZrParserModul
                     callableSummary = module_init_find_exported_callable_summary(targetSummary, effect->symbolName);
                 }
             }
+            currentSummary = module_init_find_summary_mutable(cs->state->global, summaryModuleName);
+            if (currentSummary == ZR_NULL) {
+                validationResult = ZR_FALSE;
+                break;
+            }
             if (callableSummary != ZR_NULL) {
                 callableSafe = module_init_validate_callable_summary_recursive(cs,
-                                                                               summary->moduleName,
+                                                                               currentSummary->moduleName,
                                                                                callableSummary,
                                                                                &visiting,
                                                                                &location,
@@ -2606,7 +3933,7 @@ static TZrBool module_init_validate_summary(SZrCompilerState *cs, SZrParserModul
                              symbolNameText != ZR_NULL ? symbolNameText : "<symbol>",
                              cyclePath);
                 }
-                module_init_summary_set_error(summary, &location, detail);
+                module_init_summary_set_error(currentSummary, &location, detail);
                 validationResult = ZR_FALSE;
                 break;
             }
@@ -2614,7 +3941,14 @@ static TZrBool module_init_validate_summary(SZrCompilerState *cs, SZrParserModul
     }
 
     ZrCore_Array_Free(cs->state, &visiting);
-    summary->validating = ZR_FALSE;
+    currentSummary = module_init_find_summary_mutable(cs->state->global, summaryModuleName);
+    if (currentSummary != ZR_NULL) {
+        currentSummary->validating = ZR_FALSE;
+        module_init_trace("validate summary done '%s' result=%d summary=%p",
+                          summaryModuleName != ZR_NULL ? ZrCore_String_GetNativeString(summaryModuleName) : "<null>",
+                          (int)validationResult,
+                          (void *)currentSummary);
+    }
     return validationResult;
 }
 
@@ -2642,24 +3976,31 @@ static TZrBool module_init_load_summary_from_source_loader(SZrCompilerState *cs,
     }
 
     if (io.isBinary) {
-        SZrIoSource *ioSource = ZrCore_Io_ReadSourceNew(&io);
+        SZrIoSource *ioSource = ZR_NULL;
+
+        if (!ZrParser_ModuleInitAnalysis_TryLoadBinaryMetadataSourceFromIo(cs->state, &io, &ioSource)) {
+            if (io.close != ZR_NULL) {
+                io.close(cs->state, io.customData);
+            }
+            return ZR_FALSE;
+        }
         if (io.close != ZR_NULL) {
             io.close(cs->state, io.customData);
         }
         if (ioSource == ZR_NULL || ioSource->modulesLength == 0 || ioSource->modules == ZR_NULL ||
             ioSource->modules[0].entryFunction == ZR_NULL) {
             if (ioSource != ZR_NULL) {
-                ZrCore_Io_ReadSourceFree(cs->state->global, ioSource);
+                ZrParser_ModuleInitAnalysis_FreeBinaryMetadataSource(cs->state->global, ioSource);
             }
             return ZR_FALSE;
         }
         summary->isBinary = ZR_TRUE;
         if (!module_init_analyze_binary_summary(cs, summary, ioSource->modules[0].entryFunction) ||
             !module_init_validate_summary(cs, summary)) {
-            ZrCore_Io_ReadSourceFree(cs->state->global, ioSource);
+            ZrParser_ModuleInitAnalysis_FreeBinaryMetadataSource(cs->state->global, ioSource);
             return ZR_FALSE;
         }
-        ZrCore_Io_ReadSourceFree(cs->state->global, ioSource);
+        ZrParser_ModuleInitAnalysis_FreeBinaryMetadataSource(cs->state->global, ioSource);
         return ZR_TRUE;
     }
 
@@ -2688,6 +4029,11 @@ static TZrBool module_init_load_summary_from_source_loader(SZrCompilerState *cs,
     if (!module_init_prescan_source_summary(cs->state, summary, ast) ||
         !module_init_analyze_source_summary(cs, summary, ast) ||
         !module_init_validate_summary(cs, summary)) {
+        summary = module_init_find_summary_mutable(cs->state->global, moduleName);
+        if (summary == ZR_NULL) {
+            ZrParser_Ast_Free(cs->state, ast);
+            return ZR_FALSE;
+        }
         if (summary->astIdentity == ast) {
             summary->astIdentity = ZR_NULL;
         }
@@ -2696,6 +4042,11 @@ static TZrBool module_init_load_summary_from_source_loader(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
+    summary = module_init_find_summary_mutable(cs->state->global, moduleName);
+    if (summary == ZR_NULL) {
+        ZrParser_Ast_Free(cs->state, ast);
+        return ZR_FALSE;
+    }
     if (summary->astIdentity == ast) {
         summary->astIdentity = ZR_NULL;
     }
@@ -2710,27 +4061,7 @@ const SZrParserModuleInitSummary *ZrParser_ModuleInitAnalysis_FindSummary(SZrGlo
 
 const SZrParserModuleInitSummary *ZrParser_ModuleInitAnalysis_FindSummaryByAst(SZrGlobalState *global,
                                                                                const SZrAstNode *ast) {
-    SZrParserModuleInitCache *cache;
-    TZrSize index;
-
-    if (global == ZR_NULL || ast == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    cache = module_init_get_cache(global, ZR_FALSE);
-    if (cache == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (index = 0; index < cache->summaries.length; ++index) {
-        SZrParserModuleInitSummary *summary =
-                (SZrParserModuleInitSummary *)ZrCore_Array_Get(&cache->summaries, index);
-        if (summary != ZR_NULL && summary->astIdentity == ast) {
-            return summary;
-        }
-    }
-
-    return ZR_NULL;
+    return module_init_find_summary_by_ast_mutable(global, ast);
 }
 
 TZrBool ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(SZrState *state,
@@ -2742,6 +4073,9 @@ TZrBool ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(SZrState *state,
     if (state == ZR_NULL || moduleName == ZR_NULL || ast == ZR_NULL) {
         return ZR_FALSE;
     }
+    module_init_trace("prepare current module '%s' ast=%p",
+                      ZrCore_String_GetNativeString(moduleName),
+                      (void *)ast);
 
     cache = module_init_get_cache(state->global, ZR_TRUE);
     if (cache == ZR_NULL) {
@@ -2783,6 +4117,9 @@ TZrBool ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(SZrState *state,
         return ZR_FALSE;
     }
 
+    module_init_trace("prepare current module ok '%s' summary=%p",
+                      ZrCore_String_GetNativeString(moduleName),
+                      (void *)summary);
     return ZR_TRUE;
 }
 
@@ -2815,6 +4152,7 @@ TZrBool ZrParser_ModuleInitAnalysis_EnsureSummary(SZrCompilerState *cs, SZrStrin
     if (cs == ZR_NULL || cs->state == ZR_NULL || cs->state->global == ZR_NULL || moduleName == ZR_NULL) {
         return ZR_FALSE;
     }
+    module_init_trace("ensure summary '%s'", ZrCore_String_GetNativeString(moduleName));
 
     summary = module_init_find_summary_mutable(cs->state->global, moduleName);
     if (summary != ZR_NULL) {
@@ -2850,12 +4188,24 @@ TZrBool ZrParser_ModuleInitAnalysis_EnsureSummary(SZrCompilerState *cs, SZrStrin
     }
 
     if (!module_init_load_summary_from_source_loader(cs, summary, moduleName)) {
-        if (summary->state != ZR_PARSER_MODULE_INIT_SUMMARY_FAILED) {
+        module_init_trace("ensure summary load failed '%s'", ZrCore_String_GetNativeString(moduleName));
+        summary = module_init_find_summary_mutable(cs->state->global, moduleName);
+        if (summary != ZR_NULL && summary->state != ZR_PARSER_MODULE_INIT_SUMMARY_FAILED) {
             module_init_summary_set_error(summary, ZR_NULL, "failed to build module init summary");
         }
         return ZR_FALSE;
     }
 
+    summary = module_init_find_summary_mutable(cs->state->global, moduleName);
+    if (summary == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    module_init_trace("ensure summary done '%s' state=%d hasAnalysis=%d hasPrescan=%d",
+                      ZrCore_String_GetNativeString(moduleName),
+                      (int)summary->state,
+                      (int)summary->hasAnalysis,
+                      (int)summary->hasPrescan);
     return summary->state != ZR_PARSER_MODULE_INIT_SUMMARY_FAILED;
 }
 
@@ -3037,8 +4387,7 @@ TZrBool ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(SZrCompilerState
 
     summary = moduleName != ZR_NULL
                       ? module_init_find_summary_mutable(cs->state->global, moduleName)
-                      : (SZrParserModuleInitSummary *)ZrParser_ModuleInitAnalysis_FindSummaryByAst(cs->state->global,
-                                                                                                   cs->currentAst);
+                      : module_init_find_summary_by_ast_mutable(cs->state->global, cs->currentAst);
     if (summary == ZR_NULL) {
         return ZR_TRUE;
     }
@@ -3052,6 +4401,12 @@ TZrBool ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(SZrCompilerState
         }
         if (!module_init_analyze_source_summary(cs, summary, cs->currentAst) ||
             !module_init_validate_summary(cs, summary)) {
+            return ZR_FALSE;
+        }
+        summary = moduleName != ZR_NULL
+                          ? module_init_find_summary_mutable(cs->state->global, moduleName)
+                          : module_init_find_summary_by_ast_mutable(cs->state->global, cs->currentAst);
+        if (summary == ZR_NULL) {
             return ZR_FALSE;
         }
     }

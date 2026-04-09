@@ -350,10 +350,13 @@ static void write_function_local_variables(FILE *file, SZrFunction *function) {
 
     for (TZrUInt64 i = 0; i < localLength; i++) {
         SZrFunctionLocalVariable *local = &function->localVariableList[i];
+        TZrUInt32 stackSlot = local->stackSlot;
         TZrMemoryOffset instructionStart = local->offsetActivate;
         TZrMemoryOffset instructionEnd = local->offsetDead;
         TZrUInt64 startLineLocal = 0;
         TZrUInt64 endLineLocal = 0;
+        write_string_with_length(ZR_NULL, file, local->name);
+        fwrite(&stackSlot, sizeof(TZrUInt32), 1, file);
         if (function->executionLocationInfoList != ZR_NULL && function->executionLocationInfoLength > 0) {
             for (TZrUInt32 j = 0; j < function->executionLocationInfoLength; j++) {
                 SZrFunctionExecutionLocationInfo *locInfo = &function->executionLocationInfoList[j];

@@ -6,6 +6,131 @@
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 
+static void semantic_free_collected_generic_parameters(SZrState *state,
+                                                       SZrArray *genericParameters) {
+    if (state == ZR_NULL || genericParameters == ZR_NULL ||
+        !genericParameters->isValid || genericParameters->head == ZR_NULL ||
+        genericParameters->capacity == 0 || genericParameters->elementSize == 0) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < genericParameters->length; index++) {
+        SZrTypeGenericParameterInfo *genericInfo =
+            (SZrTypeGenericParameterInfo *)ZrCore_Array_Get(genericParameters, index);
+        if (genericInfo != ZR_NULL &&
+            genericInfo->constraintTypeNames.isValid &&
+            genericInfo->constraintTypeNames.head != ZR_NULL &&
+            genericInfo->constraintTypeNames.capacity > 0 &&
+            genericInfo->constraintTypeNames.elementSize > 0) {
+            ZrCore_Array_Free(state, &genericInfo->constraintTypeNames);
+        }
+    }
+
+    ZrCore_Array_Free(state, genericParameters);
+}
+
+static SZrString *semantic_extract_generic_argument_name_string(SZrCompilerState *compilerState,
+                                                                SZrAstNode *node) {
+    SZrInferredType inferredType;
+    SZrString *typeName = ZR_NULL;
+
+    if (compilerState == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_TYPE) {
+        return ZR_NULL;
+    }
+
+    if (node->data.type.name != ZR_NULL &&
+        node->data.type.name->type == ZR_AST_IDENTIFIER_LITERAL &&
+        node->data.type.name->data.identifier.name != ZR_NULL) {
+        return node->data.type.name->data.identifier.name;
+    }
+
+    ZrParser_InferredType_Init(compilerState->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_AstTypeToInferredType_Convert(compilerState, &node->data.type, &inferredType)) {
+        typeName = inferredType.typeName;
+    }
+    ZrParser_InferredType_Free(compilerState->state, &inferredType);
+    return typeName;
+}
+
+static void semantic_collect_generic_parameter_info(SZrCompilerState *compilerState,
+                                                    SZrArray *genericParameters,
+                                                    SZrGenericDeclaration *genericDeclaration) {
+    if (compilerState == ZR_NULL || genericParameters == ZR_NULL || genericDeclaration == ZR_NULL ||
+        genericDeclaration->params == ZR_NULL) {
+        return;
+    }
+
+    if (!genericParameters->isValid || genericParameters->head == ZR_NULL ||
+        genericParameters->capacity == 0 || genericParameters->elementSize == 0) {
+        ZrCore_Array_Init(compilerState->state,
+                          genericParameters,
+                          sizeof(SZrTypeGenericParameterInfo),
+                          genericDeclaration->params->count > 0 ? genericDeclaration->params->count : 1);
+    }
+
+    for (TZrSize index = 0; index < genericDeclaration->params->count; index++) {
+        SZrAstNode *paramNode = genericDeclaration->params->nodes[index];
+        SZrTypeGenericParameterInfo genericInfo;
+        SZrParameter *parameter;
+
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        parameter = &paramNode->data.parameter;
+        memset(&genericInfo, 0, sizeof(genericInfo));
+        genericInfo.name = parameter->name != ZR_NULL ? parameter->name->name : ZR_NULL;
+        genericInfo.genericKind = parameter->genericKind;
+        genericInfo.variance = parameter->variance;
+        genericInfo.requiresClass = parameter->genericRequiresClass;
+        genericInfo.requiresStruct = parameter->genericRequiresStruct;
+        genericInfo.requiresNew = parameter->genericRequiresNew;
+        ZrCore_Array_Init(compilerState->state,
+                          &genericInfo.constraintTypeNames,
+                          sizeof(SZrString *),
+                          parameter->genericTypeConstraints != ZR_NULL
+                              ? parameter->genericTypeConstraints->count
+                              : 1);
+
+        if (parameter->genericTypeConstraints != ZR_NULL) {
+            for (TZrSize constraintIndex = 0;
+                 constraintIndex < parameter->genericTypeConstraints->count;
+                 constraintIndex++) {
+                SZrAstNode *constraintNode = parameter->genericTypeConstraints->nodes[constraintIndex];
+                SZrString *constraintName =
+                    semantic_extract_generic_argument_name_string(compilerState, constraintNode);
+
+                if (constraintName != ZR_NULL) {
+                    ZrCore_Array_Push(compilerState->state, &genericInfo.constraintTypeNames, &constraintName);
+                }
+            }
+        }
+
+        ZrCore_Array_Push(compilerState->state, genericParameters, &genericInfo);
+    }
+}
+
+static void semantic_collect_parameter_passing_modes(SZrState *state,
+                                                     SZrArray *parameterPassingModes,
+                                                     SZrAstNodeArray *params) {
+    if (state == ZR_NULL || parameterPassingModes == ZR_NULL || params == ZR_NULL || params->count == 0) {
+        return;
+    }
+
+    ZrCore_Array_Init(state, parameterPassingModes, sizeof(EZrParameterPassingMode), params->count);
+    for (TZrSize paramIndex = 0; paramIndex < params->count; paramIndex++) {
+        SZrAstNode *paramNode = params->nodes[paramIndex];
+        EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        passingMode = paramNode->data.parameter.passingMode;
+        ZrCore_Array_Push(state, parameterPassingModes, &passingMode);
+    }
+}
+
 static SZrInferredType *allocate_object_type_info(SZrState *state) {
     SZrInferredType *typeInfo;
 
@@ -213,6 +338,9 @@ static void register_function_type_binding_in_env(SZrState *state,
     SZrCompilerState *compilerState;
     SZrInferredType returnType;
     SZrArray paramTypes;
+    SZrArray genericParameters;
+    SZrArray parameterPassingModes;
+    SZrAstNode *declarationNode;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || funcDecl == ZR_NULL) {
         return;
@@ -226,8 +354,18 @@ static void register_function_type_binding_in_env(SZrState *state,
         return;
     }
 
+    ZrCore_Array_Construct(&genericParameters);
+    ZrCore_Array_Construct(&parameterPassingModes);
+    semantic_collect_generic_parameter_info(compilerState, &genericParameters, funcDecl->generic);
+    semantic_collect_parameter_passing_modes(state, &parameterPassingModes, funcDecl->params);
+    declarationNode = compilerState->currentFunctionNode;
+
     if (funcDecl->returnType != ZR_NULL &&
         !ZrParser_AstTypeToInferredType_Convert(compilerState, funcDecl->returnType, &returnType)) {
+        semantic_free_collected_generic_parameters(state, &genericParameters);
+        if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
+            ZrCore_Array_Free(state, &parameterPassingModes);
+        }
         return;
     }
 
@@ -259,7 +397,14 @@ static void register_function_type_binding_in_env(SZrState *state,
         }
     }
 
-    ZrParser_TypeEnvironment_RegisterFunction(state, typeEnv, funcDecl->name->name, &returnType, &paramTypes);
+    ZrParser_TypeEnvironment_RegisterFunctionEx(state,
+                                                typeEnv,
+                                                funcDecl->name->name,
+                                                &returnType,
+                                                &paramTypes,
+                                                &genericParameters,
+                                                &parameterPassingModes,
+                                                declarationNode);
 
     ZrParser_InferredType_Free(state, &returnType);
     for (TZrSize index = 0; index < paramTypes.length; index++) {
@@ -269,6 +414,10 @@ static void register_function_type_binding_in_env(SZrState *state,
         }
     }
     ZrCore_Array_Free(state, &paramTypes);
+    semantic_free_collected_generic_parameters(state, &genericParameters);
+    if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
+        ZrCore_Array_Free(state, &parameterPassingModes);
+    }
 }
 
 static void register_extern_function_type_binding_in_env(SZrState *state,
@@ -743,6 +892,88 @@ static void pop_runtime_type_binding_scope(SZrState *state,
     }
 }
 
+typedef struct SZrSemanticCompilerContextSnapshot {
+    SZrTypePrototypeInfo *typePrototype;
+    SZrAstNode *typeNode;
+    SZrString *typeName;
+    SZrAstNode *functionNode;
+} SZrSemanticCompilerContextSnapshot;
+
+static SZrString *semantic_extract_owner_type_name(SZrAstNode *ownerTypeNode) {
+    if (ownerTypeNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (ownerTypeNode->type) {
+        case ZR_AST_CLASS_DECLARATION:
+            return ownerTypeNode->data.classDeclaration.name != ZR_NULL
+                       ? ownerTypeNode->data.classDeclaration.name->name
+                       : ZR_NULL;
+
+        case ZR_AST_STRUCT_DECLARATION:
+            return ownerTypeNode->data.structDeclaration.name != ZR_NULL
+                       ? ownerTypeNode->data.structDeclaration.name->name
+                       : ZR_NULL;
+
+        case ZR_AST_INTERFACE_DECLARATION:
+            return ownerTypeNode->data.interfaceDeclaration.name != ZR_NULL
+                       ? ownerTypeNode->data.interfaceDeclaration.name->name
+                       : ZR_NULL;
+
+        default:
+            return ZR_NULL;
+    }
+}
+
+static void semantic_push_compiler_context(SZrSemanticAnalyzer *analyzer,
+                                           SZrAstNode *ownerTypeNode,
+                                           SZrAstNode *functionNode,
+                                           SZrSemanticCompilerContextSnapshot *snapshot) {
+    SZrCompilerState *compilerState;
+    SZrString *typeName;
+
+    if (snapshot != ZR_NULL) {
+        memset(snapshot, 0, sizeof(*snapshot));
+    }
+
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || snapshot == ZR_NULL) {
+        return;
+    }
+
+    compilerState = analyzer->compilerState;
+    snapshot->typePrototype = compilerState->currentTypePrototypeInfo;
+    snapshot->typeNode = compilerState->currentTypeNode;
+    snapshot->typeName = compilerState->currentTypeName;
+    snapshot->functionNode = compilerState->currentFunctionNode;
+
+    typeName = semantic_extract_owner_type_name(ownerTypeNode);
+    if (typeName != ZR_NULL) {
+        compilerState->currentTypeNode = ownerTypeNode;
+        compilerState->currentTypeName = typeName;
+        compilerState->currentTypePrototypeInfo =
+            find_compiler_type_prototype_inference(compilerState, typeName);
+    }
+
+    if (functionNode != ZR_NULL) {
+        compilerState->currentFunctionNode = functionNode;
+    }
+}
+
+static void semantic_pop_compiler_context(SZrSemanticAnalyzer *analyzer,
+                                          const SZrSemanticCompilerContextSnapshot *snapshot) {
+    SZrCompilerState *compilerState;
+
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || snapshot == ZR_NULL) {
+        return;
+    }
+
+    compilerState = analyzer->compilerState;
+    compilerState->currentTypePrototypeInfo = snapshot->typePrototype;
+    compilerState->currentTypeNode = snapshot->typeNode;
+    compilerState->currentTypeName = snapshot->typeName;
+    compilerState->currentFunctionNode = snapshot->functionNode;
+}
+
 static SZrInferredType *create_named_object_type_info(SZrState *state,
                                                       SZrString *typeName) {
     SZrInferredType *typeInfo;
@@ -948,6 +1179,7 @@ static void collect_single_parameter_symbol(SZrState *state,
 static void collect_function_like_scope(SZrState *state,
                                         SZrSemanticAnalyzer *analyzer,
                                         SZrAstNode *scopeNode,
+                                        SZrAstNode *compilerFunctionNode,
                                         SZrAstNodeArray *params,
                                         SZrAstNode *body,
                                         SZrAstNode *ownerTypeNode,
@@ -957,11 +1189,13 @@ static void collect_function_like_scope(SZrState *state,
                                         SZrString *manualParamName,
                                         SZrType *manualParamType) {
     SZrTypeEnvironment *savedTypeEnv;
+    SZrSemanticCompilerContextSnapshot contextSnapshot;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || scopeNode == ZR_NULL) {
         return;
     }
 
+    semantic_push_compiler_context(analyzer, ownerTypeNode, compilerFunctionNode, &contextSnapshot);
     savedTypeEnv = push_runtime_type_binding_scope(state, analyzer);
     ZrLanguageServer_SymbolTable_EnterScope(state,
                                             analyzer->symbolTable,
@@ -999,6 +1233,7 @@ static void collect_function_like_scope(SZrState *state,
 
     ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
     pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+    semantic_pop_compiler_context(analyzer, &contextSnapshot);
 }
 
 static void collect_symbols_from_node_array(SZrState *state,
@@ -1105,8 +1340,11 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrSymbol *symbol = ZR_NULL;
             SZrString *name = funcDecl->name != ZR_NULL ? funcDecl->name->name : ZR_NULL;
             if (name != ZR_NULL) {
-                SZrInferredType *returnType = create_type_info_from_type_node(state, analyzer, funcDecl->returnType);
-                
+                SZrSemanticCompilerContextSnapshot contextSnapshot;
+                SZrInferredType *returnType;
+
+                semantic_push_compiler_context(analyzer, ZR_NULL, node, &contextSnapshot);
+                returnType = create_type_info_from_type_node(state, analyzer, funcDecl->returnType);
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state, analyzer->symbolTable,
                                          ZR_SYMBOL_FUNCTION, name,
                                          node->location, returnType,
@@ -1123,6 +1361,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                 collect_function_like_scope(state,
                                             analyzer,
                                             node,
+                                            node,
                                             funcDecl->params,
                                             funcDecl->body,
                                             ZR_NULL,
@@ -1131,6 +1370,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                             ZR_FALSE,
                                             ZR_NULL,
                                             ZR_NULL);
+                semantic_pop_compiler_context(analyzer, &contextSnapshot);
             }
             return;
         }
@@ -1161,6 +1401,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             collect_function_like_scope(state,
                                         analyzer,
                                         node,
+                                        node,
                                         testDecl->params,
                                         testDecl->body,
                                         ZR_NULL,
@@ -1182,6 +1423,9 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
 
             if (compileTimeDecl->declarationType == ZR_COMPILE_TIME_FUNCTION &&
                 wrappedNode->type == ZR_AST_FUNCTION_DECLARATION) {
+                SZrSemanticCompilerContextSnapshot contextSnapshot;
+
+                semantic_push_compiler_context(analyzer, ZR_NULL, wrappedNode, &contextSnapshot);
                 register_function_type_binding_in_env(state,
                                                       analyzer,
                                                       analyzer->compilerState != ZR_NULL
@@ -1194,6 +1438,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                           ? analyzer->compilerState->compileTimeTypeEnv
                                                           : ZR_NULL,
                                                       &wrappedNode->data.functionDeclaration);
+                semantic_pop_compiler_context(analyzer, &contextSnapshot);
             } else if (compileTimeDecl->declarationType == ZR_COMPILE_TIME_VARIABLE &&
                        wrappedNode->type == ZR_AST_VARIABLE_DECLARATION &&
                        wrappedNode->data.variableDeclaration.pattern != ZR_NULL) {
@@ -1240,12 +1485,14 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             SZrExternFunctionDeclaration *funcDecl = &node->data.externFunctionDeclaration;
             SZrString *name = funcDecl->name != ZR_NULL ? funcDecl->name->name : ZR_NULL;
             SZrSymbol *symbol = ZR_NULL;
+            SZrSemanticCompilerContextSnapshot contextSnapshot;
             SZrInferredType *returnType;
 
             if (name == ZR_NULL) {
                 return;
             }
 
+            semantic_push_compiler_context(analyzer, ZR_NULL, node, &contextSnapshot);
             returnType = create_type_info_from_type_node(state, analyzer, funcDecl->returnType);
             register_extern_function_type_binding_in_env(state,
                                                          analyzer,
@@ -1283,6 +1530,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             collect_function_like_scope(state,
                                         analyzer,
                                         node,
+                                        node,
                                         funcDecl->params,
                                         ZR_NULL,
                                         ZR_NULL,
@@ -1291,6 +1539,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                         ZR_FALSE,
                                         ZR_NULL,
                                         ZR_NULL);
+            semantic_pop_compiler_context(analyzer, &contextSnapshot);
             return;
         }
 
@@ -1326,6 +1575,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
 
             collect_function_like_scope(state,
                                         analyzer,
+                                        node,
                                         node,
                                         delegateDecl->params,
                                         ZR_NULL,
@@ -1437,6 +1687,10 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                         ZR_FALSE,
                                                         ZR_TRUE,
                                                         ZR_FALSE);
+                {
+                    SZrSemanticCompilerContextSnapshot typeContextSnapshot;
+
+                    semantic_push_compiler_context(analyzer, node, ZR_NULL, &typeContextSnapshot);
                 ownerRegionId = analyzer->semanticContext != ZR_NULL
                                     ? ZrParser_Semantic_ReserveLifetimeRegionId(analyzer->semanticContext)
                                     : 0;
@@ -1457,9 +1711,13 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                         SZrClassMethod *method = &classMember->data.classMethod;
                         SZrString *memberName = method->name != ZR_NULL ? method->name->name : ZR_NULL;
                         SZrSymbol *memberSymbol = ZR_NULL;
-                        SZrInferredType *returnType = create_type_info_from_type_node(state,
-                                                                                      analyzer,
-                                                                                      method->returnType);
+                        SZrSemanticCompilerContextSnapshot functionContextSnapshot;
+                        SZrInferredType *returnType;
+
+                        semantic_push_compiler_context(analyzer, ZR_NULL, classMember, &functionContextSnapshot);
+                        returnType = create_type_info_from_type_node(state,
+                                                                     analyzer,
+                                                                     method->returnType);
                         if (memberName != ZR_NULL) {
                             ZrLanguageServer_SymbolTable_AddSymbolEx(state,
                                                                      analyzer->symbolTable,
@@ -1480,6 +1738,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                             ZrParser_InferredType_Free(state, returnType);
                             ZrCore_Memory_RawFree(state->global, returnType, sizeof(SZrInferredType));
                         }
+                        semantic_pop_compiler_context(analyzer, &functionContextSnapshot);
                     } else if (classMember->type == ZR_AST_CLASS_PROPERTY) {
                         SZrClassProperty *property = &classMember->data.classProperty;
                         SZrString *memberName = ZrLanguageServer_SemanticAnalyzer_GetClassPropertySymbolName(classMember);
@@ -1529,6 +1788,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                         collect_function_like_scope(state,
                                                     analyzer,
                                                     classMember,
+                                                    classMember,
                                                     classMember->data.classMethod.params,
                                                     classMember->data.classMethod.body,
                                                     node,
@@ -1540,6 +1800,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                     } else if (classMember->type == ZR_AST_CLASS_META_FUNCTION) {
                         collect_function_like_scope(state,
                                                     analyzer,
+                                                    classMember,
                                                     classMember,
                                                     classMember->data.classMetaFunction.params,
                                                     classMember->data.classMetaFunction.body,
@@ -1556,6 +1817,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                             collect_function_like_scope(state,
                                                         analyzer,
                                                         modifier,
+                                                        classMember,
                                                         ZR_NULL,
                                                         modifier->data.propertyGet.body,
                                                         node,
@@ -1568,6 +1830,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                             collect_function_like_scope(state,
                                                         analyzer,
                                                         modifier,
+                                                        classMember,
                                                         ZR_NULL,
                                                         modifier->data.propertySet.body,
                                                         node,
@@ -1583,6 +1846,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                 }
 
                 ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
+                    semantic_pop_compiler_context(analyzer, &typeContextSnapshot);
+                }
             }
             break;
         }
@@ -1616,6 +1881,10 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                         ZR_FALSE,
                                                         ZR_FALSE,
                                                         ZR_TRUE);
+                {
+                    SZrSemanticCompilerContextSnapshot typeContextSnapshot;
+
+                    semantic_push_compiler_context(analyzer, node, ZR_NULL, &typeContextSnapshot);
                 ownerRegionId = analyzer->semanticContext != ZR_NULL
                                     ? ZrParser_Semantic_ReserveLifetimeRegionId(analyzer->semanticContext)
                                     : 0;
@@ -1636,9 +1905,13 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                         SZrStructMethod *method = &structMember->data.structMethod;
                         SZrString *memberName = method->name != ZR_NULL ? method->name->name : ZR_NULL;
                         SZrSymbol *memberSymbol = ZR_NULL;
-                        SZrInferredType *returnType = create_type_info_from_type_node(state,
-                                                                                      analyzer,
-                                                                                      method->returnType);
+                        SZrSemanticCompilerContextSnapshot functionContextSnapshot;
+                        SZrInferredType *returnType;
+
+                        semantic_push_compiler_context(analyzer, ZR_NULL, structMember, &functionContextSnapshot);
+                        returnType = create_type_info_from_type_node(state,
+                                                                     analyzer,
+                                                                     method->returnType);
 
                         if (memberName != ZR_NULL) {
                             ZrLanguageServer_SymbolTable_AddSymbolEx(state,
@@ -1662,6 +1935,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                             ZrParser_InferredType_Free(state, returnType);
                             ZrCore_Memory_RawFree(state->global, returnType, sizeof(SZrInferredType));
                         }
+                        semantic_pop_compiler_context(analyzer, &functionContextSnapshot);
                     }
                 }
 
@@ -1675,6 +1949,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                         collect_function_like_scope(state,
                                                     analyzer,
                                                     structMember,
+                                                    structMember,
                                                     structMember->data.structMethod.params,
                                                     structMember->data.structMethod.body,
                                                     node,
@@ -1686,6 +1961,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                     } else if (structMember->type == ZR_AST_STRUCT_META_FUNCTION) {
                         collect_function_like_scope(state,
                                                     analyzer,
+                                                    structMember,
                                                     structMember,
                                                     structMember->data.structMetaFunction.params,
                                                     structMember->data.structMetaFunction.body,
@@ -1699,6 +1975,8 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                 }
 
                 ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
+                    semantic_pop_compiler_context(analyzer, &typeContextSnapshot);
+                }
             }
             break;
         }
@@ -1751,6 +2029,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
         case ZR_AST_LAMBDA_EXPRESSION:
             collect_function_like_scope(state,
                                         analyzer,
+                                        node,
                                         node,
                                         node->data.lambdaExpression.params,
                                         node->data.lambdaExpression.block,

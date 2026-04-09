@@ -210,3 +210,7 @@ TZrBool backend_aot_resolve_callable_constant_function_index(const SZrAotFunctio
     }
     return ZR_TRUE;
 }
+
+TZrUInt32 backend_aot_find_function_table_index(const SZrAotFunctionTable *table, const SZrFunction *function) {
+    return backend_aot_find_function_index(table, function);
+}

@@ -5,10 +5,12 @@ const TIER_SCALES = {
     smoke: 1,
     core: 4,
     stress: 16,
+    profile: 1,
 };
 
 function parseScale(argv) {
     let tier = "core";
+    let explicitScale = null;
 
     for (let index = 0; index < argv.length; index += 1) {
         const arg = argv[index];
@@ -20,9 +22,23 @@ function parseScale(argv) {
             index += 1;
             continue;
         }
+        if (arg === "--scale") {
+            if (index + 1 >= argv.length) {
+                throw new Error("--scale requires a positive integer");
+            }
+            explicitScale = Number.parseInt(argv[index + 1], 10);
+            if (!Number.isFinite(explicitScale) || explicitScale < 1) {
+                throw new Error("--scale requires a positive integer");
+            }
+            index += 1;
+            continue;
+        }
         throw new Error(`unknown argument: ${arg}`);
     }
 
+    if (explicitScale !== null) {
+        return explicitScale;
+    }
     if (!Object.prototype.hasOwnProperty.call(TIER_SCALES, tier)) {
         throw new Error(`unsupported tier: ${tier}`);
     }
@@ -403,6 +419,265 @@ function mapObjectAccess(scale) {
         + buckets.get("dd_slot")) % MOD;
 }
 
+function fibRecursiveValue(n) {
+    if (n <= 1) {
+        return n;
+    }
+    return fibRecursiveValue(n - 1) + fibRecursiveValue(n - 2);
+}
+
+function fibRecursive(scale) {
+    const rounds = 18 * scale;
+    let checksum = 0;
+
+    for (let index = 0; index < rounds; index += 1) {
+        const n = 13 + (index % 6);
+        const value = fibRecursiveValue(n);
+        checksum = (checksum * 131 + value * (index + 3) + n) % MOD;
+    }
+
+    return checksum;
+}
+
+class PolyAdder {
+    constructor(base) {
+        this.base = base;
+    }
+
+    call(value, delta) {
+        return (value + delta + this.base) % 100003;
+    }
+}
+
+class PolyMultiply {
+    constructor(factor) {
+        this.factor = factor;
+    }
+
+    call(value, delta) {
+        return (value * (this.factor + 3) + delta + 7) % 100003;
+    }
+}
+
+class PolyXor {
+    constructor(mask) {
+        this.mask = mask;
+    }
+
+    call(value, delta) {
+        return ((value ^ (delta + this.mask)) + this.mask * 5 + delta) % 100003;
+    }
+}
+
+function callLeaf(value, salt) {
+    return (value * 17 + salt * 13 + 19) % 100003;
+}
+
+function callChainA(value, salt) {
+    return callLeaf(value + 3, salt + 1);
+}
+
+function callChainB(value, salt) {
+    return callLeaf(callChainA(value + (salt % 5), salt + 7), salt + 11);
+}
+
+function callChainC(value, salt) {
+    return callLeaf(callChainB(value ^ salt, salt + 13), salt + 17);
+}
+
+function tailAccumulate(steps, acc) {
+    if (steps === 0) {
+        return acc;
+    }
+    return tailAccumulate(steps - 1, (acc * 3 + steps + 5) % 100003);
+}
+
+function dispatchCallable(callableObj, value, delta) {
+    return callableObj.call(value, delta);
+}
+
+function callChainPolymorphic(scale) {
+    const rounds = 320 * scale;
+    const adder = new PolyAdder(17);
+    const multiply = new PolyMultiply(23);
+    const xorCall = new PolyXor(31);
+    let state = 17;
+    let checksum = 0;
+
+    for (let outer = 0; outer < rounds; outer += 1) {
+        const delta = outer * 7 + (state % 13);
+        const selector = outer % 3;
+        if (selector === 0) {
+            state = dispatchCallable(adder, callChainA(state, delta), delta);
+        } else if (selector === 1) {
+            state = dispatchCallable(multiply, callChainB(state, delta), delta);
+        } else {
+            state = dispatchCallable(xorCall, callChainC(state, delta), delta);
+        }
+
+        checksum = (checksum + state * (selector + 1) + tailAccumulate((outer % 5) + 1, state)) % MOD;
+    }
+
+    return checksum;
+}
+
+class HotRecord {
+    constructor(seed) {
+        this.a = seed;
+        this.b = seed + 3;
+        this.c = seed + 7;
+        this.d = seed + 11;
+    }
+}
+
+function objectFieldHot(scale) {
+    const rounds = 12000 * scale;
+    const record = new HotRecord(5);
+    let checksum = 0;
+
+    for (let index = 0; index < rounds; index += 1) {
+        record.a = (record.a + record.b + index) % 10007;
+        record.b = (record.b + record.c + record.a + 3) % 10009;
+        record.c = (record.c + record.d + record.b + (index % 7)) % 10037;
+        record.d = (record.d + record.a + record.c + 5) % 10039;
+        const snapshot = record.a * 3 + record.b * 5 + record.c * 7 + record.d * 11;
+        if (snapshot % 2 === 0) {
+            checksum = (checksum + snapshot + record.b) % MOD;
+        } else {
+            checksum = (checksum + snapshot + record.c) % MOD;
+        }
+    }
+
+    return checksum;
+}
+
+function arrayIndexDense(scale) {
+    const length = 128 * scale;
+    const rounds = 48 * scale;
+    const values = new Array(length).fill(0);
+    let checksum = 0;
+
+    for (let index = 0; index < length; index += 1) {
+        values[index] = (index * 13 + 7) % 997;
+    }
+
+    for (let roundIndex = 0; roundIndex < rounds; roundIndex += 1) {
+        for (let cursor = 1; cursor < length - 1; cursor += 1) {
+            const left = values[cursor - 1];
+            const mid = values[cursor];
+            const right = values[cursor + 1];
+            const updated = (left + mid * 3 + right * 5 + roundIndex + cursor) % 1000003;
+            values[cursor] = updated;
+            checksum = (checksum + updated * (cursor + 1)) % MOD;
+        }
+
+        checksum = (checksum + values[0] + values[length - 1] + roundIndex) % MOD;
+    }
+
+    return checksum;
+}
+
+function branchJumpDense(scale) {
+    const outerLimit = 180 * scale;
+    const innerLimit = 180;
+    let state = 23;
+    let checksum = 0;
+
+    for (let outer = 0; outer < outerLimit; outer += 1) {
+        for (let inner = 0; inner < innerLimit; inner += 1) {
+            state = (state * 97 + outer * 13 + inner * 17 + 19) % 65521;
+            if (state % 11 === 0) {
+                checksum += Math.floor(state / 11) + outer;
+            } else if (state % 7 === 0) {
+                checksum += (state % 97) + inner * 3;
+            } else if (state % 5 === 0) {
+                checksum += Math.floor(state / 5) % 89 + outer * 5;
+            } else if (state % 3 === 0) {
+                checksum += (state ^ (outer + inner)) + 17;
+            } else {
+                checksum += (state % 31) + outer + inner;
+            }
+
+            checksum %= MOD;
+            if (checksum % 2 === 0) {
+                checksum = (checksum + state % 19) % MOD;
+            } else {
+                checksum = (checksum + state % 23) % MOD;
+            }
+        }
+    }
+
+    return checksum;
+}
+
+class Service {
+    constructor(weight, bias) {
+        this.weight = weight;
+        this.bias = bias;
+    }
+
+    handle(value, ticket) {
+        this.bias = (this.bias + ticket + this.weight) % 10007;
+        if ((ticket + this.weight) % 2 === 0) {
+            return (value * this.weight + this.bias + ticket) % 1000003;
+        }
+        return (value + this.weight * 7 + this.bias + ticket * 3) % 1000003;
+    }
+}
+
+function routeService(service, value, ticket) {
+    return service.handle(value, ticket);
+}
+
+function mixedServiceLoop(scale) {
+    const length = 24 * scale;
+    const rounds = 320 * scale;
+    const counters = new Array(length).fill(0);
+    const service0 = new Service(3, 11);
+    const service1 = new Service(5, 17);
+    const service2 = new Service(7, 23);
+    let checksum = 0;
+    let state = 31;
+
+    for (let index = 0; index < length; index += 1) {
+        counters[index] = (index * 19 + 5) % 257;
+    }
+
+    for (let outer = 0; outer < rounds; outer += 1) {
+        for (let inner = 0; inner < 32; inner += 1) {
+            const slot = (outer + inner + state) % length;
+            const current = counters[slot];
+            const selector = slot % 3;
+            const ticket = outer * 11 + inner * 7 + selector;
+
+            if (selector === 0) {
+                state = routeService(service0, current + state, ticket);
+            } else if (selector === 1) {
+                state = routeService(service1, current + state, ticket);
+            } else {
+                state = routeService(service2, current + state, ticket);
+            }
+
+            counters[slot] = (current + state + selector + inner) % 1000003;
+            if (counters[slot] % 4 === 0) {
+                checksum = (checksum + counters[slot] + state + current) % MOD;
+            } else {
+                checksum = (checksum + counters[slot] * (selector + 1) + state) % MOD;
+            }
+        }
+    }
+
+    return (
+        checksum
+        + service0.bias
+        + service1.bias
+        + service2.bias
+        + counters[0]
+        + counters[Math.floor(length / 2)]
+        + counters[length - 1]
+    ) % MOD;
+}
+
 const CASE_HANDLERS = {
     numeric_loops: ["BENCH_NUMERIC_LOOPS_PASS", numericLoops],
     dispatch_loops: ["BENCH_DISPATCH_LOOPS_PASS", dispatchLoops],
@@ -412,6 +687,12 @@ const CASE_HANDLERS = {
     matrix_add_2d: ["BENCH_MATRIX_ADD_2D_PASS", matrixAdd2d],
     string_build: ["BENCH_STRING_BUILD_PASS", stringBuild],
     map_object_access: ["BENCH_MAP_OBJECT_ACCESS_PASS", mapObjectAccess],
+    fib_recursive: ["BENCH_FIB_RECURSIVE_PASS", fibRecursive],
+    call_chain_polymorphic: ["BENCH_CALL_CHAIN_POLYMORPHIC_PASS", callChainPolymorphic],
+    object_field_hot: ["BENCH_OBJECT_FIELD_HOT_PASS", objectFieldHot],
+    array_index_dense: ["BENCH_ARRAY_INDEX_DENSE_PASS", arrayIndexDense],
+    branch_jump_dense: ["BENCH_BRANCH_JUMP_DENSE_PASS", branchJumpDense],
+    mixed_service_loop: ["BENCH_MIXED_SERVICE_LOOP_PASS", mixedServiceLoop],
 };
 
 function runMain(caseName) {

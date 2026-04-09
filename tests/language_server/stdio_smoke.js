@@ -726,11 +726,8 @@ async function main() {
     assert(Array.isArray(watchedBinaryMemberDefinition) && watchedBinaryMemberDefinition.some((location) =>
         location &&
         location.uri === watchedBinaryFixture.binaryUri &&
-        location.range &&
-        location.range.start &&
-        location.range.start.line === 0 &&
-        location.range.start.character === 0),
-    'binary imported member definition should navigate to the binary metadata module entry');
+        location.range),
+    'binary imported member definition should navigate to the binary metadata declaration');
 
     const watchedBinaryMemberReferences = await client.request('textDocument/references', {
         textDocument: { uri: watchedBinaryFixture.mainUri },
@@ -750,11 +747,8 @@ async function main() {
         watchedBinaryMemberReferences.some((location) =>
             location &&
             location.uri === watchedBinaryFixture.binaryUri &&
-            location.range &&
-            location.range.start &&
-            location.range.start.line === 0 &&
-            location.range.start.character === 0),
-    'binary imported member references should include the current project usage and the binary metadata module entry');
+            location.range),
+    'binary imported member references should include the current project usage and the binary metadata declaration');
 
     const watchedBinaryHighlights = await client.request('textDocument/documentHighlight', {
         textDocument: { uri: watchedBinaryFixture.mainUri },

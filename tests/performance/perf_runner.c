@@ -70,6 +70,23 @@ static int zr_perf_parse_positive_int(const char *text, int *outValue) {
     return 1;
 }
 
+static int zr_perf_parse_non_negative_int(const char *text, int *outValue) {
+    long parsed;
+    char *end = NULL;
+
+    if (text == NULL || outValue == NULL || text[0] == '\0') {
+        return 0;
+    }
+
+    parsed = strtol(text, &end, 10);
+    if (end == text || end == NULL || *end != '\0' || parsed < 0 || parsed > 1000000L) {
+        return 0;
+    }
+
+    *outValue = (int)parsed;
+    return 1;
+}
+
 static int zr_perf_compare_double(const void *left, const void *right) {
     const double leftValue = *(const double *)left;
     const double rightValue = *(const double *)right;
@@ -691,7 +708,7 @@ int main(int argc, char **argv) {
             continue;
         }
         if (strcmp(argv[index], "--warmup") == 0 && index + 1 < argc) {
-            if (!zr_perf_parse_positive_int(argv[++index], &warmup)) {
+            if (!zr_perf_parse_non_negative_int(argv[++index], &warmup)) {
                 fprintf(stderr, "Invalid --warmup value.\n");
                 return 1;
             }
@@ -711,7 +728,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (caseName == NULL || jsonPath == NULL || iterations <= 0 || warmup <= 0 || commandIndex <= 0 ||
+    if (caseName == NULL || jsonPath == NULL || iterations <= 0 || warmup < 0 || commandIndex <= 0 ||
         commandIndex >= argc) {
         zr_perf_print_usage(argv[0]);
         return 1;

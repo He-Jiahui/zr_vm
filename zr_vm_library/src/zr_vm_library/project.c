@@ -19,6 +19,10 @@
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 #define ZR_JSON_READ_STRING(STATE, OBJECT, NAME)                                                                       \
     SZrString *NAME = ZR_NULL;                                                                                         \
     {                                                                                                                  \
@@ -36,6 +40,34 @@ typedef struct ZrLibraryProjectExecuteRequest {
     TZrStackValuePointer resultBase;
     TZrBool callCompleted;
 } ZrLibraryProjectExecuteRequest;
+
+static TZrBool zr_library_project_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_VM_TRACE_PROJECT_STARTUP");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void zr_library_project_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!zr_library_project_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    fprintf(stderr, "[zr-library-project] ");
+    vfprintf(stderr, format, arguments);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(arguments);
+}
 
 SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, TZrNativeString file) {
     SZrGlobalState *global = state->global;
@@ -331,14 +363,18 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
         state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
         return state->threadStatus;
     }
+    zr_library_project_trace("run entry='%s'",
+                             ZrCore_String_GetNativeString(project->entry));
 
     TZrChar entrySourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     if (!library_project_resolve_source_path(project, ZrCore_String_GetNativeString(project->entry), entrySourcePath)) {
         state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
         return state->threadStatus;
     }
+    zr_library_project_trace("resolved entry source='%s'", entrySourcePath);
 
     TZrNativeString sourceCode = ZrLibrary_File_ReadAll(global, entrySourcePath);
+    zr_library_project_trace("read source=%p", (void *)sourceCode);
     if (sourceCode == ZR_NULL) {
         state->threadStatus = ZR_THREAD_STATUS_RUNTIME_ERROR;
         return state->threadStatus;
@@ -346,9 +382,13 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
 
     TZrSize sourceLength = ZrCore_NativeString_Length(sourceCode);
     SZrString *sourceName = ZrCore_String_Create(state, entrySourcePath, ZrCore_NativeString_Length(entrySourcePath));
+    zr_library_project_trace("compile source length=%llu sourceName=%p",
+                             (unsigned long long)sourceLength,
+                             (void *)sourceName);
     SZrFunction *function = global->compileSource(state, sourceCode, sourceLength, sourceName);
     TZrBool ignoredFunction = ZR_FALSE;
     EZrThreadStatus status;
+    zr_library_project_trace("compiled function=%p threadStatus=%d", (void *)function, (int)state->threadStatus);
     ZrCore_Memory_RawFreeWithType(global, sourceCode, sourceLength + 1, ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
 
     if (function == ZR_NULL) {
@@ -361,13 +401,17 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
     ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
 
     SZrObjectModule *projectModule = ZrCore_Module_Create(state);
+    zr_library_project_trace("project module=%p", (void *)projectModule);
     if (projectModule != ZR_NULL) {
         TZrUInt64 pathHash = ZrCore_Module_CalculatePathHash(state, sourceName);
         ZrCore_Module_SetInfo(state, projectModule, ZR_NULL, pathHash, sourceName);
         ZrCore_Module_CreatePrototypesFromConstants(state, projectModule, function);
+        zr_library_project_trace("project module prepared pathHash=%llu", (unsigned long long)pathHash);
     }
 
+    zr_library_project_trace("execute compiled function");
     status = library_project_execute_function(state, function, result);
+    zr_library_project_trace("execute finished status=%d threadStatus=%d", (int)status, (int)state->threadStatus);
     if (ignoredFunction) {
         ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
     }

@@ -14,8 +14,45 @@ static ZR_FORCE_INLINE void object_reset_hot_field_pair_cache(SZrObject *object)
     }
 
     object->cachedHiddenItemsPair = ZR_NULL;
+    object->cachedHiddenItemsObject = ZR_NULL;
     object->cachedLengthPair = ZR_NULL;
     object->cachedCapacityPair = ZR_NULL;
 }
+
+TZrBool ZrCore_Object_GetMemberWithKeyUnchecked(SZrState *state,
+                                                SZrTypeValue *receiver,
+                                                struct SZrString *memberName,
+                                                const SZrTypeValue *memberKey,
+                                                SZrTypeValue *result);
+
+TZrBool ZrCore_Object_TryGetMemberWithKeyFastUnchecked(SZrState *state,
+                                                       SZrTypeValue *receiver,
+                                                       struct SZrString *memberName,
+                                                       const SZrTypeValue *memberKey,
+                                                       SZrTypeValue *result,
+                                                       TZrBool *outHandled);
+
+TZrBool ZrCore_Object_SetMemberWithKeyUnchecked(SZrState *state,
+                                                SZrTypeValue *receiver,
+                                                struct SZrString *memberName,
+                                                const SZrTypeValue *memberKey,
+                                                const SZrTypeValue *value);
+
+TZrBool ZrCore_Object_TrySetMemberWithKeyFastUnchecked(SZrState *state,
+                                                       SZrTypeValue *receiver,
+                                                       struct SZrString *memberName,
+                                                       const SZrTypeValue *memberKey,
+                                                       const SZrTypeValue *value,
+                                                       TZrBool *outHandled);
+
+TZrBool ZrCore_Object_GetByIndexUnchecked(SZrState *state,
+                                          SZrTypeValue *receiver,
+                                          const SZrTypeValue *key,
+                                          SZrTypeValue *result);
+
+TZrBool ZrCore_Object_SetByIndexUnchecked(SZrState *state,
+                                          SZrTypeValue *receiver,
+                                          const SZrTypeValue *key,
+                                          const SZrTypeValue *value);
 
 #endif

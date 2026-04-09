@@ -28,6 +28,10 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_FileUriToNativePath(SZrStrin
 
 TZrBool ZrLanguageServer_Lsp_StringsEqual(SZrString *left, SZrString *right);
 TZrBool ZrLanguageServer_Lsp_StringContainsCaseInsensitive(SZrString *haystack, SZrString *needle);
+TZrBool ZrLanguageServer_Lsp_UrisResolveToSameNativePath(SZrString *left, SZrString *right);
+SZrHashKeyValuePair *ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(SZrState *state,
+                                                                   SZrHashSet *set,
+                                                                   SZrString *uri);
 SZrFileRange ZrLanguageServer_Lsp_GetSymbolLookupRange(SZrSymbol *symbol);
 SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state,
                                                                  SZrSymbol *symbol,

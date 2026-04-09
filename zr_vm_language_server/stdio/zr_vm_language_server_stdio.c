@@ -187,7 +187,6 @@ int main(void) {
     }
 
     server.shutdownRequested = ZR_FALSE;
-
     while ((payload = read_message_payload(&payloadLength)) != NULL) {
         cJSON *message = cJSON_ParseWithLength(payload, payloadLength);
         const cJSON *id;
@@ -234,8 +233,13 @@ int main(void) {
         exitCode = 0;
     }
 
-    ZrLanguageServer_LspContext_Free(server.state, server.context);
-    free_uri_cache(&server.uriCache);
-    ZrCore_GlobalState_Free(server.global);
+    /*
+     * The stdio server currently serves as a process boundary: once it receives EOF/exit,
+     * the entire address space is about to be reclaimed by the OS. Manual teardown has been
+     * observed to trigger access violations on shutdown, so keep exit reliable by flushing the
+     * transports and letting process termination reclaim runtime state.
+     */
+    fflush(stdout);
+    fflush(stderr);
     return exitCode;
 }

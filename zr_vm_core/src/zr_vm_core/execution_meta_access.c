@@ -50,12 +50,16 @@ const SZrFunctionCallSiteCacheEntry *execution_get_callsite_cache_entry(SZrFunct
                                                                         EZrFunctionCallSiteCacheKind expectedKind) {
     const SZrFunctionCallSiteCacheEntry *entry;
 
+    ZrCore_Profile_RecordSlowPathCurrent(ZR_PROFILE_SLOWPATH_CALLSITE_CACHE_LOOKUP);
+
     if (function == ZR_NULL || function->callSiteCaches == ZR_NULL || cacheIndex >= function->callSiteCacheLength) {
+        ZrCore_Profile_RecordSlowPathCurrent(ZR_PROFILE_SLOWPATH_CALLSITE_CACHE_MISS);
         return ZR_NULL;
     }
 
     entry = &function->callSiteCaches[cacheIndex];
     if ((EZrFunctionCallSiteCacheKind)entry->kind != expectedKind) {
+        ZrCore_Profile_RecordSlowPathCurrent(ZR_PROFILE_SLOWPATH_CALLSITE_CACHE_MISS);
         return ZR_NULL;
     }
 

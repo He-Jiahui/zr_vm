@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_object_field_hot",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

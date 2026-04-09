@@ -4,8 +4,15 @@
 
 #include "gc_internal.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 #define ZR_GC_IGNORE_REGISTRY_INITIAL_CAPACITY ((TZrSize)8)
 #define ZR_GC_IGNORE_REGISTRY_GROWTH_FACTOR ((TZrSize)2)
+
+static TZrBool raw_object_trace_enabled(void);
+static void raw_object_trace(const TZrChar *format, ...);
 
 TZrBool garbage_collector_ignore_registry_contains(SZrGarbageCollector *collector, SZrRawObject *object) {
     if (collector == ZR_NULL || object == ZR_NULL || collector->ignoredObjects == ZR_NULL) {
@@ -207,6 +214,11 @@ SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize s
     SZrGlobalState *global = state->global;
     TZrPtr memory = ZrCore_Memory_GcMalloc(state, ZR_MEMORY_NATIVE_TYPE_OBJECT, size);
     SZrRawObject *object = ZR_CAST_RAW_OBJECT(memory);
+    raw_object_trace("raw object new request state=%p type=%d size=%llu memory=%p",
+                     (void *)state,
+                     (int)type,
+                     (unsigned long long)size,
+                     memory);
     if (object == ZR_NULL) {
         return ZR_NULL;
     }
@@ -218,6 +230,10 @@ SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize s
     object->garbageCollectMark.generation = global->garbageCollector->gcGeneration;
     object->next = global->garbageCollector->gcObjectList;
     global->garbageCollector->gcObjectList = object;
+    raw_object_trace("raw object new done object=%p gcListNext=%p gcHead=%p",
+                     (void *)object,
+                     (void *)object->next,
+                     (void *)global->garbageCollector->gcObjectList);
     return object;
 }
 
@@ -276,10 +292,39 @@ void ZrCore_RawObject_MarkAsPermanent(SZrState *state, SZrRawObject *object) {
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT;
     object->next = global->garbageCollector->permanentObjectList;
     global->garbageCollector->permanentObjectList = object;
+    raw_object_trace("raw object permanent object=%p permanentHead=%p", (void *)object, (void *)global->garbageCollector->permanentObjectList);
 }
 
 void ZrCore_Gc_ValueStaticAssertIsAlive(SZrState *state, SZrTypeValue *value) {
     ZR_ASSERT(!value->isGarbageCollectable ||
               ((value->type == (EZrValueType)value->value.object->type) &&
                ((state == ZR_NULL) || !ZrCore_Gc_RawObjectIsDead(state->global, value->value.object))));
+}
+
+static TZrBool raw_object_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_VM_TRACE_CORE_BOOTSTRAP");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void raw_object_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!raw_object_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    fprintf(stderr, "[zr-raw-object] ");
+    vfprintf(stderr, format, arguments);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(arguments);
 }

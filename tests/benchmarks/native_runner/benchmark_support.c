@@ -25,6 +25,9 @@ int zr_bench_scale_from_tier(const char *tier) {
     if (strcmp(tier, "stress") == 0) {
         return 16;
     }
+    if (strcmp(tier, "profile") == 0) {
+        return 1;
+    }
     return 0;
 }
 
@@ -437,4 +440,263 @@ ZrBenchInt zr_bench_run_map_object_access(int scale) {
     }
 
     return zr_bench_mod(checksum + bucketCounts[0] + bucketCounts[1] + bucketCounts[2] + bucketCounts[3]);
+}
+
+static ZrBenchInt zr_bench_fib_recursive_value(int n) {
+    if (n <= 1) {
+        return n;
+    }
+    return zr_bench_fib_recursive_value(n - 1) + zr_bench_fib_recursive_value(n - 2);
+}
+
+ZrBenchInt zr_bench_run_fib_recursive(int scale) {
+    const int rounds = 18 * scale;
+    ZrBenchInt checksum = 0;
+    int index;
+
+    for (index = 0; index < rounds; index++) {
+        const int n = 13 + (index % 6);
+        const ZrBenchInt value = zr_bench_fib_recursive_value(n);
+        checksum = zr_bench_mod(checksum * 131 + value * (index + 3) + n);
+    }
+
+    return checksum;
+}
+
+typedef struct ZrBenchPolyCallable {
+    ZrBenchInt state;
+    int kind;
+    ZrBenchInt (*invoke)(struct ZrBenchPolyCallable *callable, ZrBenchInt value, ZrBenchInt delta);
+} ZrBenchPolyCallable;
+
+static ZrBenchInt zr_bench_poly_adder_call(ZrBenchPolyCallable *callable, ZrBenchInt value, ZrBenchInt delta) {
+    return (value + delta + callable->state) % 100003;
+}
+
+static ZrBenchInt zr_bench_poly_multiply_call(ZrBenchPolyCallable *callable, ZrBenchInt value, ZrBenchInt delta) {
+    return (value * (callable->state + 3) + delta + 7) % 100003;
+}
+
+static ZrBenchInt zr_bench_poly_xor_call(ZrBenchPolyCallable *callable, ZrBenchInt value, ZrBenchInt delta) {
+    return ((value ^ (delta + callable->state)) + callable->state * 5 + delta) % 100003;
+}
+
+static ZrBenchInt zr_bench_call_leaf(ZrBenchInt value, ZrBenchInt salt) {
+    return (value * 17 + salt * 13 + 19) % 100003;
+}
+
+static ZrBenchInt zr_bench_call_chain_a(ZrBenchInt value, ZrBenchInt salt) {
+    return zr_bench_call_leaf(value + 3, salt + 1);
+}
+
+static ZrBenchInt zr_bench_call_chain_b(ZrBenchInt value, ZrBenchInt salt) {
+    return zr_bench_call_leaf(zr_bench_call_chain_a(value + (salt % 5), salt + 7), salt + 11);
+}
+
+static ZrBenchInt zr_bench_call_chain_c(ZrBenchInt value, ZrBenchInt salt) {
+    return zr_bench_call_leaf(zr_bench_call_chain_b(value ^ salt, salt + 13), salt + 17);
+}
+
+static ZrBenchInt zr_bench_tail_accumulate(int steps, ZrBenchInt acc) {
+    if (steps == 0) {
+        return acc;
+    }
+    return zr_bench_tail_accumulate(steps - 1, (acc * 3 + steps + 5) % 100003);
+}
+
+ZrBenchInt zr_bench_run_call_chain_polymorphic(int scale) {
+    const int rounds = 320 * scale;
+    ZrBenchPolyCallable adder = {17, 0, zr_bench_poly_adder_call};
+    ZrBenchPolyCallable multiply = {23, 1, zr_bench_poly_multiply_call};
+    ZrBenchPolyCallable xorCall = {31, 2, zr_bench_poly_xor_call};
+    ZrBenchInt state = 17;
+    ZrBenchInt checksum = 0;
+    int outer;
+
+    for (outer = 0; outer < rounds; outer++) {
+        const ZrBenchInt delta = outer * 7 + (state % 13);
+        const int selector = outer % 3;
+        if (selector == 0) {
+            state = adder.invoke(&adder, zr_bench_call_chain_a(state, delta), delta);
+        } else if (selector == 1) {
+            state = multiply.invoke(&multiply, zr_bench_call_chain_b(state, delta), delta);
+        } else {
+            state = xorCall.invoke(&xorCall, zr_bench_call_chain_c(state, delta), delta);
+        }
+
+        checksum = zr_bench_mod(checksum + state * (selector + 1) + zr_bench_tail_accumulate((outer % 5) + 1, state));
+    }
+
+    return checksum;
+}
+
+typedef struct ZrBenchHotRecord {
+    ZrBenchInt a;
+    ZrBenchInt b;
+    ZrBenchInt c;
+    ZrBenchInt d;
+} ZrBenchHotRecord;
+
+ZrBenchInt zr_bench_run_object_field_hot(int scale) {
+    const int rounds = 12000 * scale;
+    ZrBenchHotRecord record = {5, 8, 12, 16};
+    ZrBenchInt checksum = 0;
+    int index;
+
+    for (index = 0; index < rounds; index++) {
+        ZrBenchInt snapshot;
+
+        record.a = (record.a + record.b + index) % 10007;
+        record.b = (record.b + record.c + record.a + 3) % 10009;
+        record.c = (record.c + record.d + record.b + (index % 7)) % 10037;
+        record.d = (record.d + record.a + record.c + 5) % 10039;
+        snapshot = record.a * 3 + record.b * 5 + record.c * 7 + record.d * 11;
+        if ((snapshot % 2) == 0) {
+            checksum = zr_bench_mod(checksum + snapshot + record.b);
+        } else {
+            checksum = zr_bench_mod(checksum + snapshot + record.c);
+        }
+    }
+
+    return checksum;
+}
+
+ZrBenchInt zr_bench_run_array_index_dense(int scale) {
+    const int length = 128 * scale;
+    const int rounds = 48 * scale;
+    ZrBenchInt *values = NULL;
+    ZrBenchInt checksum = 0;
+    int index;
+    int roundIndex;
+
+    values = (ZrBenchInt *)malloc((size_t)length * sizeof(*values));
+    if (values == NULL) {
+        return 0;
+    }
+
+    for (index = 0; index < length; index++) {
+        values[index] = (index * 13 + 7) % 997;
+    }
+
+    for (roundIndex = 0; roundIndex < rounds; roundIndex++) {
+        int cursor;
+        for (cursor = 1; cursor < length - 1; cursor++) {
+            const ZrBenchInt left = values[cursor - 1];
+            const ZrBenchInt mid = values[cursor];
+            const ZrBenchInt right = values[cursor + 1];
+            const ZrBenchInt updated = (left + mid * 3 + right * 5 + roundIndex + cursor) % 1000003;
+            values[cursor] = updated;
+            checksum = zr_bench_mod(checksum + updated * (cursor + 1));
+        }
+
+        checksum = zr_bench_mod(checksum + values[0] + values[length - 1] + roundIndex);
+    }
+
+    free(values);
+    return checksum;
+}
+
+ZrBenchInt zr_bench_run_branch_jump_dense(int scale) {
+    const int outerLimit = 180 * scale;
+    const int innerLimit = 180;
+    ZrBenchInt state = 23;
+    ZrBenchInt checksum = 0;
+    int outer;
+
+    for (outer = 0; outer < outerLimit; outer++) {
+        int inner;
+        for (inner = 0; inner < innerLimit; inner++) {
+            state = (state * 97 + outer * 13 + inner * 17 + 19) % 65521;
+            if ((state % 11) == 0) {
+                checksum += state / 11 + outer;
+            } else if ((state % 7) == 0) {
+                checksum += (state % 97) + inner * 3;
+            } else if ((state % 5) == 0) {
+                checksum += (state / 5) % 89 + outer * 5;
+            } else if ((state % 3) == 0) {
+                checksum += (state ^ (outer + inner)) + 17;
+            } else {
+                checksum += (state % 31) + outer + inner;
+            }
+
+            checksum = zr_bench_mod(checksum);
+            if ((checksum % 2) == 0) {
+                checksum = zr_bench_mod(checksum + state % 19);
+            } else {
+                checksum = zr_bench_mod(checksum + state % 23);
+            }
+        }
+    }
+
+    return checksum;
+}
+
+typedef struct ZrBenchService {
+    ZrBenchInt weight;
+    ZrBenchInt bias;
+} ZrBenchService;
+
+static ZrBenchInt zr_bench_service_handle(ZrBenchService *service, ZrBenchInt value, ZrBenchInt ticket) {
+    service->bias = (service->bias + ticket + service->weight) % 10007;
+    if (((ticket + service->weight) % 2) == 0) {
+        return (value * service->weight + service->bias + ticket) % 1000003;
+    }
+    return (value + service->weight * 7 + service->bias + ticket * 3) % 1000003;
+}
+
+ZrBenchInt zr_bench_run_mixed_service_loop(int scale) {
+    const int length = 24 * scale;
+    const int rounds = 320 * scale;
+    ZrBenchInt *counters = NULL;
+    ZrBenchService service0 = {3, 11};
+    ZrBenchService service1 = {5, 17};
+    ZrBenchService service2 = {7, 23};
+    ZrBenchInt checksum = 0;
+    ZrBenchInt state = 31;
+    int index;
+    int outer;
+
+    counters = (ZrBenchInt *)malloc((size_t)length * sizeof(*counters));
+    if (counters == NULL) {
+        return 0;
+    }
+
+    for (index = 0; index < length; index++) {
+        counters[index] = (index * 19 + 5) % 257;
+    }
+
+    for (outer = 0; outer < rounds; outer++) {
+        int inner;
+        for (inner = 0; inner < 32; inner++) {
+            const int slot = (int)((outer + inner + state) % length);
+            const ZrBenchInt current = counters[slot];
+            const int selector = slot % 3;
+            const ZrBenchInt ticket = outer * 11 + inner * 7 + selector;
+
+            if (selector == 0) {
+                state = zr_bench_service_handle(&service0, current + state, ticket);
+            } else if (selector == 1) {
+                state = zr_bench_service_handle(&service1, current + state, ticket);
+            } else {
+                state = zr_bench_service_handle(&service2, current + state, ticket);
+            }
+
+            counters[slot] = (current + state + selector + inner) % 1000003;
+            if ((counters[slot] % 4) == 0) {
+                checksum = zr_bench_mod(checksum + counters[slot] + state + current);
+            } else {
+                checksum = zr_bench_mod(checksum + counters[slot] * (selector + 1) + state);
+            }
+        }
+    }
+
+    checksum = zr_bench_mod(checksum
+                            + service0.bias
+                            + service1.bias
+                            + service2.bias
+                            + counters[0]
+                            + counters[length / 2]
+                            + counters[length - 1]);
+    free(counters);
+    return checksum;
 }

@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_call_chain_polymorphic",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

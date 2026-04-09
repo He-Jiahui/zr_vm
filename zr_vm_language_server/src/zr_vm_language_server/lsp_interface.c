@@ -309,12 +309,7 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     context->state = state;
     context->parser = ZrLanguageServer_IncrementalParser_New(state);
     context->analyzer = ZR_NULL; // 延迟创建，每个文件一个分析器
-    context->uriToAnalyzerMap.buckets = ZR_NULL;
-    context->uriToAnalyzerMap.bucketSize = 0;
-    context->uriToAnalyzerMap.elementCount = 0;
-    context->uriToAnalyzerMap.capacity = 0;
-    context->uriToAnalyzerMap.resizeThreshold = 0;
-    context->uriToAnalyzerMap.isValid = ZR_FALSE;
+    ZrCore_HashSet_Construct(&context->uriToAnalyzerMap);
     ZrCore_HashSet_Init(state, &context->uriToAnalyzerMap, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
     ZrCore_Array_Init(state,
                       &context->projectIndexes,
@@ -394,6 +389,9 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_GetOrCreateAnalyzer(SZrState *state, S
     ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
     
     SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, &context->uriToAnalyzerMap, &key);
+    if (pair == ZR_NULL) {
+        pair = ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(state, &context->uriToAnalyzerMap, uri);
+    }
     if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
         // 从原生指针中获取 SZrSemanticAnalyzer
         return (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
@@ -425,6 +423,9 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state, SZrLspCo
 
     ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
     pair = ZrCore_HashSet_Find(state, &context->uriToAnalyzerMap, &key);
+    if (pair == ZR_NULL) {
+        pair = ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(state, &context->uriToAnalyzerMap, uri);
+    }
     if (pair != ZR_NULL && pair->value.type == ZR_VALUE_TYPE_NATIVE_POINTER) {
         return (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
     }
@@ -435,17 +436,23 @@ SZrSemanticAnalyzer *ZrLanguageServer_Lsp_FindAnalyzer(SZrState *state, SZrLspCo
 void ZrLanguageServer_Lsp_RemoveAnalyzer(SZrState *state, SZrLspContext *context, SZrString *uri) {
     SZrSemanticAnalyzer *analyzer;
     SZrTypeValue key;
+    SZrHashKeyValuePair *pair;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
         return;
     }
 
-    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
-    if (analyzer == ZR_NULL) {
+    ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
+    pair = ZrCore_HashSet_Find(state, &context->uriToAnalyzerMap, &key);
+    if (pair == ZR_NULL) {
+        pair = ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(state, &context->uriToAnalyzerMap, uri);
+    }
+    if (pair == ZR_NULL || pair->value.type != ZR_VALUE_TYPE_NATIVE_POINTER) {
         return;
     }
 
-    ZrCore_Value_InitAsRawObject(state, &key, &uri->super);
+    analyzer = (SZrSemanticAnalyzer *)pair->value.value.nativeObject.nativePointer;
+    key = pair->key;
     ZrCore_HashSet_Remove(state, &context->uriToAnalyzerMap, &key);
     ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
 }

@@ -1,0 +1,78 @@
+var benchConfig = %import("bench_config");
+var {Array} = %import("zr.container");
+
+class Service {
+    pub var weight: int;
+    pub var bias: int;
+
+    pub @constructor(weight: int, bias: int) {
+        this.weight = weight;
+        this.bias = bias;
+    }
+
+    pub handle(value: int, ticket: int): int {
+        this.bias = (this.bias + ticket + this.weight) % 10007;
+        if ((ticket + this.weight) % 2 == 0) {
+            return (value * this.weight + this.bias + ticket) % 1000003;
+        }
+        return (value + this.weight * 7 + this.bias + ticket * 3) % 1000003;
+    }
+}
+
+func route(service: Service, value: int, ticket: int): int {
+    return service.handle(value, ticket);
+}
+
+var scale = benchConfig.scale();
+var length = 24 * scale;
+var rounds = 320 * scale;
+var counters = new Array<int>();
+var service0 = new Service(3, 11);
+var service1 = new Service(5, 17);
+var service2 = new Service(7, 23);
+var checksum = 0;
+var state = 31;
+var index = 0;
+
+while (index <= length - 1) {
+    counters.add((index * 19 + 5) % 257);
+    index = index + 1;
+}
+
+var outer = 0;
+while (outer <= rounds - 1) {
+    var inner = 0;
+    while (inner <= 31) {
+        var slot = (outer + inner + state) % length;
+        var current = counters[slot] + 0;
+        var selector = slot % 3;
+        var ticket = outer * 11 + inner * 7 + selector;
+
+        if (selector == 0) {
+            state = route(service0, current + state, ticket);
+        } else if (selector == 1) {
+            state = route(service1, current + state, ticket);
+        } else {
+            state = route(service2, current + state, ticket);
+        }
+
+        counters[slot] = (current + state + selector + inner) % 1000003;
+        if (counters[slot] % 4 == 0) {
+            checksum = (checksum + counters[slot] + state + current) % 1000000007;
+        } else {
+            checksum = (checksum + counters[slot] * (selector + 1) + state) % 1000000007;
+        }
+
+        inner = inner + 1;
+    }
+    outer = outer + 1;
+}
+
+checksum = (checksum
+        + service0.bias
+        + service1.bias
+        + service2.bias
+        + counters[0]
+        + counters[length / 2]
+        + counters[length - 1]) % 1000000007;
+return "BENCH_MIXED_SERVICE_LOOP_PASS\n" + <string> checksum;

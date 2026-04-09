@@ -26,6 +26,7 @@ struct SZrObjectModule;
 
 // from state.h
 struct SZrState;
+struct SZrProfileRuntime;
 
 // from gc.h
 struct SZrGarbageCollector;
@@ -79,6 +80,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
 
     // Logger
     FZrLog logFunction;
+    struct SZrProfileRuntime *profileRuntime;
 
     // IO
     FZrIoLoadSource sourceLoader;

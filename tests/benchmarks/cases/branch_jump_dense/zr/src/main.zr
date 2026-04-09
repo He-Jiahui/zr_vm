@@ -1,0 +1,38 @@
+var benchConfig = %import("bench_config");
+
+var scale = benchConfig.scale();
+var outerLimit = 180 * scale;
+var innerLimit = 180;
+var state = 23;
+var checksum = 0;
+var outer = 0;
+
+while (outer <= outerLimit - 1) {
+    var inner = 0;
+    while (inner <= innerLimit - 1) {
+        state = (state * 97 + outer * 13 + inner * 17 + 19) % 65521;
+        if (state % 11 == 0) {
+            checksum = checksum + state / 11 + outer;
+        } else if (state % 7 == 0) {
+            checksum = checksum + state % 97 + inner * 3;
+        } else if (state % 5 == 0) {
+            checksum = checksum + (state / 5) % 89 + outer * 5;
+        } else if (state % 3 == 0) {
+            checksum = checksum + (state ^ (outer + inner)) + 17;
+        } else {
+            checksum = checksum + state % 31 + outer + inner;
+        }
+
+        checksum = checksum % 1000000007;
+        if (checksum % 2 == 0) {
+            checksum = (checksum + state % 19) % 1000000007;
+        } else {
+            checksum = (checksum + state % 23) % 1000000007;
+        }
+
+        inner = inner + 1;
+    }
+    outer = outer + 1;
+}
+
+return "BENCH_BRANCH_JUMP_DENSE_PASS\n" + <string> checksum;

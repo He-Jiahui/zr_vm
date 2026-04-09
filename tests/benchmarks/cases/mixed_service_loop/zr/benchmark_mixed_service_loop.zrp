@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_mixed_service_loop",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

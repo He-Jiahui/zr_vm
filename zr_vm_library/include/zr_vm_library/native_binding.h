@@ -103,9 +103,20 @@ typedef struct ZrLibTempValueRoot {
     SZrState *state;
     struct SZrCallInfo *callInfo;
     SZrFunctionStackAnchor savedStackTopAnchor;
+    SZrFunctionStackAnchor savedCallInfoBaseAnchor;
     SZrFunctionStackAnchor savedCallInfoTopAnchor;
+    SZrFunctionStackAnchor savedCallInfoReturnAnchor;
     SZrFunctionStackAnchor slotAnchor;
+    TZrStackValuePointer savedStackTopPointer;
+    TZrStackValuePointer savedCallInfoBasePointer;
+    TZrStackValuePointer savedCallInfoTopPointer;
+    TZrStackValuePointer savedCallInfoReturnPointer;
+    TZrStackValuePointer slotPointer;
+    TZrBool hasSavedCallInfoBase;
     TZrBool hasSavedCallInfoTop;
+    TZrBool hasSavedCallInfoReturn;
+    TZrBool restoreCallInfoTopFromSavedStackTop;
+    TZrBool usesDirectPointers;
     TZrBool active;
 } ZrLibTempValueRoot;
 

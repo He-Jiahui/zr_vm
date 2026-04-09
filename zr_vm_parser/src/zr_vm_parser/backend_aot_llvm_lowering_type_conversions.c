@@ -58,6 +58,18 @@ TZrBool backend_aot_llvm_lower_type_conversion_value_family(const SZrAotLlvmLowe
             return backend_aot_llvm_lower_pair_slot_type_conversion_call(context,
                                                                          instruction,
                                                                          "ZrLibrary_AotRuntime_TypeOf");
+        case ZR_INSTRUCTION_ENUM(TO_BOOL):
+            return backend_aot_llvm_lower_pair_slot_type_conversion_call(context,
+                                                                         instruction,
+                                                                         "ZrLibrary_AotRuntime_ToBool");
+        case ZR_INSTRUCTION_ENUM(TO_UINT):
+            return backend_aot_llvm_lower_pair_slot_type_conversion_call(context,
+                                                                         instruction,
+                                                                         "ZrLibrary_AotRuntime_ToUInt");
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+            return backend_aot_llvm_lower_pair_slot_type_conversion_call(context,
+                                                                         instruction,
+                                                                         "ZrLibrary_AotRuntime_ToFloat");
         case ZR_INSTRUCTION_ENUM(TO_OBJECT):
             return backend_aot_llvm_lower_triple_slot_type_conversion_call(context,
                                                                            instruction,

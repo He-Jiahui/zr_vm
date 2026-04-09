@@ -13,6 +13,14 @@ const targets = (process.env.ZR_NATIVE_BUILD_TARGET || 'zr_vm_language_server_st
     .filter((value) => value.length > 0);
 const jobs = process.env.ZR_BUILD_JOBS || '8';
 const helloWorldProject = path.join(repositoryRoot, 'tests', 'fixtures', 'projects', 'hello_world', 'hello_world.zrp');
+const projectModulesFixture = path.join(
+    repositoryRoot,
+    'tests',
+    'fixtures',
+    'projects',
+    'import_basic',
+    'import_basic.zrp',
+);
 
 function findVsDevCmd() {
     const candidates = [];
@@ -212,7 +220,12 @@ function verifyNativeAssets(env) {
         };
     }
 
-    return verifyCliSmoke(cliExecutable, env);
+    const cliVerification = verifyCliSmoke(cliExecutable, env);
+    if (!cliVerification.ok) {
+        return cliVerification;
+    }
+
+    return verifyLanguageServerSmoke(lspExecutable, env);
 }
 
 function verifyCliSmoke(cliExecutable, env) {
@@ -278,4 +291,114 @@ function formatSpawnFailure(label, result) {
         `stdout:\n${stdout}`,
         `stderr:\n${stderr}`,
     ].join('\n');
+}
+
+function verifyLanguageServerSmoke(lspExecutable, env) {
+    const requests = [
+        { jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: {} } },
+        {
+            jsonrpc: '2.0',
+            id: 2,
+            method: 'zr/projectModules',
+            params: {
+                uri: toFileUri(projectModulesFixture),
+            },
+        },
+        {
+            jsonrpc: '2.0',
+            id: 3,
+            method: 'zr/nativeDeclarationDocument',
+            params: {
+                uri: 'zr-decompiled:/zr.system.zr',
+            },
+        },
+        { jsonrpc: '2.0', id: 4, method: 'shutdown', params: {} },
+        { jsonrpc: '2.0', method: 'exit', params: {} },
+    ];
+    const input = Buffer.from(requests.map(serializeJsonRpcFrame).join(''), 'utf8');
+    const result = spawnSync(lspExecutable, [], {
+        cwd: repositoryRoot,
+        env,
+        input,
+        encoding: 'utf8',
+        timeout: 10000,
+        windowsHide: true,
+    });
+
+    if (result.status !== 0) {
+        return {
+            ok: false,
+            message: formatSpawnFailure('zr_vm_language_server_stdio custom request smoke', result),
+        };
+    }
+
+    let responses;
+    try {
+        responses = parseJsonRpcFrames(String(result.stdout || ''));
+    } catch (error) {
+        return {
+            ok: false,
+            message: [
+                'zr_vm_language_server_stdio custom request smoke produced invalid output.',
+                `error=${error instanceof Error ? error.message : String(error)}`,
+                `stdout:\n${String(result.stdout || '')}`,
+                `stderr:\n${String(result.stderr || '')}`,
+            ].join('\n'),
+        };
+    }
+
+    const projectModulesResponse = responses.find((message) => message.id === 2);
+    const nativeDeclarationResponse = responses.find((message) => message.id === 3);
+    if (projectModulesResponse?.error?.code === -32601 || nativeDeclarationResponse?.error?.code === -32601) {
+        return {
+            ok: false,
+            message: [
+                'zr_vm_language_server_stdio is missing required custom requests.',
+                `stdout:\n${String(result.stdout || '')}`,
+                `stderr:\n${String(result.stderr || '')}`,
+            ].join('\n'),
+        };
+    }
+
+    return { ok: true, message: '' };
+}
+
+function serializeJsonRpcFrame(payload) {
+    const text = JSON.stringify(payload);
+    return `Content-Length: ${Buffer.byteLength(text, 'utf8')}\r\n\r\n${text}`;
+}
+
+function parseJsonRpcFrames(text) {
+    const responses = [];
+    let offset = 0;
+
+    while (offset < text.length) {
+        const headerEnd = text.indexOf('\r\n\r\n', offset);
+        if (headerEnd < 0) {
+            break;
+        }
+
+        const header = text.slice(offset, headerEnd);
+        const match = /Content-Length:\s*(\d+)/i.exec(header);
+        if (!match) {
+            throw new Error(`Missing Content-Length header near offset ${offset}`);
+        }
+
+        const bodyLength = Number.parseInt(match[1], 10);
+        const bodyStart = headerEnd + 4;
+        const bodyEnd = bodyStart + bodyLength;
+        const body = text.slice(bodyStart, bodyEnd);
+
+        responses.push(JSON.parse(body));
+        offset = bodyEnd;
+    }
+
+    return responses;
+}
+
+function toFileUri(filePath) {
+    const normalized = filePath.replace(/\\/g, '/');
+    return normalized.startsWith('/')
+        ? `file://${normalized}`
+        : `file:///${normalized}`;
 }

@@ -183,10 +183,12 @@ void ZrCore_Closure_CloseStackValue(struct SZrState *state, TZrStackValuePointer
             break;
         }
         SZrTypeValue *slot = &closureValue->link.closedValue;
+        TZrStackValuePointer sourcePointer = closureValue->value.valuePointer;
+        SZrTypeValue *sourceValue = ZR_CAST_FROM_STACK_VALUE(sourcePointer);
         ZR_ASSERT(closureValue->value.valuePointer < state->stackTop.valuePointer);
         ZrCore_Closure_UnlinkValue(closureValue);
         ZrCore_Value_ResetAsNull(slot);
-        ZrCore_Value_Copy(state, slot, ZR_CAST_FROM_STACK_VALUE(closureValue->value.valuePointer));
+        ZrCore_Value_Copy(state, slot, sourceValue);
         closureValue->value.valuePointer = ZR_CAST_STACK_VALUE(slot);
         SZrRawObject *rawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue);
         if (ZrCore_RawObject_IsWaitToScan(rawObject) || ZrCore_RawObject_IsReferenced(rawObject)) {

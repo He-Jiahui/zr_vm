@@ -532,10 +532,28 @@ static TZrBool unify_generic_binding(SZrState *state,
         if (!ZrParser_InferredType_Equal(&binding->inferredType, actualType)) {
             if (diagnosticBuffer != ZR_NULL && diagnosticBufferSize > 0 && binding->parameterInfo != ZR_NULL &&
                 binding->parameterInfo->name != ZR_NULL) {
+                TZrChar boundTypeBuffer[ZR_PARSER_TEXT_BUFFER_LENGTH];
+                TZrChar actualTypeBuffer[ZR_PARSER_TEXT_BUFFER_LENGTH];
+                const TZrChar *boundTypeText =
+                        ZrParser_TypeNameString_Get(state,
+                                                    &binding->inferredType,
+                                                    boundTypeBuffer,
+                                                    sizeof(boundTypeBuffer));
+                const TZrChar *actualTypeText =
+                        ZrParser_TypeNameString_Get(state,
+                                                    actualType,
+                                                    actualTypeBuffer,
+                                                    sizeof(actualTypeBuffer));
                 snprintf(diagnosticBuffer,
                          diagnosticBufferSize,
-                         "conflicting inferences for generic argument '%s'",
-                         ZrCore_String_GetNativeString(binding->parameterInfo->name));
+                         "conflicting inferences for generic argument '%s' (bound=%s base=%d owner=%d, actual=%s base=%d owner=%d)",
+                         ZrCore_String_GetNativeString(binding->parameterInfo->name),
+                         boundTypeText != ZR_NULL && boundTypeText[0] != '\0' ? boundTypeText : "<unknown>",
+                         (int)binding->inferredType.baseType,
+                         (int)binding->inferredType.ownershipQualifier,
+                         actualTypeText != ZR_NULL && actualTypeText[0] != '\0' ? actualTypeText : "<unknown>",
+                         (int)actualType->baseType,
+                         (int)actualType->ownershipQualifier);
             }
             return ZR_FALSE;
         }

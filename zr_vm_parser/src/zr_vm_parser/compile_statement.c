@@ -18,8 +18,13 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 
+#include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+static TZrBool compile_statement_trace_enabled(void);
+static void compile_statement_trace(const TZrChar *format, ...);
 
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node);
@@ -1726,6 +1731,15 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
+
+    compile_statement_trace("compile_variable_declaration enter node=%p patternType=%d valueType=%d",
+                            (void *)node,
+                            node->data.variableDeclaration.pattern != ZR_NULL
+                                    ? (int)node->data.variableDeclaration.pattern->type
+                                    : -1,
+                            node->data.variableDeclaration.value != ZR_NULL
+                                    ? (int)node->data.variableDeclaration.value->type
+                                    : -1);
     
     if (node->type != ZR_AST_VARIABLE_DECLARATION) {
         ZrParser_Compiler_Error(cs, "Expected variable declaration", node->location);
@@ -1753,14 +1767,30 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             return;
         }
 
+        compile_statement_trace("var decl identifier name=%p typeInfo=%p value=%p",
+                                (void *)varName,
+                                (void *)decl->typeInfo,
+                                (void *)decl->value);
+
         if (decl->typeInfo != ZR_NULL) {
+            compile_statement_trace("var decl infer from explicit type start");
             ZrParser_InferredType_Init(cs->state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
             resolvedTypeInitialized = ZR_TRUE;
             hasResolvedType = ZrParser_AstTypeToInferredType_Convert(cs, decl->typeInfo, &resolvedType);
+            compile_statement_trace("var decl infer from explicit type done success=%d baseType=%d typeName=%p",
+                                    (int)hasResolvedType,
+                                    resolvedTypeInitialized ? (int)resolvedType.baseType : -1,
+                                    resolvedTypeInitialized ? (void *)resolvedType.typeName : ZR_NULL);
         } else if (decl->value != ZR_NULL) {
+            compile_statement_trace("var decl infer from initializer start valueType=%d", (int)decl->value->type);
             ZrParser_InferredType_Init(cs->state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
             resolvedTypeInitialized = ZR_TRUE;
             hasResolvedType = ZrParser_ExpressionType_Infer(cs, decl->value, &resolvedType);
+            compile_statement_trace("var decl infer from initializer done success=%d baseType=%d typeName=%p hasError=%d",
+                                    (int)hasResolvedType,
+                                    resolvedTypeInitialized ? (int)resolvedType.baseType : -1,
+                                    resolvedTypeInitialized ? (void *)resolvedType.typeName : ZR_NULL,
+                                    (int)cs->hasError);
         }
 
         if (cs->hasError) {
@@ -1771,6 +1801,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         }
 
         if (decl->typeInfo != ZR_NULL && decl->value != ZR_NULL && hasResolvedType) {
+            compile_statement_trace("var decl compatibility check start");
             ZrParser_InferredType_Init(cs->state, &initializerType, ZR_VALUE_TYPE_OBJECT);
             initializerTypeInitialized = ZR_TRUE;
             if (!ZrParser_ExpressionType_Infer(cs, decl->value, &initializerType) ||
@@ -1781,6 +1812,9 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                 }
                 return;
             }
+            compile_statement_trace("var decl compatibility check done baseType=%d typeName=%p",
+                                    (int)initializerType.baseType,
+                                    (void *)initializerType.typeName);
         }
 
         TZrUInt32 varIndex = 0;
@@ -1809,7 +1843,27 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
 
         // 如果有初始值，编译初始值表达式
         if (decl->value != ZR_NULL) {
+            TZrUInt32 reservedVarSlot = allocate_stack_slot(cs);
+            TZrUInt32 initializerSlot;
+
+            compile_statement_trace("var decl initializer compile start reservedSlot=%u stackCount=%llu",
+                                    (unsigned int)reservedVarSlot,
+                                    (unsigned long long)cs->stackSlotCount);
+
+            if (reservedVarSlot == ZR_PARSER_SLOT_NONE) {
+                if (initializerTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &initializerType);
+                }
+                if (resolvedTypeInitialized) {
+                    ZrParser_InferredType_Free(cs->state, &resolvedType);
+                }
+                return;
+            }
+
             ZrParser_Expression_Compile(cs, decl->value);
+            compile_statement_trace("var decl initializer compile done hasError=%d stackCount=%llu",
+                                    (int)cs->hasError,
+                                    (unsigned long long)cs->stackSlotCount);
             if (cs->hasError || cs->stackSlotCount == 0) {
                 if (initializerTypeInitialized) {
                     ZrParser_InferredType_Free(cs->state, &initializerType);
@@ -1820,12 +1874,23 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                 return;
             }
 
-            varIndex = bind_existing_stack_slot_as_local_var(cs,
-                                                             varName,
-                                                             (TZrUInt32)(cs->stackSlotCount - 1));
+            initializerSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+            compile_statement_trace("var decl bind initializer slot=%u reserved=%u",
+                                    (unsigned int)initializerSlot,
+                                    (unsigned int)reservedVarSlot);
+            if (initializerSlot != reservedVarSlot) {
+                emit_instruction(cs,
+                                 create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                                      (TZrUInt16)reservedVarSlot,
+                                                      (TZrInt32)initializerSlot));
+            }
+            ZrParser_Compiler_TrimStackToSlot(cs, reservedVarSlot);
+            varIndex = bind_existing_stack_slot_as_local_var(cs, varName, reservedVarSlot);
+            compile_statement_trace("var decl local binding done varIndex=%u", (unsigned int)varIndex);
         } else {
             TZrSize fixedArraySize;
             varIndex = allocate_local_var(cs, varName);
+            compile_statement_trace("var decl allocate local no initializer varIndex=%u", (unsigned int)varIndex);
 
             if (hasResolvedType && resolve_fixed_array_size(&resolvedType, &fixedArraySize)) {
                 compile_default_fixed_array_initialization(cs, varIndex, fixedArraySize, node->location);
@@ -1856,6 +1921,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         if (decl->value != ZR_NULL) {
             compiler_register_callable_value_binding(cs, varName, decl->value);
             compile_statement_register_type_value_alias(cs, varName, decl->value);
+            compile_statement_trace("var decl runtime alias registration done");
         }
 
         if (!compile_statement_try_register_imported_compile_time_module_alias(cs, node) ||
@@ -1868,6 +1934,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             }
             return;
         }
+        compile_statement_trace("var decl compile-time import alias registration done");
 
         // 如果是 const 变量，记录到 constLocalVars 数组
         if (decl->isConst) {
@@ -1898,6 +1965,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         if (initializerTypeInitialized) {
             ZrParser_InferredType_Free(cs->state, &initializerType);
         }
+        compile_statement_trace("compile_variable_declaration exit success");
     } else if (decl->pattern->type == ZR_AST_DESTRUCTURING_OBJECT) {
         // 处理解构对象赋值：var {key1, key2, ...} = value;
         if (!compile_statement_try_register_imported_destructured_type_aliases(cs, node)) {
@@ -2169,6 +2237,7 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
 
     oldCurrentAst = cs->currentAst;
     cs->currentAst = node;
+    compile_statement_trace("statement compile dispatch node=%p type=%d", (void *)node, (int)node->type);
     
     switch (node->type) {
         case ZR_AST_VARIABLE_DECLARATION:
@@ -2316,6 +2385,38 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
     }
 
     cs->currentAst = oldCurrentAst;
+    compile_statement_trace("statement compile dispatch done node=%p type=%d hasError=%d",
+                            (void *)node,
+                            (int)node->type,
+                            (int)cs->hasError);
+}
+
+static TZrBool compile_statement_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_VM_TRACE_PROJECT_STARTUP");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void compile_statement_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!compile_statement_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    fprintf(stderr, "[zr-compile-stmt] ");
+    vfprintf(stderr, format, arguments);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(arguments);
 }
 
 // 编译解构对象赋值：var {key1, key2, ...} = value;

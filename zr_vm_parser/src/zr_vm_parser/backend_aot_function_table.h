@@ -23,5 +23,6 @@ TZrBool backend_aot_resolve_callable_constant_function_index(const SZrAotFunctio
                                                              const SZrFunction *function,
                                                              TZrInt32 constantIndex,
                                                              TZrUInt32 *outFunctionIndex);
+TZrUInt32 backend_aot_find_function_table_index(const SZrAotFunctionTable *table, const SZrFunction *function);
 
 #endif

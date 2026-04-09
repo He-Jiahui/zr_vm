@@ -88,6 +88,21 @@ void backend_aot_write_c_direct_mul_signed(FILE *file,
             (unsigned)rightSlot);
 }
 
+void backend_aot_write_c_direct_mul_signed_const(FILE *file,
+                                                 TZrUInt32 destinationSlot,
+                                                 TZrUInt32 leftSlot,
+                                                 TZrUInt32 constantIndex) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_MulSignedConst(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)constantIndex);
+}
+
 void backend_aot_write_c_direct_mul(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
@@ -156,6 +171,21 @@ void backend_aot_write_c_direct_sub_int(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)rightSlot);
+}
+
+void backend_aot_write_c_direct_sub_int_const(FILE *file,
+                                              TZrUInt32 destinationSlot,
+                                              TZrUInt32 leftSlot,
+                                              TZrUInt32 constantIndex) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SubIntConst(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)constantIndex);
 }
 
 void backend_aot_write_c_direct_bitwise_xor(FILE *file,
@@ -420,6 +450,21 @@ void backend_aot_write_c_direct_mod(FILE *file,
             (unsigned)rightSlot);
 }
 
+void backend_aot_write_c_direct_mod_signed_const(FILE *file,
+                                                 TZrUInt32 destinationSlot,
+                                                 TZrUInt32 leftSlot,
+                                                 TZrUInt32 constantIndex) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ModSignedConst(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)constantIndex);
+}
+
 void backend_aot_write_c_direct_div(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
@@ -476,6 +521,21 @@ void backend_aot_write_c_direct_div_signed(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)rightSlot);
+}
+
+void backend_aot_write_c_direct_div_signed_const(FILE *file,
+                                                 TZrUInt32 destinationSlot,
+                                                 TZrUInt32 leftSlot,
+                                                 TZrUInt32 constantIndex) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_DivSignedConst(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)constantIndex);
 }
 
 void backend_aot_write_c_direct_neg(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
@@ -754,6 +814,21 @@ void backend_aot_write_c_direct_add_int(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)rightSlot);
+}
+
+void backend_aot_write_c_direct_add_int_const(FILE *file,
+                                              TZrUInt32 destinationSlot,
+                                              TZrUInt32 leftSlot,
+                                              TZrUInt32 constantIndex) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_AddIntConst(state, &frame, %u, %u, %u));\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)constantIndex);
 }
 
 void backend_aot_write_c_direct_add(FILE *file,

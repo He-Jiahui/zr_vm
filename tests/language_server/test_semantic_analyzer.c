@@ -472,7 +472,22 @@ static void test_semantic_analyzer_create_and_free(SZrState *state) {
         TEST_FAIL(timer, "Semantic Analyzer Creation and Free", "Symbol table or reference tracker is NULL");
         return;
     }
-    
+
+    if (analyzer->symbolTable->nameToSymbolsHashSet.pairPoolHead != ZR_NULL ||
+        analyzer->symbolTable->nameToSymbolsHashSet.pairPoolActive != ZR_NULL ||
+        analyzer->symbolTable->nameToSymbolsHashSet.pairPoolCapacity != 0 ||
+        analyzer->symbolTable->nameToSymbolsHashSet.pairPoolUsed != 0 ||
+        analyzer->referenceTracker->symbolToReferencesMap.pairPoolHead != ZR_NULL ||
+        analyzer->referenceTracker->symbolToReferencesMap.pairPoolActive != ZR_NULL ||
+        analyzer->referenceTracker->symbolToReferencesMap.pairPoolCapacity != 0 ||
+        analyzer->referenceTracker->symbolToReferencesMap.pairPoolUsed != 0) {
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+        TEST_FAIL(timer,
+                  "Semantic Analyzer Creation and Free",
+                  "Fresh symbol/reference hash sets must start with an empty pair-pool state");
+        return;
+    }
+     
     ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     TEST_PASS(timer, "Semantic Analyzer Creation and Free");
 }
@@ -1503,6 +1518,32 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
             return;
         }
 
+        if (count_diagnostics_with_code(analyzer, "compiler_error") != 0 ||
+            analyzer->diagnostics.length != 0) {
+            SZrDiagnostic **diagPtr = analyzer->diagnostics.length > 0
+                                              ? (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, 0)
+                                              : ZR_NULL;
+            SZrDiagnostic *diag = diagPtr != ZR_NULL ? *diagPtr : ZR_NULL;
+            TZrChar message[256];
+
+            snprintf(message,
+                     sizeof(message),
+                     "%s: %s (line %d)",
+                     diag != ZR_NULL && diag->code != ZR_NULL
+                         ? ZrCore_String_GetNativeString(diag->code)
+                         : "<no code>",
+                     diag != ZR_NULL && diag->message != ZR_NULL
+                         ? ZrCore_String_GetNativeString(diag->message)
+                         : "<no message>",
+                     diag != ZR_NULL ? diag->location.start.line : -1);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Function Symbols Surface Signature Detail",
+                      message);
+            return;
+        }
+
         completionPosition = file_range_for_nth_substring(testCode, "swap<int>", 0, ZR_FALSE);
         ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
         ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
@@ -1553,6 +1594,111 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
     }
 
     TEST_PASS(timer, "Semantic Analyzer Generic Function Symbols Surface Signature Detail");
+}
+
+static void test_semantic_analyzer_function_signatures_preserve_ownership_qualifiers(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Function Signatures Preserve Ownership Qualifiers");
+
+    TEST_INFO("Ownership-aware hover/completion detail",
+              "Function completion detail and hover should preserve AST ownership qualifiers on parameters and return types");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "class Hero {\n"
+            "    pub @constructor() {\n"
+            "    }\n"
+            "}\n"
+            "take(seed: %shared Hero): %unique Hero {\n"
+            "    return %unique new Hero();\n"
+            "}\n"
+            "func use(sharedSeed: %shared Hero): void {\n"
+            "    var hero = take(sharedSeed);\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_signature_hover_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange completionPosition;
+        SZrFileRange hoverPosition;
+        SZrArray completions;
+        SZrHoverInfo *hoverInfo = ZR_NULL;
+        const char *detailText;
+        const char *hoverText;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        completionPosition = file_range_for_nth_substring(testCode, "take(sharedSeed)", 0, ZR_FALSE);
+        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
+
+        detailText = completion_detail_for_label(&completions, "take");
+        if (detailText == ZR_NULL ||
+            strstr(detailText, "take(") == ZR_NULL ||
+            strstr(detailText, "seed: %shared Hero") == ZR_NULL ||
+            strstr(detailText, "): %unique Hero") == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers",
+                      detailText != ZR_NULL ? detailText : "<null detail>");
+            return;
+        }
+
+        hoverPosition = file_range_for_nth_substring(testCode, "take(sharedSeed)", 0, ZR_FALSE);
+        if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
+            hoverInfo == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers",
+                      "Failed to get hover info for ownership-qualified function call");
+            return;
+        }
+
+        hoverText = hover_contents_string(hoverInfo);
+        if (hoverText == ZR_NULL ||
+            strstr(hoverText, "Signature: take(") == ZR_NULL ||
+            strstr(hoverText, "seed: %shared Hero") == ZR_NULL ||
+            strstr(hoverText, "): %unique Hero") == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers",
+                      hoverText != ZR_NULL ? hoverText : "<null hover>");
+            return;
+        }
+
+        ZrCore_Array_Free(state, &completions);
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers");
 }
 
 static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail(SZrState *state) {
@@ -1609,6 +1755,16 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
             TEST_FAIL(timer,
                       "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
                       "Failed to analyze AST");
+            return;
+        }
+
+        if (count_diagnostics_with_code(analyzer, "compiler_error") != 0 ||
+            analyzer->diagnostics.length != 0) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Type Symbols Surface Signature Detail",
+                      "Generic type signature analysis should not emit diagnostics");
             return;
         }
 
@@ -1797,6 +1953,72 @@ static void test_semantic_analyzer_reports_invalid_interface_variance_positions(
     }
 
     TEST_PASS(timer, "Semantic Analyzer Reports Invalid Interface Variance Positions");
+}
+
+static void test_semantic_analyzer_preserves_owner_generic_context_in_member_signatures(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Preserves Owner Generic Context In Member Signatures");
+
+    TEST_INFO("Owner generic member signatures",
+              "Class member signatures should resolve owner and method generic parameters without emitting compiler diagnostics");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "class Matrix<T, const N: int> { }\n"
+            "class Box<T> {\n"
+            "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> {\n"
+            "        return value;\n"
+            "    }\n"
+            "}\n"
+            "func use(): void {\n"
+            "    var box = new Box<int>();\n"
+            "    var value = new Matrix<int, 4>();\n"
+            "    box.shape(value);\n"
+            "}\n";
+        SZrString *sourceName =
+            ZrCore_String_Create(state, "owner_generic_member_signature_test.zr", 38);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Preserves Owner Generic Context In Member Signatures",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Preserves Owner Generic Context In Member Signatures",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Preserves Owner Generic Context In Member Signatures",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (count_diagnostics_with_code(analyzer, "compiler_error") != 0 ||
+            analyzer->diagnostics.length != 0) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Preserves Owner Generic Context In Member Signatures",
+                      "Owner/member generic signature analysis should not emit diagnostics");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Preserves Owner Generic Context In Member Signatures");
 }
 
 static void test_semantic_analyzer_warns_on_unreachable_statements_after_return_or_throw(SZrState *state) {
@@ -2833,10 +3055,16 @@ int main(void) {
     test_semantic_analyzer_generic_function_symbols_surface_signature_detail(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_function_signatures_preserve_ownership_qualifiers(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_generic_type_symbols_surface_signature_detail(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_invalid_interface_variance_positions(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_preserves_owner_generic_context_in_member_signatures(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_warns_on_unreachable_statements_after_return_or_throw(state);

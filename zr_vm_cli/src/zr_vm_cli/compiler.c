@@ -19,6 +19,9 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#else
+extern FILE *popen(const char *command, const char *mode);
+extern int pclose(FILE *stream);
 #endif
 
 typedef struct SZrCliModuleRecord {
@@ -70,6 +73,9 @@ typedef struct SZrCliCompileSummary {
 #endif
 
 static TZrBool zr_cli_command_exists(const TZrChar *commandName);
+static TZrBool zr_cli_parse_first_uint32(const TZrChar *text, TZrUInt32 *outValue);
+static TZrBool zr_cli_read_tool_major_version(const TZrChar *toolPath, TZrUInt32 *outMajorVersion);
+static TZrBool zr_cli_aot_llvm_requires_opaque_pointer_flag(const TZrChar *toolPath);
 
 #if defined(_WIN32)
 static TZrBool zr_cli_windows_find_program(const TZrChar *commandName, TZrChar *pathBuffer, TZrSize pathBufferSize);
@@ -380,6 +386,87 @@ static TZrBool zr_cli_command_exists(const TZrChar *commandName) {
 #endif
 }
 
+static TZrBool zr_cli_parse_first_uint32(const TZrChar *text, TZrUInt32 *outValue) {
+    TZrUInt64 value = 0;
+    TZrBool foundDigit = ZR_FALSE;
+
+    if (outValue != ZR_NULL) {
+        *outValue = 0u;
+    }
+    if (text == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    while (*text != '\0') {
+        if (*text >= '0' && *text <= '9') {
+            foundDigit = ZR_TRUE;
+            break;
+        }
+        text++;
+    }
+    if (!foundDigit) {
+        return ZR_FALSE;
+    }
+
+    while (*text >= '0' && *text <= '9') {
+        value = value * 10u + (TZrUInt64)(*text - '0');
+        if (value > 0xffffffffu) {
+            return ZR_FALSE;
+        }
+        text++;
+    }
+
+    *outValue = (TZrUInt32)value;
+    return ZR_TRUE;
+}
+
+static TZrBool zr_cli_read_tool_major_version(const TZrChar *toolPath, TZrUInt32 *outMajorVersion) {
+    TZrChar command[ZR_CLI_REPL_LINE_BUFFER_LENGTH];
+    TZrChar line[256];
+    TZrBool parsed = ZR_FALSE;
+    FILE *pipe = ZR_NULL;
+
+    if (outMajorVersion != ZR_NULL) {
+        *outMajorVersion = 0u;
+    }
+    if (toolPath == ZR_NULL || toolPath[0] == '\0' || outMajorVersion == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (snprintf(command, sizeof(command), "\"%s\" --version 2>&1", toolPath) >= (int)sizeof(command)) {
+        return ZR_FALSE;
+    }
+
+#if defined(_WIN32)
+    pipe = _popen(command, "r");
+#else
+    pipe = popen(command, "r");
+#endif
+    if (pipe == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    while (fgets(line, sizeof(line), pipe) != ZR_NULL) {
+        if (zr_cli_parse_first_uint32(line, outMajorVersion)) {
+            parsed = ZR_TRUE;
+            break;
+        }
+    }
+
+#if defined(_WIN32)
+    _pclose(pipe);
+#else
+    pclose(pipe);
+#endif
+    return parsed;
+}
+
+static TZrBool zr_cli_aot_llvm_requires_opaque_pointer_flag(const TZrChar *toolPath) {
+    TZrUInt32 majorVersion = 0u;
+
+    return (TZrBool)(zr_cli_read_tool_major_version(toolPath, &majorVersion) && majorVersion > 0u &&
+                     majorVersion < 15u);
+}
+
 static TZrBool zr_cli_resolve_aot_llvm_toolchain(TZrChar *toolBuffer,
                                                  TZrSize toolBufferSize,
                                                  TZrBool *outUseClangCl) {
@@ -426,6 +513,7 @@ static TZrBool zr_cli_resolve_aot_llvm_toolchain(TZrChar *toolBuffer,
 static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *record) {
     TZrChar toolCommand[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar command[ZR_CLI_REPL_LINE_BUFFER_LENGTH * 10];
+    const TZrChar *opaquePointerFlags = "";
     TZrBool useClangCl = ZR_FALSE;
 
     if (record == ZR_NULL) {
@@ -436,6 +524,13 @@ static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *
         ZrCore_Log_Error(ZR_NULL, "AOT LLVM host adapter unavailable: clang host toolchain not found\n");
         return ZR_FALSE;
     }
+    if (zr_cli_aot_llvm_requires_opaque_pointer_flag(toolCommand)) {
+#if defined(_WIN32)
+        opaquePointerFlags = useClangCl ? "/clang:-mllvm /clang:-opaque-pointers " : "-mllvm -opaque-pointers ";
+#else
+        opaquePointerFlags = "-mllvm -opaque-pointers ";
+#endif
+    }
 
 #if defined(_WIN32)
     TZrChar compileCommand[ZR_CLI_REPL_LINE_BUFFER_LENGTH * 8];
@@ -443,9 +538,10 @@ static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *
     if (useClangCl) {
         if (snprintf(compileCommand,
                      sizeof(compileCommand),
-                     "\"%s\" /nologo /LD \"%s\" /link /NOENTRY /OUT:\"%s\" /LIBPATH:\"%s\" "
+                     "\"%s\" %s/nologo /LD \"%s\" /link /NOENTRY /OUT:\"%s\" /LIBPATH:\"%s\" "
                      "/EXPORT:ZrVm_GetAotCompiledModule zr_vm_library.lib zr_vm_core.lib",
                      toolCommand,
+                     opaquePointerFlags,
                      record->aotLlvmIrPath,
                      record->aotLlvmLibraryPath,
                      ZR_VM_HOST_LIB_DIR) >= (int)sizeof(compileCommand)) {
@@ -454,9 +550,10 @@ static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *
     } else {
         if (snprintf(compileCommand,
                      sizeof(compileCommand),
-                     "\"%s\" -Wno-override-module -shared \"%s\" -L\"%s\" -lzr_vm_library -lzr_vm_core "
+                     "\"%s\" %s-Wno-override-module -shared \"%s\" -L\"%s\" -lzr_vm_library -lzr_vm_core "
                      "-Wl,/NOENTRY -Wl,/EXPORT:ZrVm_GetAotCompiledModule -o \"%s\"",
                      toolCommand,
+                     opaquePointerFlags,
                      record->aotLlvmIrPath,
                      ZR_VM_HOST_LIB_DIR,
                      record->aotLlvmLibraryPath) >= (int)sizeof(compileCommand)) {
@@ -471,8 +568,9 @@ static TZrBool zr_cli_compile_aot_llvm_shared_library(const SZrCliModuleRecord *
 #else
     if (snprintf(command,
                  sizeof(command),
-                 "%s -Wno-override-module -shared -fPIC \"%s\" -L\"%s\" -Wl,-rpath,\"%s\" -lzr_vm_library -lzr_vm_core -o \"%s\"",
+                 "%s %s-Wno-override-module -shared -fPIC \"%s\" -L\"%s\" -Wl,-rpath,\"%s\" -lzr_vm_library -lzr_vm_core -o \"%s\"",
                  toolCommand,
+                 opaquePointerFlags,
                  record->aotLlvmIrPath,
                  ZR_VM_HOST_LIB_DIR,
                  ZR_VM_HOST_LIB_DIR,

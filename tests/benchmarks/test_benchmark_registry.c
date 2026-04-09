@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "test_support.h"
 
@@ -12,32 +13,18 @@ static int benchmark_registry_expect_file(const char *path, const char *label) {
     return 1;
 }
 
-static int benchmark_registry_expect_case(const char *caseName) {
-    char path[ZR_TESTS_PATH_MAX];
-
-    if (!snprintf(path,
-                  sizeof(path),
-                  "%s/../tests/benchmarks/cases/%s",
-                  ZR_VM_TESTS_SOURCE_DIR,
-                  caseName)) {
-        printf("Failed to format benchmark case path for %s\n", caseName);
-        return 1;
-    }
-
-    if (!ZrTests_File_Exists(path)) {
-        printf("Missing benchmark case directory marker: %s\n", path);
-        return 1;
-    }
-
-    return 0;
-}
-
-static int benchmark_registry_expect_case_layout(const char *caseName) {
+static int benchmark_registry_expect_case_layout(const char *caseName,
+                                                 TZrBool requireExtendedRuntimes,
+                                                 TZrBool requireJavaRuntime) {
     static const char *const requiredRelativeFiles[] = {
             "zr/src/main.zr",
             "python/main.py",
             "node/main.js",
-            "c/benchmark_case.c",
+            "c/benchmark_case.c"
+    };
+    static const char *const optionalRelativeFiles[] = {
+            "qjs/main.js",
+            "lua/main.lua",
             "rust/mod.rs",
             "dotnet/benchmark_case.cs"
     };
@@ -63,6 +50,42 @@ static int benchmark_registry_expect_case_layout(const char *caseName) {
         failures += benchmark_registry_expect_file(path, requiredRelativeFiles[index]);
     }
 
+    if (requireExtendedRuntimes) {
+        for (index = 0; index < sizeof(optionalRelativeFiles) / sizeof(optionalRelativeFiles[0]); index++) {
+            char path[ZR_TESTS_PATH_MAX];
+            int written = snprintf(path,
+                                   sizeof(path),
+                                   "%s/../tests/benchmarks/cases/%s/%s",
+                                   ZR_VM_TESTS_SOURCE_DIR,
+                                   caseName,
+                                   optionalRelativeFiles[index]);
+            if (written <= 0 || (TZrSize) written >= sizeof(path)) {
+                printf("Failed to format benchmark extended implementation path for %s -> %s\n",
+                       caseName,
+                       optionalRelativeFiles[index]);
+                failures++;
+                continue;
+            }
+
+            failures += benchmark_registry_expect_file(path, optionalRelativeFiles[index]);
+        }
+    }
+
+    if (requireJavaRuntime) {
+        char javaPath[ZR_TESTS_PATH_MAX];
+        int written = snprintf(javaPath,
+                               sizeof(javaPath),
+                               "%s/../tests/benchmarks/cases/%s/java/benchmark_case.java",
+                               ZR_VM_TESTS_SOURCE_DIR,
+                               caseName);
+        if (written <= 0 || (TZrSize) written >= sizeof(javaPath)) {
+            printf("Failed to format benchmark Java implementation path for %s\n", caseName);
+            failures++;
+        } else {
+            failures += benchmark_registry_expect_file(javaPath, "java/benchmark_case.java");
+        }
+    }
+
     {
         char projectPath[ZR_TESTS_PATH_MAX];
         int written = snprintf(projectPath,
@@ -82,6 +105,71 @@ static int benchmark_registry_expect_case_layout(const char *caseName) {
     return failures;
 }
 
+static char *benchmark_registry_read_text_file(const char *path) {
+    FILE *file;
+    long length;
+    size_t readLength;
+    char *buffer;
+
+    if (path == NULL) {
+        return NULL;
+    }
+
+    file = fopen(path, "rb");
+    if (file == NULL) {
+        return NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return NULL;
+    }
+    length = ftell(file);
+    if (length < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return NULL;
+    }
+
+    buffer = (char *)malloc((size_t)length + 1u);
+    if (buffer == NULL) {
+        fclose(file);
+        return NULL;
+    }
+
+    readLength = fread(buffer, 1u, (size_t)length, file);
+    fclose(file);
+    if (readLength != (size_t)length) {
+        free(buffer);
+        return NULL;
+    }
+
+    buffer[readLength] = '\0';
+    return buffer;
+}
+
+static int benchmark_registry_expect_file_contains(const char *path, const char *needle, const char *label) {
+    char *content;
+
+    if (path == NULL || needle == NULL || label == NULL) {
+        return 1;
+    }
+
+    content = benchmark_registry_read_text_file(path);
+    if (content == NULL) {
+        printf("Failed to read %s: %s\n", label, path);
+        return 1;
+    }
+
+    if (strstr(content, needle) == NULL) {
+        printf("Missing %s marker '%s' in %s\n", label, needle, path);
+        free(content);
+        return 1;
+    }
+
+    free(content);
+    return 0;
+}
+
 int main(void) {
     static const char *const benchmarkCases[] = {
             "numeric_loops",
@@ -91,7 +179,13 @@ int main(void) {
             "prime_trial_division",
             "matrix_add_2d",
             "string_build",
-            "map_object_access"
+            "map_object_access",
+            "fib_recursive",
+            "call_chain_polymorphic",
+            "object_field_hot",
+            "array_index_dense",
+            "branch_jump_dense",
+            "mixed_service_loop"
     };
     char registryPath[ZR_TESTS_PATH_MAX];
     char readmePath[ZR_TESTS_PATH_MAX];
@@ -100,6 +194,8 @@ int main(void) {
     char rustRunnerMainPath[ZR_TESTS_PATH_MAX];
     char dotnetRunnerProjectPath[ZR_TESTS_PATH_MAX];
     char dotnetRunnerMainPath[ZR_TESTS_PATH_MAX];
+    char javaRunnerMainPath[ZR_TESTS_PATH_MAX];
+    char javaRunnerSupportPath[ZR_TESTS_PATH_MAX];
     int failures = 0;
     TZrSize index;
 
@@ -134,6 +230,14 @@ int main(void) {
         !snprintf(dotnetRunnerMainPath,
                   sizeof(dotnetRunnerMainPath),
                   "%s/../tests/benchmarks/dotnet_runner/Program.cs",
+                  ZR_VM_TESTS_SOURCE_DIR) ||
+        !snprintf(javaRunnerMainPath,
+                  sizeof(javaRunnerMainPath),
+                  "%s/../tests/benchmarks/java_runner/src/BenchmarkRunner.java",
+                  ZR_VM_TESTS_SOURCE_DIR) ||
+        !snprintf(javaRunnerSupportPath,
+                  sizeof(javaRunnerSupportPath),
+                  "%s/../tests/benchmarks/java_runner/src/BenchmarkSupport.java",
                   ZR_VM_TESTS_SOURCE_DIR)) {
         printf("Failed to format benchmark registry paths\n");
         return 1;
@@ -146,6 +250,25 @@ int main(void) {
     failures += benchmark_registry_expect_file(rustRunnerMainPath, "Rust benchmark runner");
     failures += benchmark_registry_expect_file(dotnetRunnerProjectPath, ".NET benchmark runner project");
     failures += benchmark_registry_expect_file(dotnetRunnerMainPath, ".NET benchmark runner");
+    failures += benchmark_registry_expect_file(javaRunnerMainPath, "Java benchmark runner");
+    failures += benchmark_registry_expect_file(javaRunnerSupportPath, "Java benchmark support");
+    failures += benchmark_registry_expect_file_contains(registryPath,
+                                                        "ZR_VM_BENCHMARK_TIER_SCALE_profile",
+                                                        "profile tier");
+    failures += benchmark_registry_expect_file_contains(registryPath, "\"java\"", "Java implementation id");
+    failures += benchmark_registry_expect_file_contains(registryPath, "\"lua\"", "Lua implementation id");
+    failures += benchmark_registry_expect_file_contains(registryPath, "\"qjs\"", "QuickJS implementation id");
+    failures += benchmark_registry_expect_file_contains(readmePath, "profile", "README profile tier");
+    failures += benchmark_registry_expect_file_contains(readmePath, "Java", "README Java");
+    failures += benchmark_registry_expect_file_contains(readmePath, "Lua", "README Lua");
+    failures += benchmark_registry_expect_file_contains(readmePath, "QuickJS", "README QuickJS");
+    failures += benchmark_registry_expect_file_contains(readmePath,
+                                                        "instruction_report",
+                                                        "README instruction report");
+    failures += benchmark_registry_expect_file_contains(readmePath, "hotspot_report", "README hotspot report");
+    failures += benchmark_registry_expect_file_contains(readmePath,
+                                                        "comparison_report",
+                                                        "README comparison report");
 
     for (index = 0; index < sizeof(benchmarkCases) / sizeof(benchmarkCases[0]); index++) {
         char casePath[ZR_TESTS_PATH_MAX];
@@ -161,7 +284,10 @@ int main(void) {
         }
 
         failures += benchmark_registry_expect_file(casePath, benchmarkCases[index]);
-        failures += benchmark_registry_expect_case_layout(benchmarkCases[index]);
+        failures += benchmark_registry_expect_case_layout(
+                benchmarkCases[index],
+                index < 8u ? ZR_TRUE : ZR_FALSE,
+                ZR_TRUE);
     }
 
     if (failures != 0) {

@@ -15,6 +15,13 @@
 #include "zr_vm_core/utf8.h"
 #include "zr_vm_core/value.h"
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+static TZrBool string_trace_enabled(void);
+static void string_trace(const TZrChar *format, ...);
+
 static void native_string_push_string_to_stack(SZrNativeStringFormatBuffer *buffer, TZrNativeString string, TZrSize length) {
     SZrState *state = buffer->state;
     SZrString *str = ZrCore_String_Create(state, string, length);
@@ -357,10 +364,16 @@ void ZrCore_StringTable_Free(struct SZrGlobalState *global, SZrStringTable *stri
 void ZrCore_StringTable_Init(SZrState *state) {
     SZrGlobalState *global = state->global;
     SZrStringTable *stringTable = global->stringTable;
+    string_trace("string table init enter state=%p global=%p table=%p", (void *)state, (void *)global, (void *)stringTable);
     // stringTable
     ZrCore_HashSet_Init(state, &stringTable->stringHashSet, ZR_STRING_TABLE_INITIAL_SIZE_LOG2);
+    string_trace("string table hash init done buckets=%p capacity=%llu valid=%d",
+                 (void *)stringTable->stringHashSet.buckets,
+                 (unsigned long long)stringTable->stringHashSet.capacity,
+                 (int)stringTable->stringHashSet.isValid);
     // this is the first string we created
     global->memoryErrorMessage = ZR_STRING_LITERAL(state, ZR_ERROR_MESSAGE_NOT_ENOUGH_MEMORY);
+    string_trace("string table memoryErrorMessage=%p", (void *)global->memoryErrorMessage);
     ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->memoryErrorMessage));
     // fill api cache with valid string
     for (TZrSize i = 0; i < ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT; i++) {
@@ -369,6 +382,7 @@ void ZrCore_StringTable_Init(SZrState *state) {
         }
     }
     stringTable->isValid = ZR_TRUE;
+    string_trace("string table init exit isValid=%d", (int)stringTable->isValid);
 }
 
 
@@ -403,6 +417,12 @@ static SZrString *string_object_create(SZrState *state, TZrNativeString string, 
 
     ZrCore_RawObject_InitHash(ZR_CAST_RAW_OBJECT_AS_SUPER(constantString),
                         hash == 0 ? ZrCore_Hash_Create(global, stringBuffer, length) : hash);
+    string_trace("string object create length=%llu string=%p object=%p hash=%llu short=%d",
+                 (unsigned long long)length,
+                 (const void *)string,
+                 (void *)constantString,
+                 (unsigned long long)ZR_CAST_RAW_OBJECT_AS_SUPER(constantString)->hash,
+                 length <= ZR_VM_SHORT_STRING_MAX ? 1 : 0);
     return constantString;
 }
 
@@ -429,11 +449,22 @@ static SZrString *string_create_short(SZrState *state, TZrNativeString string, T
         // create a new string
         SZrString *newString = string_object_create(state, string, length, hash);
         if (newString == ZR_NULL) {
+            string_trace("string create short object create failed length=%llu", (unsigned long long)length);
             return ZR_NULL;
         }
+        string_trace("string create short add raw object start string=%p hash=%llu tableBuckets=%p",
+                     (void *)newString,
+                     (unsigned long long)hash,
+                     (void *)stringTable->stringHashSet.buckets);
         if (ZrCore_HashSet_AddRawObject(state, &stringTable->stringHashSet, &newString->super) == ZR_NULL) {
+            string_trace("string create short add raw object failed string=%p threadStatus=%d",
+                         (void *)newString,
+                         state != ZR_NULL ? (int)state->threadStatus : -1);
             return ZR_NULL;
         }
+        string_trace("string create short add raw object done string=%p elementCount=%llu",
+                     (void *)newString,
+                     (unsigned long long)stringTable->stringHashSet.elementCount);
         return newString;
     }
 }
@@ -446,6 +477,7 @@ static ZR_FORCE_INLINE SZrString *string_create_long(SZrState *state, TZrNativeS
 
 
 SZrString *ZrCore_String_Create(SZrState *state, TZrNativeString string, TZrSize length) {
+    string_trace("string create dispatch length=%llu text=%p", (unsigned long long)length, (const void *)string);
     if (length <= ZR_VM_SHORT_STRING_MAX) {
         return string_create_short(state, string, length);
     }
@@ -453,6 +485,34 @@ SZrString *ZrCore_String_Create(SZrState *state, TZrNativeString string, TZrSize
         // create a long string
         return string_create_long(state, string, length);
     }
+}
+
+static TZrBool string_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_VM_TRACE_CORE_BOOTSTRAP");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void string_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!string_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    fprintf(stderr, "[zr-string] ");
+    vfprintf(stderr, format, arguments);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(arguments);
 }
 
 SZrString *ZrCore_String_CreateTryHitCache(SZrState *state, TZrNativeString string) {

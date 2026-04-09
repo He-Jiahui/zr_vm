@@ -315,12 +315,7 @@ SZrSymbolTable *ZrLanguageServer_SymbolTable_New(SZrState *state) {
     table->useHashTable = ZR_FALSE; // 使用 Object 映射
     
     // 同时初始化哈希表作为备选
-    table->nameToSymbolsHashSet.buckets = ZR_NULL;
-    table->nameToSymbolsHashSet.bucketSize = 0;
-    table->nameToSymbolsHashSet.elementCount = 0;
-    table->nameToSymbolsHashSet.capacity = 0;
-    table->nameToSymbolsHashSet.resizeThreshold = 0;
-    table->nameToSymbolsHashSet.isValid = ZR_FALSE;
+    ZrCore_HashSet_Construct(&table->nameToSymbolsHashSet);
     ZrCore_HashSet_Init(state, &table->nameToSymbolsHashSet, ZR_LSP_HASH_TABLE_INITIAL_SIZE_LOG2);
     
     // 创建全局作用域

@@ -110,6 +110,25 @@ static SZrFunction *compile_debug_metadata_fixture(SZrState *state, const char *
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+static SZrFunction *compile_debug_metadata_locals_fixture(SZrState *state, const char *sourceLabel) {
+    const char *source =
+            "var first = 1;\n"
+            "var second = first + 2;\n"
+            "return second;\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL || sourceLabel == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceLabel, strlen(sourceLabel));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
 static void test_binary_roundtrip_preserves_debug_source_identity_and_module_name(void) {
     const char *binaryPath = "debug_metadata_roundtrip_test.zro";
     const char *sourcePath = "fixtures/debug/debug_metadata_roundtrip_test.zr";
@@ -307,6 +326,63 @@ static void test_binary_roundtrip_preserves_instruction_debug_ranges(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_binary_roundtrip_preserves_local_variable_names_and_slots(void) {
+    const char *binaryPath = "debug_metadata_locals_roundtrip_test.zro";
+    const char *sourcePath = "fixtures/debug/debug_metadata_locals_roundtrip_test.zr";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrByte *buffer = ZR_NULL;
+    TZrSize bufferLength = 0;
+    SZrBinaryFixtureReader reader;
+    SZrIo io;
+    SZrIoSource *sourceObject = ZR_NULL;
+    SZrFunction *runtimeFunction = ZR_NULL;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = compile_debug_metadata_locals_fixture(state, sourcePath);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE(function->localVariableLength >= 2);
+    TEST_ASSERT_NOT_NULL(function->localVariableList[0].name);
+    TEST_ASSERT_NOT_NULL(function->localVariableList[1].name);
+    TEST_ASSERT_EQUAL_STRING("first", ZrCore_String_GetNativeString(function->localVariableList[0].name));
+    TEST_ASSERT_EQUAL_STRING("second", ZrCore_String_GetNativeString(function->localVariableList[1].name));
+
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+
+    buffer = read_binary_file_owned(binaryPath, &bufferLength);
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE(bufferLength > 0);
+
+    memset(&reader, 0, sizeof(reader));
+    reader.bytes = buffer;
+    reader.length = bufferLength;
+
+    ZrCore_Io_Init(state, &io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+    sourceObject = ZrCore_Io_ReadSourceNew(&io);
+    TEST_ASSERT_NOT_NULL(sourceObject);
+
+    runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+    TEST_ASSERT_EQUAL_UINT32(function->localVariableLength, runtimeFunction->localVariableLength);
+    TEST_ASSERT_NOT_NULL(runtimeFunction->localVariableList[0].name);
+    TEST_ASSERT_NOT_NULL(runtimeFunction->localVariableList[1].name);
+    TEST_ASSERT_EQUAL_STRING("first", ZrCore_String_GetNativeString(runtimeFunction->localVariableList[0].name));
+    TEST_ASSERT_EQUAL_STRING("second", ZrCore_String_GetNativeString(runtimeFunction->localVariableList[1].name));
+    TEST_ASSERT_EQUAL_UINT32(function->localVariableList[0].stackSlot, runtimeFunction->localVariableList[0].stackSlot);
+    TEST_ASSERT_EQUAL_UINT32(function->localVariableList[1].stackSlot, runtimeFunction->localVariableList[1].stackSlot);
+    TEST_ASSERT_EQUAL_UINT32(function->localVariableList[0].offsetActivate, runtimeFunction->localVariableList[0].offsetActivate);
+    TEST_ASSERT_EQUAL_UINT32(function->localVariableList[1].offsetActivate, runtimeFunction->localVariableList[1].offsetActivate);
+    TEST_ASSERT_EQUAL_UINT32(function->localVariableList[0].offsetDead, runtimeFunction->localVariableList[0].offsetDead);
+    TEST_ASSERT_EQUAL_UINT32(function->localVariableList[1].offsetDead, runtimeFunction->localVariableList[1].offsetDead);
+
+    remove(binaryPath);
+    free(buffer);
+    ZrCore_Function_Free(state, function);
+    ZrCore_Function_Free(state, runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -316,5 +392,6 @@ int main(void) {
     RUN_TEST(test_binary_roundtrip_preserves_debug_source_identity_and_module_name);
     RUN_TEST(test_binary_roundtrip_preserves_full_debug_source_path_without_writer_options);
     RUN_TEST(test_binary_roundtrip_preserves_instruction_debug_ranges);
+    RUN_TEST(test_binary_roundtrip_preserves_local_variable_names_and_slots);
     return UNITY_END();
 }

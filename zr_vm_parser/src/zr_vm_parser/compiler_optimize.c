@@ -70,6 +70,45 @@ static TZrBool optimizer_function_contains_exception_control(const TZrInstructio
     return ZR_FALSE;
 }
 
+static TZrSize optimizer_clamp_instruction_boundary(TZrMemoryOffset offset, TZrSize instructionCount) {
+    TZrSize boundary = (TZrSize)offset;
+
+    if (boundary > instructionCount) {
+        return instructionCount;
+    }
+
+    return boundary;
+}
+
+static void optimizer_remap_local_variable_instruction_offsets(SZrCompilerState *cs,
+                                                               const TZrSize *newBoundaryIndex,
+                                                               TZrSize instructionCount) {
+    TZrSize index;
+
+    if (cs == ZR_NULL || newBoundaryIndex == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < cs->localVars.length; index++) {
+        SZrFunctionLocalVariable *localVar =
+                (SZrFunctionLocalVariable *)ZrCore_Array_Get(&cs->localVars, index);
+        TZrSize oldActivate;
+        TZrSize oldDead;
+
+        if (localVar == ZR_NULL) {
+            continue;
+        }
+
+        oldActivate = optimizer_clamp_instruction_boundary(localVar->offsetActivate, instructionCount);
+        oldDead = optimizer_clamp_instruction_boundary(localVar->offsetDead, instructionCount);
+        localVar->offsetActivate = (TZrMemoryOffset)newBoundaryIndex[oldActivate];
+        localVar->offsetDead = (TZrMemoryOffset)newBoundaryIndex[oldDead];
+        if (localVar->offsetDead < localVar->offsetActivate) {
+            localVar->offsetDead = localVar->offsetActivate;
+        }
+    }
+}
+
 static void optimizer_info_add_read(SZrOptimizerInstructionInfo *info, TZrUInt16 slot) {
     if (info != ZR_NULL && info->readCount < ZR_ARRAY_COUNT(info->readSlots)) {
         info->readSlots[info->readCount++] = slot;
@@ -229,6 +268,15 @@ static void optimizer_classify_instruction(const TZrInstruction *instruction, SZ
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[1]);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             return;
+        case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_INT_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
+            info->operand1Index1IsSlot = ZR_FALSE;
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            return;
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
             optimizer_info_add_read(info, instruction->instruction.operandExtra);
@@ -239,6 +287,29 @@ static void optimizer_classify_instruction(const TZrInstruction *instruction, SZ
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[1]);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            info->allowSlotReuse = ZR_FALSE;
+            return;
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4):
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0] + 1u);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0] + 2u);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0] + 3u);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[1]);
+            info->allowSlotReuse = ZR_FALSE;
+            return;
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4_CONST):
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0] + 1u);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0] + 2u);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0] + 3u);
+            info->allowSlotReuse = ZR_FALSE;
+            return;
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_FILL_INT4_CONST):
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0] + 1u);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0] + 2u);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0] + 3u);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[1]);
             info->allowSlotReuse = ZR_FALSE;
             return;
         case ZR_INSTRUCTION_ENUM(JUMP):
@@ -445,11 +516,55 @@ static void optimizer_live_add_reads(TZrUInt8 *live,
     }
 }
 
+static TZrBool optimizer_slot_is_local(const TZrUInt8 *localSlots, TZrSize slotCount, TZrUInt16 slot) {
+    return localSlots != ZR_NULL && slot < slotCount && localSlots[slot] != 0;
+}
+
+static TZrBool optimizer_slot_is_active_local_at_instruction(const SZrCompilerState *cs,
+                                                             TZrUInt16 slot,
+                                                             TZrSize instructionIndex) {
+    TZrSize index;
+
+    if (cs == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < cs->localVars.length; index++) {
+        const SZrFunctionLocalVariable *localVar =
+                (const SZrFunctionLocalVariable *)ZrCore_Array_Get((SZrArray *)&cs->localVars, index);
+        if (localVar == ZR_NULL || localVar->stackSlot != slot) {
+            continue;
+        }
+
+        if ((TZrSize)localVar->offsetActivate <= instructionIndex && instructionIndex < (TZrSize)localVar->offsetDead) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void optimizer_mark_local_slots(const SZrCompilerState *cs, TZrUInt8 *localSlots, TZrSize slotCount) {
+    TZrSize index;
+
+    if (cs == ZR_NULL || localSlots == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < cs->localVars.length; index++) {
+        const SZrFunctionLocalVariable *localVar =
+                (const SZrFunctionLocalVariable *)ZrCore_Array_Get((SZrArray *)&cs->localVars, index);
+        if (localVar != ZR_NULL && localVar->stackSlot < slotCount) {
+            localSlots[localVar->stackSlot] = 1;
+        }
+    }
+}
+
 static TZrBool optimizer_is_dead_null_clear(SZrCompilerState *cs,
                                             const TZrInstruction *instruction,
                                             const TZrUInt8 *liveAfter,
                                             TZrSize slotCount,
-                                            TZrSize localFloor) {
+                                            const TZrUInt8 *localSlots) {
     TZrUInt32 constantIndex;
     TZrUInt16 destSlot;
     const SZrTypeValue *constantValue;
@@ -463,7 +578,7 @@ static TZrBool optimizer_is_dead_null_clear(SZrCompilerState *cs,
     }
 
     destSlot = instruction->instruction.operandExtra;
-    if (destSlot < localFloor || destSlot >= slotCount || liveAfter[destSlot]) {
+    if (destSlot >= slotCount || liveAfter[destSlot] || optimizer_slot_is_local(localSlots, slotCount, destSlot)) {
         return ZR_FALSE;
     }
 
@@ -474,6 +589,259 @@ static TZrBool optimizer_is_dead_null_clear(SZrCompilerState *cs,
 
     constantValue = (const SZrTypeValue *)ZrCore_Array_Get(&cs->constants, constantIndex);
     return constantValue != ZR_NULL && ZR_VALUE_IS_TYPE_NULL(constantValue->type);
+}
+
+static TZrBool optimizer_try_rewrite_dead_result_to_ret(TZrInstruction *instruction,
+                                                        const TZrUInt8 *liveAfter,
+                                                        TZrSize slotCount,
+                                                        const TZrUInt8 *localSlots) {
+    TZrUInt16 destSlot;
+    EZrInstructionCode opcode;
+
+    if (instruction == ZR_NULL || liveAfter == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZR_UNUSED_PARAMETER(localSlots);
+
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    if (opcode != ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT) &&
+        opcode != ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)) {
+        return ZR_FALSE;
+    }
+
+    destSlot = instruction->instruction.operandExtra;
+    if (destSlot >= slotCount || liveAfter[destSlot]) {
+        return ZR_FALSE;
+    }
+
+    instruction->instruction.operandExtra = ZR_INSTRUCTION_USE_RET_FLAG;
+    return ZR_TRUE;
+}
+
+static TZrBool optimizer_is_dead_pure_write(const TZrInstruction *instruction,
+                                            const SZrOptimizerInstructionInfo *info,
+                                            const TZrUInt8 *liveAfter,
+                                            TZrSize slotCount,
+                                            const TZrUInt8 *localSlots) {
+    TZrUInt16 destSlot;
+    EZrInstructionCode opcode;
+
+    if (instruction == ZR_NULL || info == ZR_NULL || liveAfter == ZR_NULL || info->writeCount != 1) {
+        return ZR_FALSE;
+    }
+
+    destSlot = info->writeSlots[0];
+    if (destSlot >= slotCount || liveAfter[destSlot]) {
+        return ZR_FALSE;
+    }
+    ZR_UNUSED_PARAMETER(localSlots);
+
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(GET_STACK):
+        case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
+        case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
+        case ZR_INSTRUCTION_ENUM(GETUPVAL):
+        case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
+        case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrSize optimizer_find_previous_kept_instruction(const TZrUInt8 *keep,
+                                                        TZrSize blockStart,
+                                                        TZrSize instructionIndex) {
+    TZrSize scan = instructionIndex;
+
+    if (keep == ZR_NULL || instructionIndex == 0) {
+        return ZR_OPTIMIZER_INDEX_NONE;
+    }
+
+    while (scan > blockStart) {
+        scan--;
+        if (keep[scan]) {
+            return scan;
+        }
+    }
+
+    return ZR_OPTIMIZER_INDEX_NONE;
+}
+
+static TZrBool optimizer_rewrite_instruction_read_slot(TZrInstruction *instruction,
+                                                       const SZrOptimizerInstructionInfo *info,
+                                                       TZrUInt16 fromSlot,
+                                                       TZrUInt16 toSlot) {
+    EZrInstructionCode opcode;
+    TZrBool changed = ZR_FALSE;
+
+    if (instruction == ZR_NULL || info == ZR_NULL || fromSlot == toSlot) {
+        return ZR_FALSE;
+    }
+
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(GET_STACK):
+        case ZR_INSTRUCTION_ENUM(SET_STACK):
+            if ((TZrUInt16)instruction->instruction.operand.operand2[0] == fromSlot) {
+                instruction->instruction.operand.operand2[0] = (TZrInt32)toSlot;
+                changed = ZR_TRUE;
+            }
+            return changed;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF):
+            if (instruction->instruction.operandExtra == fromSlot) {
+                instruction->instruction.operandExtra = toSlot;
+                changed = ZR_TRUE;
+            }
+            return changed;
+        case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
+            if (instruction->instruction.operand.operand1[0] == fromSlot) {
+                instruction->instruction.operand.operand1[0] = toSlot;
+                changed = ZR_TRUE;
+            }
+            return changed;
+        case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
+            if (instruction->instruction.operandExtra == 1 &&
+                instruction->instruction.operand.operand1[0] == fromSlot) {
+                instruction->instruction.operand.operand1[0] = toSlot;
+                changed = ZR_TRUE;
+            }
+            return changed;
+        default:
+            break;
+    }
+
+    if (instruction->instruction.operand.operand1[0] == fromSlot) {
+        instruction->instruction.operand.operand1[0] = toSlot;
+        changed = ZR_TRUE;
+    }
+    if (info->operand1Index1IsSlot &&
+        !info->hasRelativeJump &&
+        instruction->instruction.operand.operand1[1] == fromSlot) {
+        instruction->instruction.operand.operand1[1] = toSlot;
+        changed = ZR_TRUE;
+    }
+
+    return changed;
+}
+
+static TZrBool optimizer_info_writes_slot(const SZrOptimizerInstructionInfo *info, TZrUInt16 slot) {
+    TZrSize index;
+
+    if (info == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < info->writeCount; index++) {
+        if (info->writeSlots[index] == slot) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool optimizer_opcode_supports_adjacent_get_stack_forwarding(EZrInstructionCode opcode) {
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
+        case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool optimizer_adjacent_forward_rewrite_preserves_operand_distinctness(
+        const SZrOptimizerInstructionInfo *info,
+        TZrUInt16 tempSlot,
+        TZrUInt16 sourceSlot) {
+    TZrSize index;
+
+    if (info == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < info->readCount; index++) {
+        if (info->readSlots[index] == sourceSlot && info->readSlots[index] != tempSlot) {
+            return ZR_FALSE;
+        }
+    }
+
+    for (index = 0; index < info->writeCount; index++) {
+        if (info->writeSlots[index] == sourceSlot && info->writeSlots[index] != tempSlot) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool optimizer_try_forward_adjacent_get_stack_reads(TZrInstruction *instructions,
+                                                              const SZrCompilerState *cs,
+                                                              const SZrOptimizerBlock *block,
+                                                              TZrUInt8 *keep,
+                                                              const TZrUInt8 *liveAfter,
+                                                              TZrSize slotCount,
+                                                              const TZrUInt8 *localSlots,
+                                                              TZrSize instructionIndex,
+                                                              SZrOptimizerInstructionInfo *info) {
+    TZrBool changed = ZR_FALSE;
+
+    if (instructions == ZR_NULL || block == ZR_NULL || keep == ZR_NULL || liveAfter == ZR_NULL ||
+        localSlots == ZR_NULL || info == ZR_NULL || !keep[instructionIndex] ||
+        info->readCount == 0 || info->hasRangeRead || info->readsAllSlots) {
+        return ZR_FALSE;
+    }
+
+    if (!optimizer_opcode_supports_adjacent_get_stack_forwarding(
+                (EZrInstructionCode)instructions[instructionIndex].instruction.operationCode)) {
+        return ZR_FALSE;
+    }
+
+    for (;;) {
+        TZrSize writerIndex = optimizer_find_previous_kept_instruction(keep, block->start, instructionIndex);
+        TZrInstruction *writer;
+        EZrInstructionCode writerOpcode;
+        TZrUInt16 tempSlot;
+        TZrUInt16 sourceSlot;
+
+        if (writerIndex == ZR_OPTIMIZER_INDEX_NONE) {
+            break;
+        }
+
+        writer = &instructions[writerIndex];
+        writerOpcode = (EZrInstructionCode)writer->instruction.operationCode;
+        if (writerOpcode != ZR_INSTRUCTION_ENUM(GET_STACK)) {
+            break;
+        }
+
+        tempSlot = writer->instruction.operandExtra;
+        if (tempSlot >= slotCount ||
+            optimizer_slot_is_active_local_at_instruction(cs, tempSlot, writerIndex) ||
+            (liveAfter[tempSlot] && !optimizer_info_writes_slot(info, tempSlot))) {
+            break;
+        }
+
+        sourceSlot = (TZrUInt16)writer->instruction.operand.operand2[0];
+        if (!optimizer_adjacent_forward_rewrite_preserves_operand_distinctness(info, tempSlot, sourceSlot)) {
+            break;
+        }
+        if (!optimizer_rewrite_instruction_read_slot(&instructions[instructionIndex], info, tempSlot, sourceSlot)) {
+            break;
+        }
+
+        keep[writerIndex] = 0;
+        changed = ZR_TRUE;
+        optimizer_classify_instruction(&instructions[instructionIndex], info);
+        if (info->readCount == 0 || info->hasRangeRead || info->readsAllSlots) {
+            break;
+        }
+    }
+
+    return changed;
 }
 
 static void optimizer_remap_slot_value(TZrUInt16 *slot, const TZrUInt16 *slotMap, TZrSize slotCount) {
@@ -742,7 +1110,7 @@ static void optimizer_build_block_intervals(const TZrInstruction *instructions,
                                             const TZrUInt8 *liveIn,
                                             const TZrUInt8 *liveOut,
                                             TZrSize slotCount,
-                                            TZrSize localFloor,
+                                            const TZrUInt8 *localSlots,
                                             TZrUInt16 *slotMap) {
     TZrSize *firstDef = ZR_NULL;
     TZrSize *lastDef = ZR_NULL;
@@ -800,14 +1168,14 @@ static void optimizer_build_block_intervals(const TZrInstruction *instructions,
 
         for (index = 0; index < info.readCount; index++) {
             slot = info.readSlots[index];
-            if (slot >= localFloor && slot < slotCount) {
+            if (slot < slotCount && !optimizer_slot_is_local(localSlots, slotCount, (TZrUInt16)slot)) {
                 lastUse[slot] = instructionIndex;
             }
         }
 
         for (index = 0; index < info.writeCount; index++) {
             slot = info.writeSlots[index];
-            if (slot < localFloor || slot >= slotCount) {
+            if (slot >= slotCount || optimizer_slot_is_local(localSlots, slotCount, (TZrUInt16)slot)) {
                 continue;
             }
 
@@ -819,13 +1187,17 @@ static void optimizer_build_block_intervals(const TZrInstruction *instructions,
         }
     }
 
-    for (slot = localFloor; slot < slotCount; slot++) {
+    for (slot = 0; slot < slotCount; slot++) {
         TZrBool slotLiveIn = liveIn[slot] != 0;
         TZrBool slotLiveOut = liveOut[slot] != 0;
         TZrBool hasDefinition = firstDef[slot] != ZR_OPTIMIZER_INDEX_NONE;
         TZrBool hasUsage = lastUse[slot] != ZR_OPTIMIZER_INDEX_NONE;
         TZrSize intervalStart;
         TZrSize intervalEnd;
+
+        if (optimizer_slot_is_local(localSlots, slotCount, (TZrUInt16)slot)) {
+            continue;
+        }
 
         if (!slotLiveIn && !slotLiveOut && !hasDefinition && !hasUsage) {
             continue;
@@ -897,7 +1269,10 @@ static void optimizer_build_block_intervals(const TZrInstruction *instructions,
             continue;
         }
 
-        for (activeIndex = localFloor; activeIndex < slotCount; activeIndex++) {
+        for (activeIndex = 0; activeIndex < slotCount; activeIndex++) {
+            if (optimizer_slot_is_local(localSlots, slotCount, (TZrUInt16)activeIndex)) {
+                continue;
+            }
             if (!physicalInUse[activeIndex]) {
                 intervals[slot].assignedSlot = (TZrUInt16)activeIndex;
                 break;
@@ -930,6 +1305,7 @@ void optimize_instructions(SZrCompilerState *cs) {
     TZrUInt8 *defSets = ZR_NULL;
     TZrUInt8 *liveInSets = ZR_NULL;
     TZrUInt8 *liveOutSets = ZR_NULL;
+    TZrUInt8 *localSlots = ZR_NULL;
     TZrUInt8 *keep = ZR_NULL;
     TZrUInt16 *slotMap = ZR_NULL;
     TZrSize *newBoundaryIndex = ZR_NULL;
@@ -968,17 +1344,20 @@ void optimize_instructions(SZrCompilerState *cs) {
     defSets = (TZrUInt8 *)calloc(instructionCount * slotCount, sizeof(TZrUInt8));
     liveInSets = (TZrUInt8 *)calloc(instructionCount * slotCount, sizeof(TZrUInt8));
     liveOutSets = (TZrUInt8 *)calloc(instructionCount * slotCount, sizeof(TZrUInt8));
+    localSlots = (TZrUInt8 *)calloc(slotCount, sizeof(TZrUInt8));
     keep = (TZrUInt8 *)malloc(sizeof(TZrUInt8) * instructionCount);
     slotMap = (TZrUInt16 *)malloc(sizeof(TZrUInt16) * slotCount);
     newBoundaryIndex = (TZrSize *)malloc(sizeof(TZrSize) * (instructionCount + 1));
     if (leaders == ZR_NULL || boundaryToBlock == ZR_NULL || blocks == ZR_NULL || useSets == ZR_NULL ||
-        defSets == ZR_NULL || liveInSets == ZR_NULL || liveOutSets == ZR_NULL || keep == ZR_NULL ||
+        defSets == ZR_NULL || liveInSets == ZR_NULL || liveOutSets == ZR_NULL || localSlots == ZR_NULL ||
+        keep == ZR_NULL ||
         slotMap == ZR_NULL || newBoundaryIndex == ZR_NULL) {
         goto cleanup;
     }
 
     memset(boundaryToBlock, 0xFF, sizeof(TZrSize) * (instructionCount + 1));
     memset(keep, 1, sizeof(TZrUInt8) * instructionCount);
+    optimizer_mark_local_slots(cs, localSlots, slotCount);
 
     leaders[0] = 1;
     for (blockIndex = 0; blockIndex < instructionCount; blockIndex++) {
@@ -1109,15 +1488,49 @@ void optimize_instructions(SZrCompilerState *cs) {
         for (instructionIndex = blocks[blockIndex].end; instructionIndex > blocks[blockIndex].start; instructionIndex--) {
             TZrSize currentInstructionIndex = instructionIndex - 1;
             SZrOptimizerInstructionInfo info;
+            TZrBool removeCurrent = ZR_FALSE;
+
+            if (!keep[currentInstructionIndex]) {
+                continue;
+            }
 
             optimizer_classify_instruction(&instructions[currentInstructionIndex], &info);
+            if (optimizer_try_rewrite_dead_result_to_ret(&instructions[currentInstructionIndex],
+                                                         live,
+                                                         slotCount,
+                                                         localSlots)) {
+                changed = ZR_TRUE;
+                optimizer_classify_instruction(&instructions[currentInstructionIndex], &info);
+            }
+            if (optimizer_try_forward_adjacent_get_stack_reads(instructions,
+                                                               cs,
+                                                               &blocks[blockIndex],
+                                                               keep,
+                                                               live,
+                                                               slotCount,
+                                                               localSlots,
+                                                               currentInstructionIndex,
+                                                               &info)) {
+                changed = ZR_TRUE;
+                optimizer_classify_instruction(&instructions[currentInstructionIndex], &info);
+            }
             if (optimizer_is_dead_null_clear(cs,
                                              &instructions[currentInstructionIndex],
                                              live,
                                              slotCount,
-                                             localFloor)) {
+                                             localSlots) ||
+                optimizer_is_dead_pure_write(&instructions[currentInstructionIndex],
+                                             &info,
+                                             live,
+                                             slotCount,
+                                             localSlots)) {
                 keep[currentInstructionIndex] = 0;
                 changed = ZR_TRUE;
+                removeCurrent = ZR_TRUE;
+            }
+
+            if (removeCurrent) {
+                continue;
             }
 
             optimizer_live_remove_writes(live, slotCount, &info);
@@ -1133,7 +1546,7 @@ void optimize_instructions(SZrCompilerState *cs) {
                                         liveInSets + (blockIndex * slotCount),
                                         liveOutSets + (blockIndex * slotCount),
                                         slotCount,
-                                        localFloor,
+                                        localSlots,
                                         slotMap);
 
         for (instructionIndex = blocks[blockIndex].start; instructionIndex < blocks[blockIndex].end; instructionIndex++) {
@@ -1152,6 +1565,7 @@ void optimize_instructions(SZrCompilerState *cs) {
     for (blockIndex = 0; blockIndex < instructionCount; blockIndex++) {
         newBoundaryIndex[blockIndex + 1] = newBoundaryIndex[blockIndex] + (keep[blockIndex] ? 1 : 0);
     }
+    optimizer_remap_local_variable_instruction_offsets(cs, newBoundaryIndex, instructionCount);
 
     for (blockIndex = 0; blockIndex < instructionCount; blockIndex++) {
         if (!keep[blockIndex]) {
@@ -1216,6 +1630,7 @@ cleanup:
     free(defSets);
     free(liveInSets);
     free(liveOutSets);
+    free(localSlots);
     free(keep);
     free(slotMap);
     free(newBoundaryIndex);

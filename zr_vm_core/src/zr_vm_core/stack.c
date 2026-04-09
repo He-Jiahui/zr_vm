@@ -11,6 +11,14 @@
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/state.h"
 
+/*
+ * Stack growth and stack-to-stack moves are hot internal VM paths. Use raw
+ * accessors and no-profile value ops here to avoid repeated TLS helper checks.
+ */
+#define ZrCore_Stack_GetValue ZrCore_Stack_GetValueNoProfile
+#define ZrCore_Value_ResetAsNull ZrCore_Value_ResetAsNullNoProfile
+#define ZrCore_Value_Copy ZrCore_Value_CopyNoProfile
+
 ZR_FORCE_INLINE TZrMemoryOffset ZrStackSaveAsOffset(SZrState *state, TZrStackValuePointer pointer) {
     return (TZrBytePtr) pointer - (TZrBytePtr) state->stackBase.valuePointer;
 }

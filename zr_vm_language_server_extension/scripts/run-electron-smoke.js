@@ -3,6 +3,10 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { runTests } = require('@vscode/test-electron');
 const { spawnSync } = require('node:child_process');
+const {
+    executableName,
+    resolveLatestRunnableNativeAssetDir,
+} = require('./native-asset-selection');
 
 function resolveNativeServerPath(repoRoot) {
     const configured = process.env.ZR_TEST_NATIVE_SERVER;
@@ -10,16 +14,9 @@ function resolveNativeServerPath(repoRoot) {
         return configured;
     }
 
-    const executableName = process.platform === 'win32'
-        ? 'zr_vm_language_server_stdio.exe'
-        : 'zr_vm_language_server_stdio';
-    const candidates = [
-        path.join(repoRoot, 'build', 'codex-lsp', 'bin', 'Debug', executableName),
-        path.join(repoRoot, 'build', 'codex-lsp', 'bin', executableName),
-        path.join(repoRoot, 'zr_vm_language_server_extension', 'server', 'native', `${process.platform}-${process.arch}`, executableName),
-    ];
-
-    return candidates.find((candidate) => fs.existsSync(candidate));
+    const extensionRoot = path.join(repoRoot, 'zr_vm_language_server_extension');
+    const assetDir = resolveLatestRunnableNativeAssetDir(repoRoot, extensionRoot);
+    return assetDir ? path.join(assetDir, executableName('languageServer')) : undefined;
 }
 
 function syncBundledNativeServer(extensionDevelopmentPath, nativeServerPath) {

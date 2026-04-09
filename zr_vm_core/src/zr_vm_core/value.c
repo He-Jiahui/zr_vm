@@ -28,13 +28,8 @@ void ZrCore_Value_Barrier(struct SZrState *state, SZrRawObject *object, SZrTypeV
 }
 
 void ZrCore_Value_ResetAsNull(SZrTypeValue *value) {
-    value->type = ZR_VALUE_TYPE_NULL;
-    value->value.nativeObject.nativeUInt64 = 0;
-    value->isGarbageCollectable = ZR_FALSE;
-    value->isNative = ZR_TRUE;
-    value->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
-    value->ownershipControl = ZR_NULL;
-    value->ownershipWeakRef = ZR_NULL;
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_RESET_NULL);
+    ZrCore_Value_ResetAsNullNoProfile(value);
 }
 
 void ZrCore_Value_InitAsRawObject(SZrState *state, SZrTypeValue *value, SZrRawObject *object) {

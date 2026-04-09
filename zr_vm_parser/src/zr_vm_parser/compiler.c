@@ -3,8 +3,15 @@
 //
 
 #include "compiler_internal.h"
+
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "module_init_analysis.h"
 #include "type_inference_internal.h"
+
+static TZrBool zr_parser_compile_trace_enabled(void);
+static void zr_parser_compile_trace(const TZrChar *format, ...);
 
 EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) {
     if (node == ZR_NULL) {
@@ -506,6 +513,9 @@ void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
         for (TZrSize i = 0; i < script->statements->count; i++) {
             SZrAstNode *stmt = script->statements->nodes[i];
             if (stmt != ZR_NULL) {
+                zr_parser_compile_trace("compile_script stmt[%llu] type=%d",
+                                        (unsigned long long)i,
+                                        (int)stmt->type);
                 if (stmt->type == ZR_AST_COMPILE_TIME_DECLARATION) {
                     compiler_compile_compile_time_runtime_support(cs, stmt);
                     continue;
@@ -754,11 +764,14 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
     ZrParser_CompilerState_Init(&cs, state);
     cs.currentAst = ast;
     cs.currentAst = ast;
+    zr_parser_compile_trace("compiler compile core init ast=%p", (void *)ast);
 
     if (!compiler_validate_task_effects(&cs, ast)) {
+        zr_parser_compile_trace("compiler validate task effects failed ast=%p", (void *)ast);
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
     }
+    zr_parser_compile_trace("compiler validate task effects ok ast=%p", (void *)ast);
 
     // 创建新函数
     cs.currentFunction = ZrCore_Function_New(state);
@@ -766,9 +779,12 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
     }
+    zr_parser_compile_trace("compiler current function=%p", (void *)cs.currentFunction);
 
     // 编译脚本
+    zr_parser_compile_trace("compile_script start ast=%p", (void *)ast);
     compile_script(&cs, ast);
+    zr_parser_compile_trace("compile_script done ast=%p hasError=%d", (void *)ast, (int)cs.hasError);
 
     if (cs.hasError) {
         // 错误信息已在 ZrParser_Compiler_Error 中输出（包含行列号）
@@ -785,6 +801,7 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
 
     // 如果有顶层函数声明，返回它；否则返回脚本函数
     SZrFunction *func = (cs.topLevelFunction != ZR_NULL) ? cs.topLevelFunction : cs.currentFunction;
+    zr_parser_compile_trace("optimize instructions func=%p", (void *)func);
     optimize_instructions(&cs);
     if (!compiler_assemble_final_function(&cs,
                                           func,
@@ -795,24 +812,29 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
     }
+    zr_parser_compile_trace("assemble final function ok func=%p", (void *)func);
 
     if (!compiler_build_function_semir_metadata(state, func)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
     }
+    zr_parser_compile_trace("build semir metadata ok func=%p", (void *)func);
 
     if (!compiler_quicken_execbc_function(state, func)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
     }
+    zr_parser_compile_trace("quicken execbc ok func=%p", (void *)func);
 
     if (!ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(&cs, ZR_NULL, func)) {
+        zr_parser_compile_trace("finalize current source module failed func=%p", (void *)func);
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
         return ZR_NULL;
     }
+    zr_parser_compile_trace("finalize current source module ok func=%p", (void *)func);
 
     ZrParser_CompilerState_Free(&cs);
     return func;
@@ -968,25 +990,42 @@ struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrCha
     if (state == ZR_NULL || source == ZR_NULL || sourceLength == 0) {
         return ZR_NULL;
     }
+    zr_parser_compile_trace("source compile start name='%s' len=%llu",
+                            sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
+                            (unsigned long long)sourceLength);
     
     // 解析源代码为AST
     SZrAstNode *ast = ZrParser_Parse(state, source, sourceLength, sourceName);
     if (ast == ZR_NULL) {
+        zr_parser_compile_trace("parse failed name='%s'",
+                                sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
         return ZR_NULL;
     }
+    zr_parser_compile_trace("parse ok name='%s' ast=%p",
+                            sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
+                            (void *)ast);
 
     if (!ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(state, sourceName, ast)) {
+        zr_parser_compile_trace("prepare current source module failed name='%s'",
+                                sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
         ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
         ZrParser_Ast_Free(state, ast);
         return ZR_NULL;
     }
+    zr_parser_compile_trace("prepare current source module ok name='%s'",
+                            sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
     
     // 编译AST为函数
     SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
+    zr_parser_compile_trace("compiler compile finished name='%s' func=%p",
+                            sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
+                            (void *)func);
     
     // 释放AST
     ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
     ZrParser_Ast_Free(state, ast);
+    zr_parser_compile_trace("source compile cleanup name='%s'",
+                            sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
     
     return func;
 }
@@ -999,4 +1038,31 @@ void ZrParser_ToGlobalState_Register(struct SZrState *state) {
     
     // 使用 API 设置 compileSource 函数指针，避免直接访问内部结构
     ZrCore_GlobalState_SetCompileSource(state->global, ZrParser_Source_Compile);
+}
+static TZrBool zr_parser_compile_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        const TZrChar *flag = getenv("ZR_VM_TRACE_PROJECT_STARTUP");
+        enabled = (flag != ZR_NULL && flag[0] != '\0') ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void zr_parser_compile_trace(const TZrChar *format, ...) {
+    va_list arguments;
+
+    if (!zr_parser_compile_trace_enabled() || format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    fprintf(stderr, "[zr-parser-compile] ");
+    vfprintf(stderr, format, arguments);
+    fprintf(stderr, "\n");
+    fflush(stderr);
+    va_end(arguments);
 }

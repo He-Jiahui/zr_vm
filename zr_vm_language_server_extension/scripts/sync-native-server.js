@@ -1,5 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+    requiredRuntimeFiles,
+    resolveLatestCompleteNativeAssetDir,
+} = require('./native-asset-selection');
 
 const extensionRoot = path.resolve(__dirname, '..');
 const repositoryRoot = path.resolve(extensionRoot, '..');
@@ -12,14 +16,14 @@ const sourceDir = process.argv[2]
 const retryableCopyErrorCodes = new Set(['EBUSY', 'EPERM']);
 const copyRetryDelaysMs = [150, 300, 600, 1200, 2000];
 
-const { requiredFiles, optionalFiles } = process.platform === 'win32'
-    ? collectWindowsNativeAssets(sourceDir)
-    : collectUnixNativeAssets(sourceDir);
-
 if (!fs.existsSync(sourceDir)) {
     console.error(`Native server source directory does not exist: ${sourceDir}`);
     process.exit(1);
 }
+
+const { requiredFiles, optionalFiles } = process.platform === 'win32'
+    ? collectWindowsNativeAssets(sourceDir)
+    : collectUnixNativeAssets(sourceDir);
 
 for (const fileName of requiredFiles) {
     const sourceFile = path.join(sourceDir, fileName);
@@ -43,18 +47,8 @@ for (const fileName of [...requiredFiles, ...optionalFiles]) {
 }
 
 function resolveDefaultSourceDir() {
-    const candidates = [
-        path.join(repositoryRoot, 'build', 'codex-lsp', 'bin', 'Debug'),
-        path.join(repositoryRoot, 'build', 'codex-lsp', 'bin'),
-    ];
-
-    for (const candidate of candidates) {
-        if (fs.existsSync(candidate)) {
-            return candidate;
-        }
-    }
-
-    return candidates[0];
+    return resolveLatestCompleteNativeAssetDir(repositoryRoot, extensionRoot) ||
+        path.join(repositoryRoot, 'build', 'codex-lsp', 'bin');
 }
 
 function collectWindowsNativeAssets(nativeSourceDir) {
@@ -72,7 +66,7 @@ function collectWindowsNativeAssets(nativeSourceDir) {
         .filter((fileName) => entries.some((entry) => entry.isFile() && entry.name === fileName));
 
     return {
-        requiredFiles: ['zr_vm_language_server_stdio.exe', 'zr_vm_cli.exe', ...dllFiles],
+        requiredFiles: [...new Set([...requiredRuntimeFiles(), ...dllFiles])],
         optionalFiles: pdbFiles,
     };
 }

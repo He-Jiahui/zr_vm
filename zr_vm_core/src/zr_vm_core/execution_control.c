@@ -63,6 +63,7 @@ TZrBool execution_invoke_meta_call(SZrState *state,
     TZrStackValuePointer metaBase;
 
     scratchBase = execution_resolve_meta_scratch_base(savedStackTop, requestedScratchBase, savedCallInfo);
+    ZrCore_Profile_RecordSlowPathCurrent(ZR_PROFILE_SLOWPATH_META_FALLBACK);
 
     if (outMetaBase != ZR_NULL) {
         *outMetaBase = scratchBase;

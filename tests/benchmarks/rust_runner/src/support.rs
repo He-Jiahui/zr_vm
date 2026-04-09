@@ -7,6 +7,7 @@ pub fn scale_from_tier(tier: &str) -> Option<i64> {
         "smoke" => Some(1),
         "core" => Some(4),
         "stress" => Some(16),
+        "profile" => Some(1),
         _ => None,
     }
 }

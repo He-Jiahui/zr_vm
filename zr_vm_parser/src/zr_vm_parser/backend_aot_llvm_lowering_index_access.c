@@ -28,6 +28,61 @@ static TZrBool backend_aot_llvm_lower_triple_slot_index_call(const SZrAotLlvmLow
     return ZR_TRUE;
 }
 
+static TZrBool backend_aot_llvm_lower_super_array_add_int4(const SZrAotLlvmLoweringContext *context,
+                                                           const SZrAotLlvmInstructionContext *instruction) {
+    TZrChar argsBuffer[256];
+
+    snprintf(argsBuffer,
+             sizeof(argsBuffer),
+             "ptr %%state, ptr %%frame, i32 %u, i32 %u",
+             (unsigned)instruction->operandA1,
+             (unsigned)instruction->operandB1);
+    backend_aot_llvm_write_guarded_call_text(context->file,
+                                             context->tempCounter,
+                                             "ZrLibrary_AotRuntime_SuperArrayAddInt4",
+                                             argsBuffer,
+                                             instruction->nextLabel,
+                                             context->failLabel);
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_llvm_lower_super_array_add_int4_const(const SZrAotLlvmLoweringContext *context,
+                                                                 const SZrAotLlvmInstructionContext *instruction) {
+    TZrChar argsBuffer[256];
+
+    snprintf(argsBuffer,
+             sizeof(argsBuffer),
+             "ptr %%state, ptr %%frame, i32 %u, i32 %u",
+             (unsigned)instruction->operandA1,
+             (unsigned)instruction->operandB1);
+    backend_aot_llvm_write_guarded_call_text(context->file,
+                                             context->tempCounter,
+                                             "ZrLibrary_AotRuntime_SuperArrayAddInt4Const",
+                                             argsBuffer,
+                                             instruction->nextLabel,
+                                             context->failLabel);
+    return ZR_TRUE;
+}
+
+static TZrBool backend_aot_llvm_lower_super_array_fill_int4_const(const SZrAotLlvmLoweringContext *context,
+                                                                  const SZrAotLlvmInstructionContext *instruction) {
+    TZrChar argsBuffer[256];
+
+    snprintf(argsBuffer,
+             sizeof(argsBuffer),
+             "ptr %%state, ptr %%frame, i32 %u, i32 %u, i32 %u",
+             (unsigned)instruction->operandA1,
+             (unsigned)instruction->operandB1,
+             (unsigned)instruction->destinationSlot);
+    backend_aot_llvm_write_guarded_call_text(context->file,
+                                             context->tempCounter,
+                                             "ZrLibrary_AotRuntime_SuperArrayFillInt4Const",
+                                             argsBuffer,
+                                             instruction->nextLabel,
+                                             context->failLabel);
+    return ZR_TRUE;
+}
+
 TZrBool backend_aot_llvm_lower_index_value_family(const SZrAotLlvmLoweringContext *context,
                                                   const SZrAotLlvmInstructionContext *instruction) {
     if (context == ZR_NULL || instruction == ZR_NULL) {
@@ -60,6 +115,12 @@ TZrBool backend_aot_llvm_lower_index_value_family(const SZrAotLlvmLoweringContex
                                                                  instruction,
                                                                  "ZrLibrary_AotRuntime_SuperArrayAddInt",
                                                                  ZR_TRUE);
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4):
+            return backend_aot_llvm_lower_super_array_add_int4(context, instruction);
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4_CONST):
+            return backend_aot_llvm_lower_super_array_add_int4_const(context, instruction);
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_FILL_INT4_CONST):
+            return backend_aot_llvm_lower_super_array_fill_int4_const(context, instruction);
         default:
             return ZR_FALSE;
     }

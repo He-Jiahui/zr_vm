@@ -1,0 +1,90 @@
+var benchConfig = %import("bench_config");
+
+class PolyAdder {
+    pri var base: int;
+
+    pub @constructor(base: int) {
+        this.base = base;
+    }
+
+    pub @call(value: int, delta: int): int {
+        return (value + delta + this.base) % 100003;
+    }
+}
+
+class PolyMultiply {
+    pri var factor: int;
+
+    pub @constructor(factor: int) {
+        this.factor = factor;
+    }
+
+    pub @call(value: int, delta: int): int {
+        return (value * (this.factor + 3) + delta + 7) % 100003;
+    }
+}
+
+class PolyXor {
+    pri var mask: int;
+
+    pub @constructor(mask: int) {
+        this.mask = mask;
+    }
+
+    pub @call(value: int, delta: int): int {
+        return ((value ^ (delta + this.mask)) + this.mask * 5 + delta) % 100003;
+    }
+}
+
+func callLeaf(value: int, salt: int): int {
+    return (value * 17 + salt * 13 + 19) % 100003;
+}
+
+func callChainA(value: int, salt: int): int {
+    return callLeaf(value + 3, salt + 1);
+}
+
+func callChainB(value: int, salt: int): int {
+    return callLeaf(callChainA(value + salt % 5, salt + 7), salt + 11);
+}
+
+func callChainC(value: int, salt: int): int {
+    return callLeaf(callChainB(value ^ salt, salt + 13), salt + 17);
+}
+
+func tailAccumulate(steps: int, acc: int): int {
+    if (steps == 0) {
+        return acc;
+    }
+    return tailAccumulate(steps - 1, (acc * 3 + steps + 5) % 100003);
+}
+
+func dispatch(callable, value: int, delta: int): int {
+    return callable(value, delta);
+}
+
+var scale = benchConfig.scale();
+var rounds = 320 * scale;
+var adder = new PolyAdder(17);
+var multiplier = new PolyMultiply(23);
+var xorCall = new PolyXor(31);
+var state = 17;
+var checksum = 0;
+var outer = 0;
+
+while (outer <= rounds - 1) {
+    var delta = outer * 7 + state % 13;
+    var selector = outer % 3;
+    if (selector == 0) {
+        state = dispatch(adder, callChainA(state, delta), delta);
+    } else if (selector == 1) {
+        state = dispatch(multiplier, callChainB(state, delta), delta);
+    } else {
+        state = dispatch(xorCall, callChainC(state, delta), delta);
+    }
+
+    checksum = (checksum + state * (selector + 1) + tailAccumulate((outer % 5) + 1, state)) % 1000000007;
+    outer = outer + 1;
+}
+
+return "BENCH_CALL_CHAIN_POLYMORPHIC_PASS\n" + <string> checksum;

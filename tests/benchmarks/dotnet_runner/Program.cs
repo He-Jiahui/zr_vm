@@ -2,7 +2,7 @@ using BenchmarkRunner;
 
 var argsList = Environment.GetCommandLineArgs().Skip(1).ToArray();
 string? caseName = null;
-var tierArgs = new List<string>();
+var runnerArgs = new List<string>();
 
 for (var index = 0; index < argsList.Length; index++)
 {
@@ -20,12 +20,22 @@ for (var index = 0; index < argsList.Length; index++)
         case "--tier":
             if (index + 1 >= argsList.Length)
             {
-                Console.Error.WriteLine("--tier requires smoke, core, or stress");
+                Console.Error.WriteLine("--tier requires smoke, core, stress, or profile");
                 return 1;
             }
 
-            tierArgs.Add(argsList[index]);
-            tierArgs.Add(argsList[++index]);
+            runnerArgs.Add(argsList[index]);
+            runnerArgs.Add(argsList[++index]);
+            break;
+        case "--scale":
+            if (index + 1 >= argsList.Length)
+            {
+                Console.Error.WriteLine("--scale requires a positive integer");
+                return 1;
+            }
+
+            runnerArgs.Add(argsList[index]);
+            runnerArgs.Add(argsList[++index]);
             break;
         default:
             Console.Error.WriteLine($"unknown argument: {argsList[index]}");
@@ -39,7 +49,7 @@ if (string.IsNullOrEmpty(caseName))
     return 1;
 }
 
-var scale = BenchmarkSupport.ParseScale(tierArgs.ToArray(), out var scaleError);
+var scale = BenchmarkSupport.ParseScale(runnerArgs.ToArray(), out var scaleError);
 if (!string.IsNullOrEmpty(scaleError))
 {
     Console.Error.WriteLine(scaleError);

@@ -580,8 +580,8 @@ static TZrBool io_runtime_populate_function(SZrState *state,
         }
 
         for (TZrSize index = 0; index < source->localVariablesLength; index++) {
-            function->localVariableList[index].name = ZR_NULL;
-            function->localVariableList[index].stackSlot = (TZrUInt32)index;
+            function->localVariableList[index].name = source->localVariables[index].name;
+            function->localVariableList[index].stackSlot = source->localVariables[index].stackSlot;
             function->localVariableList[index].offsetActivate =
                     (TZrMemoryOffset)source->localVariables[index].instructionStartIndex;
             function->localVariableList[index].offsetDead =

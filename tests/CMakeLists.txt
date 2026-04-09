@@ -81,6 +81,12 @@ add_executable(
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/matrix_add_2d/c/benchmark_case.c
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/string_build/c/benchmark_case.c
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/map_object_access/c/benchmark_case.c
+        ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/fib_recursive/c/benchmark_case.c
+        ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/call_chain_polymorphic/c/benchmark_case.c
+        ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/object_field_hot/c/benchmark_case.c
+        ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/array_index_dense/c/benchmark_case.c
+        ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/branch_jump_dense/c/benchmark_case.c
+        ${CMAKE_SOURCE_DIR}/tests/benchmarks/cases/mixed_service_loop/c/benchmark_case.c
 )
 target_include_directories(zr_vm_native_benchmark_runner PRIVATE
         ${CMAKE_SOURCE_DIR}/tests/benchmarks/native_runner
@@ -197,6 +203,34 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/tests/core/test_runtime_crash_recovery.c
             ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
     )
+    zr_vm_add_unity_test_target(
+            zr_vm_value_copy_fast_paths_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_value_copy_fast_paths.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_execution_add_stack_relocation_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_execution_add_stack_relocation.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_stateless_function_closure_cache_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_stateless_function_closure_cache.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_precall_frame_slot_reset_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_precall_frame_slot_reset.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_tail_reuse_callinfo_reset_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_tail_reuse_callinfo_reset.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_vm_closure_precall_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_vm_closure_precall.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_hash_set_dense_paths_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_hash_set_dense_paths.c
+    )
     target_include_directories(zr_vm_native_closure_value_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -207,6 +241,41 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_runtime_crash_recovery_test)
+    target_include_directories(zr_vm_value_copy_fast_paths_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_value_copy_fast_paths_test)
+    target_include_directories(zr_vm_execution_add_stack_relocation_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_execution_add_stack_relocation_test)
+    target_include_directories(zr_vm_stateless_function_closure_cache_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_stateless_function_closure_cache_test)
+    target_include_directories(zr_vm_precall_frame_slot_reset_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_precall_frame_slot_reset_test)
+    target_include_directories(zr_vm_tail_reuse_callinfo_reset_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_tail_reuse_callinfo_reset_test)
+    target_include_directories(zr_vm_vm_closure_precall_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_vm_closure_precall_test)
+    target_include_directories(zr_vm_hash_set_dense_paths_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_hash_set_dense_paths_test)
 endif ()
 
 if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
@@ -280,6 +349,21 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_execbc_aot_pipeline_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_execbc_aot_manual_opcode_sync_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_execbc_aot_manual_opcode_sync.c
+    )
+    target_include_directories(zr_vm_execbc_aot_manual_opcode_sync_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_execbc_aot_manual_opcode_sync_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_dynamic_iteration_pipeline_test
@@ -538,8 +622,9 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     target_include_directories(zr_vm_compile_time_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
     )
-    zr_vm_link_parser_core(zr_vm_compile_time_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_compile_time_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_decorator_pipeline_test
@@ -594,6 +679,11 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_container_temp_value_root_test
+            ${CMAKE_SOURCE_DIR}/tests/container/test_temp_value_root.c
+            ${CMAKE_SOURCE_DIR}/tests/container/container_test_common.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_task_runtime_test
             ${CMAKE_SOURCE_DIR}/tests/task/test_task_runtime.c
             ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
@@ -609,7 +699,8 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     foreach (container_target
             zr_vm_container_runtime_test
             zr_vm_container_metadata_test
-            zr_vm_container_type_inference_test)
+            zr_vm_container_type_inference_test
+            zr_vm_container_temp_value_root_test)
         target_include_directories(${container_target} PRIVATE
                 ${CMAKE_SOURCE_DIR}/tests/container
                 ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
@@ -951,12 +1042,12 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
 endif ()
 
 set(core_runtime_executables "")
-if (TARGET zr_vm_gc_test AND TARGET zr_vm_instructions_test AND TARGET zr_vm_meta_test AND TARGET zr_vm_native_closure_value_test AND TARGET zr_vm_runtime_crash_recovery_test)
+if (TARGET zr_vm_gc_test AND TARGET zr_vm_instructions_test AND TARGET zr_vm_meta_test AND TARGET zr_vm_native_closure_value_test AND TARGET zr_vm_runtime_crash_recovery_test AND TARGET zr_vm_value_copy_fast_paths_test AND TARGET zr_vm_precall_frame_slot_reset_test AND TARGET zr_vm_tail_reuse_callinfo_reset_test AND TARGET zr_vm_vm_closure_precall_test)
     set(core_runtime_executables
-            "$<TARGET_FILE:zr_vm_gc_test>;$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_native_closure_value_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>"
+            "$<TARGET_FILE:zr_vm_gc_test>;$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_native_closure_value_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>;$<TARGET_FILE:zr_vm_value_copy_fast_paths_test>;$<TARGET_FILE:zr_vm_precall_frame_slot_reset_test>;$<TARGET_FILE:zr_vm_tail_reuse_callinfo_reset_test>;$<TARGET_FILE:zr_vm_vm_closure_precall_test>"
     )
     set(core_runtime_smoke_executables
-            "$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>"
+            "$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>;$<TARGET_FILE:zr_vm_value_copy_fast_paths_test>;$<TARGET_FILE:zr_vm_precall_frame_slot_reset_test>;$<TARGET_FILE:zr_vm_tail_reuse_callinfo_reset_test>;$<TARGET_FILE:zr_vm_vm_closure_precall_test>"
     )
     set(core_runtime_core_executables "${core_runtime_executables}")
     set(core_runtime_stress_executables "${core_runtime_executables}")
@@ -1019,12 +1110,13 @@ endif ()
 set(container_executables "")
 if (TARGET zr_vm_container_runtime_test AND
         TARGET zr_vm_container_metadata_test AND
-        TARGET zr_vm_container_type_inference_test)
+        TARGET zr_vm_container_type_inference_test AND
+        TARGET zr_vm_container_temp_value_root_test)
     set(container_executables
-            "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_metadata_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>"
+            "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_metadata_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>;$<TARGET_FILE:zr_vm_container_temp_value_root_test>"
     )
     set(container_smoke_executables
-            "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>"
+            "$<TARGET_FILE:zr_vm_container_runtime_test>;$<TARGET_FILE:zr_vm_container_type_inference_test>;$<TARGET_FILE:zr_vm_container_temp_value_root_test>"
     )
     add_test(
             NAME containers

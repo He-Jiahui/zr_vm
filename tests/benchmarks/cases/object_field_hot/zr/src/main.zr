@@ -1,0 +1,39 @@
+var benchConfig = %import("bench_config");
+
+class HotRecord {
+    pub var a: int;
+    pub var b: int;
+    pub var c: int;
+    pub var d: int;
+
+    pub @constructor(seed: int) {
+        this.a = seed;
+        this.b = seed + 3;
+        this.c = seed + 7;
+        this.d = seed + 11;
+    }
+}
+
+var scale = benchConfig.scale();
+var rounds = 12000 * scale;
+var record = new HotRecord(5);
+var checksum = 0;
+var index = 0;
+
+while (index <= rounds - 1) {
+    record.a = (record.a + record.b + index) % 10007;
+    record.b = (record.b + record.c + record.a + 3) % 10009;
+    record.c = (record.c + record.d + record.b + (index % 7)) % 10037;
+    record.d = (record.d + record.a + record.c + 5) % 10039;
+
+    var snapshot = record.a * 3 + record.b * 5 + record.c * 7 + record.d * 11;
+    if (snapshot % 2 == 0) {
+        checksum = (checksum + snapshot + record.b) % 1000000007;
+    } else {
+        checksum = (checksum + snapshot + record.c) % 1000000007;
+    }
+
+    index = index + 1;
+}
+
+return "BENCH_OBJECT_FIELD_HOT_PASS\n" + <string> checksum;

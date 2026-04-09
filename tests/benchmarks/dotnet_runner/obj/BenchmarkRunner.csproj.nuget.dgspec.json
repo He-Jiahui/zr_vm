@@ -1,31 +1,25 @@
 {
   "format": 1,
   "restore": {
-    "E:\\Git\\zr_vm\\tests\\benchmarks\\dotnet_runner\\BenchmarkRunner.csproj": {}
+    "/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/BenchmarkRunner.csproj": {}
   },
   "projects": {
-    "E:\\Git\\zr_vm\\tests\\benchmarks\\dotnet_runner\\BenchmarkRunner.csproj": {
+    "/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/BenchmarkRunner.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "E:\\Git\\zr_vm\\tests\\benchmarks\\dotnet_runner\\BenchmarkRunner.csproj",
+        "projectUniqueName": "/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/BenchmarkRunner.csproj",
         "projectName": "BenchmarkRunner",
-        "projectPath": "E:\\Git\\zr_vm\\tests\\benchmarks\\dotnet_runner\\BenchmarkRunner.csproj",
-        "packagesPath": "C:\\Users\\HeJiahui\\.nuget\\packages\\",
-        "outputPath": "E:\\Git\\zr_vm\\tests\\benchmarks\\dotnet_runner\\obj\\",
+        "projectPath": "/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/BenchmarkRunner.csproj",
+        "packagesPath": "/home/hejiahui/.nuget/packages/",
+        "outputPath": "/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/obj/",
         "projectStyle": "PackageReference",
-        "fallbackFolders": [
-          "D:\\Tools\\ide\\VisualStudioShared\\NuGetPackages"
-        ],
         "configFilePaths": [
-          "C:\\Users\\HeJiahui\\AppData\\Roaming\\NuGet\\NuGet.Config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
-          "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
+          "/home/hejiahui/.nuget/NuGet/NuGet.Config"
         ],
         "originalTargetFrameworks": [
           "net8.0"
         ],
         "sources": {
-          "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
@@ -43,8 +37,7 @@
           "enableAudit": "true",
           "auditLevel": "low",
           "auditMode": "direct"
-        },
-        "SdkAnalysisLevel": "9.0.300"
+        }
       },
       "frameworks": {
         "net8.0": {
@@ -65,7 +58,7 @@
               "privateAssets": "all"
             }
           },
-          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.312/PortableRuntimeIdentifierGraph.json"
+          "runtimeIdentifierGraphPath": "/snap/dotnet-sdk/256/sdk/8.0.407/PortableRuntimeIdentifierGraph.json"
         }
       }
     }

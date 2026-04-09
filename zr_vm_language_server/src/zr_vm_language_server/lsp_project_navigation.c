@@ -1050,7 +1050,7 @@ static TZrBool project_navigation_try_find_binary_export_declaration_at(
         binarySource->modules[0].entryFunction == ZR_NULL ||
         binarySource->modules[0].entryFunction->typedExportedSymbols == ZR_NULL) {
         if (binarySource != ZR_NULL) {
-            ZrCore_Io_ReadSourceFree(state->global, binarySource);
+            ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(state->global, binarySource);
         }
         return ZR_FALSE;
     }
@@ -1081,11 +1081,11 @@ static TZrBool project_navigation_try_find_binary_export_declaration_at(
                              ? ZrCore_String_Create(state, (TZrNativeString)symbolNameText, strlen(symbolNameText))
                              : ZR_NULL;
         *outRange = symbolRange;
-        ZrCore_Io_ReadSourceFree(state->global, binarySource);
+        ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(state->global, binarySource);
         return *outMemberName != ZR_NULL;
     }
 
-    ZrCore_Io_ReadSourceFree(state->global, binarySource);
+    ZrLanguageServer_LspModuleMetadata_FreeBinaryModuleSource(state->global, binarySource);
     return ZR_FALSE;
 }
 

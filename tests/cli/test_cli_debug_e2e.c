@@ -686,6 +686,26 @@ static int cli_debug_json_int(cJSON *object, const char *field) {
     return cJSON_IsNumber(item) ? (int)item->valuedouble : 0;
 }
 
+static cJSON *cli_debug_find_named_object(cJSON *array, const char *name) {
+    int index;
+
+    if (!cJSON_IsArray(array) || name == NULL) {
+        return NULL;
+    }
+
+    for (index = 0; index < cJSON_GetArraySize(array); index++) {
+        cJSON *item = cJSON_GetArrayItem(array, index);
+        if (item == NULL) {
+            continue;
+        }
+        if (strcmp(cli_debug_json_string(item, "name"), name) == 0) {
+            return item;
+        }
+    }
+
+    return NULL;
+}
+
 static int test_debug_print_endpoint_without_wait(void) {
     const char *testName = "debug_print_endpoint_without_wait";
     ZrCliE2eProcess process;
@@ -949,7 +969,16 @@ static int test_debug_wait_hits_import_basic_launch_breakpoint(void) {
     cJSON *result = NULL;
     cJSON *resultBreakpoints = NULL;
     cJSON *firstBreakpoint = NULL;
+    cJSON *frames = NULL;
+    cJSON *topFrame = NULL;
+    cJSON *scopes = NULL;
+    cJSON *variables = NULL;
+    cJSON *scopeItem = NULL;
+    cJSON *greetModuleItem = NULL;
     int status = 1;
+    int frameId = 0;
+    int scopeIndex = 0;
+    int scopeCount = 0;
 
     memset(&process, 0, sizeof(process));
     memset(&client, 0, sizeof(client));
@@ -1164,12 +1193,128 @@ static int test_debug_wait_hits_import_basic_launch_breakpoint(void) {
     cJSON_Delete(message);
     message = NULL;
 
-    if (!cli_debug_send_request(&client, 4, "continue", cJSON_CreateObject(), error, sizeof(error))) {
+    if (!cli_debug_send_request(&client, 4, "stackTrace", cJSON_CreateObject(), error, sizeof(error))) {
         cli_process_terminate(&process);
         status = cli_fail(testName, "%s", error);
         goto cleanup;
     }
     if (!cli_debug_expect_response(&client, 4, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    result = cJSON_GetObjectItemCaseSensitive(message, "result");
+    frames = cJSON_GetObjectItemCaseSensitive(result, "frames");
+    topFrame = cJSON_IsArray(frames) ? cJSON_GetArrayItem(frames, 0) : NULL;
+    if (topFrame == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "stackTrace did not return a frame at the import_basic breakpoint");
+        goto cleanup;
+    }
+    frameId = cli_debug_json_int(topFrame, "frameId");
+    if (frameId <= 0) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "stackTrace returned an invalid frameId");
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    params = cJSON_CreateObject();
+    if (params == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to allocate scopes request");
+        goto cleanup;
+    }
+    cJSON_AddNumberToObject(params, "frameId", frameId);
+    if (!cli_debug_send_request(&client, 5, "scopes", params, error, sizeof(error))) {
+        params = NULL;
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    params = NULL;
+    if (!cli_debug_expect_response(&client, 5, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    result = cJSON_GetObjectItemCaseSensitive(message, "result");
+    scopes = cJSON_GetObjectItemCaseSensitive(result, "scopes");
+    if (!cJSON_IsArray(scopes) || cJSON_GetArraySize(scopes) == 0) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "scopes did not return any entries at the import_basic breakpoint");
+        goto cleanup;
+    }
+
+    scopeCount = cJSON_GetArraySize(scopes);
+    for (scopeIndex = 0; scopeIndex < scopeCount; scopeIndex++) {
+        int scopeId;
+
+        scopeItem = cJSON_GetArrayItem(scopes, scopeIndex);
+        if (scopeItem == NULL) {
+            continue;
+        }
+
+        scopeId = cli_debug_json_int(scopeItem, "scopeId");
+        if (scopeId <= 0) {
+            continue;
+        }
+
+        params = cJSON_CreateObject();
+        if (params == NULL) {
+            cli_process_terminate(&process);
+            status = cli_fail(testName, "failed to allocate variables request");
+            goto cleanup;
+        }
+        cJSON_AddNumberToObject(params, "scopeId", scopeId);
+        if (!cli_debug_send_request(&client, 6 + scopeIndex, "variables", params, error, sizeof(error))) {
+            params = NULL;
+            cli_process_terminate(&process);
+            status = cli_fail(testName, "%s", error);
+            goto cleanup;
+        }
+        params = NULL;
+        if (!cli_debug_expect_response(&client, 6 + scopeIndex, &message, error, sizeof(error))) {
+            cli_process_terminate(&process);
+            status = cli_fail(testName, "%s", error);
+            goto cleanup;
+        }
+
+        result = cJSON_GetObjectItemCaseSensitive(message, "result");
+        variables = cJSON_GetObjectItemCaseSensitive(result, "variables");
+        greetModuleItem = cli_debug_find_named_object(variables, "greetModule");
+        if (greetModuleItem != NULL) {
+            break;
+        }
+
+        cJSON_Delete(message);
+        message = NULL;
+    }
+
+    if (greetModuleItem == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "expected variables request to expose greetModule in at least one scope\n"
+                          "moduleLoaded source: %s\n"
+                          "entry stop source: %s\n"
+                          "entry stop line: %d\n"
+                          "Output so far:\n%s",
+                          runtimeModuleSource,
+                          runtimeEntrySource,
+                          runtimeEntryLine,
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_send_request(&client, 6 + scopeCount, "continue", cJSON_CreateObject(), error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_expect_response(&client, 6 + scopeCount, &message, error, sizeof(error))) {
         cli_process_terminate(&process);
         status = cli_fail(testName, "%s", error);
         goto cleanup;
