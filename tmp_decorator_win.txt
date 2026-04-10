@@ -1,4 +1,0 @@
-==========
-Compile-Time Member Decorator Tests
-==========
-Unit Test - Percent Type Source Member Reflection Exposes Compile-Time Member Decorator Metadata

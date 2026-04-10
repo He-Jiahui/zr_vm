@@ -1,3 +1,0 @@
-BENCH_STRING_BUILD_PASS
-353247225
-executed_via=aot_c

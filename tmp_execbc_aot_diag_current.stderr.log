@@ -1,6 +1,0 @@
-  [execbc_aot_signed_numeric_paths_test.zr:3:1] 期望 '>'，但遇到 ';' (遇到 token: ';')
-    var delta = right - left;
-^
-[diag] generic_sub state-created
-[diag] generic_sub container-registered
-[diag] generic_sub source-compiled

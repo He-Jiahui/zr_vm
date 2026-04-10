@@ -1,3 +1,0 @@
-pub scale(): int {
-    return 4;
-}

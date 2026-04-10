@@ -1,6 +1,0 @@
-  [execbc_aot_signed_numeric_paths_test.zr:3:1] 期望 '>'，但遇到 ';' (遇到 token: ';')
-    var delta = right - left;
-^
-Error: SUPER_ARRAY_ADD_INT: receiver must be an array-like object with int payload
-payload: SUPER_ARRAY_ADD_INT: receiver must be an array-like object with int payload
-  at <anonymous> (execbc_aot_benchmark_style_string_numeric_test.zr:3, ip=11)

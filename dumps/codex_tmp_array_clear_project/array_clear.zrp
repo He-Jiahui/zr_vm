@@ -1,6 +1,0 @@
-{
-  "name": "array_clear",
-  "source": "src",
-  "binary": "bin",
-  "entry": "main"
-}

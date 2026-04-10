@@ -1,6 +1,0 @@
-{
-  "name": "array_map_index_split",
-  "source": "src",
-  "binary": "bin",
-  "entry": "main"
-}

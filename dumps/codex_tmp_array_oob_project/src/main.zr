@@ -1,4 +1,0 @@
-var container = %import("zr.container");
-var xs = new container.Array<int>();
-xs.add(1);
-xs[1] = 5;

@@ -1,6 +1,0 @@
-{
-  "name": "benchmark_matrix_add_2d",
-  "source": "src",
-  "binary": "bin",
-  "entry": "main"
-}
