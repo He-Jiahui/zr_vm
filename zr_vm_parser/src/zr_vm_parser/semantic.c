@@ -186,6 +186,7 @@ TZrTypeId ZrParser_Semantic_RegisterInferredType(SZrSemanticContext *context,
             (SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, i);
         if (existing != ZR_NULL &&
             existing->kind == semantic_type_kind_from_inferred_type(type, kind) &&
+            existing->astNode == astNode &&
             semantic_names_equal(existing->name, name != ZR_NULL ? name : type->typeName) &&
             ZrParser_InferredType_Equal(&existing->inferredType, type)) {
             return existing->id;
@@ -218,7 +219,7 @@ TZrTypeId ZrParser_Semantic_RegisterNamedType(SZrSemanticContext *context,
     for (i = 0; i < context->types.length; i++) {
         SZrSemanticTypeRecord *existing =
             (SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, i);
-        if (existing != ZR_NULL && semantic_names_equal(existing->name, name)) {
+        if (existing != ZR_NULL && existing->astNode == astNode && semantic_names_equal(existing->name, name)) {
             return existing->id;
         }
     }

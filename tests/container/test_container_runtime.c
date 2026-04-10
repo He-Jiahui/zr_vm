@@ -1451,7 +1451,8 @@ static void test_reference_object_array_map_plain_index_fixture_keeps_contract_s
     TEST_ASSERT_NOT_NULL(entryFunction);
     genericGetByIndexCount = count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_BY_INDEX));
     genericSetByIndexCount = count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SET_BY_INDEX));
-    superArrayGetIntCount = count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT));
+    superArrayGetIntCount = count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)) +
+                            count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST));
     superArraySetIntCount = count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT));
     TEST_ASSERT_TRUE(genericGetByIndexCount >= 4);
     TEST_ASSERT_TRUE(genericSetByIndexCount >= 2);

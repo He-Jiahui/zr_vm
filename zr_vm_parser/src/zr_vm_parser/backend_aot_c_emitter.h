@@ -26,6 +26,7 @@ void backend_aot_write_c_direct_add_int(FILE *file,
                                         TZrUInt32 leftSlot,
                                         TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_add_int_const(FILE *file,
+                                              const SZrFunction *function,
                                               TZrUInt32 destinationSlot,
                                               TZrUInt32 leftSlot,
                                               TZrUInt32 constantIndex);

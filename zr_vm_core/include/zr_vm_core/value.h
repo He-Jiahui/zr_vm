@@ -188,6 +188,17 @@ static ZR_FORCE_INLINE void ZrCore_Value_AssignMaterializedStackValueNoProfile(s
         return;
     }
 
+    if (source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK) {
+        /*
+         * Weak results must re-register against the destination slot, but the
+         * transient source slot cannot stay tracked once SET_STACK materializes
+         * the final value or later slot reuse will expire unrelated locals.
+         */
+        ZrCore_Value_CopyNoProfile(state, destination, source);
+        ZrCore_Ownership_ReleaseValue(state, source);
+        return;
+    }
+
     ZrCore_Value_CopyNoProfile(state, destination, source);
 }
 

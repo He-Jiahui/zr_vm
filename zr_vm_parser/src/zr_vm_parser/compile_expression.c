@@ -1531,6 +1531,14 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
         case ZR_AST_LAMBDA_EXPRESSION:
             compile_lambda_expression(cs, node);
             break;
+
+        case ZR_AST_GENERATOR_EXPRESSION:
+            if (node->data.generatorExpression.block == ZR_NULL) {
+                ZrParser_Compiler_Error(cs, "Generator expression block is null", node->location);
+                break;
+            }
+            compile_block_as_expression(cs, node->data.generatorExpression.block);
+            break;
         
         case ZR_AST_BLOCK:
             // 块作为表达式使用时，编译块并提取最后一个表达式的值

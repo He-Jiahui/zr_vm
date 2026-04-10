@@ -1,0 +1,105 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 4
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 3
+
+CONSTANTS (2):
+  [0] null
+  [1] function
+
+LOCAL_VARIABLES (1):
+  [0] scale: offset_activate=0, offset_dead=3
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (1):
+    [0] scale: function
+  EXPORTED_SYMBOLS (1):
+    fn scale(): int [kind=function readiness=declaration child=0]
+  STATIC_IMPORTS (0):
+  MODULE_ENTRY_EFFECTS (0):
+  EXPORTED_CALLABLE_SUMMARIES (1):
+    fn scale [child=4294967295 effects=0]
+  TOP_LEVEL_CALLABLE_BINDINGS (1):
+    fn scale [slot=0 child=0 kind=function readiness=declaration access=0]
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+INSTRUCTIONS (5):
+  [0] GET_CONSTANT (extra=0, operand=0)
+  [1] CREATE_CLOSURE (extra=1)
+  [2] SET_STACK (extra=0, operand=1)
+  [3] GET_CONSTANT (extra=2, operand=0)
+  [4] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
+
+CHILD_FUNCTIONS (1):
+  [0] FUNCTION:
+    NAME: scale
+    START_LINE: 1
+    END_LINE: 3
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 1
+
+    CONSTANTS (1):
+      [0] int: 4
+
+    LOCAL_VARIABLES (0):
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (0):
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (2):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+
+

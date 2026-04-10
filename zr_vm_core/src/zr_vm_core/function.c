@@ -97,6 +97,7 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->constantValueLength = 0;
     function->childFunctionList = ZR_NULL;
     function->childFunctionLength = 0;
+    function->childFunctionGraphIsBorrowed = ZR_FALSE;
     function->instructionsList = ZR_NULL;
     function->instructionsLength = 0;
     function->executionLocationInfoList = ZR_NULL;
@@ -137,6 +138,10 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->compileTimeVariableInfoLength = 0;
     function->compileTimeFunctionInfos = ZR_NULL;
     function->compileTimeFunctionInfoLength = 0;
+    function->escapeBindings = ZR_NULL;
+    function->escapeBindingLength = 0;
+    function->returnEscapeSlots = ZR_NULL;
+    function->returnEscapeSlotCount = 0;
     function->testInfos = ZR_NULL;
     function->testInfoLength = 0;
     function->hasDecoratorMetadata = ZR_FALSE;
@@ -394,6 +399,7 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(operandA1, &slotCount);
@@ -692,6 +698,18 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
         ZrCore_Memory_RawFreeWithType(global,
                                       function->compileTimeVariableInfos,
                                       sizeof(SZrFunctionCompileTimeVariableInfo) * function->compileTimeVariableInfoLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->escapeBindings != ZR_NULL && function->escapeBindingLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->escapeBindings,
+                                      sizeof(SZrFunctionEscapeBinding) * function->escapeBindingLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+    if (function->returnEscapeSlots != ZR_NULL && function->returnEscapeSlotCount > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->returnEscapeSlots,
+                                      sizeof(TZrUInt32) * function->returnEscapeSlotCount,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     if (function->testInfos != ZR_NULL && function->testInfoLength > 0) {

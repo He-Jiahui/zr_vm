@@ -19,6 +19,7 @@
 #define ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE 17 /* 128KB */
 // wait memory to 200% before starting new gc cycle
 #define ZR_GARBAGE_COLLECT_PAUSE_THRESHOLD_PERCENT 200
+#define ZR_GC_SCOPE_DEPTH_NONE ((TZrUInt32)0xFFFFFFFFu)
 
 
 enum EZrGarbageCollectMode {
@@ -96,6 +97,77 @@ enum EZrGarbageCollectGeneration {
 
 typedef enum EZrGarbageCollectGeneration EZrGarbageCollectGeneration;
 
+enum EZrGarbageCollectHeapGenerationKind {
+    ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_YOUNG = 0,
+    ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_OLD = 1,
+    ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_PERMANENT = 2,
+    ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_MAX
+};
+
+typedef enum EZrGarbageCollectHeapGenerationKind EZrGarbageCollectHeapGenerationKind;
+
+enum EZrGarbageCollectRegionKind {
+    ZR_GARBAGE_COLLECT_REGION_KIND_INVALID = 0,
+    ZR_GARBAGE_COLLECT_REGION_KIND_EDEN = 1,
+    ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR = 2,
+    ZR_GARBAGE_COLLECT_REGION_KIND_OLD = 3,
+    ZR_GARBAGE_COLLECT_REGION_KIND_PINNED = 4,
+    ZR_GARBAGE_COLLECT_REGION_KIND_LARGE = 5,
+    ZR_GARBAGE_COLLECT_REGION_KIND_PERMANENT = 6,
+    ZR_GARBAGE_COLLECT_REGION_KIND_MAX
+};
+
+typedef enum EZrGarbageCollectRegionKind EZrGarbageCollectRegionKind;
+
+enum EZrGarbageCollectStorageKind {
+    ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE = 0,
+    ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE = 1,
+    ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_PINNED = 2,
+    ZR_GARBAGE_COLLECT_STORAGE_KIND_LARGE_PERSISTENT = 3,
+    ZR_GARBAGE_COLLECT_STORAGE_KIND_MAX
+};
+
+typedef enum EZrGarbageCollectStorageKind EZrGarbageCollectStorageKind;
+
+enum EZrGarbageCollectEscapeKind {
+    ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE = 0,
+    ZR_GARBAGE_COLLECT_ESCAPE_KIND_RETURN = 1 << 0,
+    ZR_GARBAGE_COLLECT_ESCAPE_KIND_CLOSURE_CAPTURE = 1 << 1,
+    ZR_GARBAGE_COLLECT_ESCAPE_KIND_MODULE_ROOT = 1 << 2,
+    ZR_GARBAGE_COLLECT_ESCAPE_KIND_GLOBAL_ROOT = 1 << 3,
+    ZR_GARBAGE_COLLECT_ESCAPE_KIND_HOST_HANDLE = 1 << 4,
+    ZR_GARBAGE_COLLECT_ESCAPE_KIND_OLD_REFERENCE = 1 << 5,
+    ZR_GARBAGE_COLLECT_ESCAPE_KIND_PINNED_REFERENCE = 1 << 6,
+    ZR_GARBAGE_COLLECT_ESCAPE_KIND_CROSS_THREAD = 1 << 7,
+    ZR_GARBAGE_COLLECT_ESCAPE_KIND_NATIVE_HANDLE = 1 << 8
+};
+
+typedef enum EZrGarbageCollectEscapeKind EZrGarbageCollectEscapeKind;
+
+enum EZrGarbageCollectPinKind {
+    ZR_GARBAGE_COLLECT_PIN_KIND_NONE = 0,
+    ZR_GARBAGE_COLLECT_PIN_KIND_HOST_HANDLE = 1 << 0,
+    ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE = 1 << 1,
+    ZR_GARBAGE_COLLECT_PIN_KIND_PERSISTENT_ROOT = 1 << 2,
+    ZR_GARBAGE_COLLECT_PIN_KIND_LARGE_OBJECT = 1 << 3
+};
+
+typedef enum EZrGarbageCollectPinKind EZrGarbageCollectPinKind;
+
+enum EZrGarbageCollectPromotionReason {
+    ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE = 0,
+    ZR_GARBAGE_COLLECT_PROMOTION_REASON_SURVIVAL = 1,
+    ZR_GARBAGE_COLLECT_PROMOTION_REASON_ESCAPE = 2,
+    ZR_GARBAGE_COLLECT_PROMOTION_REASON_OLD_REFERENCE = 3,
+    ZR_GARBAGE_COLLECT_PROMOTION_REASON_PINNED = 4,
+    ZR_GARBAGE_COLLECT_PROMOTION_REASON_MODULE_ROOT = 5,
+    ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT = 6,
+    ZR_GARBAGE_COLLECT_PROMOTION_REASON_HOST_HANDLE = 7,
+    ZR_GARBAGE_COLLECT_PROMOTION_REASON_LARGE_OBJECT = 8
+};
+
+typedef enum EZrGarbageCollectPromotionReason EZrGarbageCollectPromotionReason;
+
 enum EZrRawObjectType {
     ZR_RAW_OBJECT_TYPE_INVALID,
     ZR_RAW_OBJECT_TYPE_STRING = ZR_VALUE_TYPE_STRING,
@@ -131,6 +203,17 @@ struct SZrGarbageCollectionObjectMark {
     EZrGarbageCollectIncrementalObjectStatus status;
     EZrGarbageCollectGenerationalObjectStatus generationalStatus;
     EZrGarbageCollectGeneration generation;
+    EZrGarbageCollectHeapGenerationKind heapGenerationKind;
+    EZrGarbageCollectRegionKind regionKind;
+    EZrGarbageCollectStorageKind storageKind;
+    TZrUInt32 regionId;
+    TZrUInt32 survivalAge;
+    TZrUInt32 escapeFlags;
+    TZrUInt32 anchorScopeDepth;
+    TZrUInt32 pinFlags;
+    EZrGarbageCollectPromotionReason promotionReason;
+    TZrPtr forwardingAddress;
+    TZrPtr forwardingRefLocation;
 };
 
 typedef struct SZrGarbageCollectionObjectMark SZrGarbageCollectionObjectMark;

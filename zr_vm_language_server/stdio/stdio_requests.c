@@ -441,6 +441,32 @@ static cJSON *handle_signature_help_request(SZrStdioServer *server, const cJSON 
     return result != NULL ? result : cJSON_CreateNull();
 }
 
+static cJSON *handle_inlay_hint_request(SZrStdioServer *server, const cJSON *params) {
+    const cJSON *rangeJson;
+    const char *uriText;
+    SZrString *uri;
+    SZrLspRange range;
+    SZrArray hints = {0};
+    cJSON *result;
+
+    if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
+        return NULL;
+    }
+
+    rangeJson = get_object_item(params, ZR_LSP_FIELD_RANGE);
+    if (!parse_range(rangeJson, &range)) {
+        return NULL;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetInlayHints(server->state, server->context, uri, range, &hints)) {
+        return cJSON_CreateArray();
+    }
+
+    result = serialize_inlay_hints_array(&hints);
+    free_inlay_hints_array(server->state, &hints);
+    return result;
+}
+
 static cJSON *handle_definition_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrLspPosition position;
@@ -876,6 +902,7 @@ static cJSON *handle_initialize_request(void) {
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_SYMBOL_PROVIDER, 1);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_WORKSPACE_SYMBOL_PROVIDER, 1);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_HIGHLIGHT_PROVIDER, 1);
+    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_INLAY_HINT_PROVIDER, 1);
     cJSON_AddItemToObject(semanticTokensProvider, ZR_LSP_FIELD_LEGEND, semanticLegend);
     cJSON_AddBoolToObject(semanticTokensProvider, ZR_LSP_FIELD_FULL, 1);
     cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_SEMANTIC_TOKENS_PROVIDER, semanticTokensProvider);
@@ -920,6 +947,8 @@ void handle_request_message(SZrStdioServer *server,
         result = handle_hover_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SIGNATURE_HELP) == 0) {
         result = handle_signature_help_request(server, params);
+    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_INLAY_HINT) == 0) {
+        result = handle_inlay_hint_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DEFINITION) == 0) {
         result = handle_definition_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES) == 0) {

@@ -1,0 +1,4 @@
+[diag] complex_graph: before_import
+[diag] complex_graph: after_import
+[diag] complex_graph: before_call
+[diag] complex_graph: after_call type=5 int=24

@@ -2957,19 +2957,11 @@ static void test_compiler_lambda_crlf_locations(void) {
         return;
     }
 
-    TEST_ASSERT_EQUAL_UINT32(2, function->constantValueLength);
-
-    for (TZrUInt32 i = 0; i < function->constantValueLength; i++) {
-        const SZrTypeValue* constant = &function->constantValueList[i];
-        TEST_ASSERT_TRUE(constant->type == ZR_VALUE_TYPE_FUNCTION || constant->type == ZR_VALUE_TYPE_CLOSURE);
-        TEST_ASSERT_NOT_NULL(constant->value.object);
-    }
+    TEST_ASSERT_EQUAL_UINT32(2, function->childFunctionLength);
 
     {
-        SZrRawObject* rawGreet = function->constantValueList[0].value.object;
-        SZrRawObject* rawBuildMessage = function->constantValueList[1].value.object;
-        SZrFunction* greetFunction = ZR_CAST(SZrFunction*, rawGreet);
-        SZrFunction* buildMessageFunction = ZR_CAST(SZrFunction*, rawBuildMessage);
+        SZrFunction* greetFunction = &function->childFunctionList[0];
+        SZrFunction* buildMessageFunction = &function->childFunctionList[1];
 
         TEST_ASSERT_EQUAL_UINT32(3, greetFunction->lineInSourceStart);
         TEST_ASSERT_EQUAL_UINT32(6, greetFunction->lineInSourceEnd);

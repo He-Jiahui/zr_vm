@@ -607,8 +607,10 @@ TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
 TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs);
 
 TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *function);
+TZrBool compiler_build_function_semir_metadata_shallow(SZrState *state, SZrFunction *function);
 
 TZrBool compiler_quicken_execbc_function(SZrState *state, SZrFunction *function);
+TZrBool compiler_quicken_execbc_function_shallow(SZrState *state, SZrFunction *function);
 
 void compile_script(SZrCompilerState *cs, SZrAstNode *node) ;
 

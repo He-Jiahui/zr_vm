@@ -1,0 +1,330 @@
+==========
+Language Server - Semantic Analyzer Tests
+==========
+
+Unit Test - Semantic Analyzer Creation and Free
+Testing Semantic Analyzer Creation:
+ Creating and freeing semantic analyzer
+Pass - Cost Time:1.000ms - Semantic Analyzer Creation and Free
+----------
+Unit Test - Semantic Analyzer Analyze
+Testing Analyze AST:
+ Analyzing simple AST for semantic information
+Pass - Cost Time:0.000ms - Semantic Analyzer Analyze
+----------
+Unit Test - Semantic Analyzer Type Checking Assignment Path
+Testing Type Checking:
+ Analyzing assignment and binary expression path
+Pass - Cost Time:0.000ms - Semantic Analyzer Type Checking Assignment Path
+----------
+Unit Test - Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics
+Testing Binary expression diagnostics:
+ Analyzing native float arithmetic and string concatenation that the compiler accepts should not emit type_mismatch diagnostics
+Pass - Cost Time:7.000ms - Semantic Analyzer Avoids False Binary Type Mismatch Diagnostics
+----------
+Unit Test - Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics
+Testing Variable initializer diagnostics:
+ Analyzing explicit numeric initializers that the compiler accepts should not emit type_mismatch diagnostics
+Pass - Cost Time:1.000ms - Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics
+----------
+Unit Test - Semantic Analyzer Expression Metadata Records Exact Types
+Testing Expression exact type metadata:
+ Intermediate numeric expressions should be recorded in semantic metadata with exact inferred types instead of falling back to a weak object
+Pass - Cost Time:0.000ms - Semantic Analyzer Expression Metadata Records Exact Types
+----------
+Unit Test - Semantic Analyzer Unannotated Function Records Exact Return Type
+Testing Exact function return metadata:
+ Unannotated functions with provable returns should store an exact return type in symbol metadata
+Pass - Cost Time:0.000ms - Semantic Analyzer Unannotated Function Records Exact Return Type
+----------
+Unit Test - Semantic Analyzer Reports Initializer Requires Annotation
+Testing Strong typed local declaration diagnostics:
+ An untyped declaration without an initializer must emit initializer_requires_annotation instead of inventing a weak object type
+Pass - Cost Time:0.000ms - Semantic Analyzer Reports Initializer Requires Annotation
+----------
+Unit Test - Semantic Analyzer Reports Return Type Not Provable
+Testing Strong typed return diagnostics:
+ An unannotated function with incompatible return branches must emit return_type_not_provable and must not synthesize a weak object return type
+Pass - Cost Time:1.000ms - Semantic Analyzer Reports Return Type Not Provable
+----------
+Unit Test - Semantic Analyzer Populates Semantic Context
+Testing Semantic context integration:
+ Analyzing declarations should populate semantic symbols, types, HIR module and overload sets
+Pass - Cost Time:0.000ms - Semantic Analyzer Populates Semantic Context
+----------
+Unit Test - Semantic Analyzer Records Using Cleanup And Template Segments
+Testing Using/template semantic metadata:
+ Analyzing using statements should populate cleanup plan and template segments in semantic context
+Pass - Cost Time:0.000ms - Semantic Analyzer Records Using Cleanup And Template Segments
+----------
+Unit Test - Semantic Analyzer Records Owned Field Cleanup Metadata
+Testing Owned field semantic metadata:
+ Analyzing direct %unique/%shared fields should register field symbols and distinguish struct-value cleanup from instance-field cleanup
+Pass - Cost Time:0.000ms - Semantic Analyzer Records Owned Field Cleanup Metadata
+----------
+Unit Test - Semantic Analyzer Get Diagnostics
+Testing Get Diagnostics:
+ Getting diagnostic information from analyzer
+Pass - Cost Time:0.000ms - Semantic Analyzer Get Diagnostics
+----------
+Unit Test - Semantic Analyzer Get Completions
+Testing Get Completions:
+ Getting code completion suggestions
+Pass - Cost Time:0.000ms - Semantic Analyzer Get Completions
+----------
+Unit Test - Semantic Analyzer Get Completions Includes Local Scope Symbols
+Testing Local scope completions:
+ Getting code completion suggestions inside a function body should include parameters and local variables
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: Unqualified type name 'Resource' requires an explicit module qualifier or destructuring import
+  Location: owned_field_semantic_test.z:1:40 - 1:48
+
+  Error Analysis:
+    - Problem: Compilation error occurred
+    - Root Cause: See error message above for details
+
+  How to Fix:
+═══════════════════════════════════════════════════════════════
+
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: Unqualified type name 'Resource' requires an explicit module qualifier or destructuring import
+  Location: owned_field_semantic_test.z:2:38 - 2:46
+
+  Error Analysis:
+    - Problem: Compilation error occurred
+    - Root Cause: See error message above for details
+
+  How to Fix:
+═══════════════════════════════════════════════════════════════
+
+Pass - Cost Time:0.000ms - Semantic Analyzer Get Completions Includes Local Scope Symbols
+----------
+Unit Test - Semantic Analyzer Get Symbol At Resolves Local References
+Testing Local reference resolution:
+ Resolving a symbol at a local identifier reference should return the matching parameter/local declaration instead of only global definitions
+Pass - Cost Time:0.000ms - Semantic Analyzer Get Symbol At Resolves Local References
+----------
+Unit Test - Semantic Analyzer Get Completions Includes Native Hint Entries
+Testing Native hint completions:
+ Getting code completion suggestions should surface lib_system/lib_math registered hint entries with detail text
+Pass - Cost Time:9.000ms - Semantic Analyzer Get Completions Includes Native Hint Entries
+----------
+Unit Test - Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail
+Testing Local symbol hover/completion detail:
+ Local parameters and variables should surface type and access detail in completion and hover results
+Pass - Cost Time:0.000ms - Semantic Analyzer Local Symbols Surface Rich Hover And Completion Detail
+----------
+Unit Test - Semantic Analyzer Class Method Scope Surfaces This Super And Locals
+Testing Class method scopes:
+ Instance methods should expose this/super receivers, parameters, and locals to completion and hover
+Pass - Cost Time:1.000ms - Semantic Analyzer Class Method Scope Surfaces This Super And Locals
+----------
+Unit Test - Semantic Analyzer Compile Time Test And Lambda Scopes Surface Symbols
+Testing Compile-time/test/lambda scopes:
+ Compile-time declarations, test bodies, and typed lambdas should register symbols and inferred types
+Pass - Cost Time:0.000ms - Semantic Analyzer Compile Time Test And Lambda Scopes Surface Symbols
+----------
+Unit Test - Semantic Analyzer Generic Function Symbols Surface Signature Detail
+Testing Generic hover/completion detail:
+ Generic function symbols should expose explicit generic and passing-mode signature text in completion and hover
+Pass - Cost Time:1.000ms - Semantic Analyzer Generic Function Symbols Surface Signature Detail
+----------
+Unit Test - Semantic Analyzer Function Signatures Preserve Ownership Qualifiers
+Testing Ownership-aware hover/completion detail:
+ Function completion detail and hover should preserve AST ownership qualifiers on parameters and return types
+Pass - Cost Time:0.000ms - Semantic Analyzer Function Signatures Preserve Ownership Qualifiers
+----------
+Unit Test - Semantic Analyzer Generic Type Symbols Surface Signature Detail
+Testing Generic type hover/completion detail:
+ Generic class and interface symbols should surface inheritance, const generics, variance, and where clauses in completion and hover
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: Unqualified type name 'T' requires an explicit module qualifier or destructuring import
+  Location: generic_type_signature_hover_test.zr:7:43 - 7:44
+
+  Error Analysis:
+    - Problem: Compilation error occurred
+    - Root Cause: See error message above for details
+
+  How to Fix:
+═══════════════════════════════════════════════════════════════
+
+Pass - Cost Time:1.000ms - Semantic Analyzer Generic Type Symbols Surface Signature Detail
+----------
+Unit Test - Semantic Analyzer Reports Invalid Interface Variance Positions
+Testing Variance diagnostics:
+ Illegal interface variance positions should emit dedicated diagnostics for method, field, property, and nested generic usage
+Pass - Cost Time:0.000ms - Semantic Analyzer Reports Invalid Interface Variance Positions
+----------
+Unit Test - Semantic Analyzer Preserves Owner Generic Context In Member Signatures
+Testing Owner generic member signatures:
+ Class member signatures should resolve owner and method generic parameters without emitting compiler diagnostics
+Pass - Cost Time:0.000ms - Semantic Analyzer Preserves Owner Generic Context In Member Signatures
+----------
+Unit Test - Semantic Analyzer Warns On Unreachable Statements After Return Or Throw
+Testing Deterministic unreachable statements:
+ Analyzing statements after return/throw should emit warning diagnostics instead of silently treating them as reachable
+Pass - Cost Time:0.000ms - Semantic Analyzer Warns On Unreachable Statements After Return Or Throw
+----------
+Unit Test - Semantic Analyzer Warns On Unreachable If Branches
+Testing Deterministic branch reachability:
+ Analyzing if(true/false) should emit warnings for the statically unreachable branch
+Pass - Cost Time:0.000ms - Semantic Analyzer Warns On Unreachable If Branches
+----------
+Unit Test - Semantic Analyzer Warns On Deterministic Short Circuit Branches
+Testing Deterministic short-circuit reachability:
+ Analyzing true || ... and false && ... should warn that the right-hand branch is unreachable
+Pass - Cost Time:0.000ms - Semantic Analyzer Warns On Deterministic Short Circuit Branches
+----------
+Unit Test - Semantic Analyzer Reports Declared Ownership Initializer Mismatch
+Testing Ownership compatibility in variable declarations:
+ Analyzing an explicit %unique T declaration initialized from %shared T should emit a type_mismatch diagnostic
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: Type Error: Type mismatch (expected: %unique Resource, actual: %shared Resource). Check variable types, function signatures, and type annotations. Ensure the actual type is compatible with the expected type. Consider adding explicit type conversions if needed.
+  Location: ownership_decl_mismatch_test.zr:4:31 - 4:39
+
+  Error Analysis:
+    - Problem: Type compatibility check failed
+    - Root Cause: The types of operands, variables, or function arguments are
+                  not compatible with the operation or assignment being performed
+
+  How to Fix:
+  Suggestion: Type mismatch detected. Check:
+              1. Variable types match their assignments
+              2. Function argument types match the function signature
+              3. Return types match the function declaration
+              4. Type annotations are correct
+═══════════════════════════════════════════════════════════════
+
+Pass - Cost Time:0.000ms - Semantic Analyzer Reports Declared Ownership Initializer Mismatch
+----------
+Unit Test - Semantic Analyzer Reports Return Ownership Mismatch
+Testing Ownership compatibility in return statements:
+ Analyzing a function that promises %unique T but returns %shared T should emit a type_mismatch diagnostic
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: Type Error: Type mismatch (expected: %unique Resource, actual: %shared Resource). Check variable types, function signatures, and type annotations. Ensure the actual type is compatible with the expected type. Consider adding explicit type conversions if needed.
+  Location: ownership_return_mismatch_test.zr:4:12 - 4:20
+
+  Error Analysis:
+    - Problem: Type compatibility check failed
+    - Root Cause: The types of operands, variables, or function arguments are
+                  not compatible with the operation or assignment being performed
+
+  How to Fix:
+  Suggestion: Type mismatch detected. Check:
+              1. Variable types match their assignments
+              2. Function argument types match the function signature
+              3. Return types match the function declaration
+              4. Type annotations are correct
+═══════════════════════════════════════════════════════════════
+
+Pass - Cost Time:1.000ms - Semantic Analyzer Reports Return Ownership Mismatch
+----------
+Unit Test - Semantic Analyzer Reports Function Argument Ownership Mismatch
+Testing Ownership compatibility in function calls:
+ Analyzing a direct function call that passes %shared T into %unique T should emit a type_mismatch diagnostic
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: No matching overload for function 'consume'
+  Location: ownership_call_mismatch_test.zr:6:5 - 6:12
+
+  Error Analysis:
+    - Problem: Compilation error occurred
+    - Root Cause: See error message above for details
+
+  How to Fix:
+═══════════════════════════════════════════════════════════════
+
+Pass - Cost Time:0.000ms - Semantic Analyzer Reports Function Argument Ownership Mismatch
+----------
+Unit Test - Semantic Analyzer Reports Method Argument Ownership Mismatch
+Testing Ownership compatibility in method calls:
+ Analyzing an instance method call that passes %shared T into %unique T should emit a type_mismatch diagnostic
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: Type Error: Type mismatch (expected: %unique Resource, actual: %shared Resource). Check variable types, function signatures, and type annotations. Ensure the actual type is compatible with the expected type. Consider adding explicit type conversions if needed.
+  Location: ownership_method_call_mismatch_test.zr:9:17 - 9:25
+
+  Error Analysis:
+    - Problem: Type compatibility check failed
+    - Root Cause: The types of operands, variables, or function arguments are
+                  not compatible with the operation or assignment being performed
+
+  How to Fix:
+  Suggestion: Type mismatch detected. Check:
+              1. Variable types match their assignments
+              2. Function argument types match the function signature
+              3. Return types match the function declaration
+              4. Type annotations are correct
+═══════════════════════════════════════════════════════════════
+
+Pass - Cost Time:0.000ms - Semantic Analyzer Reports Method Argument Ownership Mismatch
+----------
+Unit Test - Semantic Analyzer Resolves Overloads For Call Compatibility
+Testing Overload-aware call compatibility:
+ Analyzing overload sets should keep the matching call green and still diagnose the unmatched call
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: No matching overload for function 'mix'
+  Location: overload_call_compatibility_test.zr:9:5 - 9:8
+
+  Error Analysis:
+    - Problem: Compilation error occurred
+    - Root Cause: See error message above for details
+
+  How to Fix:
+═══════════════════════════════════════════════════════════════
+
+Pass - Cost Time:1.000ms - Semantic Analyzer Resolves Overloads For Call Compatibility
+----------
+Unit Test - Semantic Analyzer Reports Invalid FFI Decorators
+Testing Decorator semantic validation:
+ Analyzing invalid zr.ffi decorator usage should emit decorator diagnostics without stopping later analysis
+  [invalid_ffi_decorator_test.zr:9:21] Expected type name (遇到 token: 'out')
+       delegate MutPtr(         #zr.ffi.out#
+                                        ^
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: Unqualified type name 'pointer' requires an explicit module qualifier or destructuring import
+  Location: invalid_ffi_decorator_test.zr:11:23 - 12:7
+
+  Error Analysis:
+    - Problem: Compilation error occurred
+    - Root Cause: See error message above for details
+
+  How to Fix:
+═══════════════════════════════════════════════════════════════
+
+Pass - Cost Time:0.000ms - Semantic Analyzer Reports Invalid FFI Decorators
+----------
+Unit Test - Semantic Analyzer Cache
+Testing Cache Functionality:
+ Testing cache enable/disable and clear
+Pass - Cost Time:0.000ms - Semantic Analyzer Cache
+----------
+
+==========
+All Semantic Analyzer Tests Completed
+==========

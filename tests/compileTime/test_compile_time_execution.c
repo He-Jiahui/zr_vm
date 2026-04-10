@@ -1187,6 +1187,30 @@ static void test_compile_time_binary_import_function_alias_projection(void) {
         TEST_ASSERT_NOT_NULL(ast);
         TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
         TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+        TEST_ASSERT_NOT_NULL(compileResult.mainFunction);
+        TEST_ASSERT_TRUE(compileResult.mainFunction->compileTimeFunctionInfoLength > 0);
+        {
+            TZrBool foundBuildBias = ZR_FALSE;
+
+            for (TZrUInt32 infoIndex = 0; infoIndex < compileResult.mainFunction->compileTimeFunctionInfoLength;
+                 infoIndex++) {
+                SZrFunctionCompileTimeFunctionInfo* info =
+                        &compileResult.mainFunction->compileTimeFunctionInfos[infoIndex];
+
+                if (info->name == ZR_NULL || strcmp(ZrCore_String_GetNativeString(info->name), "buildBias") != 0) {
+                    continue;
+                }
+
+                foundBuildBias = ZR_TRUE;
+                TEST_ASSERT_EQUAL_UINT32(1u, info->parameterCount);
+                TEST_ASSERT_NOT_NULL(info->parameters);
+                TEST_ASSERT_NOT_NULL(info->parameters[0].name);
+                TEST_ASSERT_EQUAL_STRING("seed", ZrCore_String_GetNativeString(info->parameters[0].name));
+                break;
+            }
+
+            TEST_ASSERT_TRUE(foundBuildBias);
+        }
         reset_loaded_module_registry(state);
         TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 42, testSummary));
 

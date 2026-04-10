@@ -96,6 +96,14 @@ typedef struct SZrLspProjectModuleSummary {
     SZrLspRange range;
 } SZrLspProjectModuleSummary;
 
+typedef struct SZrLspInlayHint {
+    SZrLspPosition position;
+    SZrString *label;
+    TZrInt32 kind;
+    TZrBool paddingLeft;
+    TZrBool paddingRight;
+} SZrLspInlayHint;
+
 // LSP 文档高亮
 typedef struct SZrLspDocumentHighlight {
     SZrLspRange range;                // 高亮范围
@@ -200,6 +208,14 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetProjectModules(SZrState *
                                                                      SZrArray *result);
 
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeProjectModules(SZrState *state, SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
+                                                                  SZrLspContext *context,
+                                                                  SZrString *uri,
+                                                                  SZrLspRange range,
+                                                                  SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeInlayHints(SZrState *state, SZrArray *result);
 
 // 获取文档高亮
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetDocumentHighlights(SZrState *state,

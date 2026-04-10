@@ -1,0 +1,93 @@
+    Skipping statement type 34 (not implemented yet)
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: Unexpected expression type: UNKNOWN (type 56) at line 1:12. This node type should not be compiled as an expression. Please check if it was incorrectly placed in an expression context.
+  Location: test.zr:1:12 - 1:37
+
+  Error Analysis:
+    - Problem: AST node type not supported in expression context
+    - Root Cause: The compiler encountered a node type that cannot be compiled
+                  as an expression. This may indicate a parsing error or missing
+                  implementation for this node type.
+
+  How to Fix:
+  Suggestion: This AST node type is not supported in expression context.
+              Possible causes:
+              1. The node was incorrectly parsed or placed in the wrong context
+              2. A declaration type was mistakenly used as an expression
+              3. Missing implementation for this node type in ZrParser_Expression_Compile
+              Check the AST structure and ensure the node is in the correct context.
+═══════════════════════════════════════════════════════════════
+
+    Compilation error at statement 0, resetting error and continuing...
+
+=== Compilation Summary ===
+Status: FAILED
+Reason: Unexpected expression type: UNKNOWN (type 56) at line 1:12. This node type should not be compiled as an expression. Please check if it was incorrectly placed in an expression context.
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: Type Error: Incompatible types for arithmetic operation (expected: string, actual: int). Check variable types, function signatures, and type annotations. Ensure the actual type is compatible with the expected type. Consider adding explicit type conversions if needed.
+  Location: test.zr:1:52 - 1:52
+
+  Error Analysis:
+    - Problem: Type compatibility check failed
+    - Root Cause: The types of operands, variables, or function arguments are
+                  not compatible with the operation or assignment being performed
+
+  How to Fix:
+  Suggestion: Type mismatch detected. Check:
+              1. Variable types match their assignments
+              2. Function argument types match the function signature
+              3. Return types match the function declaration
+              4. Type annotations are correct
+═══════════════════════════════════════════════════════════════
+
+    Compilation error at statement 2, resetting error and continuing...
+
+=== Compilation Summary ===
+Status: FAILED
+Reason: Type Error: Incompatible types for arithmetic operation (expected: string, actual: int). Check variable types, function signatures, and type annotations. Ensure the actual type is compatible with the expected type. Consider adding explicit type conversions if needed.
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: failed to load import metadata for module 'zr.math'
+  Location: type_expression_compile_test.zr:1:4 - 1:4
+
+  Error Analysis:
+    - Problem: Compilation error occurred
+    - Root Cause: See error message above for details
+
+  How to Fix:
+═══════════════════════════════════════════════════════════════
+
+    Compilation error at statement 0, resetting error and continuing...
+
+═══════════════════════════════════════════════════════════════
+Compiler Error
+═══════════════════════════════════════════════════════════════
+  Error Message: Identifier 'math' not found in current scope; only 'zr' is implicitly global
+  Location: type_expression_compile_test.zr:2:24 - 2:28
+
+  Error Analysis:
+    - Problem: Identifier not found in current scope
+    - Root Cause: The variable, function, or type name was not found in the
+                  current scope or type environment
+
+  How to Fix:
+  Suggestion: The referenced identifier was not found. Check:
+              1. Variable/function is declared before use
+              2. Variable/function is in scope
+              3. Spelling is correct
+              4. Import statements are correct (if using modules)
+═══════════════════════════════════════════════════════════════
+
+    Compilation error at statement 1, resetting error and continuing...
+
+=== Compilation Summary ===
+Status: FAILED
+Reason: Identifier 'math' not found in current scope; only 'zr' is implicitly global

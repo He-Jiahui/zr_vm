@@ -50,6 +50,7 @@ static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *le
 
 static TZrBool receiver_type_text_is_specific(const TZrChar *text) {
     return text != ZR_NULL && text[0] != '\0' &&
+           strcmp(text, "cannot infer exact type") != 0 &&
            strcmp(text, "object") != 0 &&
            strcmp(text, "unknown") != 0;
 }

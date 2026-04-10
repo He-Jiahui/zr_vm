@@ -397,6 +397,41 @@ static cJSON* serialize_symbol_array(SZrState *state, SZrArray *symbols) {
     return json;
 }
 
+static cJSON* serialize_inlay_hint(SZrState *state, SZrLspInlayHint *hint) {
+    cJSON *json = cJSON_CreateObject();
+    const char *label = ZR_NULL;
+
+    if (json == ZR_NULL || state == ZR_NULL || hint == ZR_NULL) {
+        return json;
+    }
+
+    label = string_to_cstr(state, hint->label);
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_POSITION, serialize_lsp_position(hint->position));
+    cJSON_AddStringToObject(json, ZR_LSP_FIELD_LABEL, label != ZR_NULL ? label : "");
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_KIND, hint->kind);
+    cJSON_AddBoolToObject(json, ZR_LSP_FIELD_PADDING_LEFT, hint->paddingLeft ? cJSON_True : cJSON_False);
+    cJSON_AddBoolToObject(json, ZR_LSP_FIELD_PADDING_RIGHT, hint->paddingRight ? cJSON_True : cJSON_False);
+    free_cstr(state, label);
+    return json;
+}
+
+static cJSON* serialize_inlay_hints(SZrState *state, SZrArray *hints) {
+    cJSON *json = cJSON_CreateArray();
+
+    if (json == ZR_NULL || state == ZR_NULL || hints == ZR_NULL) {
+        return json;
+    }
+
+    for (TZrSize i = 0; i < hints->length; i++) {
+        SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(hints, i);
+        if (hintPtr != ZR_NULL && *hintPtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_inlay_hint(state, *hintPtr));
+        }
+    }
+
+    return json;
+}
+
 static cJSON* serialize_project_module_summary(SZrState *state, SZrLspProjectModuleSummary *summary) {
     cJSON *json = cJSON_CreateObject();
     const char *moduleName = ZR_NULL;
@@ -907,6 +942,50 @@ const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uri
 
     ZrCore_Array_Free(g_wasm_state, &symbols);
     return create_error_response("Failed to get document symbols");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetInlayHints(void* context,
+                                    const char* uri,
+                                    int uriLen,
+                                    int startLine,
+                                    int startCharacter,
+                                    int endLine,
+                                    int endCharacter) {
+    SZrString *uriStr;
+    SZrLspRange range;
+    SZrArray hints;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    range.start.line = startLine;
+    range.start.character = startCharacter;
+    range.end.line = endLine;
+    range.end.character = endCharacter;
+
+    ZrCore_Array_Init(g_wasm_state, &hints, sizeof(SZrLspInlayHint*), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    if (ZrLanguageServer_Lsp_GetInlayHints(g_wasm_state,
+                                           (SZrLspContext*)context,
+                                           uriStr,
+                                           range,
+                                           &hints)) {
+        cJSON *data = serialize_inlay_hints(g_wasm_state, &hints);
+        const char *jsonStr = create_success_response(data);
+        ZrLanguageServer_Lsp_FreeInlayHints(g_wasm_state, &hints);
+        return jsonStr;
+    }
+
+    ZrLanguageServer_Lsp_FreeInlayHints(g_wasm_state, &hints);
+    return create_error_response("Failed to get inlay hints");
 }
 
 #ifdef __EMSCRIPTEN__

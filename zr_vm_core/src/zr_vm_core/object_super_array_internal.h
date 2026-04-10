@@ -39,13 +39,19 @@ static ZR_FORCE_INLINE SZrObject *zr_super_array_cached_items_object_assume_fast
 static ZR_FORCE_INLINE void zr_super_array_store_plain_int_reuse(SZrTypeValue *destination, TZrInt64 value) {
     ZR_ASSERT(destination != ZR_NULL);
     ZR_ASSERT(zr_super_array_value_can_overwrite_without_release(destination));
-    ZR_VALUE_FAST_SET(destination, nativeInt64, value, ZR_VALUE_TYPE_INT64);
+    destination->type = ZR_VALUE_TYPE_INT64;
+    destination->value.nativeObject.nativeInt64 = value;
+    destination->isGarbageCollectable = ZR_FALSE;
+    destination->isNative = ZR_TRUE;
 }
 
 static ZR_FORCE_INLINE void zr_super_array_store_plain_null_reuse(SZrTypeValue *destination) {
     ZR_ASSERT(destination != ZR_NULL);
     ZR_ASSERT(zr_super_array_value_can_overwrite_without_release(destination));
-    ZR_VALUE_FAST_SET(destination, nativeUInt64, 0, ZR_VALUE_TYPE_NULL);
+    destination->type = ZR_VALUE_TYPE_NULL;
+    destination->value.nativeObject.nativeUInt64 = 0;
+    destination->isGarbageCollectable = ZR_FALSE;
+    destination->isNative = ZR_TRUE;
 }
 
 static ZR_FORCE_INLINE void zr_super_array_assign_int_or_copy(SZrState *state,
@@ -56,7 +62,7 @@ static ZR_FORCE_INLINE void zr_super_array_assign_int_or_copy(SZrState *state,
 
     if (ZR_LIKELY(destination->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE)) {
         ZR_ASSERT(destination->ownershipControl == ZR_NULL && destination->ownershipWeakRef == ZR_NULL);
-        ZR_VALUE_FAST_SET(destination, nativeInt64, value, ZR_VALUE_TYPE_INT64);
+        zr_super_array_store_plain_int_reuse(destination, value);
         return;
     }
 
@@ -73,7 +79,7 @@ static ZR_FORCE_INLINE void zr_super_array_assign_null_or_copy(SZrState *state, 
 
     if (ZR_LIKELY(destination->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE)) {
         ZR_ASSERT(destination->ownershipControl == ZR_NULL && destination->ownershipWeakRef == ZR_NULL);
-        ZR_VALUE_FAST_SET(destination, nativeUInt64, 0, ZR_VALUE_TYPE_NULL);
+        zr_super_array_store_plain_null_reuse(destination);
         return;
     }
 
@@ -164,6 +170,7 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
     SZrObject *itemsObject;
     const SZrHashSet *nodeMap;
     SZrHashKeyValuePair *pair;
+    TZrBool plainDestination;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(receiver != ZR_NULL);
@@ -175,6 +182,21 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
     }
 
     nodeMap = &itemsObject->nodeMap;
+    plainDestination = (TZrBool)(result->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE);
+    if (ZR_LIKELY(plainDestination)) {
+        ZR_ASSERT(result->ownershipControl == ZR_NULL && result->ownershipWeakRef == ZR_NULL);
+        if (ZR_UNLIKELY((TZrUInt64)indexValue >= (TZrUInt64)nodeMap->elementCount)) {
+            zr_super_array_store_plain_null_reuse(result);
+            return ZR_TRUE;
+        }
+
+        pair = nodeMap->buckets[(TZrSize)indexValue];
+        ZR_ASSERT(pair != ZR_NULL);
+        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type));
+        zr_super_array_store_plain_int_reuse(result, pair->value.value.nativeObject.nativeInt64);
+        return ZR_TRUE;
+    }
+
     if (ZR_UNLIKELY((TZrUInt64)indexValue >= (TZrUInt64)nodeMap->elementCount)) {
         zr_super_array_assign_null_or_copy(state, result);
         return ZR_TRUE;
@@ -184,6 +206,40 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
     ZR_ASSERT(pair != ZR_NULL);
     ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type));
     zr_super_array_assign_int_or_copy(state, result, pair->value.value.nativeObject.nativeInt64);
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssumeFastPlainDestination(
+        SZrState *state,
+        SZrTypeValue *receiver,
+        TZrInt64 indexValue,
+        SZrTypeValue *result) {
+    SZrObject *itemsObject;
+    const SZrHashSet *nodeMap;
+    SZrHashKeyValuePair *pair;
+    TZrUInt64 unsignedIndex;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+    ZR_ASSERT(zr_super_array_value_can_overwrite_without_release(result));
+
+    itemsObject = zr_super_array_resolve_items_object_only_cached_assume_fast(state, receiver);
+    if (itemsObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nodeMap = &itemsObject->nodeMap;
+    unsignedIndex = (TZrUInt64)indexValue;
+    if (ZR_UNLIKELY(unsignedIndex >= (TZrUInt64)nodeMap->elementCount)) {
+        zr_super_array_store_plain_null_reuse(result);
+        return ZR_TRUE;
+    }
+
+    pair = nodeMap->buckets[(TZrSize)unsignedIndex];
+    ZR_ASSERT(pair != ZR_NULL);
+    ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type));
+    zr_super_array_store_plain_int_reuse(result, pair->value.value.nativeObject.nativeInt64);
     return ZR_TRUE;
 }
 

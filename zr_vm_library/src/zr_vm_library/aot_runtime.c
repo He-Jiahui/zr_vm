@@ -222,6 +222,11 @@ static TZrBool aot_runtime_apply_float_compare_operation(SZrState *state,
                                                          TZrUInt32 rightSlot,
                                                          EZrAotRuntimeCompareOp operation,
                                                          const TZrChar *instructionName);
+static TZrBool aot_runtime_call_temp_base_without_yield(SZrState *state,
+                                                        ZrAotGeneratedFrame *frame,
+                                                        TZrUInt32 destinationSlot,
+                                                        TZrStackValuePointer callBase,
+                                                        TZrUInt32 argumentCount);
 static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
                                               ZrAotGeneratedFrame *frame,
                                               TZrUInt32 destinationSlot,
@@ -1316,9 +1321,6 @@ static TZrBool aot_runtime_prepare_meta_target(SZrState *state,
     state->stackTop.valuePointer++;
 
     ZrCore_Value_InitAsRawObject(state, receiverValue, ZR_CAST_RAW_OBJECT_AS_SUPER(metaValue->function));
-    receiverValue->type = ZR_VALUE_TYPE_FUNCTION;
-    receiverValue->isGarbageCollectable = ZR_TRUE;
-    receiverValue->isNative = ZR_FALSE;
     if (outMetadataFunction != ZR_NULL) {
         *outMetadataFunction = metaValue->function;
     }
@@ -3916,6 +3918,57 @@ static TZrBool aot_runtime_reserve_temp_call_base(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool aot_runtime_call_temp_base_without_yield(SZrState *state,
+                                                        ZrAotGeneratedFrame *frame,
+                                                        TZrUInt32 destinationSlot,
+                                                        TZrStackValuePointer callBase,
+                                                        TZrUInt32 argumentCount) {
+    SZrLibraryAotRuntimeState *runtimeState;
+    TZrStackValuePointer destinationPointer;
+    TZrStackValuePointer resultBase;
+    SZrFunctionStackAnchor callAnchor;
+    SZrFunctionStackAnchor destinationAnchor;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
+    destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
+    if (state == ZR_NULL || frame == ZR_NULL || callBase == ZR_NULL || destinationPointer == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "META_CALL: invalid call target (callBase=%p destination=%p)",
+                         (void *)callBase,
+                         (void *)destinationPointer);
+        return ZR_FALSE;
+    }
+
+    ZrCore_Function_StackAnchorInit(state, callBase, &callAnchor);
+    ZrCore_Function_StackAnchorInit(state, destinationPointer, &destinationAnchor);
+    state->stackTop.valuePointer = callBase + 1 + argumentCount;
+    if (frame->callInfo != ZR_NULL && frame->callInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+        frame->callInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
+
+    resultBase = ZrCore_Function_CallWithoutYieldAndRestoreAnchor(state, &callAnchor, 1);
+    destinationPointer = ZrCore_Function_StackAnchorRestore(state, &destinationAnchor);
+    if (resultBase == ZR_NULL || destinationPointer == ZR_NULL || state->threadStatus != ZR_THREAD_STATUS_FINE ||
+        state->callInfoList == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "META_CALL: generic invoke failed (resultBase=%p destination=%p threadStatus=%u callInfo=%p)",
+                         (void *)resultBase,
+                         (void *)destinationPointer,
+                         (unsigned)(state != ZR_NULL ? state->threadStatus : 0),
+                         (void *)(state != ZR_NULL ? state->callInfoList : ZR_NULL));
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(destinationPointer), ZrCore_Stack_GetValue(resultBase));
+    frame->callInfo = state->callInfoList;
+    frame->slotBase = state->callInfoList->functionBase.valuePointer + 1;
+    state->stackTop.valuePointer = state->callInfoList->functionTop.valuePointer;
+    return ZR_TRUE;
+}
+
 static TZrBool aot_runtime_invoke_unary_meta(SZrState *state,
                                              ZrAotGeneratedFrame *frame,
                                              TZrUInt32 destinationSlot,
@@ -3944,9 +3997,6 @@ static TZrBool aot_runtime_invoke_unary_meta(SZrState *state,
 
     stableReceiver = *receiverValue;
     ZrCore_Value_InitAsRawObject(state, functionValue, ZR_CAST_RAW_OBJECT_AS_SUPER(metadataFunction));
-    functionValue->type = ZR_VALUE_TYPE_FUNCTION;
-    functionValue->isGarbageCollectable = ZR_TRUE;
-    functionValue->isNative = ZR_FALSE;
     ZrCore_Stack_CopyValue(state, callBase + 1, &stableReceiver);
 
     state->stackTop.valuePointer = callBase + 2;
@@ -3981,7 +4031,7 @@ static TZrBool aot_runtime_invoke_unary_meta(SZrState *state,
         }
     }
 
-    return ZrLibrary_AotRuntime_Call(state, frame, destinationSlot, functionSlot, 1);
+    return aot_runtime_call_temp_base_without_yield(state, frame, destinationSlot, callBase, 1);
 }
 
 static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
@@ -4015,9 +4065,6 @@ static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
     stableReceiver = *receiverValue;
     stableArgument = *argumentValue;
     ZrCore_Value_InitAsRawObject(state, functionValue, ZR_CAST_RAW_OBJECT_AS_SUPER(metadataFunction));
-    functionValue->type = ZR_VALUE_TYPE_FUNCTION;
-    functionValue->isGarbageCollectable = ZR_TRUE;
-    functionValue->isNative = ZR_FALSE;
     ZrCore_Stack_CopyValue(state, callBase + 1, &stableReceiver);
     ZrCore_Stack_CopyValue(state, callBase + 2, &stableArgument);
 
@@ -4053,7 +4100,7 @@ static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
         }
     }
 
-    return ZrLibrary_AotRuntime_Call(state, frame, destinationSlot, functionSlot, 2);
+    return aot_runtime_call_temp_base_without_yield(state, frame, destinationSlot, callBase, 2);
 }
 
 TZrBool ZrLibrary_AotRuntime_AddInt(SZrState *state,
@@ -5183,12 +5230,18 @@ TZrBool ZrLibrary_AotRuntime_Call(SZrState *state,
                                   TZrUInt32 destinationSlot,
                                   TZrUInt32 functionSlot,
                                   TZrUInt32 argumentCount) {
+    SZrLibraryAotRuntimeState *runtimeState;
     SZrCallInfo *callInfo;
     TZrStackValuePointer callBase;
     TZrStackValuePointer destinationPointer;
     SZrFunctionStackAnchor callAnchor;
+    SZrTypeValue *callableValue;
+
+    runtimeState =
+            state != ZR_NULL && state->global != ZR_NULL ? aot_runtime_get_state_from_global(state->global) : ZR_NULL;
 
     if (state == ZR_NULL || frame == ZR_NULL || frame->slotBase == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "CALL: invalid frame");
         return ZR_FALSE;
     }
 
@@ -5196,6 +5249,18 @@ TZrBool ZrLibrary_AotRuntime_Call(SZrState *state,
     callBase = aot_runtime_frame_slot(frame, functionSlot);
     destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
     if (callInfo == ZR_NULL || callBase == ZR_NULL || destinationPointer == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "CALL: invalid call target (callInfo=%p callBase=%p destination=%p)",
+                         (void *)callInfo,
+                         (void *)callBase,
+                         (void *)destinationPointer);
+        return ZR_FALSE;
+    }
+
+    callableValue = ZrCore_Stack_GetValue(callBase);
+    if (callableValue == ZR_NULL) {
+        aot_runtime_fail(state, runtimeState, "CALL: missing callable value");
         return ZR_FALSE;
     }
 
@@ -5207,6 +5272,14 @@ TZrBool ZrLibrary_AotRuntime_Call(SZrState *state,
 
     callBase = ZrCore_Function_CallAndRestoreAnchor(state, &callAnchor, 1);
     if (callBase == ZR_NULL || state->threadStatus != ZR_THREAD_STATUS_FINE || state->callInfoList == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "CALL: generic invoke failed (callBase=%p threadStatus=%u callInfo=%p callableType=%u isNative=%u)",
+                         (void *)callBase,
+                         (unsigned)state->threadStatus,
+                         (void *)state->callInfoList,
+                         (unsigned)callableValue->type,
+                         (unsigned)callableValue->isNative);
         return ZR_FALSE;
     }
 

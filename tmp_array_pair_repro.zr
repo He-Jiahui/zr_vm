@@ -1,0 +1,13 @@
+var container = %import("zr.container");
+var {Pair} = %import("zr.container");
+var xs = new container.Array<Pair<int, string>>();
+xs.add(new container.Pair<int, string>(2, "even"));
+xs.add(new container.Pair<int, string>(4, "even"));
+var a: Pair<int, string> = xs[0];
+var b: Pair<int, string> = xs[1];
+var score = 0;
+if (a.first == 2) { score = score + 1000; }
+if (a.second == "even") { score = score + 100; }
+if (b.first == 4) { score = score + 10; }
+if (b.second == "even") { score = score + 1; }
+return score;

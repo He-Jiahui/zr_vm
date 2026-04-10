@@ -38,6 +38,23 @@ static const TZrChar *virtual_documents_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+static const TZrChar *virtual_documents_missing_exact_type_identifier(void) {
+    return "ZrMissingExactType";
+}
+
+static TZrBool virtual_documents_type_text_is_specific(const TZrChar *typeText) {
+    return typeText != ZR_NULL && typeText[0] != '\0' &&
+           strcmp(typeText, virtual_documents_missing_exact_type_identifier()) != 0 &&
+           strcmp(typeText, "object") != 0 &&
+           strcmp(typeText, "unknown") != 0;
+}
+
+static const TZrChar *virtual_documents_type_text_or_placeholder(const TZrChar *typeText) {
+    return virtual_documents_type_text_is_specific(typeText)
+               ? typeText
+               : virtual_documents_missing_exact_type_identifier();
+}
+
 static const TZrChar *virtual_documents_type_keyword(EZrObjectPrototypeType prototypeType) {
     switch (prototypeType) {
         case ZR_OBJECT_PROTOTYPE_TYPE_STRUCT:
@@ -258,7 +275,7 @@ static void virtual_documents_format_parameters(const ZrLibParameterDescriptor *
         const ZrLibParameterDescriptor *parameter = &parameters[index];
         const TZrChar *separator = index > 0 ? ", " : "";
         const TZrChar *name = parameter->name != ZR_NULL ? parameter->name : "arg";
-        const TZrChar *typeName = parameter->typeName != ZR_NULL ? parameter->typeName : "object";
+        const TZrChar *typeName = virtual_documents_type_text_or_placeholder(parameter->typeName);
 
         used += (TZrSize)snprintf(buffer + used, bufferSize - used, "%s%s: %s", separator, name, typeName);
     }
@@ -295,7 +312,7 @@ static void virtual_documents_format_type_tail(const ZrLibTypeDescriptor *typeDe
                                       bufferSize - used,
                                       "%s%s",
                                       index > 0 ? ", " : "",
-                                      implementsName != ZR_NULL ? implementsName : "object");
+                                      virtual_documents_type_text_or_placeholder(implementsName));
         }
     }
 }
@@ -344,7 +361,7 @@ static void virtual_documents_append_constants(SZrLspVirtualBuilder *builder,
         snprintf(suffix,
                  sizeof(suffix),
                  ": %s;\n",
-                 constantDescriptor->typeName != ZR_NULL ? constantDescriptor->typeName : "object");
+                 virtual_documents_type_text_or_placeholder(constantDescriptor->typeName));
         virtual_builder_append_identifier_line(builder,
                                                "    pub const ",
                                                ZR_LSP_VIRTUAL_DECLARATION_CONSTANT,
@@ -371,7 +388,7 @@ static void virtual_documents_append_functions(SZrLspVirtualBuilder *builder,
                  sizeof(suffix),
                  "(%s): %s;\n",
                  parameters,
-                 functionDescriptor->returnTypeName != ZR_NULL ? functionDescriptor->returnTypeName : "object");
+                 virtual_documents_type_text_or_placeholder(functionDescriptor->returnTypeName));
         virtual_builder_append_identifier_line(builder,
                                                "    pub ",
                                                ZR_LSP_VIRTUAL_DECLARATION_FUNCTION,
@@ -391,7 +408,7 @@ static void virtual_documents_append_type_fields(SZrLspVirtualBuilder *builder,
         snprintf(suffix,
                  sizeof(suffix),
                  ": %s;\n",
-                 fieldDescriptor->typeName != ZR_NULL ? fieldDescriptor->typeName : "object");
+                 virtual_documents_type_text_or_placeholder(fieldDescriptor->typeName));
         virtual_builder_append_identifier_line(builder,
                                                "        pub var ",
                                                ZR_LSP_VIRTUAL_DECLARATION_FIELD,
@@ -423,7 +440,7 @@ static void virtual_documents_append_type_methods(SZrLspVirtualBuilder *builder,
                  sizeof(suffix),
                  "(%s): %s;\n",
                  parameters,
-                 methodDescriptor->returnTypeName != ZR_NULL ? methodDescriptor->returnTypeName : "object");
+                 virtual_documents_type_text_or_placeholder(methodDescriptor->returnTypeName));
         virtual_builder_append_identifier_line(builder,
                                                prefix,
                                                ZR_LSP_VIRTUAL_DECLARATION_METHOD,
@@ -451,7 +468,7 @@ static void virtual_documents_append_type_meta_methods(SZrLspVirtualBuilder *bui
                  sizeof(suffix),
                  "(%s): %s;\n",
                  parameters,
-                 metaMethodDescriptor->returnTypeName != ZR_NULL ? metaMethodDescriptor->returnTypeName : "object");
+                 virtual_documents_type_text_or_placeholder(metaMethodDescriptor->returnTypeName));
         virtual_builder_append_identifier_line(builder,
                                                "        pub ",
                                                ZR_LSP_VIRTUAL_DECLARATION_META_METHOD,

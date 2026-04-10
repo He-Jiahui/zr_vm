@@ -1,0 +1,6 @@
+{
+  "name": "array_oob",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

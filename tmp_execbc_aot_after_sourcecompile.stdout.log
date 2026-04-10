@@ -1,0 +1,159 @@
+Unit Test - Access Lowering Preserves Explicit Member And Index Ops
+Testing access/meta execbc pipeline:
+ Testing that dot and bracket access stay as explicit member/index opcodes and do not quicken back into legacy dynamic instructions
+Pass - Cost Time:4.000ms - Access Lowering Preserves Explicit Member And Index Ops
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7266:test_access_lowering_preserves_explicit_member_and_index_ops:PASS
+Unit Test - AOT Backends Preserve Runtime Contract Artifacts Under Strict AOT C
+Testing aot artifact emission:
+ Testing that SemIR, AOT C, and AOT LLVM all keep runtime contract evidence while strict AOT C lowers indexed access directly without shim-backed fallback
+Pass - Cost Time:17.000ms - AOT Backends Preserve Runtime Contract Artifacts Under Strict AOT C
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7267:test_aot_backends_preserve_runtime_contract_artifacts_under_strict_aot_c:PASS
+Unit Test - AOT C Backend Emits Child Thunks For Callable Constants
+Testing aot c child thunk emission:
+ Testing that callable constants such as exported lambdas receive their own generated AOT thunks instead of being folded into the entry thunk only
+Pass - Cost Time:15.000ms - AOT C Backend Emits Child Thunks For Callable Constants
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7268:test_aot_c_backend_emits_child_thunks_for_callable_constants:PASS
+Unit Test - AOT LLVM Backend Lowers Simple Entry Execution Path
+Testing aot llvm simple lowering:
+ Testing that simple LLVM AOT output lowers the actual constant+return execution path instead of routing the generated function body to unsupported placeholders
+Pass - Cost Time:8.000ms - AOT LLVM Backend Lowers Simple Entry Execution Path
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7269:test_aot_llvm_backend_lowers_simple_entry_execution_path:PASS
+Unit Test - AOT LLVM Backend Lowers Static Direct Call Protocol
+Testing aot llvm static direct calls:
+ Testing that LLVM AOT lowers callable constants through the formal static direct-call frame protocol instead of generic unsupported placeholders
+Pass - Cost Time:8.000ms - AOT LLVM Backend Lowers Static Direct Call Protocol
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7270:test_aot_llvm_backend_lowers_static_direct_call_protocol:PASS
+Unit Test - AOT LLVM Backend Lowers Closure Capture Access
+Testing aot llvm closure captures:
+ Testing that LLVM AOT lowers closure-capture reads through the generated closure-value runtime protocol instead of immediately reporting unsupported GETUPVAL instructions
+Pass - Cost Time:9.000ms - AOT LLVM Backend Lowers Closure Capture Access
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7271:test_aot_llvm_backend_lowers_closure_capture_access:PASS
+Unit Test - AOT LLVM Backend Lowers Object Creation Path
+Testing aot llvm create object:
+ Testing that LLVM AOT lowers CREATE_OBJECT through the generated object-allocation runtime helper instead of emitting an immediate unsupported sink
+Pass - Cost Time:9.000ms - AOT LLVM Backend Lowers Object Creation Path
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7272:test_aot_llvm_backend_lowers_object_creation_path:PASS
+Unit Test - AOT LLVM Backend Lowers ToObject With Runtime Helper
+Testing aot llvm to_object lowering:
+ Testing that LLVM true AOT lowers TO_OBJECT instructions through the dedicated runtime helper instead of emitting unsupported sinks for class/object conversions
+Pass - Cost Time:13.000ms - AOT LLVM Backend Lowers ToObject With Runtime Helper
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7273:test_aot_llvm_backend_lowers_to_object_with_runtime_helper:PASS
+Unit Test - AOT C Backend Emits Native Entry Descriptor Instead Of Shim Invoke
+Testing aot c native entry:
+ Testing that AOT C output exports the formal descriptor and no longer routes entry execution through InvokeActiveShim
+Pass - Cost Time:16.000ms - AOT C Backend Emits Native Entry Descriptor Instead Of Shim Invoke
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7274:test_aot_c_backend_emits_native_entry_descriptor_instead_of_shim_invoke:PASS
+Unit Test - AOT C Backend Directly Lowers Static Slot And Int Ops
+Testing aot c direct static lowering:
+ Testing that simple constant loads, local copies, and integer adds lower to direct generated C instead of routing through AOT runtime opcode helpers
+Pass - Cost Time:11.000ms - AOT C Backend Directly Lowers Static Slot And Int Ops
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7275:test_aot_c_backend_directly_lowers_static_slot_and_int_ops:PASS
+Unit Test - AOT C Backend Directly Lowers Primitive Literal Constants
+Testing aot c immediate constant lowering:
+ Testing that primitive literals lower to direct immediate writes in generated C instead of copying from the function constant table
+Pass - Cost Time:11.000ms - AOT C Backend Directly Lowers Primitive Literal Constants
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7276:test_aot_c_backend_directly_lowers_primitive_literal_constants:PASS
+Unit Test - AOT C Backend Lowers Generic Add With Fast Path And Helper Fallback
+Testing aot c generic add lowering:
+ Testing that generic ADD instructions from local AOT function call results compile under strict AOT C, keep an inline numeric fast path, and fall back to the runtime helper only for the non-trivial cases
+Pass - Cost Time:7.000ms - AOT C Backend Lowers Generic Add With Fast Path And Helper Fallback
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7277:test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fallback:PASS
+Unit Test - AOT C Backend Directly Lowers Local Callable Constants
+Testing aot c callable constant lowering:
+ Testing that local callable constants and closure creation lower to direct native-closure construction instead of routing through the AOT runtime create-closure helper
+Pass - Cost Time:6.000ms - AOT C Backend Directly Lowers Local Callable Constants
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7278:test_aot_c_backend_directly_lowers_local_callable_constants:PASS
+Unit Test - AOT C Backend Directly Lowers Local AOT Function Calls
+Testing aot c direct function call lowering:
+ Testing that the representative module-graph AOT C fixture still preserves the runtime direct-call fast path for call targets that are not statically bound by the emitter
+Pass - Cost Time:1.000ms - AOT C Backend Directly Lowers Local AOT Function Calls
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7279:test_aot_c_backend_directly_lowers_local_aot_function_calls:PASS
+Unit Test - AOT C Backend Statically Lowers Proven Local AOT Function Calls
+Testing aot c static direct function call lowering:
+ Testing that local call targets with compile-time-proven AOT provenance lower to static thunk calls with explicit VM call-frame setup instead of runtime closure probing
+Pass - Cost Time:12.000ms - AOT C Backend Statically Lowers Proven Local AOT Function Calls
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7280:test_aot_c_backend_statically_lowers_proven_local_aot_function_calls:PASS
+Unit Test - AOT C Backend Lowers Cached Meta Calls With Direct Call Frames
+Testing aot c meta call lowering:
+ Testing that cached @call dispatch sites lower to explicit AOT meta-call preparation plus VM-visible direct-call frames instead of rejecting the site or falling back to a shim
+Pass - Cost Time:16.000ms - AOT C Backend Lowers Cached Meta Calls With Direct Call Frames
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7281:test_aot_c_backend_lowers_cached_meta_calls_with_direct_call_frames:PASS
+Unit Test - AOT LLVM Backend Lowers Cached Meta Calls With Direct Call Frames
+Testing aot llvm meta call lowering:
+ Testing that cached @call dispatch sites lower to explicit LLVM meta-call preparation plus VM-visible direct-call frames instead of emitting unsupported instruction sinks
+Pass - Cost Time:18.000ms - AOT LLVM Backend Lowers Cached Meta Calls With Direct Call Frames
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7282:test_aot_llvm_backend_lowers_cached_meta_calls_with_direct_call_frames:PASS
+Unit Test - AOT C Backend Lowers Plain Meta Get Set With Runtime Helpers
+Testing aot c plain meta get/set lowering:
+ Testing that non-cached property getter/setter instructions lower to dedicated runtime helpers instead of being rejected when they survive quickening inside child methods
+Pass - Cost Time:33.000ms - AOT C Backend Lowers Plain Meta Get Set With Runtime Helpers
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7283:test_aot_c_backend_lowers_plain_meta_get_set_with_runtime_helpers:PASS
+Unit Test - AOT LLVM Backend Lowers Meta Tail Calls With Direct Call Frames
+Testing aot llvm meta tail-call lowering:
+ Testing that zero-argument meta tail calls lower through the shared generated call-frame protocol and return path instead of reporting unsupported instructions
+Pass - Cost Time:21.000ms - AOT LLVM Backend Lowers Meta Tail Calls With Direct Call Frames
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7284:test_aot_llvm_backend_lowers_meta_tail_calls_with_direct_call_frames:PASS
+Unit Test - AOT LLVM Backend Lowers Exception Control Transfer Helpers
+Testing aot llvm eh/control lowering:
+ Testing that TRY/END_TRY/THROW/CATCH/END_FINALLY and pending-return control transfer lower to dedicated runtime helpers instead of unsupported instruction sinks
+Pass - Cost Time:14.000ms - AOT LLVM Backend Lowers Exception Control Transfer Helpers
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7285:test_aot_llvm_backend_lowers_exception_control_transfer_helpers:PASS
+Unit Test - AOT C Backend Lowers Cached Dynamic Tail Calls With Runtime Prepare
+Testing aot c cached dynamic tail-call lowering:
+ Testing that quickened dynamic tail-call sites lower through the runtime dynamic-call preparation helper instead of remaining unsupported in child functions
+Pass - Cost Time:16.000ms - AOT C Backend Lowers Cached Dynamic Tail Calls With Runtime Prepare
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7286:test_aot_c_backend_lowers_cached_dynamic_tail_calls_with_runtime_prepare:PASS
+Unit Test - AOT C Backend Directly Lowers Non Export Return
+Testing aot c direct return lowering:
+ Testing that functions without export publication inline their return writeback in generated C instead of routing through the AOT runtime return helper
+Pass - Cost Time:10.000ms - AOT C Backend Directly Lowers Non Export Return
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7287:test_aot_c_backend_directly_lowers_non_export_return:PASS
+Unit Test - AOT C Backend Lowers ToObject With Runtime Helper
+Testing aot c to_object lowering:
+ Testing that strict AOT C lowers TO_OBJECT instructions through the dedicated runtime helper instead of rejecting class/object conversions
+Pass - Cost Time:15.000ms - AOT C Backend Lowers ToObject With Runtime Helper
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7288:test_aot_c_backend_lowers_to_object_with_runtime_helper:PASS
+Unit Test - AOT C Backend Lowers ToStruct With Runtime Helper
+Testing aot c to_struct lowering:
+ Testing that strict AOT C lowers TO_STRUCT instructions through the dedicated runtime helper instead of rejecting struct conversions
+Pass - Cost Time:11.000ms - AOT C Backend Lowers ToStruct With Runtime Helper
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7289:test_aot_c_backend_lowers_to_struct_with_runtime_helper:PASS
+Unit Test - AOT C Backend Lowers Signed Compare Div And Neg Paths
+Testing aot c signed arithmetic lowering:
+ Testing that strict AOT C lowers signed compare/div/neg instruction sequences into generated C control flow plus dedicated helpers instead of rejecting them as unsupported
+Pass - Cost Time:14.000ms - AOT C Backend Lowers Signed Compare Div And Neg Paths
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7290:test_aot_c_backend_lowers_signed_compare_div_and_neg_paths:PASS
+Unit Test - AOT Backends Lower Benchmark Style Mod String And Compare Paths
+Testing benchmark style aot lowering:
+ Testing that strict AOT C and LLVM lower benchmark-like generic modulo, <= compare, TO_STRING, and string concatenation paths instead of reporting unsupported instructions
+Pass - Cost Time:24.000ms - AOT Backends Lower Benchmark Style Mod String And Compare Paths
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7291:test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths:PASS
+Unit Test - AOT Backends Lower Benchmark Style Generic Sub Paths
+Testing benchmark style generic subtraction lowering:
+ Testing that strict AOT C and LLVM lower benchmark-like generic SUB paths sourced from indexed container values instead of reporting unsupported instructions

@@ -114,12 +114,18 @@ static TZrBool compiler_member_is_field_kind(const SZrTypeMemberInfo *memberInfo
            memberInfo->memberType == ZR_AST_CLASS_FIELD;
 }
 
+static TZrBool compiler_member_is_constructor_meta_method(const SZrTypeMemberInfo *memberInfo) {
+    return memberInfo != ZR_NULL &&
+           memberInfo->isMetaMethod &&
+           memberInfo->metaType == ZR_META_CONSTRUCTOR;
+}
+
 static TZrBool compiler_member_supports_virtual_chain(const SZrTypeMemberInfo *memberInfo) {
     if (memberInfo == ZR_NULL || memberInfo->isStatic) {
         return ZR_FALSE;
     }
 
-    if (memberInfo->isMetaMethod && memberInfo->metaType == ZR_META_CONSTRUCTOR) {
+    if (compiler_member_is_constructor_meta_method(memberInfo)) {
         return ZR_FALSE;
     }
 
@@ -338,7 +344,7 @@ static TZrBool compiler_class_validate_member_override_semantics(SZrCompilerStat
         return ZR_FALSE;
     }
 
-    if (memberInfo->isMetaMethod && memberInfo->metaType == ZR_META_CONSTRUCTOR &&
+    if (compiler_member_is_constructor_meta_method(memberInfo) &&
         memberInfo->modifierFlags != ZR_DECLARATION_MODIFIER_NONE) {
         ZrParser_Compiler_Error(cs, "@constructor does not support abstract/virtual/override/final/shadow modifiers", location);
         return ZR_FALSE;
@@ -405,6 +411,15 @@ static TZrBool compiler_class_validate_member_override_semantics(SZrCompilerStat
         memberInfo->baseDefinitionName = memberInfo->name;
         memberInfo->virtualSlotIndex = (hasVirtual || hasAbstract) ? info->nextVirtualSlotIndex++
                                                                    : compiler_member_virtual_slot_none();
+        return ZR_TRUE;
+    }
+
+    if (baseMember != ZR_NULL &&
+        compiler_member_is_constructor_meta_method(memberInfo) &&
+        compiler_member_is_constructor_meta_method(baseMember)) {
+        memberInfo->baseDefinitionOwnerTypeName = memberInfo->ownerTypeName;
+        memberInfo->baseDefinitionName = memberInfo->name;
+        memberInfo->virtualSlotIndex = compiler_member_virtual_slot_none();
         return ZR_TRUE;
     }
 

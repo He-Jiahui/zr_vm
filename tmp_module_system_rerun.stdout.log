@@ -1,0 +1,364 @@
+==========
+Module System Tests
+==========
+Unit Test - Script Level Variables as __entry Locals
+Testing Script level variables compilation:
+ Testing that script-level variables are compiled as __entry function local variables
+Pass - Cost Time:2.000ms - Script Level Variables as __entry Locals
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8059:test_script_level_variables_as_entry_locals:PASS
+Unit Test - Visibility Modifiers Parsing
+Testing Visibility modifiers parsing:
+ Testing parsing of pub/pri/pro visibility modifiers for variables
+Pass - Cost Time:1.000ms - Visibility Modifiers Parsing
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8062:test_visibility_modifiers_parsing:PASS
+Unit Test - Module Export Collection
+Testing Module export collection:
+ Testing that pub and pro variables are collected and stored separately in module object
+Pass - Cost Time:0.000ms - Module Export Collection
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8065:test_module_export_collection:PASS
+Unit Test - Module Cache Operations
+Testing Module cache operations:
+ Testing module cache lookup and add operations with path as key
+Pass - Cost Time:1.000ms - Module Cache Operations
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8068:test_module_cache_operations:PASS
+Unit Test - Module Import Helper And Hidden zr.import
+Testing module import helper and hidden zr.import:
+ Testing internal module import helper loads native modules while zr.import is no longer script-visible
+Pass - Cost Time:8.000ms - Module Import Helper And Hidden zr.import
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8071:test_module_import_helper_and_hidden_zr_import:PASS
+Unit Test - Module Cache Hit/Miss Scenarios
+Testing Module cache hit/miss scenarios:
+ Testing cache hit and miss scenarios
+Pass - Cost Time:0.000ms - Module Cache Hit/Miss Scenarios
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8074:test_module_cache_hit_miss:PASS
+Unit Test - Module Visibility Access Control
+Testing Module visibility access control:
+ Testing that pub exports are accessible across modules, pro exports are accessible within same module library
+Pass - Cost Time:0.000ms - Module Visibility Access Control
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8077:test_module_visibility_access_control:PASS
+Unit Test - zr Identifier Global Access and Scope Override
+Testing zr identifier access:
+ Testing that zr identifier is globally accessible but can be overridden by local variables
+Pass - Cost Time:1.000ms - zr Identifier Global Access and Scope Override
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8080:test_zr_identifier_global_access_and_scope_override:PASS
+Unit Test - Path Hash Calculation
+Testing Path hash calculation:
+ Testing path hash calculation using xxhash
+Pass - Cost Time:1.000ms - Path Hash Calculation
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8083:test_path_hash_calculation:PASS
+Unit Test - Complete Module Loading Flow
+Testing Complete module loading flow:
+ Testing complete flow: compile source -> collect exports -> create module -> cache
+Pass - Cost Time:1.000ms - Complete Module Loading Flow
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8086:test_complete_module_loading_flow:PASS
+Unit Test - Module Restores Owned Field Metadata
+Testing Owned field runtime metadata:
+ Testing that prototypeData loading restores struct field offsets and managed-field metadata for direct %unique/%shared fields
+Pass - Cost Time:4.000ms - Module Restores Owned Field Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8089:test_module_restores_owned_field_prototype_metadata:PASS
+Unit Test - Module Restores Advanced OOP Runtime Descriptor Metadata
+Testing Advanced OOP runtime descriptor metadata:
+ Testing that module prototype materialization restores modifier flags, override chains, virtual slots, property identity, and interface contract slots
+Pass - Cost Time:3.000ms - Module Restores Advanced OOP Runtime Descriptor Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8092:test_module_restores_advanced_oop_runtime_descriptor_metadata:PASS
+Unit Test - Source Module Exports Complex Function Graph
+Pass - Cost Time:11.000ms - Source Module Exports Complex Function Graph
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8095:test_source_module_exports_complex_function_graph_without_null_call_targets:PASS
+Unit Test - Source Module Preinstalled Callable Preserves Imported Module Captures After Native Imports
+probe
+Pass - Cost Time:17.000ms - Source Module Preinstalled Callable Preserves Imported Module Captures After Native Imports
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8098:test_source_module_preinstalled_callable_preserves_imported_module_captures_after_native_imports:PASS
+Unit Test - Imported Function Alias With Parameters Preserves Call Signature
+Pass - Cost Time:5.000ms - Imported Function Alias With Parameters Preserves Call Signature
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8101:test_imported_function_alias_with_parameters_preserves_call_signature:PASS
+Unit Test - Module Init Summary Cache Growth Keeps Current Source Summary Stable
+Pass - Cost Time:7.000ms - Module Init Summary Cache Growth Keeps Current Source Summary Stable
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8104:test_module_init_summary_cache_growth_keeps_current_source_summary_stable:PASS
+Unit Test - Cyclic Source Modules Allow Declaration Ready Function References
+Pass - Cost Time:7.000ms - Cyclic Source Modules Allow Declaration Ready Function References
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8107:test_cyclic_source_modules_allow_declaration_ready_function_references:PASS
+Unit Test - Cyclic Source Modules Allow Safe Imported Call During Entry
+Pass - Cost Time:9.000ms - Cyclic Source Modules Allow Safe Imported Call During Entry
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8110:test_cyclic_source_modules_allow_safe_imported_call_during_entry:PASS
+Unit Test - Cyclic Source Modules Dynamic Entry Read Raises Cycle Init Error
+Pass - Cost Time:6.000ms - Cyclic Source Modules Dynamic Entry Read Raises Cycle Init Error
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8113:test_cyclic_source_modules_dynamic_entry_read_raises_cycle_init_error:PASS
+Unit Test - Binary Roundtrip Preserves Module Init Callable Metadata
+Pass - Cost Time:12.000ms - Binary Roundtrip Preserves Module Init Callable Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8116:test_binary_roundtrip_preserves_module_init_callable_metadata:PASS
+Unit Test - System Vm CallModuleExport Executes Nested Native Export
+Pass - Cost Time:13.000ms - System Vm CallModuleExport Executes Nested Native Export
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8119:test_system_vm_call_module_export_executes_nested_native_export:PASS
+Unit Test - Native Vector3 Constructor Binds Numeric Arguments
+Pass - Cost Time:8.000ms - Native Vector3 Constructor Binds Numeric Arguments
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8122:test_native_vector3_constructor_binds_all_numeric_arguments_at_runtime:PASS
+Unit Test - System Root Aggregates Leaf Modules
+Pass - Cost Time:7.000ms - System Root Aggregates Leaf Modules
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8125:test_system_root_aggregates_leaf_modules_and_reuses_cached_instances:PASS
+Unit Test - System Root Exports Only Submodules
+Pass - Cost Time:7.000ms - System Root Exports Only Submodules
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8128:test_system_root_exports_only_submodules:PASS
+Unit Test - System Leaf Modules Expose New API
+Pass - Cost Time:8.000ms - System Leaf Modules Expose New API
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8131:test_system_leaf_modules_expose_new_api_and_owned_types:PASS
+Unit Test - System Native Types Register Complete Struct Fields
+Pass - Cost Time:5.000ms - System Native Types Register Complete Struct Fields
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8134:test_system_native_types_register_complete_struct_fields:PASS
+Unit Test - System Root Native Module Info Exposes Module Links
+Pass - Cost Time:6.000ms - System Root Native Module Info Exposes Module Links
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8137:test_system_root_native_module_info_exposes_module_links:PASS
+Unit Test - Native Module Info Exposes Enum And Interface Descriptors
+Pass - Cost Time:4.000ms - Native Module Info Exposes Enum And Interface Descriptors
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8140:test_native_module_info_exposes_enum_and_interface_descriptors:PASS
+Unit Test - Native Module Info Exposes Callable Parameters And Generic Constraints
+Pass - Cost Time:3.000ms - Native Module Info Exposes Callable Parameters And Generic Constraints
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8143:test_native_module_info_exposes_callable_parameters_and_generic_constraints:PASS
+Unit Test - Native Module Info Exposes FFI Wrapper Lowering Metadata
+Pass - Cost Time:4.000ms - Native Module Info Exposes FFI Wrapper Lowering Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8146:test_native_module_info_exposes_ffi_wrapper_lowering_metadata:PASS
+Unit Test - Source Module Wrapper Metadata Exposes FFI Wrapper Fields And Runtime Hidden Metadata
+Pass - Cost Time:8.000ms - Source Module Wrapper Metadata Exposes FFI Wrapper Fields And Runtime Hidden Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8149:test_source_module_wrapper_metadata_exposes_ffi_wrapper_fields_and_runtime_hidden_metadata:PASS
+Unit Test - Native Module Runtime Registers Enum Members And Interface Inheritance
+Pass - Cost Time:4.000ms - Native Module Runtime Registers Enum Members And Interface Inheritance
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8152:test_native_module_runtime_registers_enum_members_and_interface_inheritance:PASS
+Unit Test - Native Binding Helpers Root Fresh Values Across Gc Retry
+Pass - Cost Time:1.000ms - Native Binding Helpers Root Fresh Values Across Gc Retry
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8155:test_native_binding_helpers_root_fresh_values_across_gc_retry:PASS
+Unit Test - Native Enum Construction Returns Runtime Enum Instance
+Pass - Cost Time:3.000ms - Native Enum Construction Returns Runtime Enum Instance
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8158:test_native_enum_construction_returns_runtime_enum_instance:PASS
+Unit Test - Container Module Exports Generic Interfaces And Constraints
+Pass - Cost Time:4.000ms - Container Module Exports Generic Interfaces And Constraints
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8161:test_container_module_exports_generic_interfaces_and_constraints:PASS
+Unit Test - Builtin Module Exports Protocols Roots And Wrappers
+Pass - Cost Time:2.000ms - Builtin Module Exports Protocols Roots And Wrappers
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8164:test_builtin_module_exports_protocols_roots_and_wrappers:PASS
+Unit Test - Builtin Module Exports Complete Type Hints
+Pass - Cost Time:3.000ms - Builtin Module Exports Complete Type Hints
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8167:test_builtin_module_exports_complete_type_hints:PASS
+Unit Test - Builtin Wrapper Box Helpers Preserve Runtime Semantics
+Pass - Cost Time:10.000ms - Builtin Wrapper Box Helpers Preserve Runtime Semantics
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8170:test_builtin_wrapper_box_helpers_preserve_runtime_semantics:PASS
+Unit Test - Container Array Runtime Supports Add And Computed Index Access
+Pass - Cost Time:5.000ms - Container Array Runtime Supports Add And Computed Index Access
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8173:test_container_array_runtime_supports_add_and_computed_index_access:PASS
+Unit Test - Container Fixed Array Runtime Supports Foreach Iteration
+Pass - Cost Time:1.000ms - Container Fixed Array Runtime Supports Foreach Iteration
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8176:test_container_fixed_array_runtime_supports_foreach_iteration:PASS
+Unit Test - Container Array Runtime Supports Foreach Iteration
+Pass - Cost Time:6.000ms - Container Array Runtime Supports Foreach Iteration
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8179:test_container_array_runtime_supports_foreach_iteration:PASS
+Unit Test - Container Map Runtime Supports Computed Key Access
+Pass - Cost Time:5.000ms - Container Map Runtime Supports Computed Key Access
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8182:test_container_map_runtime_supports_computed_key_access:PASS
+Unit Test - Container Set Runtime Enforces Uniqueness
+Pass - Cost Time:6.000ms - Container Set Runtime Enforces Uniqueness
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8185:test_container_set_runtime_enforces_uniqueness:PASS
+Unit Test - Container Linked List Runtime Updates Head And Tail
+Pass - Cost Time:5.000ms - Container Linked List Runtime Updates Head And Tail
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8188:test_container_linked_list_runtime_updates_head_and_tail:PASS
+Unit Test - Percent Type Module Reflection Exposes Expected Fields
+Pass - Cost Time:5.000ms - Percent Type Module Reflection Exposes Expected Fields
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8191:test_percent_type_module_reflection_exposes_expected_fields:PASS
+Unit Test - Percent Type Instance Reflection Uses Runtime Prototype
+Pass - Cost Time:8.000ms - Percent Type Instance Reflection Uses Runtime Prototype
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8194:test_percent_type_instance_reflection_uses_runtime_prototype:PASS
+Unit Test - Percent Type Source Module Reflection Uses Ordered Script Metadata
+Pass - Cost Time:5.000ms - Percent Type Source Module Reflection Uses Ordered Script Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8197:test_percent_type_source_module_reflection_uses_ordered_script_metadata:PASS
+Unit Test - Percent Type Source Type Reflection Exposes Parameters Layout And CodeBlocks
+Pass - Cost Time:7.000ms - Percent Type Source Type Reflection Exposes Parameters Layout And CodeBlocks
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8200:test_percent_type_source_type_reflection_exposes_parameters_layout_and_codeblocks:PASS
+Unit Test - Percent Type Source Function Reflection Exposes Parameter Metadata And Ir
+Pass - Cost Time:10.000ms - Percent Type Source Function Reflection Exposes Parameter Metadata And Ir
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8203:test_percent_type_source_function_reflection_exposes_parameter_metadata_and_ir:PASS
+Unit Test - Function Type Literal Runtime Materializes Callable Reflection
+Pass - Cost Time:4.000ms - Function Type Literal Runtime Materializes Callable Reflection
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8206:test_function_type_literal_runtime_materializes_callable_reflection:PASS
+Unit Test - Percent Type Function Type Literal Reflection Exposes Callable Shape
+Pass - Cost Time:4.000ms - Percent Type Function Type Literal Reflection Exposes Callable Shape
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8209:test_percent_type_function_type_literal_reflection_exposes_callable_shape:PASS
+Unit Test - Percent Type Source Module Reflection Exposes Compile Time And Test Metadata
+Pass - Cost Time:7.000ms - Percent Type Source Module Reflection Exposes Compile Time And Test Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8212:test_percent_type_source_module_reflection_exposes_compile_time_and_test_metadata:PASS
+Unit Test - Percent Type Source Type Reflection Exposes Decorator Metadata
+Pass - Cost Time:8.000ms - Percent Type Source Type Reflection Exposes Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8215:test_percent_type_source_type_reflection_exposes_decorator_metadata:PASS
+Unit Test - Percent Type Source Type Reflection Exposes Runtime Class Decorator Metadata
+Pass - Cost Time:7.000ms - Percent Type Source Type Reflection Exposes Runtime Class Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8218:test_percent_type_source_type_reflection_exposes_runtime_class_decorator_metadata:PASS
+Unit Test - Percent Type Source Function Reflection Exposes Runtime Function Decorator Metadata
+Pass - Cost Time:8.000ms - Percent Type Source Function Reflection Exposes Runtime Function Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8221:test_percent_type_source_function_reflection_exposes_runtime_function_decorator_metadata:PASS
+Unit Test - Source runtime decorated pub function is directly callable from imported module
+Pass - Cost Time:7.000ms - Source runtime decorated pub function is directly callable from imported module
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8224:test_source_runtime_decorated_pub_function_is_directly_callable_from_imported_module:PASS
+Unit Test - Source module runtime registers enum members and imported access
+Pass - Cost Time:6.000ms - Source module runtime registers enum members and imported access
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8227:test_source_module_runtime_registers_enum_members_and_imported_access:PASS
+Unit Test - Source module struct constructor manual vm call preserves fields
+Pass - Cost Time:1.000ms - Source module struct constructor manual vm call preserves fields
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8230:test_source_module_struct_constructor_manual_vm_call_preserves_fields:PASS
+Unit Test - Source module struct constructor runtime invocation preserves fields
+Pass - Cost Time:1.000ms - Source module struct constructor runtime invocation preserves fields
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8233:test_source_module_struct_constructor_runtime_invocation_preserves_fields:PASS
+Unit Test - Source module struct method call writebacks receiver state
+Pass - Cost Time:6.000ms - Source module struct method call writebacks receiver state
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8236:test_source_module_struct_method_call_writebacks_receiver_state:PASS
+Unit Test - Source module struct value construction preserves field access
+Pass - Cost Time:5.000ms - Source module struct value construction preserves field access
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8239:test_source_module_struct_value_construction_preserves_field_access:PASS
+Unit Test - Source module class boxed construction preserves field access
+Pass - Cost Time:6.000ms - Source module class boxed construction preserves field access
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8242:test_source_module_class_boxed_construction_preserves_field_access:PASS
+Unit Test - Percent Type Source Field Reflection Exposes Runtime Field Decorator Metadata
+Pass - Cost Time:9.000ms - Percent Type Source Field Reflection Exposes Runtime Field Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8245:test_percent_type_source_field_reflection_exposes_runtime_field_decorator_metadata:PASS
+Unit Test - Percent Type Source Method Reflection Exposes Runtime Method Decorator Metadata
+Pass - Cost Time:9.000ms - Percent Type Source Method Reflection Exposes Runtime Method Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8248:test_percent_type_source_method_reflection_exposes_runtime_method_decorator_metadata:PASS
+Unit Test - Percent Type Source Property Reflection Exposes Runtime Property Decorator Metadata
+Pass - Cost Time:9.000ms - Percent Type Source Property Reflection Exposes Runtime Property Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8251:test_percent_type_source_property_reflection_exposes_runtime_property_decorator_metadata:PASS
+Unit Test - Percent Type Source Reflection Exposes Advanced OOP Metadata
+Pass - Cost Time:9.000ms - Percent Type Source Reflection Exposes Advanced OOP Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8254:test_percent_type_source_reflection_exposes_advanced_oop_metadata:PASS
+Unit Test - Percent Type Source Module Reflection Preserves Compile Time Metadata Across Full GC
+Pass - Cost Time:5.000ms - Percent Type Source Module Reflection Preserves Compile Time Metadata Across Full GC
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8257:test_percent_type_source_module_reflection_preserves_compile_time_metadata_across_full_gc:PASS
+Unit Test - Percent Type Binary Module Reflection Restores Compile Time And Test Metadata
+Pass - Cost Time:8.000ms - Percent Type Binary Module Reflection Restores Compile Time And Test Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8260:test_percent_type_binary_module_reflection_restores_compile_time_and_test_metadata:PASS
+Unit Test - Percent Type Binary Type Reflection Exposes Runtime Class Decorator Metadata
+Pass - Cost Time:8.000ms - Percent Type Binary Type Reflection Exposes Runtime Class Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8263:test_percent_type_binary_type_reflection_exposes_runtime_class_decorator_metadata:PASS
+Unit Test - Percent Type Binary Function Reflection Exposes Runtime Function Decorator Metadata
+Pass - Cost Time:10.000ms - Percent Type Binary Function Reflection Exposes Runtime Function Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8266:test_percent_type_binary_function_reflection_exposes_runtime_function_decorator_metadata:PASS
+Unit Test - Binary runtime decorated pub function is directly callable from imported module
+Pass - Cost Time:10.000ms - Binary runtime decorated pub function is directly callable from imported module
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8269:test_binary_runtime_decorated_pub_function_is_directly_callable_from_imported_module:PASS
+Unit Test - Percent Type Binary Field Reflection Exposes Runtime Field Decorator Metadata
+Pass - Cost Time:10.000ms - Percent Type Binary Field Reflection Exposes Runtime Field Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8272:test_percent_type_binary_field_reflection_exposes_runtime_field_decorator_metadata:PASS
+Unit Test - Percent Type Binary Method Reflection Exposes Runtime Method Decorator Metadata
+Pass - Cost Time:9.000ms - Percent Type Binary Method Reflection Exposes Runtime Method Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8273:test_percent_type_binary_method_reflection_exposes_runtime_method_decorator_metadata:PASS
+Unit Test - Percent Type Binary Property Reflection Exposes Runtime Property Decorator Metadata
+Pass - Cost Time:11.000ms - Percent Type Binary Property Reflection Exposes Runtime Property Decorator Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8274:test_percent_type_binary_property_reflection_exposes_runtime_property_decorator_metadata:PASS
+Unit Test - Percent Type Binary Reflection Restores Advanced OOP Metadata
+Pass - Cost Time:17.000ms - Percent Type Binary Reflection Restores Advanced OOP Metadata
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8277:test_percent_type_binary_reflection_restores_advanced_oop_metadata:PASS
+Unit Test - Native Registry Rejects Future Runtime ABI
+Pass - Cost Time:1.000ms - Native Registry Rejects Future Runtime ABI
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8280:test_native_registry_rejects_future_runtime_abi:PASS
+Unit Test - Native Registry Rejects Unsupported Capabilities
+Pass - Cost Time:0.000ms - Native Registry Rejects Unsupported Capabilities
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8283:test_native_registry_rejects_unsupported_capabilities:PASS
+Unit Test - Reference Protocols Native Iterable Fixture Uses Registered Contracts
+Pass - Cost Time:6.000ms - Reference Protocols Native Iterable Fixture Uses Registered Contracts
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8286:test_reference_protocols_native_iterable_fixture_uses_registered_contracts:PASS
+Unit Test - Reference Import Manifest And Native Member Chain Fixture
+Pass - Cost Time:10.000ms - Reference Import Manifest And Native Member Chain Fixture
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8289:test_reference_import_manifest_and_native_member_chain_fixture:PASS
+Unit Test - Reference Modules Manifest Duplicate Import And Hidden API Cases
+Pass - Cost Time:8.000ms - Reference Modules Manifest Duplicate Import And Hidden API Cases
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8290:test_reference_modules_manifest_duplicate_import_and_hidden_api_cases:PASS
+Unit Test - Reference Hidden Internal Import API Fixture Is Rejected
+Pass - Cost Time:0.000ms - Reference Hidden Internal Import API Fixture Is Rejected
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8291:test_reference_hidden_internal_import_api_fixture_is_rejected:PASS
+Unit Test - Reference Source And Binary Import Forms Share Logical Identity
+Pass - Cost Time:10.000ms - Reference Source And Binary Import Forms Share Logical Identity
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8292:test_reference_source_and_binary_import_forms_share_logical_identity:PASS
+Unit Test - Reference Binary Module Metadata Roundtrip Fixture
+Pass - Cost Time:21.000ms - Reference Binary Module Metadata Roundtrip Fixture
+----------
+E:\Git\zr_vm\tests\module\test_module_system.c:8293:test_reference_binary_module_metadata_roundtrip_fixture:PASS
+
+-----------------------
+83 Tests 0 Failures 0 Ignored 
+OK

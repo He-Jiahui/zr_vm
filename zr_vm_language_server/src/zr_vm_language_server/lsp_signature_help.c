@@ -32,6 +32,17 @@ typedef struct SZrLspGenericBinding {
     SZrInferredType inferredType;
 } SZrLspGenericBinding;
 
+static const TZrChar *signature_exact_type_failure_text(void) {
+    return "cannot infer exact type";
+}
+
+static TZrBool signature_inferred_type_is_precise(const SZrInferredType *typeInfo) {
+    return typeInfo != ZR_NULL &&
+           !(typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
+             typeInfo->typeName == ZR_NULL &&
+             (!typeInfo->elementTypes.isValid || typeInfo->elementTypes.length == 0));
+}
+
 static TZrBool signature_range_contains_position(SZrFileRange range, SZrFileRange position) {
     if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
         range.source != ZR_NULL &&
@@ -181,7 +192,7 @@ static void signature_append_ast_type(SZrType *typeInfo,
                                       TZrSize bufferSize,
                                       TZrSize *offset) {
     if (typeInfo == ZR_NULL || typeInfo->name == ZR_NULL) {
-        signature_buffer_append(buffer, bufferSize, offset, "object");
+        signature_buffer_append(buffer, bufferSize, offset, "%s", signature_exact_type_failure_text());
         return;
     }
 
@@ -245,7 +256,7 @@ static void signature_append_ast_type(SZrType *typeInfo,
         }
 
         default:
-            signature_buffer_append(buffer, bufferSize, offset, "object");
+            signature_buffer_append(buffer, bufferSize, offset, "%s", signature_exact_type_failure_text());
             break;
     }
 
@@ -265,14 +276,14 @@ static void signature_format_type(SZrState *state,
     }
 
     buffer[0] = '\0';
-    if (state == ZR_NULL || typeInfo == ZR_NULL) {
-        snprintf(buffer, bufferSize, "object");
+    if (state == ZR_NULL || !signature_inferred_type_is_precise(typeInfo)) {
+        snprintf(buffer, bufferSize, "%s", signature_exact_type_failure_text());
         return;
     }
 
     text = ZrParser_TypeNameString_Get(state, typeInfo, buffer, bufferSize);
     if (text == ZR_NULL || text[0] == '\0') {
-        snprintf(buffer, bufferSize, "object");
+        snprintf(buffer, bufferSize, "%s", signature_exact_type_failure_text());
     }
 }
 
@@ -408,7 +419,7 @@ static void signature_append_where_clauses(SZrState *state,
                                         offset,
                                         "%s%s",
                                         firstConstraint ? "" : ", ",
-                                        typeBuffer[0] != '\0' ? typeBuffer : "object");
+                                        typeBuffer[0] != '\0' ? typeBuffer : signature_exact_type_failure_text());
                 firstConstraint = ZR_FALSE;
             }
         }
@@ -456,7 +467,7 @@ static void signature_append_parameter_label(SZrState *state,
                             offset,
                             "%s: %s",
                             signature_string_native(parameter->name != ZR_NULL ? parameter->name->name : ZR_NULL),
-                            typeBuffer[0] != '\0' ? typeBuffer : "object");
+                            typeBuffer[0] != '\0' ? typeBuffer : signature_exact_type_failure_text());
 }
 
 static void signature_append_parameter_label_from_metadata(SZrState *state,
@@ -502,7 +513,7 @@ static void signature_append_parameter_label_from_metadata(SZrState *state,
                             offset,
                             "%s: %s",
                             signature_string_native(parameterName),
-                            typeBuffer[0] != '\0' ? typeBuffer : "object");
+                            typeBuffer[0] != '\0' ? typeBuffer : signature_exact_type_failure_text());
 }
 
 static SZrGenericDeclaration *signature_method_generic_declaration(SZrAstNode *declarationNode) {

@@ -1,0 +1,17 @@
+==========
+Language Server - LSP Interface Tests
+==========
+
+Unit Test - LSP Context Creation and Free
+Testing LSP Context Creation:
+ Creating and freeing LSP context
+Pass - Cost Time:1.000ms - LSP Context Creation and Free
+----------
+Unit Test - LSP Update Document
+Testing Update Document:
+ Updating document in LSP context
+Pass - Cost Time:5.000ms - LSP Update Document
+----------
+Unit Test - LSP Get Diagnostics
+Testing Get Diagnostics:
+ Getting diagnostics from LSP context

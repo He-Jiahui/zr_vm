@@ -1,0 +1,6 @@
+{
+  "name": "set_to_map",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

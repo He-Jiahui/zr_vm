@@ -13,6 +13,57 @@
 static TZrBool zr_parser_compile_trace_enabled(void);
 static void zr_parser_compile_trace(const TZrChar *format, ...);
 
+static TZrBool compiler_refresh_borrowed_child_function_graph(SZrState *state,
+                                                              SZrFunction *function,
+                                                              const SZrFunction *sourceRoot) {
+    SZrGlobalState *global;
+    TZrSize childFuncSize;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || function == ZR_NULL || sourceRoot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!function->childFunctionGraphIsBorrowed) {
+        return ZR_TRUE;
+    }
+
+    global = state->global;
+    if (sourceRoot->childFunctionList == ZR_NULL || sourceRoot->childFunctionLength == 0) {
+        if (function->childFunctionList != ZR_NULL && function->childFunctionLength > 0) {
+            ZrCore_Memory_RawFreeWithType(global,
+                                          function->childFunctionList,
+                                          sizeof(SZrFunction) * function->childFunctionLength,
+                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+        function->childFunctionList = ZR_NULL;
+        function->childFunctionLength = 0;
+        return ZR_TRUE;
+    }
+
+    childFuncSize = sizeof(SZrFunction) * sourceRoot->childFunctionLength;
+    if (function->childFunctionList == ZR_NULL || function->childFunctionLength != sourceRoot->childFunctionLength) {
+        if (function->childFunctionList != ZR_NULL && function->childFunctionLength > 0) {
+            ZrCore_Memory_RawFreeWithType(global,
+                                          function->childFunctionList,
+                                          sizeof(SZrFunction) * function->childFunctionLength,
+                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        }
+
+        function->childFunctionList =
+                (SZrFunction *)ZrCore_Memory_RawMallocWithType(global, childFuncSize, ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->childFunctionList == ZR_NULL) {
+            function->childFunctionLength = 0;
+            return ZR_FALSE;
+        }
+    }
+
+    memcpy(function->childFunctionList, sourceRoot->childFunctionList, childFuncSize);
+    function->childFunctionLength = sourceRoot->childFunctionLength;
+    function->childFunctionGraphIsBorrowed = ZR_TRUE;
+    ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
+    return ZR_TRUE;
+}
+
 EZrOwnershipQualifier get_member_receiver_qualifier(SZrAstNode *node) {
     if (node == ZR_NULL) {
         return ZR_OWNERSHIP_QUALIFIER_NONE;
@@ -935,7 +986,7 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
     }
 
     for (TZrSize i = 0; i < result->testFunctionCount; i++) {
-        if (!compiler_build_function_semir_metadata(state, result->testFunctions[i])) {
+        if (!compiler_build_function_semir_metadata_shallow(state, result->testFunctions[i])) {
             ZrCore_Function_Free(state, func);
             ZrParser_CompilerState_Free(&cs);
             return ZR_FALSE;
@@ -955,7 +1006,12 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
     }
 
     for (TZrSize i = 0; i < result->testFunctionCount; i++) {
-        if (!compiler_quicken_execbc_function(state, result->testFunctions[i])) {
+        if (!compiler_refresh_borrowed_child_function_graph(state, result->testFunctions[i], func)) {
+            ZrCore_Function_Free(state, func);
+            ZrParser_CompilerState_Free(&cs);
+            return ZR_FALSE;
+        }
+        if (!compiler_quicken_execbc_function_shallow(state, result->testFunctions[i])) {
             ZrCore_Function_Free(state, func);
             ZrParser_CompilerState_Free(&cs);
             return ZR_FALSE;

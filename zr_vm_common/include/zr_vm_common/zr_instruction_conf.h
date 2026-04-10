@@ -30,6 +30,7 @@
     Z(GET_BY_INDEX)                                                                                                    \
     Z(SET_BY_INDEX)                                                                                                    \
     Z(SUPER_ARRAY_GET_INT)                                                                                             \
+    Z(SUPER_ARRAY_GET_INT_PLAIN_DEST)                                                                                  \
     Z(SUPER_ARRAY_SET_INT)                                                                                             \
     Z(SUPER_ARRAY_ADD_INT)                                                                                             \
     Z(SUPER_ARRAY_ADD_INT4)                                                                                            \

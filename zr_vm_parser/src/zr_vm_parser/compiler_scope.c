@@ -13,6 +13,7 @@ void enter_scope(SZrCompilerState *cs) {
     scope.startVarIndex = cs->localVarCount;
     scope.varCount = 0;
     scope.cleanupRegistrationCount = 0;
+    scope.depth = (TZrUInt32)cs->scopeStack.length;
     // 如果当前编译器有父编译器，则新作用域的父编译器就是当前编译器
     // 否则，如果当前编译器是顶层编译器，其父编译器为NULL
     scope.parentCompiler = cs->currentFunction != ZR_NULL ? cs : ZR_NULL;

@@ -95,6 +95,24 @@ static void execution_meta_clear_cache_entry(SZrFunctionCallSiteCacheEntry *entr
     }
 }
 
+static TZrBool execution_meta_try_anchor_stack_value(SZrState *state,
+                                                     SZrTypeValue *value,
+                                                     SZrFunctionStackAnchor *anchor) {
+    TZrStackValuePointer stackSlot;
+
+    if (state == ZR_NULL || value == ZR_NULL || anchor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stackSlot = ZR_CAST(TZrStackValuePointer, value);
+    if (stackSlot < state->stackBase.valuePointer || stackSlot >= state->stackTail.valuePointer) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Function_StackAnchorInit(state, stackSlot, anchor);
+    return ZR_TRUE;
+}
+
 static TZrUInt32 execution_meta_find_descriptor_index(SZrObjectPrototype *prototype, SZrString *memberName) {
     TZrUInt32 index;
 
@@ -524,7 +542,9 @@ TZrBool execution_meta_set_member(SZrState *state,
                                   const SZrTypeValue *assignedValue) {
     SZrTypeValue stableReceiver;
     SZrTypeValue stableAssignedValue;
-    SZrTypeValue ignoredResult;
+    SZrTypeValue setterResult;
+    SZrFunctionStackAnchor receiverAnchor;
+    TZrBool hasReceiverAnchor;
 
     if (state == ZR_NULL || receiverAndResult == ZR_NULL || memberName == ZR_NULL || assignedValue == ZR_NULL) {
         return ZR_FALSE;
@@ -532,17 +552,21 @@ TZrBool execution_meta_set_member(SZrState *state,
 
     stableReceiver = *receiverAndResult;
     stableAssignedValue = *assignedValue;
-    ZrCore_Value_ResetAsNull(&ignoredResult);
+    hasReceiverAnchor = execution_meta_try_anchor_stack_value(state, receiverAndResult, &receiverAnchor);
+    ZrCore_Value_ResetAsNull(&setterResult);
     if (!ZrCore_Object_InvokeMember(state,
                                     &stableReceiver,
                                     memberName,
                                     &stableAssignedValue,
                                     1,
-                                    &ignoredResult)) {
+                                    &setterResult)) {
         return ZR_FALSE;
     }
 
-    ZrCore_Value_Copy(state, receiverAndResult, &stableReceiver);
+    if (hasReceiverAnchor) {
+        receiverAndResult = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
+    }
+    ZrCore_Value_Copy(state, receiverAndResult, &setterResult);
     return ZR_TRUE;
 }
 
@@ -557,7 +581,9 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
     SZrString *memberName;
     SZrTypeValue stableReceiver;
     SZrTypeValue stableAssignedValue;
-    SZrTypeValue ignoredResult;
+    SZrTypeValue setterResult;
+    SZrFunctionStackAnchor receiverAnchor;
+    TZrBool hasReceiverAnchor;
 
     if (state == ZR_NULL || function == ZR_NULL || receiverAndResult == ZR_NULL || assignedValue == ZR_NULL) {
         return ZR_FALSE;
@@ -570,16 +596,20 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
 
     stableReceiver = *receiverAndResult;
     stableAssignedValue = *assignedValue;
-    ZrCore_Value_ResetAsNull(&ignoredResult);
+    hasReceiverAnchor = execution_meta_try_anchor_stack_value(state, receiverAndResult, &receiverAnchor);
+    ZrCore_Value_ResetAsNull(&setterResult);
     if (execution_meta_try_cached_call(state,
                                        entry,
                                        &stableReceiver,
                                        &stableAssignedValue,
                                        1,
-                                       &ignoredResult,
+                                       &setterResult,
                                        ZR_TRUE,
                                        expectedStatic)) {
-        ZrCore_Value_Copy(state, receiverAndResult, &stableReceiver);
+        if (hasReceiverAnchor) {
+            receiverAndResult = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &receiverAnchor));
+        }
+        ZrCore_Value_Copy(state, receiverAndResult, &setterResult);
         return ZR_TRUE;
     }
 

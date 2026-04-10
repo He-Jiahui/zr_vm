@@ -304,15 +304,6 @@ static SZrTypePrototypeInfo *find_registered_type_prototype_inference_exact_only
     }
 
     if (cs->currentTypePrototypeInfo != ZR_NULL &&
-        cs->typePrototypes.isValid &&
-        cs->typePrototypes.head != ZR_NULL &&
-        cs->typePrototypes.elementSize == sizeof(SZrTypePrototypeInfo) &&
-        (const TZrUInt8 *)cs->currentTypePrototypeInfo >= (const TZrUInt8 *)cs->typePrototypes.head &&
-        (const TZrUInt8 *)cs->currentTypePrototypeInfo <
-                (const TZrUInt8 *)cs->typePrototypes.head +
-                        cs->typePrototypes.elementSize * cs->typePrototypes.length &&
-        ((((const TZrUInt8 *)cs->currentTypePrototypeInfo - (const TZrUInt8 *)cs->typePrototypes.head) %
-          cs->typePrototypes.elementSize) == 0) &&
         cs->currentTypePrototypeInfo->name != ZR_NULL &&
         ZrCore_String_Equal(cs->currentTypePrototypeInfo->name, typeName)) {
         return cs->currentTypePrototypeInfo;

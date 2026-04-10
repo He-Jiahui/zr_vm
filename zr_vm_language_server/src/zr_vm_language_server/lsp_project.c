@@ -176,7 +176,6 @@ static TZrBool project_source_loader(SZrState *state,
         ZrLibrary_File_Exist(resolvedPath) == ZR_LIBRARY_FILE_IS_FILE) {
         return project_load_resolved_file_to_io(state, resolvedPath, ZR_TRUE, io);
     }
-
     return project_source_loader_invoke_fallback(state, context, sourcePath, md5, io);
 }
 

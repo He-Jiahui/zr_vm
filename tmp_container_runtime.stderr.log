@@ -1,0 +1,12 @@
+Error: Array capacity must be non-negative
+payload: Array capacity must be non-negative
+  at <anonymous> (container_array_negative_capacity_runtime_test.zr:1, ip=11)
+Error: Array.insert index out of range
+payload: Array.insert index out of range
+  at <anonymous> (container_array_insert_oob_runtime_test.zr:1, ip=18)
+Error: Array index out of range
+payload: Array index out of range
+  at <anonymous> (container_array_set_oob_runtime_test.zr:2, ip=9)
+Error: Array.removeAt index out of range
+payload: Array.removeAt index out of range
+  at <anonymous> (container_array_remove_oob_runtime_test.zr:1, ip=15)

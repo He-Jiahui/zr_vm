@@ -95,7 +95,7 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
 }
 
 static const SZrSemanticOverloadSetRecord *find_overload_set_record(SZrSemanticContext *context,
-                                                                 const char *name) {
+                                                                  const char *name) {
     TZrSize i;
 
     if (context == ZR_NULL || name == ZR_NULL) {
@@ -116,8 +116,27 @@ static const SZrSemanticOverloadSetRecord *find_overload_set_record(SZrSemanticC
     return ZR_NULL;
 }
 
+static const SZrSemanticTypeRecord *find_type_record_for_ast_node(SZrSemanticContext *context,
+                                                                  SZrAstNode *node) {
+    TZrSize i;
+
+    if (context == ZR_NULL || node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (i = 0; i < context->types.length; i++) {
+        SZrSemanticTypeRecord *record =
+            (SZrSemanticTypeRecord *)ZrCore_Array_Get(&context->types, i);
+        if (record != ZR_NULL && record->astNode == node) {
+            return record;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool cleanup_plan_targets_symbol(const SZrSemanticContext *context,
-                                         TZrSymbolId symbolId) {
+                                          TZrSymbolId symbolId) {
     TZrSize i;
 
     if (context == ZR_NULL || symbolId == 0) {
@@ -692,6 +711,542 @@ static void test_semantic_analyzer_avoids_false_numeric_initializer_type_mismatc
 
     ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     TEST_PASS(timer, "Semantic Analyzer Avoids False Numeric Initializer Type Mismatch Diagnostics");
+}
+
+static void test_semantic_analyzer_expression_metadata_records_exact_types(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Expression Metadata Records Exact Types");
+
+    TEST_INFO("Expression exact type metadata",
+              "Intermediate numeric expressions should be recorded in semantic metadata with exact inferred types instead of falling back to a weak object");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "compute(left: int, right: int) {\n"
+            "    var sum: int = left + right;\n"
+            "    var widened: float = left + 0.0;\n"
+            "    return widened;\n"
+            "}\n";
+        SZrString *sourceName =
+            ZrCore_String_Create(state, "expression_hover_exact_type_test.zr", 35);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrAstNode *computeNode;
+        SZrAstNode *sumExpr;
+        SZrAstNode *widenedExpr;
+        const SZrSemanticTypeRecord *sumTypeRecord;
+        const SZrSemanticTypeRecord *widenedTypeRecord;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Expression Metadata Records Exact Types",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Expression Metadata Records Exact Types",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Expression Metadata Records Exact Types",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        computeNode = ast != ZR_NULL &&
+                              ast->type == ZR_AST_SCRIPT &&
+                              ast->data.script.statements != ZR_NULL &&
+                              ast->data.script.statements->count > 0
+                          ? ast->data.script.statements->nodes[0]
+                          : ZR_NULL;
+        sumExpr = computeNode != ZR_NULL &&
+                          computeNode->type == ZR_AST_FUNCTION_DECLARATION &&
+                          computeNode->data.functionDeclaration.body != ZR_NULL &&
+                          computeNode->data.functionDeclaration.body->type == ZR_AST_BLOCK &&
+                          computeNode->data.functionDeclaration.body->data.block.body != ZR_NULL &&
+                          computeNode->data.functionDeclaration.body->data.block.body->count > 0 &&
+                          computeNode->data.functionDeclaration.body->data.block.body->nodes[0] != ZR_NULL &&
+                          computeNode->data.functionDeclaration.body->data.block.body->nodes[0]->type ==
+                              ZR_AST_VARIABLE_DECLARATION
+                      ? computeNode->data.functionDeclaration.body->data.block.body->nodes[0]
+                            ->data.variableDeclaration.value
+                      : ZR_NULL;
+        widenedExpr = computeNode != ZR_NULL &&
+                              computeNode->type == ZR_AST_FUNCTION_DECLARATION &&
+                              computeNode->data.functionDeclaration.body != ZR_NULL &&
+                              computeNode->data.functionDeclaration.body->type == ZR_AST_BLOCK &&
+                              computeNode->data.functionDeclaration.body->data.block.body != ZR_NULL &&
+                              computeNode->data.functionDeclaration.body->data.block.body->count > 1 &&
+                              computeNode->data.functionDeclaration.body->data.block.body->nodes[1] != ZR_NULL &&
+                              computeNode->data.functionDeclaration.body->data.block.body->nodes[1]->type ==
+                                  ZR_AST_VARIABLE_DECLARATION
+                          ? computeNode->data.functionDeclaration.body->data.block.body->nodes[1]
+                                ->data.variableDeclaration.value
+                          : ZR_NULL;
+        sumTypeRecord = find_type_record_for_ast_node(analyzer->semanticContext, sumExpr);
+        widenedTypeRecord = find_type_record_for_ast_node(analyzer->semanticContext, widenedExpr);
+
+        if (sumTypeRecord == ZR_NULL ||
+            !ZR_VALUE_IS_TYPE_INT(sumTypeRecord->inferredType.baseType)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Expression Metadata Records Exact Types",
+                      "Expected semantic metadata to record an exact int type for left + right");
+            return;
+        }
+
+        if (widenedTypeRecord == ZR_NULL ||
+            !ZR_VALUE_IS_TYPE_FLOAT(widenedTypeRecord->inferredType.baseType)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Expression Metadata Records Exact Types",
+                      "Expected semantic metadata to record an exact float type for left + 0.0");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Expression Metadata Records Exact Types");
+}
+
+static void test_semantic_analyzer_unannotated_function_records_exact_return_type(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Unannotated Function Records Exact Return Type");
+
+    TEST_INFO("Exact function return metadata",
+              "Unannotated functions with provable returns should store an exact return type in symbol metadata");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "make(seed: int) {\n"
+            "    return seed + 0;\n"
+            "}\n"
+            "useIt() {\n"
+            "    return make(1);\n"
+            "}\n";
+        SZrString *sourceName =
+            ZrCore_String_Create(state, "exact_return_type_symbol_test.zr", 32);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrString *functionName;
+        SZrSymbol *functionSymbol;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Records Exact Return Type",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Records Exact Return Type",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Records Exact Return Type",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (has_diagnostic_code(analyzer, "return_type_not_provable") ||
+            has_diagnostic_code(analyzer, "cannot_infer_exact_type")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Records Exact Return Type",
+                      "Provable unannotated returns should not emit exact-type diagnostics");
+            return;
+        }
+
+        functionName = ZrCore_String_Create(state, "make", 4);
+        functionSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, functionName, ZR_NULL);
+        if (functionSymbol == ZR_NULL ||
+            functionSymbol->typeInfo == ZR_NULL ||
+            !ZR_VALUE_IS_TYPE_INT(functionSymbol->typeInfo->baseType)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Records Exact Return Type",
+                      "Expected function symbol metadata to store an exact int return type");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Unannotated Function Records Exact Return Type");
+}
+
+static void test_semantic_analyzer_reports_initializer_requires_annotation(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Initializer Requires Annotation");
+
+    TEST_INFO("Strong typed local declaration diagnostics",
+              "An untyped declaration without an initializer must emit initializer_requires_annotation instead of inventing a weak object type");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "probe() {\n"
+            "    var missing;\n"
+            "}\n";
+        SZrString *sourceName =
+            ZrCore_String_Create(state, "initializer_requires_annotation_test.zr", 39);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagnostic;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Initializer Requires Annotation",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Initializer Requires Annotation",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Initializer Requires Annotation",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "initializer_requires_annotation", 2);
+        if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Initializer Requires Annotation",
+                      "Expected initializer_requires_annotation on the untyped local variable");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Initializer Requires Annotation");
+}
+
+static void test_semantic_analyzer_reports_return_type_not_provable(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Return Type Not Provable");
+
+    TEST_INFO("Strong typed return diagnostics",
+              "An unannotated function with incompatible return branches must emit return_type_not_provable and must not synthesize a weak object return type");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "probe(flag: bool) {\n"
+            "    if (flag) {\n"
+            "        return 1;\n"
+            "    }\n"
+            "    return \"text\";\n"
+            "}\n";
+        SZrString *sourceName =
+            ZrCore_String_Create(state, "return_type_not_provable_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagnostic;
+        SZrString *functionName;
+        SZrSymbol *functionSymbol;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Type Not Provable",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Type Not Provable",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Type Not Provable",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "return_type_not_provable", 1);
+        if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Type Not Provable",
+                      "Expected return_type_not_provable on the incompatible unannotated function");
+            return;
+        }
+
+        functionName = ZrCore_String_Create(state, "probe", 5);
+        functionSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, functionName, ZR_NULL);
+        if (functionSymbol != ZR_NULL &&
+            functionSymbol->typeInfo != ZR_NULL &&
+            functionSymbol->typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
+            functionSymbol->typeInfo->typeName == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Type Not Provable",
+                      "Inference failure must not be materialized as a weak object return type");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Return Type Not Provable");
+}
+
+static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_and_completion_detail(
+    SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail");
+
+    TEST_INFO("Strong typed hover/completion failure surface",
+              "Symbols that fail exact inference must surface 'cannot infer exact type' in hover and completion detail instead of a weak object fallback");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "probe() {\n"
+            "    var missing;\n"
+            "    missing;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "exact_type_failure_detail_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange completionPosition;
+        SZrFileRange hoverPosition;
+        SZrArray completions;
+        SZrHoverInfo *hoverInfo = ZR_NULL;
+        const char *hoverText;
+        const char *detailText;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (find_diagnostic_by_code_and_line(analyzer, "initializer_requires_annotation", 2) == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Expected initializer_requires_annotation for the untyped local symbol");
+            return;
+        }
+
+        completionPosition = file_range_for_nth_substring(testCode, "missing;", 1, ZR_FALSE);
+        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
+        detailText = completion_detail_for_label(&completions, "missing");
+        if (detailText == ZR_NULL ||
+            strstr(detailText, "cannot infer exact type") == ZR_NULL ||
+            strstr(detailText, "object") != ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      detailText != ZR_NULL ? detailText : "<null completion detail>");
+            return;
+        }
+
+        hoverPosition = file_range_for_nth_substring(testCode, "missing;", 1, ZR_FALSE);
+        if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
+            hoverInfo == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      "Failed to get hover info for the exact-type failure symbol");
+            return;
+        }
+
+        hoverText = hover_contents_string(hoverInfo);
+        if (hoverText == ZR_NULL ||
+            strstr(hoverText, "cannot infer exact type") == ZR_NULL ||
+            strstr(hoverText, "object") != ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail",
+                      hoverText != ZR_NULL ? hoverText : "<null hover>");
+            return;
+        }
+
+        ZrCore_Array_Free(state, &completions);
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Exact Type Failure Surfaces Explicit Hover And Completion Detail");
+}
+
+static void test_semantic_analyzer_unannotated_function_surfaces_exact_return_signature_detail(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail");
+
+    TEST_INFO("Exact return signature detail",
+              "Provable unannotated functions should expose their exact return type in hover and completion signatures instead of 'object'");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "make(seed: int) {\n"
+            "    return seed + 0;\n"
+            "}\n"
+            "use(): void {\n"
+            "    make(1);\n"
+            "}\n";
+        SZrString *sourceName =
+            ZrCore_String_Create(state, "exact_return_signature_detail_test.zr", 37);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange completionPosition;
+        SZrFileRange hoverPosition;
+        SZrArray completions;
+        SZrHoverInfo *hoverInfo = ZR_NULL;
+        const char *hoverText;
+        const char *detailText;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (has_diagnostic_code(analyzer, "cannot_infer_exact_type") ||
+            has_diagnostic_code(analyzer, "return_type_not_provable")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail",
+                      "Provable unannotated function should not emit strong-type diagnostics");
+            return;
+        }
+
+        completionPosition = file_range_for_nth_substring(testCode, "make(1)", 0, ZR_FALSE);
+        ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), 8);
+        ZrLanguageServer_SemanticAnalyzer_GetCompletions(state, analyzer, completionPosition, &completions);
+        detailText = completion_detail_for_label(&completions, "make");
+        if (detailText == ZR_NULL ||
+            strstr(detailText, "make(seed: int): int") == ZR_NULL ||
+            strstr(detailText, "object") != ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail",
+                      detailText != ZR_NULL ? detailText : "<null completion detail>");
+            return;
+        }
+
+        hoverPosition = file_range_for_nth_substring(testCode, "make(1)", 0, ZR_FALSE);
+        if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
+            hoverInfo == ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail",
+                      "Failed to get hover info for the unannotated function call");
+            return;
+        }
+
+        hoverText = hover_contents_string(hoverInfo);
+        if (hoverText == ZR_NULL ||
+            strstr(hoverText, "Signature: make(seed: int): int") == ZR_NULL ||
+            strstr(hoverText, "object") != ZR_NULL) {
+            ZrCore_Array_Free(state, &completions);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail",
+                      hoverText != ZR_NULL ? hoverText : "<null hover>");
+            return;
+        }
+
+        ZrCore_Array_Free(state, &completions);
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Unannotated Function Surfaces Exact Return Signature Detail");
 }
 
 static void test_semantic_analyzer_populates_semantic_context(SZrState *state) {
@@ -2238,6 +2793,8 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
+            "class Resource {\n"
+            "}\n"
             "var borrowed: %shared Resource;\n"
             "var owned: %unique Resource = borrowed;\n";
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_decl_mismatch_test.zr", 31);
@@ -2268,7 +2825,7 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
             return;
         }
 
-        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 2);
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 4);
         if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -2295,6 +2852,8 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
+            "class Resource {\n"
+            "}\n"
             "upgrade(resource: %shared Resource): %unique Resource {\n"
             "    return resource;\n"
             "}\n";
@@ -2326,7 +2885,7 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
             return;
         }
 
-        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 2);
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 4);
         if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -2353,6 +2912,8 @@ static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
+            "class Resource {\n"
+            "}\n"
             "consume(resource: %unique Resource) {\n"
             "}\n"
             "run(resource: %shared Resource) {\n"
@@ -2386,7 +2947,7 @@ static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(
             return;
         }
 
-        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 4);
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 6);
         if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -2413,6 +2974,8 @@ static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZ
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
         const TZrChar *testCode =
+            "class Resource {\n"
+            "}\n"
             "class ResourceBox {\n"
             "    consume(resource: %unique Resource): int {\n"
             "        return 0;\n"
@@ -2449,7 +3012,7 @@ static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZ
             return;
         }
 
-        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 7);
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 9);
         if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
@@ -3018,6 +3581,24 @@ int main(void) {
     TEST_DIVIDER();
 
     test_semantic_analyzer_avoids_false_numeric_initializer_type_mismatch_diagnostics(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_expression_metadata_records_exact_types(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_unannotated_function_records_exact_return_type(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_reports_initializer_requires_annotation(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_reports_return_type_not_provable(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_and_completion_detail(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_unannotated_function_surfaces_exact_return_signature_detail(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_populates_semantic_context(state);

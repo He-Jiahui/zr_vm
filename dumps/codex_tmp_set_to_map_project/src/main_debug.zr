@@ -1,0 +1,44 @@
+var container = %import("zr.container");
+var {Array, Pair} = %import("zr.container");
+var seen = new container.Set<Pair<int, string>>();
+seen.add(new container.Pair<int, string>(3, "odd_hi"));
+seen.add(new container.Pair<int, string>(1, "odd_lo"));
+seen.add(new container.Pair<int, string>(2, "even"));
+seen.add(new container.Pair<int, string>(4, "even"));
+var buckets = new container.Map<string, Array<int>>();
+for (var pair in seen) {
+    var label = <string> pair.second;
+    var value = <int> pair.first;
+    var bucket = buckets[label];
+    if (bucket == null) {
+        bucket = new container.Array<int>();
+        buckets[label] = bucket;
+    }
+    bucket.add(value);
+}
+var oddLo: Array<int> = buckets["odd_lo"];
+var oddHi: Array<int> = buckets["odd_hi"];
+var even: Array<int> = buckets["even"];
+var total = 0;
+var oddLoSeen = 0;
+var oddHiSeen = 0;
+var evenSeen = 0;
+if (oddLo != null) {
+    for (var item in oddLo) {
+        total = total + <int> item;
+        oddLoSeen = oddLoSeen + 1;
+    }
+}
+if (oddHi != null) {
+    for (var item in oddHi) {
+        total = total + <int> item;
+        oddHiSeen = oddHiSeen + 1;
+    }
+}
+if (even != null) {
+    for (var item in even) {
+        total = total + <int> item;
+        evenSeen = evenSeen + 1;
+    }
+}
+return total * 1000000 + oddLoSeen * 100000 + oddHiSeen * 10000 + evenSeen * 1000 + (oddLo == null ? 0 : oddLo.length) * 100 + (oddHi == null ? 0 : oddHi.length) * 10 + (even == null ? 0 : even.length);

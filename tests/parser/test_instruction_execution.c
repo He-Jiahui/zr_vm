@@ -18,6 +18,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/global.h"
+#include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
@@ -258,6 +259,31 @@ static TZrByte *build_binary_import_fixture(SZrState *state,
 }
 
 static TZrInt64 g_usingCloseInvocationCount = 0;
+
+static const SZrTypeValue *get_named_global_value(SZrState *state, const char *name) {
+    SZrObject *globalObject;
+    SZrString *nameString;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || name == ZR_NULL ||
+        state->global->zrObject.type != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_NULL;
+    }
+
+    globalObject = ZR_CAST_OBJECT(state, state->global->zrObject.value.object);
+    if (globalObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    nameString = ZrCore_String_Create(state, (TZrNativeString)name, strlen(name));
+    if (nameString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(nameString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    return ZrCore_Object_GetValue(state, globalObject, &key);
+}
 
 static TZrInt64 test_close_meta_native(struct SZrState *state) {
     ZR_UNUSED_PARAMETER(state);
@@ -2642,6 +2668,12 @@ static void test_execute_nested_using_return_invokes_all_close_meta(void) {
 static void test_execute_get_member_materializes_global_prototype_with_aliased_destination(void) {
     SZrTestTimer timer;
     const char *testSummary = "GET_MEMBER Materializes Global Prototype With Aliased Destination";
+    const char *source =
+        "%module \"static_retry\";\n"
+        "class StaticHolder {\n"
+        "    pub static var value: int = 42;\n"
+        "}\n"
+        "return StaticHolder.value;";
     TZrBool hasAliasedGetMember = ZR_FALSE;
 
     TEST_START(testSummary);
@@ -2651,16 +2683,37 @@ static void test_execute_get_member_materializes_global_prototype_with_aliased_d
         SZrState *state = create_test_state();
         TEST_ASSERT_NOT_NULL(state);
 
+        {
+            SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
+            SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+            SZrFunction *function;
+            const SZrTypeValue *prototypeValue;
+
+            TEST_ASSERT_NOT_NULL(ast);
+            function = ZrParser_Compiler_Compile(state, ast);
+            ZrParser_Ast_Free(state, ast);
+
+            TEST_ASSERT_NOT_NULL(function);
+            TEST_ASSERT_TRUE(function->prototypeCount > 0);
+            TEST_ASSERT_TRUE(ZrCore_Module_CreatePrototypesFromData(state, ZR_NULL, function) > 0);
+
+            prototypeValue = get_named_global_value(state, "StaticHolder");
+            TEST_ASSERT_NOT_NULL(prototypeValue);
+            TEST_ASSERT_EQUAL_UINT32(ZR_VALUE_TYPE_OBJECT, prototypeValue->type);
+            TEST_ASSERT_NOT_NULL(ZR_CAST_OBJECT(state, prototypeValue->value.object));
+        }
+
+        destroy_test_state(state);
+    }
+
+    {
+        SZrState *state = create_test_state();
+        TEST_ASSERT_NOT_NULL(state);
+
         TEST_INFO("GET_MEMBER retry path",
                   "Testing that static member access still succeeds when GET_MEMBER reuses the receiver slot and needs prototype materialization");
 
         {
-            const char *source =
-                "%module \"static_retry\";\n"
-                "class StaticHolder {\n"
-                "    pub static var value: int = 42;\n"
-                "}\n"
-                "return StaticHolder.value;";
             SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
             SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
             SZrFunction *function;

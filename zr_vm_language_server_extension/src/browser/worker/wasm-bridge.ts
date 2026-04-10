@@ -162,6 +162,20 @@ export class ZrWasmBridge {
         );
     }
 
+    async getInlayHints(
+        uri: string,
+        startLine: number,
+        startCharacter: number,
+        endLine: number,
+        endCharacter: number,
+    ): Promise<WasmResponse<unknown[]>> {
+        return this.invoke<unknown[]>(
+            'wasm_ZrLspGetInlayHints',
+            ['number', 'string', 'number', 'number', 'number', 'number', 'number'],
+            [await this.context(), uri, byteLength(uri), startLine, startCharacter, endLine, endCharacter],
+        );
+    }
+
     async getWorkspaceSymbols(query: string): Promise<WasmResponse<unknown[]>> {
         return this.invoke<unknown[]>(
             'wasm_ZrLspGetWorkspaceSymbols',

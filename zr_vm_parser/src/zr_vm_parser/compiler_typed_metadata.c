@@ -410,6 +410,66 @@ TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static TZrBool compiler_build_compile_time_function_parameter_metadata_from_record(
+        SZrCompilerState *cs,
+        const SZrCompileTimeFunction *record,
+        SZrFunctionMetadataParameter **outParameters,
+        TZrUInt32 *outParameterCount) {
+    TZrUInt32 parameterCount;
+    SZrFunctionMetadataParameter *parameters;
+
+    if (outParameters == ZR_NULL || outParameterCount == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outParameters = ZR_NULL;
+    *outParameterCount = 0;
+    if (cs == ZR_NULL || record == ZR_NULL || record->paramTypes.length == 0) {
+        return ZR_TRUE;
+    }
+
+    parameterCount = (TZrUInt32)record->paramTypes.length;
+    parameters = (SZrFunctionMetadataParameter *)ZrCore_Memory_RawMallocWithType(
+            cs->state->global,
+            sizeof(SZrFunctionMetadataParameter) * parameterCount,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (parameters == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(parameters, 0, sizeof(SZrFunctionMetadataParameter) * parameterCount);
+    for (TZrUInt32 index = 0; index < parameterCount; index++) {
+        const SZrInferredType *paramType =
+                (const SZrInferredType *)ZrCore_Array_Get((SZrArray *)&record->paramTypes, index);
+        SZrString **paramNamePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&record->paramNames, index);
+        TZrBool *hasDefaultValuePtr =
+                (TZrBool *)ZrCore_Array_Get((SZrArray *)&record->paramHasDefaultValues, index);
+        SZrTypeValue *defaultValue =
+                (SZrTypeValue *)ZrCore_Array_Get((SZrArray *)&record->paramDefaultValues, index);
+
+        typed_type_ref_init_unknown(&parameters[index].type);
+        parameters[index].name = paramNamePtr != ZR_NULL ? *paramNamePtr : ZR_NULL;
+        parameters[index].hasDefaultValue = ZR_FALSE;
+        ZrCore_Value_ResetAsNull(&parameters[index].defaultValue);
+        parameters[index].hasDecoratorMetadata = ZR_FALSE;
+        ZrCore_Value_ResetAsNull(&parameters[index].decoratorMetadataValue);
+        parameters[index].decoratorNames = ZR_NULL;
+        parameters[index].decoratorCount = 0;
+
+        if (paramType != ZR_NULL) {
+            typed_type_ref_from_inferred(&parameters[index].type, paramType);
+        }
+        if (hasDefaultValuePtr != ZR_NULL && *hasDefaultValuePtr && defaultValue != ZR_NULL) {
+            ZrCore_Value_Copy(cs->state, &parameters[index].defaultValue, defaultValue);
+            parameters[index].hasDefaultValue = ZR_TRUE;
+        }
+    }
+
+    *outParameters = parameters;
+    *outParameterCount = parameterCount;
+    return ZR_TRUE;
+}
+
 static TZrBool build_compile_time_variable_infos(SZrCompilerState *cs,
                                                  SZrFunctionCompileTimeVariableInfo **outInfos,
                                                  TZrUInt32 *outCount) {
@@ -559,14 +619,23 @@ static TZrBool build_compile_time_function_infos(SZrCompilerState *cs,
             declaration = &record->declaration->data.functionDeclaration;
         }
 
-        if (declaration != ZR_NULL &&
-            !compiler_build_function_parameter_metadata(cs,
-                                                        declaration->params,
-                                                        ZR_TRUE,
-                                                        &infos[index].parameters,
-                                                        &infos[index].parameterCount)) {
-            free_compile_time_function_infos(cs->state, infos, infoCount);
-            return ZR_FALSE;
+        if (declaration != ZR_NULL) {
+            if (!compiler_build_function_parameter_metadata(cs,
+                                                            declaration->params,
+                                                            ZR_TRUE,
+                                                            &infos[index].parameters,
+                                                            &infos[index].parameterCount)) {
+                free_compile_time_function_infos(cs->state, infos, infoCount);
+                return ZR_FALSE;
+            }
+        } else if (record->paramTypes.length > 0) {
+            if (!compiler_build_compile_time_function_parameter_metadata_from_record(cs,
+                                                                                     record,
+                                                                                     &infos[index].parameters,
+                                                                                     &infos[index].parameterCount)) {
+                free_compile_time_function_infos(cs->state, infos, infoCount);
+                return ZR_FALSE;
+            }
         }
     }
 

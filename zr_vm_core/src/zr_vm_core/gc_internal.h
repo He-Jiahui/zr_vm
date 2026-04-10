@@ -25,6 +25,8 @@
 
 TZrBool garbage_collector_ignore_registry_contains(SZrGarbageCollector *collector, SZrRawObject *object);
 TZrBool garbage_collector_ensure_ignore_registry_capacity(SZrGlobalState *global, TZrSize minCapacity);
+TZrBool garbage_collector_remembered_registry_contains(SZrGarbageCollector *collector, SZrRawObject *object);
+TZrBool garbage_collector_ensure_remembered_registry_capacity(SZrGlobalState *global, TZrSize minCapacity);
 TZrSize garbage_collector_get_object_base_size(SZrState *state, SZrRawObject *object);
 void garbage_collector_free_object(SZrState *state, SZrRawObject *object);
 

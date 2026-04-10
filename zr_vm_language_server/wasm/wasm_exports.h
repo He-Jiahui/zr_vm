@@ -113,6 +113,15 @@ const char* wasm_ZrLspRename(void* context, const char* uri, int uriLen,
 // 获取文档符号
 const char* wasm_ZrLspGetDocumentSymbols(void* context, const char* uri, int uriLen);
 
+// 获取 inlay hints
+const char* wasm_ZrLspGetInlayHints(void* context,
+                                    const char* uri,
+                                    int uriLen,
+                                    int startLine,
+                                    int startCharacter,
+                                    int endLine,
+                                    int endCharacter);
+
 // 获取工作区符号
 const char* wasm_ZrLspGetWorkspaceSymbols(void* context, const char* query, int queryLen);
 

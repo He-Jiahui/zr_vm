@@ -16,6 +16,17 @@ static TZrBool metadata_provider_try_get_analyzer_for_uri(SZrState *state,
                                                           SZrString *uri,
                                                           SZrSemanticAnalyzer **outAnalyzer);
 
+static const TZrChar *metadata_provider_exact_type_failure_text(void) {
+    return "cannot infer exact type";
+}
+
+static TZrBool metadata_provider_type_text_is_specific(const TZrChar *typeText) {
+    return typeText != ZR_NULL && typeText[0] != '\0' &&
+           strcmp(typeText, metadata_provider_exact_type_failure_text()) != 0 &&
+           strcmp(typeText, "object") != 0 &&
+           strcmp(typeText, "unknown") != 0;
+}
+
 static SZrFileRange metadata_provider_module_entry_range(SZrString *uri) {
     SZrFilePosition start = ZrParser_FilePosition_Create(0, 1, 1);
     return ZrParser_FileRange_Create(start, start, uri);
@@ -41,14 +52,24 @@ static const TZrChar *metadata_provider_hover_source_text(const SZrLspResolvedMe
     return defaultText;
 }
 
+static const TZrChar *metadata_provider_type_text_or_failure(const TZrChar *typeText) {
+    return metadata_provider_type_text_is_specific(typeText)
+               ? typeText
+               : metadata_provider_exact_type_failure_text();
+}
+
 static void metadata_provider_set_type_text(SZrState *state,
                                             SZrLspResolvedMetadataMember *outResolved,
                                             const TZrChar *typeText) {
-    if (state == ZR_NULL || outResolved == ZR_NULL || typeText == ZR_NULL || typeText[0] == '\0') {
+    const TZrChar *storedTypeText;
+
+    if (state == ZR_NULL || outResolved == ZR_NULL) {
         return;
     }
 
-    outResolved->resolvedTypeText = ZrCore_String_Create(state, (TZrNativeString)typeText, strlen(typeText));
+    storedTypeText = metadata_provider_type_text_or_failure(typeText);
+    outResolved->resolvedTypeText =
+        ZrCore_String_Create(state, (TZrNativeString)storedTypeText, strlen(storedTypeText));
 }
 
 static void metadata_provider_set_type_text_from_inferred(SZrState *state,
@@ -62,7 +83,29 @@ static void metadata_provider_set_type_text_from_inferred(SZrState *state,
     }
 
     typeText = ZrParser_TypeNameString_Get(state, typeInfo, typeBuffer, sizeof(typeBuffer));
-    metadata_provider_set_type_text(state, outResolved, typeText);
+    metadata_provider_set_type_text(state,
+                                    outResolved,
+                                    metadata_provider_type_text_is_specific(typeText) ? typeText : ZR_NULL);
+}
+
+static const TZrChar *metadata_provider_precise_inferred_type_text(SZrState *state,
+                                                                   const SZrInferredType *typeInfo,
+                                                                   TZrChar *buffer,
+                                                                   TZrSize bufferSize) {
+    const TZrChar *typeText = ZR_NULL;
+
+    if (state != ZR_NULL &&
+        typeInfo != ZR_NULL &&
+        !(typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
+          typeInfo->typeName == ZR_NULL &&
+          (!typeInfo->elementTypes.isValid || typeInfo->elementTypes.length == 0))) {
+        typeText = ZrParser_TypeNameString_Get(state, typeInfo, buffer, bufferSize);
+        if (metadata_provider_type_text_is_specific(typeText)) {
+            return typeText;
+        }
+    }
+
+    return metadata_provider_exact_type_failure_text();
 }
 
 static SZrString *metadata_provider_create_markdown_text(SZrState *state, const TZrChar *text) {
@@ -801,15 +844,15 @@ static const TZrChar *metadata_provider_module_member_kind_text(SZrSemanticAnaly
 static const TZrChar *metadata_provider_binary_type_ref_text(const SZrIoFunctionTypedTypeRef *typeRef,
                                                              TZrChar *buffer,
                                                              TZrSize bufferSize) {
-    const TZrChar *baseName = "object";
+    const TZrChar *baseName = metadata_provider_exact_type_failure_text();
 
     if (buffer == ZR_NULL || bufferSize == 0) {
-        return "object";
+        return metadata_provider_exact_type_failure_text();
     }
 
     buffer[0] = '\0';
     if (typeRef == ZR_NULL) {
-        return "object";
+        return metadata_provider_exact_type_failure_text();
     }
 
     if (typeRef->isArray) {
@@ -835,7 +878,7 @@ static const TZrChar *metadata_provider_binary_type_ref_text(const SZrIoFunction
                     elementName = "string";
                     break;
                 default:
-                    elementName = "object";
+                    elementName = metadata_provider_exact_type_failure_text();
                     break;
             }
         }
@@ -876,7 +919,7 @@ static const TZrChar *metadata_provider_binary_type_ref_text(const SZrIoFunction
             baseName = "function";
             break;
         default:
-            baseName = "object";
+            baseName = metadata_provider_exact_type_failure_text();
             break;
     }
 
@@ -958,22 +1001,20 @@ static void metadata_provider_append_project_symbol_completion(SZrState *state,
                                                                SZrArray *result) {
     TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
     TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
-    const TZrChar *typeText = "object";
+    const TZrChar *typeText = metadata_provider_exact_type_failure_text();
     SZrCompletionItem *item;
 
     if (state == ZR_NULL || symbol == ZR_NULL || result == ZR_NULL || symbol->name == ZR_NULL) {
         return;
     }
 
-    if (symbol->typeInfo != ZR_NULL) {
-        typeText = ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
-    }
+    typeText = metadata_provider_precise_inferred_type_text(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
 
     snprintf(detail,
              sizeof(detail),
              "%s %s",
              metadata_provider_symbol_kind_text(symbol->type),
-             typeText != ZR_NULL ? typeText : "object");
+             metadata_provider_type_text_or_failure(typeText));
     item = ZrLanguageServer_CompletionItem_New(state,
                                                metadata_provider_string_text(symbol->name),
                                                metadata_provider_symbol_kind_text(symbol->type),
@@ -1020,7 +1061,7 @@ static void metadata_provider_append_module_prototype_completions(SZrState *stat
         const SZrTypeMemberInfo *member =
             (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&modulePrototype->members, index);
         const TZrChar *kind = metadata_provider_module_member_kind_text(analyzer, member);
-        const TZrChar *detailType = "object";
+        const TZrChar *detailType = metadata_provider_exact_type_failure_text();
         const TZrChar *label;
         TZrChar detail[ZR_LSP_DETAIL_BUFFER_LENGTH];
         SZrCompletionItem *item;
@@ -1040,14 +1081,14 @@ static void metadata_provider_append_module_prototype_completions(SZrState *stat
                      sizeof(detail),
                      "%s(...): %s",
                      label,
-                     detailType != ZR_NULL ? detailType : "object");
+                     metadata_provider_type_text_or_failure(detailType));
         } else {
             detailType = metadata_provider_string_text(member->fieldTypeName);
             snprintf(detail,
                      sizeof(detail),
                      "%s %s",
                      kind,
-                     detailType != ZR_NULL ? detailType : "object");
+                     metadata_provider_type_text_or_failure(detailType));
         }
 
         item = ZrLanguageServer_CompletionItem_New(state, label, kind, detail, ZR_NULL, ZR_NULL);
@@ -1166,7 +1207,7 @@ static void metadata_provider_append_native_module_completions(SZrState *state,
         snprintf(detail,
                  sizeof(detail),
                  "constant %s",
-                 constantDescriptor->typeName != ZR_NULL ? constantDescriptor->typeName : "object");
+                 metadata_provider_type_text_or_failure(constantDescriptor->typeName));
         item = ZrLanguageServer_CompletionItem_New(state,
                                                    constantDescriptor->name,
                                                    "constant",
@@ -1191,7 +1232,7 @@ static void metadata_provider_append_native_module_completions(SZrState *state,
                  sizeof(detail),
                  "%s(...): %s",
                  functionDescriptor->name,
-                 functionDescriptor->returnTypeName != ZR_NULL ? functionDescriptor->returnTypeName : "object");
+                 metadata_provider_type_text_or_failure(functionDescriptor->returnTypeName));
         item = ZrLanguageServer_CompletionItem_New(state,
                                                    functionDescriptor->name,
                                                    "function",
@@ -1823,7 +1864,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                          memberText != ZR_NULL ? memberText : "",
                          resolvedMember->resolvedTypeText != ZR_NULL
                              ? metadata_provider_string_text(resolvedMember->resolvedTypeText)
-                             : "object",
+                             : metadata_provider_exact_type_failure_text(),
                          hoverSourceText != ZR_NULL ? hoverSourceText : "unresolved",
                          resolvedMember->constantDescriptor != ZR_NULL && resolvedMember->constantDescriptor->documentation != ZR_NULL
                              ? "\n\n"
@@ -1845,7 +1886,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                          memberText != ZR_NULL ? memberText : "",
                          resolvedMember->resolvedTypeText != ZR_NULL
                              ? metadata_provider_string_text(resolvedMember->resolvedTypeText)
-                             : "object",
+                             : metadata_provider_exact_type_failure_text(),
                          hoverSourceText != ZR_NULL ? hoverSourceText : "unresolved",
                          resolvedMember->functionDescriptor != ZR_NULL && resolvedMember->functionDescriptor->documentation != ZR_NULL
                              ? "\n\n"
@@ -1875,7 +1916,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                          memberText != ZR_NULL ? memberText : "",
                          resolvedMember->resolvedTypeText != ZR_NULL
                              ? metadata_provider_string_text(resolvedMember->resolvedTypeText)
-                             : "object",
+                             : metadata_provider_exact_type_failure_text(),
                          hoverSourceText != ZR_NULL ? hoverSourceText : "unresolved",
                          resolvedMember->typeDescriptor != ZR_NULL && resolvedMember->typeDescriptor->documentation != ZR_NULL
                              ? "\n\n"
@@ -1897,10 +1938,10 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                          memberText != ZR_NULL ? memberText : "",
                          resolvedMember->resolvedTypeText != ZR_NULL
                              ? metadata_provider_string_text(resolvedMember->resolvedTypeText)
-                             : "object",
+                             : metadata_provider_exact_type_failure_text(),
                          resolvedMember->ownerTypeName != ZR_NULL
                              ? metadata_provider_string_text(resolvedMember->ownerTypeName)
-                             : "object",
+                             : metadata_provider_exact_type_failure_text(),
                          hoverSourceText != ZR_NULL ? hoverSourceText : "unresolved",
                          resolvedMember->fieldDescriptor != ZR_NULL && resolvedMember->fieldDescriptor->documentation != ZR_NULL
                              ? "\n\n"
@@ -1926,7 +1967,7 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                                            index > 0 ? ", " : "",
                                            parameter->name != ZR_NULL ? parameter->name : "",
                                            parameter->name != ZR_NULL ? ": " : "",
-                                           parameter->typeName != ZR_NULL ? parameter->typeName : "object");
+                                           metadata_provider_type_text_or_failure(parameter->typeName));
                         if (written <= 0 || (TZrSize)written >= sizeof(parameterBuffer) - parameterUsed) {
                             break;
                         }
@@ -1947,10 +1988,10 @@ TZrBool ZrLanguageServer_LspMetadataProvider_CreateImportedMemberHover(SZrLspMet
                          parameterBuffer,
                          resolvedMember->resolvedTypeText != ZR_NULL
                              ? metadata_provider_string_text(resolvedMember->resolvedTypeText)
-                             : "object",
+                             : metadata_provider_exact_type_failure_text(),
                          resolvedMember->ownerTypeName != ZR_NULL
                              ? metadata_provider_string_text(resolvedMember->ownerTypeName)
-                             : "object",
+                             : metadata_provider_exact_type_failure_text(),
                          hoverSourceText != ZR_NULL ? hoverSourceText : "unresolved",
                          documentation[0] != '\0' ? "\n\n" : "",
                          documentation);

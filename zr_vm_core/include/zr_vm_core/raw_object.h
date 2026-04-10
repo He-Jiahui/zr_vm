@@ -34,6 +34,17 @@ ZR_FORCE_INLINE void ZrCore_RawObject_Construct(SZrRawObject *super, EZrRawObjec
     super->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
     super->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW;
     super->garbageCollectMark.generation = ZR_GARBAGE_COLLECT_GENERATION_INVALID;
+    super->garbageCollectMark.heapGenerationKind = ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_YOUNG;
+    super->garbageCollectMark.regionKind = ZR_GARBAGE_COLLECT_REGION_KIND_EDEN;
+    super->garbageCollectMark.storageKind = ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE;
+    super->garbageCollectMark.regionId = 0;
+    super->garbageCollectMark.survivalAge = 0;
+    super->garbageCollectMark.escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE;
+    super->garbageCollectMark.anchorScopeDepth = ZR_GC_SCOPE_DEPTH_NONE;
+    super->garbageCollectMark.pinFlags = ZR_GARBAGE_COLLECT_PIN_KIND_NONE;
+    super->garbageCollectMark.promotionReason = ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE;
+    super->garbageCollectMark.forwardingAddress = ZR_NULL;
+    super->garbageCollectMark.forwardingRefLocation = ZR_NULL;
     super->gcList = ZR_NULL;
     super->scanMarkGcFunction = ZR_NULL;
     super->ownershipControl = ZR_NULL;

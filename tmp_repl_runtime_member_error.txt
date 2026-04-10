@@ -1,0 +1,4 @@
+var system = %import("zr.system");
+system.s.console.print("xxx");
+
+:quit

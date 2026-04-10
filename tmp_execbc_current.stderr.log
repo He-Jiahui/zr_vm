@@ -1,0 +1,13 @@
+  [execbc_aot_signed_numeric_paths_test.zr:3:1] 期望 '>'，但遇到 ';' (遇到 token: ';')
+    var delta = right - left;
+^
+[diag] string_build state-created
+[diag] string_build binary-loaded len=15944
+[diag] string_build source-read modules=1
+[diag] string_build runtime-loaded function=000002D0C341B9A0 instructions=000002D0C38C9580 instructionsLength=225
+[diag] string_build opcode-flags to_string=1 add_string=1 mod_signed=1 mod_signed_const=1
+[diag] ownership state-created
+[diag] ownership source-compiled
+[diag] ownership artifacts-written
+[diag] ownership artifacts-read
+[diag] ownership text-asserts-done

@@ -2731,6 +2731,100 @@ static void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract
     TEST_DIVIDER();
 }
 
+static void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Release Preserves Unrelated Stack Values After Weak Expiry";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Ownership runtime weak temp materialization",
+              "Testing that releasing the last shared owners expires weak references without nulling later locals that reused temporary stack slots");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Loop {\n"
+            "    pub @call(n: int, acc: int): int {\n"
+            "        if (n == 0) { return acc; }\n"
+            "        return this(n - 1, acc + 1);\n"
+            "    }\n"
+            "}\n"
+            "func direct(n: int, acc: int): int {\n"
+            "    if (n == 0) { return acc; }\n"
+            "    return direct(n - 1, acc + 1);\n"
+            "}\n"
+            "func guarded(flag: int): int {\n"
+            "    var marker = 0;\n"
+            "    try {\n"
+            "        try {\n"
+            "            if (flag != 0) { throw \"boom\"; }\n"
+            "            return 0;\n"
+            "        } finally {\n"
+            "            marker = marker + 7;\n"
+            "        }\n"
+            "    } catch (e) {\n"
+            "        return marker + 1;\n"
+            "    }\n"
+            "}\n"
+            "class Box {}\n"
+            "var ownerSeed = %unique new Box();\n"
+            "var owner = %shared(ownerSeed);\n"
+            "var weak = %weak(owner);\n"
+            "var alias = %upgrade(weak);\n"
+            "var loop = new Loop();\n"
+            "var directValue = direct(12, 0);\n"
+            "var metaValue = loop(10, 0);\n"
+            "var guardedValue = guarded(1);\n"
+            "var releasedOwner = %release(owner);\n"
+            "var releasedAlias = %release(alias);\n"
+            "return directValue + metaValue + guardedValue;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_release_preserves_stack_values.zr",
+                                                     strlen("ownership_release_preserves_stack_values.zr"));
+        SZrFunction *func;
+        TZrInt64 result = 0;
+
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile ownership stack preservation source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_WEAK)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute ownership stack preservation source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 30) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Ownership weak expiry clobbered an unrelated stack value");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 static void test_ownership_builtin_compile_rejects_invalid_operands(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Builtin Compile Rejects Invalid Operands";
@@ -3619,6 +3713,7 @@ int main(void) {
     RUN_TEST(test_ownership_borrow_loan_and_detach_runtime_follow_surface_contract);
     RUN_TEST(test_ownership_weak_runtime_expires_to_null_after_last_shared_release);
     RUN_TEST(test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract);
+    RUN_TEST(test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry);
     RUN_TEST(test_ownership_builtin_compile_rejects_invalid_operands);
     RUN_TEST(test_ownership_detach_runtime_rejects_multi_owner_shared_value);
 

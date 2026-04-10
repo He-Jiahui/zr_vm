@@ -3,12 +3,12 @@
 // 也可以写作 %module sample;
 // 可以在任意地方引入和使用模块
 // %import 是保留语法，支持裸路径、字符串和括号字符串三种写法
-var math = %import math.core;
-var math1 = %import "math.scalar";
-var math2 = %import("math.vector");
-var math3 = %import math.hex;
-var math4 = %import "math.oct";
-var math5 = %import("math.decimal");
+var math = %import zr.builtin;
+var math1 = %import "zr.builtin";
+var math2 = %import("zr.builtin");
+var math3 = %import zr.builtin;
+var math4 = %import "zr.builtin";
+var math5 = %import("zr.builtin");
 var result = 1 + (5 - 1) * 4;
 
 var myInt = 0xFFFFFFFFFFFFFFFF;
@@ -26,7 +26,7 @@ var test_exp = 5;
 test_exp += -5 * 4 + 1 << 2 == 4 & 1 && 2 | 3 ^ 5 % 1 || 2 ? 3 << 3 : 5;
 
 // 也可以以这样的方式引入
-var {matrix, pi, e, ln} = %import("math");
+var {TypeInfo, Integer} = %import("zr.builtin");
 
 // 测试方法
 %test("test"){
@@ -131,22 +131,12 @@ var arr2:int[] = [1;2;3;];
 var arr3:[string, int, bool, object] = ["root", 1, true, null];
 var [x] = arr3;
 // interface只能当做类型声明 只能声明方法和成员而不实现 会忽略访问性检查
-interface Man: arr{
-    pub var id:string;
-    pub var telephone;
-    pro var _address:string;
-    // 访问器可以让getter 和 setter 返回不同的类型
-    pub get set address:int;
-
-    pub @constructor(id: string);
+interface Man{
 }
-#singleton#
+
 class Person{
-    # header("Person Info") #
-    # serializable #
     pub var id:string;
     pri var _address:string;
-    # editor.input #
     pro var telephone: string;
 
     pro static var telephone2: string;
@@ -154,7 +144,6 @@ class Person{
 
     pub @constructor(id: string){
     }
-    # editor.input #
     pub set address(val:string){
         this._address = val;
     }
@@ -163,16 +152,17 @@ class Person{
     }
 
     pub static get address2{
-        return this._address;
+        return Person.telephone2;
     }
 }
 var builtin = %import("zr.builtin");
 var k = {{
     // out 会寻找最近的block表达式
     // j的类型在编译阶段就已经确定
+    var j = [1, 2, 3];
     if(builtin.Object.type(j) == "array"){
         // out to block expression
-        out j.toArray();
+        out j;
     }
     // default out null;
 }};
@@ -180,6 +170,7 @@ var k = {{
 class Student:Person, Man{
     // 必须先构造基类
     pub @constructor(id: string)super(id){
+        var localArr = [1, 2, 3];
         if(true){
             return;
         }
@@ -190,9 +181,9 @@ class Student:Person, Man{
             (1){}
             (/*default case*/){}
         }
-        for(var i:int=0;i<100;i+=1){}
+        for(var i:int=0;100>i;i+=1){}
         for(;;){}
-        for(var i in arr){
+        for(var i in localArr){
         
         }
     }
@@ -205,23 +196,19 @@ class Student:Person, Man{
 
 
     pub test():void{
-        // 函数
-        key.register(()->{
-            var i = 1;
-            return null;
-        });
-        key.register((k:int,b:float)->{
-
-        });
-        key.register((k,b)->{
-
-        });
-        key["reg"].member["sant"]();
-        var temp = $(key["Vector3"].revert(mam)("kanji")["minify"] + val)(s);
+        var key = {
+            reg: {
+                member: {
+                    sant: 1
+                }
+            }
+        };
+        var value = key["reg"].member["sant"];
+        var temp = $Vector3(1, 2, 3);
     }
 }
 // 声明外动作加载脚本时立刻执行
-new Student();
+new Student("student");
 
 intermediate TestIntermediate(i:int, j:int):int %
 <

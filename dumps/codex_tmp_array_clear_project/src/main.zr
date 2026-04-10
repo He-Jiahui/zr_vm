@@ -1,0 +1,12 @@
+var container = %import("zr.container");
+var xs = new container.Array<int>(2);
+var before = 0;
+xs.add(10);
+xs.add(20);
+xs.add(30);
+before = xs.capacity;
+xs.clear();
+if (xs[0] != null) {
+    return -1;
+}
+return before * 10 + xs.capacity;

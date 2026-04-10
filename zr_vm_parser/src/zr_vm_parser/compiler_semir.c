@@ -634,7 +634,9 @@ static TZrBool semir_build_for_single_function(SZrState *state, SZrFunction *fun
     return ZR_TRUE;
 }
 
-TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *function) {
+static TZrBool compiler_build_function_semir_metadata_internal(SZrState *state,
+                                                               SZrFunction *function,
+                                                               TZrBool recurseChildren) {
     TZrUInt32 childIndex;
 
     if (function == ZR_NULL) {
@@ -645,11 +647,23 @@ TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *fun
         return ZR_FALSE;
     }
 
-    for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
-        if (!compiler_build_function_semir_metadata(state, &function->childFunctionList[childIndex])) {
-            return ZR_FALSE;
+    if (recurseChildren && !function->childFunctionGraphIsBorrowed) {
+        for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+            if (!compiler_build_function_semir_metadata_internal(state,
+                                                                 &function->childFunctionList[childIndex],
+                                                                 ZR_TRUE)) {
+                return ZR_FALSE;
+            }
         }
     }
 
     return ZR_TRUE;
+}
+
+TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *function) {
+    return compiler_build_function_semir_metadata_internal(state, function, ZR_TRUE);
+}
+
+TZrBool compiler_build_function_semir_metadata_shallow(SZrState *state, SZrFunction *function) {
+    return compiler_build_function_semir_metadata_internal(state, function, ZR_FALSE);
 }

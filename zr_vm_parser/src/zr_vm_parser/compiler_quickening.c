@@ -223,6 +223,7 @@ static TZrBool compiler_quickening_opcode_produces_known_int(const SZrFunction *
         case ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT):
         case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
             return ZR_TRUE;
         default:
             return ZR_FALSE;
@@ -1472,6 +1473,7 @@ static TZrBool compiler_quickening_instruction_writes_slot(const TZrInstruction 
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
         case ZR_INSTRUCTION_ENUM(TO_BOOL):
         case ZR_INSTRUCTION_ENUM(TO_INT):
@@ -2364,6 +2366,7 @@ static TZrBool compiler_quicken_array_int_index_accesses(SZrFunction *function) 
                 case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
                 case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
                 case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+                case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
                     slotKinds[destinationSlot] = ZR_COMPILER_QUICKENING_SLOT_KIND_INT;
                     break;
                 default:
@@ -2852,7 +2855,9 @@ static TZrBool compiler_quicken_meta_access(SZrState *state, SZrFunction *functi
     return ZR_TRUE;
 }
 
-static TZrBool compiler_quicken_child_functions(SZrState *state, SZrFunction *function) {
+static TZrBool compiler_quicken_child_functions(SZrState *state,
+                                                SZrFunction *function,
+                                                TZrBool recurseChildren) {
     TZrUInt32 childIndex;
 
     if (function == ZR_NULL) {
@@ -2923,9 +2928,11 @@ static TZrBool compiler_quicken_child_functions(SZrState *state, SZrFunction *fu
         return ZR_FALSE;
     }
 
-    for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
-        if (!compiler_quicken_child_functions(state, &function->childFunctionList[childIndex])) {
-            return ZR_FALSE;
+    if (recurseChildren && !function->childFunctionGraphIsBorrowed) {
+        for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+            if (!compiler_quicken_child_functions(state, &function->childFunctionList[childIndex], ZR_TRUE)) {
+                return ZR_FALSE;
+            }
         }
     }
 
@@ -2939,5 +2946,13 @@ TZrBool compiler_quicken_execbc_function(SZrState *state, SZrFunction *function)
         return ZR_FALSE;
     }
 
-    return compiler_quicken_child_functions(state, function);
+    return compiler_quicken_child_functions(state, function, ZR_TRUE);
+}
+
+TZrBool compiler_quicken_execbc_function_shallow(SZrState *state, SZrFunction *function) {
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return compiler_quicken_child_functions(state, function, ZR_FALSE);
 }

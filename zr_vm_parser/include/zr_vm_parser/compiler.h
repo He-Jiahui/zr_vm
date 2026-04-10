@@ -191,6 +191,7 @@ typedef struct SZrScope {
     TZrSize startVarIndex;              // 作用域开始的变量索引
     TZrSize varCount;                   // 作用域内的变量数量
     TZrSize cleanupRegistrationCount;   // 作用域内 using 注册的清理数量
+    TZrUInt32 depth;                    // 作用域深度（用于逃逸分析）
     SZrCompilerState *parentCompiler;   // 父编译器（用于闭包）
 } SZrScope;
 

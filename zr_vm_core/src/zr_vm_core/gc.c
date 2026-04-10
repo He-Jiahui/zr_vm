@@ -19,6 +19,10 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     gc->ignoredObjectCount = 0;
     gc->ignoredObjectCapacity = 0;
     gc->ignoredObjects = ZR_NULL;
+    gc->rememberedObjects = ZR_NULL;
+    gc->rememberedObjectCount = 0;
+    gc->rememberedObjectCapacity = 0;
+    gc->nextRegionId = 1u;
     gc->gcPauseBudget = ZR_GC_DEFAULT_PAUSE_BUDGET;
     gc->gcSweepSliceBudget = ZR_GC_DEFAULT_SWEEP_SLICE_BUDGET;
     gc->gcLastStepWork = 0;
@@ -46,6 +50,26 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     gc->waitToScanAgainObjectList = ZR_NULL;
     gc->waitToReleaseObjectList = ZR_NULL;
     gc->releasedObjectList = ZR_NULL;
+
+    gc->heapLimitBytes = 0;
+    gc->youngRegionSize = 256u * 1024u;
+    gc->youngRegionCountTarget = 4u;
+    gc->survivorAgeThreshold = 2u;
+    gc->pauseBudgetUs = 2000u;
+    gc->remarkBudgetUs = 1000u;
+    gc->workerCount = 1u;
+    gc->fragmentationCompactThreshold = 35u;
+    gc->gcFlags = 0u;
+    gc->scheduledCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+    gc->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
+    gc->statsSnapshot.heapLimitBytes = gc->heapLimitBytes;
+    gc->statsSnapshot.pauseBudgetUs = gc->pauseBudgetUs;
+    gc->statsSnapshot.remarkBudgetUs = gc->remarkBudgetUs;
+    gc->statsSnapshot.workerCount = gc->workerCount;
+    gc->statsSnapshot.rememberedObjectCount = 0u;
+    gc->statsSnapshot.lastCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+    gc->statsSnapshot.lastRequestedCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+    gc->statsSnapshot.collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
 }
 
 void ZrCore_GarbageCollector_Free(SZrGlobalState *global, SZrGarbageCollector *collector) {
@@ -107,6 +131,14 @@ void ZrCore_GarbageCollector_Free(SZrGlobalState *global, SZrGarbageCollector *c
         collector->ignoredObjects = ZR_NULL;
     }
     collector->ignoredObjectCapacity = 0;
+    if (collector->rememberedObjects != ZR_NULL) {
+        TZrSize rememberedBytes = collector->rememberedObjectCapacity * sizeof(SZrRawObject *);
+        ZrCore_Memory_RawFreeWithType(
+                global, collector->rememberedObjects, rememberedBytes, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        collector->rememberedObjects = ZR_NULL;
+    }
+    collector->rememberedObjectCapacity = 0;
+    collector->rememberedObjectCount = 0;
 
     ZrCore_Memory_RawFreeWithType(global, collector, sizeof(SZrGarbageCollector), ZR_MEMORY_NATIVE_TYPE_MANAGER);
 }
@@ -198,6 +230,11 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
     collector = global->garbageCollector;
 
     collector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
+    collector->scheduledCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL;
+    collector->statsSnapshot.lastRequestedCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL;
+    collector->statsSnapshot.lastCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL;
+    collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_REMARK;
+    collector->statsSnapshot.collectionPhase = collector->collectionPhase;
     collector->gcObjectListSweeper = ZR_NULL;
     collector->waitToScanObjectList = ZR_NULL;
     collector->waitToScanAgainObjectList = ZR_NULL;
@@ -213,6 +250,9 @@ void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
         garbage_collector_full_inc(state, global);
     }
     collector->isImmediateGcFlag = ZR_FALSE;
+    collector->scheduledCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+    collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
+    collector->statsSnapshot.collectionPhase = collector->collectionPhase;
     if (collector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {
         collector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_STOP_BY_SELF;
     }
@@ -247,9 +287,19 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
     }
 
     if (garbage_collector_is_generational_mode(global)) {
+        collector->statsSnapshot.lastCollectionKind = collector->scheduledCollectionKind;
+        collector->collectionPhase = collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR
+                                             ? ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_MARK
+                                             : ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
+        collector->statsSnapshot.collectionPhase = collector->collectionPhase;
         garbage_collector_run_generational_step(state);
         collector->gcLastStepWork = 1;
     } else {
+        collector->statsSnapshot.lastCollectionKind = collector->scheduledCollectionKind;
+        collector->collectionPhase = collector->scheduledCollectionKind == ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR
+                                             ? ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_MARK
+                                             : ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT;
+        collector->statsSnapshot.collectionPhase = collector->collectionPhase;
         pauseBudget = collector->gcPauseBudget > 0 ? (TZrSize)collector->gcPauseBudget : 1;
         for (TZrSize step = 0; step < pauseBudget; step++) {
             EZrGarbageCollectRunningStatus stepStatusBefore = collector->gcRunningStatus;
@@ -283,6 +333,8 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
 
     if (collector->gcRunningStatus == ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED) {
         collector->gcStatus = ZR_GARBAGE_COLLECT_STATUS_STOP_BY_SELF;
+        collector->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
+        collector->statsSnapshot.collectionPhase = collector->collectionPhase;
     }
 
     if (collector->gcLastStepWork == 0 &&
@@ -290,6 +342,100 @@ void ZrCore_GarbageCollector_GcStep(SZrState *state) {
         collector->gcLastStepWork = 1;
     }
     collector->gcLastCompletedRunningStatus = collector->gcRunningStatus;
+}
+
+void ZrCore_GarbageCollector_SetHeapLimitBytes(SZrGlobalState *global, TZrMemoryOffset heapLimitBytes) {
+    if (global == ZR_NULL || global->garbageCollector == ZR_NULL) {
+        return;
+    }
+
+    global->garbageCollector->heapLimitBytes = heapLimitBytes;
+    global->garbageCollector->statsSnapshot.heapLimitBytes = heapLimitBytes;
+}
+
+void ZrCore_GarbageCollector_SetPauseBudgetUs(SZrGlobalState *global,
+                                              TZrUInt64 pauseBudgetUs,
+                                              TZrUInt64 remarkBudgetUs) {
+    if (global == ZR_NULL || global->garbageCollector == ZR_NULL) {
+        return;
+    }
+
+    global->garbageCollector->pauseBudgetUs = pauseBudgetUs;
+    global->garbageCollector->remarkBudgetUs = remarkBudgetUs;
+    global->garbageCollector->gcPauseBudget = pauseBudgetUs > 0 ? pauseBudgetUs : 1u;
+    global->garbageCollector->statsSnapshot.pauseBudgetUs = pauseBudgetUs;
+    global->garbageCollector->statsSnapshot.remarkBudgetUs = remarkBudgetUs;
+}
+
+void ZrCore_GarbageCollector_SetWorkerCount(SZrGlobalState *global, TZrUInt32 workerCount) {
+    if (global == ZR_NULL || global->garbageCollector == ZR_NULL) {
+        return;
+    }
+
+    global->garbageCollector->workerCount = workerCount;
+    global->garbageCollector->statsSnapshot.workerCount = workerCount;
+}
+
+void ZrCore_GarbageCollector_ScheduleCollection(SZrGlobalState *global, EZrGarbageCollectCollectionKind kind) {
+    SZrGarbageCollector *collector;
+
+    if (global == ZR_NULL || global->garbageCollector == ZR_NULL) {
+        return;
+    }
+
+    collector = global->garbageCollector;
+    collector->scheduledCollectionKind = kind;
+    collector->statsSnapshot.lastRequestedCollectionKind = kind;
+    if (collector->gcDebtSize <= 0) {
+        ZrCore_GarbageCollector_AddDebtSpace(global, ZR_GC_DEBT_CREDIT_BYTES);
+    }
+}
+
+void ZrCore_GarbageCollector_GetStatsSnapshot(SZrGlobalState *global, SZrGarbageCollectorStatsSnapshot *outSnapshot) {
+    if (global == ZR_NULL || global->garbageCollector == ZR_NULL || outSnapshot == ZR_NULL) {
+        return;
+    }
+
+    global->garbageCollector->statsSnapshot.heapLimitBytes = global->garbageCollector->heapLimitBytes;
+    global->garbageCollector->statsSnapshot.pauseBudgetUs = global->garbageCollector->pauseBudgetUs;
+    global->garbageCollector->statsSnapshot.remarkBudgetUs = global->garbageCollector->remarkBudgetUs;
+    global->garbageCollector->statsSnapshot.workerCount = global->garbageCollector->workerCount;
+    global->garbageCollector->statsSnapshot.rememberedObjectCount =
+            (TZrUInt32)global->garbageCollector->rememberedObjectCount;
+    *outSnapshot = global->garbageCollector->statsSnapshot;
+}
+
+TZrBool ZrCore_GarbageCollector_HasRememberedObject(SZrGlobalState *global, SZrRawObject *object) {
+    if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return garbage_collector_remembered_registry_contains(global->garbageCollector, object);
+}
+
+void ZrCore_GarbageCollector_PinObject(SZrState *state,
+                                       SZrRawObject *object,
+                                       EZrGarbageCollectPinKind pinKind) {
+    TZrUInt32 escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_PINNED_REFERENCE;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL || object == ZR_NULL) {
+        return;
+    }
+
+    object->garbageCollectMark.pinFlags |= (TZrUInt32)pinKind;
+    if ((pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_HOST_HANDLE) != 0) {
+        escapeFlags |= ZR_GARBAGE_COLLECT_ESCAPE_KIND_HOST_HANDLE;
+    }
+    if ((pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_NATIVE_HANDLE) != 0) {
+        escapeFlags |= ZR_GARBAGE_COLLECT_ESCAPE_KIND_NATIVE_HANDLE;
+    }
+    if ((pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_PERSISTENT_ROOT) != 0) {
+        escapeFlags |= ZR_GARBAGE_COLLECT_ESCAPE_KIND_GLOBAL_ROOT;
+    }
+    object->garbageCollectMark.escapeFlags |= escapeFlags;
+    object->garbageCollectMark.promotionReason = ZR_GARBAGE_COLLECT_PROMOTION_REASON_PINNED;
+    ZrCore_RawObject_SetStorageKind(object, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_PINNED);
+    ZrCore_RawObject_SetRegionKind(object, ZR_GARBAGE_COLLECT_REGION_KIND_PINNED);
 }
 
 TZrBool ZrCore_GarbageCollector_IsInvariant(SZrGlobalState *global) {
@@ -304,13 +450,25 @@ TZrBool ZrCore_GarbageCollector_IsSweeping(SZrGlobalState *global) {
 }
 
 void ZrCore_GarbageCollector_CheckGc(SZrState *state) {
-    SZrGlobalState *global = state->global;
+    SZrGlobalState *global;
+    SZrGarbageCollector *collector;
 
-    if (global->garbageCollector->gcDebtSize > 0) {
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
+        return;
+    }
+
+    global = state->global;
+    collector = global->garbageCollector;
+
+    if (collector->heapLimitBytes > 0 && collector->managedMemories >= collector->heapLimitBytes) {
+        ZrCore_GarbageCollector_ScheduleCollection(global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL);
+    }
+
+    if (collector->gcDebtSize > 0) {
         ZrCore_GarbageCollector_GcStep(state);
     }
 #if defined(ZR_DEBUG_GARBAGE_COLLECT_MEM_TEST)
-    if (global->garbageCollector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
+    if (collector->gcStatus == ZR_GARBAGE_COLLECT_STATUS_RUNNING) {
         ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
     }
 #endif

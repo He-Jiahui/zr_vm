@@ -623,8 +623,44 @@ void ZrGarbageCollectorRestartCollection(SZrState *state) {
     global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION;
 }
 
+static TZrBool garbage_collector_object_is_old_or_pinned(const SZrRawObject *object) {
+    if (object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE ||
+           object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_PINNED ||
+           object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_LARGE_PERSISTENT ||
+           object->garbageCollectMark.regionKind == ZR_GARBAGE_COLLECT_REGION_KIND_PERMANENT;
+}
+
+static TZrBool garbage_collector_object_is_young(const SZrRawObject *object) {
+    return object != ZR_NULL && object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE;
+}
+
+static void garbage_collector_remember_object(SZrGlobalState *global, SZrRawObject *object) {
+    if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
+        return;
+    }
+
+    if (garbage_collector_remembered_registry_contains(global->garbageCollector, object)) {
+        return;
+    }
+
+    if (!garbage_collector_ensure_remembered_registry_capacity(global,
+                                                               global->garbageCollector->rememberedObjectCount + 1)) {
+        return;
+    }
+
+    global->garbageCollector->rememberedObjects[global->garbageCollector->rememberedObjectCount++] = object;
+    global->garbageCollector->statsSnapshot.rememberedObjectCount =
+            (TZrUInt32)global->garbageCollector->rememberedObjectCount;
+}
+
 void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrRawObject *valueObject) {
     SZrGlobalState *global;
+    TZrUInt32 propagatedEscapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE;
+    EZrGarbageCollectPromotionReason promotionReason = ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE;
 
     if (state == ZR_NULL || object == ZR_NULL || valueObject == ZR_NULL) {
         return;
@@ -642,6 +678,27 @@ void ZrCore_GarbageCollector_Barrier(SZrState *state, SZrRawObject *object, SZrR
     if (!ZrCore_RawObject_IsMarkReferenced(object) || !ZrCore_RawObject_IsMarkInited(valueObject) ||
         ZrCore_RawObject_IsUnreferenced(state, object) || ZrCore_RawObject_IsUnreferenced(state, valueObject)) {
         return;
+    }
+
+    if (garbage_collector_object_is_old_or_pinned(object) && garbage_collector_object_is_young(valueObject)) {
+        garbage_collector_remember_object(global, object);
+        if (object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_PINNED ||
+            object->garbageCollectMark.regionKind == ZR_GARBAGE_COLLECT_REGION_KIND_PINNED) {
+            propagatedEscapeFlags |= ZR_GARBAGE_COLLECT_ESCAPE_KIND_PINNED_REFERENCE;
+            promotionReason = ZR_GARBAGE_COLLECT_PROMOTION_REASON_PINNED;
+        } else if (object->garbageCollectMark.regionKind == ZR_GARBAGE_COLLECT_REGION_KIND_PERMANENT) {
+            propagatedEscapeFlags |= ZR_GARBAGE_COLLECT_ESCAPE_KIND_GLOBAL_ROOT;
+            promotionReason = ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT;
+        } else {
+            propagatedEscapeFlags |= ZR_GARBAGE_COLLECT_ESCAPE_KIND_OLD_REFERENCE;
+            promotionReason = ZR_GARBAGE_COLLECT_PROMOTION_REASON_OLD_REFERENCE;
+        }
+
+        valueObject->garbageCollectMark.escapeFlags |= propagatedEscapeFlags;
+        if (valueObject->garbageCollectMark.promotionReason == ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE ||
+            valueObject->garbageCollectMark.promotionReason == ZR_GARBAGE_COLLECT_PROMOTION_REASON_SURVIVAL) {
+            valueObject->garbageCollectMark.promotionReason = promotionReason;
+        }
     }
 
     if (ZrCore_GarbageCollector_IsInvariant(global)) {

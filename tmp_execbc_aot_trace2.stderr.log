@@ -1,0 +1,30 @@
+  [execbc_aot_signed_numeric_paths_test.zr:3:1] 期望 '>'，但遇到 ';' (遇到 token: ';')
+    var delta = right - left;
+^
+[map-array-trace] find_type_prototype request=Array<int> module=<null> expectedType=0
+[map-array-trace] find_type_prototype request=Array module=<null> expectedType=0
+[map-array-trace] find_type_prototype hit loaded registry name=Array mask=80
+[map-array-trace] find_type_prototype hit open generic name=Array mask=80
+[map-array-trace] find_type_prototype request=Array<int> module=<null> expectedType=0
+[map-array-trace] find_type_prototype request=Array module=<null> expectedType=0
+[map-array-trace] find_type_prototype hit loaded registry name=Array mask=80
+[map-array-trace] find_type_prototype hit open generic name=Array mask=80
+[map-array-trace] find_type_prototype request=Array<int> module=<null> expectedType=0
+[map-array-trace] find_type_prototype request=Array module=<null> expectedType=0
+[map-array-trace] find_type_prototype hit loaded registry name=Array mask=80
+[map-array-trace] find_type_prototype hit open generic name=Array mask=80
+[map-array-trace] find_type_prototype request=Array<int> module=<null> expectedType=0
+[map-array-trace] find_type_prototype request=Array module=<null> expectedType=0
+[map-array-trace] find_type_prototype hit loaded registry name=Array mask=80
+[map-array-trace] find_type_prototype hit open generic name=Array mask=80
+[map-array-trace] find_type_prototype request=MultiplyWorker module=<null> expectedType=0
+[map-array-trace] find_type_prototype hit global zr name=MultiplyWorker mask=0
+[map-array-trace] find_type_prototype request=Array<int> module=<null> expectedType=0
+[map-array-trace] find_type_prototype request=Array module=<null> expectedType=0
+[map-array-trace] find_type_prototype hit loaded registry name=Array mask=80
+[map-array-trace] find_type_prototype hit open generic name=Array mask=80
+[map-array-trace] super_array_not_applicable reason=items_value prototype=Array mask=80 itemsType=-1
+Error: SUPER_ARRAY_ADD_INT: receiver must be an array-like object with int payload
+payload: SUPER_ARRAY_ADD_INT: receiver must be an array-like object with int payload
+  at <anonymous> (execbc_aot_benchmark_style_generic_div_test.zr:3, ip=11)
+*** stack smashing detected ***: terminated

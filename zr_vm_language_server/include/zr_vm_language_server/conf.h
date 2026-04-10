@@ -117,6 +117,7 @@
 #define ZR_LSP_FIELD_DOCUMENT_SYMBOL_PROVIDER "documentSymbolProvider"
 #define ZR_LSP_FIELD_WORKSPACE_SYMBOL_PROVIDER "workspaceSymbolProvider"
 #define ZR_LSP_FIELD_DOCUMENT_HIGHLIGHT_PROVIDER "documentHighlightProvider"
+#define ZR_LSP_FIELD_INLAY_HINT_PROVIDER "inlayHintProvider"
 #define ZR_LSP_FIELD_LEGEND "legend"
 #define ZR_LSP_FIELD_FULL "full"
 #define ZR_LSP_FIELD_SEMANTIC_TOKENS_PROVIDER "semanticTokensProvider"
@@ -131,6 +132,8 @@
 #define ZR_LSP_FIELD_DISPLAY_NAME "displayName"
 #define ZR_LSP_FIELD_DESCRIPTION "description"
 #define ZR_LSP_FIELD_NAVIGATION_URI "navigationUri"
+#define ZR_LSP_FIELD_PADDING_LEFT "paddingLeft"
+#define ZR_LSP_FIELD_PADDING_RIGHT "paddingRight"
 
 #define ZR_LSP_MARKUP_KIND_MARKDOWN "markdown"
 #define ZR_LSP_INSERT_TEXT_FORMAT_KIND_PLAINTEXT "plaintext"
@@ -156,6 +159,7 @@
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_SYMBOL "textDocument/documentSymbol"
 #define ZR_LSP_METHOD_WORKSPACE_SYMBOL "workspace/symbol"
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT "textDocument/documentHighlight"
+#define ZR_LSP_METHOD_TEXT_DOCUMENT_INLAY_HINT "textDocument/inlayHint"
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL "textDocument/semanticTokens/full"
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_PREPARE_RENAME "textDocument/prepareRename"
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_RENAME "textDocument/rename"
@@ -204,6 +208,11 @@ typedef enum EZrLspSymbolKind {
     ZR_LSP_SYMBOL_KIND_ENUM_MEMBER = 22,
     ZR_LSP_SYMBOL_KIND_STRUCT = 23,
 } EZrLspSymbolKind;
+
+typedef enum EZrLspInlayHintKind {
+    ZR_LSP_INLAY_HINT_KIND_TYPE = 1,
+    ZR_LSP_INLAY_HINT_KIND_PARAMETER = 2,
+} EZrLspInlayHintKind;
 
 #define ZR_LSP_JSON_RPC_PARSE_ERROR_CODE (-32700)
 #define ZR_LSP_JSON_RPC_INVALID_REQUEST_CODE (-32600)

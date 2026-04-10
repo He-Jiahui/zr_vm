@@ -1,0 +1,68 @@
+
+==========
+ZR-VM Compiler Regression Unit Tests
+==========
+
+Unit Test - Class Member Nested Functions Keep Constant Indices In Range
+Testing Nested function constant cache reset:
+ Testing that class member methods compile with local constant indices after nested function state resets
+Pass - Cost Time:5.000ms - Class Member Nested Functions Keep Constant Indices In Range
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_regressions.c:1637:test_class_member_nested_functions_keep_constant_indices_in_range:PASS
+Unit Test - Lambda Create Closure Targets Are Reachable From Child Function Graph
+Testing Lambda child function graph completeness:
+ Testing that CREATE_CLOSURE function constants are reachable from childFunctions instead of relying on constant-only recovery
+Pass - Cost Time:0.000ms - Lambda Create Closure Targets Are Reachable From Child Function Graph
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_regressions.c:1638:test_lambda_create_closure_targets_are_reachable_from_child_function_graph:PASS
+Unit Test - Classes Full Module Compiles Without Static And Receiver Signature Regressions
+Testing Static class access and instance parameter metadata:
+ Testing that classes_full hero module compiles with static member access and instance method signatures
+Pass - Cost Time:3.000ms - Classes Full Module Compiles Without Static And Receiver Signature Regressions
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_regressions.c:1639:test_classes_full_module_compiles_without_static_and_receiver_signature_regressions:PASS
+Unit Test - Native Network Optional Argument Import Compiles Without Unknown Parameter Blowup
+Testing Imported native optional parameters:
+ Testing that optional-argument native members like zr.network.tcp.connect do not treat UNKNOWN parameter counts as allocation sizes during compile
+Pass - Cost Time:3.000ms - Native Network Optional Argument Import Compiles Without Unknown Parameter Blowup
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_regressions.c:1640:test_native_network_optional_argument_import_compiles_without_unknown_parameter_blowup:PASS
+Unit Test - Reserved %type Targets Compile Without Explicit Imports
+Testing Reserved reflection target pseudo-types:
+ Testing that %type Class/Struct/Function/Field/Method/Property/Parameter/Object remain valid reserved targets without reopening imported type globals
+Pass - Cost Time:1.000ms - Reserved %type Targets Compile Without Explicit Imports
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_regressions.c:1641:test_reserved_type_query_targets_compile_without_explicit_imports:PASS
+Unit Test - Qualified Container Types Compile Through Function Predeclaration Paths
+Testing Qualified container types through predeclaration:
+ Testing that module-qualified container types remain available when function signatures are predeclared before the normal statement compilation pass
+Pass - Cost Time:3.000ms - Qualified Container Types Compile Through Function Predeclaration Paths
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_regressions.c:1642:test_qualified_container_types_compile_through_function_predeclaration_paths:PASS
+Unit Test - Native Network Loopback Runtime Returns Expected Payload
+Testing Loopback TCP/UDP runtime:
+ Testing that zr.network TCP and UDP loopback client/server flows return the expected payload on the current platform
+Pass - Cost Time:8.000ms - Native Network Loopback Runtime Returns Expected Payload
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_regressions.c:1643:test_native_network_loopback_runtime_returns_expected_payload:PASS
+Unit Test - Native Network Loopback Project Run Returns Expected Payload
+Testing Project runtime loopback:
+ Testing that ZrLibrary_Project_Run executes the network_loopback project without escaping through an unhandled runtime exception
+Pass - Cost Time:22.000ms - Native Network Loopback Project Run Returns Expected Payload
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_regressions.c:1644:test_native_network_loopback_project_run_returns_expected_payload:PASS
+Unit Test - Imported Source Module Type Stubs Stay Out Of Entry Prototype Data
+Testing Compiler prototype serialization:
+ Testing that importing a source module for type analysis does not serialize the imported module's runtime type stubs into the current entry function
+Pass - Cost Time:9.000ms - Imported Source Module Type Stubs Stay Out Of Entry Prototype Data
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_regressions.c:1645:test_imported_source_module_type_stubs_do_not_serialize_into_entry_prototype_data:PASS
+Unit Test - Project Local Struct Pair Shadows Native Pair At Runtime
+Testing Project type shadowing:
+ Testing that a project-local struct Pair keeps its constructor and field access even when another module imports zr.container's native Pair
+Pass - Cost Time:14.000ms - Project Local Struct Pair Shadows Native Pair At Runtime
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_regressions.c:1646:test_project_local_struct_pair_shadows_native_pair_at_runtime:PASS
+Unit Test - LSP Language Feature Matrix Runtime Returns Expected Total
+Testing Project runtime type resolution:
+ Testing that the language-feature matrix resolves bare in-module types against the current module before sibling or native modules with the same type name

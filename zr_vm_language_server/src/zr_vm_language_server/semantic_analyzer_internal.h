@@ -27,6 +27,17 @@ ZR_FORCE_INLINE const TZrChar *semantic_string_native(SZrString *value) {
     return ZrCore_String_GetNativeString(value);
 }
 
+ZR_FORCE_INLINE TZrBool ZrLanguageServer_SemanticAnalyzer_IsWeakObjectType(const SZrInferredType *typeInfo) {
+    return typeInfo != ZR_NULL &&
+           typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
+           typeInfo->typeName == ZR_NULL &&
+           (!typeInfo->elementTypes.isValid || typeInfo->elementTypes.length == 0);
+}
+
+ZR_FORCE_INLINE TZrBool ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(const SZrInferredType *typeInfo) {
+    return typeInfo != ZR_NULL && !ZrLanguageServer_SemanticAnalyzer_IsWeakObjectType(typeInfo);
+}
+
 void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state,
                                                            SZrSemanticAnalyzer *analyzer,
                                                            SZrAstNode *node);
@@ -62,6 +73,11 @@ void ZrLanguageServer_SemanticAnalyzer_RecordUsingCleanupStep(SZrSemanticAnalyze
 void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *state,
                                                                       SZrSemanticAnalyzer *analyzer,
                                                                       SZrFileRange fallbackLocation);
+
+TZrBool ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(SZrState *state,
+                                                                   SZrSemanticAnalyzer *analyzer,
+                                                                   SZrAstNode *node,
+                                                                   SZrInferredType *outType);
 
 void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *state,
                                                                   SZrSemanticAnalyzer *analyzer,

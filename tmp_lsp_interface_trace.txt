@@ -1,0 +1,901 @@
+==========
+Language Server - LSP Interface Tests
+==========
+
+Unit Test - LSP Context Creation and Free
+Testing LSP Context Creation:
+ Creating and freeing LSP context
+Pass - Cost Time:0.000ms - LSP Context Creation and Free
+----------
+Unit Test - LSP Update Document
+Testing Update Document:
+ Updating document in LSP context
+Pass - Cost Time:2.000ms - LSP Update Document
+----------
+Unit Test - LSP Get Diagnostics
+Testing Get Diagnostics:
+ Getting diagnostics from LSP context
+Pass - Cost Time:2.000ms - LSP Get Diagnostics
+----------
+Unit Test - LSP Get Parser Diagnostics
+Testing Parser Diagnostics:
+ Publishing syntax errors through standard LSP diagnostics
+Pass - Cost Time:1.000ms - LSP Get Parser Diagnostics
+----------
+Unit Test - LSP Incomplete Edit Preserves Prior Semantic Snapshot
+Testing Incremental syntax fallback:
+ A missing closing brace in the middle of the file should still surface parser diagnostics without dropping semantic information for unchanged declarations below it
+Pass - Cost Time:4.000ms - LSP Incomplete Edit Preserves Prior Semantic Snapshot
+----------
+Unit Test - LSP Get Completion
+Testing Get Completion:
+ Getting code completion from LSP context
+Pass - Cost Time:3.000ms - LSP Get Completion
+----------
+Unit Test - LSP Get Definition
+Testing Get Definition:
+ Getting definition location from LSP context
+Pass - Cost Time:4.000ms - LSP Get Definition
+----------
+Unit Test - LSP Find References
+Testing Find References:
+ Finding all references to a symbol
+Pass - Cost Time:4.000ms - LSP Find References
+----------
+Unit Test - LSP Rename
+Testing Rename Symbol:
+ Renaming a symbol and getting all locations
+Pass - Cost Time:1.000ms - LSP Rename
+----------
+Unit Test - LSP Get Document Symbols
+Testing Get Document Symbols:
+ Collecting symbols from a single document
+Pass - Cost Time:0.000ms - LSP Get Document Symbols
+----------
+Unit Test - LSP Get Workspace Symbols
+Testing Get Workspace Symbols:
+ Searching symbols across multiple open documents
+Pass - Cost Time:2.000ms - LSP Get Workspace Symbols
+----------
+Unit Test - LSP Project Definition Resolves Imported Function
+Testing Project Definition:
+ Opening a .zrp should let goto definition jump to imported source files
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627B4650
+[zr-module-init] prepare current module 'greet' ast=00000204627B4650
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627B4650
+[zr-parser-compile] compiler validate task effects ok ast=00000204627B4650
+[zr-parser-compile] compiler current function=00000204627BC540
+[zr-parser-compile] compile_script start ast=00000204627B4650
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627B4D50 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627B49D0 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627B49D0 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627B4D50 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627B4650 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627BC540
+[zr-parser-compile] assemble final function ok func=00000204627BC540
+[zr-parser-compile] build semir metadata ok func=00000204627BC540
+[zr-parser-compile] quicken execbc ok func=00000204627BC540
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627B4650
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627BC540
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627BC540
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627BC540
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627AF370
+[zr-module-init] prepare current module 'greet' ast=00000204627AF370
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627AF370
+[zr-parser-compile] compiler validate task effects ok ast=00000204627AF370
+[zr-parser-compile] compiler current function=00000204627B32D0
+[zr-parser-compile] compile_script start ast=00000204627AF370
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627AF450 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627AF0D0 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627AF0D0 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627AF450 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627AF370 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627B32D0
+[zr-parser-compile] assemble final function ok func=00000204627B32D0
+[zr-parser-compile] build semir metadata ok func=00000204627B32D0
+[zr-parser-compile] quicken execbc ok func=00000204627B32D0
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627AF370
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627B32D0
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627B32D0
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627B32D0
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627AFA70
+[zr-module-init] prepare current module 'greet' ast=00000204627AFA70
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627AFA70
+[zr-parser-compile] compiler validate task effects ok ast=00000204627AFA70
+[zr-parser-compile] compiler current function=00000204627E23E0
+[zr-parser-compile] compile_script start ast=00000204627AFA70
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627AF290 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627AE8F0 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627AE8F0 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627AF290 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627AFA70 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627E23E0
+[zr-parser-compile] assemble final function ok func=00000204627E23E0
+[zr-parser-compile] build semir metadata ok func=00000204627E23E0
+[zr-parser-compile] quicken execbc ok func=00000204627E23E0
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627AFA70
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627E23E0
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627E23E0
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627E23E0
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627AF1B0
+[zr-module-init] prepare current module 'greet' ast=00000204627AF1B0
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627AF1B0
+[zr-parser-compile] compiler validate task effects ok ast=00000204627AF1B0
+[zr-parser-compile] compiler current function=00000204627E1D60
+[zr-parser-compile] compile_script start ast=00000204627AF1B0
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627AF610 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627AE490 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627AE490 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627AF610 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627AF1B0 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627E1D60
+[zr-parser-compile] assemble final function ok func=00000204627E1D60
+[zr-parser-compile] build semir metadata ok func=00000204627E1D60
+[zr-parser-compile] quicken execbc ok func=00000204627E1D60
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627AF1B0
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627E1D60
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627E1D60
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627E1D60
+[zr-import-meta] ensure import compile info exit result=1
+Pass - Cost Time:12.000ms - LSP Project Definition Resolves Imported Function
+----------
+Unit Test - LSP Project References Include Imported Function Usage
+Testing Project References:
+ Opening a .zrp should let references cross imported project source files
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627AE3B0
+[zr-module-init] prepare current module 'greet' ast=00000204627AE3B0
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627AE3B0
+[zr-parser-compile] compiler validate task effects ok ast=00000204627AE3B0
+[zr-parser-compile] compiler current function=00000204627E00E0
+[zr-parser-compile] compile_script start ast=00000204627AE3B0
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627AE810 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627AEAB0 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627AEAB0 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627AE810 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627AE3B0 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627E00E0
+[zr-parser-compile] assemble final function ok func=00000204627E00E0
+[zr-parser-compile] build semir metadata ok func=00000204627E00E0
+[zr-parser-compile] quicken execbc ok func=00000204627E00E0
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627AE3B0
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627E00E0
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627E00E0
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627E00E0
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627AF0D0
+[zr-module-init] prepare current module 'greet' ast=00000204627AF0D0
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627AF0D0
+[zr-parser-compile] compiler validate task effects ok ast=00000204627AF0D0
+[zr-parser-compile] compiler current function=00000204627E0660
+[zr-parser-compile] compile_script start ast=00000204627AF0D0
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627AF370 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627AE2D0 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627AE2D0 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627AF370 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627AF0D0 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627E0660
+[zr-parser-compile] assemble final function ok func=00000204627E0660
+[zr-parser-compile] build semir metadata ok func=00000204627E0660
+[zr-parser-compile] quicken execbc ok func=00000204627E0660
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627AF0D0
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627E0660
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627E0660
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627E0660
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627AEF10
+[zr-module-init] prepare current module 'greet' ast=00000204627AEF10
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627AEF10
+[zr-parser-compile] compiler validate task effects ok ast=00000204627AEF10
+[zr-parser-compile] compiler current function=00000204627BEBA0
+[zr-parser-compile] compile_script start ast=00000204627AEF10
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627AF990 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627AE810 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627AE810 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627AF990 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627AEF10 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627BEBA0
+[zr-parser-compile] assemble final function ok func=00000204627BEBA0
+[zr-parser-compile] build semir metadata ok func=00000204627BEBA0
+[zr-parser-compile] quicken execbc ok func=00000204627BEBA0
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627AEF10
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627BEBA0
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627BEBA0
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627BEBA0
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627AE110
+[zr-module-init] prepare current module 'greet' ast=00000204627AE110
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627AE110
+[zr-parser-compile] compiler validate task effects ok ast=00000204627AE110
+[zr-parser-compile] compiler current function=00000204627BF3E0
+[zr-parser-compile] compile_script start ast=00000204627AE110
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627AF290 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627ADF50 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627ADF50 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627AF290 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627AE110 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627BF3E0
+[zr-parser-compile] assemble final function ok func=00000204627BF3E0
+[zr-parser-compile] build semir metadata ok func=00000204627BF3E0
+[zr-parser-compile] quicken execbc ok func=00000204627BF3E0
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627AE110
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627BF3E0
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627BF3E0
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627BF3E0
+[zr-import-meta] ensure import compile info exit result=1
+Pass - Cost Time:9.000ms - LSP Project References Include Imported Function Usage
+----------
+Unit Test - LSP Project Workspace Symbols Include Imported Exports
+Testing Project Workspace Symbols:
+ Opening a .zrp should index imported project exports for workspace/symbol
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627AF8B0
+[zr-module-init] prepare current module 'greet' ast=00000204627AF8B0
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627AF8B0
+[zr-parser-compile] compiler validate task effects ok ast=00000204627AF8B0
+[zr-parser-compile] compiler current function=00000204627BDDE0
+[zr-parser-compile] compile_script start ast=00000204627AF8B0
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627AFDF0 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627AE650 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627AE650 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627AFDF0 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627AF8B0 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627BDDE0
+[zr-parser-compile] assemble final function ok func=00000204627BDDE0
+[zr-parser-compile] build semir metadata ok func=00000204627BDDE0
+[zr-parser-compile] quicken execbc ok func=00000204627BDDE0
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627AF8B0
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627BDDE0
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627BDDE0
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627BDDE0
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627AF990
+[zr-module-init] prepare current module 'greet' ast=00000204627AF990
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627AF990
+[zr-parser-compile] compiler validate task effects ok ast=00000204627AF990
+[zr-parser-compile] compiler current function=00000204627BE0A0
+[zr-parser-compile] compile_script start ast=00000204627AF990
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627AE1F0 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627AE570 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627AE570 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627AE1F0 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627AF990 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627BE0A0
+[zr-parser-compile] assemble final function ok func=00000204627BE0A0
+[zr-parser-compile] build semir metadata ok func=00000204627BE0A0
+[zr-parser-compile] quicken execbc ok func=00000204627BE0A0
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627AF990
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627BE0A0
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627BE0A0
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627BE0A0
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=00000204627AF0D0
+[zr-module-init] prepare current module 'greet' ast=00000204627AF0D0
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204627AF0D0
+[zr-parser-compile] compiler validate task effects ok ast=00000204627AF0D0
+[zr-parser-compile] compiler current function=00000204627EC030
+[zr-parser-compile] compile_script start ast=00000204627AF0D0
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=00000204627AF450 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204627AFDF0 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204627AFDF0 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204627AF450 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=00000204627AF0D0 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627EC030
+[zr-parser-compile] assemble final function ok func=00000204627EC030
+[zr-parser-compile] build semir metadata ok func=00000204627EC030
+[zr-parser-compile] quicken execbc ok func=00000204627EC030
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204627AF0D0
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627EC030
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627EC030
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627EC030
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=33
+[zr-parser-compile] source compile start name='greet' len=33
+[zr-parser-compile] parse ok name='greet' ast=000002046275F8B0
+[zr-module-init] prepare current module 'greet' ast=000002046275F8B0
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=000002046275F8B0
+[zr-parser-compile] compiler validate task effects ok ast=000002046275F8B0
+[zr-parser-compile] compiler current function=00000204627EBAB0
+[zr-parser-compile] compile_script start ast=000002046275F8B0
+[zr-parser-compile] compile_script stmt[0] type=6
+[zr-compile-stmt] statement compile dispatch node=000002046275FED0 type=57
+[zr-compile-stmt] statement compile dispatch node=000002046275F290 type=60
+[zr-compile-stmt] statement compile dispatch done node=000002046275F290 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=000002046275FED0 type=57 hasError=0
+[zr-parser-compile] compile_script done ast=000002046275F8B0 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627EBAB0
+[zr-parser-compile] assemble final function ok func=00000204627EBAB0
+[zr-parser-compile] build semir metadata ok func=00000204627EBAB0
+[zr-parser-compile] quicken execbc ok func=00000204627EBAB0
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=000002046275F8B0
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627EBAB0
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627EBAB0
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627EBAB0
+[zr-import-meta] ensure import compile info exit result=1
+Pass - Cost Time:8.000ms - LSP Project Workspace Symbols Include Imported Exports
+----------
+Unit Test - LSP Project Encoded URI Builtin Import Refresh Does Not Crash
+Testing Project refresh encoded URI:
+ Opening a project source file through a percent-encoded file URI should keep project refresh and native builtin metadata loading stable for zr.system imports
+[zr-import-meta] ensure import compile info enter module=000002046279F9E0
+[zr-import-meta] ensure import compile info satisfied by native module
+[zr-import-meta] ensure import compile info enter module=000002046279F9E0
+[zr-import-meta] ensure import compile info satisfied by native module
+Pass - Cost Time:11.000ms - LSP Project Encoded URI Builtin Import Refresh Does Not Crash
+----------
+Unit Test - LSP Get Document Highlights
+Testing Get Document Highlights:
+ Collecting highlight ranges for a symbol
+Pass - Cost Time:2.000ms - LSP Get Document Highlights
+----------
+Unit Test - LSP Prepare Rename
+Testing Prepare Rename:
+ Validating rename range and placeholder before rename
+Pass - Cost Time:0.000ms - LSP Prepare Rename
+----------
+Unit Test - LSP Class Member Navigation And Completion
+Testing Class Members:
+ Checking definition, references, document symbols, and get/set completions
+Pass - Cost Time:10.000ms - LSP Class Member Navigation And Completion
+----------
+Unit Test - LSP Hover And Completion Include Comments
+Testing Documentation Comments:
+ Checking hover and completion documentation pick up leading comments
+Pass - Cost Time:3.000ms - LSP Hover And Completion Include Comments
+----------
+Unit Test - LSP Function Symbol Range Trimmed To Body
+Testing Function Symbol Range:
+ Checking function range end does not drift into the next declaration
+Pass - Cost Time:2.000ms - LSP Function Symbol Range Trimmed To Body
+----------
+Unit Test - LSP Function Prepare Rename Uses Name Range
+Testing Function Rename Range:
+ Checking function declarations map to the identifier span instead of the whole declaration
+Pass - Cost Time:2.000ms - LSP Function Prepare Rename Uses Name Range
+----------
+Unit Test - LSP Closed Generic Type Display And Definition
+Testing Closed Generic Types:
+ Checking hover, completion detail, and goto definition stay consistent for closed generic type uses
+Pass - Cost Time:4.000ms - LSP Closed Generic Type Display And Definition
+----------
+Unit Test - LSP Signature Help Displays Closed Generic Instantiation
+Testing Signature Help:
+ Checking signature help closes receiver and const generic types at the call site
+Pass - Cost Time:7.000ms - LSP Signature Help Displays Closed Generic Instantiation
+----------
+Unit Test - LSP Signature Help Resolves Super Constructor
+Testing Super constructor signature help:
+ The derived constructor should surface the base constructor signature at super(...) call sites
+Pass - Cost Time:1.000ms - LSP Signature Help Resolves Super Constructor
+----------
+Unit Test - LSP Definition Resolves Super Constructor
+Testing Super constructor definition:
+ Goto definition on super(...) should jump to the base constructor declaration
+Pass - Cost Time:1.000ms - LSP Definition Resolves Super Constructor
+----------
+Unit Test - LSP References Resolve Super Constructor
+Testing Super constructor references:
+ Find references on super(...) should include the base constructor declaration and super call
+Pass - Cost Time:1.000ms - LSP References Resolve Super Constructor
+----------
+Unit Test - LSP Document Highlights Resolve Super Constructor
+Testing Super constructor highlights:
+ Document highlights on super(...) should include the base constructor declaration and super call
+Pass - Cost Time:1.000ms - LSP Document Highlights Resolve Super Constructor
+----------
+Unit Test - LSP Definition Resolves Decorator Target
+Testing Decorator definition:
+ Goto definition on a decorator token should jump to the decorated class or method
+Pass - Cost Time:1.000ms - LSP Definition Resolves Decorator Target
+----------
+Unit Test - LSP Hover Describes Decorator Target
+Testing Decorator hover:
+ Hover on a decorator token should describe the decorator category and decorated declaration
+Pass - Cost Time:2.000ms - LSP Hover Describes Decorator Target
+----------
+Unit Test - LSP Hover Describes Meta Method Category
+Testing Meta method hover:
+ Hover on an @meta-method token should describe its category and applicable declaration shape
+Pass - Cost Time:2.000ms - LSP Hover Describes Meta Method Category
+----------
+Unit Test - LSP Extern Function Navigation And Signature Help
+Testing Extern function semantic integration:
+ Extern function declarations should participate in completion, hover-independent definition/reference tracking, document highlights, and signature help
+Pass - Cost Time:7.000ms - LSP Extern Function Navigation And Signature Help
+----------
+Unit Test - LSP Extern Type Symbols Surface Hover And Definition
+Testing Extern type semantic integration:
+ Extern delegate/struct/enum declarations should become navigable source symbols with stable hover and completion
+Pass - Cost Time:16.000ms - LSP Extern Type Symbols Surface Hover And Definition
+----------
+Unit Test - LSP Extern Layout Hover Surfaces FFI Metadata
+Testing Extern layout metadata hover:
+ Extern struct/enum hover should surface ffi layout decorators like pack/align/offset/underlying/value through the same source-symbol path
+Pass - Cost Time:13.000ms - LSP Extern Layout Hover Surfaces FFI Metadata
+----------
+Unit Test - LSP FFI Pointer Helpers Surface Extern Wrapper Types
+Testing FFI pointer helper extern wrapper flow:
+ pin/as/read should keep extern wrapper types on locals, completions, field navigation, and hover metadata
+[zr-import-meta] ensure import compile info enter module=00000204629BEC80
+[zr-import-meta] ensure import compile info satisfied by native module
+[zr-import-meta] ensure import compile info enter module=00000204629BEC80
+[zr-import-meta] ensure import compile info hit registered prototype
+[zr-import-meta] ensure import compile info enter module=00000204629BEC80
+[zr-import-meta] ensure import compile info hit registered prototype
+[zr-import-meta] ensure import compile info enter module=00000204629BEC80
+[zr-import-meta] ensure import compile info hit registered prototype
+Pass - Cost Time:21.000ms - LSP FFI Pointer Helpers Surface Extern Wrapper Types
+----------
+Unit Test - LSP Completion Lists Directives And Meta Methods
+Testing Directive/meta completion:
+ Typing % or @ should offer reserved directives and meta method categories
+Pass - Cost Time:6.000ms - LSP Completion Lists Directives And Meta Methods
+----------
+Unit Test - LSP Semantic Query Unifies Local Symbol Navigation And Hover
+Testing Structured semantic query:
+ The shared semantic query should resolve one local symbol target and drive hover/definition/references/highlights from the same structured result
+Pass - Cost Time:3.000ms - LSP Semantic Query Unifies Local Symbol Navigation And Hover
+----------
+Unit Test - LSP Web URI Local Symbol Navigation
+Testing Web URI support:
+ Non-file document URIs such as vscode-test-web://... should still support same-document definition, references, and highlights through the shared semantic query path
+Pass - Cost Time:1.000ms - LSP Web URI Local Symbol Navigation
+----------
+Unit Test - LSP FileUriToNativePath Rejects Non-File Web Uri
+Testing Web URI native-path rejection:
+ Non-file URIs such as vscode-test-web://... must not be treated as native file-system paths for project refresh or metadata loading
+Pass - Cost Time:0.000ms - LSP FileUriToNativePath Rejects Non-File Web Uri
+----------
+Unit Test - LSP Semantic Query Resolves Native Import Member Source Kind
+Testing Structured metadata provider:
+ The shared semantic query should resolve imported members through the metadata provider and preserve the native builtin source kind
+[zr-import-meta] ensure import compile info enter module=00000204629BEC80
+[zr-import-meta] ensure import compile info satisfied by native module
+Pass - Cost Time:4.000ms - LSP Semantic Query Resolves Native Import Member Source Kind
+----------
+Unit Test - LSP Semantic Query Resolves Module-Link Chain Member Navigation
+Testing Structured import chain query:
+ Secondary chain segments such as system.console.printLine should resolve through the same structured metadata query used by definition, references, and document highlight
+[zr-import-meta] ensure import compile info enter module=000002046279F9E0
+[zr-import-meta] ensure import compile info satisfied by native module
+Pass - Cost Time:6.000ms - LSP Semantic Query Resolves Module-Link Chain Member Navigation
+----------
+Unit Test - LSP Semantic Query Unifies Import Target Navigation
+Testing Structured import target query:
+ Import literals and aliases should resolve through the shared semantic query path for hover/definition/references/highlights instead of interface-level string navigation
+[zr-import-meta] ensure import compile info enter module=000002046279F9E0
+[zr-import-meta] ensure import compile info satisfied by native module
+Pass - Cost Time:8.000ms - LSP Semantic Query Unifies Import Target Navigation
+----------
+Unit Test - LSP Native Declaration Document Renders Virtual ZR Source
+Testing Native declaration virtual document:
+ The language server should render native module descriptors into zr-decompiled virtual ZR declarations.
+Pass - Cost Time:0.000ms - LSP Native Declaration Document Renders Virtual ZR Source
+----------
+Unit Test - LSP Native Import Definition Uses Virtual Declaration URI
+Testing Native import goto definition:
+ Goto definition on a native import should land on the zr-decompiled virtual declaration document instead of a C source file.
+[zr-import-meta] ensure import compile info enter module=0000020462A6F030
+[zr-import-meta] ensure import compile info satisfied by native module
+Pass - Cost Time:4.000ms - LSP Native Import Definition Uses Virtual Declaration URI
+----------
+Unit Test - LSP Project Modules Summarize Project Native And Binary Modules
+Testing Project module summary:
+ The language server should summarize selected-project source, binary and native modules through a single request.
+Pass - Cost Time:6.000ms - LSP Project Modules Summarize Project Native And Binary Modules
+----------
+Unit Test - LSP Project Source Bootstrap Indexes Open File Symbols And Modules
+Testing Project source bootstrap:
+ Opening a project-owned .zr file through a VS Code style encoded URI should upgrade the project to semantic load, index the file into workspace symbols, and expose it through projectModules.
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=59
+[zr-parser-compile] source compile start name='greet' len=59
+[zr-parser-compile] parse ok name='greet' ast=00000204629F99E0
+[zr-module-init] prepare current module 'greet' ast=00000204629F99E0
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204629F99E0
+[zr-parser-compile] compiler validate task effects ok ast=00000204629F99E0
+[zr-parser-compile] compiler current function=00000204627EACF0
+[zr-parser-compile] compile_script start ast=00000204629F99E0
+[zr-parser-compile] compile_script stmt[0] type=7
+[zr-compile-stmt] statement compile dispatch node=0000020462A95A80 type=7
+[zr-compile-stmt] compile_variable_declaration enter node=0000020462A95A80 patternType=50 valueType=32
+[zr-compile-stmt] var decl identifier name=00000204627A0BF0 typeInfo=0000000000000000 value=0000020462A958C0
+[zr-compile-stmt] var decl infer from initializer start valueType=32
+[zr-compile-stmt] var decl infer from initializer done success=1 baseType=17 typeName=0000020462A72440 hasError=0
+[zr-compile-stmt] var decl initializer compile start reservedSlot=0 stackCount=1
+[zr-compile-stmt] statement compile dispatch node=0000020462A96DC0 type=57
+[zr-compile-stmt] statement compile dispatch node=0000020462A96CE0 type=60
+[zr-compile-stmt] statement compile dispatch done node=0000020462A96CE0 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=0000020462A96DC0 type=57 hasError=0
+[zr-compile-stmt] var decl initializer compile done hasError=0 stackCount=2
+[zr-compile-stmt] var decl bind initializer slot=1 reserved=0
+[zr-compile-stmt] var decl local binding done varIndex=0
+[zr-compile-stmt] var decl runtime alias registration done
+[zr-compile-stmt] var decl compile-time import alias registration done
+[zr-compile-stmt] compile_variable_declaration exit success
+[zr-compile-stmt] statement compile dispatch done node=0000020462A95A80 type=7 hasError=0
+[zr-parser-compile] compile_script done ast=00000204629F99E0 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627EACF0
+[zr-parser-compile] assemble final function ok func=00000204627EACF0
+[zr-parser-compile] build semir metadata ok func=00000204627EACF0
+[zr-parser-compile] quicken execbc ok func=00000204627EACF0
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204629F99E0
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627EACF0
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627EACF0
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627EACF0
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=59
+[zr-parser-compile] source compile start name='greet' len=59
+[zr-parser-compile] parse ok name='greet' ast=00000204629FAD20
+[zr-module-init] prepare current module 'greet' ast=00000204629FAD20
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204629FAD20
+[zr-parser-compile] compiler validate task effects ok ast=00000204629FAD20
+[zr-parser-compile] compiler current function=00000204627ED370
+[zr-parser-compile] compile_script start ast=00000204629FAD20
+[zr-parser-compile] compile_script stmt[0] type=7
+[zr-compile-stmt] statement compile dispatch node=00000204629FAB60 type=7
+[zr-compile-stmt] compile_variable_declaration enter node=00000204629FAB60 patternType=50 valueType=32
+[zr-compile-stmt] var decl identifier name=00000204627A0BF0 typeInfo=0000000000000000 value=00000204629F9040
+[zr-compile-stmt] var decl infer from initializer start valueType=32
+[zr-compile-stmt] var decl infer from initializer done success=1 baseType=17 typeName=0000020462A72440 hasError=0
+[zr-compile-stmt] var decl initializer compile start reservedSlot=0 stackCount=1
+[zr-compile-stmt] statement compile dispatch node=00000204629F9660 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204629F9F20 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204629F9F20 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204629F9660 type=57 hasError=0
+[zr-compile-stmt] var decl initializer compile done hasError=0 stackCount=2
+[zr-compile-stmt] var decl bind initializer slot=1 reserved=0
+[zr-compile-stmt] var decl local binding done varIndex=0
+[zr-compile-stmt] var decl runtime alias registration done
+[zr-compile-stmt] var decl compile-time import alias registration done
+[zr-compile-stmt] compile_variable_declaration exit success
+[zr-compile-stmt] statement compile dispatch done node=00000204629FAB60 type=7 hasError=0
+[zr-parser-compile] compile_script done ast=00000204629FAD20 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627ED370
+[zr-parser-compile] assemble final function ok func=00000204627ED370
+[zr-parser-compile] build semir metadata ok func=00000204627ED370
+[zr-parser-compile] quicken execbc ok func=00000204627ED370
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204629FAD20
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627ED370
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627ED370
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627ED370
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=00000204627A0BF0
+[zr-import-meta] ensure import compile info module='greet'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=59
+[zr-parser-compile] source compile start name='greet' len=59
+[zr-parser-compile] parse ok name='greet' ast=00000204629F92E0
+[zr-module-init] prepare current module 'greet' ast=00000204629F92E0
+[zr-module-init] prepare current module ok 'greet' summary=00000204627B0F50
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=00000204629F92E0
+[zr-parser-compile] compiler validate task effects ok ast=00000204629F92E0
+[zr-parser-compile] compiler current function=00000204627EC2F0
+[zr-parser-compile] compile_script start ast=00000204629F92E0
+[zr-parser-compile] compile_script stmt[0] type=7
+[zr-compile-stmt] statement compile dispatch node=00000204629F9200 type=7
+[zr-compile-stmt] compile_variable_declaration enter node=00000204629F9200 patternType=50 valueType=32
+[zr-compile-stmt] var decl identifier name=00000204627A0BF0 typeInfo=0000000000000000 value=00000204629FA1C0
+[zr-compile-stmt] var decl infer from initializer start valueType=32
+[zr-compile-stmt] var decl infer from initializer done success=1 baseType=17 typeName=0000020462A72440 hasError=0
+[zr-compile-stmt] var decl initializer compile start reservedSlot=0 stackCount=1
+[zr-compile-stmt] statement compile dispatch node=00000204629FAB60 type=57
+[zr-compile-stmt] statement compile dispatch node=00000204629F9660 type=60
+[zr-compile-stmt] statement compile dispatch done node=00000204629F9660 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=00000204629FAB60 type=57 hasError=0
+[zr-compile-stmt] var decl initializer compile done hasError=0 stackCount=2
+[zr-compile-stmt] var decl bind initializer slot=1 reserved=0
+[zr-compile-stmt] var decl local binding done varIndex=0
+[zr-compile-stmt] var decl runtime alias registration done
+[zr-compile-stmt] var decl compile-time import alias registration done
+[zr-compile-stmt] compile_variable_declaration exit success
+[zr-compile-stmt] statement compile dispatch done node=00000204629F9200 type=7 hasError=0
+[zr-parser-compile] compile_script done ast=00000204629F92E0 hasError=0
+[zr-parser-compile] optimize instructions func=00000204627EC2F0
+[zr-parser-compile] assemble final function ok func=00000204627EC2F0
+[zr-parser-compile] build semir metadata ok func=00000204627EC2F0
+[zr-parser-compile] quicken execbc ok func=00000204627EC2F0
+[zr-module-init] analyze source summary 'greet' summary=00000204627B0F50 ast=00000204629F92E0
+[zr-module-init] analyze source summary done 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary 'greet' summary=00000204627B0F50
+[zr-module-init] validate summary done 'greet' result=1 summary=00000204627B0F50
+[zr-parser-compile] finalize current source module ok func=00000204627EC2F0
+[zr-parser-compile] compiler compile finished name='greet' func=00000204627EC2F0
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=00000204627EC2F0
+[zr-import-meta] ensure import compile info exit result=1
+Pass - Cost Time:10.000ms - LSP Project Source Bootstrap Indexes Open File Symbols And Modules
+----------
+Unit Test - LSP Semantic Query Collects Receiver Completion Items
+Testing Structured completion query:
+ Completion should be collectable through the shared semantic query path for local receivers such as value-constructor-backed structs
+[zr-import-meta] ensure import compile info enter module=00000204629B03D0
+[zr-import-meta] ensure import compile info satisfied by native module
+Pass - Cost Time:9.000ms - LSP Semantic Query Collects Receiver Completion Items
+----------
+Unit Test - LSP Semantic Query Collects Import Module Completion Items
+Testing Structured import completion query:
+ Completion on imported module members should come from the shared semantic query/module metadata path instead of the legacy string-scanning import completion helper
+[zr-import-meta] ensure import compile info enter module=000002046279F9E0
+[zr-import-meta] ensure import compile info satisfied by native module
+Pass - Cost Time:4.000ms - LSP Semantic Query Collects Import Module Completion Items
+----------
+Unit Test - LSP Semantic Query Collects Import Chain Completion Items
+Testing Structured import-chain completion query:
+ Completion after system.console. should come from the same import-chain metadata resolver instead of falling back to generic receiver heuristics
+[zr-import-meta] ensure import compile info enter module=000002046279F9E0
+[zr-import-meta] ensure import compile info satisfied by native module
+Pass - Cost Time:5.000ms - LSP Semantic Query Collects Import Chain Completion Items
+----------
+Unit Test - LSP Semantic Tokens Cover Import Chain Members
+Testing Structured import-chain semantic tokens:
+ Semantic tokens should classify linked submodules and their terminal members through the shared import-chain metadata resolver
+[zr-import-meta] ensure import compile info enter module=000002046279F9E0
+[zr-import-meta] ensure import compile info satisfied by native module
+Pass - Cost Time:5.000ms - LSP Semantic Tokens Cover Import Chain Members
+----------
+Unit Test - LSP Semantic Query Builds Native Receiver Member Hover
+Testing Structured native receiver hover:
+ Hover on $module.Type(...).member should resolve through the shared semantic query instead of interface markdown fallback
+[zr-import-meta] ensure import compile info enter module=00000204629B03D0
+[zr-import-meta] ensure import compile info satisfied by native module
+Pass - Cost Time:4.000ms - LSP Semantic Query Builds Native Receiver Member Hover
+----------
+Unit Test - LSP Semantic Query Resolves External Metadata Declaration Targets
+Testing Structured external metadata query:
+ The shared semantic query should recognize .zro declaration entries directly instead of relying on interface-level project fallback code
+[zr-import-meta] ensure import compile info enter module=000002046279F9E0
+[zr-import-meta] ensure import compile info satisfied by native module
+[zr-import-meta] ensure import compile info enter module=0000020462A74750
+[zr-import-meta] ensure import compile info module='graph_stage_a'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='graph_stage_a' size=41
+[zr-parser-compile] source compile start name='graph_stage_a' len=41
+[zr-parser-compile] parse ok name='graph_stage_a' ast=0000020462B55DB0
+[zr-module-init] prepare current module 'graph_stage_a' ast=0000020462B55DB0
+[zr-module-init] prepare current module ok 'graph_stage_a' summary=00000204627B10F8
+[zr-parser-compile] prepare current source module ok name='graph_stage_a'
+[zr-parser-compile] compiler compile core init ast=0000020462B55DB0
+[zr-parser-compile] compiler validate task effects ok ast=0000020462B55DB0
+[zr-parser-compile] compiler current function=0000020462AC87A0
+[zr-parser-compile] compile_script start ast=0000020462B55DB0
+[zr-parser-compile] compile_script stmt[0] type=7
+[zr-compile-stmt] statement compile dispatch node=0000020462B55950 type=7
+[zr-compile-stmt] compile_variable_declaration enter node=0000020462B55950 patternType=50 valueType=32
+[zr-compile-stmt] var decl identifier name=00000204629B4B00 typeInfo=0000000000000000 value=0000020462B54C30
+[zr-compile-stmt] var decl infer from initializer start valueType=32
+[zr-compile-stmt] var decl infer from initializer done success=1 baseType=17 typeName=0000020462B682D0 hasError=0
+[zr-compile-stmt] var decl initializer compile start reservedSlot=0 stackCount=1
+[zr-compile-stmt] statement compile dispatch node=0000020462B555D0 type=57
+[zr-compile-stmt] statement compile dispatch node=0000020462B54290 type=60
+[zr-compile-stmt] statement compile dispatch done node=0000020462B54290 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=0000020462B555D0 type=57 hasError=0
+[zr-compile-stmt] var decl initializer compile done hasError=0 stackCount=2
+[zr-compile-stmt] var decl bind initializer slot=1 reserved=0
+[zr-compile-stmt] var decl local binding done varIndex=0
+[zr-compile-stmt] var decl runtime alias registration done
+[zr-compile-stmt] var decl compile-time import alias registration done
+[zr-compile-stmt] compile_variable_declaration exit success
+[zr-compile-stmt] statement compile dispatch done node=0000020462B55950 type=7 hasError=0
+[zr-parser-compile] compile_script done ast=0000020462B55DB0 hasError=0
+[zr-parser-compile] optimize instructions func=0000020462AC87A0
+[zr-parser-compile] assemble final function ok func=0000020462AC87A0
+[zr-parser-compile] build semir metadata ok func=0000020462AC87A0
+[zr-parser-compile] quicken execbc ok func=0000020462AC87A0
+[zr-module-init] analyze source summary 'graph_stage_a' summary=00000204627B10F8 ast=0000020462B55DB0
+[zr-module-init] analyze source summary done 'graph_stage_a' summary=00000204627B10F8
+[zr-module-init] validate summary 'graph_stage_a' summary=00000204627B10F8
+[zr-module-init] validate summary done 'graph_stage_a' result=1 summary=00000204627B10F8
+[zr-parser-compile] finalize current source module ok func=0000020462AC87A0
+[zr-parser-compile] compiler compile finished name='graph_stage_a' func=0000020462AC87A0
+[zr-parser-compile] source compile cleanup name='graph_stage_a'
+[zr-import-meta] ensure import compile info register runtime result=1 func=0000020462AC87A0
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=0000020462A73650
+[zr-import-meta] ensure import compile info module='graph_stage_b'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='graph_stage_b' size=78
+[zr-parser-compile] source compile start name='graph_stage_b' len=78
+[zr-parser-compile] parse ok name='graph_stage_b' ast=0000020462B54D10
+[zr-module-init] prepare current module 'graph_stage_b' ast=0000020462B54D10
+[zr-module-init] prepare current module ok 'graph_stage_b' summary=00000204627B12A0
+[zr-parser-compile] prepare current source module ok name='graph_stage_b'
+[zr-parser-compile] compiler compile core init ast=0000020462B54D10
+[zr-parser-compile] compiler validate task effects ok ast=0000020462B54D10
+[zr-parser-compile] compiler current function=0000020462AC8FE0
+[zr-parser-compile] compile_script start ast=0000020462B54D10
+[zr-parser-compile] compile_script stmt[0] type=7
+[zr-compile-stmt] statement compile dispatch node=0000020462B54290 type=7
+[zr-compile-stmt] compile_variable_declaration enter node=0000020462B54290 patternType=50 valueType=32
+[zr-compile-stmt] var decl identifier name=0000020462A740F0 typeInfo=0000000000000000 value=0000020462B55090
+[zr-compile-stmt] var decl infer from initializer start valueType=32
+[zr-compile-stmt] var decl infer from initializer done success=1 baseType=17 typeName=0000020462B69700 hasError=0
+[zr-compile-stmt] var decl initializer compile start reservedSlot=0 stackCount=1
+[zr-compile-stmt] statement compile dispatch node=0000020462B541B0 type=57
+[zr-compile-stmt] statement compile dispatch node=0000020462B540D0 type=60
+[zr-compile-stmt] statement compile dispatch done node=0000020462B540D0 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=0000020462B541B0 type=57 hasError=0
+[zr-compile-stmt] var decl initializer compile done hasError=0 stackCount=2
+[zr-compile-stmt] var decl bind initializer slot=1 reserved=0
+[zr-compile-stmt] var decl local binding done varIndex=0
+[zr-compile-stmt] var decl runtime alias registration done
+[zr-compile-stmt] var decl compile-time import alias registration done
+[zr-compile-stmt] compile_variable_declaration exit success
+[zr-compile-stmt] statement compile dispatch done node=0000020462B54290 type=7 hasError=0
+[zr-parser-compile] compile_script done ast=0000020462B54D10 hasError=0
+[zr-parser-compile] optimize instructions func=0000020462AC8FE0
+[zr-parser-compile] assemble final function ok func=0000020462AC8FE0
+[zr-parser-compile] build semir metadata ok func=0000020462AC8FE0
+[zr-parser-compile] quicken execbc ok func=0000020462AC8FE0
+[zr-module-init] analyze source summary 'graph_stage_b' summary=00000204627B12A0 ast=0000020462B54D10
+[zr-module-init] analyze source summary done 'graph_stage_b' summary=00000204627B12A0
+[zr-module-init] validate summary 'graph_stage_b' summary=00000204627B12A0
+[zr-module-init] validate summary done 'graph_stage_b' result=1 summary=00000204627B12A0
+[zr-parser-compile] finalize current source module ok func=0000020462AC8FE0
+[zr-parser-compile] compiler compile finished name='graph_stage_b' func=0000020462AC8FE0
+[zr-parser-compile] source compile cleanup name='graph_stage_b'
+[zr-import-meta] ensure import compile info register runtime result=1 func=0000020462AC8FE0
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=0000020462A72FF0
+[zr-import-meta] ensure import compile info module='graph_binary_stage'
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=1

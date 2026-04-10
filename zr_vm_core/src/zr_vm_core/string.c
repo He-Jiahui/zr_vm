@@ -624,9 +624,6 @@ TZrBool ZrCore_String_Equal(SZrString *string1, SZrString *string2) {
     }
 
     // short string
-    if (string1->super.hash != string2->super.hash) {
-        return ZR_FALSE;
-    }
     return ZrCore_Memory_RawCompare(ZrCore_String_GetNativeStringShort(string1), ZrCore_String_GetNativeStringShort(string2),
                               string1->shortStringLength * sizeof(TZrChar)) == 0;
 }

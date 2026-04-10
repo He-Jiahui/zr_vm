@@ -1026,6 +1026,289 @@ static void test_ownership_weak_expires_when_returned_object_is_released(void) {
     TEST_DIVIDER();
 }
 
+static void test_gc_region_configuration_defaults(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Region Configuration Defaults";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Collector defaults",
+              "Verifying that the collector boots with region, budget, and stats defaults for the staged generational pipeline");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+
+        TEST_ASSERT_NOT_NULL(object);
+        TEST_ASSERT_EQUAL_UINT64(0u, (UNITY_UINT64)gc->heapLimitBytes);
+        TEST_ASSERT_TRUE(gc->youngRegionSize > 0);
+        TEST_ASSERT_TRUE(gc->youngRegionCountTarget > 0);
+        TEST_ASSERT_TRUE(gc->pauseBudgetUs > 0);
+        TEST_ASSERT_TRUE(gc->remarkBudgetUs > 0);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR, gc->scheduledCollectionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE, gc->collectionPhase);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR, gc->statsSnapshot.lastCollectionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_EDEN, object->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE, object->garbageCollectMark.storageKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE, object->garbageCollectMark.escapeFlags);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PIN_KIND_NONE, object->garbageCollectMark.pinFlags);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE, object->garbageCollectMark.promotionReason);
+        TEST_ASSERT_EQUAL_UINT32(0u, object->garbageCollectMark.survivalAge);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GC_SCOPE_DEPTH_NONE, object->garbageCollectMark.anchorScopeDepth);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_control_plane_updates_snapshot(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Control Plane Updates Snapshot";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Collector control plane",
+              "Testing heap limit, budget, worker count, and collection scheduling controls exposed by the C API");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollectorStatsSnapshot snapshot;
+
+        ZrCore_GarbageCollector_SetHeapLimitBytes(state->global, 1024 * 1024);
+        ZrCore_GarbageCollector_SetPauseBudgetUs(state->global, 2500, 1200);
+        ZrCore_GarbageCollector_SetWorkerCount(state->global, 3);
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
+        ZrCore_GarbageCollector_GetStatsSnapshot(state->global, &snapshot);
+
+        TEST_ASSERT_EQUAL_UINT64(1024u * 1024u, (UNITY_UINT64)state->global->garbageCollector->heapLimitBytes);
+        TEST_ASSERT_EQUAL_UINT64(2500u, (UNITY_UINT64)state->global->garbageCollector->pauseBudgetUs);
+        TEST_ASSERT_EQUAL_UINT64(1200u, (UNITY_UINT64)state->global->garbageCollector->remarkBudgetUs);
+        TEST_ASSERT_EQUAL_UINT32(3u, state->global->garbageCollector->workerCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR,
+                                 state->global->garbageCollector->scheduledCollectionKind);
+        TEST_ASSERT_EQUAL_UINT64(1024u * 1024u, (UNITY_UINT64)snapshot.heapLimitBytes);
+        TEST_ASSERT_EQUAL_UINT32(3u, snapshot.workerCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR, snapshot.lastRequestedCollectionKind);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_scheduled_collection_check_gc_forces_full_step(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Scheduled Collection CheckGc Forces Full Step";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Scheduled major collection",
+              "Testing that an explicit scheduled major collection immediately creates GC debt and drives the generational full path on CheckGc");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        gc->gcDebtSize = 0;
+        gc->gcLastStepWork = 0;
+        gc->statsSnapshot.lastCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+        gc->statsSnapshot.lastRequestedCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
+
+        TEST_ASSERT_TRUE(gc->gcDebtSize > 0);
+
+        ZrCore_GarbageCollector_CheckGc(state);
+
+        TEST_ASSERT_TRUE(gc->gcLastStepWork > 0);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR, gc->scheduledCollectionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL, gc->statsSnapshot.lastCollectionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR, gc->statsSnapshot.lastRequestedCollectionKind);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_heap_limit_pressure_check_gc_escalates_to_full(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Heap Limit Pressure CheckGc Escalates To Full";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Heap limit pressure",
+              "Testing that CheckGc escalates to the full generational path when managed memory reaches the configured heap limit even without pre-existing debt");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        gc->gcDebtSize = 0;
+        gc->gcLastStepWork = 0;
+        gc->managedMemories = 8192;
+        gc->statsSnapshot.lastCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+        gc->statsSnapshot.lastRequestedCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+        ZrCore_GarbageCollector_SetHeapLimitBytes(state->global, 4096);
+
+        ZrCore_GarbageCollector_CheckGc(state);
+
+        TEST_ASSERT_TRUE(gc->gcLastStepWork > 0);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR, gc->scheduledCollectionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL, gc->statsSnapshot.lastCollectionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL, gc->statsSnapshot.lastRequestedCollectionKind);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_barrier_records_old_to_young_remembered_escape(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Barrier Records Old To Young Remembered Escape";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Old to young write barrier",
+              "Testing that old movable parents record remembered references and mark young children as escaped promotion candidates");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrRawObject *parent = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+        SZrRawObject *child = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+
+        TEST_ASSERT_NOT_NULL(parent);
+        TEST_ASSERT_NOT_NULL(child);
+
+        ZrCore_RawObject_MarkAsReferenced(parent);
+        ZrCore_RawObject_MarkAsInit(state, child);
+        ZrCore_RawObject_SetStorageKind(parent, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(parent, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+        ZrCore_RawObject_SetStorageKind(child, ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(child, ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
+        child->garbageCollectMark.anchorScopeDepth = 3u;
+
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, parent));
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE, child->garbageCollectMark.escapeFlags);
+
+        ZrCore_GarbageCollector_Barrier(state, parent, child);
+
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, parent));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+        TEST_ASSERT_TRUE((child->garbageCollectMark.escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_OLD_REFERENCE) != 0u);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_OLD_REFERENCE,
+                                 child->garbageCollectMark.promotionReason);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_pinning_marks_object_non_moving(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Pinning Marks Object Non Moving";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Pinned object transition",
+              "Testing that host-visible pinned objects transition into the non-moving storage class and become escaped");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+
+        TEST_ASSERT_NOT_NULL(object);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PIN_KIND_NONE, object->garbageCollectMark.pinFlags);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE, object->garbageCollectMark.storageKind);
+
+        ZrCore_GarbageCollector_PinObject(state, object, ZR_GARBAGE_COLLECT_PIN_KIND_HOST_HANDLE);
+
+        TEST_ASSERT_TRUE((object->garbageCollectMark.pinFlags & ZR_GARBAGE_COLLECT_PIN_KIND_HOST_HANDLE) != 0u);
+        TEST_ASSERT_TRUE((object->garbageCollectMark.escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_HOST_HANDLE) != 0u);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_PINNED, object->garbageCollectMark.storageKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_PINNED, object->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_PINNED,
+                                 object->garbageCollectMark.promotionReason);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_function_escape_metadata_defaults(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Function Escape Metadata Defaults";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Function metadata defaults",
+              "Testing that new function objects and function metadata structures start with empty escape metadata");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrFunction *function = ZrCore_Function_New(state);
+        SZrFunctionLocalVariable localVariable = {0};
+        SZrFunctionClosureVariable closureVariable = {0};
+
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_NULL(function->escapeBindings);
+        TEST_ASSERT_EQUAL_UINT32(0u, function->escapeBindingLength);
+        TEST_ASSERT_EQUAL_UINT32(0u, function->returnEscapeSlotCount);
+        TEST_ASSERT_NULL(function->returnEscapeSlots);
+
+        TEST_ASSERT_EQUAL_UINT32(0u, localVariable.scopeDepth);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE, localVariable.escapeFlags);
+        TEST_ASSERT_EQUAL_UINT32(0u, closureVariable.scopeDepth);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE, closureVariable.escapeFlags);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 // 主测试函数
 int main(void) {
     printf("\n");
@@ -1067,6 +1350,13 @@ int main(void) {
     RUN_TEST(test_gc_sweep_slice_budget_limits_single_step_sweep);
     RUN_TEST(test_gc_ignore_registry_and_phase_metadata);
     RUN_TEST(test_gc_barrier_unignores_escaped_object);
+    RUN_TEST(test_gc_region_configuration_defaults);
+    RUN_TEST(test_gc_control_plane_updates_snapshot);
+    RUN_TEST(test_gc_scheduled_collection_check_gc_forces_full_step);
+    RUN_TEST(test_gc_heap_limit_pressure_check_gc_escalates_to_full);
+    RUN_TEST(test_gc_barrier_records_old_to_young_remembered_escape);
+    RUN_TEST(test_gc_pinning_marks_object_non_moving);
+    RUN_TEST(test_function_escape_metadata_defaults);
     RUN_TEST(test_ownership_shared_refcount_and_weak_null_on_release);
     RUN_TEST(test_ownership_unique_can_return_to_gc_control);
     RUN_TEST(test_ownership_weak_expires_when_returned_object_is_released);

@@ -418,6 +418,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                 }
             }
             newFunc->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
+            newFunc->childFunctionGraphIsBorrowed = ZR_TRUE;
             ZrCore_Function_RebindConstantFunctionValuesToChildren(newFunc);
         }
     }

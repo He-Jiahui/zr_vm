@@ -1,0 +1,6 @@
+{
+  "name": "array_map_plain_index",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

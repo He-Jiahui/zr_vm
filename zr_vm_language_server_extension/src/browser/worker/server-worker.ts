@@ -10,6 +10,7 @@ import {
     type DiagnosticSeverity,
     type DocumentHighlight,
     type Hover,
+    type InlayHint,
     type InitializeParams,
     type InitializeResult,
     type Location,
@@ -94,6 +95,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
             documentSymbolProvider: true,
             workspaceSymbolProvider: true,
             documentHighlightProvider: true,
+            inlayHintProvider: true,
             semanticTokensProvider: {
                 legend: semanticTokenLegend,
                 full: true,
@@ -201,6 +203,17 @@ connection.onReferences(async ({ textDocument, position, context }) => {
 connection.onDocumentSymbol(async ({ textDocument }) => {
     const response = await bridge.getDocumentSymbols(textDocument.uri);
     return responseData<unknown[]>(response, []);
+});
+
+connection.onRequest('textDocument/inlayHint', async ({ textDocument, range }) => {
+    const response = await bridge.getInlayHints(
+        textDocument.uri,
+        range.start.line,
+        range.start.character,
+        range.end.line,
+        range.end.character,
+    );
+    return responseData<InlayHint[]>(response, []);
 });
 
 connection.onWorkspaceSymbol(async ({ query }) => {

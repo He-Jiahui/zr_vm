@@ -34,7 +34,8 @@ func guarded(flag: int): int {
 
 class Box {}
 
-var owner = %shared new Box();
+var ownerSeed = %unique new Box();
+var owner = %shared(ownerSeed);
 var weak = %weak(owner);
 var alias = %upgrade(weak);
 

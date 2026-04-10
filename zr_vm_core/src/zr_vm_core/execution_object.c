@@ -4,9 +4,29 @@
 
 #include "execution_internal.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 static const TZrChar *kNativeEnumValueFieldName = "__zr_enumValue";
 static const TZrChar *kNativeEnumNameFieldName = "__zr_enumName";
 static const TZrChar *kNativeEnumValueTypeFieldName = "__zr_enumValueTypeName";
+
+static TZrBool execution_object_trace_enabled(void) {
+    static int initialized = 0;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        enabled = getenv("ZR_VM_TRACE_MAP_ARRAY") != ZR_NULL ? ZR_TRUE : ZR_FALSE;
+        initialized = 1;
+    }
+
+    return enabled;
+}
+
+static const char *execution_object_debug_string(SZrString *value) {
+    return value != ZR_NULL ? ZrCore_String_GetNativeString(value) : "<null>";
+}
 
 static TZrBool prototype_type_matches(EZrObjectPrototypeType expectedType, EZrObjectPrototypeType actualType) {
     return expectedType == ZR_OBJECT_PROTOTYPE_TYPE_INVALID || expectedType == actualType;
@@ -433,6 +453,7 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
                                         SZrString *typeName,
                                         EZrObjectPrototypeType expectedType) {
     struct SZrObjectModule *module;
+    TZrBool trace = execution_object_trace_enabled();
 
     if (state == ZR_NULL || typeName == ZR_NULL) {
         return ZR_NULL;
@@ -451,6 +472,14 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
     if (actualTypeName == ZR_NULL) {
         return ZR_NULL;
     }
+
+    if (trace) {
+        fprintf(stderr,
+                "[map-array-trace] find_type_prototype request=%s module=%s expectedType=%d\n",
+                execution_object_debug_string(actualTypeName),
+                execution_object_debug_string(moduleName),
+                (int)expectedType);
+    }
     
     // 如果指定了模块名，从该模块中查找
     if (moduleName != ZR_NULL) {
@@ -459,6 +488,12 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
         if (module != ZR_NULL) {
             SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
             if (prototype != ZR_NULL) {
+                if (trace) {
+                    fprintf(stderr,
+                            "[map-array-trace] find_type_prototype hit module cache name=%s mask=%llu\n",
+                            execution_object_debug_string(prototype->name),
+                            (unsigned long long)prototype->protocolMask);
+                }
                 return prototype;
             }
         }
@@ -467,6 +502,12 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
         if (module != ZR_NULL) {
             SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
             if (prototype != ZR_NULL) {
+                if (trace) {
+                    fprintf(stderr,
+                            "[map-array-trace] find_type_prototype hit lookup module name=%s mask=%llu\n",
+                            execution_object_debug_string(prototype->name),
+                            (unsigned long long)prototype->protocolMask);
+                }
                 return prototype;
             }
         }
@@ -475,6 +516,12 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
             if (module != ZR_NULL) {
                 SZrObjectPrototype *prototype = find_prototype_in_module(state, module, actualTypeName, expectedType);
                 if (prototype != ZR_NULL) {
+                    if (trace) {
+                        fprintf(stderr,
+                                "[map-array-trace] find_type_prototype hit materialized module name=%s mask=%llu\n",
+                                execution_object_debug_string(prototype->name),
+                                (unsigned long long)prototype->protocolMask);
+                    }
                     return prototype;
                 }
             }
@@ -482,6 +529,12 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
             {
                 SZrObjectPrototype *prototype = find_prototype_in_global_zr_object(state, actualTypeName, expectedType);
                 if (prototype != ZR_NULL) {
+                    if (trace) {
+                        fprintf(stderr,
+                                "[map-array-trace] find_type_prototype hit global zr name=%s mask=%llu\n",
+                                execution_object_debug_string(prototype->name),
+                                (unsigned long long)prototype->protocolMask);
+                    }
                     return prototype;
                 }
             }
@@ -491,6 +544,12 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
             SZrObjectPrototype *prototype =
                     find_prototype_in_loaded_modules_registry(state, actualTypeName, expectedType);
             if (prototype != ZR_NULL) {
+                if (trace) {
+                    fprintf(stderr,
+                            "[map-array-trace] find_type_prototype hit loaded registry name=%s mask=%llu\n",
+                            execution_object_debug_string(prototype->name),
+                            (unsigned long long)prototype->protocolMask);
+                }
                 return prototype;
             }
         }
@@ -499,6 +558,12 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
     {
         SZrObjectPrototype *prototype = find_prototype_in_global_zr_object(state, actualTypeName, expectedType);
         if (prototype != ZR_NULL) {
+            if (trace) {
+                fprintf(stderr,
+                        "[map-array-trace] find_type_prototype hit global fallback name=%s mask=%llu\n",
+                        execution_object_debug_string(prototype->name),
+                        (unsigned long long)prototype->protocolMask);
+            }
             return prototype;
         }
     }
@@ -508,9 +573,22 @@ SZrObjectPrototype *find_type_prototype(SZrState *state,
         if (openGenericBaseName != ZR_NULL && !ZrCore_String_Equal(openGenericBaseName, actualTypeName)) {
             SZrObjectPrototype *openPrototype = find_type_prototype(state, openGenericBaseName, expectedType);
             if (openPrototype != ZR_NULL) {
+                if (trace) {
+                    fprintf(stderr,
+                            "[map-array-trace] find_type_prototype hit open generic name=%s mask=%llu\n",
+                            execution_object_debug_string(openPrototype->name),
+                            (unsigned long long)openPrototype->protocolMask);
+                }
                 return openPrototype;
             }
         }
+    }
+
+    if (trace) {
+        fprintf(stderr,
+                "[map-array-trace] find_type_prototype miss request=%s module=%s\n",
+                execution_object_debug_string(actualTypeName),
+                execution_object_debug_string(moduleName));
     }
 
     // 如果找不到，返回 ZR_NULL（后续可以通过元方法或创建新原型）

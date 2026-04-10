@@ -10,6 +10,8 @@
 
 #define ZR_GC_IGNORE_REGISTRY_INITIAL_CAPACITY ((TZrSize)8)
 #define ZR_GC_IGNORE_REGISTRY_GROWTH_FACTOR ((TZrSize)2)
+#define ZR_GC_REMEMBERED_REGISTRY_INITIAL_CAPACITY ((TZrSize)8)
+#define ZR_GC_REMEMBERED_REGISTRY_GROWTH_FACTOR ((TZrSize)2)
 
 static TZrBool raw_object_trace_enabled(void);
 static void raw_object_trace(const TZrChar *format, ...);
@@ -74,6 +76,70 @@ TZrBool garbage_collector_ensure_ignore_registry_capacity(SZrGlobalState *global
 
     collector->ignoredObjects = newItems;
     collector->ignoredObjectCapacity = newCapacity;
+    return ZR_TRUE;
+}
+
+TZrBool garbage_collector_remembered_registry_contains(SZrGarbageCollector *collector, SZrRawObject *object) {
+    if (collector == ZR_NULL || object == ZR_NULL || collector->rememberedObjects == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize i = 0; i < collector->rememberedObjectCount; i++) {
+        if (collector->rememberedObjects[i] == object) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool garbage_collector_ensure_remembered_registry_capacity(SZrGlobalState *global, TZrSize minCapacity) {
+    SZrGarbageCollector *collector;
+    SZrRawObject **newItems;
+    TZrSize newCapacity;
+    TZrSize oldBytes;
+    TZrSize newBytes;
+
+    if (global == ZR_NULL || global->garbageCollector == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    collector = global->garbageCollector;
+    if (collector->rememberedObjectCapacity >= minCapacity) {
+        return ZR_TRUE;
+    }
+
+    newCapacity = collector->rememberedObjectCapacity > 0
+                      ? collector->rememberedObjectCapacity
+                      : ZR_GC_REMEMBERED_REGISTRY_INITIAL_CAPACITY;
+    while (newCapacity < minCapacity) {
+        newCapacity *= ZR_GC_REMEMBERED_REGISTRY_GROWTH_FACTOR;
+    }
+
+    newBytes = newCapacity * sizeof(SZrRawObject *);
+    newItems = (SZrRawObject **)ZrCore_Memory_RawMallocWithType(global, newBytes, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (newItems == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(newItems, 0, newBytes);
+    if (collector->rememberedObjects != ZR_NULL && collector->rememberedObjectCount > 0) {
+        memcpy(newItems,
+               collector->rememberedObjects,
+               collector->rememberedObjectCount * sizeof(SZrRawObject *));
+    }
+
+    if (collector->rememberedObjects != ZR_NULL) {
+        oldBytes = collector->rememberedObjectCapacity * sizeof(SZrRawObject *);
+        ZrCore_Memory_RawFreeWithType(global,
+                                      collector->rememberedObjects,
+                                      oldBytes,
+                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    }
+
+    collector->rememberedObjects = newItems;
+    collector->rememberedObjectCapacity = newCapacity;
+    collector->statsSnapshot.rememberedObjectCount = (TZrUInt32)collector->rememberedObjectCount;
     return ZR_TRUE;
 }
 
@@ -228,6 +294,7 @@ SZrRawObject *ZrCore_RawObject_New(SZrState *state, EZrValueType type, TZrSize s
     object->isNative = isNative;
     object->garbageCollectMark.status = global->garbageCollector->gcInitializeObjectStatus;
     object->garbageCollectMark.generation = global->garbageCollector->gcGeneration;
+    object->garbageCollectMark.regionId = global->garbageCollector->nextRegionId++;
     object->next = global->garbageCollector->gcObjectList;
     global->garbageCollector->gcObjectList = object;
     raw_object_trace("raw object new done object=%p gcListNext=%p gcHead=%p",
@@ -290,6 +357,12 @@ void ZrCore_RawObject_MarkAsPermanent(SZrState *state, SZrRawObject *object) {
     ZR_ASSERT(object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED);
 
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT;
+    object->garbageCollectMark.heapGenerationKind = ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_PERMANENT;
+    object->garbageCollectMark.storageKind = ZR_GARBAGE_COLLECT_STORAGE_KIND_LARGE_PERSISTENT;
+    object->garbageCollectMark.regionKind = ZR_GARBAGE_COLLECT_REGION_KIND_PERMANENT;
+    object->garbageCollectMark.pinFlags |= ZR_GARBAGE_COLLECT_PIN_KIND_PERSISTENT_ROOT;
+    object->garbageCollectMark.escapeFlags |= ZR_GARBAGE_COLLECT_ESCAPE_KIND_GLOBAL_ROOT;
+    object->garbageCollectMark.promotionReason = ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT;
     object->next = global->garbageCollector->permanentObjectList;
     global->garbageCollector->permanentObjectList = object;
     raw_object_trace("raw object permanent object=%p permanentHead=%p", (void *)object, (void *)global->garbageCollector->permanentObjectList);

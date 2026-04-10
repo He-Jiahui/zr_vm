@@ -2317,10 +2317,10 @@ static void test_meta_get_and_meta_set_instructions_dispatch_hidden_accessors(vo
         base = state->callInfoList->functionBase.valuePointer;
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(ZrCore_Stack_GetValue(base + 1)->type));
         TEST_ASSERT_EQUAL_INT64(5, ZrCore_Stack_GetValue(base + 1)->value.nativeObject.nativeInt64);
+        updatedValue = get_object_field_cstring(state, instance, "__meta_value");
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(ZrCore_Stack_GetValue(base + 2)->type));
         TEST_ASSERT_EQUAL_INT64(13, ZrCore_Stack_GetValue(base + 2)->value.nativeObject.nativeInt64);
 
-        updatedValue = get_object_field_cstring(state, instance, "__meta_value");
         TEST_ASSERT_NOT_NULL(updatedValue);
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(updatedValue->type));
         TEST_ASSERT_EQUAL_INT64(13, updatedValue->value.nativeObject.nativeInt64);
@@ -3697,7 +3697,8 @@ static void test_mod_generic(void) {
 
     TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
     SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
-    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(result->type));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
+    TEST_ASSERT_EQUAL_INT64(2, result->value.nativeObject.nativeInt64);
 
     ZrCore_Function_Free(state, function);
     destroy_test_state(state);

@@ -1,0 +1,10 @@
+Unit Test - zr.ffi import exposes known types and functions
+Pass - Cost Time:3.000ms - zr.ffi import exposes known types and functions
+----------
+Unit Test - zr.ffi BufferHandle.allocate is callable
+Pass - Cost Time:2.000ms - zr.ffi BufferHandle.allocate is callable
+----------
+Unit Test - zr.ffi can load fixture and call primitive symbols
+Error: [MarshalError] argument 1 for symbol 'zr_ffi_strlen_utf8' failed to marshal: unsupported value for ffi argument
+payload: [MarshalError] argument 1 for symbol 'zr_ffi_strlen_utf8' failed to marshal: unsupported value for ffi argument
+  at <anonymous> (ffi_primitive_roundtrip.zr:15, ip=101)

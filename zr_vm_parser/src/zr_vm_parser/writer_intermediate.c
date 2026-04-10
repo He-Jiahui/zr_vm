@@ -916,6 +916,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4):
@@ -1161,6 +1162,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
                 fprintf(file, "SUPER_ARRAY_GET_INT");
+                break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
+                fprintf(file, "SUPER_ARRAY_GET_INT_PLAIN_DEST");
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
                 fprintf(file, "SUPER_ARRAY_SET_INT");
@@ -1615,6 +1619,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4):

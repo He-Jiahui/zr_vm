@@ -1,0 +1,147 @@
+
+==========
+ZR-VM Compiler Features Unit Tests
+==========
+
+==========
+Basic Compiler Features Tests
+==========
+Unit Test - Function Parameter Handling
+Testing Function Parameter Handling:
+ Testing that function declarations correctly extract parameter count and variable arguments flag
+  Total Instructions: 4
+  Instructions:
+    [0] CREATE_CLOSURE[92] op1=[1, 0] op2=[1] extra=1
+    [1] SET_STACK[1] dst=0, src=1
+    [2] GET_CONSTANT[2] dst=1, src=0
+    [3] FUNCTION_RETURN[87] result_count=1, result_slot=1
+Pass - Cost Time:1.000ms - Function Parameter Handling
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3518:test_function_parameter_handling:PASS
+Unit Test - Constant Deduplication
+Testing Constant Deduplication:
+ Testing that duplicate constants are deduplicated in the constant pool
+Pass - Cost Time:0.000ms - Constant Deduplication
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3519:test_constant_deduplication:PASS
+Unit Test - Global Object Access
+Testing Global Object Access:
+ Testing that global object properties can be accessed using GET_GLOBAL + GET_MEMBER
+  Total Instructions: 5
+  Instructions:
+    [0] GET_GLOBAL dst=1
+    [1] GET_MEMBER dst=1, receiver=1, operand=0
+    [2] SET_STACK dst=0, src=1
+    [3] GET_CONSTANT dst=1, src=0
+    [4] FUNCTION_RETURN result_count=1, result_slot=1
+Pass - Cost Time:0.000ms - Global Object Access
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3520:test_global_object_access:PASS
+Unit Test - Binary Expression Type Inference
+Testing Binary Expression Type Inference:
+ Testing that binary expressions correctly infer types and generate appropriate instructions
+Pass - Cost Time:1.000ms - Binary Expression Type Inference
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3521:test_binary_expression_type_inference:PASS
+Unit Test - Nested Function Scope
+Testing Nested Function Scope:
+ Testing that nested functions correctly handle scope and parent compiler references
+Pass - Cost Time:0.000ms - Nested Function Scope
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3522:test_nested_function_scope:PASS
+==========
+Expression Compilation Tests
+==========
+Unit Test - Closure Variable Capture
+Testing Closure Variable Capture:
+ Testing that lambda expressions correctly capture external variables
+Pass - Cost Time:0.000ms - Closure Variable Capture
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3528:test_closure_capture:PASS
+Unit Test - Complex Left Value Handling
+Testing Complex Left Value Handling:
+ Testing that member access and array index assignments are correctly compiled
+Pass - Cost Time:1.000ms - Complex Left Value Handling
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3529:test_complex_lvalue:PASS
+Unit Test - External Variable Analysis
+Testing External Variable Analysis:
+ Testing that external variables are correctly identified and captured
+Pass - Cost Time:0.000ms - External Variable Analysis
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3530:test_external_variable_analysis:PASS
+==========
+Statement Compilation Tests
+==========
+Unit Test - Foreach Destructuring Support
+Testing Foreach Destructuring Support:
+ Testing that foreach loops correctly support object and array destructuring
+Pass - Cost Time:1.000ms - Foreach Destructuring Support
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3536:test_foreach_destructuring:PASS
+Unit Test - Switch Statement
+Testing Switch Statement:
+ Testing that switch statements are correctly parsed and compiled
+Pass - Cost Time:0.000ms - Switch Statement
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3537:test_switch_statement:PASS
+Unit Test - Generator Mechanism
+Testing Generator Mechanism:
+ Testing that generator functions and yield/out statements are correctly compiled
+Fail - Cost Time:0.000ms - Generator Mechanism:
+ Failed to compile function
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3538:test_generator_mechanism:PASS
+==========
+Type Inference Tests
+==========
+Unit Test - Function Call Type Inference
+Testing Function Call Type Inference:
+ Testing that function calls correctly infer return types
+Pass - Cost Time:1.000ms - Function Call Type Inference
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3544:test_function_call_type_inference:PASS
+Unit Test - Member Access Type Inference
+Testing Member Access Type Inference:
+ Testing that member access chains correctly infer types
+Pass - Cost Time:0.000ms - Member Access Type Inference
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3545:test_member_access_type_inference:PASS
+Unit Test - Type Conversion Instructions
+Testing Type Conversion Instructions:
+ Testing that type conversion instructions are correctly generated for mixed-type operations
+Fail - Cost Time:0.000ms - Type Conversion Instructions:
+ Failed to compile function
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3546:test_type_conversion_instructions:PASS
+Unit Test - Function Call Argument Conversion Emits TO_FLOAT
+Testing Function call argument conversion:
+ Testing that calling a typed float function with an int argument emits a TO_FLOAT conversion before FUNCTION_CALL
+Pass - Cost Time:1.000ms - Function Call Argument Conversion Emits TO_FLOAT
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3547:test_function_call_argument_conversion_emits_to_float:PASS
+Unit Test - Type Expression Compiles To TYPEOF Opcode
+Testing Type expression lowering:
+ Testing that %type(expr) lowers to the dedicated TYPEOF opcode instead of a serialized native helper
+Fail - Cost Time:0.000ms - Type Expression Compiles To TYPEOF Opcode:
+ Failed to compile type expression source
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3548:test_type_expression_compiles_to_typeof_opcode:PASS
+Unit Test - Intermediate Writer Emits Type Metadata Section
+Testing Intermediate writer type metadata:
+ Testing that .zri output includes a dedicated type metadata section with exported signatures
+Pass - Cost Time:3.000ms - Intermediate Writer Emits Type Metadata Section
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3549:test_intermediate_writer_emits_type_metadata_section:PASS
+Unit Test - Intermediate Writer Emits Compile Time And Test Metadata
+Testing Intermediate writer metadata closure:
+ Testing that .zri output includes compile-time declarations and %test metadata
+Pass - Cost Time:2.000ms - Intermediate Writer Emits Compile Time And Test Metadata
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3550:test_intermediate_writer_emits_compile_time_and_test_metadata:PASS
+Unit Test - Compiler Optimizer Removes Dead Null Clear Streaks
+Testing Dead null clear optimization:
+ Testing that straight-line temp cleanup no longer leaves long GET_CONSTANT null streaks in compiled output
+Pass - Cost Time:1.000ms - Compiler Optimizer Removes Dead Null Clear Streaks
+----------
+E:\Git\zr_vm\tests\parser\test_compiler_features.c:3551:test_compiler_optimizer_removes_dead_null_clear_streaks:PASS
+Unit Test - Compiler Optimizer Reuses Temp Slots In Basic Blocks
+Testing Temp slot reuse:
+ Testing that sequential temp-heavy statements reuse transient slots instead of monotonically inflating stackSize

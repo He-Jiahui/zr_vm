@@ -369,6 +369,53 @@ cJSON *serialize_signature_help(const SZrLspSignatureHelp *help) {
     return json;
 }
 
+static cJSON *serialize_inlay_hint(const SZrLspInlayHint *hint) {
+    cJSON *json;
+    char *labelText;
+
+    if (hint == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    if (json == NULL) {
+        return NULL;
+    }
+
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_POSITION, serialize_position(hint->position));
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_KIND, hint->kind);
+    cJSON_AddBoolToObject(json, ZR_LSP_FIELD_PADDING_LEFT, hint->paddingLeft ? 1 : 0);
+    cJSON_AddBoolToObject(json, ZR_LSP_FIELD_PADDING_RIGHT, hint->paddingRight ? 1 : 0);
+
+    labelText = zr_string_to_c_string(hint->label);
+    if (labelText != NULL) {
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_LABEL, labelText);
+        free(labelText);
+    } else {
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_LABEL, "");
+    }
+
+    return json;
+}
+
+cJSON *serialize_inlay_hints_array(SZrArray *hints) {
+    cJSON *json = cJSON_CreateArray();
+    TZrSize index;
+
+    if (json == NULL || hints == ZR_NULL) {
+        return json;
+    }
+
+    for (index = 0; index < hints->length; index++) {
+        SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(hints, index);
+        if (hintPtr != ZR_NULL && *hintPtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_inlay_hint(*hintPtr));
+        }
+    }
+
+    return json;
+}
+
 cJSON *serialize_document_highlight(const SZrLspDocumentHighlight *highlight) {
     cJSON *json = cJSON_CreateObject();
     if (json == NULL) {
@@ -531,6 +578,23 @@ void free_completion_items_array(SZrState *state, SZrArray *items) {
         }
     }
     ZrCore_Array_Free(state, items);
+}
+
+void free_inlay_hints_array(SZrState *state, SZrArray *hints) {
+    TZrSize index;
+
+    if (state == ZR_NULL || hints == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < hints->length; index++) {
+        SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(hints, index);
+        if (hintPtr != ZR_NULL && *hintPtr != ZR_NULL) {
+            ZrCore_Memory_RawFree(state->global, *hintPtr, sizeof(SZrLspInlayHint));
+        }
+    }
+
+    ZrCore_Array_Free(state, hints);
 }
 
 void free_highlights_array(SZrState *state, SZrArray *highlights) {

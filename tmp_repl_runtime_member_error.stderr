@@ -1,0 +1,3 @@
+Error: GET_MEMBER: missing member 's'
+payload: GET_MEMBER: missing member 's'
+  at <anonymous> (<repl>:2, ip=5)

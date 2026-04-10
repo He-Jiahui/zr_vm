@@ -216,6 +216,7 @@ static void optimizer_classify_instruction(const TZrInstruction *instruction, SZ
             return;
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD):
         case ZR_INSTRUCTION_ENUM(ADD_INT):
         case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
@@ -747,6 +748,7 @@ static TZrBool optimizer_opcode_supports_adjacent_get_stack_forwarding(EZrInstru
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
             return ZR_TRUE;
         default:
@@ -1025,6 +1027,28 @@ static void optimizer_remap_compiler_metadata_slots(SZrCompilerState *cs,
         SZrExportedVariable *exported = (SZrExportedVariable *)ZrCore_Array_Get(&cs->proVariables, index);
         if (exported != ZR_NULL && exported->stackSlot < slotCount) {
             exported->stackSlot = slotMap[exported->stackSlot];
+        }
+    }
+
+    for (index = 0; index < cs->childFunctions.length; index++) {
+        SZrFunction **childPtr = (SZrFunction **)ZrCore_Array_Get(&cs->childFunctions, index);
+        SZrFunction *childFunction;
+        TZrUInt32 closureIndex;
+
+        if (childPtr == ZR_NULL || *childPtr == ZR_NULL) {
+            continue;
+        }
+
+        childFunction = *childPtr;
+        if (childFunction->closureValueList == ZR_NULL || childFunction->closureValueLength == 0) {
+            continue;
+        }
+
+        for (closureIndex = 0; closureIndex < childFunction->closureValueLength; closureIndex++) {
+            SZrFunctionClosureVariable *closureVar = &childFunction->closureValueList[closureIndex];
+            if (closureVar->inStack && closureVar->index < slotCount) {
+                closureVar->index = slotMap[closureVar->index];
+            }
         }
     }
 }

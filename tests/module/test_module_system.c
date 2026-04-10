@@ -753,6 +753,7 @@ static SZrState *create_test_state_with_allocator_context(TZrPtr allocatorUserDa
         ZrCore_GlobalState_InitRegistry(mainState, global);
         // 注册 parser 模块
         ZrParser_ToGlobalState_Register(mainState);
+        ZrVmLibMath_Register(global);
         ZrVmLibContainer_Register(global);
         ZrVmLibSystem_Register(global);
     }
@@ -1978,6 +1979,91 @@ static void test_source_module_exports_complex_function_graph_without_null_call_
         TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(summarizeExport->type));
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FUNCTION(runExport->type) || ZR_VALUE_IS_TYPE_CLOSURE(runExport->type));
         TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FUNCTION(summarizeExport->type) || ZR_VALUE_IS_TYPE_CLOSURE(summarizeExport->type));
+
+        TEST_ASSERT_TRUE(ZrLib_CallValue(state, runExport, ZR_NULL, ZR_NULL, 0, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+        TEST_ASSERT_EQUAL_INT64(24, result.value.nativeObject.nativeInt64);
+
+        state->global->sourceLoader = ZR_NULL;
+        g_module_fixture_sources = previousFixtures;
+        g_module_fixture_source_count = previousFixtureCount;
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_source_module_preinstalled_callable_preserves_imported_module_captures_after_native_imports(void) {
+    static const SZrModuleFixtureSource kFixtures[] = {
+            MODULE_FIXTURE_SOURCE_TEXT(
+                    "lin_alg",
+                    "projectVectorsImpl(seed) {\n"
+                    "    return seed + 2;\n"
+                    "}\n"
+                    "pub var projectVectors = projectVectorsImpl;\n"),
+            MODULE_FIXTURE_SOURCE_TEXT(
+                    "signal",
+                    "mixSignalImpl(seed) {\n"
+                    "    return seed + 3;\n"
+                    "}\n"
+                    "pub var mixSignal = mixSignalImpl;\n"),
+            MODULE_FIXTURE_SOURCE_TEXT(
+                    "tensor_pipeline",
+                    "runTensorPassImpl() {\n"
+                    "    return 11;\n"
+                    "}\n"
+                    "pub var runTensorPass = runTensorPassImpl;\n"),
+            MODULE_FIXTURE_SOURCE_TEXT(
+                    "probe_callbacks",
+                    "var math = %import(\"zr.math\");\n"
+                    "var system = %import(\"zr.system\");\n"
+                    "var lin = %import(\"lin_alg\");\n"
+                    "var signal = %import(\"signal\");\n"
+                    "var tensor = %import(\"tensor_pipeline\");\n"
+                    "\n"
+                    "helperValue() {\n"
+                    "    return 0;\n"
+                    "}\n"
+                    "\n"
+                    "pub runProbe(): int {\n"
+                    "    var vector = $math.Vector3(1.0, 2.0, 3.0);\n"
+                    "    system.console.printLine(\"probe\");\n"
+                    "    return lin.projectVectors(2) + signal.mixSignal(5) + tensor.runTensorPass() + <int>vector.x;\n"
+                    "}\n"
+                    "\n"
+                    "pub summarizeProbe(value): int {\n"
+                    "    return value + helperValue();\n"
+                    "}\n"),
+    };
+    SZrTestTimer timer;
+    const char *testSummary = "Source Module Preinstalled Callable Preserves Imported Module Captures After Native Imports";
+    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
+    TZrSize previousFixtureCount = g_module_fixture_source_count;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *module;
+        const SZrTypeValue *runExport;
+        SZrTypeValue result;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        g_module_fixture_sources = kFixtures;
+        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
+        state->global->sourceLoader = module_fixture_source_loader;
+
+        module = import_native_module(state, "probe_callbacks");
+        TEST_ASSERT_NOT_NULL(module);
+
+        runExport = get_module_export_value(state, module, "runProbe");
+        TEST_ASSERT_NOT_NULL(runExport);
+        TEST_ASSERT_FALSE(ZR_VALUE_IS_TYPE_NULL(runExport->type));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_FUNCTION(runExport->type) || ZR_VALUE_IS_TYPE_CLOSURE(runExport->type));
 
         TEST_ASSERT_TRUE(ZrLib_CallValue(state, runExport, ZR_NULL, ZR_NULL, 0, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
@@ -8001,6 +8087,9 @@ int main(void) {
 
     // 13. 复杂 source module 导出函数图不应出现 null call target
     RUN_TEST(test_source_module_exports_complex_function_graph_without_null_call_targets);
+
+    // 13.1 preinstalled callable 不应在 native import 期间丢失 imported module captures
+    RUN_TEST(test_source_module_preinstalled_callable_preserves_imported_module_captures_after_native_imports);
 
     // 14. 带参导出函数别名在跨模块调用时保留调用签名
     RUN_TEST(test_imported_function_alias_with_parameters_preserves_call_signature);

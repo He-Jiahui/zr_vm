@@ -15,6 +15,15 @@ TZrUInt32 allocate_local_var(SZrCompilerState *cs, SZrString *name) {
     localVar.stackSlot = stackSlot;
     localVar.offsetActivate = (TZrMemoryOffset) cs->instructionCount;
     localVar.offsetDead = 0; // 将在变量作用域结束时设置
+    localVar.scopeDepth = 0;
+    localVar.escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE;
+
+    if (cs->scopeStack.length > 0) {
+        SZrScope *scope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, cs->scopeStack.length - 1);
+        if (scope != ZR_NULL) {
+            localVar.scopeDepth = scope->depth;
+        }
+    }
 
     ZrCore_Array_Push(cs->state, &cs->localVars, &localVar);
     // localVarCount 应该与 localVars.length 保持同步
@@ -175,6 +184,15 @@ TZrUInt32 allocate_closure_var(SZrCompilerState *cs, SZrString *name, TZrBool in
     closureVar.inStack = inStack;
     closureVar.index = (TZrUInt32) cs->closureVarCount;
     closureVar.valueType = ZR_VALUE_TYPE_NULL; // 类型将在运行时确定
+    closureVar.scopeDepth = 0;
+    closureVar.escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_CLOSURE_CAPTURE;
+
+    if (cs->scopeStack.length > 0) {
+        SZrScope *scope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, cs->scopeStack.length - 1);
+        if (scope != ZR_NULL) {
+            closureVar.scopeDepth = scope->depth;
+        }
+    }
 
     ZrCore_Array_Push(cs->state, &cs->closureVars, &closureVar);
     cs->closureVarCount++;

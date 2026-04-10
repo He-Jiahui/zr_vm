@@ -553,8 +553,41 @@ TZrBool ZrCore_Object_CompareWithAddress(struct SZrState *state, SZrObject *obje
     return object1 == object2;
 }
 
+static const SZrTypeValue *object_resolve_storage_key(SZrState *state,
+                                                      const SZrTypeValue *key,
+                                                      SZrTypeValue *normalizedKey) {
+    SZrString *keyString;
+    TZrNativeString keyText;
+    TZrSize keyLength;
+    SZrString *canonicalString;
+
+    if (key == ZR_NULL || normalizedKey == ZR_NULL || key->type != ZR_VALUE_TYPE_STRING || key->value.object == ZR_NULL ||
+        state == ZR_NULL) {
+        return key;
+    }
+
+    keyString = ZR_CAST_STRING(state, key->value.object);
+    if (keyString == ZR_NULL) {
+        return key;
+    }
+
+    keyText = ZrCore_String_GetNativeString(keyString);
+    keyLength = ZrCore_String_GetByteLength(keyString);
+    canonicalString = ZrCore_String_Create(state, keyText != ZR_NULL ? keyText : "", keyLength);
+    if (canonicalString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, normalizedKey, ZR_CAST_RAW_OBJECT_AS_SUPER(canonicalString));
+    normalizedKey->type = ZR_VALUE_TYPE_STRING;
+    return normalizedKey;
+}
+
 
 void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key, const SZrTypeValue *value) {
+    SZrTypeValue normalizedKey;
+    const SZrTypeValue *storageKey = key;
+
     ZR_ASSERT(object != ZR_NULL);
     if (key == ZR_NULL) {
         ZrCore_Log_Error(state, "attempt to set value with null key");
@@ -586,10 +619,17 @@ void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZr
             return;
         }
     }
+
+    storageKey = object_resolve_storage_key(state, key, &normalizedKey);
+    if (storageKey == ZR_NULL) {
+        ZrCore_Log_Error(state, "failed to normalize object storage key");
+        return;
+    }
+
     SZrHashSet *nodeMap = &object->nodeMap;
-    SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, nodeMap, key);
+    SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, nodeMap, storageKey);
     if (pair == ZR_NULL) {
-        pair = ZrCore_HashSet_Add(state, nodeMap, key);
+        pair = ZrCore_HashSet_Add(state, nodeMap, storageKey);
         if (pair == ZR_NULL) {
             ZrCore_Log_Error(state, "failed to allocate object storage entry");
             return;
@@ -597,7 +637,7 @@ void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZr
     }
     ZrCore_Value_Copy(state, &pair->value, value);
     object->memberVersion++;
-    object_refresh_hidden_items_object_cache(state, object, key, pair);
+    object_refresh_hidden_items_object_cache(state, object, storageKey, pair);
 }
 
 static TZrBool object_trace_enabled(void) {
@@ -630,14 +670,21 @@ static void object_trace(const TZrChar *format, ...) {
 
 const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key) {
     SZrHashKeyValuePair *pair = ZR_NULL;
+    SZrTypeValue normalizedKey;
+    const SZrTypeValue *lookupKey = key;
 
     ZR_ASSERT(object != ZR_NULL);
     if (key == ZR_NULL) {
         ZrCore_Log_Error(state, "attempt to get value with null key");
         return ZR_NULL;
     }
+    lookupKey = object_resolve_storage_key(state, key, &normalizedKey);
+    if (lookupKey == ZR_NULL) {
+        ZrCore_Log_Error(state, "failed to normalize object lookup key");
+        return ZR_NULL;
+    }
     if (object_node_map_is_ready(object)) {
-        pair = ZrCore_HashSet_Find(state, &object->nodeMap, key);
+        pair = ZrCore_HashSet_Find(state, &object->nodeMap, lookupKey);
     }
     if (pair != ZR_NULL) {
         return &pair->value;
@@ -648,7 +695,7 @@ const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *ob
         prototype = prototype->superPrototype;
         while (prototype != ZR_NULL) {
             if (object_node_map_is_ready(&prototype->super)) {
-                pair = ZrCore_HashSet_Find(state, &prototype->super.nodeMap, key);
+                pair = ZrCore_HashSet_Find(state, &prototype->super.nodeMap, lookupKey);
             } else {
                 pair = ZR_NULL;
             }
@@ -662,7 +709,7 @@ const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *ob
 
     SZrObjectPrototype *prototype = object->prototype;
     while (prototype != ZR_NULL) {
-        pair = ZrCore_HashSet_Find(state, &prototype->super.nodeMap, key);
+        pair = ZrCore_HashSet_Find(state, &prototype->super.nodeMap, lookupKey);
         if (pair != ZR_NULL) {
             return &pair->value;
         }

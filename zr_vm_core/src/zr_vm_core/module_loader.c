@@ -264,11 +264,37 @@ static TZrBool module_loader_slot_matches_function(SZrState *state,
     return existingFunction == function ? ZR_TRUE : ZR_FALSE;
 }
 
-static TZrBool module_loader_preinstall_exported_function(SZrState *state,
-                                                          SZrObjectModule *module,
-                                                          SZrFunction *function,
-                                                          const SZrFunctionExportedVariable *exported,
-                                                          TZrStackValuePointer base) {
+static SZrFunction *module_loader_find_child_function_for_value(SZrState *state,
+                                                                SZrFunction *entryFunction,
+                                                                const SZrTypeValue *value) {
+    SZrFunction *metadataFunction;
+    TZrUInt32 index;
+
+    if (state == ZR_NULL || entryFunction == ZR_NULL || value == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    metadataFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, value);
+    if (metadataFunction == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < entryFunction->childFunctionLength; ++index) {
+        SZrFunction *childFunction = &entryFunction->childFunctionList[index];
+        if (childFunction == metadataFunction) {
+            return childFunction;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool module_loader_bind_exported_function(SZrState *state,
+                                                    SZrObjectModule *module,
+                                                    SZrFunction *function,
+                                                    const SZrFunctionExportedVariable *exported,
+                                                    TZrStackValuePointer base,
+                                                    TZrBool forceRecreate) {
     TZrStackValuePointer slotPointer;
     SZrTypeValue *slotValue;
     SZrFunction *childFunction;
@@ -287,7 +313,7 @@ static TZrBool module_loader_preinstall_exported_function(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!module_loader_slot_matches_function(state, slotValue, childFunction)) {
+    if (forceRecreate || !module_loader_slot_matches_function(state, slotValue, childFunction)) {
         ZrCore_Closure_PushToStack(state, childFunction, ZR_NULL, base, slotPointer);
         slotValue->type = ZR_VALUE_TYPE_CLOSURE;
         slotValue->isGarbageCollectable = ZR_TRUE;
@@ -301,6 +327,53 @@ static TZrBool module_loader_preinstall_exported_function(SZrState *state,
     }
     ZrCore_Module_SetExportDescriptorReady(module, exported->name, ZR_TRUE);
     return ZR_TRUE;
+}
+
+static TZrBool module_loader_stack_slot_is_preinstalled_callable(const SZrFunction *entryFunction, TZrUInt32 stackSlot) {
+    TZrUInt32 index;
+
+    if (entryFunction == ZR_NULL || entryFunction->topLevelCallableBindings == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < entryFunction->topLevelCallableBindingLength; ++index) {
+        const SZrFunctionTopLevelCallableBinding *binding = &entryFunction->topLevelCallableBindings[index];
+        if (binding->stackSlot == stackSlot) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool module_loader_callable_can_be_preinstalled(const SZrFunction *entryFunction,
+                                                          const SZrFunction *childFunction) {
+    TZrUInt32 index;
+
+    if (entryFunction == ZR_NULL || childFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < childFunction->closureValueLength; ++index) {
+        const SZrFunctionClosureVariable *closureValue = &childFunction->closureValueList[index];
+        if (!closureValue->inStack) {
+            continue;
+        }
+
+        if (!module_loader_stack_slot_is_preinstalled_callable(entryFunction, closureValue->index)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool module_loader_preinstall_exported_function(SZrState *state,
+                                                          SZrObjectModule *module,
+                                                          SZrFunction *function,
+                                                          const SZrFunctionExportedVariable *exported,
+                                                          TZrStackValuePointer base) {
+    return module_loader_bind_exported_function(state, module, function, exported, base, ZR_FALSE);
 }
 
 static TZrBool module_loader_preinstall_top_level_callables(SZrState *state,
@@ -338,6 +411,10 @@ static TZrBool module_loader_preinstall_top_level_callables(SZrState *state,
             continue;
         }
 
+        if (!module_loader_callable_can_be_preinstalled(function, childFunction)) {
+            continue;
+        }
+
         if (!module_loader_slot_matches_function(state, slotValue, childFunction)) {
             ZrCore_Closure_PushToStack(state, childFunction, ZR_NULL, base, slotPointer);
             slotValue->type = ZR_VALUE_TYPE_CLOSURE;
@@ -357,6 +434,33 @@ static TZrBool module_loader_preinstall_top_level_callables(SZrState *state,
             ZrCore_Module_AddProExport(state, module, exported->name, slotValue);
         }
         ZrCore_Module_SetExportDescriptorReady(module, exported->name, ZR_TRUE);
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool module_loader_refresh_declaration_exports(SZrState *state,
+                                                         SZrObjectModule *module,
+                                                         SZrFunction *function,
+                                                         TZrStackValuePointer callBase) {
+    TZrUInt32 index;
+    TZrStackValuePointer base;
+
+    if (state == ZR_NULL || module == ZR_NULL || function == ZR_NULL || callBase == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    base = callBase + 1;
+    for (index = 0; index < function->exportedVariableLength; ++index) {
+        const SZrFunctionExportedVariable *exported = &function->exportedVariables[index];
+        if (exported->readiness != ZR_MODULE_EXPORT_READY_DECLARATION ||
+            exported->exportKind != ZR_MODULE_EXPORT_KIND_FUNCTION) {
+            continue;
+        }
+
+        if (!module_loader_bind_exported_function(state, module, function, exported, base, ZR_TRUE)) {
+            return ZR_FALSE;
+        }
     }
 
     return ZR_TRUE;
@@ -392,6 +496,20 @@ static void module_loader_backfill_entry_exports(SZrState *state,
         varValue = ZrCore_Stack_GetValue(varPointer);
         if (varValue == ZR_NULL) {
             continue;
+        }
+
+        {
+            SZrFunction *childFunction = module_loader_find_child_function_for_value(state, function, varValue);
+            if (childFunction != ZR_NULL) {
+                ZrCore_Closure_PushToStack(state, childFunction, ZR_NULL, callBase + 1, varPointer);
+                varValue = ZrCore_Stack_GetValue(varPointer);
+                if (varValue == ZR_NULL) {
+                    continue;
+                }
+                varValue->type = ZR_VALUE_TYPE_CLOSURE;
+                varValue->isGarbageCollectable = ZR_TRUE;
+                varValue->isNative = ZR_FALSE;
+            }
         }
 
         if (exportVar->accessModifier == ZR_ACCESS_CONSTANT_PUBLIC) {
@@ -646,7 +764,23 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         callBase = request.resultBase;
     }
 
+    if (!module_loader_refresh_declaration_exports(state, module, func, callBase)) {
+        ZrCore_Module_SetInitializationState(module, ZR_MODULE_INIT_STATE_FAILED);
+        state->stackTop.valuePointer = savedStackTop;
+        return ZR_NULL;
+    }
+
     module_loader_backfill_entry_exports(state, module, func, callBase);
+    if (state->stackTop.valuePointer < callBase + 1 + func->stackSize) {
+        state->stackTop.valuePointer = callBase + 1 + func->stackSize;
+    }
+    // Export refresh/backfill can synthesize new closures after the entry frame
+    // has already returned. Close any remaining module-frame upvalues now so
+    // exported closures do not keep dangling references into reusable stack slots.
+    ZrCore_Closure_CloseClosure(state,
+                                callBase + 1,
+                                ZR_THREAD_STATUS_INVALID,
+                                ZR_FALSE);
     if (module_loader_registry_has_other_initializing_modules(state, module)) {
         module->reserved0 = (TZrUInt8)(module->reserved0 | ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS);
         module_loader_set_entry_export_descriptors_ready(module, ZR_FALSE);

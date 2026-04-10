@@ -59,6 +59,39 @@
 struct SZrGlobalState;
 struct SZrState;
 
+enum EZrGarbageCollectCollectionKind {
+    ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR = 0,
+    ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR = 1,
+    ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL = 2,
+    ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX
+};
+
+typedef enum EZrGarbageCollectCollectionKind EZrGarbageCollectCollectionKind;
+
+enum EZrGarbageCollectCollectionPhase {
+    ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE = 0,
+    ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_MARK = 1,
+    ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_EVACUATE = 2,
+    ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT = 3,
+    ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_REMARK = 4,
+    ZR_GARBAGE_COLLECT_COLLECTION_PHASE_SWEEP = 5,
+    ZR_GARBAGE_COLLECT_COLLECTION_PHASE_COMPACT = 6,
+    ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAX
+};
+
+typedef enum EZrGarbageCollectCollectionPhase EZrGarbageCollectCollectionPhase;
+
+typedef struct SZrGarbageCollectorStatsSnapshot {
+    TZrMemoryOffset heapLimitBytes;
+    TZrUInt64 pauseBudgetUs;
+    TZrUInt64 remarkBudgetUs;
+    TZrUInt32 workerCount;
+    TZrUInt32 rememberedObjectCount;
+    EZrGarbageCollectCollectionKind lastCollectionKind;
+    EZrGarbageCollectCollectionKind lastRequestedCollectionKind;
+    EZrGarbageCollectCollectionPhase collectionPhase;
+} SZrGarbageCollectorStatsSnapshot;
+
 // generational mode
 struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     EZrGarbageCollectMode gcMode;
@@ -98,6 +131,23 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     EZrGarbageCollectRunningStatus gcLastCompletedRunningStatus;
 
     SZrRawObject **ignoredObjects;
+    SZrRawObject **rememberedObjects;
+    TZrSize rememberedObjectCount;
+    TZrSize rememberedObjectCapacity;
+    TZrUInt32 nextRegionId;
+
+    TZrMemoryOffset heapLimitBytes;
+    TZrUInt64 youngRegionSize;
+    TZrUInt32 youngRegionCountTarget;
+    TZrUInt32 survivorAgeThreshold;
+    TZrUInt64 pauseBudgetUs;
+    TZrUInt64 remarkBudgetUs;
+    TZrUInt32 workerCount;
+    TZrUInt32 fragmentationCompactThreshold;
+    TZrUInt32 gcFlags;
+    EZrGarbageCollectCollectionKind scheduledCollectionKind;
+    EZrGarbageCollectCollectionPhase collectionPhase;
+    SZrGarbageCollectorStatsSnapshot statsSnapshot;
 
     SZrRawObject *aliveObjectList;
     SZrRawObject *circleMoreObjectList;
@@ -134,6 +184,20 @@ ZR_CORE_API void ZrCore_GarbageCollector_Barrier(struct SZrState *state, SZrRawO
 ZR_CORE_API void ZrCore_GarbageCollector_BarrierBack(struct SZrState *state, SZrRawObject *object);
 
 ZR_CORE_API void ZrCore_RawObject_Barrier(struct SZrState *state, SZrRawObject *object, SZrRawObject *valueObject);
+
+ZR_CORE_API void ZrCore_GarbageCollector_SetHeapLimitBytes(struct SZrGlobalState *global, TZrMemoryOffset heapLimitBytes);
+ZR_CORE_API void ZrCore_GarbageCollector_SetPauseBudgetUs(struct SZrGlobalState *global,
+                                                          TZrUInt64 pauseBudgetUs,
+                                                          TZrUInt64 remarkBudgetUs);
+ZR_CORE_API void ZrCore_GarbageCollector_SetWorkerCount(struct SZrGlobalState *global, TZrUInt32 workerCount);
+ZR_CORE_API void ZrCore_GarbageCollector_ScheduleCollection(struct SZrGlobalState *global,
+                                                            EZrGarbageCollectCollectionKind kind);
+ZR_CORE_API void ZrCore_GarbageCollector_GetStatsSnapshot(struct SZrGlobalState *global,
+                                                          SZrGarbageCollectorStatsSnapshot *outSnapshot);
+ZR_CORE_API TZrBool ZrCore_GarbageCollector_HasRememberedObject(struct SZrGlobalState *global, SZrRawObject *object);
+ZR_CORE_API void ZrCore_GarbageCollector_PinObject(struct SZrState *state,
+                                                   SZrRawObject *object,
+                                                   EZrGarbageCollectPinKind pinKind);
 
 ZR_CORE_API SZrRawObject *ZrCore_RawObject_New(struct SZrState *state, EZrValueType type, TZrSize size, TZrBool isNative);
 
@@ -185,6 +249,21 @@ ZR_FORCE_INLINE TZrBool ZrCore_RawObject_IsGenerationalThroughBarrier(SZrRawObje
 ZR_FORCE_INLINE void ZrCore_RawObject_SetGenerationalStatus(SZrRawObject *object,
                                                       EZrGarbageCollectGenerationalObjectStatus status) {
     object->garbageCollectMark.generationalStatus = status;
+}
+
+ZR_FORCE_INLINE void ZrCore_RawObject_SetStorageKind(SZrRawObject *object,
+                                                     EZrGarbageCollectStorageKind storageKind) {
+    object->garbageCollectMark.storageKind = storageKind;
+    object->garbageCollectMark.heapGenerationKind =
+            storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE
+                    ? ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_YOUNG
+                    : (storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_LARGE_PERSISTENT
+                               ? ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_PERMANENT
+                               : ZR_GARBAGE_COLLECT_HEAP_GENERATION_KIND_OLD);
+}
+
+ZR_FORCE_INLINE void ZrCore_RawObject_SetRegionKind(SZrRawObject *object, EZrGarbageCollectRegionKind regionKind) {
+    object->garbageCollectMark.regionKind = regionKind;
 }
 
 ZR_CORE_API void ZrCore_Gc_ValueStaticAssertIsAlive(struct SZrState *state, SZrTypeValue *value);

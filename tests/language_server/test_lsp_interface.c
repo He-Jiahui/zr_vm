@@ -13,10 +13,14 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/location.h"
+#include "zr_vm_parser/writer.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_library/file.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_interface_internal.h"
+#include "path_support.h"
 
 #include <errno.h>
 
@@ -107,6 +111,7 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                TZrInt32 extraCharacterOffset,
                                                SZrLspPosition *outPosition);
 static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle);
+static TZrBool inlay_hint_array_contains_label(SZrArray *hints, const TZrChar *label);
 static SZrLspSymbolInformation *find_symbol_information_by_name(SZrArray *symbols, const TZrChar *name);
 static TZrBool build_fixture_native_path(const TZrChar *relativePath, TZrChar *buffer, TZrSize bufferSize);
 static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength);
@@ -875,6 +880,18 @@ static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     return ZR_FALSE;
 }
 
+static TZrBool inlay_hint_array_contains_label(SZrArray *hints, const TZrChar *label) {
+    for (TZrSize index = 0; hints != ZR_NULL && label != ZR_NULL && index < hints->length; index++) {
+        SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(hints, index);
+        if (hintPtr != ZR_NULL && *hintPtr != ZR_NULL &&
+            strcmp(test_string_ptr((*hintPtr)->label), label) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static const TZrChar *signature_help_first_label(SZrLspSignatureHelp *help) {
     if (help == ZR_NULL || help->signatures.length == 0) {
         return ZR_NULL;
@@ -980,6 +997,199 @@ static TZrChar *read_fixture_text_file(const TZrChar *path, TZrSize *outLength) 
     buffer[fileSize] = '\0';
     *outLength = (TZrSize)fileSize;
     return buffer;
+}
+
+typedef struct SZrGeneratedBinaryMetadataFixture {
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    TZrChar binaryPath[ZR_TESTS_PATH_MAX];
+} SZrGeneratedBinaryMetadataFixture;
+
+static TZrChar *find_last_path_separator(TZrChar *path) {
+    TZrChar *forwardSlash;
+    TZrChar *backSlash;
+
+    if (path == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    forwardSlash = strrchr(path, '/');
+    backSlash = strrchr(path, '\\');
+    if (forwardSlash == ZR_NULL) {
+        return backSlash;
+    }
+    if (backSlash == ZR_NULL) {
+        return forwardSlash;
+    }
+
+    return forwardSlash > backSlash ? forwardSlash : backSlash;
+}
+
+static TZrBool write_text_file(const TZrChar *path, const TZrChar *content, TZrSize length) {
+    FILE *file;
+    size_t written;
+
+    if (path == ZR_NULL || content == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrTests_Path_EnsureParentDirectory(path)) {
+        return ZR_FALSE;
+    }
+
+    file = fopen(path, "wb");
+    if (file == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    written = fwrite(content, 1, (size_t)length, file);
+    fclose(file);
+    return written == (size_t)length;
+}
+
+static TZrBool copy_fixture_file(const TZrChar *sourcePath, const TZrChar *targetPath) {
+    TZrSize contentLength = 0;
+    TZrChar *content = read_fixture_text_file(sourcePath, &contentLength);
+    TZrBool success;
+
+    if (content == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    success = write_text_file(targetPath, content, contentLength);
+    free(content);
+    return success;
+}
+
+static TZrBool regenerate_binary_metadata_fixture_artifacts(SZrState *state,
+                                                            const TZrChar *binaryPath,
+                                                            const TZrChar *moduleSource) {
+    SZrString *sourceName;
+    SZrFunction *function;
+    SZrBinaryWriterOptions options;
+    TZrChar moduleNameBuffer[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *fileName;
+    const TZrChar *extension;
+    TZrSize moduleNameLength;
+    TZrBool success;
+
+    if (state == ZR_NULL || binaryPath == ZR_NULL || moduleSource == ZR_NULL || binaryPath[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    if (!ZrTests_Path_EnsureParentDirectory(binaryPath)) {
+        return ZR_FALSE;
+    }
+
+    memset(&options, 0, sizeof(options));
+    fileName = strrchr(binaryPath, '/');
+    if (fileName == ZR_NULL) {
+        fileName = strrchr(binaryPath, '\\');
+    }
+    fileName = fileName != ZR_NULL ? fileName + 1 : binaryPath;
+    extension = strrchr(fileName, '.');
+    moduleNameLength = extension != ZR_NULL ? (TZrSize)(extension - fileName) : strlen(fileName);
+    if (moduleNameLength == 0 || moduleNameLength >= sizeof(moduleNameBuffer)) {
+        return ZR_FALSE;
+    }
+
+    memcpy(moduleNameBuffer, fileName, moduleNameLength);
+    moduleNameBuffer[moduleNameLength] = '\0';
+    options.moduleName = moduleNameBuffer;
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)binaryPath, strlen(binaryPath));
+    if (sourceName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    function = ZrParser_Source_Compile(state, (TZrNativeString)moduleSource, strlen(moduleSource), sourceName);
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    success = ZrParser_Writer_WriteBinaryFileWithOptions(state, function, binaryPath, &options);
+    ZrCore_Function_Free(state, function);
+    return success;
+}
+
+static TZrBool prepare_generated_binary_metadata_fixture(SZrState *state,
+                                                         const TZrChar *artifactName,
+                                                         SZrGeneratedBinaryMetadataFixture *fixture) {
+    TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
+    TZrChar fixtureProjectPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar fixtureMainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar fixtureStageAPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar fixtureStageBPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar fixtureBinarySourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourceRootPath[ZR_TESTS_PATH_MAX];
+    TZrChar binaryRootPath[ZR_TESTS_PATH_MAX];
+    TZrChar targetStageAPath[ZR_TESTS_PATH_MAX];
+    TZrChar targetStageBPath[ZR_TESTS_PATH_MAX];
+    TZrChar *lastSeparator;
+    TZrSize binarySourceLength = 0;
+    TZrChar *binarySourceContent = ZR_NULL;
+
+    if (state == ZR_NULL || artifactName == ZR_NULL || fixture == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(fixture, 0, sizeof(*fixture));
+    if (!ZrTests_Path_GetGeneratedArtifact("language_server",
+                                           artifactName,
+                                           "aot_module_graph_pipeline",
+                                           ".zrp",
+                                           generatedProjectPath,
+                                           sizeof(generatedProjectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/aot_module_graph_pipeline.zrp",
+                                   fixtureProjectPath,
+                                   sizeof(fixtureProjectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/src/main.zr",
+                                   fixtureMainPath,
+                                   sizeof(fixtureMainPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/src/graph_stage_a.zr",
+                                   fixtureStageAPath,
+                                   sizeof(fixtureStageAPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/src/graph_stage_b.zr",
+                                   fixtureStageBPath,
+                                   sizeof(fixtureStageBPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/fixtures/graph_binary_stage_source.zr",
+                                   fixtureBinarySourcePath,
+                                   sizeof(fixtureBinarySourcePath))) {
+        return ZR_FALSE;
+    }
+
+    snprintf(rootPath, sizeof(rootPath), "%s", generatedProjectPath);
+    lastSeparator = find_last_path_separator(rootPath);
+    if (lastSeparator == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *lastSeparator = '\0';
+
+    snprintf(fixture->projectPath, sizeof(fixture->projectPath), "%s", generatedProjectPath);
+    ZrLibrary_File_PathJoin(rootPath, "src", sourceRootPath);
+    ZrLibrary_File_PathJoin(rootPath, "bin", binaryRootPath);
+    ZrLibrary_File_PathJoin(sourceRootPath, "main.zr", fixture->mainPath);
+    ZrLibrary_File_PathJoin(sourceRootPath, "graph_stage_a.zr", targetStageAPath);
+    ZrLibrary_File_PathJoin(sourceRootPath, "graph_stage_b.zr", targetStageBPath);
+    ZrLibrary_File_PathJoin(binaryRootPath, "graph_binary_stage.zro", fixture->binaryPath);
+
+    binarySourceContent = read_fixture_text_file(fixtureBinarySourcePath, &binarySourceLength);
+    if (binarySourceContent == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!copy_fixture_file(fixtureProjectPath, fixture->projectPath) ||
+        !copy_fixture_file(fixtureMainPath, fixture->mainPath) ||
+        !copy_fixture_file(fixtureStageAPath, targetStageAPath) ||
+        !copy_fixture_file(fixtureStageBPath, targetStageBPath) ||
+        !regenerate_binary_metadata_fixture_artifacts(state, fixture->binaryPath, binarySourceContent)) {
+        free(binarySourceContent);
+        return ZR_FALSE;
+    }
+
+    free(binarySourceContent);
+    return ZR_TRUE;
 }
 
 static SZrString *create_file_uri_from_native_path(SZrState *state, const TZrChar *path) {
@@ -2307,6 +2517,255 @@ static void test_lsp_signature_help_displays_closed_generic_instantiation(SZrSta
 
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Signature Help Displays Closed Generic Instantiation");
+}
+
+static void test_lsp_inlay_hints_surface_exact_inferred_types(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class Matrix<T, const N: int> { }\n"
+        "class Box<T> {\n"
+        "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+        "}\n"
+        "func inferNumber() {\n"
+        "    return 42;\n"
+        "}\n"
+        "func use(): void {\n"
+        "    var box = new Box<int>();\n"
+        "    var m = new Matrix<int, 2 + 2>();\n"
+        "    var shaped = box.shape(m);\n"
+        "}\n";
+    SZrLspRange range;
+    SZrArray hints;
+
+    TEST_START("LSP Inlay Hints Surface Exact Inferred Types");
+    TEST_INFO("Inlay Hints",
+              "Unannotated locals and callable returns should surface exact strong types from the shared semantic truth without weak object fallback");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Inlay Hints Surface Exact Inferred Types", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///inlay_exact_inferred_types.zr", 38);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Inlay Hints Surface Exact Inferred Types",
+                  "Failed to prepare the inlay hint fixture");
+        return;
+    }
+
+    range.start.line = 0;
+    range.start.character = 0;
+    range.end.line = 32;
+    range.end.character = 0;
+
+    ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 8);
+    if (!ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints) ||
+        !inlay_hint_array_contains_label(&hints, ": Box<int>") ||
+        !inlay_hint_array_contains_label(&hints, ": Matrix<int, 4>") ||
+        !inlay_hint_array_contains_label(&hints, ": int")) {
+        ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Inlay Hints Surface Exact Inferred Types",
+                  "Inlay hints should expose exact inferred closed-generic local types and inferred callable return types");
+        return;
+    }
+
+    ZrLanguageServer_Lsp_FreeInlayHints(state, &hints);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Inlay Hints Surface Exact Inferred Types");
+}
+
+static void test_lsp_hover_and_completion_surface_explicit_exact_type_failures(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "probe() {\n"
+        "    var missing;\n"
+        "    missing;\n"
+        "}\n";
+    SZrLspPosition usagePosition;
+    SZrArray diagnostics;
+    SZrArray completions;
+    SZrLspHover *hover = ZR_NULL;
+    SZrLspCompletionItem *missingItem;
+    const TZrChar *detailText = ZR_NULL;
+
+    TEST_START("LSP Hover And Completion Surface Explicit Exact Type Failures");
+    TEST_INFO("Strong typed hover/completion failure surface",
+              "LSP hover and completion detail must say 'cannot infer exact type' for unresolved strong-typed symbols instead of falling back to object.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Hover And Completion Surface Explicit Exact Type Failures",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///exact_type_failure_surface.zr", 37);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "missing;", 1, 0, &usagePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover And Completion Surface Explicit Exact Type Failures",
+                  "Failed to prepare the exact-type failure fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
+        !diagnostic_array_contains_message(&diagnostics, "initializer requires annotation")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover And Completion Surface Explicit Exact Type Failures",
+                  "Expected initializer requires annotation diagnostic for the untyped local");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, usagePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "cannot infer exact type") ||
+        hover_contains_text(hover, "object")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover And Completion Surface Explicit Exact Type Failures",
+                  "Hover should surface explicit exact-type failure text without a weak object fallback");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, usagePosition, &completions)) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover And Completion Surface Explicit Exact Type Failures",
+                  "Completion request failed");
+        return;
+    }
+
+    missingItem = find_completion_item_by_label(&completions, "missing");
+    detailText = missingItem != ZR_NULL && missingItem->detail != ZR_NULL
+                     ? test_string_ptr(missingItem->detail)
+                     : ZR_NULL;
+    if (detailText == ZR_NULL ||
+        strstr(detailText, "cannot infer exact type") == ZR_NULL ||
+        strstr(detailText, "object") != ZR_NULL) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover And Completion Surface Explicit Exact Type Failures",
+                  detailText != ZR_NULL ? detailText : "<null completion detail>");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Hover And Completion Surface Explicit Exact Type Failures");
+}
+
+static void test_lsp_signature_help_and_completion_surface_exact_unannotated_return_type(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "make(seed: int) {\n"
+        "    return seed + 0;\n"
+        "}\n"
+        "use(): void {\n"
+        "    make(1);\n"
+        "}\n";
+    SZrLspPosition callPosition;
+    SZrLspSignatureHelp *help = ZR_NULL;
+    SZrLspHover *hover = ZR_NULL;
+    SZrArray completions;
+    SZrLspCompletionItem *makeItem;
+    const TZrChar *detailText = ZR_NULL;
+
+    TEST_START("LSP Signature Help And Completion Surface Exact Unannotated Return Type");
+    TEST_INFO("Exact return signature surface",
+              "Provable unannotated functions must expose their exact return type in hover, completion, and signature help instead of object.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Signature Help And Completion Surface Exact Unannotated Return Type",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///exact_unannotated_return_signature.zr", 44);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "make(1)", 0, 5, &callPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help And Completion Surface Exact Unannotated Return Type",
+                  "Failed to prepare the unannotated return fixture");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, callPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "Signature: make(seed: int): int") ||
+        hover_contains_text(hover, "object")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help And Completion Surface Exact Unannotated Return Type",
+                  "Hover should show the exact inferred return type for the unannotated function");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, callPosition, &completions)) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help And Completion Surface Exact Unannotated Return Type",
+                  "Completion request failed");
+        return;
+    }
+
+    makeItem = find_completion_item_by_label(&completions, "make");
+    detailText = makeItem != ZR_NULL && makeItem->detail != ZR_NULL
+                     ? test_string_ptr(makeItem->detail)
+                     : ZR_NULL;
+    if (detailText == ZR_NULL ||
+        strstr(detailText, "make(seed: int): int") == ZR_NULL ||
+        strstr(detailText, "object") != ZR_NULL) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help And Completion Surface Exact Unannotated Return Type",
+                  detailText != ZR_NULL ? detailText : "<null completion detail>");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, callPosition, &help) ||
+        help == ZR_NULL ||
+        !signature_help_contains_text(help, "make(seed: int): int") ||
+        signature_help_contains_text(help, "object")) {
+        const TZrChar *label = signature_help_first_label(help);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help And Completion Surface Exact Unannotated Return Type",
+                  label != ZR_NULL ? label : "<null signature>");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Signature Help And Completion Surface Exact Unannotated Return Type");
 }
 
 static void test_lsp_signature_help_resolves_super_constructor(SZrState *state) {
@@ -4585,8 +5044,7 @@ static void test_lsp_semantic_query_builds_native_receiver_member_hover(SZrState
 static void test_lsp_semantic_query_resolves_external_metadata_declaration_targets(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
-    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    SZrGeneratedBinaryMetadataFixture fixture;
     TZrSize mainLength = 0;
     TZrChar *mainContent;
     SZrString *mainUri = ZR_NULL;
@@ -4598,19 +5056,16 @@ static void test_lsp_semantic_query_resolves_external_metadata_declaration_targe
     TEST_INFO("Structured external metadata query",
               "The shared semantic query should recognize .zro declaration entries directly instead of relying on interface-level project fallback code");
 
-    if (!build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/src/main.zr",
-                                   mainPath,
-                                   sizeof(mainPath)) ||
-        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/bin/graph_binary_stage.zro",
-                                   binaryPath,
-                                   sizeof(binaryPath))) {
+    if (!prepare_generated_binary_metadata_fixture(state,
+                                                   "interface_external_metadata_declaration_target",
+                                                   &fixture)) {
         TEST_FAIL(timer,
                   "LSP Semantic Query Resolves External Metadata Declaration Targets",
-                  "Failed to build binary metadata fixture paths");
+                  "Failed to prepare generated binary metadata fixture");
         return;
     }
 
-    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    mainContent = read_fixture_text_file(fixture.mainPath, &mainLength);
     context = ZrLanguageServer_LspContext_New(state);
     if (mainContent == ZR_NULL || context == ZR_NULL) {
         free(mainContent);
@@ -4621,8 +5076,8 @@ static void test_lsp_semantic_query_resolves_external_metadata_declaration_targe
         return;
     }
 
-    mainUri = create_file_uri_from_native_path(state, mainPath);
-    binaryUri = create_file_uri_from_native_path(state, binaryPath);
+    mainUri = create_file_uri_from_native_path(state, fixture.mainPath);
+    binaryUri = create_file_uri_from_native_path(state, fixture.binaryPath);
     if (mainUri == ZR_NULL || binaryUri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1)) {
         free(mainContent);
@@ -4637,6 +5092,7 @@ static void test_lsp_semantic_query_resolves_external_metadata_declaration_targe
     if (!ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, binaryUri, binaryEntryPosition, &query) ||
         query.kind != ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION ||
         query.moduleName == ZR_NULL ||
+        strcmp(test_string_ptr(query.moduleName), "graph_binary_stage") != 0 ||
         strcmp(test_string_ptr(query.uri), test_string_ptr(binaryUri)) != 0 ||
         query.sourceKind != ZR_LSP_IMPORTED_MODULE_SOURCE_BINARY_METADATA) {
         ZrLanguageServer_LspSemanticQuery_Free(state, &query);
@@ -4657,8 +5113,7 @@ static void test_lsp_semantic_query_resolves_external_metadata_declaration_targe
 static void test_lsp_semantic_query_external_metadata_references_and_highlights(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
-    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    SZrGeneratedBinaryMetadataFixture fixture;
     TZrSize mainLength = 0;
     TZrChar *mainContent;
     SZrString *mainUri = ZR_NULL;
@@ -4674,19 +5129,16 @@ static void test_lsp_semantic_query_external_metadata_references_and_highlights(
     TEST_INFO("Structured external metadata references",
               "External metadata semantic queries should drive references and same-document highlights without routing back through legacy project position fallback");
 
-    if (!build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/src/main.zr",
-                                   mainPath,
-                                   sizeof(mainPath)) ||
-        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/bin/graph_binary_stage.zro",
-                                   binaryPath,
-                                   sizeof(binaryPath))) {
+    if (!prepare_generated_binary_metadata_fixture(state,
+                                                   "interface_external_metadata_references",
+                                                   &fixture)) {
         TEST_FAIL(timer,
                   "LSP Semantic Query External Metadata References And Highlights",
-                  "Failed to build binary metadata fixture paths");
+                  "Failed to prepare generated binary metadata fixture");
         return;
     }
 
-    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    mainContent = read_fixture_text_file(fixture.mainPath, &mainLength);
     context = ZrLanguageServer_LspContext_New(state);
     if (mainContent == ZR_NULL || context == ZR_NULL) {
         free(mainContent);
@@ -4697,8 +5149,8 @@ static void test_lsp_semantic_query_external_metadata_references_and_highlights(
         return;
     }
 
-    mainUri = create_file_uri_from_native_path(state, mainPath);
-    binaryUri = create_file_uri_from_native_path(state, binaryPath);
+    mainUri = create_file_uri_from_native_path(state, fixture.mainPath);
+    binaryUri = create_file_uri_from_native_path(state, fixture.binaryPath);
     if (mainUri == ZR_NULL || binaryUri == ZR_NULL ||
         !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
         !lsp_find_position_for_substring(mainContent, "\"graph_binary_stage\"", 0, 1, &importLiteralPosition) ||
@@ -4833,6 +5285,15 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_signature_help_displays_closed_generic_instantiation(state);
+    TEST_DIVIDER();
+
+    test_lsp_inlay_hints_surface_exact_inferred_types(state);
+    TEST_DIVIDER();
+
+    test_lsp_hover_and_completion_surface_explicit_exact_type_failures(state);
+    TEST_DIVIDER();
+
+    test_lsp_signature_help_and_completion_surface_exact_unannotated_return_type(state);
     TEST_DIVIDER();
 
     test_lsp_signature_help_resolves_super_constructor(state);

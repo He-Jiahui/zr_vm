@@ -1,0 +1,180 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 20
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 26
+
+CONSTANTS (19):
+  [0] native closure
+  [1] string: "zr.container"
+  [2] null
+  [3] string: "Array<int>"
+  [4] int: 2
+  [5] string: "Map<string, int>"
+  [6] int: 0
+  [7] int: 10
+  [8] int: 20
+  [9] int: 30
+  [10] string: "k"
+  [11] int: 40
+  [12] int: 1
+  [13] int: 5
+  [14] int: 100
+  [15] string: "missing"
+  [16] int: 1000
+  [17] int: 10000
+  [18] int: 100000
+
+LOCAL_VARIABLES (5):
+  [0] container: offset_activate=4, offset_dead=106
+  [1] xs: offset_activate=11, offset_dead=106
+  [2] map: offset_activate=17, offset_dead=106
+  [3] obj: offset_activate=19, offset_dead=106
+  [4] score: offset_activate=21, offset_dead=106
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (5):
+    [0] container: zr.container
+    [1] xs: Array<int>
+    [2] map: Map<string, int>
+    [3] obj: object
+    [4] score: int
+  EXPORTED_SYMBOLS (0):
+  STATIC_IMPORTS (1):
+    import zr.container
+  MODULE_ENTRY_EFFECTS (0):
+  EXPORTED_CALLABLE_SUMMARIES (0):
+  TOP_LEVEL_CALLABLE_BINDINGS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+INSTRUCTIONS (105):
+  [0] GET_CONSTANT (extra=1, operand=0)
+  [1] GET_CONSTANT (extra=2, operand=1)
+  [2] FUNCTION_CALL (extra=1, operand1=1, operand2=1)
+  [3] SET_STACK (extra=0, operand=1)
+  [4] CREATE_OBJECT (extra=2)
+  [5] OPCODE_27 (extra=2, operand2=196610, operand1=2, operand1_1=3)
+  [6] GET_MEMBER (extra=3, operand1=2, operand2=0)
+  [7] SET_STACK (extra=4, operand=2)
+  [8] GET_CONSTANT (extra=5, operand=4)
+  [9] FUNCTION_CALL (extra=3, operand1=3, operand2=2)
+  [10] SET_STACK (extra=1, operand=2)
+  [11] CREATE_OBJECT (extra=3)
+  [12] OPCODE_27 (extra=3, operand2=327683, operand1=3, operand1_1=5)
+  [13] GET_MEMBER (extra=4, operand1=3, operand2=0)
+  [14] SET_STACK (extra=5, operand=3)
+  [15] FUNCTION_CALL (extra=4, operand1=4, operand2=1)
+  [16] SET_STACK (extra=2, operand=3)
+  [17] CREATE_OBJECT (extra=4)
+  [18] SET_STACK (extra=3, operand=4)
+  [19] GET_CONSTANT (extra=5, operand=6)
+  [20] SET_STACK (extra=4, operand=5)
+  [21] GET_STACK (extra=5, operand=1)
+  [22] SET_STACK (extra=6, operand=5)
+  [23] GET_MEMBER (extra=5, operand1=5, operand2=1)
+  [24] GET_CONSTANT (extra=7, operand=7)
+  [25] FUNCTION_CALL (extra=5, operand1=5, operand2=2)
+  [26] GET_STACK (extra=5, operand=1)
+  [27] SET_STACK (extra=6, operand=5)
+  [28] GET_MEMBER (extra=5, operand1=5, operand2=1)
+  [29] GET_CONSTANT (extra=7, operand=8)
+  [30] FUNCTION_CALL (extra=5, operand1=5, operand2=2)
+  [31] GET_CONSTANT (extra=5, operand=9)
+  [32] GET_STACK (extra=6, operand=2)
+  [33] GET_CONSTANT (extra=7, operand=10)
+  [34] SET_BY_INDEX (extra=5, operand1=6, operand2=7)
+  [35] GET_CONSTANT (extra=5, operand=11)
+  [36] GET_STACK (extra=6, operand=3)
+  [37] SET_BY_INDEX (extra=5, operand1=6, operand2=7)
+  [38] GET_STACK (extra=5, operand=1)
+  [39] GET_CONSTANT (extra=6, operand=12)
+  [40] GET_BY_INDEX (extra=5, operand1=5, operand2=6)
+  [41] GET_CONSTANT (extra=6, operand=8)
+  [42] LOGICAL_EQUAL (extra=7, operand1=5, operand2=6)
+  [43] JUMP_IF (extra=7, operand=5)
+  [44] GET_STACK (extra=8, operand=4)
+  [45] GET_CONSTANT (extra=9, operand=12)
+  [46] ADD_INT (extra=10, operand1=8, operand2=9)
+  [47] SET_STACK (extra=4, operand=10)
+  [48] JUMP (extra=0, operand=0)
+  [49] GET_STACK (extra=8, operand=1)
+  [50] GET_CONSTANT (extra=9, operand=13)
+  [51] SUPER_ARRAY_GET_INT (extra=8, operand1=8, operand2=9)
+  [52] GET_CONSTANT (extra=9, operand=2)
+  [53] LOGICAL_EQUAL (extra=5, operand1=8, operand2=9)
+  [54] JUMP_IF (extra=5, operand=5)
+  [55] GET_STACK (extra=11, operand=4)
+  [56] GET_CONSTANT (extra=12, operand=7)
+  [57] ADD_INT (extra=13, operand1=11, operand2=12)
+  [58] SET_STACK (extra=4, operand=13)
+  [59] JUMP (extra=0, operand=0)
+  [60] GET_STACK (extra=11, operand=2)
+  [61] GET_CONSTANT (extra=12, operand=10)
+  [62] GET_BY_INDEX (extra=11, operand1=11, operand2=12)
+  [63] GET_CONSTANT (extra=12, operand=9)
+  [64] LOGICAL_EQUAL (extra=5, operand1=11, operand2=12)
+  [65] JUMP_IF (extra=5, operand=5)
+  [66] GET_STACK (extra=14, operand=4)
+  [67] GET_CONSTANT (extra=15, operand=14)
+  [68] ADD_INT (extra=16, operand1=14, operand2=15)
+  [69] SET_STACK (extra=4, operand=16)
+  [70] JUMP (extra=0, operand=0)
+  [71] GET_STACK (extra=14, operand=2)
+  [72] GET_CONSTANT (extra=15, operand=15)
+  [73] GET_BY_INDEX (extra=14, operand1=14, operand2=15)
+  [74] GET_CONSTANT (extra=15, operand=2)
+  [75] LOGICAL_EQUAL (extra=5, operand1=14, operand2=15)
+  [76] JUMP_IF (extra=5, operand=5)
+  [77] GET_STACK (extra=17, operand=4)
+  [78] GET_CONSTANT (extra=18, operand=16)
+  [79] ADD_INT (extra=19, operand1=17, operand2=18)
+  [80] SET_STACK (extra=4, operand=19)
+  [81] JUMP (extra=0, operand=0)
+  [82] GET_STACK (extra=17, operand=3)
+  [83] GET_CONSTANT (extra=18, operand=10)
+  [84] GET_BY_INDEX (extra=17, operand1=17, operand2=18)
+  [85] GET_CONSTANT (extra=18, operand=11)
+  [86] LOGICAL_EQUAL (extra=5, operand1=17, operand2=18)
+  [87] JUMP_IF (extra=5, operand=5)
+  [88] GET_STACK (extra=20, operand=4)
+  [89] GET_CONSTANT (extra=21, operand=17)
+  [90] ADD_INT (extra=22, operand1=20, operand2=21)
+  [91] SET_STACK (extra=4, operand=22)
+  [92] JUMP (extra=0, operand=0)
+  [93] GET_STACK (extra=20, operand=3)
+  [94] GET_CONSTANT (extra=21, operand=15)
+  [95] GET_BY_INDEX (extra=20, operand1=20, operand2=21)
+  [96] GET_CONSTANT (extra=21, operand=2)
+  [97] LOGICAL_EQUAL (extra=5, operand1=20, operand2=21)
+  [98] JUMP_IF (extra=5, operand=5)
+  [99] GET_STACK (extra=23, operand=4)
+  [100] GET_CONSTANT (extra=24, operand=18)
+  [101] ADD_INT (extra=25, operand1=23, operand2=24)
+  [102] SET_STACK (extra=4, operand=25)
+  [103] JUMP (extra=0, operand=0)
+  [104] FUNCTION_RETURN (extra=1, operand1=4, operand2=0)
+

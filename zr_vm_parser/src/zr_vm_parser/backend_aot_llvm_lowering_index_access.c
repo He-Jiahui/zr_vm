@@ -96,6 +96,7 @@ TZrBool backend_aot_llvm_lower_index_value_family(const SZrAotLlvmLoweringContex
                                                                  "ZrLibrary_AotRuntime_GetByIndex",
                                                                  ZR_TRUE);
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
             return backend_aot_llvm_lower_triple_slot_index_call(context,
                                                                  instruction,
                                                                  "ZrLibrary_AotRuntime_SuperArrayGetInt",

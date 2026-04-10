@@ -403,6 +403,11 @@ static void build_opcode_window_message(const SZrFunction *rootFunction,
     }
 }
 
+static TZrBool opcode_is_super_array_get_int_family(EZrInstructionCode opcode) {
+    return opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT) ||
+           opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST);
+}
+
 static void assert_super_array_int_ops_do_not_reload_adjacent_temp_slots(const SZrFunction *function, TZrUInt32 depth) {
     char message[256];
 
@@ -415,7 +420,7 @@ static void assert_super_array_int_ops_do_not_reload_adjacent_temp_slots(const S
         TZrUInt16 readSlots[3];
         TZrUInt32 readCount = 0;
 
-        if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)) {
+        if (opcode_is_super_array_get_int_family(opcode)) {
             readSlots[readCount++] = instruction->instruction.operand.operand1[0];
             readSlots[readCount++] = instruction->instruction.operand.operand1[1];
         } else if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)) {
@@ -439,8 +444,8 @@ static void assert_super_array_int_ops_do_not_reload_adjacent_temp_slots(const S
                          "Function '%s' still reloads temp slot %u immediately before %s at instruction %u",
                          function_name_or_anonymous(function),
                          (unsigned int)previous->instruction.operandExtra,
-                         opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT) ? "SUPER_ARRAY_GET_INT"
-                                                                            : "SUPER_ARRAY_SET_INT",
+                         opcode_is_super_array_get_int_family(opcode) ? "SUPER_ARRAY_GET_INT family"
+                                                                       : "SUPER_ARRAY_SET_INT",
                          (unsigned int)index);
                 TEST_ASSERT_NOT_EQUAL_MESSAGE((int)previous->instruction.operandExtra,
                                               (int)readSlots[readIndex],
@@ -1102,6 +1107,7 @@ static void test_imported_source_module_type_stubs_do_not_serialize_into_entry_p
     state = global->mainThreadState;
     TEST_ASSERT_NOT_NULL(state);
     ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibNetwork_Register(global));
 
     source = read_text_file_owned(sourcePath);
     TEST_ASSERT_NOT_NULL(source);
@@ -1547,13 +1553,14 @@ static void test_matrix_add_2d_compile_eliminates_generic_array_int_index_opcode
 
     genericGetCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(GET_BY_INDEX), 0);
     genericSetCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SET_BY_INDEX), 0);
-    fastGetCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT), 0);
+    fastGetCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT), 0) +
+                   count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST), 0);
     fastSetCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT), 0);
 
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
             fastGetCount,
-            "matrix_add_2d should emit SUPER_ARRAY_GET_INT for typed Array<int> reads");
+            "matrix_add_2d should emit SUPER_ARRAY_GET_INT-family opcodes for typed Array<int> reads");
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
             fastSetCount,

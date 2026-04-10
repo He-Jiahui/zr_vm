@@ -1,0 +1,263 @@
+Skipping cleanup for locked path C:\Users\HeJiahui\AppData\Local\Temp\zr-stdio-binary-watch-AwWx4E: EBUSY
+Error: Timed out waiting for response to workspace/symbol. stderr=[lsp_update] begin uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr len=22 allowRefresh=1 version=1
+[lsp_update] after update-file uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr
+[lsp_update] after parse uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr
+[lsp_update] before analyze uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr project=0000000000000000 parserDiag=0 fallback=0
+[lsp_update] analyze ok uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr
+[lsp_update] begin uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr len=22 allowRefresh=1 version=2
+[lsp_update] after update-file uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr
+[lsp_update] after parse uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr
+[lsp_update] before analyze uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr project=0000000000000000 parserDiag=0 fallback=0
+[lsp_update] analyze ok uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr
+[lsp_update] begin uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr len=330 allowRefresh=1 version=1
+[lsp_update] after update-file uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr
+[lsp_update] after parse uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr
+[lsp_update] before analyze uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr project=0000000000000000 parserDiag=1 fallback=0
+[lsp_update] analyze ok uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr
+[lsp_update] begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr len=58 allowRefresh=1 version=1
+[lsp_update] after update-file uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr
+[lsp_update] after parse uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr
+[lsp_project] refresh begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr length=58
+[lsp_project] ensure module=main
+[lsp_project] load imports uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr
+[lsp_project] reanalyze begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr
+[zr-import-meta] ensure import compile info enter module=000001A6AB3326D0
+[zr-import-meta] ensure import compile info module='greet'
+[lsp_project] source-loader request module=greet
+[lsp_project] source-loader source-hit module=greet path=C:\Users\HeJiahui\AppData\Local\Temp\zr-stdio-import-diag-GH4Jhs\src\greet.zr
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=21
+[zr-parser-compile] source compile start name='greet' len=21
+[zr-parser-compile] parse ok name='greet' ast=000001A6AB338F70
+[zr-module-init] prepare current module 'greet' ast=000001A6AB338F70
+[zr-module-init] prepare current module ok 'greet' summary=000001A6AB349680
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=000001A6AB338F70
+[zr-parser-compile] compiler validate task effects ok ast=000001A6AB338F70
+[zr-parser-compile] compiler current function=000001A6AB34E450
+[zr-parser-compile] compile_script start ast=000001A6AB338F70
+[zr-parser-compile] compile_script stmt[0] type=7
+[zr-compile-stmt] statement compile dispatch node=000001A6AB338330 type=7
+[zr-compile-stmt] compile_variable_declaration enter node=000001A6AB338330 patternType=50 valueType=44
+[zr-compile-stmt] var decl identifier name=000001A6AB340680 typeInfo=0000000000000000 value=000001A6AB338A30
+[zr-compile-stmt] var decl infer from initializer start valueType=44
+[zr-compile-stmt] var decl infer from initializer done success=1 baseType=5 typeName=0000000000000000 hasError=0
+[zr-compile-stmt] var decl initializer compile start reservedSlot=0 stackCount=1
+[zr-compile-stmt] var decl initializer compile done hasError=0 stackCount=2
+[zr-compile-stmt] var decl bind initializer slot=1 reserved=0
+[zr-compile-stmt] var decl local binding done varIndex=0
+[zr-compile-stmt] var decl runtime alias registration done
+[zr-compile-stmt] var decl compile-time import alias registration done
+[zr-compile-stmt] compile_variable_declaration exit success
+[zr-compile-stmt] statement compile dispatch done node=000001A6AB338330 type=7 hasError=0
+[zr-parser-compile] compile_script done ast=000001A6AB338F70 hasError=0
+[zr-parser-compile] optimize instructions func=000001A6AB34E450
+[zr-parser-compile] assemble final function ok func=000001A6AB34E450
+[zr-parser-compile] build semir metadata ok func=000001A6AB34E450
+[zr-parser-compile] quicken execbc ok func=000001A6AB34E450
+[zr-module-init] analyze source summary 'greet' summary=000001A6AB349680 ast=000001A6AB338F70
+[zr-module-init] analyze source summary done 'greet' summary=000001A6AB349680
+[zr-module-init] validate summary 'greet' summary=000001A6AB349680
+[zr-module-init] validate summary done 'greet' result=1 summary=000001A6AB349680
+[zr-parser-compile] finalize current source module ok func=000001A6AB34E450
+[zr-parser-compile] compiler compile finished name='greet' func=000001A6AB34E450
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=000001A6AB34E450
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=000001A6AB340900
+[zr-import-meta] ensure import compile info satisfied by native module
+[zr-import-meta] ensure import compile info enter module=000001A6AB340B80
+[zr-import-meta] ensure import compile info satisfied by native module
+[zr-import-meta] ensure import compile info enter module=000001A6AB3326D0
+[zr-import-meta] ensure import compile info hit registered prototype
+[lsp_project] reanalyze end uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_update] begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr len=21 allowRefresh=0 version=0
+[lsp_update] after update-file uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr
+[lsp_update] after parse uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr
+[lsp_update] before analyze uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr project=000001A6AB33D5C0 parserDiag=0 fallback=0
+[lsp_project] project-analyze begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr
+[lsp_project] project-analyze before semantic uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr
+[lsp_project] project-analyze after semantic uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr success=1
+[lsp_update] analyze ok uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr
+[lsp_project] load imports uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr
+[lsp_project] reanalyze end uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr success=1
+[lsp_project] load imports uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr
+[lsp_project] reanalyze begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr
+[zr-import-meta] ensure import compile info enter module=000001A6AB3326D0
+[zr-import-meta] ensure import compile info module='greet'
+[lsp_project] source-loader request module=greet
+[lsp_project] source-loader source-hit module=greet path=C:\Users\HeJiahui\AppData\Local\Temp\zr-stdio-import-diag-GH4Jhs\src\greet.zr
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='greet' size=21
+[zr-parser-compile] source compile start name='greet' len=21
+[zr-parser-compile] parse ok name='greet' ast=000001A6AB3393D0
+[zr-module-init] prepare current module 'greet' ast=000001A6AB3393D0
+[zr-module-init] prepare current module ok 'greet' summary=000001A6AB349680
+[zr-parser-compile] prepare current source module ok name='greet'
+[zr-parser-compile] compiler compile core init ast=000001A6AB3393D0
+[zr-parser-compile] compiler validate task effects ok ast=000001A6AB3393D0
+[zr-parser-compile] compiler current function=000001A6AB348C30
+[zr-parser-compile] compile_script start ast=000001A6AB3393D0
+[zr-parser-compile] compile_script stmt[0] type=7
+[zr-compile-stmt] statement compile dispatch node=000001A6AB338330 type=7
+[zr-compile-stmt] compile_variable_declaration enter node=000001A6AB338330 patternType=50 valueType=44
+[zr-compile-stmt] var decl identifier name=000001A6AB340680 typeInfo=0000000000000000 value=000001A6AB3392F0
+[zr-compile-stmt] var decl infer from initializer start valueType=44
+[zr-compile-stmt] var decl infer from initializer done success=1 baseType=5 typeName=0000000000000000 hasError=0
+[zr-compile-stmt] var decl initializer compile start reservedSlot=0 stackCount=1
+[zr-compile-stmt] var decl initializer compile done hasError=0 stackCount=2
+[zr-compile-stmt] var decl bind initializer slot=1 reserved=0
+[zr-compile-stmt] var decl local binding done varIndex=0
+[zr-compile-stmt] var decl runtime alias registration done
+[zr-compile-stmt] var decl compile-time import alias registration done
+[zr-compile-stmt] compile_variable_declaration exit success
+[zr-compile-stmt] statement compile dispatch done node=000001A6AB338330 type=7 hasError=0
+[zr-parser-compile] compile_script done ast=000001A6AB3393D0 hasError=0
+[zr-parser-compile] optimize instructions func=000001A6AB348C30
+[zr-parser-compile] assemble final function ok func=000001A6AB348C30
+[zr-parser-compile] build semir metadata ok func=000001A6AB348C30
+[zr-parser-compile] quicken execbc ok func=000001A6AB348C30
+[zr-module-init] analyze source summary 'greet' summary=000001A6AB349680 ast=000001A6AB3393D0
+[zr-module-init] analyze source summary done 'greet' summary=000001A6AB349680
+[zr-module-init] validate summary 'greet' summary=000001A6AB349680
+[zr-module-init] validate summary done 'greet' result=1 summary=000001A6AB349680
+[zr-parser-compile] finalize current source module ok func=000001A6AB348C30
+[zr-parser-compile] compiler compile finished name='greet' func=000001A6AB348C30
+[zr-parser-compile] source compile cleanup name='greet'
+[zr-import-meta] ensure import compile info register runtime result=1 func=000001A6AB348C30
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=000001A6AB340900
+[zr-import-meta] ensure import compile info satisfied by native module
+[zr-import-meta] ensure import compile info enter module=000001A6AB340B80
+[zr-import-meta] ensure import compile info satisfied by native module
+[zr-import-meta] ensure import compile info enter module=000001A6AB3326D0
+[zr-import-meta] ensure import compile info hit registered prototype
+[lsp_project] reanalyze end uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] ensure cached module=greet
+[lsp_project] load imports uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr
+[lsp_project] reanalyze end uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/greet.zr success=1
+[lsp_project] refresh end uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-import-diag-GH4Jhs/src/main.zr
+[lsp_update] begin uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr len=410 allowRefresh=1 version=1
+[lsp_update] after update-file uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr
+[lsp_update] after parse uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr
+[lsp_update] before analyze uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr project=0000000000000000 parserDiag=0 fallback=0
+[lsp_update] analyze ok uri=file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr
+[lsp_project] refresh begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-binary-watch-AwWx4E/aot_module_graph_pipeline.zrp length=99
+[lsp_project] ensure module=main
+[lsp_update] begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-binary-watch-AwWx4E/src/main.zr len=389 allowRefresh=0 version=0
+[lsp_update] after update-file uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-binary-watch-AwWx4E/src/main.zr
+[lsp_update] after parse uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-binary-watch-AwWx4E/src/main.zr
+[lsp_update] before analyze uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-binary-watch-AwWx4E/src/main.zr project=000001A6AB5AB620 parserDiag=0 fallback=0
+[lsp_project] project-analyze begin uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-binary-watch-AwWx4E/src/main.zr
+[lsp_project] project-analyze before semantic uri=file:///C:/Users/HeJiahui/AppData/Local/Temp/zr-stdio-binary-watch-AwWx4E/src/main.zr
+[zr-import-meta] ensure import compile info enter module=000001A6AB567E60
+[zr-import-meta] ensure import compile info satisfied by native module
+[zr-import-meta] ensure import compile info enter module=000001A6AB3A7EF0
+[zr-import-meta] ensure import compile info module='graph_stage_a'
+[lsp_project] source-loader request module=graph_stage_a
+[lsp_project] source-loader source-hit module=graph_stage_a path=C:\Users\HeJiahui\AppData\Local\Temp\zr-stdio-binary-watch-AwWx4E\src\graph_stage_a.zr
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='graph_stage_a' size=41
+[zr-parser-compile] source compile start name='graph_stage_a' len=41
+[zr-parser-compile] parse ok name='graph_stage_a' ast=000001A6AB5B5A20
+[zr-module-init] prepare current module 'graph_stage_a' ast=000001A6AB5B5A20
+[zr-module-init] prepare current module ok 'graph_stage_a' summary=000001A6AB349828
+[zr-parser-compile] prepare current source module ok name='graph_stage_a'
+[zr-parser-compile] compiler compile core init ast=000001A6AB5B5A20
+[zr-parser-compile] compiler validate task effects ok ast=000001A6AB5B5A20
+[zr-parser-compile] compiler current function=000001A6AB6BB730
+[zr-parser-compile] compile_script start ast=000001A6AB5B5A20
+[zr-parser-compile] compile_script stmt[0] type=7
+[zr-compile-stmt] statement compile dispatch node=000001A6AB5B6040 type=7
+[zr-compile-stmt] compile_variable_declaration enter node=000001A6AB5B6040 patternType=50 valueType=32
+[zr-compile-stmt] var decl identifier name=000001A6AB5B3790 typeInfo=0000000000000000 value=000001A6AB5B5DA0
+[zr-compile-stmt] var decl infer from initializer start valueType=32
+[zr-compile-stmt] var decl infer from initializer done success=1 baseType=17 typeName=000001A6AB6501F0 hasError=0
+[zr-compile-stmt] var decl initializer compile start reservedSlot=0 stackCount=1
+[zr-compile-stmt] statement compile dispatch node=000001A6AB5B6820 type=57
+[zr-compile-stmt] statement compile dispatch node=000001A6AB5B6E40 type=60
+[zr-compile-stmt] statement compile dispatch done node=000001A6AB5B6E40 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=000001A6AB5B6820 type=57 hasError=0
+[zr-compile-stmt] var decl initializer compile done hasError=0 stackCount=2
+[zr-compile-stmt] var decl bind initializer slot=1 reserved=0
+[zr-compile-stmt] var decl local binding done varIndex=0
+[zr-compile-stmt] var decl runtime alias registration done
+[zr-compile-stmt] var decl compile-time import alias registration done
+[zr-compile-stmt] compile_variable_declaration exit success
+[zr-compile-stmt] statement compile dispatch done node=000001A6AB5B6040 type=7 hasError=0
+[zr-parser-compile] compile_script done ast=000001A6AB5B5A20 hasError=0
+[zr-parser-compile] optimize instructions func=000001A6AB6BB730
+[zr-parser-compile] assemble final function ok func=000001A6AB6BB730
+[zr-parser-compile] build semir metadata ok func=000001A6AB6BB730
+[zr-parser-compile] quicken execbc ok func=000001A6AB6BB730
+[zr-module-init] analyze source summary 'graph_stage_a' summary=000001A6AB349828 ast=000001A6AB5B5A20
+[zr-module-init] analyze source summary done 'graph_stage_a' summary=000001A6AB349828
+[zr-module-init] validate summary 'graph_stage_a' summary=000001A6AB349828
+[zr-module-init] validate summary done 'graph_stage_a' result=1 summary=000001A6AB349828
+[zr-parser-compile] finalize current source module ok func=000001A6AB6BB730
+[zr-parser-compile] compiler compile finished name='graph_stage_a' func=000001A6AB6BB730
+[zr-parser-compile] source compile cleanup name='graph_stage_a'
+[zr-import-meta] ensure import compile info register runtime result=1 func=000001A6AB6BB730
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=000001A6AB5B4E10
+[zr-import-meta] ensure import compile info module='graph_stage_b'
+[lsp_project] source-loader request module=graph_stage_b
+[lsp_project] source-loader source-hit module=graph_stage_b path=C:\Users\HeJiahui\AppData\Local\Temp\zr-stdio-binary-watch-AwWx4E\src\graph_stage_b.zr
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=0
+[zr-import-meta] ensure import compile info compileSource start module='graph_stage_b' size=78
+[zr-parser-compile] source compile start name='graph_stage_b' len=78
+[zr-parser-compile] parse ok name='graph_stage_b' ast=000001A6AB5B6E40
+[zr-module-init] prepare current module 'graph_stage_b' ast=000001A6AB5B6E40
+[zr-module-init] prepare current module ok 'graph_stage_b' summary=000001A6AB3499D0
+[zr-parser-compile] prepare current source module ok name='graph_stage_b'
+[zr-parser-compile] compiler compile core init ast=000001A6AB5B6E40
+[zr-parser-compile] compiler validate task effects ok ast=000001A6AB5B6E40
+[zr-parser-compile] compiler current function=000001A6AB6BBD50
+[zr-parser-compile] compile_script start ast=000001A6AB5B6E40
+[zr-parser-compile] compile_script stmt[0] type=7
+[zr-compile-stmt] statement compile dispatch node=000001A6AB5B72A0 type=7
+[zr-compile-stmt] compile_variable_declaration enter node=000001A6AB5B72A0 patternType=50 valueType=32
+[zr-compile-stmt] var decl identifier name=000001A6AB5B3F10 typeInfo=0000000000000000 value=000001A6AB5B63C0
+[zr-compile-stmt] var decl infer from initializer start valueType=32
+[zr-compile-stmt] var decl infer from initializer done success=1 baseType=17 typeName=000001A6AB6506F0 hasError=0
+[zr-compile-stmt] var decl initializer compile start reservedSlot=0 stackCount=1
+[zr-compile-stmt] statement compile dispatch node=000001A6AB5B6200 type=57
+[zr-compile-stmt] statement compile dispatch node=000001A6AB5B6120 type=60
+[zr-compile-stmt] statement compile dispatch done node=000001A6AB5B6120 type=60 hasError=0
+[zr-compile-stmt] statement compile dispatch done node=000001A6AB5B6200 type=57 hasError=0
+[zr-compile-stmt] var decl initializer compile done hasError=0 stackCount=2
+[zr-compile-stmt] var decl bind initializer slot=1 reserved=0
+[zr-compile-stmt] var decl local binding done varIndex=0
+[zr-compile-stmt] var decl runtime alias registration done
+[zr-compile-stmt] var decl compile-time import alias registration done
+[zr-compile-stmt] compile_variable_declaration exit success
+[zr-compile-stmt] statement compile dispatch done node=000001A6AB5B72A0 type=7 hasError=0
+[zr-parser-compile] compile_script done ast=000001A6AB5B6E40 hasError=0
+[zr-parser-compile] optimize instructions func=000001A6AB6BBD50
+[zr-parser-compile] assemble final function ok func=000001A6AB6BBD50
+[zr-parser-compile] build semir metadata ok func=000001A6AB6BBD50
+[zr-parser-compile] quicken execbc ok func=000001A6AB6BBD50
+[zr-module-init] analyze source summary 'graph_stage_b' summary=000001A6AB3499D0 ast=000001A6AB5B6E40
+[zr-module-init] analyze source summary done 'graph_stage_b' summary=000001A6AB3499D0
+[zr-module-init] validate summary 'graph_stage_b' summary=000001A6AB3499D0
+[zr-module-init] validate summary done 'graph_stage_b' result=1 summary=000001A6AB3499D0
+[zr-parser-compile] finalize current source module ok func=000001A6AB6BBD50
+[zr-parser-compile] compiler compile finished name='graph_stage_b' func=000001A6AB6BBD50
+[zr-parser-compile] source compile cleanup name='graph_stage_b'
+[zr-import-meta] ensure import compile info register runtime result=1 func=000001A6AB6BBD50
+[zr-import-meta] ensure import compile info exit result=1
+[zr-import-meta] ensure import compile info enter module=000001A6AB5B1C10
+[zr-import-meta] ensure import compile info module='graph_binary_stage'
+[lsp_project] source-loader request module=graph_binary_stage
+[lsp_project] source-loader binary-hit module=graph_binary_stage path=C:\Users\HeJiahui\AppData\Local\Temp\zr-stdio-binary-watch-AwWx4E\bin\graph_binary_stage.zro
+[zr-import-meta] ensure import compile info sourceLoader result=1 isBinary=1
+
+    at Timeout._onTimeout (E:\Git\zr_vm\tests\language_server\stdio_smoke.js:318:24)
+    at listOnTimeout (node:internal/timers:594:17)
+    at process.processTimers (node:internal/timers:529:7)

@@ -1486,7 +1486,11 @@ cli_case_matches_tier("core;stress" run_repl_runtime_error)
 if (run_repl_runtime_error)
     message("---- repl_runtime_error")
     set(repl_runtime_error_input_file "${CLI_SUITE_ROOT}/repl_runtime_error_input.txt")
-    file(WRITE "${repl_runtime_error_input_file}" "var s = %import(\"zr.system\");\n\ns.console.print(\"xxx\");\n\n:quit\n")
+    file(WRITE "${repl_runtime_error_input_file}"
+        "var system = %import(\"zr.system\");\n"
+        "system.s.console.print(\"xxx\");\n"
+        "\n"
+        ":quit\n")
     execute_process(
         COMMAND "${CLI_EXE}"
         INPUT_FILE "${repl_runtime_error_input_file}"

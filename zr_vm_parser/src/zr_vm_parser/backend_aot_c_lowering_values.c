@@ -817,18 +817,74 @@ void backend_aot_write_c_direct_add_int(FILE *file,
 }
 
 void backend_aot_write_c_direct_add_int_const(FILE *file,
+                                              const SZrFunction *function,
                                               TZrUInt32 destinationSlot,
                                               TZrUInt32 leftSlot,
                                               TZrUInt32 constantIndex) {
+    const SZrTypeValue *constantValue;
+    char rightLiteral[64];
+
     if (file == ZR_NULL) {
         return;
     }
 
+    constantValue = backend_aot_c_get_constant_value(function, (TZrInt32)constantIndex);
+    if (constantValue == ZR_NULL) {
+        fprintf(file,
+                "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_AddIntConst(state, &frame, %u, %u, %u));\n",
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                (unsigned)constantIndex);
+        return;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(constantValue->type)) {
+        snprintf(rightLiteral,
+                 sizeof(rightLiteral),
+                 "(TZrInt64)%lld",
+                 (long long)constantValue->value.nativeObject.nativeInt64);
+    } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(constantValue->type)) {
+        snprintf(rightLiteral,
+                 sizeof(rightLiteral),
+                 "(TZrInt64)%llu",
+                 (unsigned long long)constantValue->value.nativeObject.nativeUInt64);
+    } else if (ZR_VALUE_IS_TYPE_BOOL(constantValue->type)) {
+        snprintf(rightLiteral,
+                 sizeof(rightLiteral),
+                 "(TZrInt64)%s",
+                 constantValue->value.nativeObject.nativeBool ? "1" : "0");
+    } else {
+        fprintf(file,
+                "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_AddIntConst(state, &frame, %u, %u, %u));\n",
+                (unsigned)destinationSlot,
+                (unsigned)leftSlot,
+                (unsigned)constantIndex);
+        return;
+    }
+
     fprintf(file,
-            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_AddIntConst(state, &frame, %u, %u, %u));\n",
+            "    {\n"
+            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        TZrInt64 zr_aot_left_int = 0;\n"
+            "        if (zr_aot_destination == ZR_NULL || zr_aot_left == ZR_NULL) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)) {\n"
+            "            zr_aot_left_int = zr_aot_left->value.nativeObject.nativeInt64;\n"
+            "        } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_left->type)) {\n"
+            "            zr_aot_left_int = (TZrInt64)zr_aot_left->value.nativeObject.nativeUInt64;\n"
+            "        } else {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
+            "                          nativeInt64,\n"
+            "                          zr_aot_left_int + %s,\n"
+            "                          ZR_VALUE_TYPE_INT64);\n"
+            "    }\n",
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
-            (unsigned)constantIndex);
+            rightLiteral);
 }
 
 void backend_aot_write_c_direct_add(FILE *file,

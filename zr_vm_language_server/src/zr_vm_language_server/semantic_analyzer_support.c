@@ -501,6 +501,46 @@ void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *
     compilerState->hasError = ZR_FALSE;
 }
 
+TZrBool ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(SZrState *state,
+                                                                   SZrSemanticAnalyzer *analyzer,
+                                                                   SZrAstNode *node,
+                                                                   SZrInferredType *outType) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
+        node == ZR_NULL || outType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrParser_ExpressionType_Infer(analyzer->compilerState, node, outType)) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(outType)) {
+        ZrParser_InferredType_Free(state, outType);
+        ZrParser_InferredType_Init(state, outType, ZR_VALUE_TYPE_OBJECT);
+        return ZR_FALSE;
+    }
+
+    if (analyzer->semanticContext != ZR_NULL) {
+        EZrSemanticTypeKind kind = ZR_SEMANTIC_TYPE_KIND_REFERENCE;
+
+        if (outType->baseType != ZR_VALUE_TYPE_OBJECT &&
+            outType->baseType != ZR_VALUE_TYPE_ARRAY &&
+            outType->baseType != ZR_VALUE_TYPE_STRING) {
+            kind = ZR_SEMANTIC_TYPE_KIND_VALUE;
+        } else if (outType->elementTypes.isValid && outType->elementTypes.length > 0) {
+            kind = ZR_SEMANTIC_TYPE_KIND_GENERIC_INSTANCE;
+        }
+
+        ZrParser_Semantic_RegisterInferredType(analyzer->semanticContext,
+                                               outType,
+                                               kind,
+                                               outType->typeName,
+                                               node);
+    }
+
+    return ZR_TRUE;
+}
+
 static SZrInferredType *create_field_symbol_type(SZrState *state,
                                                  SZrSemanticAnalyzer *analyzer,
                                                  const SZrType *fieldType) {

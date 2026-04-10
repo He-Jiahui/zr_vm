@@ -1,0 +1,67 @@
+Unit Test - Ownership Borrow Loan Detach Upgrade Release SemIR And True AOT C Preserve Dedicated Opcodes
+Testing ownership borrow/loan/detach semantic pipeline:
+ Testing that %shared/%weak/%borrow/%loan/%detach/%upgrade/%release keep dedicated ExecBC and SemIR ownership opcodes, and that true AOT C plus AOT LLVM lower them to explicit runtime helpers without shim fallback
+[diag] ownership state-created
+[diag] ownership source-compiled
+[diag] ownership artifacts-written
+[diag] ownership artifacts-read
+[diag] ownership text-asserts-done
+[diag] own init-unique-dst value=0000023A7E66C030 type=18 kind=1 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=1 detached=1 weakRef=0000000000000000 gc=1
+[diag] own unique-src value=0000023A7E66C060 type=18 kind=0 obj=0000023A7E6FE970 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=1
+[diag] own unique-dst value=0000023A7E66C030 type=18 kind=1 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=1 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-before value=0000023A7E66C000 type=0 kind=0 obj=0000000000000000 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=0
+[diag] own share-dst value=0000023A7E66C060 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=1 detached=1 weakRef=0000000000000000 gc=1
+[diag] own share-src value=0000023A7E66C000 type=0 kind=0 obj=0000000000000000 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=0
+[diag] own weak-src value=0000023A7E66C0C0 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=4 detached=1 weakRef=0000000000000000 gc=1
+[diag] own weak-dst value=0000023A7E66C090 type=18 kind=3 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=4 detached=1 weakRef=0000023A7E65B0A0 gc=1
+[diag] own release-before value=0000023A7E66C060 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=4 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-after ctl=0000023A7E6FDC70 strong=3 detached=1 object=0000023A7E6FE970
+[diag] own release-before value=0000023A7E66C0F0 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=4 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-after ctl=0000023A7E6FDC70 strong=3 detached=1 object=0000023A7E6FE970
+[diag] own release-before value=0000023A7E66C0C0 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=4 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-after ctl=0000023A7E6FDC70 strong=3 detached=1 object=0000023A7E6FE970
+[diag] own borrow-src value=0000023A7E66C0F0 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=3 detached=1 weakRef=0000000000000000 gc=1
+[diag] own borrow-dst value=0000023A7E66C0C0 type=18 kind=4 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=3 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-before value=0000023A7E66C090 type=18 kind=3 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=3 detached=1 weakRef=0000023A7E65B0A0 gc=1
+[diag] own release-after-weak value=0000023A7E66C090 type=0 kind=0 obj=0000000000000000 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=0
+[diag] own release-before value=0000023A7E66C0F0 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=3 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-after ctl=0000023A7E6FDC70 strong=2 detached=1 object=0000023A7E6FE970
+[diag] own release-before value=0000023A7E66C120 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=2 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-after ctl=0000023A7E6FDC70 strong=1 detached=1 object=0000023A7E6FE970
+[diag] own release-before value=0000023A7E66C0C0 type=18 kind=4 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=1 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-after-borrowed value=0000023A7E66C0C0 type=0 kind=0 obj=0000000000000000 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=0
+[diag] own upgrade-src value=0000023A7E66C150 type=18 kind=3 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=2 detached=1 weakRef=0000023A7E65B0A0 gc=1
+[diag] own upgrade-dst value=0000023A7E66C120 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=2 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-before value=0000023A7E66C0F0 type=18 kind=4 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=2 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-after-borrowed value=0000023A7E66C0F0 type=0 kind=0 obj=0000000000000000 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=0
+[diag] own release-before value=0000023A7E66C0F0 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=3 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-after ctl=0000023A7E6FDC70 strong=2 detached=1 object=0000023A7E6FE970
+[diag] own release-before value=0000023A7E66C120 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=2 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-after ctl=0000023A7E6FDC70 strong=1 detached=1 object=0000023A7E6FE970
+[diag] own init-unique-dst value=0000023A7E66C180 type=18 kind=1 obj=0000023A7E6FEE30 ctl=0000023A7E6FD490 strong=1 detached=1 weakRef=0000000000000000 gc=1
+[diag] own unique-src value=0000023A7E66C1B0 type=18 kind=0 obj=0000023A7E6FEE30 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=1
+[diag] own unique-dst value=0000023A7E66C180 type=18 kind=1 obj=0000023A7E6FEE30 ctl=0000023A7E6FD490 strong=1 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-before value=0000023A7E66C150 type=0 kind=0 obj=0000000000000000 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=0
+[diag] own loan-dst value=0000023A7E66C1B0 type=18 kind=5 obj=0000023A7E6FEE30 ctl=0000023A7E6FD490 strong=1 detached=1 weakRef=0000000000000000 gc=1
+[diag] own loan-src value=0000023A7E66C150 type=0 kind=0 obj=0000000000000000 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=0
+[diag] own release-before value=0000023A7E66C180 type=0 kind=0 obj=0000000000000000 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=0
+[diag] own init-unique-dst value=0000023A7E66C210 type=18 kind=1 obj=0000023A7E6FF8E0 ctl=0000023A7E6FDA90 strong=1 detached=1 weakRef=0000000000000000 gc=1
+[diag] own unique-src value=0000023A7E66C240 type=18 kind=0 obj=0000023A7E6FF8E0 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=1
+[diag] own unique-dst value=0000023A7E66C210 type=18 kind=1 obj=0000023A7E6FF8E0 ctl=0000023A7E6FDA90 strong=1 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-before value=0000023A7E66C1E0 type=18 kind=5 obj=0000023A7E6FEE30 ctl=0000023A7E6FD490 strong=2 detached=1 weakRef=0000000000000000 gc=1
+[diag] own release-after ctl=0000023A7E6FD490 strong=1 detached=1 object=0000023A7E6FEE30
+[diag] own detach-dst value=0000023A7E66C240 type=18 kind=0 obj=0000023A7E6FF8E0 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=1
+[diag] own detach-src value=0000023A7E66C1E0 type=0 kind=0 obj=0000000000000000 ctl=0000000000000000 strong=0 detached=0 weakRef=0000000000000000 gc=0
+[diag] own release-before value=0000023A7E66C030 type=18 kind=2 obj=0000023A7E6FE970 ctl=0000023A7E6FDC70 strong=1 detached=1 weakRef=0000000000000000 gc=1
+[diag] own expire-weak ctl=0000023A7E6FDC70 slot=0000023A7E66C150 usesOffset=1 stackOffset=432
+[diag] own expire-weak ctl=0000023A7E6FDC70 slot=0000023A7E66C180 usesOffset=1 stackOffset=480
+[diag] own expire-weak ctl=0000023A7E6FDC70 slot=0000023A7E66C060 usesOffset=1 stackOffset=192
+[diag] own release-after ctl=0000023A7E6FDC70 strong=0 detached=0 object=0000023A7E6FE970
+[diag] ownership executed
+Pass - Cost Time:28.000ms - Ownership Borrow Loan Detach Upgrade Release SemIR And True AOT C Preserve Dedicated Opcodes
+----------
+E:\Git\zr_vm\tests\parser\test_execbc_aot_pipeline.c:7298:test_ownership_upgrade_release_semir_and_true_aot_c_preserve_dedicated_opcodes:PASS
+
+-----------------------
+1 Tests 0 Failures 0 Ignored 
+OK

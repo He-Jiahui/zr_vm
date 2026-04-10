@@ -1,0 +1,150 @@
+==========
+Instruction Tests
+==========
+Unit Test - GET_STACK Instruction
+=== test_get_stack: Generated Instructions (3) ===
+  [0] GET_CONSTANT (extra=0, operand2[0]=0)
+  [1] GET_STACK (extra=1, operand2[0]=0)
+  [2] FUNCTION_RETURN (extra=1, operand1[0]=1, operand1[1]=0)
+========================================
+Pass - Cost Time:2.000ms - GET_STACK Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4271:test_get_stack:PASS
+Unit Test - SET_STACK Instruction
+Pass - Cost Time:0.000ms - SET_STACK Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4272:test_set_stack:PASS
+Unit Test - GET_CONSTANT Instruction
+Pass - Cost Time:0.000ms - GET_CONSTANT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4275:test_get_constant:PASS
+Unit Test - TO_BOOL Instruction
+Pass - Cost Time:1.000ms - TO_BOOL Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4278:test_to_bool:PASS
+Unit Test - TO_INT Instruction
+Pass - Cost Time:0.000ms - TO_INT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4279:test_to_int:PASS
+Unit Test - TO_UINT Instruction
+Pass - Cost Time:1.000ms - TO_UINT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4280:test_to_uint:PASS
+Unit Test - TO_FLOAT Instruction
+Pass - Cost Time:0.000ms - TO_FLOAT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4281:test_to_float:PASS
+Unit Test - TO_STRING Instruction
+Pass - Cost Time:0.000ms - TO_STRING Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4282:test_to_string:PASS
+Unit Test - ADD_INT Instruction
+Pass - Cost Time:1.000ms - ADD_INT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4285:test_add_int:PASS
+Unit Test - SUB_INT Instruction
+Pass - Cost Time:0.000ms - SUB_INT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4286:test_sub_int:PASS
+Unit Test - MUL_SIGNED Instruction
+Pass - Cost Time:0.000ms - MUL_SIGNED Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4287:test_mul_signed:PASS
+Unit Test - ADD_FLOAT Instruction
+Pass - Cost Time:0.000ms - ADD_FLOAT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4288:test_add_float:PASS
+Unit Test - ADD_STRING Instruction
+Pass - Cost Time:0.000ms - ADD_STRING Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4289:test_add_string:PASS
+Unit Test - DIV_SIGNED Instruction
+Pass - Cost Time:1.000ms - DIV_SIGNED Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4290:test_div_signed:PASS
+Unit Test - MOD_SIGNED Instruction
+Pass - Cost Time:0.000ms - MOD_SIGNED Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4291:test_mod_signed:PASS
+Unit Test - LOGICAL_NOT Instruction
+Pass - Cost Time:0.000ms - LOGICAL_NOT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4294:test_logical_not:PASS
+Unit Test - LOGICAL_AND Instruction
+Pass - Cost Time:1.000ms - LOGICAL_AND Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4295:test_logical_and:PASS
+Unit Test - LOGICAL_OR Instruction
+Pass - Cost Time:0.000ms - LOGICAL_OR Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4296:test_logical_or:PASS
+Unit Test - LOGICAL_EQUAL Instruction
+Pass - Cost Time:0.000ms - LOGICAL_EQUAL Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4297:test_logical_equal:PASS
+Unit Test - LOGICAL_GREATER_SIGNED Instruction
+Pass - Cost Time:1.000ms - LOGICAL_GREATER_SIGNED Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4298:test_logical_greater_signed:PASS
+Unit Test - BITWISE_AND Instruction
+Pass - Cost Time:0.000ms - BITWISE_AND Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4301:test_bitwise_and:PASS
+Unit Test - BITWISE_OR Instruction
+Pass - Cost Time:1.000ms - BITWISE_OR Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4302:test_bitwise_or:PASS
+Unit Test - BITWISE_XOR Instruction
+Pass - Cost Time:0.000ms - BITWISE_XOR Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4303:test_bitwise_xor:PASS
+Unit Test - BITWISE_NOT Instruction
+Pass - Cost Time:0.000ms - BITWISE_NOT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4304:test_bitwise_not:PASS
+Unit Test - BITWISE_SHIFT_LEFT Instruction
+Pass - Cost Time:0.000ms - BITWISE_SHIFT_LEFT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4305:test_bitwise_shift_left:PASS
+Unit Test - BITWISE_SHIFT_RIGHT Instruction
+Pass - Cost Time:0.000ms - BITWISE_SHIFT_RIGHT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4306:test_bitwise_shift_right:PASS
+Unit Test - CREATE_OBJECT Instruction
+Pass - Cost Time:0.000ms - CREATE_OBJECT Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4309:test_create_object:PASS
+Unit Test - CREATE_ARRAY Instruction
+Pass - Cost Time:1.000ms - CREATE_ARRAY Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4310:test_create_array:PASS
+Unit Test - GET_BY_INDEX Instruction
+Pass - Cost Time:0.000ms - GET_BY_INDEX Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4313:test_get_by_index:PASS
+Unit Test - SET_BY_INDEX Instruction
+Pass - Cost Time:0.000ms - SET_BY_INDEX Instruction
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4314:test_set_by_index:PASS
+Unit Test - GET_MEMBER Property Descriptor
+Pass - Cost Time:1.000ms - GET_MEMBER Property Descriptor
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4315:test_get_member_uses_property_descriptor:PASS
+Unit Test - GET_MEMBER Builtin Array Length
+Pass - Cost Time:0.000ms - GET_MEMBER Builtin Array Length
+----------
+E:\Git\zr_vm\tests\instructions\test_instructions.c:4316:test_builtin_array_length_member_uses_native_contract:PASS
+Unit Test - META_GET And META_SET Instructions
+[meta-test] before execute_test_function
+[meta-test] getter enter base=000001C10CEBDAC0 stackTop=000001C10CEBDB20
+[meta-test] getter exit base=000001C10CEBDAC0 stackTop=000001C10CEBDAF0
+[meta-test] setter enter base=000001C10CEBDB20 stackTop=000001C10CEBDBB0
+[meta-test] setter args receiverType=18 assignedType=5 assignedValue=13 assignedObject=000000000000000D
+[meta-test] setter exit base=000001C10CEBDB20 stackTop=000001C10CEBDB50
+[meta-test] after execute_test_function success=1 threadStatus=0
+[meta-test] after execute base=000001C10CEBDA00 callInfo=000001C10D34B4C0 stackTop=000001C10CEBDAC0 functionTop=000001C10CEBDBB0
+[meta-test] assert slot1 type=5 value=5
+[meta-test] slot0 type=17 int=1928662079856 obj=000001C10D37D970
+[meta-test] slot1 obj=0000000000000005 slot2 obj=000001C10D325BA0
+[meta-test] pre-assert slot2 ptr=000001C10CEBDA60 type=18 value=1928661719968
+[meta-test] pre-assert updatedValue=000001C10D402E60 type=5 int=13 obj=000000000000000D

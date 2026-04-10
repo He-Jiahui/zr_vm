@@ -1,0 +1,167 @@
+[lsp_diag] before ensure project
+[lsp_diag] after ensure project projectIndex=0000000000000000 parserDiagLen=0 fallback=0
+[lsp_diag] before semantic diagnostics analyzer=00000226F9F5D6E0 diagLen=0
+[lsp_diag] after semantic diagnostics copied=0
+[lsp_diag] before import diagnostics
+[lsp_diag] after import diagnostics valid=0 len=0
+[lsp_diag] before ensure project
+[lsp_diag] after ensure project projectIndex=0000000000000000 parserDiagLen=1 fallback=0
+[lsp_diag] before semantic diagnostics analyzer=00000226F9F5D6E0 diagLen=0
+[lsp_diag] after semantic diagnostics copied=0
+[lsp_diag] before import diagnostics
+[lsp_diag] after import diagnostics valid=0 len=0
+[lsp_diag] before ensure project
+[lsp_diag] after ensure project projectIndex=0000000000000000 parserDiagLen=4 fallback=1
+[lsp_project] refresh begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/import_pub_function.zrp length=99
+[lsp_project] ensure module=main
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr success=1
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] ensure cached module=greet
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr success=1
+[lsp_project] refresh begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr length=68
+[lsp_project] ensure module=main
+[lsp_project] ensure cached module=main
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] ensure cached module=greet
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr success=1
+[lsp_project] refresh end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] refresh begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/import_pub_function.zrp length=99
+[lsp_project] ensure module=main
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr success=1
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] ensure cached module=greet
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr success=1
+[lsp_project] refresh begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr length=68
+[lsp_project] ensure module=main
+[lsp_project] ensure cached module=main
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] ensure cached module=greet
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr success=1
+[lsp_project] refresh end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] refresh begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/import_pub_function.zrp length=99
+[lsp_project] ensure module=main
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr success=1
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] ensure cached module=greet
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr success=1
+[lsp_project] refresh begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr length=68
+[lsp_project] ensure module=main
+[lsp_project] ensure cached module=main
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] ensure cached module=greet
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr
+[lsp_project] reanalyze end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/greet.zr success=1
+[lsp_project] refresh end uri=file:///E:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] refresh begin uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr length=45
+[lsp_project] ensure module=main
+[lsp_project] load imports uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=zr.system uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=zr.system
+[lsp_project] ensure no-source module=zr.system
+[lsp_project] load imports uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze begin uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] reanalyze end uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr success=1
+[lsp_project] load import module=zr.system uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_project] ensure module=zr.system
+[lsp_project] ensure no-source module=zr.system
+[lsp_project] refresh end uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_pub_function/src/main.zr
+[lsp_diag] before ensure project
+[lsp_diag] after ensure project projectIndex=00000226F9F82100 parserDiagLen=0 fallback=0
+[lsp_diag] before semantic diagnostics analyzer=00000226F9F716E0 diagLen=0
+[lsp_diag] after semantic diagnostics copied=0
+[lsp_diag] before import diagnostics
+[lsp_diag] after import diagnostics valid=0 len=0
+[lsp_diag] before ensure project
+[lsp_diag] after ensure project projectIndex=0000000000000000 parserDiagLen=1 fallback=0
+[lsp_diag] before semantic diagnostics analyzer=00000226F9F81E20 diagLen=0
+[lsp_diag] after semantic diagnostics copied=0
+[lsp_diag] before import diagnostics
+[lsp_diag] after import diagnostics valid=0 len=0
+[lsp_diag] before ensure project
+[lsp_diag] after ensure project projectIndex=0000000000000000 parserDiagLen=0 fallback=0
+[lsp_diag] before semantic diagnostics analyzer=00000226FA2EC510 diagLen=0
+[lsp_diag] after semantic diagnostics copied=0
+[lsp_diag] before import diagnostics
+[lsp_diag] after import diagnostics valid=0 len=0
+[lsp_project] refresh begin uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_basic/src/greet.zr length=62
+[lsp_project] ensure module=main
+[lsp_project] load imports uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/main.zr
+[lsp_project] reanalyze begin uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/main.zr
+[lsp_project] reanalyze end uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] load imports uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/greet.zr
+[lsp_project] reanalyze end uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/greet.zr success=1
+[lsp_project] load imports uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_basic/src/greet.zr
+[lsp_project] reanalyze begin uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_basic/src/greet.zr
+[lsp_project] reanalyze end uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_basic/src/greet.zr success=1
+[lsp_project] load imports uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/main.zr
+[lsp_project] reanalyze begin uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/main.zr
+[lsp_project] reanalyze end uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/main.zr success=1
+[lsp_project] load import module=greet uri=file:///e:/Git/zr_vm/tests/fixtures/projects/import_basic/src/main.zr
+[lsp_project] ensure module=greet
+[lsp_project] ensure cached module=greet
+[lsp_project] refresh end uri=file:///e%3A/Git/zr_vm/tests/fixtures/projects/import_basic/src/greet.zr
+[lsp_project] refresh begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/aot_module_graph_pipeline/src/main.zr length=389
+[lsp_project] ensure module=main
+[lsp_project] load imports uri=file:///E:/Git/zr_vm/tests/fixtures/projects/aot_module_graph_pipeline/src/main.zr
+[lsp_project] reanalyze begin uri=file:///E:/Git/zr_vm/tests/fixtures/projects/aot_module_graph_pipeline/src/main.zr

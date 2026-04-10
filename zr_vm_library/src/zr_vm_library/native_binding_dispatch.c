@@ -1223,7 +1223,7 @@ static TZrBool native_binding_begin_rooted_field_key(SZrState *state,
         return ZR_FALSE;
     }
 
-    fieldString = native_binding_create_string(state, fieldName);
+    fieldString = ZrCore_String_Create(state, (TZrNativeString)fieldName, strlen(fieldName));
     if (fieldString == ZR_NULL) {
         ZrLib_TempValueRoot_End(root);
         return ZR_FALSE;

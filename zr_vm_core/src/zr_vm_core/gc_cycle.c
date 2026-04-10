@@ -86,6 +86,9 @@ TZrSize garbage_collector_run_generational_full(SZrState *state) {
         object = object->next;
     }
 
+    global->garbageCollector->gcObjectListSweeper = ZR_NULL;
+    global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
+
     return work;
 }
 
@@ -268,13 +271,18 @@ TZrBool gcrunning(SZrGlobalState *global) {
 
 void garbage_collector_run_generational_step(SZrState *state) {
     SZrGlobalState *global = state->global;
-    TZrMemoryOffset managedMemories = global->garbageCollector->managedMemories;
-    TZrMemoryOffset threshold = global->garbageCollector->gcPauseThresholdPercent * managedMemories / 100;
+    SZrGarbageCollector *collector = global->garbageCollector;
+    TZrMemoryOffset managedMemories = collector->managedMemories;
+    TZrMemoryOffset threshold = collector->gcPauseThresholdPercent * managedMemories / 100;
     SZrRawObject *object;
     SZrRawObject **current;
 
-    if (managedMemories > threshold) {
+    if (collector->scheduledCollectionKind != ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR ||
+        (collector->heapLimitBytes > 0 && managedMemories >= collector->heapLimitBytes) ||
+        managedMemories > threshold) {
         garbage_collector_run_generational_full(state);
+        collector->scheduledCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+        collector->statsSnapshot.lastCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL;
         return;
     }
 

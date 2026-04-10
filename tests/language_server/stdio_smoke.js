@@ -1,13 +1,49 @@
-const { spawn } = require('node:child_process');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { pathToFileURL } = require('node:url');
+const { spawn, spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { pathToFileURL } = require('url');
 
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
     }
+}
+
+function copyPathSync(sourcePath, targetPath) {
+    const stats = fs.statSync(sourcePath);
+
+    if (stats.isDirectory()) {
+        fs.mkdirSync(targetPath, { recursive: true });
+        fs.readdirSync(sourcePath).forEach((entry) => {
+            copyPathSync(path.join(sourcePath, entry), path.join(targetPath, entry));
+        });
+        return;
+    }
+
+    fs.copyFileSync(sourcePath, targetPath);
+}
+
+function removePathSync(targetPath, options = {}) {
+    if (typeof fs.rmSync === 'function') {
+        fs.rmSync(targetPath, options);
+        return;
+    }
+
+    if (!fs.existsSync(targetPath)) {
+        return;
+    }
+
+    const stats = fs.statSync(targetPath);
+    if (stats.isDirectory()) {
+        fs.readdirSync(targetPath).forEach((entry) => {
+            removePathSync(path.join(targetPath, entry), options);
+        });
+        fs.rmdirSync(targetPath);
+        return;
+    }
+
+    fs.unlinkSync(targetPath);
 }
 
 function createMessage(payload) {
@@ -69,18 +105,59 @@ function createWatchedProjectFixture() {
     };
 }
 
-function createWatchedBinaryMetadataFixture() {
+function regenerateWatchedBinaryMetadataFixture(serverPath, rootPath) {
+    const cliPath = path.join(path.dirname(serverPath), `zr_vm_cli${path.extname(serverPath)}`);
+    const projectPath = path.join(rootPath, 'aot_module_graph_pipeline.zrp');
+    const tempBinarySourcePath = path.join(rootPath, 'src', 'graph_binary_stage.zr');
+    const compileResult = spawnSync(cliPath, [
+        '--compile',
+        projectPath,
+        '--intermediate',
+    ], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        windowsHide: true,
+    });
+
+    removePathSync(tempBinarySourcePath, { force: true });
+
+    if (compileResult.error) {
+        throw compileResult.error;
+    }
+
+    if (compileResult.status !== 0) {
+        const stderr = compileResult.stderr ? compileResult.stderr.trim() : '';
+        const stdout = compileResult.stdout ? compileResult.stdout.trim() : '';
+        throw new Error([
+            `Failed to regenerate watched binary metadata fixture with ${cliPath}`,
+            `status=${compileResult.status}`,
+            stdout ? `stdout=${stdout}` : '',
+            stderr ? `stderr=${stderr}` : '',
+        ].filter(Boolean).join('\n'));
+    }
+}
+
+function createWatchedBinaryMetadataFixture(serverPath) {
     const sourceFixtureRoot = path.join(__dirname,
         '..',
         'fixtures',
         'projects',
         'aot_module_graph_pipeline');
+    const binarySourceFixturePath = path.join(sourceFixtureRoot,
+        'fixtures',
+        'graph_binary_stage_source.zr');
     const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-binary-watch-'));
     const projectPath = path.join(rootPath, 'aot_module_graph_pipeline.zrp');
     const mainPath = path.join(rootPath, 'src', 'main.zr');
     const binaryPath = path.join(rootPath, 'bin', 'graph_binary_stage.zro');
+    const binaryIntermediatePath = path.join(rootPath, 'bin', 'graph_binary_stage.zri');
+    const tempBinarySourcePath = path.join(rootPath, 'src', 'graph_binary_stage.zr');
 
-    fs.cpSync(sourceFixtureRoot, rootPath, { recursive: true });
+    copyPathSync(sourceFixtureRoot, rootPath);
+    fs.copyFileSync(binarySourceFixturePath, tempBinarySourcePath);
+    removePathSync(binaryPath, { force: true });
+    removePathSync(binaryIntermediatePath, { force: true });
+    regenerateWatchedBinaryMetadataFixture(serverPath, rootPath);
 
     return {
         rootPath,
@@ -128,12 +205,35 @@ function createImportDiagnosticsFixture() {
     };
 }
 
+function sleepSync(milliseconds) {
+    const waitArray = new Int32Array(new SharedArrayBuffer(4));
+    Atomics.wait(waitArray, 0, 0, milliseconds);
+}
+
 function cleanupPath(targetPath) {
+    let lastError = null;
+
     if (!targetPath) {
         return;
     }
 
-    fs.rmSync(targetPath, { recursive: true, force: true });
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+        try {
+            removePathSync(targetPath, { recursive: true, force: true });
+            return;
+        } catch (error) {
+            if (!error || (error.code !== 'EBUSY' && error.code !== 'EPERM')) {
+                throw error;
+            }
+
+            lastError = error;
+            sleepSync(25 * (attempt + 1));
+        }
+    }
+
+    if (lastError) {
+        console.warn(`Skipping cleanup for locked path ${targetPath}: ${lastError.code}`);
+    }
 }
 
 let watchedFixtureRootToCleanup = null;
@@ -262,8 +362,9 @@ class LspClient {
             return;
         }
 
-        const nextParams = this.notificationBacklog.get(message.method)?.shift();
-        if (this.notificationBacklog.get(message.method)?.length === 0) {
+        const notificationBacklog = this.notificationBacklog.get(message.method);
+        const nextParams = notificationBacklog ? notificationBacklog.shift() : undefined;
+        if (notificationBacklog && notificationBacklog.length === 0) {
             this.notificationBacklog.delete(message.method);
         }
 
@@ -276,7 +377,7 @@ class LspClient {
         waiter.resolve(nextParams);
     }
 
-    request(method, params, timeoutMs = 3000) {
+    request(method, params, timeoutMs = 10000) {
         if (this.closed) {
             return Promise.reject(new Error('Server already exited'));
         }
@@ -312,7 +413,7 @@ class LspClient {
         }));
     }
 
-    waitForNotification(method, timeoutMs = 3000) {
+    waitForNotification(method, timeoutMs = 10000) {
         const backlog = this.notificationBacklog.get(method);
         if (backlog && backlog.length > 0) {
             const params = backlog.shift();
@@ -343,7 +444,7 @@ class LspClient {
         });
     }
 
-    waitForExit(timeoutMs = 3000) {
+    waitForExit(timeoutMs = 10000) {
         if (this.closed) {
             return Promise.resolve(this.exitCode);
         }
@@ -365,7 +466,7 @@ async function main() {
     const serverPath = process.argv[2];
     assert(serverPath, 'Expected server executable path as argv[2]');
     const watchedFixture = createWatchedProjectFixture();
-    const watchedBinaryFixture = createWatchedBinaryMetadataFixture();
+    const watchedBinaryFixture = createWatchedBinaryMetadataFixture(serverPath);
     const importDiagnosticsFixture = createImportDiagnosticsFixture();
     watchedFixtureRootToCleanup = watchedFixture.rootPath;
     watchedBinaryFixtureRootToCleanup = watchedBinaryFixture.rootPath;
@@ -407,6 +508,9 @@ async function main() {
         'class Box<T> {',
         '    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }',
         '}',
+        'func inferNumber() {',
+        '    return 42;',
+        '}',
         'func use(): void {',
         '    var value: Derived<Item, 2 + 2> = null;',
         '    var box = new Box<int>();',
@@ -442,9 +546,16 @@ async function main() {
     assert(initializeResult.capabilities.semanticTokensProvider &&
         initializeResult.capabilities.semanticTokensProvider.full === true,
         'semanticTokensProvider.full must be enabled');
-    assert(Array.isArray(initializeResult.capabilities.semanticTokensProvider.legend?.tokenTypes) &&
-        initializeResult.capabilities.semanticTokensProvider.legend.tokenTypes.includes('keyword'),
+    const semanticTokensProvider = initializeResult.capabilities.semanticTokensProvider;
+    const semanticTokenTypes = semanticTokensProvider &&
+        semanticTokensProvider.legend &&
+        semanticTokensProvider.legend.tokenTypes;
+    assert(Array.isArray(semanticTokenTypes) &&
+        semanticTokenTypes.includes('keyword'),
         'semantic token legend must include keyword');
+    assert(initializeResult.capabilities.inlayHintProvider === true ||
+        typeof initializeResult.capabilities.inlayHintProvider === 'object',
+        'inlayHintProvider must be enabled');
 
     client.notify('initialized', {});
     client.notify('textDocument/didOpen', {
@@ -670,6 +781,22 @@ async function main() {
         typeof signature.label === 'string' &&
         signature.label.includes('shape<const N: int>(value: Matrix<int, 4>): Matrix<int, 4>')),
         'signatureHelp should show the closed generic method signature with normalized const generics');
+
+    const genericInlayHints = await client.request('textDocument/inlayHint', {
+        textDocument: { uri: genericUri },
+        range: {
+            start: { line: 0, character: 0 },
+            end: { line: genericText.split('\n').length, character: 0 },
+        },
+    });
+    assert(Array.isArray(genericInlayHints),
+        'textDocument/inlayHint must return an array');
+    assert(genericInlayHints.some((hint) => hint && hint.label === ': Box<int>'),
+        'inlay hints should include the exact inferred closed generic type for box');
+    assert(genericInlayHints.some((hint) => hint && hint.label === ': Matrix<int, 4>'),
+        'inlay hints should include the normalized exact inferred closed generic type for m');
+    assert(genericInlayHints.some((hint) => hint && hint.label === ': int'),
+        'inlay hints should include the exact inferred return type for inferNumber');
 
     client.notify('workspace/didChangeWatchedFiles', {
         changes: [

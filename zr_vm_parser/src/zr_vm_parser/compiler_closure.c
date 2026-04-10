@@ -382,6 +382,14 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
                     closureVar.inStack = (parentLocalIndex != ZR_PARSER_SLOT_NONE) ? ZR_TRUE : ZR_FALSE;
                     closureVar.index = (parentLocalIndex != ZR_PARSER_SLOT_NONE) ? parentLocalIndex : parentClosureIndex;
                     closureVar.valueType = ZR_VALUE_TYPE_NULL;
+                    closureVar.scopeDepth = 0u;
+                    if (cs->scopeStack.length > 0) {
+                        SZrScope *scope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, cs->scopeStack.length - 1);
+                        if (scope != ZR_NULL) {
+                            closureVar.scopeDepth = scope->depth;
+                        }
+                    }
+                    closureVar.escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_CLOSURE_CAPTURE;
                     ZrCore_Array_Push(cs->state, &cs->closureVars, &closureVar);
                     cs->closureVarCount++;
                 }

@@ -8,6 +8,8 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #if defined(_MSC_VER)
@@ -40,6 +42,109 @@ typedef struct SZrObjectHotLiteralCache {
     SZrString *addMember;
 } SZrObjectHotLiteralCache;
 
+static TZrBool object_super_array_trace_enabled(void) {
+    static int initialized = 0;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        enabled = getenv("ZR_VM_TRACE_MAP_ARRAY") != ZR_NULL ? ZR_TRUE : ZR_FALSE;
+        initialized = 1;
+    }
+
+    return enabled;
+}
+
+static const char *object_super_array_debug_string(SZrString *value) {
+    return value != ZR_NULL ? ZrCore_String_GetNativeString(value) : "<null>";
+}
+
+static void object_super_array_trace_dump_object_fields(SZrState *state,
+                                                        const char *label,
+                                                        SZrObject *object) {
+    const TZrSize maxDumpedPairs = 32;
+    TZrSize dumpedPairs = 0;
+
+    if (!object_super_array_trace_enabled()) {
+        return;
+    }
+
+    fprintf(stderr,
+            "[map-array-trace] %s object=%p internalType=%d memberVersion=%u nodeMapValid=%d buckets=%p capacity=%llu elementCount=%llu cachedItemsPair=%p cachedItemsObject=%p cachedLengthPair=%p cachedCapacityPair=%p prototype=%s\n",
+            label != ZR_NULL ? label : "object_dump",
+            (void *)object,
+            object != ZR_NULL ? (int)object->internalType : -1,
+            object != ZR_NULL ? (unsigned int)object->memberVersion : 0U,
+            object != ZR_NULL ? (int)object->nodeMap.isValid : 0,
+            object != ZR_NULL ? (void *)object->nodeMap.buckets : ZR_NULL,
+            object != ZR_NULL ? (unsigned long long)object->nodeMap.capacity : 0ULL,
+            object != ZR_NULL ? (unsigned long long)object->nodeMap.elementCount : 0ULL,
+            object != ZR_NULL ? (void *)object->cachedHiddenItemsPair : ZR_NULL,
+            object != ZR_NULL ? (void *)object->cachedHiddenItemsObject : ZR_NULL,
+            object != ZR_NULL ? (void *)object->cachedLengthPair : ZR_NULL,
+            object != ZR_NULL ? (void *)object->cachedCapacityPair : ZR_NULL,
+            object != ZR_NULL && object->prototype != ZR_NULL ? object_super_array_debug_string(object->prototype->name)
+                                                              : "<null>");
+    if (state == ZR_NULL || object == ZR_NULL || !object->nodeMap.isValid || object->nodeMap.buckets == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize bucketIndex = 0; bucketIndex < object->nodeMap.capacity && dumpedPairs < maxDumpedPairs; bucketIndex++) {
+        for (SZrHashKeyValuePair *pair = object->nodeMap.buckets[bucketIndex];
+             pair != ZR_NULL && dumpedPairs < maxDumpedPairs;
+             pair = pair->next) {
+            const char *keyText = "<non-string>";
+            unsigned long long keyHash = 0ULL;
+            TZrInt64 signedValue = 0;
+            unsigned long long unsignedValue = 0ULL;
+            SZrObject *valueObject = ZR_NULL;
+            int valueInternalType = -1;
+
+            if (pair->key.type == ZR_VALUE_TYPE_STRING && pair->key.value.object != ZR_NULL) {
+                SZrString *keyString = ZR_CAST_STRING(state, pair->key.value.object);
+                if (keyString != ZR_NULL) {
+                    keyText = object_super_array_debug_string(keyString);
+                    keyHash = (unsigned long long)ZR_CAST_RAW_OBJECT_AS_SUPER(keyString)->hash;
+                }
+            }
+
+            if (ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type)) {
+                signedValue = pair->value.value.nativeObject.nativeInt64;
+            }
+            if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(pair->value.type)) {
+                unsignedValue = (unsigned long long)pair->value.value.nativeObject.nativeUInt64;
+            }
+            if ((pair->value.type == ZR_VALUE_TYPE_OBJECT || pair->value.type == ZR_VALUE_TYPE_ARRAY) &&
+                pair->value.value.object != ZR_NULL) {
+                valueObject = ZR_CAST_OBJECT(state, pair->value.value.object);
+                valueInternalType = valueObject != ZR_NULL ? (int)valueObject->internalType : -1;
+            }
+
+            fprintf(stderr,
+                    "[map-array-trace] %s field[%llu] bucket=%llu pair=%p keyType=%d key=%s keyHash=%llu valueType=%d valueObject=%p valueInternalType=%d signedValue=%lld unsignedValue=%llu\n",
+                    label != ZR_NULL ? label : "object_dump",
+                    (unsigned long long)dumpedPairs,
+                    (unsigned long long)bucketIndex,
+                    (void *)pair,
+                    (int)pair->key.type,
+                    keyText,
+                    keyHash,
+                    (int)pair->value.type,
+                    (void *)valueObject,
+                    valueInternalType,
+                    (long long)signedValue,
+                    unsignedValue);
+            dumpedPairs++;
+        }
+    }
+
+    if (object->nodeMap.elementCount > dumpedPairs) {
+        fprintf(stderr,
+                "[map-array-trace] %s field_dump_truncated remaining=%llu\n",
+                label != ZR_NULL ? label : "object_dump",
+                (unsigned long long)(object->nodeMap.elementCount - dumpedPairs));
+    }
+}
+
 static ZR_FORCE_INLINE TZrBool object_value_is_plain_primitive(const SZrTypeValue *value) {
     ZR_ASSERT(value != ZR_NULL);
     return !value->isGarbageCollectable && ZrCore_Value_HasNormalizedNoOwnership(value);
@@ -57,9 +162,6 @@ static ZR_FORCE_INLINE void object_store_plain_int_reuse(SZrTypeValue *destinati
     destination->value.nativeObject.nativeInt64 = value;
     destination->isGarbageCollectable = ZR_FALSE;
     destination->isNative = ZR_TRUE;
-    destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
-    destination->ownershipControl = ZR_NULL;
-    destination->ownershipWeakRef = ZR_NULL;
 }
 
 static ZR_FORCE_INLINE void object_store_plain_null_reuse(SZrTypeValue *destination) {
@@ -69,9 +171,6 @@ static ZR_FORCE_INLINE void object_store_plain_null_reuse(SZrTypeValue *destinat
     destination->value.nativeObject.nativeUInt64 = 0;
     destination->isGarbageCollectable = ZR_FALSE;
     destination->isNative = ZR_TRUE;
-    destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
-    destination->ownershipControl = ZR_NULL;
-    destination->ownershipWeakRef = ZR_NULL;
 }
 
 static ZR_FORCE_INLINE void object_assign_primitive_value_or_copy(SZrState *state,
@@ -816,10 +915,7 @@ static ZR_FORCE_INLINE TZrBool object_try_super_array_set_cached_int_field(SZrSt
     }
 
     if (object_value_can_overwrite_without_release(&pair->value)) {
-        ZR_VALUE_FAST_SET(&pair->value, nativeInt64, value, ZR_VALUE_TYPE_INT64);
-        pair->value.ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
-        pair->value.ownershipControl = ZR_NULL;
-        pair->value.ownershipWeakRef = ZR_NULL;
+        object_store_plain_int_reuse(&pair->value, value);
     } else {
         object_assign_int_value_or_copy(state, &pair->value, value);
     }
@@ -865,6 +961,7 @@ static TZrBool object_try_resolve_super_array_items(SZrState *state,
     SZrObjectPrototype *prototype;
     const SZrTypeValue *itemsValue = ZR_NULL;
     SZrObject *itemsObject;
+    TZrBool trace = object_super_array_trace_enabled();
 
     if (outReceiverObject != ZR_NULL) {
         *outReceiverObject = ZR_NULL;
@@ -908,6 +1005,14 @@ static TZrBool object_try_resolve_super_array_items(SZrState *state,
         prototype = state->global->basicTypeObjectPrototype[receiver->type];
     }
     if (prototype == ZR_NULL || (prototype->protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ARRAY_LIKE)) == 0) {
+        if (trace) {
+            fprintf(stderr,
+                    "[map-array-trace] super_array_not_applicable reason=prototype receiverType=%d internalType=%d prototype=%s mask=%llu\n",
+                    (int)receiver->type,
+                    receiverObject != ZR_NULL ? (int)receiverObject->internalType : -1,
+                    prototype != ZR_NULL ? object_super_array_debug_string(prototype->name) : "<null>",
+                    prototype != ZR_NULL ? (unsigned long long)prototype->protocolMask : 0ULL);
+        }
         return ZR_TRUE;
     }
 
@@ -919,11 +1024,30 @@ static TZrBool object_try_resolve_super_array_items(SZrState *state,
     }
     if (itemsValue == ZR_NULL ||
         (itemsValue->type != ZR_VALUE_TYPE_OBJECT && itemsValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        if (trace) {
+            SZrString *hiddenItemsKey = ZrCore_Object_CachedKnownFieldString(state, ZR_OBJECT_HIDDEN_ITEMS_FIELD);
+            fprintf(stderr,
+                    "[map-array-trace] super_array_not_applicable reason=items_value prototype=%s mask=%llu itemsType=%d hiddenKey=%s hiddenHash=%llu\n",
+                    object_super_array_debug_string(prototype->name),
+                    (unsigned long long)prototype->protocolMask,
+                    itemsValue != ZR_NULL ? (int)itemsValue->type : -1,
+                    object_super_array_debug_string(hiddenItemsKey),
+                    hiddenItemsKey != ZR_NULL ? (unsigned long long)ZR_CAST_RAW_OBJECT_AS_SUPER(hiddenItemsKey)->hash
+                                              : 0ULL);
+            object_super_array_trace_dump_object_fields(state, "items_value_receiver", receiverObject);
+        }
         return ZR_TRUE;
     }
 
     itemsObject = ZR_CAST_OBJECT(state, itemsValue->value.object);
     if (itemsObject == ZR_NULL || itemsObject->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        if (trace) {
+            fprintf(stderr,
+                    "[map-array-trace] super_array_not_applicable reason=items_object prototype=%s mask=%llu itemsInternalType=%d\n",
+                    object_super_array_debug_string(prototype->name),
+                    (unsigned long long)prototype->protocolMask,
+                    itemsObject != ZR_NULL ? (int)itemsObject->internalType : -1);
+        }
         return ZR_TRUE;
     }
 
@@ -1187,6 +1311,7 @@ static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plan_assume_fas
     SZrObject *itemsObject = ZR_NULL;
     TZrSize length;
     TZrSize requiredLength;
+    TZrBool trace = object_super_array_trace_enabled();
 
     if (plan == ZR_NULL) {
         return ZR_FALSE;
@@ -1196,6 +1321,11 @@ static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plan_assume_fas
     ZR_ASSERT(receiver != ZR_NULL);
 
     if (!zr_super_array_resolve_items_cached_assume_fast(state, receiver, &receiverObject, &itemsObject)) {
+        if (trace) {
+            fprintf(stderr,
+                    "[map-array-trace] append_plan resolve_items_failed receiverType=%d\n",
+                    (int)receiver->type);
+        }
         return ZR_FALSE;
     }
 
@@ -1212,6 +1342,29 @@ static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plan_assume_fas
                                                            itemsObject,
                                                            requiredLength,
                                                            appendCount)) {
+        if (trace) {
+            TZrInt64 cachedLength = receiverObject->cachedLengthPair != ZR_NULL
+                                            ? object_super_array_pair_int_or_default(receiverObject->cachedLengthPair, -1)
+                                            : -1;
+            TZrInt64 cachedCapacity = receiverObject->cachedCapacityPair != ZR_NULL
+                                              ? object_super_array_pair_int_or_default(receiverObject->cachedCapacityPair, -1)
+                                              : -1;
+
+            fprintf(stderr,
+                    "[map-array-trace] append_plan ensure_capacity_failed proto=%s receiverInternal=%d itemsInternal=%d length=%llu required=%llu cachedLength=%lld cachedCapacity=%lld nodeCap=%llu resizeThreshold=%llu pairPoolUsed=%llu pairPoolCapacity=%llu\n",
+                    receiverObject->prototype != ZR_NULL ? object_super_array_debug_string(receiverObject->prototype->name)
+                                                         : "<null>",
+                    (int)receiverObject->internalType,
+                    (int)itemsObject->internalType,
+                    (unsigned long long)length,
+                    (unsigned long long)requiredLength,
+                    (long long)cachedLength,
+                    (long long)cachedCapacity,
+                    (unsigned long long)itemsObject->nodeMap.capacity,
+                    (unsigned long long)itemsObject->nodeMap.resizeThreshold,
+                    (unsigned long long)itemsObject->nodeMap.pairPoolUsed,
+                    (unsigned long long)itemsObject->nodeMap.pairPoolCapacity);
+        }
         return ZR_FALSE;
     }
 
@@ -1514,6 +1667,7 @@ static ZR_FORCE_INLINE TZrBool object_super_array_commit_append_plan_assume_fast
                                                                                  TZrInt64 value) {
     TZrSize appendCount;
     SZrHashKeyValuePair *pair;
+    TZrBool trace = object_super_array_trace_enabled();
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(plan != ZR_NULL);
@@ -1532,6 +1686,19 @@ static ZR_FORCE_INLINE TZrBool object_super_array_commit_append_plan_assume_fast
                                                                                (TZrInt64)plan->length,
                                                                                value);
         if (pair == ZR_NULL) {
+            if (trace) {
+                fprintf(stderr,
+                        "[map-array-trace] append_commit add_pair_failed proto=%s length=%llu required=%llu nodeCap=%llu pairPoolUsed=%llu pairPoolCapacity=%llu value=%lld\n",
+                        plan->receiverObject->prototype != ZR_NULL
+                                ? object_super_array_debug_string(plan->receiverObject->prototype->name)
+                                : "<null>",
+                        (unsigned long long)plan->length,
+                        (unsigned long long)plan->requiredLength,
+                        (unsigned long long)plan->itemsObject->nodeMap.capacity,
+                        (unsigned long long)plan->itemsObject->nodeMap.pairPoolUsed,
+                        (unsigned long long)plan->itemsObject->nodeMap.pairPoolCapacity,
+                        (long long)value);
+            }
             return ZR_FALSE;
         }
     } else if (!object_add_int_int_pairs_assuming_absent_dense_ready_assume_fast(state,
@@ -1539,12 +1706,34 @@ static ZR_FORCE_INLINE TZrBool object_super_array_commit_append_plan_assume_fast
                                                                                   plan->length,
                                                                                   appendCount,
                                                                                   value)) {
+        if (trace) {
+            fprintf(stderr,
+                    "[map-array-trace] append_commit add_pairs_failed proto=%s length=%llu required=%llu appendCount=%llu value=%lld\n",
+                    plan->receiverObject->prototype != ZR_NULL
+                            ? object_super_array_debug_string(plan->receiverObject->prototype->name)
+                            : "<null>",
+                    (unsigned long long)plan->length,
+                    (unsigned long long)plan->requiredLength,
+                    (unsigned long long)appendCount,
+                    (long long)value);
+        }
         return ZR_FALSE;
     }
 
-    return object_super_array_update_cached_length_assume_fast(state,
-                                                               plan->receiverObject,
-                                                               plan->requiredLength);
+    if (!object_super_array_update_cached_length_assume_fast(state, plan->receiverObject, plan->requiredLength)) {
+        if (trace) {
+            fprintf(stderr,
+                    "[map-array-trace] append_commit update_length_failed proto=%s required=%llu cachedLengthPair=%p\n",
+                    plan->receiverObject->prototype != ZR_NULL
+                            ? object_super_array_debug_string(plan->receiverObject->prototype->name)
+                            : "<null>",
+                    (unsigned long long)plan->requiredLength,
+                    (void *)plan->receiverObject->cachedLengthPair);
+        }
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
 }
 
 static ZR_FORCE_INLINE TZrBool object_super_array_append_int_assume_fast(SZrState *state,

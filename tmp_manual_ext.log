@@ -1,0 +1,7 @@
+Unit Test - AOT Backends Lower Manual Extended Numeric Opcode Fixture
+Testing aot extended numeric lowering:
+ Testing that strict AOT C and LLVM both lower the expanded numeric, conversion, logical, and bitwise opcode families from a manual function fixture without reporting unsupported instructions
+[diag] manual-ext function-initialized
+[diag] manual-ext c-written
+[diag] manual-ext llvm-written
+[diag] manual-ext texts-read

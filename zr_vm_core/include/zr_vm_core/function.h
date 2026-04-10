@@ -43,6 +43,8 @@ struct ZR_STRUCT_ALIGN SZrFunctionClosureVariable {
     TZrBool inStack;
     TZrUInt32 index;
     EZrValueType valueType;
+    TZrUInt32 scopeDepth;
+    TZrUInt32 escapeFlags;
 };
 
 typedef struct SZrFunctionClosureVariable SZrFunctionClosureVariable;
@@ -52,6 +54,8 @@ struct ZR_STRUCT_ALIGN SZrFunctionLocalVariable {
     TZrUInt32 stackSlot;
     TZrMemoryOffset offsetActivate;
     TZrMemoryOffset offsetDead;
+    TZrUInt32 scopeDepth;
+    TZrUInt32 escapeFlags;
 };
 
 typedef struct SZrFunctionLocalVariable SZrFunctionLocalVariable;
@@ -226,6 +230,25 @@ typedef struct SZrFunctionCompileTimeFunctionInfo {
     TZrUInt32 lineInSourceEnd;
 } SZrFunctionCompileTimeFunctionInfo;
 
+typedef enum EZrFunctionEscapeBindingKind {
+    ZR_FUNCTION_ESCAPE_BINDING_KIND_LOCAL = 0,
+    ZR_FUNCTION_ESCAPE_BINDING_KIND_CLOSURE = 1,
+    ZR_FUNCTION_ESCAPE_BINDING_KIND_RETURN_SLOT = 2,
+    ZR_FUNCTION_ESCAPE_BINDING_KIND_MODULE_EXPORT = 3,
+    ZR_FUNCTION_ESCAPE_BINDING_KIND_GLOBAL_BINDING = 4,
+    ZR_FUNCTION_ESCAPE_BINDING_KIND_NATIVE_BINDING = 5
+} EZrFunctionEscapeBindingKind;
+
+typedef struct SZrFunctionEscapeBinding {
+    struct SZrString *name;
+    TZrUInt32 slotOrIndex;
+    TZrUInt32 scopeDepth;
+    TZrUInt32 escapeFlags;
+    TZrUInt8 bindingKind;
+    TZrUInt8 reserved0;
+    TZrUInt16 reserved1;
+} SZrFunctionEscapeBinding;
+
 typedef struct SZrFunctionTestInfo {
     struct SZrString *name;
     TZrUInt32 parameterCount;
@@ -357,6 +380,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 constantValueLength;
     TZrUInt32 localVariableLength;
     TZrUInt32 childFunctionLength;
+    TZrBool childFunctionGraphIsBorrowed;
     TZrUInt32 executionLocationInfoLength;
     TZrUInt32 catchClauseCount;
     TZrUInt32 exceptionHandlerCount;
@@ -402,6 +426,10 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 compileTimeVariableInfoLength;
     SZrFunctionCompileTimeFunctionInfo *compileTimeFunctionInfos;
     TZrUInt32 compileTimeFunctionInfoLength;
+    SZrFunctionEscapeBinding *escapeBindings;
+    TZrUInt32 escapeBindingLength;
+    TZrUInt32 *returnEscapeSlots;
+    TZrUInt32 returnEscapeSlotCount;
     SZrFunctionTestInfo *testInfos;
     TZrUInt32 testInfoLength;
     TZrBool hasDecoratorMetadata;
