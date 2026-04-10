@@ -427,6 +427,13 @@ static TZrBool decorator_navigation_resolve_target(SZrAstNode *ownerNode, SZrLsp
             outTarget->kind = "enum member";
             return ZR_TRUE;
 
+        case ZR_AST_INTERFACE_DECLARATION:
+            outTarget->name = ownerNode->data.interfaceDeclaration.name != ZR_NULL
+                                  ? ownerNode->data.interfaceDeclaration.name->name
+                                  : ZR_NULL;
+            outTarget->kind = "interface";
+            return ZR_TRUE;
+
         case ZR_AST_EXTERN_FUNCTION_DECLARATION:
             outTarget->name = ownerNode->data.externFunctionDeclaration.name != ZR_NULL
                                   ? ownerNode->data.externFunctionDeclaration.name->name

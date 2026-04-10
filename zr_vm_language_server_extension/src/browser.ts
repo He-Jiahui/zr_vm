@@ -16,6 +16,8 @@ import { registerWebProjectActionsUnavailable } from './projectActionsWeb';
 import { registerZrStructureViews, ZrStructureController } from './structure';
 import { registerVirtualDocumentSupport } from './virtualDocuments';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
+import { sendZrSelectedProjectToLanguageServer } from './selectedProjectSync';
+import { activeWorkspaceFolder, onDidChangeSelectedProject, resolveSelectedProjectUri } from './workspaceProjects';
 
 const CONFIG_SECTION = 'zr.languageServer';
 const RESTART_COMMAND = 'zr.restartLanguageServer';
@@ -56,6 +58,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (event.affectsConfiguration(CONFIG_SECTION)) {
                 await enqueueRestart(context, false);
             }
+        }),
+    );
+
+    context.subscriptions.push(
+        onDidChangeSelectedProject(() => {
+            void sendZrSelectedProjectToLanguageServer(context, client);
         }),
     );
 
@@ -114,11 +122,14 @@ async function startClient(context: vscode.ExtensionContext, requestedByUser: bo
     });
     workerHandle = worker;
 
+    const selectedProjectUri = await resolveSelectedProjectUri(context, activeWorkspaceFolder(), false);
+
     const clientOptions: LanguageClientOptions = {
         documentSelector: createDocumentSelector() as LanguageClientOptions['documentSelector'],
         outputChannelName: 'Zr Language Server',
         initializationOptions: {
             serverBaseUrl: vscode.Uri.joinPath(context.extensionUri, 'out', 'web').toString(),
+            zrSelectedProjectUri: selectedProjectUri?.toString() ?? null,
         },
         synchronize: {
             configurationSection: CONFIG_SECTION,
@@ -145,6 +156,7 @@ async function startClient(context: vscode.ExtensionContext, requestedByUser: bo
         'Timed out while starting the Zr web language server.',
     );
     await nextClient.setTrace(resolveTrace(config.get<string>('trace.server', 'off')));
+    await sendZrSelectedProjectToLanguageServer(context, nextClient);
     refreshStructureViewsAsync();
 
     if (requestedByUser) {

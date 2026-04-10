@@ -234,7 +234,20 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         const source = args.source as { path?: string } | undefined;
         const pathText = typeof source?.path === 'string' ? path.normalize(source.path) : '';
         const breakpoints = Array.isArray(args.breakpoints) ? args.breakpoints : [];
-        const runtimeSourcePath = this.runtimeSourcePaths.get(canonicalSourcePath(pathText)) ?? pathText;
+        const canonicalKey = canonicalSourcePath(pathText);
+        let runtimeSourcePath = this.runtimeSourcePaths.get(canonicalKey) ?? pathText;
+        if (
+            this.launchSourceContext !== undefined &&
+            pathText.length > 0 &&
+            !path.isAbsolute(pathText)
+        ) {
+            const candidate = path.normalize(path.resolve(this.launchSourceContext.sourceRoot, pathText));
+            const resolved = await existingFilePath(candidate);
+            if (resolved !== undefined) {
+                runtimeSourcePath = resolved;
+                this.runtimeSourcePaths.set(canonicalKey, resolved);
+            }
+        }
 
         if (!pathText) {
             throw new Error('ZR setBreakpoints requires source.path.');

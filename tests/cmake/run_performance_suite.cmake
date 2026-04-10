@@ -85,6 +85,37 @@ if (NOT PERF_ITERATIONS MATCHES "^[0-9]+$" OR PERF_ITERATIONS LESS 1)
     message(FATAL_ERROR "Invalid PERF_ITERATIONS: ${PERF_ITERATIONS}")
 endif ()
 
+# Callgrind: optional instruction-counting mode (no cache / branch simulation), via Valgrind flags.
+# See: valgrind --tool=callgrind --help (simulation options).
+set(PERF_CALLGRIND_COUNTING_MODE FALSE)
+if (DEFINED ENV{ZR_VM_PERF_CALLGRIND_COUNTING} AND NOT "$ENV{ZR_VM_PERF_CALLGRIND_COUNTING}" STREQUAL "")
+    string(TOLOWER "$ENV{ZR_VM_PERF_CALLGRIND_COUNTING}" PERF_CALLGRIND_COUNTING_ENV)
+    if (PERF_CALLGRIND_COUNTING_ENV STREQUAL "1" OR
+            PERF_CALLGRIND_COUNTING_ENV STREQUAL "yes" OR
+            PERF_CALLGRIND_COUNTING_ENV STREQUAL "on" OR
+            PERF_CALLGRIND_COUNTING_ENV STREQUAL "true")
+        set(PERF_CALLGRIND_COUNTING_MODE TRUE)
+    endif ()
+endif ()
+if (PERF_CALLGRIND_COUNTING_MODE)
+    set(PERF_CALLGRIND_DOC_LINE "- Callgrind counting mode: **on** (passes `--cache-sim=no --branch-sim=no` to callgrind)\n")
+    set(PERF_CALLGRIND_JSON_BOOL "true")
+else ()
+    set(PERF_CALLGRIND_DOC_LINE "- Callgrind counting mode: **off** (set `ZR_VM_PERF_CALLGRIND_COUNTING=1` to enable)\n")
+    set(PERF_CALLGRIND_JSON_BOOL "false")
+endif ()
+
+# Optional: ZR_VM_PERF_ONLY_IMPLEMENTATIONS=comma-separated ids (e.g. zr_aot_c,zr_aot_llvm) to run a subset for diagnosis.
+set(PERF_ONLY_FILTER_ACTIVE FALSE)
+set(PERF_ONLY_IMPLEMENTATION_LIST "")
+if (DEFINED ENV{ZR_VM_PERF_ONLY_IMPLEMENTATIONS} AND NOT "$ENV{ZR_VM_PERF_ONLY_IMPLEMENTATIONS}" STREQUAL "")
+    set(PERF_ONLY_FILTER_ACTIVE TRUE)
+    string(REPLACE "," ";" PERF_ONLY_IMPLEMENTATION_LIST "$ENV{ZR_VM_PERF_ONLY_IMPLEMENTATIONS}")
+endif ()
+if (PERF_ONLY_FILTER_ACTIVE)
+    message("ZR_VM_PERF_ONLY_IMPLEMENTATIONS filter active: ${PERF_ONLY_IMPLEMENTATION_LIST}")
+endif ()
+
 set(PERF_SUITE_ROOT "${GENERATED_DIR}/performance_suite")
 set(PERF_REPORT_DIR "${GENERATED_DIR}/performance")
 set(PERF_TOOLCHAIN_DIR "${PERF_SUITE_ROOT}/toolchains")
@@ -453,6 +484,19 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
         continue()
     endif ()
 
+    if (PERF_ONLY_FILTER_ACTIVE)
+        set(case_has_filtered_impl FALSE)
+        foreach (impl IN LISTS ZR_VM_BENCHMARK_IMPLEMENTATIONS_${case_name})
+            list(FIND PERF_ONLY_IMPLEMENTATION_LIST "${impl}" PERF_ONLY_CASE_IX)
+            if (PERF_ONLY_CASE_IX GREATER_EQUAL 0)
+                set(case_has_filtered_impl TRUE)
+            endif ()
+        endforeach ()
+        if (NOT case_has_filtered_impl)
+            continue()
+        endif ()
+    endif ()
+
     math(EXPR PERF_CASE_COUNT "${PERF_CASE_COUNT} + 1")
     perf_prepare_zr_case("${case_name}" zr_project_dir zr_project_file)
     perf_case_scale("${case_name}" case_scale)
@@ -480,6 +524,12 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
     set(case_interp_ready FALSE)
 
     foreach (implementation_id IN LISTS ZR_VM_BENCHMARK_IMPLEMENTATIONS_${case_name})
+        if (PERF_ONLY_FILTER_ACTIVE)
+            list(FIND PERF_ONLY_IMPLEMENTATION_LIST "${implementation_id}" PERF_ONLY_IMPL_IX)
+            if (PERF_ONLY_IMPL_IX LESS 0)
+                continue()
+            endif ()
+        endif ()
         set(implementation_name "")
         set(language "")
         set(mode "")
@@ -991,13 +1041,17 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
             set(case_callgrind_annotate_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.callgrind.annotate.txt")
             set(case_hotspot_summary_json_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.hotspot.json")
             set(case_hotspot_summary_md_path "${PERF_REPORT_DIR}/${case_name}__zr_interp.hotspot.md")
-            execute_process(
-                    COMMAND
+            set(_perf_callgrind_cmd
                     "${PERF_VALGRIND_EXE}"
                     "--tool=callgrind"
                     "--trace-children=no"
-                    "--callgrind-out-file=${case_callgrind_out_path}"
-                    ${case_interp_command_list}
+                    "--callgrind-out-file=${case_callgrind_out_path}")
+            if (PERF_CALLGRIND_COUNTING_MODE)
+                list(APPEND _perf_callgrind_cmd "--cache-sim=no" "--branch-sim=no")
+            endif ()
+            list(APPEND _perf_callgrind_cmd ${case_interp_command_list})
+            execute_process(
+                    COMMAND ${_perf_callgrind_cmd}
                     WORKING_DIRECTORY "${case_interp_working_directory}"
                     RESULT_VARIABLE case_callgrind_result
                     OUTPUT_VARIABLE case_callgrind_stdout
@@ -1177,6 +1231,8 @@ string(CONCAT PERF_MARKDOWN_REPORT
         "- Scale Policy: registry tier scale (profile uses per-case profile scale)\n"
         "- Warmup Iterations Per Implementation: ${PERF_WARMUP}\n"
         "- Measured Iterations Per Implementation: ${PERF_ITERATIONS}\n"
+        "${PERF_CALLGRIND_DOC_LINE}"
+        "- **Wall ms scope:** For **ZR binary**, **ZR aot_c**, and **ZR aot_llvm**, the suite runs a **separate untimed** one-shot `zr_vm_cli --compile ...` (and `--emit-aot-c` / `--emit-aot-llvm` for AOT) **before** `perf_runner`. **Prepare / host compile time is not included** in the table; reported wall ms are **run-only** (`perf_runner` child process for `zr_vm_cli ... --execution-mode ...`). CSV column `one_shot_compile_excluded_from_wall_ms` flags these modes.\n"
         "- Benchmarks Root: `${BENCHMARKS_DIR}`\n"
         "- Cases: ${PERF_CASE_COUNT}\n\n"
         "| case | implementation | language | status | mean wall ms | median wall ms | min wall ms | max wall ms | stddev wall ms | mean peak MiB | max peak MiB | relative_to_c |\n"
@@ -1209,6 +1265,9 @@ file(WRITE
         "  \"scale_policy\": \"tier_default_or_case_profile\",\n"
         "  \"warmup\": ${PERF_WARMUP},\n"
         "  \"iterations\": ${PERF_ITERATIONS},\n"
+        "  \"callgrind_counting_mode\": ${PERF_CALLGRIND_JSON_BOOL},\n"
+        "  \"reported_wall_ms_includes_prepare_compile\": false,\n"
+        "  \"reported_wall_ms_scope\": \"perf_runner_iterations_only_excludes_cmake_prepare_zr_vm_cli_compile\",\n"
         "  \"cases\": [\n${PERF_JSON_CASES}\n  ]\n"
         "}\n")
 
@@ -1256,7 +1315,9 @@ file(WRITE
         "${PERF_REPORT_DIR}/hotspot_report.md"
         "# ZR VM Hotspot Report\n\n"
         "- Generated At (UTC): ${PERF_GENERATED_AT_UTC}\n"
-        "- Tier: ${PERF_REQUESTED_TIER}\n\n"
+        "- Tier: ${PERF_REQUESTED_TIER}\n"
+        "${PERF_CALLGRIND_DOC_LINE}"
+        "\n"
         "${PERF_HOTSPOT_MARKDOWN_CASES}")
 file(WRITE
         "${PERF_REPORT_DIR}/hotspot_report.json"
@@ -1264,6 +1325,7 @@ file(WRITE
         "  \"suite\": \"hotspot_report\",\n"
         "  \"generated_at_utc\": \"${PERF_GENERATED_AT_UTC}\",\n"
         "  \"tier\": \"${PERF_REQUESTED_TIER}\",\n"
+        "  \"callgrind_counting_mode\": ${PERF_CALLGRIND_JSON_BOOL},\n"
         "  \"cases\": [\n${PERF_HOTSPOT_JSON_CASES}\n  ]\n"
         "}\n")
 
@@ -1272,6 +1334,11 @@ message("Performance json report: ${PERF_REPORT_DIR}/benchmark_report.json")
 message("Comparison markdown report: ${PERF_REPORT_DIR}/comparison_report.md")
 message("Instruction markdown report: ${PERF_REPORT_DIR}/instruction_report.md")
 message("Hotspot markdown report: ${PERF_REPORT_DIR}/hotspot_report.md")
+if (PERF_CALLGRIND_COUNTING_MODE)
+    message("Callgrind counting mode: on (--cache-sim=no --branch-sim=no)")
+else ()
+    message("Callgrind counting mode: off (set ZR_VM_PERF_CALLGRIND_COUNTING=1 to enable)")
+endif ()
 
 if (PERF_HARD_FAILURE)
     message(FATAL_ERROR "performance_report encountered benchmark failures. See generated report for details.")

@@ -273,9 +273,17 @@ static void report_import_compile_info_failure(SZrCompilerState *cs, SZrString *
 
     ZrCore_Memory_RawSet(&location, 0, sizeof(location));
     summary = ZrParser_ModuleInitAnalysis_FindSummary(cs->state->global, moduleName);
-    if (summary != ZR_NULL && summary->state == ZR_PARSER_MODULE_INIT_SUMMARY_FAILED &&
-        summary->errorMessage[0] != '\0') {
-        ZrParser_Compiler_Error(cs, summary->errorMessage, summary->errorLocation);
+    if (summary != ZR_NULL && summary->state == ZR_PARSER_MODULE_INIT_SUMMARY_FAILED) {
+        if (summary->errorMessage[0] != '\0') {
+            ZrParser_Compiler_Error(cs, summary->errorMessage, summary->errorLocation);
+        } else {
+            moduleNameText = import_metadata_string_text(moduleName);
+            snprintf(detail,
+                     sizeof(detail),
+                     "failed to load import metadata for module '%s' (init failed without message)",
+                     moduleNameText != ZR_NULL ? moduleNameText : "<module>");
+            ZrParser_Compiler_Error(cs, detail, location);
+        }
         return;
     }
 

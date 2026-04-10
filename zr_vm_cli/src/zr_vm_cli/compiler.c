@@ -302,6 +302,8 @@ static TZrBool zr_cli_load_binary_function(SZrState *state, const TZrChar *path,
     return *outFunction != ZR_NULL;
 }
 
+static TZrBool zr_cli_command_exists(const TZrChar *commandName);
+
 static TZrBool zr_cli_compile_aot_c_shared_library(const SZrCliModuleRecord *record) {
     TZrChar command[ZR_CLI_REPL_LINE_BUFFER_LENGTH * 10];
 
@@ -343,18 +345,37 @@ static TZrBool zr_cli_compile_aot_c_shared_library(const SZrCliModuleRecord *rec
         }
     }
 #else
-    if (snprintf(command,
-                 sizeof(command),
-                 "cc -shared -fPIC -DZR_PLATFORM_UNIX -I\"%s/zr_vm_common/include\" -I\"%s/zr_vm_core/include\" -I\"%s/zr_vm_library/include\" "
-                 "\"%s\" -L\"%s\" -Wl,-rpath,\"%s\" -lzr_vm_library -lzr_vm_core -o \"%s\"",
-                 ZR_VM_SOURCE_ROOT,
-                 ZR_VM_SOURCE_ROOT,
-                 ZR_VM_SOURCE_ROOT,
-                 record->aotCSourcePath,
-                 ZR_VM_HOST_LIB_DIR,
-                 ZR_VM_HOST_LIB_DIR,
-                 record->aotCLibraryPath) >= (int)sizeof(command)) {
-        return ZR_FALSE;
+    {
+        TZrChar hostC[ZR_LIBRARY_MAX_PATH_LENGTH];
+        const TZrChar *fromEnv = (const TZrChar *)getenv("ZR_VM_AOT_C_HOST_COMPILER");
+
+        if (fromEnv != ZR_NULL && fromEnv[0] != '\0') {
+            if (snprintf(hostC, sizeof(hostC), "%s", fromEnv) >= (int)sizeof(hostC)) {
+                return ZR_FALSE;
+            }
+        } else if (zr_cli_command_exists("clang")) {
+            if (snprintf(hostC, sizeof(hostC), "clang") >= (int)sizeof(hostC)) {
+                return ZR_FALSE;
+            }
+        } else {
+            if (snprintf(hostC, sizeof(hostC), "cc") >= (int)sizeof(hostC)) {
+                return ZR_FALSE;
+            }
+        }
+        if (snprintf(command,
+                     sizeof(command),
+                     "%s -shared -fPIC -DZR_PLATFORM_UNIX -I\"%s/zr_vm_common/include\" -I\"%s/zr_vm_core/include\" -I\"%s/zr_vm_library/include\" "
+                     "\"%s\" -L\"%s\" -Wl,-rpath,\"%s\" -lzr_vm_library -lzr_vm_core -o \"%s\"",
+                     hostC,
+                     ZR_VM_SOURCE_ROOT,
+                     ZR_VM_SOURCE_ROOT,
+                     ZR_VM_SOURCE_ROOT,
+                     record->aotCSourcePath,
+                     ZR_VM_HOST_LIB_DIR,
+                     ZR_VM_HOST_LIB_DIR,
+                     record->aotCLibraryPath) >= (int)sizeof(command)) {
+            return ZR_FALSE;
+        }
     }
 #endif
 

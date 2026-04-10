@@ -7,6 +7,9 @@
 #include "lsp_semantic_query.h"
 #include "semantic_analyzer_internal.h"
 
+#include <ctype.h>
+#include <string.h>
+
 #include "zr_vm_parser/compiler.h"
 
 #include "zr_vm_lib_ffi/module.h"
@@ -495,6 +498,7 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
                       &context->projectIndexes,
                       sizeof(SZrLspProjectIndex *),
                       ZR_LSP_PROJECT_INDEX_INITIAL_CAPACITY);
+    context->clientSelectedZrpNativePath = ZR_NULL;
 
     ZrVmLibMath_Register(state->global);
     ZrVmLibSystem_Register(state->global);
@@ -554,8 +558,66 @@ void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context) {
         ZrLanguageServer_SemanticAnalyzer_Free(state, context->analyzer);
     }
 
+    if (context->clientSelectedZrpNativePath != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      context->clientSelectedZrpNativePath,
+                                      strlen(context->clientSelectedZrpNativePath) + 1,
+                                      ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+        context->clientSelectedZrpNativePath = ZR_NULL;
+    }
+
     ZrLanguageServer_Lsp_ProjectIndexes_Free(state, context);
     ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));
+}
+
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_LspContext_SetClientSelectedZrpUri(SZrState *state,
+                                                                              SZrLspContext *context,
+                                                                              SZrString *zrpFileUri) {
+    TZrChar buffer[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize pathLength;
+    TZrChar *copy;
+
+    if (state == ZR_NULL || context == ZR_NULL || state->global == ZR_NULL) {
+        return;
+    }
+
+    if (context->clientSelectedZrpNativePath != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      context->clientSelectedZrpNativePath,
+                                      strlen(context->clientSelectedZrpNativePath) + 1,
+                                      ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+        context->clientSelectedZrpNativePath = ZR_NULL;
+    }
+
+    if (zrpFileUri == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_FileUriToNativePath(zrpFileUri, buffer, sizeof(buffer))) {
+        return;
+    }
+
+    pathLength = strlen(buffer);
+    if (pathLength < 4) {
+        return;
+    }
+
+    if (tolower((unsigned char)buffer[pathLength - 4]) != '.' ||
+        tolower((unsigned char)buffer[pathLength - 3]) != 'z' ||
+        tolower((unsigned char)buffer[pathLength - 2]) != 'r' ||
+        tolower((unsigned char)buffer[pathLength - 1]) != 'p') {
+        return;
+    }
+
+    copy = (TZrChar *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                      pathLength + 1,
+                                                      ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    if (copy == ZR_NULL) {
+        return;
+    }
+
+    memcpy(copy, buffer, pathLength + 1);
+    context->clientSelectedZrpNativePath = copy;
 }
 
 // 获取或创建分析器

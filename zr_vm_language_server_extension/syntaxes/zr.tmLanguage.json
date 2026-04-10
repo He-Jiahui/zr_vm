@@ -50,7 +50,7 @@
         },
         {
           "name": "keyword.other.zr",
-          "match": "\\b(using|module|struct|class|interface|enum|intermediate|var|const|static|pub|pri|pro|new|super|in|out|get|set|test)\\b"
+          "match": "\\b(using|module|struct|class|interface|enum|intermediate|var|const|static|pub|pri|pro|new|super|in|out|get|set|test|func)\\b"
         },
         {
           "name": "constant.language.zr",

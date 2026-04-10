@@ -95,6 +95,12 @@ static TZrBool discover_project_path_for_uri(SZrString *uri,
                                              TZrChar *projectPath,
                                              TZrSize projectPathSize,
                                              TZrBool *outAmbiguous);
+static TZrBool discover_project_path_with_context(SZrState *state,
+                                                  SZrLspContext *context,
+                                                  SZrString *uri,
+                                                  TZrChar *projectPath,
+                                                  TZrSize projectPathSize,
+                                                  TZrBool *outAmbiguous);
 static TZrBool project_resolve_source_path(SZrLspProjectIndex *projectIndex,
                                            const TZrChar *moduleName,
                                            TZrChar *buffer,
@@ -615,7 +621,7 @@ static TZrBool project_collect_import_module_names_from_text(SZrState *state,
             continue;
         }
 
-        moduleName = ZrCore_String_Create(state, start, (TZrSize)(scan - start));
+        moduleName = ZrCore_String_Create(state, (TZrNativeString)start, (TZrSize)(scan - start));
         if (moduleName == ZR_NULL || !project_append_unique_import_module_name(state, moduleNames, moduleName)) {
             return ZR_FALSE;
         }
@@ -1144,10 +1150,12 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectFo
         projectFilePath = get_string_text(bestProject->projectFilePath);
         projectFileUri = bestProject->projectFileUri;
     } else {
-        if (!discover_project_path_for_uri(uri,
-                                           discoveredProjectPath,
-                                           sizeof(discoveredProjectPath),
-                                           &ambiguous) ||
+        if (!discover_project_path_with_context(state,
+                                                context,
+                                                uri,
+                                                discoveredProjectPath,
+                                                sizeof(discoveredProjectPath),
+                                                &ambiguous) ||
             ambiguous) {
             return ZR_FALSE;
         }
@@ -1428,6 +1436,46 @@ static TZrBool discover_project_path_for_uri(SZrString *uri,
     return ZR_FALSE;
 }
 
+static TZrBool discover_project_path_with_context(SZrState *state,
+                                                  SZrLspContext *context,
+                                                  SZrString *uri,
+                                                  TZrChar *projectPath,
+                                                  TZrSize projectPathSize,
+                                                  TZrBool *outAmbiguous) {
+    TZrBool ambiguous = ZR_FALSE;
+    TZrChar fileNative[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar zrpDir[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    ZR_UNUSED_PARAMETER(state);
+
+    if (discover_project_path_for_uri(uri, projectPath, projectPathSize, &ambiguous)) {
+        if (outAmbiguous != ZR_NULL) {
+            *outAmbiguous = ambiguous;
+        }
+        return ZR_TRUE;
+    }
+
+    if (context != ZR_NULL && context->clientSelectedZrpNativePath != ZR_NULL &&
+        lsp_uri_to_native_path(uri, fileNative, sizeof(fileNative)) &&
+        ZrLibrary_File_GetDirectory(context->clientSelectedZrpNativePath, zrpDir) &&
+        native_path_is_within_directory(fileNative, zrpDir)) {
+        TZrSize zrpLength = strlen(context->clientSelectedZrpNativePath);
+
+        if (zrpLength + 1 <= projectPathSize) {
+            memcpy(projectPath, context->clientSelectedZrpNativePath, zrpLength + 1);
+            if (outAmbiguous != ZR_NULL) {
+                *outAmbiguous = ZR_FALSE;
+            }
+            return ZR_TRUE;
+        }
+    }
+
+    if (outAmbiguous != ZR_NULL) {
+        *outAmbiguous = ambiguous;
+    }
+    return ZR_FALSE;
+}
+
 static void project_invalidate_loaded_analyzers(SZrState *state,
                                                 SZrLspContext *context,
                                                 SZrLspProjectIndex *projectIndex) {
@@ -1600,7 +1648,7 @@ static TZrBool project_register_source_record(SZrState *state,
 
     isFfiWrapperSource = project_script_contains_top_level_ffi_wrapper(ast) ||
                          project_content_contains_ffi_wrapper_marker(content);
-    pathString = ZrCore_String_Create(state, path, strlen(path));
+    pathString = ZrCore_String_Create(state, (TZrNativeString)path, strlen(path));
     moduleString = ZrCore_String_Create(state, moduleBuffer, strlen(moduleBuffer));
     if (pathString == ZR_NULL || moduleString == ZR_NULL) {
         return ZR_FALSE;
@@ -1902,7 +1950,8 @@ SZrLspProjectIndex *ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(SZrState *st
         return projectIndex;
     }
 
-    if (!discover_project_path_for_uri(uri, projectPath, sizeof(projectPath), &ambiguous) || ambiguous) {
+    if (!discover_project_path_with_context(state, context, uri, projectPath, sizeof(projectPath), &ambiguous) ||
+        ambiguous) {
         return ZR_NULL;
     }
 
@@ -1948,7 +1997,8 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_GetOrCreateForUri(SZrState *stat
         return projectIndex;
     }
 
-    if (!discover_project_path_for_uri(uri, projectPath, sizeof(projectPath), &ambiguous) || ambiguous) {
+    if (!discover_project_path_with_context(state, context, uri, projectPath, sizeof(projectPath), &ambiguous) ||
+        ambiguous) {
         return ZR_NULL;
     }
 

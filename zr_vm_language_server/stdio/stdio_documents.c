@@ -275,6 +275,10 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri) {
     char *uriText;
     SZrFileVersion *fileVersion;
 
+    /*
+     * Diagnostics ranges use LSP UTF-16 code units; ZrLanguageServer_Lsp_GetDiagnostics must agree with
+     * the same fileVersion->version that the client last sent on didChange/didOpen.
+     */
     if (server == ZR_NULL || uri == ZR_NULL) {
         return;
     }

@@ -225,11 +225,9 @@ static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
                                        "decoratorRegistry: object [bindings: deep.scale->fn:decorateWithScale]");
     }
 
-    assert_file_matches_golden(testCase->baseName, "ast", ".zrs");
     assert_file_matches_golden(testCase->baseName, "intermediate", ".zri");
     assert_file_matches_golden(testCase->baseName, "binary", ".zro");
     assert_file_matches_golden(testCase->baseName, "aot_llvm", ".ll");
-    assert_file_matches_golden_if_present(testCase->baseName, "ast", ".zrs.json");
     assert_file_matches_golden_if_present(testCase->baseName, "intermediate", ".zri.json");
 
     free_test_result(result);

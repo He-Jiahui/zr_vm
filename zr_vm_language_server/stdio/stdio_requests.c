@@ -811,7 +811,83 @@ static cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params)
     return result != NULL ? result : cJSON_CreateNull();
 }
 
-static cJSON *handle_initialize_request(void) {
+static void apply_initialization_selected_project(SZrStdioServer *server, const cJSON *params) {
+    const cJSON *initializationOptions;
+    const cJSON *uriJson;
+    const char *uriText;
+    SZrString *cachedUri;
+
+    if (server == ZR_NULL || server->context == ZR_NULL || params == ZR_NULL) {
+        return;
+    }
+
+    initializationOptions = get_object_item(params, ZR_LSP_FIELD_INITIALIZATION_OPTIONS);
+    if (initializationOptions == ZR_NULL) {
+        return;
+    }
+
+    uriJson = get_object_item(initializationOptions, ZR_LSP_INITIALIZATION_OPTION_SELECTED_PROJECT_URI);
+    if (uriJson == ZR_NULL) {
+        return;
+    }
+
+    if (cJSON_IsNull((cJSON *)uriJson)) {
+        ZrLanguageServer_LspContext_SetClientSelectedZrpUri(server->state, server->context, ZR_NULL);
+        return;
+    }
+
+    if (!cJSON_IsString((cJSON *)uriJson)) {
+        return;
+    }
+
+    uriText = cJSON_GetStringValue((cJSON *)uriJson);
+    if (uriText == ZR_NULL || uriText[0] == '\0') {
+        ZrLanguageServer_LspContext_SetClientSelectedZrpUri(server->state, server->context, ZR_NULL);
+        return;
+    }
+
+    cachedUri = server_get_cached_uri(server, uriText);
+    if (cachedUri == ZR_NULL) {
+        return;
+    }
+
+    ZrLanguageServer_LspContext_SetClientSelectedZrpUri(server->state, server->context, cachedUri);
+}
+
+static void handle_zr_selected_project_notification(SZrStdioServer *server, const cJSON *params) {
+    const cJSON *uriJson;
+    const char *uriText;
+    SZrString *cachedUri;
+
+    if (server == ZR_NULL || server->context == ZR_NULL || params == ZR_NULL) {
+        return;
+    }
+
+    uriJson = get_object_item(params, ZR_LSP_FIELD_URI);
+    if (cJSON_IsNull((cJSON *)uriJson)) {
+        ZrLanguageServer_LspContext_SetClientSelectedZrpUri(server->state, server->context, ZR_NULL);
+        return;
+    }
+
+    if (!cJSON_IsString((cJSON *)uriJson)) {
+        return;
+    }
+
+    uriText = cJSON_GetStringValue((cJSON *)uriJson);
+    if (uriText == ZR_NULL || uriText[0] == '\0') {
+        ZrLanguageServer_LspContext_SetClientSelectedZrpUri(server->state, server->context, ZR_NULL);
+        return;
+    }
+
+    cachedUri = server_get_cached_uri(server, uriText);
+    if (cachedUri == ZR_NULL) {
+        return;
+    }
+
+    ZrLanguageServer_LspContext_SetClientSelectedZrpUri(server->state, server->context, cachedUri);
+}
+
+static cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params) {
     cJSON *result = cJSON_CreateObject();
     cJSON *capabilities = cJSON_CreateObject();
     cJSON *textDocumentSync = cJSON_CreateObject();
@@ -916,6 +992,9 @@ static cJSON *handle_initialize_request(void) {
 
     cJSON_AddItemToObject(result, ZR_LSP_FIELD_CAPABILITIES, capabilities);
     cJSON_AddItemToObject(result, ZR_LSP_FIELD_SERVER_INFO, serverInfo);
+
+    apply_initialization_selected_project(server, params);
+
     return result;
 }
 
@@ -930,7 +1009,7 @@ void handle_request_message(SZrStdioServer *server,
     }
 
     if (strcmp(method, ZR_LSP_METHOD_INITIALIZE) == 0) {
-        result = handle_initialize_request();
+        result = handle_initialize_request(server, params);
         send_result_response(id, result != NULL ? result : cJSON_CreateNull());
         return;
     }
@@ -1001,6 +1080,11 @@ void handle_notification_message(SZrStdioServer *server,
         strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_CONFIGURATION) == 0 ||
         strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WORKSPACE_FOLDERS) == 0 ||
         strcmp(method, ZR_LSP_METHOD_CANCEL_REQUEST) == 0) {
+        return;
+    }
+
+    if (strcmp(method, ZR_LSP_METHOD_ZR_SELECTED_PROJECT) == 0) {
+        handle_zr_selected_project_notification(server, params);
         return;
     }
 

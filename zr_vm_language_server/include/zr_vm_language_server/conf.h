@@ -172,6 +172,10 @@
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_DID_SAVE "textDocument/didSave"
 #define ZR_LSP_METHOD_ZR_NATIVE_DECLARATION_DOCUMENT "zr/nativeDeclarationDocument"
 #define ZR_LSP_METHOD_ZR_PROJECT_MODULES "zr/projectModules"
+#define ZR_LSP_METHOD_ZR_SELECTED_PROJECT "zr/selectedProject"
+
+#define ZR_LSP_FIELD_INITIALIZATION_OPTIONS "initializationOptions"
+#define ZR_LSP_INITIALIZATION_OPTION_SELECTED_PROJECT_URI "zrSelectedProjectUri"
 
 #define ZR_LSP_SERVER_NAME "zr_vm_language_server_stdio"
 #define ZR_LSP_SERVER_VERSION "0.0.1"

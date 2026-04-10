@@ -257,6 +257,11 @@ TZrBool is_lambda_expression_after_lparen(SZrParserState *ps) {
     ZrParser_Lexer_Next(ps->lexer);
     depth = 1;
     while (depth > 0 && ps->lexer->t.token != ZR_TK_EOS) {
+        /* 形如 ((params) -> { }) 或多层括号包裹：参数列表闭合后 depth>=1，下一 token 为 -> */
+        if (ps->lexer->t.token == ZR_TK_RIGHT_ARROW && depth >= 1 && depth <= 32) {
+            isLambda = ZR_TRUE;
+            break;
+        }
         if (ps->lexer->t.token == ZR_TK_LPAREN) {
             depth++;
         } else if (ps->lexer->t.token == ZR_TK_RPAREN) {
@@ -265,7 +270,7 @@ TZrBool is_lambda_expression_after_lparen(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 
-    if (depth == 0 && ps->lexer->t.token == ZR_TK_RIGHT_ARROW) {
+    if (!isLambda && depth == 0 && ps->lexer->t.token == ZR_TK_RIGHT_ARROW) {
         isLambda = ZR_TRUE;
     }
 

@@ -17,9 +17,11 @@ import { registerDesktopDebugSupport } from './debug/configProvider';
 import { setLanguageClientRequestClient } from './languageClientRequests';
 import { LANGUAGE_SERVER_CONFIG_SECTION, resolveNativeLanguageServerPath } from './nativeAssets';
 import { registerDesktopProjectActions } from './projectActions';
+import { sendZrSelectedProjectToLanguageServer } from './selectedProjectSync';
 import { registerZrStructureViews, ZrStructureController } from './structure';
 import { registerVirtualDocumentSupport } from './virtualDocuments';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
+import { activeWorkspaceFolder, onDidChangeSelectedProject, resolveSelectedProjectUri } from './workspaceProjects';
 
 const CONFIG_SECTION = LANGUAGE_SERVER_CONFIG_SECTION;
 const RESTART_COMMAND = 'zr.restartLanguageServer';
@@ -58,6 +60,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (event.affectsConfiguration(CONFIG_SECTION)) {
                 await enqueueRestart(context, false);
             }
+        }),
+    );
+
+    context.subscriptions.push(
+        onDidChangeSelectedProject(() => {
+            void sendZrSelectedProjectToLanguageServer(context, client);
         }),
     );
 
@@ -138,9 +146,14 @@ async function startClient(
         fileEvents,
     ];
 
+    const selectedProjectUri = await resolveSelectedProjectUri(context, activeWorkspaceFolder(), false);
+
     const clientOptions: LanguageClientOptions = {
         documentSelector: createDocumentSelector() as LanguageClientOptions['documentSelector'],
         outputChannelName: 'Zr Language Server',
+        initializationOptions: {
+            zrSelectedProjectUri: selectedProjectUri?.toString() ?? null,
+        },
         synchronize: {
             configurationSection: CONFIG_SECTION,
             fileEvents,
@@ -162,6 +175,7 @@ async function startClient(
 
     await nextClient.start();
     await nextClient.setTrace(resolveTrace(config.get<string>('trace.server', 'off')));
+    await sendZrSelectedProjectToLanguageServer(context, nextClient);
     refreshStructureViewsAsync();
 
     if (requestedByUser) {

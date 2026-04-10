@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { onDidChangeLanguageClient, sendLanguageServerRequest } from './languageClientRequests';
+import { listBuiltinModuleSnapshots } from './structure/builtinModules';
 import {
     activeWorkspaceFolder,
     isZrpDocument,
@@ -10,6 +11,7 @@ import {
 
 export const ZR_FILES_VIEW_ID = 'zrFiles';
 export const ZR_IMPORTS_VIEW_ID = 'zrImports';
+export const ZR_BUILTIN_MODULES_VIEW_ID = 'zrBuiltinModules';
 export const ZR_STRUCTURE_REFRESH_COMMAND = 'zr.structure.refresh';
 export const ZR_STRUCTURE_INSPECT_COMMAND = 'zr.__inspectStructureViews';
 export const ZR_STRUCTURE_OPEN_TARGET_COMMAND = 'zr.structure.openTarget';
@@ -123,12 +125,15 @@ class ZrStructureService implements ZrStructureController {
     private readonly disposables: vscode.Disposable[] = [];
     private readonly filesProvider = new StructureTreeProvider();
     private readonly projectProvider = new StructureTreeProvider();
+    private readonly builtinProvider = new StructureTreeProvider();
     private readonly filesView: vscode.TreeView<TreeNode>;
     private readonly projectView: vscode.TreeView<TreeNode>;
+    private readonly builtinView: vscode.TreeView<TreeNode>;
     private refreshChain: Promise<void> = Promise.resolve();
     private refreshTimer: ReturnType<typeof setTimeout> | undefined;
     private filesRoots: TreeNode[] = [];
     private projectRoots: TreeNode[] = [];
+    private builtinRoots: TreeNode[] = [];
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this.filesView = vscode.window.createTreeView(ZR_FILES_VIEW_ID, {
@@ -139,12 +144,18 @@ class ZrStructureService implements ZrStructureController {
             treeDataProvider: this.projectProvider,
             showCollapseAll: true,
         });
+        this.builtinView = vscode.window.createTreeView(ZR_BUILTIN_MODULES_VIEW_ID, {
+            treeDataProvider: this.builtinProvider,
+            showCollapseAll: true,
+        });
 
         this.disposables.push(
             this.filesProvider,
             this.projectProvider,
+            this.builtinProvider,
             this.filesView,
             this.projectView,
+            this.builtinView,
             vscode.commands.registerCommand(ZR_STRUCTURE_REFRESH_COMMAND, async () => {
                 await this.refresh();
             }),
@@ -154,6 +165,7 @@ class ZrStructureService implements ZrStructureController {
                     files: this.filesRoots.map((node) => serializeNode(node)),
                     imports: this.projectRoots.map((node) => serializeNode(node)),
                     project: this.projectRoots.map((node) => serializeNode(node)),
+                    builtin: this.builtinRoots.map((node) => serializeNode(node)),
                 };
             }),
             vscode.commands.registerCommand(ZR_STRUCTURE_OPEN_TARGET_COMMAND, async (payload: OpenTargetPayload) => {
@@ -239,9 +251,60 @@ class ZrStructureService implements ZrStructureController {
     private async performRefresh(): Promise<void> {
         this.filesRoots = await buildCurrentFileRoots();
         this.projectRoots = await buildProjectRoots(this.context);
+        this.builtinRoots = buildBuiltinLibraryRoots();
         this.filesProvider.setRoots(this.filesRoots);
         this.projectProvider.setRoots(this.projectRoots);
+        this.builtinProvider.setRoots(this.builtinRoots);
     }
+}
+
+function buildBuiltinLibraryRoots(): TreeNode[] {
+    const snapshots = listBuiltinModuleSnapshots();
+    return snapshots.map((snapshot) => {
+        const linkNodes: TreeNode[] =
+            snapshot.modules?.map((link) => ({
+                id: `builtin:link:${link.moduleName}`,
+                nodeType: 'import' as const,
+                label: link.name,
+                description: link.detail,
+                tooltip: link.moduleName,
+                icon: new vscode.ThemeIcon('package'),
+                collapsibleState: vscode.TreeItemCollapsibleState.None,
+                children: [],
+            })) ?? [];
+        const symbolNodes: TreeNode[] =
+            snapshot.symbols?.map((symbol) => ({
+                id: `builtin:sym:${snapshot.moduleName}:${symbol.name}`,
+                nodeType: 'declaration' as const,
+                label: symbol.name,
+                description: symbol.kind,
+                tooltip: `${snapshot.moduleName}.${symbol.name}`,
+                icon: new vscode.ThemeIcon(
+                    symbol.kind === 'type' ? 'symbol-interface' : symbol.kind === 'constant' ? 'symbol-variable' : 'symbol-method',
+                ),
+                collapsibleState: vscode.TreeItemCollapsibleState.None,
+                children: [],
+            })) ?? [];
+        const groups: TreeNode[] = [];
+        if (linkNodes.length > 0) {
+            groups.push(createGroupNode(`builtin:${snapshot.moduleName}:submodules`, 'Submodules', linkNodes));
+        }
+        if (symbolNodes.length > 0) {
+            groups.push(createGroupNode(`builtin:${snapshot.moduleName}:symbols`, 'Symbols', symbolNodes));
+        }
+        return {
+            id: `builtin:root:${snapshot.moduleName}`,
+            nodeType: 'module',
+            label: snapshot.moduleName,
+            description: snapshot.detail,
+            tooltip: snapshot.detail ?? snapshot.moduleName,
+            icon: new vscode.ThemeIcon('library'),
+            collapsibleState: groups.length > 0
+                ? vscode.TreeItemCollapsibleState.Collapsed
+                : vscode.TreeItemCollapsibleState.None,
+            children: groups,
+        };
+    });
 }
 
 async function buildCurrentFileRoots(): Promise<TreeNode[]> {

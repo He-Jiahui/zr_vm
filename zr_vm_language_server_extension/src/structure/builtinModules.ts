@@ -149,3 +149,9 @@ const BUILTIN_MODULES: Record<string, BuiltinModuleSnapshot> = {
 export function getBuiltinModuleSnapshot(moduleName: string): BuiltinModuleSnapshot | undefined {
     return BUILTIN_MODULES[moduleName];
 }
+
+export function listBuiltinModuleSnapshots(): BuiltinModuleSnapshot[] {
+    return Object.values(BUILTIN_MODULES).sort((left, right) =>
+        left.moduleName.localeCompare(right.moduleName),
+    );
+}

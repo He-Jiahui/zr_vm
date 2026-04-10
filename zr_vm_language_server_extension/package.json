@@ -24,6 +24,7 @@
     "onCommand:zr.attachDebugEndpoint",
     "onView:zrFiles",
     "onView:zrImports",
+    "onView:zrBuiltinModules",
     "onDebugResolve:zr"
   ],
   "main": "./out/extension.js",
@@ -223,6 +224,10 @@
         {
           "id": "zrImports",
           "name": "Selected Project"
+        },
+        {
+          "id": "zrBuiltinModules",
+          "name": "可用模块库"
         }
       ]
     },
@@ -236,6 +241,11 @@
         {
           "command": "zr.structure.refresh",
           "when": "view == zrImports",
+          "group": "navigation"
+        },
+        {
+          "command": "zr.structure.refresh",
+          "when": "view == zrBuiltinModules",
           "group": "navigation"
         },
         {

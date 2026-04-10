@@ -723,7 +723,7 @@ async function main() {
     });
 
     const importDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(importDiagnostics.uri === importDiagnosticsFixture.mainUri,
+    assert(diagnosticRelatedUriMatches(importDiagnosticsFixture.mainUri, importDiagnostics.uri),
         'import diagnostics uri mismatch');
     assert(Array.isArray(importDiagnostics.diagnostics) && importDiagnostics.diagnostics.length > 0,
         'import diagnostics fixture should publish at least one diagnostic');
@@ -829,7 +829,7 @@ async function main() {
     assert(Array.isArray(watchedBootstrapSymbols) && watchedBootstrapSymbols.some((item) =>
         item &&
         item.location &&
-        item.location.uri === watchedBinaryFixture.mainUri &&
+        diagnosticRelatedUriMatches(watchedBinaryFixture.mainUri, item.location.uri) &&
         item.name === 'merged'),
     'workspace/didChangeWatchedFiles binary metadata change must bootstrap unopened project indexes');
 
@@ -847,7 +847,7 @@ async function main() {
     });
 
     const watchedBinaryDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(watchedBinaryDiagnostics.uri === watchedBinaryFixture.mainUri,
+    assert(diagnosticRelatedUriMatches(watchedBinaryFixture.mainUri, watchedBinaryDiagnostics.uri),
         'binary watched metadata diagnostics uri mismatch');
     assert(Array.isArray(watchedBinaryDiagnostics.diagnostics) && watchedBinaryDiagnostics.diagnostics.length === 0,
         'binary watched metadata fixture should open without diagnostics');
@@ -858,7 +858,7 @@ async function main() {
     });
     assert(Array.isArray(watchedBinaryImportDefinition) && watchedBinaryImportDefinition.some((location) =>
         location &&
-        location.uri === watchedBinaryFixture.binaryUri &&
+        diagnosticRelatedUriMatches(watchedBinaryFixture.binaryUri, location.uri) &&
         location.range &&
         location.range.start &&
         location.range.start.line === 0 &&
@@ -871,7 +871,7 @@ async function main() {
     });
     assert(Array.isArray(watchedBinaryMemberDefinition) && watchedBinaryMemberDefinition.some((location) =>
         location &&
-        location.uri === watchedBinaryFixture.binaryUri &&
+        diagnosticRelatedUriMatches(watchedBinaryFixture.binaryUri, location.uri) &&
         location.range),
     'binary imported member definition should navigate to the binary metadata declaration');
 
@@ -882,7 +882,7 @@ async function main() {
     });
     assert(Array.isArray(watchedBinaryMemberReferences) && watchedBinaryMemberReferences.some((location) =>
         location &&
-        location.uri === watchedBinaryFixture.mainUri &&
+        diagnosticRelatedUriMatches(watchedBinaryFixture.mainUri, location.uri) &&
         location.range &&
         location.range.start &&
         location.range.end &&
@@ -892,7 +892,7 @@ async function main() {
         location.range.end.character === watchedBinaryHoverPosition.character + 'binarySeed'.length) &&
         watchedBinaryMemberReferences.some((location) =>
             location &&
-            location.uri === watchedBinaryFixture.binaryUri &&
+            diagnosticRelatedUriMatches(watchedBinaryFixture.binaryUri, location.uri) &&
             location.range),
     'binary imported member references should include the current project usage and the binary metadata declaration');
 
@@ -961,7 +961,7 @@ async function main() {
     assert(Array.isArray(watchedCreateSymbols) && watchedCreateSymbols.some((item) =>
         item &&
         item.location &&
-        item.location.uri === watchedFixture.mainUri &&
+        diagnosticRelatedUriMatches(watchedFixture.mainUri, item.location.uri) &&
         item.name === 'watched_before_refresh'),
     'workspace/didChangeWatchedFiles create must index unopened project sources');
 
@@ -980,7 +980,7 @@ async function main() {
     });
 
     const watchedChangeDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(watchedChangeDiagnostics.uri === watchedFixture.mainUri,
+    assert(diagnosticRelatedUriMatches(watchedFixture.mainUri, watchedChangeDiagnostics.uri),
         'workspace/didChangeWatchedFiles source change diagnostics uri mismatch');
     assert(Array.isArray(watchedChangeDiagnostics.diagnostics) && watchedChangeDiagnostics.diagnostics.length === 0,
         'workspace/didChangeWatchedFiles source change should publish empty diagnostics');
@@ -991,7 +991,7 @@ async function main() {
     assert(Array.isArray(watchedUpdatedSymbols) && watchedUpdatedSymbols.some((item) =>
         item &&
         item.location &&
-        item.location.uri === watchedFixture.mainUri &&
+        diagnosticRelatedUriMatches(watchedFixture.mainUri, item.location.uri) &&
         item.name === 'watched_after_refresh'),
     'workspace/didChangeWatchedFiles change must refresh unopened source analyzers');
 
@@ -1009,7 +1009,7 @@ async function main() {
     });
 
     const watchedDeleteDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(watchedDeleteDiagnostics.uri === watchedFixture.projectUri,
+    assert(diagnosticRelatedUriMatches(watchedFixture.projectUri, watchedDeleteDiagnostics.uri),
         'workspace/didChangeWatchedFiles project delete diagnostics uri mismatch');
     assert(Array.isArray(watchedDeleteDiagnostics.diagnostics) && watchedDeleteDiagnostics.diagnostics.length === 0,
         'workspace/didChangeWatchedFiles project delete must clear diagnostics');
