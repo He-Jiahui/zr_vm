@@ -87,6 +87,9 @@ dkms.conf
 
 # Local debugger scratch scripts
 /tmp_*.gdb
+/tmp_*.log
+/tmp_*.sh
+/tmp_*.py
 
 /temp_*.gdb
 */__pycache__/
