@@ -640,7 +640,7 @@ void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value) 
          kind == ZR_OWNERSHIP_VALUE_KIND_LOANED) &&
         control->strongRefCount > 0) {
         control->strongRefCount--;
-        if (control->strongRefCount == 0 && control->isDetachedFromGc) {
+        if (control->strongRefCount == 0) {
             ownership_return_control_to_gc(state, control);
             ownership_expire_weak_refs(state, control);
         }

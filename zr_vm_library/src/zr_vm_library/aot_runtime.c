@@ -2541,12 +2541,16 @@ TZrBool ZrLibrary_AotRuntime_CopyStack(SZrState *state,
                                        TZrUInt32 sourceSlot) {
     TZrStackValuePointer destinationPointer = aot_runtime_frame_slot(frame, destinationSlot);
     TZrStackValuePointer sourcePointer = aot_runtime_frame_slot(frame, sourceSlot);
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *sourceValue;
 
     if (state == ZR_NULL || destinationPointer == ZR_NULL || sourcePointer == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(destinationPointer), ZrCore_Stack_GetValue(sourcePointer));
+    destinationValue = ZrCore_Stack_GetValue(destinationPointer);
+    sourceValue = ZrCore_Stack_GetValue(sourcePointer);
+    ZrCore_Value_AssignMaterializedStackValue(state, destinationValue, sourceValue);
     return ZR_TRUE;
 }
 

@@ -68,6 +68,8 @@ ZR_CORE_API TZrBool ZrCore_Value_Equal(struct SZrState *state, SZrTypeValue *val
 
 ZR_CORE_API SZrTypeValue *ZrCore_Value_GetStackOffsetValue(struct SZrState *state, TZrMemoryOffset offset);
 
+ZR_CORE_API void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value);
+
 #define ZR_VALUE_FAST_SET(VALUE, REGION, DATA, TYPE)                                                                   \
     {                                                                                                                  \
         (VALUE)->type = (TYPE);                                                                                        \
@@ -148,6 +150,52 @@ static ZR_FORCE_INLINE void ZrCore_Value_CopyNoProfile(struct SZrState *state,
     }
 
     ZrCore_Value_CopySlow(state, destination, source);
+}
+
+static ZR_FORCE_INLINE TZrBool ZrCore_Value_ShouldTransferMaterializedStackOwnership(
+        const SZrTypeValue *source) {
+    ZR_ASSERT(source != ZR_NULL);
+
+    /*
+     * SET_STACK materializes a temporary stack result into its final slot.
+     * Shared results must transfer their wrapper instead of copying, or the
+     * transient slot keeps an extra strong ref alive until frame teardown.
+     *
+     * Weak values are intentionally excluded here because their weak-ref
+     * bookkeeping records the source slot location and therefore must be
+     * re-registered through the slow copy path.
+     */
+    return source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
+           source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_LOANED ||
+           source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_SHARED;
+}
+
+static ZR_FORCE_INLINE void ZrCore_Value_AssignMaterializedStackValueNoProfile(struct SZrState *state,
+                                                                               SZrTypeValue *destination,
+                                                                               SZrTypeValue *source) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(source != ZR_NULL);
+
+    if (destination == source) {
+        return;
+    }
+
+    if (ZrCore_Value_ShouldTransferMaterializedStackOwnership(source)) {
+        ZrCore_Ownership_ReleaseValue(state, destination);
+        *destination = *source;
+        ZrCore_Value_ResetAsNullNoProfile(source);
+        return;
+    }
+
+    ZrCore_Value_CopyNoProfile(state, destination, source);
+}
+
+static ZR_FORCE_INLINE void ZrCore_Value_AssignMaterializedStackValue(struct SZrState *state,
+                                                                      SZrTypeValue *destination,
+                                                                      SZrTypeValue *source) {
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_VALUE_COPY);
+    ZrCore_Value_AssignMaterializedStackValueNoProfile(state, destination, source);
 }
 
 ZR_CORE_API TZrUInt64 ZrCore_Value_GetHash(struct SZrState *state, const SZrTypeValue *value);

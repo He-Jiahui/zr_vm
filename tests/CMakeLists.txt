@@ -322,8 +322,13 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     target_include_directories(zr_vm_compiler_features_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
     )
-    zr_vm_link_parser_core(zr_vm_compiler_features_test)
+    zr_vm_link_parser_core_plus_library(zr_vm_compiler_features_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_semir_pipeline_test

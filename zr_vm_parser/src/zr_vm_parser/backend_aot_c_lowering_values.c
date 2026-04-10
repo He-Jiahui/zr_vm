@@ -748,9 +748,9 @@ void backend_aot_write_c_direct_stack_copy(FILE *file, TZrUInt32 destinationSlot
     }
 
     fprintf(file,
-            "    ZrCore_Value_Copy(state,\n"
-            "                      ZrCore_Stack_GetValue(frame.slotBase + %u),\n"
-            "                      ZrCore_Stack_GetValue(frame.slotBase + %u));\n",
+            "    ZrCore_Value_AssignMaterializedStackValue(state,\n"
+            "                                               ZrCore_Stack_GetValue(frame.slotBase + %u),\n"
+            "                                               ZrCore_Stack_GetValue(frame.slotBase + %u));\n",
             (unsigned)destinationSlot,
             (unsigned)sourceSlot);
 }

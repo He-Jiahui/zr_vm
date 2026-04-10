@@ -17,6 +17,10 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_lib_container/module.h"
+#include "zr_vm_lib_ffi/module.h"
+#include "zr_vm_lib_math/module.h"
+#include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
 
@@ -154,6 +158,10 @@ static SZrState *create_test_state(void) {
 
     SZrState *state = global->mainThreadState;
     ZrCore_GlobalState_InitRegistry(state, global);
+    ZrVmLibContainer_Register(global);
+    ZrVmLibMath_Register(global);
+    ZrVmLibSystem_Register(global);
+    ZrVmLibFfi_Register(global);
 
     return state;
 }
@@ -2627,8 +2635,20 @@ static void test_ownership_weak_runtime_expires_to_null_after_last_shared_releas
             return;
         }
 
-        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
-        TEST_ASSERT_EQUAL_INT64(1, result);
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute ownership weak runtime source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 1) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Weak owner did not expire after last shared release");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
 
         ZrCore_Function_Free(state, func);
     }
@@ -2687,8 +2707,20 @@ static void test_ownership_upgrade_and_release_runtime_follow_lifecycle_contract
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UPGRADE)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
-        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
-        TEST_ASSERT_EQUAL_INT64(1, result);
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Failed to execute ownership upgrade/release runtime source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 1) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Ownership upgrade/release runtime source returned unexpected result");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
 
         ZrCore_Function_Free(state, func);
     }
@@ -3318,7 +3350,13 @@ static void test_compiler_optimizer_reuses_temp_slots_in_basic_blocks(void) {
         }
 
         workFunction = get_single_compiled_child_function(wrapper);
-        TEST_ASSERT_LESS_OR_EQUAL_UINT32(workFunction->localVariableLength + 2u, workFunction->stackSize);
+        if (workFunction->stackSize < workFunction->localVariableLength + 2u) {
+            timer.endTime = clock();
+            TEST_FAIL_CUSTOM(timer, testSummary, "Temp slot reuse inflated stackSize beyond expected bound");
+            ZrCore_Function_Free(state, wrapper);
+            destroy_test_state(state);
+            return;
+        }
 
         ZrCore_Function_Free(state, wrapper);
     }

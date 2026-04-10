@@ -43,6 +43,26 @@ static ZR_FORCE_INLINE void execution_copy_stack_value_to_stack_fast_no_profile(
     ZrCore_Value_CopySlow(state, destination, source);
 }
 
+static ZR_FORCE_INLINE void execution_assign_stack_value_to_stack_fast_no_profile(SZrState *state,
+                                                                                  SZrTypeValue *destination,
+                                                                                  SZrTypeValue *source) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(source != ZR_NULL);
+
+    if (destination == source) {
+        return;
+    }
+
+    /*
+     * SET_STACK materializes expression results into their destination slots.
+     * Ownership-wrapped temporaries such as %shared(...) must transfer their
+     * wrapper into the destination slot instead of leaving an extra temp
+     * owner alive until frame teardown.
+     */
+    ZrCore_Value_AssignMaterializedStackValueNoProfile(state, destination, source);
+}
+
 static ZR_FORCE_INLINE void execution_copy_value_fast(SZrState *state,
                                                       SZrTypeValue *destination,
                                                       const SZrTypeValue *source,
@@ -448,7 +468,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_SET_STACK_BODY()                                                                                       \
     do {                                                                                                               \
         SZrTypeValue *srcValue = &BASE(A2(instruction))->value;                                                        \
-        ZrCore_Value_Copy(state, &BASE(E(instruction))->value, srcValue);                                              \
+        execution_assign_stack_value_to_stack_fast_no_profile(state, &BASE(E(instruction))->value, srcValue);         \
     } while (0)
 #define EXECUTE_GET_CONSTANT_BODY()                                                                                    \
     do {                                                                                                               \
@@ -477,13 +497,12 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     } while (0)
 #define EXECUTE_SET_STACK_BODY_FAST()                                                                                  \
     do {                                                                                                               \
-        const SZrTypeValue *srcValue = &BASE(A2(instruction))->value;                                                  \
+        SZrTypeValue *srcValue = &BASE(A2(instruction))->value;                                                        \
         SZrTypeValue *stackDestination = &BASE(E(instruction))->value;                                                 \
         if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
-            execution_copy_value_fast(state, stackDestination, srcValue, profileRuntime, ZR_TRUE);                     \
-        } else {                                                                                                       \
-            execution_copy_stack_value_to_stack_fast_no_profile(state, stackDestination, srcValue);                   \
+            profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;                                              \
         }                                                                                                              \
+        execution_assign_stack_value_to_stack_fast_no_profile(state, stackDestination, srcValue);                     \
     } while (0)
 #define EXECUTE_GET_CONSTANT_BODY_FAST()                                                                               \
     do {                                                                                                               \
