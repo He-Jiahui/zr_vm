@@ -10,6 +10,31 @@
 
 static volatile int g_survivor_test_ran = 0;
 
+static void run_crash_guarded_test(UnityTestFunction func, const char *funcName, int funcLineNum) {
+    Unity.CurrentTestName = funcName;
+    Unity.CurrentTestLineNumber = (UNITY_LINE_TYPE) funcLineNum;
+    Unity.NumberOfTests++;
+#ifndef UNITY_EXCLUDE_DETAILS
+    #ifdef UNITY_DETAIL_STACK_SIZE
+    Unity.CurrentDetailStackSize = 0;
+    #else
+    UNITY_CLR_DETAILS();
+    #endif
+#endif
+    UNITY_EXEC_TIME_START();
+    if (ZrTests_Unity_TestProtect_Begin() && (setjmp(Unity.AbortFrame) == 0)) {
+        setUp();
+        func();
+    }
+    ZrTests_Unity_TestProtect_End();
+    if (ZrTests_Unity_TestProtect_Begin() && (setjmp(Unity.AbortFrame) == 0)) {
+        tearDown();
+    }
+    ZrTests_Unity_TestProtect_End();
+    UNITY_EXEC_TIME_STOP();
+    UnityConcludeTest();
+}
+
 static void seed_current_exception(SZrState *state) {
     SZrString *message;
     SZrTypeValue payload;
@@ -60,7 +85,11 @@ static void test_runtime_crash_recovery_continues_with_later_tests(void) {
 
 int main(void) {
     UNITY_BEGIN();
-    RUN_TEST(test_runtime_crash_recovery_interrupts_current_test);
-    RUN_TEST(test_runtime_crash_recovery_continues_with_later_tests);
+    run_crash_guarded_test(test_runtime_crash_recovery_interrupts_current_test,
+                           "test_runtime_crash_recovery_interrupts_current_test",
+                           __LINE__ - 1);
+    run_crash_guarded_test(test_runtime_crash_recovery_continues_with_later_tests,
+                           "test_runtime_crash_recovery_continues_with_later_tests",
+                           __LINE__ - 1);
     return UNITY_END();
 }

@@ -1,6 +1,5 @@
 #include "unity_crash_guard.h"
 
-#include <setjmp.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,13 +14,8 @@
     #define ZR_TESTS_THREAD_LOCAL _Thread_local
 #endif
 
-#define ZR_TESTS_JUMP_BUFFER jmp_buf
-#define ZR_TESTS_SETJMP(buffer) setjmp(buffer)
-#define ZR_TESTS_LONGJMP(buffer, value) longjmp(buffer, value)
-
 static ZrTestsUnityCrashInfo g_zr_tests_unity_last_crash_info = {0};
 static int g_zr_tests_unity_handlers_installed = 0;
-static ZR_TESTS_THREAD_LOCAL ZR_TESTS_JUMP_BUFFER g_zr_tests_unity_abort_frame;
 static ZR_TESTS_THREAD_LOCAL volatile sig_atomic_t g_zr_tests_unity_abort_frame_active = 0;
 static ZR_TESTS_THREAD_LOCAL volatile sig_atomic_t g_zr_tests_unity_pending_signal = 0;
 static ZR_TESTS_THREAD_LOCAL int g_zr_tests_unity_skip_next_protect = 0;
@@ -54,7 +48,7 @@ static void zr_tests_unity_reset_pending_signal_state(void) {
 static void zr_tests_unity_interrupt_current_test(int signalNumber) {
     g_zr_tests_unity_pending_signal = signalNumber;
     if (g_zr_tests_unity_abort_frame_active) {
-        ZR_TESTS_LONGJMP(g_zr_tests_unity_abort_frame, 1);
+        longjmp(Unity.AbortFrame, 1);
     }
 }
 
@@ -121,9 +115,7 @@ static void zr_tests_unity_capture_recovered_crash(int signalNumber) {
     g_zr_tests_unity_expected_recovered_crash = 0;
 }
 
-int ZrTests_Unity_TestProtect(void) {
-    int jumpStatus;
-
+int ZrTests_Unity_TestProtect_Begin(void) {
     zr_tests_unity_install_handlers_once();
 
     if (g_zr_tests_unity_skip_next_protect != 0) {
@@ -133,28 +125,18 @@ int ZrTests_Unity_TestProtect(void) {
     }
 
     g_zr_tests_unity_abort_frame_active = 1;
-    jumpStatus = ZR_TESTS_SETJMP(g_zr_tests_unity_abort_frame);
-    if (jumpStatus == 0) {
-        return 1;
-    }
+    return 1;
+}
 
+void ZrTests_Unity_TestProtect_End(void) {
     if (g_zr_tests_unity_pending_signal == 0) {
         g_zr_tests_unity_abort_frame_active = 0;
-        return 0;
+        return;
     }
 
     zr_tests_unity_capture_recovered_crash((int)g_zr_tests_unity_pending_signal);
     zr_tests_unity_reset_pending_signal_state();
     g_zr_tests_unity_skip_next_protect = 1;
-    return 0;
-}
-
-ZR_TESTS_NORETURN void ZrTests_Unity_TestAbort(void) {
-    if (g_zr_tests_unity_abort_frame_active) {
-        ZR_TESTS_LONGJMP(g_zr_tests_unity_abort_frame, 1);
-    }
-
-    abort();
 }
 
 void ZrTests_Unity_ExpectRecoveredCrash(void) {
