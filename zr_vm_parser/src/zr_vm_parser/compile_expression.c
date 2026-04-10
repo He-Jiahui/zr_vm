@@ -1312,8 +1312,6 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
     // 分配结果槽位
     TZrUInt32 destSlot = allocate_stack_slot(cs);
     
-    // 创建标签用于短路求值
-    TZrSize shortCircuitLabelId = create_label(cs);
     TZrSize endLabelId = create_label(cs);
     
     if (strcmp(op, "&&") == 0) {
@@ -1322,58 +1320,46 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
         TZrInstruction copyLeftInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)destSlot, (TZrInt32)leftSlot);
         emit_instruction(cs, copyLeftInst);
         
-        // 如果左操作数为false，跳转到短路标签
-        TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)leftSlot, 0);
-        TZrSize jumpIfIndex = cs->instructionCount;
-        emit_instruction(cs, jumpIfInst);
-        add_pending_jump(cs, jumpIfIndex, shortCircuitLabelId);
-        
-        // 编译右操作数
-        compile_expression_non_tail(cs, right);
-        TZrUInt32 rightSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
-        
-        // 将右操作数复制到结果槽位
-        TZrInstruction copyRightInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)destSlot, (TZrInt32)rightSlot);
-        emit_instruction(cs, copyRightInst);
-        
-        // 跳转到结束标签
-        TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
-        TZrSize jumpEndIndex = cs->instructionCount;
-        emit_instruction(cs, jumpEndInst);
-        add_pending_jump(cs, jumpEndIndex, endLabelId);
-        
-        // 短路标签：左操作数为false，结果就是false（已经在destSlot中）
-        resolve_label(cs, shortCircuitLabelId);
-        
-        // 结束标签
-        resolve_label(cs, endLabelId);
-    } else if (strcmp(op, "||") == 0) {
-        // || 运算符：如果左操作数为true，短路返回true
-        // 复制左操作数到结果槽位
-        TZrInstruction copyLeftInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)destSlot, (TZrInt32)leftSlot);
-        emit_instruction(cs, copyLeftInst);
-        
-        // 如果左操作数为true，跳转到结束标签（短路返回true）
+        // 如果左操作数为false，直接短路到结束标签
         TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)leftSlot, 0);
         TZrSize jumpIfIndex = cs->instructionCount;
         emit_instruction(cs, jumpIfInst);
         add_pending_jump(cs, jumpIfIndex, endLabelId);
         
-        // 左操作数为false，需要计算右操作数
-        // 编译右操作数
-        compile_expression_non_tail(cs, right);
-        TZrUInt32 rightSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+        if (compile_expression_into_slot(cs, right, destSlot) == ZR_PARSER_SLOT_NONE) {
+            return;
+        }
+    } else if (strcmp(op, "||") == 0) {
+        TZrSize evaluateRightLabelId = create_label(cs);
+
+        // || 运算符：如果左操作数为true，短路返回true
+        // 复制左操作数到结果槽位
+        TZrInstruction copyLeftInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)destSlot, (TZrInt32)leftSlot);
+        emit_instruction(cs, copyLeftInst);
         
-        // 将右操作数复制到结果槽位
-        TZrInstruction copyRightInst = create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK), (TZrUInt16)destSlot, (TZrInt32)rightSlot);
-        emit_instruction(cs, copyRightInst);
+        // JUMP_IF 在条件为 false 时跳转，所以 false 时进入右操作数求值。
+        TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)leftSlot, 0);
+        TZrSize jumpIfIndex = cs->instructionCount;
+        emit_instruction(cs, jumpIfInst);
+        add_pending_jump(cs, jumpIfIndex, evaluateRightLabelId);
+
+        // 左操作数为 true，直接短路返回左值。
+        TZrInstruction jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+        TZrSize jumpEndIndex = cs->instructionCount;
+        emit_instruction(cs, jumpEndInst);
+        add_pending_jump(cs, jumpEndIndex, endLabelId);
         
-        // 结束标签：左操作数为true时跳转到这里（结果已经是true）
-        resolve_label(cs, endLabelId);
+        resolve_label(cs, evaluateRightLabelId);
+        if (compile_expression_into_slot(cs, right, destSlot) == ZR_PARSER_SLOT_NONE) {
+            return;
+        }
     } else {
         ZrParser_Compiler_Error(cs, "Unknown logical operator", node->location);
         return;
     }
+
+    resolve_label(cs, endLabelId);
+    collapse_stack_to_slot(cs, destSlot);
 }
 
 // 编译条件表达式（三元运算符）

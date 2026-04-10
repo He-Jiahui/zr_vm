@@ -971,6 +971,14 @@ ZR_PARSER_API TZrBool type_name_is_explicitly_available_in_context_inference(SZr
         typeNameText = ZrCore_String_GetNativeString(typeName);
     }
 
+    if (typeNameText != ZR_NULL && strcmp(typeNameText, "zr") == 0) {
+        if (find_compiler_type_prototype_inference(cs, typeName) != ZR_NULL ||
+            (ensure_import_module_compile_info(cs, typeName) &&
+             find_compiler_type_prototype_inference(cs, typeName) != ZR_NULL)) {
+            return ZR_TRUE;
+        }
+    }
+
     if (typeNameText != ZR_NULL && strchr(typeNameText, '.') != ZR_NULL) {
         if (find_compiler_type_prototype_inference(cs, typeName) != ZR_NULL) {
             return ZR_TRUE;

@@ -171,19 +171,19 @@ static void assert_parameter_reflection(SZrState *state,
 
 static const TZrChar *kCompileTimeMemberDecoratorModuleSource =
         "%compileTime class MarkField {\n"
-        "    @decorate(target: %type Field): DecoratorPatch {\n"
+        "    @decorate(target: %type Field): zr.DecoratorPatch {\n"
         "        return { metadata: { compileTimeField: true } };\n"
         "    }\n"
         "}\n"
         "\n"
         "%compileTime class MarkMethod {\n"
-        "    @decorate(target: %type Method): DecoratorPatch {\n"
+        "    @decorate(target: %type Method): zr.DecoratorPatch {\n"
         "        return { metadata: { compileTimeMethod: true } };\n"
         "    }\n"
         "}\n"
         "\n"
         "%compileTime class MarkProperty {\n"
-        "    @decorate(target: %type Property): DecoratorPatch {\n"
+        "    @decorate(target: %type Property): zr.DecoratorPatch {\n"
         "        return { metadata: { compileTimeProperty: true } };\n"
         "    }\n"
         "}\n"
@@ -215,7 +215,7 @@ static const TZrChar *kCompileTimeMemberDecoratorImportSource =
 
 static const TZrChar *kCompileTimeParameterDecoratorModuleSource =
         "%compileTime class MarkParameter {\n"
-        "    @decorate(target: %type Parameter): DecoratorPatch {\n"
+        "    @decorate(target: %type Parameter): zr.DecoratorPatch {\n"
         "        return { metadata: { compileTimeParameter: true } };\n"
         "    }\n"
         "}\n"

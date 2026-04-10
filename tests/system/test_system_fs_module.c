@@ -504,6 +504,61 @@ static void test_system_fs_source_runtime_supports_path_objects_and_directory_op
     ZR_TEST_DIVIDER();
 }
 
+static void test_system_fs_copy_result_supports_exists_and_read_text_separately(void) {
+    static const TZrChar *kSourceTemplate =
+            "var fs = %%import(\"zr.system.fs\");\n"
+            "var root = new fs.Folder(\"%s\");\n"
+            "var source = new fs.File(\"%s\");\n"
+            "var copyTarget = \"%s\";\n"
+            "root.create(true);\n"
+            "source.create(true);\n"
+            "source.writeText(\"alpha\");\n"
+            "var copy = source.copyTo(copyTarget, true);\n"
+            "var copiedExists = copy.exists();\n"
+            "var copiedText = copy.readText();\n"
+            "if (!copiedExists) { return -1; }\n"
+            "if (copiedText != \"alpha\") { return -2; }\n"
+            "return 1;\n";
+    SZrTestTimer timer = {0};
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar copyPath[ZR_TESTS_PATH_MAX];
+    char source[8192];
+    char escapedRoot[ZR_TESTS_PATH_MAX * 2];
+    char escapedSource[ZR_TESTS_PATH_MAX * 2];
+    char escapedCopy[ZR_TESTS_PATH_MAX * 2];
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+
+    ZR_TEST_START("zr.system.fs copy result supports exists and readText separately");
+    timer.startTime = clock();
+
+    TEST_ASSERT_TRUE(make_unique_test_root("copy_result_separate", rootPath, sizeof(rootPath)));
+    snprintf(sourcePath, sizeof(sourcePath), "%s/source.txt", rootPath);
+    snprintf(copyPath, sizeof(copyPath), "%s/copy.txt", rootPath);
+
+    escape_for_zr_string_literal(escapedRoot, sizeof(escapedRoot), rootPath);
+    escape_for_zr_string_literal(escapedSource, sizeof(escapedSource), sourcePath);
+    escape_for_zr_string_literal(escapedCopy, sizeof(escapedCopy), copyPath);
+
+    snprintf(source, sizeof(source), kSourceTemplate, escapedRoot, escapedSource, escapedCopy);
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_source(state, source, "system_fs_copy_result_separate_runtime.zr");
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    destroy_test_state(state);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "zr.system.fs copy result supports exists and readText separately");
+    ZR_TEST_DIVIDER();
+}
+
 static void test_system_fs_source_runtime_supports_stream_modes_using_and_handle_id_lowering(void) {
     static const TZrChar *kSourceTemplate =
             "%%extern(\"%s\") {\n"
@@ -731,6 +786,7 @@ int main(void) {
 
     RUN_TEST(test_system_fs_module_metadata_exposes_object_surface_and_wrapper_fields);
     RUN_TEST(test_system_fs_source_runtime_supports_path_objects_and_directory_operations);
+    RUN_TEST(test_system_fs_copy_result_supports_exists_and_read_text_separately);
     RUN_TEST(test_system_fs_source_runtime_supports_stream_modes_using_and_handle_id_lowering);
     RUN_TEST(test_system_fs_source_runtime_raises_io_exception_for_missing_file);
     RUN_TEST(test_system_fs_handle_id_lowering_rejects_closed_stream);

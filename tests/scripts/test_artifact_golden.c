@@ -218,7 +218,7 @@ static void run_artifact_case(const SZrArtifactGoldenCase* testCase) {
         assert_generated_text_contains(testCase->baseName,
                                        "intermediate",
                                        ".zri",
-                                       "fn decorateWithScale(target: Function, bonus: int = 5, factor: int = 2): DecoratorPatch");
+                                       "fn decorateWithScale(target: Function, bonus: int = 5, factor: int = 2): zr.DecoratorPatch");
         assert_generated_text_contains(testCase->baseName,
                                        "intermediate",
                                        ".zri",

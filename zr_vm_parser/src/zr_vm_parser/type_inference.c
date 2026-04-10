@@ -2019,12 +2019,18 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
     const SZrType *segmentType;
     SZrInferredType currentType;
     TZrBool resolvedRootFromModuleAlias = ZR_FALSE;
+    TZrBool preserveExplicitZrQualifiedTypeName = ZR_FALSE;
 
     if (cs == ZR_NULL || astType == ZR_NULL || astType->name == ZR_NULL || astType->subType == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
     ZrParser_InferredType_Init(cs->state, &currentType, ZR_VALUE_TYPE_OBJECT);
+    if (astType->name->type == ZR_AST_IDENTIFIER_LITERAL &&
+        astType->name->data.identifier.name != ZR_NULL &&
+        zr_string_equals_cstr(astType->name->data.identifier.name, "zr")) {
+        preserveExplicitZrQualifiedTypeName = ZR_TRUE;
+    }
 
     if (astType->name->type == ZR_AST_IDENTIFIER_LITERAL &&
         cs->typeEnv != ZR_NULL &&
@@ -2084,16 +2090,27 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
         if (type_name_is_module_prototype_inference(cs, currentType.typeName) &&
             memberResolvedTypeName != ZR_NULL) {
             SZrString *qualifiedMemberTypeName =
+                    ast_type_build_qualified_module_member_type_name(cs, currentType.typeName, memberResolvedTypeName);
+            SZrString *canonicalMemberTypeName =
                     ast_type_build_canonical_module_member_type_name(cs, memberInfo->fieldTypeName, memberResolvedTypeName);
             SZrString *candidateTypeName =
-                    qualifiedMemberTypeName != ZR_NULL ? qualifiedMemberTypeName
-                                                       : (memberInfo->fieldTypeName != ZR_NULL
-                                                                  ? memberInfo->fieldTypeName
-                                                                  : memberResolvedTypeName);
+                    (preserveExplicitZrQualifiedTypeName && !resolvedRootFromModuleAlias &&
+                     qualifiedMemberTypeName != ZR_NULL)
+                            ? qualifiedMemberTypeName
+                            : (canonicalMemberTypeName != ZR_NULL
+                                       ? canonicalMemberTypeName
+                                       : (memberInfo->fieldTypeName != ZR_NULL
+                                                  ? memberInfo->fieldTypeName
+                                                  : memberResolvedTypeName));
 
             ensure_generic_instance_type_prototype(cs, candidateTypeName);
             if (find_compiler_type_prototype_inference(cs, candidateTypeName) != ZR_NULL &&
                 inferred_type_from_type_name(cs, candidateTypeName, &nextType)) {
+                resolvedFromModuleMember = ZR_TRUE;
+            } else if (preserveExplicitZrQualifiedTypeName &&
+                       !resolvedRootFromModuleAlias &&
+                       qualifiedMemberTypeName != ZR_NULL &&
+                       inferred_type_from_type_name(cs, qualifiedMemberTypeName, &nextType)) {
                 resolvedFromModuleMember = ZR_TRUE;
             }
         }

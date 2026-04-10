@@ -2301,7 +2301,8 @@ TZrBool ZrDebug_ReadVariables(ZrDebugAgent *agent,
         }
 
         for (slotIndex = startSlot; slotIndex < endSlot; slotIndex++) {
-            if (ZrCore_Function_GetLocalVariableName(function, slotIndex, pc) != ZR_NULL) {
+            SZrString *slotName = ZrCore_Function_GetLocalVariableName(function, slotIndex, pc);
+            if (slotName != ZR_NULL) {
                 valueCount++;
             }
         }

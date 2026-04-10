@@ -74,7 +74,8 @@ static SZrString *catch_clause_type_name(SZrAstNode *catchClauseNode) {
 
 TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
                                                 SZrString *name,
-                                                TZrUInt32 stackSlot) {
+                                                TZrUInt32 stackSlot,
+                                                TZrUInt32 activateOffset) {
     SZrFunctionLocalVariable localVar;
 
     if (cs == ZR_NULL || cs->hasError || name == ZR_NULL) {
@@ -87,7 +88,7 @@ TZrUInt32 bind_existing_stack_slot_as_local_var(SZrCompilerState *cs,
 
     localVar.name = name;
     localVar.stackSlot = stackSlot;
-    localVar.offsetActivate = (TZrMemoryOffset)cs->instructionCount;
+    localVar.offsetActivate = (TZrMemoryOffset)activateOffset;
     localVar.offsetDead = 0;
 
     ZrCore_Array_Push(cs->state, &cs->localVars, &localVar);

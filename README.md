@@ -514,7 +514,7 @@ decoratedBonus(): int {
         this.marker = marker;
     }
 
-    @decorate(target: %type Class): DecoratorPatch {
+    @decorate(target: %type Class): zr.DecoratorPatch {
         return {
             metadata: {
                 serializable: this.marker
@@ -524,12 +524,12 @@ decoratedBonus(): int {
 }
 
 %compileTime class MarkParameter {
-    @decorate(target: %type Parameter): DecoratorPatch {
+    @decorate(target: %type Parameter): zr.DecoratorPatch {
         return { metadata: { parameterTag: 62 } };
     }
 }
 
-%compileTime markFunction(target: %type Function, bonus: int = 17): DecoratorPatch {
+%compileTime markFunction(target: %type Function, bonus: int = 17): zr.DecoratorPatch {
     return { metadata: { instrumented: bonus } };
 }
 
@@ -548,7 +548,7 @@ decoratedBonus(#MarkParameter# value: int = 1): int {
 - 编译时 class decorator
 - 编译时 function decorator
 - 编译时 parameter decorator
-- `@decorate(target: %type X): DecoratorPatch`
+- `@decorate(target: %type X): zr.DecoratorPatch`
 
 ## 7. 容器、定长数组、native 库类型推断
 

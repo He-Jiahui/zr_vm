@@ -1,7 +1,7 @@
 %module "decorators";
 
 %compileTime class Serializable {
-    @decorate(target: %type Class): DecoratorPatch {
+    @decorate(target: %type Class): zr.DecoratorPatch {
         return { metadata: { serializable: true } };
     }
 }

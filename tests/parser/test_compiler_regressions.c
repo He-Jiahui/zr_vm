@@ -482,6 +482,39 @@ static TZrUInt32 count_opcode_recursive(const SZrFunction *function, EZrInstruct
     return count;
 }
 
+static const SZrFunctionLocalVariable *find_local_variable_by_name(const SZrFunction *function, const char *name) {
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(name);
+
+    if (function->localVariableList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0; index < function->localVariableLength; index++) {
+        const SZrFunctionLocalVariable *local = &function->localVariableList[index];
+        const char *localName = local->name != ZR_NULL ? ZrCore_String_GetNativeString(local->name) : ZR_NULL;
+
+        if (localName != ZR_NULL && strcmp(localName, name) == 0) {
+            return local;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrUInt32 find_first_execution_location_offset_for_line(const SZrFunction *function, TZrUInt32 lineNumber) {
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(function->executionLocationInfoList);
+
+    for (TZrUInt32 index = 0; index < function->executionLocationInfoLength; index++) {
+        if (function->executionLocationInfoList[index].lineInSource == lineNumber) {
+            return (TZrUInt32)function->executionLocationInfoList[index].currentInstructionOffset;
+        }
+    }
+
+    return UINT32_MAX;
+}
+
 static TZrUInt32 count_stack_self_update_int_const_triplets_recursive(const SZrFunction *function,
                                                                       TZrUInt32 depth) {
     TZrUInt32 count = 0;
@@ -1626,6 +1659,103 @@ static void test_repeated_constructor_string_arguments_survive_quickening_across
     ZR_TEST_DIVIDER();
 }
 
+static void test_initializer_bound_local_is_visible_on_next_source_line(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Initializer Bound Local Is Visible On Next Source Line";
+    const char *source =
+            "var first = 1;\n"
+            "var second = first + 2;\n"
+            "return second;\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    const SZrFunctionLocalVariable *secondLocal;
+    TZrUInt32 returnLineInstructionIndex;
+    SZrString *visibleName;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Initializer local live range",
+                 "Testing that a local bound to a reserved initializer slot is already visible to debug/local metadata at the first instruction of the next source line.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+
+    sourceName = ZrCore_String_CreateFromNative(state, "initializer_local_visibility_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    secondLocal = find_local_variable_by_name(function, "second");
+    TEST_ASSERT_NOT_NULL(secondLocal);
+    returnLineInstructionIndex = find_first_execution_location_offset_for_line(function, 3u);
+    TEST_ASSERT_NOT_EQUAL_UINT32_MESSAGE(UINT32_MAX,
+                                         returnLineInstructionIndex,
+                                         "Expected compiled function to record a debugger execution location for line 3");
+
+    visibleName = ZrCore_Function_GetLocalVariableName(function, secondLocal->stackSlot, returnLineInstructionIndex);
+    TEST_ASSERT_NOT_NULL_MESSAGE(
+            visibleName,
+            "Initializer-bound local 'second' should already be visible at the first instruction of the next source line");
+    TEST_ASSERT_EQUAL_STRING("second", ZrCore_String_GetNativeString(visibleName));
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_logical_short_circuit_runtime_preserves_side_effect_boundaries(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Logical Short Circuit Runtime Preserves Side Effect Boundaries";
+    const char *source =
+            "var counter = 0;\n"
+            "var touch = () => {\n"
+            "    counter = counter + 1;\n"
+            "    return true;\n"
+            "};\n"
+            "if (!(false || touch())) { return -1; }\n"
+            "if (counter != 1) { return -2; }\n"
+            "if (!(true || touch())) { return -3; }\n"
+            "if (counter != 1) { return -4; }\n"
+            "if (false && touch()) { return -5; }\n"
+            "if (counter != 1) { return -6; }\n"
+            "if (!(true && touch())) { return -7; }\n"
+            "if (counter != 2) { return -8; }\n"
+            "return 1;\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    SZrTypeValue result;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Logical short-circuit runtime",
+                 "Testing that || and && evaluate the right operand only on the correct runtime paths while preserving the expected result value.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+
+    sourceName = ZrCore_String_CreateFromNative(state, "logical_short_circuit_runtime_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(1, result.value.nativeObject.nativeInt64);
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
 int main(void) {
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();
@@ -1652,5 +1782,7 @@ int main(void) {
     RUN_TEST(test_matrix_add_2d_compile_eliminates_temp_self_updates_for_add_int_const);
     RUN_TEST(test_matrix_add_2d_compile_eliminates_generic_array_int_index_opcodes);
     RUN_TEST(test_repeated_constructor_string_arguments_survive_quickening_across_calls);
+    RUN_TEST(test_initializer_bound_local_is_visible_on_next_source_line);
+    RUN_TEST(test_logical_short_circuit_runtime_preserves_side_effect_boundaries);
     return UNITY_END();
 }

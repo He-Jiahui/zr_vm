@@ -221,7 +221,7 @@ void test_compile_time_class_decorator_parsing(void) {
     const char *testSummary = "Compile Time Class Decorator Parsing";
     const char *source =
             "%compileTime class Serializable {\n"
-            "    @decorate(target: %type Class): DecoratorPatch {\n"
+            "    @decorate(target: %type Class): zr.DecoratorPatch {\n"
             "        return { metadata: { serializable: true } };\n"
             "    }\n"
             "}\n"
@@ -287,7 +287,7 @@ void test_compile_time_public_class_decorator_parsing(void) {
     const char *testSummary = "Compile Time Public Class Decorator Parsing";
     const char *source =
             "%compileTime class Serializable {\n"
-            "    @decorate(target: %type Class): DecoratorPatch {\n"
+            "    @decorate(target: %type Class): zr.DecoratorPatch {\n"
             "        return { metadata: { serializable: true } };\n"
             "    }\n"
             "}\n"
@@ -344,7 +344,7 @@ void test_compile_time_struct_decorator_parsing(void) {
     const char *testSummary = "Compile Time Struct Decorator Parsing";
     const char *source =
             "%compileTime struct Packed {\n"
-            "    @decorate(target: %type Struct): DecoratorPatch {\n"
+            "    @decorate(target: %type Struct): zr.DecoratorPatch {\n"
             "        return { metadata: { packed: true } };\n"
             "    }\n"
             "}\n"
@@ -411,7 +411,7 @@ void test_compile_time_function_decorator_parsing(void) {
     SZrExternParserTestTimer timer;
     const char *testSummary = "Compile Time Function Decorator Parsing";
     const char *source =
-            "%compileTime decorate(target: %type Class, version: int = 7): DecoratorPatch {\n"
+            "%compileTime decorate(target: %type Class, version: int = 7): zr.DecoratorPatch {\n"
             "    return { metadata: { version: version } };\n"
             "}\n"
             "\n"

@@ -1,7 +1,7 @@
 %module "compile_time_parameter_decorator_artifact_baseline";
 
 %compileTime class MarkParameter {
-    @decorate(target: %type Parameter): DecoratorPatch {
+    @decorate(target: %type Parameter): zr.DecoratorPatch {
         return { metadata: { compileTimeParameter: 62 } };
     }
 }

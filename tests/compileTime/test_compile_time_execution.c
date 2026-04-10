@@ -1682,7 +1682,7 @@ static void test_compile_time_imported_decorator_member_chain(void) {
                     "decorators",
                     "%module \"decorators\";\n"
                     "%compileTime class Serializable {\n"
-                    "    @decorate(target: %type Class): DecoratorPatch {\n"
+                    "    @decorate(target: %type Class): zr.DecoratorPatch {\n"
                     "        return { metadata: { serializable: true } };\n"
                     "    }\n"
                     "}\n"
@@ -2007,7 +2007,7 @@ static void test_compile_time_class_decorator_projects_metadata_to_runtime_refle
                     "compile_time_class_decorator_reflection_fixture",
                     "%module \"compile_time_class_decorator_reflection_fixture\";\n"
                     "%compileTime class Serializable {\n"
-                    "    @decorate(target: %type Class): DecoratorPatch {\n"
+                    "    @decorate(target: %type Class): zr.DecoratorPatch {\n"
                     "        return { metadata: { serializable: true } };\n"
                     "    }\n"
                     "}\n"
@@ -2155,7 +2155,7 @@ static void test_compile_time_struct_decorator_projects_metadata_to_runtime_refl
                     "compile_time_struct_decorator_reflection_fixture",
                     "%module \"compile_time_struct_decorator_reflection_fixture\";\n"
                     "%compileTime struct Packed {\n"
-                    "    @decorate(target: %type Struct): DecoratorPatch {\n"
+                    "    @decorate(target: %type Struct): zr.DecoratorPatch {\n"
                     "        return { metadata: { packed: true } };\n"
                     "    }\n"
                     "}\n"

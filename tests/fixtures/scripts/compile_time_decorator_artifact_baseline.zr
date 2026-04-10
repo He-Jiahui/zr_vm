@@ -3,7 +3,7 @@
 %compileTime var BASE_BONUS: int = 5;
 %compileTime var EXTRA_FACTOR: int = 2;
 
-%compileTime decorateWithScale(target: %type Function, bonus: int = BASE_BONUS, factor: int = EXTRA_FACTOR): DecoratorPatch {
+%compileTime decorateWithScale(target: %type Function, bonus: int = BASE_BONUS, factor: int = EXTRA_FACTOR): zr.DecoratorPatch {
     return {
         metadata: {
             compileTimeTagged: true,
@@ -25,7 +25,7 @@
         this.marker = marker;
     }
 
-    @decorate(target: %type Class): DecoratorPatch {
+    @decorate(target: %type Class): zr.DecoratorPatch {
         return {
             metadata: {
                 compileTimeClassTag: this.marker

@@ -1845,6 +1845,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         if (decl->value != ZR_NULL) {
             TZrUInt32 reservedVarSlot = allocate_stack_slot(cs);
             TZrUInt32 initializerSlot;
+            TZrUInt32 activateOffset;
 
             compile_statement_trace("var decl initializer compile start reservedSlot=%u stackCount=%llu",
                                     (unsigned int)reservedVarSlot,
@@ -1878,6 +1879,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
             compile_statement_trace("var decl bind initializer slot=%u reserved=%u",
                                     (unsigned int)initializerSlot,
                                     (unsigned int)reservedVarSlot);
+            activateOffset = (TZrUInt32)cs->instructionCount;
             if (initializerSlot != reservedVarSlot) {
                 emit_instruction(cs,
                                  create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
@@ -1885,7 +1887,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                                                       (TZrInt32)initializerSlot));
             }
             ZrParser_Compiler_TrimStackToSlot(cs, reservedVarSlot);
-            varIndex = bind_existing_stack_slot_as_local_var(cs, varName, reservedVarSlot);
+            varIndex = bind_existing_stack_slot_as_local_var(cs, varName, reservedVarSlot, activateOffset);
             compile_statement_trace("var decl local binding done varIndex=%u", (unsigned int)varIndex);
         } else {
             TZrSize fixedArraySize;

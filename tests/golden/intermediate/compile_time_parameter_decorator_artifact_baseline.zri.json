@@ -3,8 +3,8 @@
 	"endLine":	12,
 	"parameterCount":	0,
 	"hasVariableArguments":	false,
-	"stackSize":	3,
-	"instructionsLength":	5,
+	"stackSize":	2,
+	"instructionsLength":	4,
 	"constantValueLength":	2,
 	"localVariableLength":	1,
 	"constants":	[{
@@ -16,23 +16,19 @@
 		}],
 	"instructions":	[{
 			"index":	0,
-			"opcode":	2,
-			"operandExtra":	0
-		}, {
-			"index":	1,
-			"opcode":	80,
+			"opcode":	92,
 			"operandExtra":	1
 		}, {
-			"index":	2,
+			"index":	1,
 			"opcode":	1,
 			"operandExtra":	0
 		}, {
-			"index":	3,
+			"index":	2,
 			"opcode":	2,
-			"operandExtra":	2
+			"operandExtra":	1
 		}, {
-			"index":	4,
-			"opcode":	75,
+			"index":	3,
+			"opcode":	87,
 			"operandExtra":	1
 		}]
 }

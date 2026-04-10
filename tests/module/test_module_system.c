@@ -5517,7 +5517,7 @@ static void test_percent_type_source_type_reflection_exposes_decorator_metadata(
             MODULE_FIXTURE_SOURCE_TEXT(
                     "reflect_decorators",
                     "%compileTime class Serializable {\n"
-                    "    @decorate(target: %type Class): DecoratorPatch {\n"
+                    "    @decorate(target: %type Class): zr.DecoratorPatch {\n"
                     "        return { metadata: { serializable: true } };\n"
                     "    }\n"
                     "}\n"

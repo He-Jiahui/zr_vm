@@ -1463,6 +1463,53 @@ static void test_construct_expression_preserves_ownership_qualifier(void) {
     TEST_DIVIDER();
 }
 
+static void test_convert_ast_type_preserves_qualified_root_module_member_name(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Preserves Qualified Root Module Member Name";
+    SZrInferredType convertedType;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source = "var patch: zr.DecoratorPatch = null;";
+        SZrString *sourceName = ZrCore_String_Create(state, "qualified_root_module_member_type_test.zr", 42);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *decl;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        decl = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(decl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, decl->type);
+        TEST_ASSERT_NOT_NULL(decl->data.variableDeclaration.typeInfo);
+
+        ZrParser_InferredType_Init(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(
+                ZrParser_AstTypeToInferredType_Convert(cs, decl->data.variableDeclaration.typeInfo, &convertedType));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, convertedType.baseType);
+        TEST_ASSERT_NOT_NULL(convertedType.typeName);
+        TEST_ASSERT_EQUAL_STRING("zr.DecoratorPatch", ZrCore_String_GetNativeString(convertedType.typeName));
+
+        ZrParser_InferredType_Free(state, &convertedType);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void expect_ownership_builtin_type_inference_failure(const char *source,
                                                             const char *sourceNameText,
                                                             const char *expectedMessage) {
@@ -6696,6 +6743,7 @@ int main(void) {
     RUN_TEST(test_type_inference_resolves_best_function_overload);
     RUN_TEST(test_convert_ast_type_registers_generic_instance_semantics);
     RUN_TEST(test_convert_ast_type_preserves_ownership_qualifier);
+    RUN_TEST(test_convert_ast_type_preserves_qualified_root_module_member_name);
     RUN_TEST(test_construct_expression_preserves_ownership_qualifier);
     RUN_TEST(test_ownership_builtin_type_inference_rejects_invalid_operands);
     RUN_TEST(test_unique_instance_only_calls_borrowed_methods);
