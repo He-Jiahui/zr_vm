@@ -5,6 +5,7 @@
 #include "zr_vm_library/native_registry.h"
 #include "../../../zr_vm_parser/src/zr_vm_parser/module_init_analysis.h"
 
+#include <ctype.h>
 #include <string.h>
 
 static const TZrChar *module_metadata_string_text(SZrString *value) {
@@ -153,7 +154,15 @@ static SZrString *module_metadata_create_file_uri_from_native_path(SZrState *sta
 #endif
 
     for (TZrSize index = 0; index < pathLength && writeIndex + 1 < sizeof(buffer); index++) {
-        buffer[writeIndex++] = path[index] == '\\' ? '/' : path[index];
+        TZrChar ch = path[index] == '\\' ? '/' : path[index];
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+        if (index == 0 && pathLength >= 2 && isalpha((unsigned char)ch) && path[1] == ':') {
+            ch = (TZrChar)toupper((unsigned char)ch);
+        }
+#endif
+
+        buffer[writeIndex++] = ch;
     }
 
     buffer[writeIndex] = '\0';

@@ -5,6 +5,8 @@
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
 
+#include <ctype.h>
+
 #ifdef ZR_VM_PLATFORM_IS_WIN
 #include <windows.h>
 #else
@@ -48,7 +50,15 @@ static SZrString *project_navigation_native_path_to_file_uri(SZrState *state, co
 #endif
 
     for (TZrSize index = 0; index < pathLength && writeIndex + 1 < sizeof(buffer); index++) {
-        buffer[writeIndex++] = path[index] == '\\' ? '/' : path[index];
+        TZrChar ch = path[index] == '\\' ? '/' : path[index];
+
+#ifdef ZR_VM_PLATFORM_IS_WIN
+        if (index == 0 && pathLength >= 2 && isalpha((unsigned char)ch) && path[1] == ':') {
+            ch = (TZrChar)toupper((unsigned char)ch);
+        }
+#endif
+
+        buffer[writeIndex++] = ch;
     }
 
     buffer[writeIndex] = '\0';

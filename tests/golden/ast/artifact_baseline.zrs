@@ -11,11 +11,11 @@ SCRIPT [line:1:col:2]
   name: "greet"
       value:       LAMBDA_EXPRESSION [line:3:col:20]
         params: ()
-        body:         BLOCK [line:3:col:24]
+        body:         BLOCK [line:3:col:23]
     VARIABLE_DECLARATION [line:7:col:5]
       pattern:       IDENTIFIER [line:7:col:5]
   name: "buildMessage"
       value:       LAMBDA_EXPRESSION [line:7:col:23]
         params: ()
-        body:         BLOCK [line:7:col:27]
+        body:         BLOCK [line:7:col:26]
     RETURN_STATEMENT [line:11:col:8]

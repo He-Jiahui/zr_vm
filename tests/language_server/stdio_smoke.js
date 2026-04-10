@@ -2,11 +2,30 @@ const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { pathToFileURL } = require('url');
+const { pathToFileURL, fileURLToPath } = require('url');
 
 function assert(condition, message) {
     if (!condition) {
         throw new Error(message);
+    }
+}
+
+function diagnosticRelatedUriMatches(expectedUri, actualUri) {
+    if (actualUri === expectedUri) {
+        return true;
+    }
+    if (typeof actualUri !== 'string' || typeof expectedUri !== 'string') {
+        return false;
+    }
+    try {
+        const expectedPath = fileURLToPath(expectedUri);
+        const actualPath = fileURLToPath(actualUri);
+        if (process.platform === 'win32') {
+            return expectedPath.toLowerCase() === actualPath.toLowerCase();
+        }
+        return expectedPath === actualPath;
+    } catch {
+        return false;
     }
 }
 
@@ -718,11 +737,11 @@ async function main() {
         missingImportDiagnostic.relatedInformation.some((item) =>
             item &&
             item.location &&
-            item.location.uri === importDiagnosticsFixture.mainUri) &&
+            diagnosticRelatedUriMatches(importDiagnosticsFixture.mainUri, item.location.uri)) &&
         missingImportDiagnostic.relatedInformation.some((item) =>
             item &&
             item.location &&
-            item.location.uri === importDiagnosticsFixture.moduleUri),
+            diagnosticRelatedUriMatches(importDiagnosticsFixture.moduleUri, item.location.uri)),
     'import diagnostics should serialize cross-file relatedInformation trace locations');
 
     client.notify('textDocument/didOpen', {
