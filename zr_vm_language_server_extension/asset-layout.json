@@ -1,0 +1,58 @@
+{
+  "native": {
+    "bundledRelativeDir": "server/native/{platform}-{arch}",
+    "executables": {
+      "languageServer": {
+        "default": "zr_vm_language_server_stdio",
+        "win32": "zr_vm_language_server_stdio.exe"
+      },
+      "cli": {
+        "default": "zr_vm_cli",
+        "win32": "zr_vm_cli.exe"
+      }
+    },
+    "requiredRuntimeFiles": {
+      "default": [
+        "zr_vm_language_server_stdio",
+        "zr_vm_cli"
+      ],
+      "win32": [
+        "zr_vm_language_server_stdio.exe",
+        "zr_vm_cli.exe",
+        "zr_vm_core.dll",
+        "zr_vm_debug.dll",
+        "zr_vm_language_server.dll",
+        "zr_vm_library.dll",
+        "zr_vm_parser.dll",
+        "zr_vm_lib_container.dll",
+        "zr_vm_lib_ffi.dll",
+        "zr_vm_lib_math.dll",
+        "zr_vm_lib_system.dll"
+      ]
+    },
+    "buildSubdirs": [
+      "bin/{config}",
+      "bin"
+    ],
+    "scannedBuildSubdirs": [
+      "bin",
+      "bin/Debug",
+      "bin/Release",
+      "bin/RelWithDebInfo"
+    ]
+  },
+  "wasm": {
+    "bundledRelativeDir": "out/web",
+    "requiredFiles": [
+      "zr_vm_language_server.js",
+      "zr_vm_language_server.wasm"
+    ],
+    "buildSubdirs": [
+      "wasm",
+      "."
+    ],
+    "fallbackBuildDirectories": [
+      "build/wasm"
+    ]
+  }
+}

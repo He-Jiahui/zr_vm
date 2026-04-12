@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_gc_fragment_baseline",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

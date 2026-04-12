@@ -25,7 +25,36 @@ if (TARGET zr_vm_lib_network_shared OR TARGET zr_vm_lib_network_static)
         )
     endif()
 endif()
+if (TARGET zr_vm_thread_shared OR TARGET zr_vm_thread_static)
+    zr_link_library_for_module(${zr_curr_module_name} "zr_vm_thread")
+
+    if (TARGET ${zr_curr_module_name}_shared)
+        target_compile_definitions(${zr_curr_module_name}_shared PRIVATE
+            ZR_VM_LSP_HAS_THREAD_LIB=1
+        )
+    endif()
+
+    if (TARGET ${zr_curr_module_name}_static)
+        target_compile_definitions(${zr_curr_module_name}_static PRIVATE
+            ZR_VM_LSP_HAS_THREAD_LIB=1
+        )
+    endif()
+endif()
 zr_link_third_party_for_module(${zr_curr_module_name} "zr_c_json")
+
+set(_zr_vm_ls_parser_private_includes
+        ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler
+        ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/backend_aot
+        ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/parser
+        ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/type_inference
+        ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/writer
+)
+if (TARGET zr_vm_language_server_shared)
+    target_include_directories(zr_vm_language_server_shared PRIVATE ${_zr_vm_ls_parser_private_includes})
+endif ()
+if (TARGET zr_vm_language_server_static)
+    target_include_directories(zr_vm_language_server_static PRIVATE ${_zr_vm_ls_parser_private_includes})
+endif ()
 
 zr_install_module(${zr_curr_module_name})
 
@@ -105,7 +134,7 @@ if(BUILD_WASM)
         
         # 收集 zr_vm_parser 的源文件（直接包含到 WASM 构建中）
         file(GLOB_RECURSE zr_vm_parser_src
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/*.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/**/*.c
         )
 
         file(GLOB_RECURSE zr_vm_library_src
@@ -137,7 +166,7 @@ if(BUILD_WASM)
         list(FILTER zr_vm_lib_container_src EXCLUDE REGEX ".*test.*")
         list(FILTER zr_vm_lib_ffi_src EXCLUDE REGEX ".*test.*")
         list(APPEND zr_vm_parser_src
-            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler_test.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/src/zr_vm_parser/compiler/compiler_test.c
         )
         
         # 创建 WASM 可执行文件（包含所有依赖的源文件）

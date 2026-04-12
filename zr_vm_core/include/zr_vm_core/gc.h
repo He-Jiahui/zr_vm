@@ -81,15 +81,57 @@ enum EZrGarbageCollectCollectionPhase {
 
 typedef enum EZrGarbageCollectCollectionPhase EZrGarbageCollectCollectionPhase;
 
+typedef struct SZrGarbageCollectRegionDescriptor {
+    TZrUInt32 id;
+    EZrGarbageCollectRegionKind kind;
+    TZrUInt64 capacityBytes;
+    TZrUInt64 usedBytes;
+    TZrUInt64 liveBytes;
+    TZrUInt32 liveObjectCount;
+} SZrGarbageCollectRegionDescriptor;
+
 typedef struct SZrGarbageCollectorStatsSnapshot {
     TZrMemoryOffset heapLimitBytes;
+    TZrUInt64 managedMemoryBytes;
+    TZrInt64 gcDebtBytes;
     TZrUInt64 pauseBudgetUs;
     TZrUInt64 remarkBudgetUs;
     TZrUInt32 workerCount;
+    TZrUInt32 ignoredObjectCount;
     TZrUInt32 rememberedObjectCount;
+    TZrUInt32 regionCount;
+    TZrUInt32 edenRegionCount;
+    TZrUInt32 survivorRegionCount;
+    TZrUInt32 oldRegionCount;
+    TZrUInt32 pinnedRegionCount;
+    TZrUInt32 largeRegionCount;
+    TZrUInt32 permanentRegionCount;
+    TZrUInt64 edenUsedBytes;
+    TZrUInt64 survivorUsedBytes;
+    TZrUInt64 oldUsedBytes;
+    TZrUInt64 pinnedUsedBytes;
+    TZrUInt64 largeUsedBytes;
+    TZrUInt64 permanentUsedBytes;
+    TZrUInt64 edenLiveBytes;
+    TZrUInt64 survivorLiveBytes;
+    TZrUInt64 oldLiveBytes;
+    TZrUInt64 pinnedLiveBytes;
+    TZrUInt64 largeLiveBytes;
+    TZrUInt64 permanentLiveBytes;
+    TZrUInt64 lastStepDurationUs;
+    TZrUInt64 lastStepWork;
     EZrGarbageCollectCollectionKind lastCollectionKind;
     EZrGarbageCollectCollectionKind lastRequestedCollectionKind;
     EZrGarbageCollectCollectionPhase collectionPhase;
+    TZrUInt64 minorCollectionCount;
+    TZrUInt64 majorCollectionCount;
+    TZrUInt64 fullCollectionCount;
+    TZrUInt64 minorCollectionTotalDurationUs;
+    TZrUInt64 majorCollectionTotalDurationUs;
+    TZrUInt64 fullCollectionTotalDurationUs;
+    TZrUInt64 minorCollectionMaxDurationUs;
+    TZrUInt64 majorCollectionMaxDurationUs;
+    TZrUInt64 fullCollectionMaxDurationUs;
 } SZrGarbageCollectorStatsSnapshot;
 
 // generational mode
@@ -135,6 +177,15 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     TZrSize rememberedObjectCount;
     TZrSize rememberedObjectCapacity;
     TZrUInt32 nextRegionId;
+    TZrUInt32 currentEdenRegionId;
+    TZrUInt32 currentSurvivorRegionId;
+    TZrUInt32 currentOldRegionId;
+    TZrUInt64 currentEdenRegionUsedBytes;
+    TZrUInt64 currentSurvivorRegionUsedBytes;
+    TZrUInt64 currentOldRegionUsedBytes;
+    SZrGarbageCollectRegionDescriptor *regions;
+    TZrSize regionCount;
+    TZrSize regionCapacity;
 
     TZrMemoryOffset heapLimitBytes;
     TZrUInt64 youngRegionSize;
@@ -147,7 +198,11 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     TZrUInt32 gcFlags;
     EZrGarbageCollectCollectionKind scheduledCollectionKind;
     EZrGarbageCollectCollectionPhase collectionPhase;
+    TZrUInt32 minorCollectionEpoch;
     SZrGarbageCollectorStatsSnapshot statsSnapshot;
+    TZrUInt64 collectionCounts[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX];
+    TZrUInt64 collectionTotalDurationUs[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX];
+    TZrUInt64 collectionMaxDurationUs[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX];
 
     SZrRawObject *aliveObjectList;
     SZrRawObject *circleMoreObjectList;
@@ -198,6 +253,16 @@ ZR_CORE_API TZrBool ZrCore_GarbageCollector_HasRememberedObject(struct SZrGlobal
 ZR_CORE_API void ZrCore_GarbageCollector_PinObject(struct SZrState *state,
                                                    SZrRawObject *object,
                                                    EZrGarbageCollectPinKind pinKind);
+ZR_CORE_API void ZrCore_GarbageCollector_MarkRawObjectEscaped(struct SZrState *state,
+                                                              SZrRawObject *object,
+                                                              TZrUInt32 escapeFlags,
+                                                              TZrUInt32 scopeDepth,
+                                                              EZrGarbageCollectPromotionReason promotionReason);
+ZR_CORE_API void ZrCore_GarbageCollector_MarkValueEscaped(struct SZrState *state,
+                                                          const SZrTypeValue *value,
+                                                          TZrUInt32 escapeFlags,
+                                                          TZrUInt32 scopeDepth,
+                                                          EZrGarbageCollectPromotionReason promotionReason);
 
 ZR_CORE_API SZrRawObject *ZrCore_RawObject_New(struct SZrState *state, EZrValueType type, TZrSize size, TZrBool isNative);
 
@@ -208,6 +273,12 @@ ZR_CORE_API void ZrCore_RawObject_MarkAsInit(struct SZrState *state, SZrRawObjec
 
 // only available for latest generated object
 ZR_CORE_API void ZrCore_RawObject_MarkAsPermanent(struct SZrState *state, SZrRawObject *object);
+
+/*
+** Incremental GC barrier stepping (gc_mark.c). Exported so test binaries can link against zr_vm_core_shared on MSVC.
+*/
+ZR_CORE_API TZrSize ZrGarbageCollectorPropagateAll(struct SZrState *state);
+ZR_CORE_API void ZrGarbageCollectorRestartCollection(struct SZrState *state);
 
 ZR_FORCE_INLINE void ZrCore_RawObject_MarkAsReferenced(SZrRawObject *object) {
     object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_REFERENCED;
@@ -267,4 +338,9 @@ ZR_FORCE_INLINE void ZrCore_RawObject_SetRegionKind(SZrRawObject *object, EZrGar
 }
 
 ZR_CORE_API void ZrCore_Gc_ValueStaticAssertIsAlive(struct SZrState *state, SZrTypeValue *value);
+
+/*
+ * 可 GC 对象在堆上的逻辑基大小（与 gc_object 内部记账一致），供验证测试与 DLL 宿主工具链链接（MSVC 导入库）。
+ */
+ZR_CORE_API TZrSize ZrCore_GarbageCollector_GetObjectBaseSize(struct SZrState *state, struct SZrRawObject *object);
 #endif // ZR_VM_CORE_GC_H

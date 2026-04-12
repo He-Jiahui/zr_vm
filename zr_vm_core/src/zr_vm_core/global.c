@@ -27,6 +27,18 @@
 
 static TZrBool global_trace_enabled(void);
 static void global_trace(const TZrChar *format, ...);
+static TZrUInt64 global_state_next_cache_identity(void);
+
+static TZrUInt64 g_global_state_cache_identity_counter = 1u;
+
+static TZrUInt64 global_state_next_cache_identity(void) {
+    TZrUInt64 nextValue = g_global_state_cache_identity_counter++;
+
+    if (nextValue == 0) {
+        nextValue = g_global_state_cache_identity_counter++;
+    }
+    return nextValue;
+}
 
 static SZrString *global_state_create_permanent_string(SZrState *state, const TZrChar *text) {
     SZrString *stringObject;
@@ -355,6 +367,7 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->isValid = ZR_FALSE;
     global->allocator = allocator;
     global->userAllocationArguments = userAllocationArguments;
+    global->cacheIdentity = global_state_next_cache_identity();
     global_trace("global new allocated global=%p unique=%llu", (void *)global, (unsigned long long)uniqueNumber);
     SZrState *newState = ZrCore_State_New(global);
     global->mainThreadState = newState;

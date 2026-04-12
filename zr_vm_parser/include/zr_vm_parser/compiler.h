@@ -82,6 +82,7 @@ typedef struct SZrCompilerState {
     SZrFileRange errorLocation;
     TZrBool hasFatalError;                  // 是否有致命错误（阻止编译完成）
     TZrBool hasCompileTimeError;            // 是否发生过编译期错误（不能在后续语句中被吞掉）
+    TZrBool suppressErrorOutput;            // 是否抑制 stderr 错误输出（LSP/分析器路径）
     
     // 测试模式
     TZrBool isTestMode;                    // 是否处于测试模式

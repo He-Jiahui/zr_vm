@@ -1,0 +1,14 @@
+// ZR Syntax Tree File (.zrs)
+// Generated from parsed AST
+
+SCRIPT [line:1:col:2]
+  module:   MODULE_DECLARATION [line:1:col:2]
+    STRING_LITERAL [line:1:col:1]
+  value: "classes_full"
+  statements (4):
+    CLASS_DECLARATION [line:3:col:1]
+    CLASS_DECLARATION [line:24:col:1]
+    CLASS_DECLARATION [line:36:col:1]
+    TEST_DECLARATION [line:48:col:3]
+      name:       UNKNOWN
+      body:       BLOCK [line:48:col:35]

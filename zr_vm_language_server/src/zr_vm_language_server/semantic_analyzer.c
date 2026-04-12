@@ -1474,8 +1474,10 @@ static void semantic_format_type_from_ast(SZrState *state,
                                           SZrType *typeNode,
                                           TZrChar *buffer,
                                           TZrSize bufferSize) {
-    SZrInferredType inferredType;
     TZrSize offset = 0;
+
+    ZR_UNUSED_PARAMETER(state);
+    ZR_UNUSED_PARAMETER(compilerState);
 
     if (buffer == ZR_NULL || bufferSize == 0) {
         return;
@@ -1485,19 +1487,6 @@ static void semantic_format_type_from_ast(SZrState *state,
     if (typeNode != ZR_NULL &&
         semantic_append_ast_type_decl(typeNode, buffer, bufferSize, &offset) &&
         buffer[0] != '\0') {
-        return;
-    }
-
-    buffer[0] = '\0';
-    if (typeNode != ZR_NULL &&
-        state != ZR_NULL &&
-        compilerState != ZR_NULL &&
-        ZrParser_AstTypeToInferredType_Convert(compilerState, typeNode, &inferredType)) {
-        const TZrChar *typeText = ZrParser_TypeNameString_Get(state, &inferredType, buffer, bufferSize);
-        if (typeText != buffer && typeText != ZR_NULL) {
-            snprintf(buffer, bufferSize, "%s", typeText);
-        }
-        ZrParser_InferredType_Free(state, &inferredType);
         return;
     }
 
@@ -2466,20 +2455,69 @@ SZrSemanticAnalyzer *ZrLanguageServer_SemanticAnalyzer_New(SZrState *state) {
     return analyzer;
 }
 
+static void semantic_analyzer_clear_cached_diagnostic_refs(SZrSemanticAnalyzer *analyzer) {
+    if (analyzer == ZR_NULL || analyzer->cache == ZR_NULL || !analyzer->cache->cachedDiagnostics.isValid) {
+        return;
+    }
+
+    analyzer->cache->cachedDiagnostics.length = 0;
+}
+
+static void semantic_analyzer_release_diagnostics(SZrState *state,
+                                                  SZrSemanticAnalyzer *analyzer,
+                                                  TZrBool resetStorage) {
+    TZrSize capacity;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || !analyzer->diagnostics.isValid) {
+        return;
+    }
+
+    for (TZrSize i = 0; i < analyzer->diagnostics.length; i++) {
+        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, i);
+        SZrDiagnostic *diagnostic = diagPtr != ZR_NULL ? *diagPtr : ZR_NULL;
+        TZrBool alreadyReleased = ZR_FALSE;
+
+        if (diagnostic == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrSize previousIndex = 0; previousIndex < i; previousIndex++) {
+            SZrDiagnostic **previousPtr =
+                (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, previousIndex);
+            if (previousPtr != ZR_NULL && *previousPtr == diagnostic) {
+                alreadyReleased = ZR_TRUE;
+                break;
+            }
+        }
+
+        if (!alreadyReleased) {
+            ZrLanguageServer_Diagnostic_Free(state, diagnostic);
+        }
+
+        if (diagPtr != ZR_NULL) {
+            *diagPtr = ZR_NULL;
+        }
+    }
+
+    semantic_analyzer_clear_cached_diagnostic_refs(analyzer);
+
+    if (resetStorage) {
+        capacity = analyzer->diagnostics.capacity > 0 ? analyzer->diagnostics.capacity : ZR_LSP_ARRAY_INITIAL_CAPACITY;
+        ZrCore_Array_Free(state, &analyzer->diagnostics);
+        ZrCore_Array_Init(state, &analyzer->diagnostics, sizeof(SZrDiagnostic *), capacity);
+        return;
+    }
+
+    analyzer->diagnostics.length = 0;
+}
+
 // 释放语义分析器
 void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer *analyzer) {
     if (state == ZR_NULL || analyzer == ZR_NULL) {
         return;
     }
 
-    // 释放所有诊断
-    for (TZrSize i = 0; i < analyzer->diagnostics.length; i++) {
-        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, i);
-        if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
-            ZrLanguageServer_Diagnostic_Free(state, *diagPtr);
-        }
-    }
-    
+    semantic_analyzer_release_diagnostics(state, analyzer, ZR_FALSE);
     ZrCore_Array_Free(state, &analyzer->diagnostics);
     
     // 释放缓存
@@ -2527,31 +2565,16 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_Analyze(SZrState *state,
 
     analyzer->ast = ast;
     
-    // 检查缓存
     TZrSize astHash = 0;
     if (analyzer->enableCache && analyzer->cache != ZR_NULL) {
         astHash = ZrLanguageServer_SemanticAnalyzer_ComputeAstHash(ast);
         if (analyzer->cache->isValid && analyzer->cache->astHash == astHash) {
-            // 缓存有效，使用缓存结果
-            // 复制缓存的诊断信息
-            for (TZrSize i = 0; i < analyzer->cache->cachedDiagnostics.length; i++) {
-                SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->cache->cachedDiagnostics, i);
-                if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
-                    ZrCore_Array_Push(state, &analyzer->diagnostics, diagPtr);
-                }
-            }
             return ZR_TRUE;
         }
     }
 
-    // 清除旧的诊断信息
-    for (TZrSize i = 0; i < analyzer->diagnostics.length; i++) {
-        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, i);
-        if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
-            ZrLanguageServer_Diagnostic_Free(state, *diagPtr);
-        }
-    }
-    analyzer->diagnostics.length = 0;
+    // 分析器独占 diagnostics 的所有权；重新分析前释放并重建数组存储，避免保留悬空条目。
+    semantic_analyzer_release_diagnostics(state, analyzer, ZR_TRUE);
     
     if (!ZrLanguageServer_SemanticAnalyzer_PrepareState(state, analyzer, ast)) {
         return ZR_FALSE;
@@ -2574,14 +2597,11 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_Analyze(SZrState *state,
         analyzer->cache->astHash = astHash;
         analyzer->cache->isValid = ZR_TRUE;
         
-        // 复制诊断信息到缓存
+        /*
+         * cachedDiagnostics 当前没有恢复路径，保留借用指针只会扩大诊断对象的别名范围。
+         * 让 analyzer->diagnostics 继续作为唯一所有者，缓存只记录 AST 哈希即可。
+         */
         analyzer->cache->cachedDiagnostics.length = 0;
-        for (TZrSize i = 0; i < analyzer->diagnostics.length; i++) {
-            SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, i);
-            if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
-                ZrCore_Array_Push(state, &analyzer->cache->cachedDiagnostics, diagPtr);
-            }
-        }
     }
     
     return ZR_TRUE;
@@ -2676,7 +2696,11 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(SZrState *state,
         return ZR_FALSE;
     }
 
-    return ZrParser_AstTypeToInferredType_Convert(analyzer->compilerState, typeInfo, outType);
+    return ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
+                                                                           ZR_NULL,
+                                                                           ZR_NULL,
+                                                                           typeInfo,
+                                                                           outType);
 }
 
 // 获取悬停信息
@@ -2745,7 +2769,11 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
         analyzer->compilerState != ZR_NULL &&
         (symbol->type == ZR_SYMBOL_CLASS || symbol->type == ZR_SYMBOL_STRUCT || symbol->type == ZR_SYMBOL_INTERFACE)) {
         ZrParser_InferredType_Init(state, &resolvedType, ZR_VALUE_TYPE_OBJECT);
-        if (ZrParser_AstTypeToInferredType_Convert(analyzer->compilerState, hoverTypeInfo, &resolvedType)) {
+        if (ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
+                                                                            ZR_NULL,
+                                                                            ZR_NULL,
+                                                                            hoverTypeInfo,
+                                                                            &resolvedType)) {
             resolvedTypeText = semantic_precise_inferred_type_text(state,
                                                                    &resolvedType,
                                                                    resolvedTypeBuffer,
@@ -3060,13 +3088,6 @@ void ZrLanguageServer_SemanticAnalyzer_ClearCache(SZrState *state, SZrSemanticAn
     analyzer->cache->isValid = ZR_FALSE;
     analyzer->cache->astHash = 0;
     
-    // 清除缓存的诊断信息
-    for (TZrSize i = 0; i < analyzer->cache->cachedDiagnostics.length; i++) {
-        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->cache->cachedDiagnostics, i);
-        if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL) {
-            // 注意：诊断可能在 analyzer->diagnostics 中，避免重复释放
-        }
-    }
-    analyzer->cache->cachedDiagnostics.length = 0;
+    semantic_analyzer_clear_cached_diagnostic_refs(analyzer);
     analyzer->cache->cachedSymbols.length = 0;
 }

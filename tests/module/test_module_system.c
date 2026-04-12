@@ -662,12 +662,6 @@ static const ZrLibModuleDescriptor kProbeUnsupportedCapabilityModuleDescriptor =
         ZR_NULL,
 };
 
-// 测试时间测量结构
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
-
 typedef struct ZrTestAllocatorFailureConfig {
     TZrBool armed;
     TZrBool fired;
@@ -2899,7 +2893,39 @@ static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
             "SystemFileInfo",
     };
     static const TZrChar *kEnvExports[] = {"getVariable"};
-    static const TZrChar *kGcExports[] = {"start", "stop", "step", "collect"};
+    static const TZrChar *kGcExports[] = {
+            "enable",
+            "disable",
+            "collect",
+            "set_heap_limit",
+            "set_budget",
+            "get_stats",
+            "SystemGcStats",
+    };
+    static const TZrChar *kGcAbsentExports[] = {"start", "stop", "step"};
+    static const struct {
+        const TZrChar *symbolName;
+        const TZrChar *signature;
+    } kGcTypeHints[] = {
+            {"enable", "enable(): null"},
+            {"disable", "disable(): null"},
+            {"collect", "collect(kind: string = \"full\"): null"},
+            {"set_heap_limit", "set_heap_limit(bytes: int): null"},
+            {"set_budget", "set_budget(microseconds: int): null"},
+            {"get_stats", "get_stats(): SystemGcStats"},
+            {"SystemGcStats",
+             "struct SystemGcStats { enabled, heapLimitBytes, managedMemoryBytes, gcDebtBytes, pauseBudgetUs, "
+             "remarkBudgetUs, workerCount, ignoredObjectCount, rememberedObjectCount, regionCount, "
+             "edenRegionCount, survivorRegionCount, oldRegionCount, pinnedRegionCount, largeRegionCount, "
+             "permanentRegionCount, edenUsedBytes, survivorUsedBytes, oldUsedBytes, pinnedUsedBytes, "
+             "largeUsedBytes, permanentUsedBytes, edenLiveBytes, survivorLiveBytes, oldLiveBytes, "
+             "pinnedLiveBytes, largeLiveBytes, permanentLiveBytes, lastStepDurationUs, lastStepWork, "
+             "lastCollectionKind, "
+             "lastRequestedCollectionKind, collectionPhase, minorCollectionCount, majorCollectionCount, "
+             "fullCollectionCount, minorCollectionTotalDurationUs, majorCollectionTotalDurationUs, "
+             "fullCollectionTotalDurationUs, minorCollectionMaxDurationUs, majorCollectionMaxDurationUs, "
+             "fullCollectionMaxDurationUs }"},
+    };
     static const TZrChar *kExceptionExports[] = {
             "registerUnhandledException",
             "Error",
@@ -2927,9 +2953,13 @@ static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
         SZrObjectModule *vmModule;
         const SZrTypeValue *consoleModuleInfoValue;
         const SZrTypeValue *consoleTypeHintsValue;
+        const SZrTypeValue *gcModuleInfoValue;
+        const SZrTypeValue *gcTypeHintsValue;
         const SZrTypeValue *argumentsValue;
         SZrObject *consoleModuleInfo;
         SZrObject *consoleTypeHints;
+        SZrObject *gcModuleInfo;
+        SZrObject *gcTypeHints;
         TZrSize index;
 
         TEST_ASSERT_NOT_NULL(state);
@@ -3005,6 +3035,37 @@ static void test_system_leaf_modules_expose_new_api_and_owned_types(void) {
         for (index = 0; index < ZR_ARRAY_COUNT(kGcExports); index++) {
             TEST_ASSERT_NOT_NULL(get_module_export_value(state, gcModule, kGcExports[index]));
         }
+        for (index = 0; index < ZR_ARRAY_COUNT(kGcAbsentExports); index++) {
+            TEST_ASSERT_NULL(get_module_export_value(state, gcModule, kGcAbsentExports[index]));
+        }
+
+        gcModuleInfoValue = get_module_export_value(state, gcModule, ZR_NATIVE_MODULE_INFO_EXPORT_NAME);
+        TEST_ASSERT_NOT_NULL(gcModuleInfoValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, gcModuleInfoValue->type);
+        gcModuleInfo = ZR_CAST_OBJECT(state, gcModuleInfoValue->value.object);
+        TEST_ASSERT_NOT_NULL(gcModuleInfo);
+
+        gcTypeHintsValue = get_object_field_value(state, gcModuleInfo, "typeHints");
+        TEST_ASSERT_NOT_NULL(gcTypeHintsValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, gcTypeHintsValue->type);
+        gcTypeHints = ZR_CAST_OBJECT(state, gcTypeHintsValue->value.object);
+        TEST_ASSERT_NOT_NULL(gcTypeHints);
+        TEST_ASSERT_EQUAL_UINT64(ZR_ARRAY_COUNT(kGcTypeHints), get_array_length(gcTypeHints));
+
+        for (index = 0; index < ZR_ARRAY_COUNT(kGcTypeHints); index++) {
+            SZrObject *hintEntry = find_named_entry_in_array(state,
+                                                             gcTypeHints,
+                                                             "symbolName",
+                                                             kGcTypeHints[index].symbolName);
+            const SZrTypeValue *signatureValue;
+
+            TEST_ASSERT_NOT_NULL(hintEntry);
+            signatureValue = get_object_field_value(state, hintEntry, "signature");
+            TEST_ASSERT_NOT_NULL(signatureValue);
+            TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, signatureValue->type);
+            TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, signatureValue->value.object),
+                                                   kGcTypeHints[index].signature));
+        }
 
         for (index = 0; index < ZR_ARRAY_COUNT(kExceptionExports); index++) {
             TEST_ASSERT_NOT_NULL(get_module_export_value(state, exceptionModule, kExceptionExports[index]));
@@ -3032,8 +3093,10 @@ static void test_system_native_types_register_complete_struct_fields(void) {
     {
         SZrState *state = create_test_state();
         SZrObjectModule *fsModule;
+        SZrObjectModule *gcModule;
         SZrObjectModule *vmModule;
         SZrObjectPrototype *fileInfoPrototype;
+        SZrObjectPrototype *gcStatsPrototype;
         SZrObjectPrototype *vmStatePrototype;
         SZrObjectPrototype *loadedModuleInfoPrototype;
         TZrUInt64 offset = 0;
@@ -3041,18 +3104,23 @@ static void test_system_native_types_register_complete_struct_fields(void) {
         TEST_ASSERT_NOT_NULL(state);
 
         fsModule = import_native_module(state, "zr.system.fs");
+        gcModule = import_native_module(state, "zr.system.gc");
         vmModule = import_native_module(state, "zr.system.vm");
         TEST_ASSERT_NOT_NULL(fsModule);
+        TEST_ASSERT_NOT_NULL(gcModule);
         TEST_ASSERT_NOT_NULL(vmModule);
 
         fileInfoPrototype = get_module_exported_prototype(state, fsModule, "SystemFileInfo");
+        gcStatsPrototype = get_module_exported_prototype(state, gcModule, "SystemGcStats");
         vmStatePrototype = get_module_exported_prototype(state, vmModule, "SystemVmState");
         loadedModuleInfoPrototype = get_module_exported_prototype(state, vmModule, "SystemLoadedModuleInfo");
 
         TEST_ASSERT_NOT_NULL(fileInfoPrototype);
+        TEST_ASSERT_NOT_NULL(gcStatsPrototype);
         TEST_ASSERT_NOT_NULL(vmStatePrototype);
         TEST_ASSERT_NOT_NULL(loadedModuleInfoPrototype);
         TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, fileInfoPrototype->type);
+        TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, gcStatsPrototype->type);
         TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, vmStatePrototype->type);
         TEST_ASSERT_EQUAL_INT(ZR_OBJECT_PROTOTYPE_TYPE_STRUCT, loadedModuleInfoPrototype->type);
 
@@ -3061,6 +3129,49 @@ static void test_system_native_types_register_complete_struct_fields(void) {
         TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)fileInfoPrototype, "isFile", &offset));
         TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)fileInfoPrototype, "isDirectory", &offset));
         TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)fileInfoPrototype, "modifiedMilliseconds", &offset));
+
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "enabled", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "heapLimitBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "managedMemoryBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "gcDebtBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "pauseBudgetUs", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "remarkBudgetUs", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "workerCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "ignoredObjectCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "rememberedObjectCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "regionCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "edenRegionCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "survivorRegionCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "oldRegionCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "pinnedRegionCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "largeRegionCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "permanentRegionCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "edenUsedBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "survivorUsedBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "oldUsedBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "pinnedUsedBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "largeUsedBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "permanentUsedBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "edenLiveBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "survivorLiveBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "oldLiveBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "pinnedLiveBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "largeLiveBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "permanentLiveBytes", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "lastStepDurationUs", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "lastStepWork", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "lastCollectionKind", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "lastRequestedCollectionKind", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "collectionPhase", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "minorCollectionCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "majorCollectionCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "fullCollectionCount", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "minorCollectionTotalDurationUs", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "majorCollectionTotalDurationUs", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "fullCollectionTotalDurationUs", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "minorCollectionMaxDurationUs", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "majorCollectionMaxDurationUs", &offset));
+        TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)gcStatsPrototype, "fullCollectionMaxDurationUs", &offset));
 
         TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)vmStatePrototype, "loadedModuleCount", &offset));
         TEST_ASSERT_TRUE(lookup_struct_field_offset(state, (SZrStructPrototype *)vmStatePrototype, "garbageCollectionMode", &offset));
@@ -3297,6 +3408,183 @@ static void test_native_module_info_exposes_enum_and_interface_descriptors(void)
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, firstImplementValue->type);
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, firstImplementValue->value.object),
                                                "NativeStreamReadable"));
+
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_system_gc_safe_controls_report_runtime_stats(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "System GC Safe Controls Report Runtime Stats";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "var system = %import(\"zr.system\");\n"
+                "system.gc.enable();\n"
+                "system.gc.set_heap_limit(4096);\n"
+                "system.gc.set_budget(1234);\n"
+                "var enabledStats = system.gc.get_stats();\n"
+                "system.gc.disable();\n"
+                "var disabledStats = system.gc.get_stats();\n"
+                "system.gc.enable();\n"
+                "system.gc.collect(\"minor\");\n"
+                "system.gc.collect(\"major\");\n"
+                "var majorStats = system.gc.get_stats();\n"
+                "system.gc.collect(\"full\");\n"
+                "var finalStats = system.gc.get_stats();\n"
+                "return {\n"
+                "    enabledBeforeDisable: enabledStats.enabled,\n"
+                "    disabledAfterCall: disabledStats.enabled,\n"
+                "    heapLimitBytes: finalStats.heapLimitBytes,\n"
+                "    managedMemoryBytes: finalStats.managedMemoryBytes,\n"
+                "    gcDebtBytes: finalStats.gcDebtBytes,\n"
+                "    pauseBudgetUs: finalStats.pauseBudgetUs,\n"
+                "    remarkBudgetUs: finalStats.remarkBudgetUs,\n"
+                "    regionCount: finalStats.regionCount,\n"
+                "    edenRegionCount: finalStats.edenRegionCount,\n"
+                "    oldRegionCount: finalStats.oldRegionCount,\n"
+                "    pinnedRegionCount: finalStats.pinnedRegionCount,\n"
+                "    permanentRegionCount: finalStats.permanentRegionCount,\n"
+                "    permanentLiveBytes: finalStats.permanentLiveBytes,\n"
+                "    majorRequestedCollectionKind: majorStats.lastRequestedCollectionKind,\n"
+                "    lastRequestedCollectionKind: finalStats.lastRequestedCollectionKind,\n"
+                "    minorCollectionCount: finalStats.minorCollectionCount,\n"
+                "    majorCollectionCount: finalStats.majorCollectionCount,\n"
+                "    fullCollectionCount: finalStats.fullCollectionCount,\n"
+                "    fullCollectionTotalDurationUs: finalStats.fullCollectionTotalDurationUs,\n"
+                "    fullCollectionMaxDurationUs: finalStats.fullCollectionMaxDurationUs\n"
+                "};\n";
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        SZrTypeValue result;
+        SZrObject *resultObject;
+        const SZrTypeValue *enabledBeforeDisableValue;
+        const SZrTypeValue *disabledAfterCallValue;
+        const SZrTypeValue *heapLimitBytesValue;
+        const SZrTypeValue *managedMemoryBytesValue;
+        const SZrTypeValue *gcDebtBytesValue;
+        const SZrTypeValue *pauseBudgetUsValue;
+        const SZrTypeValue *remarkBudgetUsValue;
+        const SZrTypeValue *regionCountValue;
+        const SZrTypeValue *edenRegionCountValue;
+        const SZrTypeValue *oldRegionCountValue;
+        const SZrTypeValue *pinnedRegionCountValue;
+        const SZrTypeValue *permanentRegionCountValue;
+        const SZrTypeValue *permanentLiveBytesValue;
+        const SZrTypeValue *majorRequestedCollectionKindValue;
+        const SZrTypeValue *lastRequestedCollectionKindValue;
+        const SZrTypeValue *minorCollectionCountValue;
+        const SZrTypeValue *majorCollectionCountValue;
+        const SZrTypeValue *fullCollectionCountValue;
+        const SZrTypeValue *fullCollectionTotalDurationUsValue;
+        const SZrTypeValue *fullCollectionMaxDurationUsValue;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        sourceName = ZrCore_String_Create(state, "system_gc_safe_controls_runtime_test.zr", 39);
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
+
+        resultObject = ZR_CAST_OBJECT(state, result.value.object);
+        TEST_ASSERT_NOT_NULL(resultObject);
+
+        enabledBeforeDisableValue = get_object_field_value(state, resultObject, "enabledBeforeDisable");
+        disabledAfterCallValue = get_object_field_value(state, resultObject, "disabledAfterCall");
+        heapLimitBytesValue = get_object_field_value(state, resultObject, "heapLimitBytes");
+        managedMemoryBytesValue = get_object_field_value(state, resultObject, "managedMemoryBytes");
+        gcDebtBytesValue = get_object_field_value(state, resultObject, "gcDebtBytes");
+        pauseBudgetUsValue = get_object_field_value(state, resultObject, "pauseBudgetUs");
+        remarkBudgetUsValue = get_object_field_value(state, resultObject, "remarkBudgetUs");
+        regionCountValue = get_object_field_value(state, resultObject, "regionCount");
+        edenRegionCountValue = get_object_field_value(state, resultObject, "edenRegionCount");
+        oldRegionCountValue = get_object_field_value(state, resultObject, "oldRegionCount");
+        pinnedRegionCountValue = get_object_field_value(state, resultObject, "pinnedRegionCount");
+        permanentRegionCountValue = get_object_field_value(state, resultObject, "permanentRegionCount");
+        permanentLiveBytesValue = get_object_field_value(state, resultObject, "permanentLiveBytes");
+        majorRequestedCollectionKindValue = get_object_field_value(state, resultObject, "majorRequestedCollectionKind");
+        lastRequestedCollectionKindValue = get_object_field_value(state, resultObject, "lastRequestedCollectionKind");
+        minorCollectionCountValue = get_object_field_value(state, resultObject, "minorCollectionCount");
+        majorCollectionCountValue = get_object_field_value(state, resultObject, "majorCollectionCount");
+        fullCollectionCountValue = get_object_field_value(state, resultObject, "fullCollectionCount");
+        fullCollectionTotalDurationUsValue = get_object_field_value(state, resultObject, "fullCollectionTotalDurationUs");
+        fullCollectionMaxDurationUsValue = get_object_field_value(state, resultObject, "fullCollectionMaxDurationUs");
+
+        TEST_ASSERT_NOT_NULL(enabledBeforeDisableValue);
+        TEST_ASSERT_NOT_NULL(disabledAfterCallValue);
+        TEST_ASSERT_NOT_NULL(heapLimitBytesValue);
+        TEST_ASSERT_NOT_NULL(managedMemoryBytesValue);
+        TEST_ASSERT_NOT_NULL(gcDebtBytesValue);
+        TEST_ASSERT_NOT_NULL(pauseBudgetUsValue);
+        TEST_ASSERT_NOT_NULL(remarkBudgetUsValue);
+        TEST_ASSERT_NOT_NULL(regionCountValue);
+        TEST_ASSERT_NOT_NULL(edenRegionCountValue);
+        TEST_ASSERT_NOT_NULL(oldRegionCountValue);
+        TEST_ASSERT_NOT_NULL(pinnedRegionCountValue);
+        TEST_ASSERT_NOT_NULL(permanentRegionCountValue);
+        TEST_ASSERT_NOT_NULL(permanentLiveBytesValue);
+        TEST_ASSERT_NOT_NULL(majorRequestedCollectionKindValue);
+        TEST_ASSERT_NOT_NULL(lastRequestedCollectionKindValue);
+        TEST_ASSERT_NOT_NULL(minorCollectionCountValue);
+        TEST_ASSERT_NOT_NULL(majorCollectionCountValue);
+        TEST_ASSERT_NOT_NULL(fullCollectionCountValue);
+        TEST_ASSERT_NOT_NULL(fullCollectionTotalDurationUsValue);
+        TEST_ASSERT_NOT_NULL(fullCollectionMaxDurationUsValue);
+
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, enabledBeforeDisableValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, disabledAfterCallValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, heapLimitBytesValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, managedMemoryBytesValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, gcDebtBytesValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, pauseBudgetUsValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, remarkBudgetUsValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, regionCountValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, edenRegionCountValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, oldRegionCountValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, pinnedRegionCountValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, permanentRegionCountValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, permanentLiveBytesValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, majorRequestedCollectionKindValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, lastRequestedCollectionKindValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, minorCollectionCountValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, majorCollectionCountValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, fullCollectionCountValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, fullCollectionTotalDurationUsValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, fullCollectionMaxDurationUsValue->type);
+
+        TEST_ASSERT_TRUE(enabledBeforeDisableValue->value.nativeObject.nativeBool);
+        TEST_ASSERT_FALSE(disabledAfterCallValue->value.nativeObject.nativeBool);
+        TEST_ASSERT_EQUAL_INT64(4096, heapLimitBytesValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_TRUE(managedMemoryBytesValue->value.nativeObject.nativeInt64 > 0);
+        TEST_ASSERT_TRUE(gcDebtBytesValue->value.nativeObject.nativeInt64 >= 0);
+        TEST_ASSERT_EQUAL_INT64(1234, pauseBudgetUsValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(1234, remarkBudgetUsValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_TRUE(regionCountValue->value.nativeObject.nativeInt64 > 0);
+        TEST_ASSERT_TRUE(edenRegionCountValue->value.nativeObject.nativeInt64 >= 0);
+        TEST_ASSERT_TRUE(oldRegionCountValue->value.nativeObject.nativeInt64 >= 0);
+        TEST_ASSERT_TRUE(pinnedRegionCountValue->value.nativeObject.nativeInt64 >= 0);
+        TEST_ASSERT_TRUE(permanentRegionCountValue->value.nativeObject.nativeInt64 > 0);
+        TEST_ASSERT_TRUE(permanentLiveBytesValue->value.nativeObject.nativeInt64 > 0);
+        TEST_ASSERT_TRUE(regionCountValue->value.nativeObject.nativeInt64 >=
+                         permanentRegionCountValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(1, majorRequestedCollectionKindValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(2, lastRequestedCollectionKindValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(1, minorCollectionCountValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_TRUE(majorCollectionCountValue->value.nativeObject.nativeInt64 >= 0);
+        TEST_ASSERT_EQUAL_INT64(1, fullCollectionCountValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_TRUE(fullCollectionTotalDurationUsValue->value.nativeObject.nativeInt64 > 0);
+        TEST_ASSERT_TRUE(fullCollectionMaxDurationUsValue->value.nativeObject.nativeInt64 > 0);
+        TEST_ASSERT_TRUE(fullCollectionMaxDurationUsValue->value.nativeObject.nativeInt64 <=
+                         fullCollectionTotalDurationUsValue->value.nativeObject.nativeInt64);
 
         destroy_test_state(state);
     }
@@ -8127,31 +8415,34 @@ int main(void) {
     // 19. system 原生类型字段元信息完整
     RUN_TEST(test_system_native_types_register_complete_struct_fields);
 
-    // 20. 根模块原生元信息包含 modules 数组
+    // 20. system.gc 安全控制面返回运行时统计
+    RUN_TEST(test_system_gc_safe_controls_report_runtime_stats);
+
+    // 21. 根模块原生元信息包含 modules 数组
     RUN_TEST(test_system_root_native_module_info_exposes_module_links);
 
-    // 21. native enum/interface descriptor 元信息完整暴露
+    // 22. native enum/interface descriptor 元信息完整暴露
     RUN_TEST(test_native_module_info_exposes_enum_and_interface_descriptors);
 
-    // 22. native callable / generic descriptor 元信息完整暴露
+    // 23. native callable / generic descriptor 元信息完整暴露
     RUN_TEST(test_native_module_info_exposes_callable_parameters_and_generic_constraints);
 
-    // 23. zr.ffi wrapper lowering 元信息同时暴露到 module info 和 runtime prototype
+    // 24. zr.ffi wrapper lowering 元信息同时暴露到 module info 和 runtime prototype
     RUN_TEST(test_native_module_info_exposes_ffi_wrapper_lowering_metadata);
 
-    // 24. source wrapper metadata 同时暴露到 %type metadata 和 runtime prototype hidden fields
+    // 25. source wrapper metadata 同时暴露到 %type metadata 和 runtime prototype hidden fields
     RUN_TEST(test_source_module_wrapper_metadata_exposes_ffi_wrapper_fields_and_runtime_hidden_metadata);
 
-    // 25. native runtime 注册 enum 静态成员和 interface 继承链
+    // 26. native runtime 注册 enum 静态成员和 interface 继承链
     RUN_TEST(test_native_module_runtime_registers_enum_members_and_interface_inheritance);
 
-    // 26. native binding helper 在 GC retry 中仍保活 fresh object/value
+    // 27. native binding helper 在 GC retry 中仍保活 fresh object/value
     RUN_TEST(test_native_binding_helpers_root_fresh_values_across_gc_retry);
 
-    // 25. native enum 构造在 runtime 返回正确实例
+    // 28. native enum 构造在 runtime 返回正确实例
     RUN_TEST(test_native_enum_construction_returns_runtime_enum_instance);
 
-    // 26. zr.container 导出泛型接口/类型以及约束元数据
+    // 29. zr.container 导出泛型接口/类型以及约束元数据
     RUN_TEST(test_container_module_exports_generic_interfaces_and_constraints);
 
     // 26.1 zr.builtin 导出协议、根类型与 primitive wrappers

@@ -198,10 +198,22 @@ ZR_CORE_API TZrBool ZrCore_Object_GetMember(struct SZrState *state,
                                             struct SZrString *memberName,
                                             SZrTypeValue *result);
 
+ZR_CORE_API TZrBool ZrCore_Object_GetMemberCachedDescriptorUnchecked(struct SZrState *state,
+                                                                     SZrTypeValue *receiver,
+                                                                     struct SZrObjectPrototype *ownerPrototype,
+                                                                     TZrUInt32 descriptorIndex,
+                                                                     SZrTypeValue *result);
+
 ZR_CORE_API TZrBool ZrCore_Object_SetMember(struct SZrState *state,
                                             SZrTypeValue *receiver,
                                             struct SZrString *memberName,
                                             const SZrTypeValue *value);
+
+ZR_CORE_API TZrBool ZrCore_Object_SetMemberCachedDescriptorUnchecked(struct SZrState *state,
+                                                                     SZrTypeValue *receiver,
+                                                                     struct SZrObjectPrototype *ownerPrototype,
+                                                                     TZrUInt32 descriptorIndex,
+                                                                     const SZrTypeValue *value);
 
 ZR_CORE_API TZrBool ZrCore_Object_InvokeMember(struct SZrState *state,
                                                SZrTypeValue *receiver,

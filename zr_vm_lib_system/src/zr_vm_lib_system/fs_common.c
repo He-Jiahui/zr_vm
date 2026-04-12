@@ -15,13 +15,61 @@
 #include <stdio.h>
 #include <string.h>
 
+static EZrValueType system_fs_root_value_type(const SZrObject *object) {
+    if (object != ZR_NULL && object->super.type == ZR_RAW_OBJECT_TYPE_ARRAY) {
+        return ZR_VALUE_TYPE_ARRAY;
+    }
+    return ZR_VALUE_TYPE_OBJECT;
+}
+
+static TZrBool system_fs_begin_rooted_object(SZrState *state, SZrObject *object, ZrLibTempValueRoot *root) {
+    if (state == ZR_NULL || object == ZR_NULL || root == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!ZrLib_TempValueRoot_Begin(state, root)) {
+        return ZR_FALSE;
+    }
+    if (!ZrLib_TempValueRoot_SetObject(root, object, system_fs_root_value_type(object))) {
+        ZrLib_TempValueRoot_End(root);
+        return ZR_FALSE;
+    }
+    return ZR_TRUE;
+}
+
+static SZrObject *system_fs_rooted_object(SZrState *state, ZrLibTempValueRoot *root) {
+    SZrTypeValue *rootValue;
+
+    if (state == ZR_NULL || root == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    rootValue = ZrLib_TempValueRoot_Value(root);
+    if (rootValue == ZR_NULL || rootValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_OBJECT(state, rootValue->value.object);
+}
+
 static void system_fs_set_message_field(SZrState *state, SZrObject *object, const TZrChar *message) {
     SZrTypeValue fieldValue;
+    ZrLibTempValueRoot objectRoot;
+    SZrObject *rootedObject;
+
     if (state == ZR_NULL || object == ZR_NULL) {
         return;
     }
+
+    if (!system_fs_begin_rooted_object(state, object, &objectRoot)) {
+        return;
+    }
+
     ZrLib_Value_SetString(state, &fieldValue, message != ZR_NULL ? message : "I/O error");
-    ZrLib_Object_SetFieldCString(state, object, "message", &fieldValue);
+    rootedObject = system_fs_rooted_object(state, &objectRoot);
+    if (rootedObject != ZR_NULL) {
+        ZrLib_Object_SetFieldCString(state, rootedObject, "message", &fieldValue);
+    }
+    ZrLib_TempValueRoot_End(&objectRoot);
 }
 
 static TZrBool system_fs_make_io_exception(SZrState *state,
@@ -29,25 +77,53 @@ static TZrBool system_fs_make_io_exception(SZrState *state,
                                            ZR_OUT SZrTypeValue *outValue) {
     SZrObject *object;
     SZrObject *stacksArray;
+    SZrObject *rootedObject;
     SZrTypeValue objectValue;
     SZrTypeValue stacksValue;
+    ZrLibTempValueRoot objectRoot;
 
     if (state == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
     }
 
     object = ZrLib_Type_NewInstance(state, "IOException");
-    stacksArray = ZrLib_Array_New(state);
-    if (object == ZR_NULL || stacksArray == ZR_NULL) {
+    if (object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!system_fs_begin_rooted_object(state, object, &objectRoot)) {
         return ZR_FALSE;
     }
 
-    ZrLib_Value_SetObject(state, &objectValue, object, ZR_VALUE_TYPE_OBJECT);
+    stacksArray = ZrLib_Array_New(state);
+    rootedObject = system_fs_rooted_object(state, &objectRoot);
+    if (rootedObject == ZR_NULL || stacksArray == ZR_NULL) {
+        ZrLib_TempValueRoot_End(&objectRoot);
+        return ZR_FALSE;
+    }
+
+    ZrLib_Value_SetObject(state, &objectValue, rootedObject, ZR_VALUE_TYPE_OBJECT);
     ZrLib_Value_SetObject(state, &stacksValue, stacksArray, ZR_VALUE_TYPE_ARRAY);
-    ZrLib_Object_SetFieldCString(state, object, "stacks", &stacksValue);
-    ZrLib_Object_SetFieldCString(state, object, "exception", &objectValue);
-    system_fs_set_message_field(state, object, message);
-    *outValue = objectValue;
+    ZrLib_Object_SetFieldCString(state, rootedObject, "stacks", &stacksValue);
+    rootedObject = system_fs_rooted_object(state, &objectRoot);
+    if (rootedObject == ZR_NULL) {
+        ZrLib_TempValueRoot_End(&objectRoot);
+        return ZR_FALSE;
+    }
+    ZrLib_Value_SetObject(state, &objectValue, rootedObject, ZR_VALUE_TYPE_OBJECT);
+    ZrLib_Object_SetFieldCString(state, rootedObject, "exception", &objectValue);
+    rootedObject = system_fs_rooted_object(state, &objectRoot);
+    if (rootedObject == ZR_NULL) {
+        ZrLib_TempValueRoot_End(&objectRoot);
+        return ZR_FALSE;
+    }
+    system_fs_set_message_field(state, rootedObject, message);
+    rootedObject = system_fs_rooted_object(state, &objectRoot);
+    if (rootedObject == ZR_NULL) {
+        ZrLib_TempValueRoot_End(&objectRoot);
+        return ZR_FALSE;
+    }
+    ZrLib_Value_SetObject(state, outValue, rootedObject, ZR_VALUE_TYPE_OBJECT);
+    ZrLib_TempValueRoot_End(&objectRoot);
     return ZR_TRUE;
 }
 
@@ -71,11 +147,23 @@ void ZrSystem_Fs_WriteBoolField(SZrState *state, SZrObject *object, const TZrCha
 
 void ZrSystem_Fs_WriteStringField(SZrState *state, SZrObject *object, const TZrChar *fieldName, const TZrChar *value) {
     SZrTypeValue fieldValue;
+    ZrLibTempValueRoot objectRoot;
+    SZrObject *rootedObject;
+
     if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
         return;
     }
+
+    if (!system_fs_begin_rooted_object(state, object, &objectRoot)) {
+        return;
+    }
+
     ZrLib_Value_SetString(state, &fieldValue, value != ZR_NULL ? value : "");
-    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
+    rootedObject = system_fs_rooted_object(state, &objectRoot);
+    if (rootedObject != ZR_NULL) {
+        ZrLib_Object_SetFieldCString(state, rootedObject, fieldName, &fieldValue);
+    }
+    ZrLib_TempValueRoot_End(&objectRoot);
 }
 
 void ZrSystem_Fs_WriteNullField(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
@@ -299,6 +387,7 @@ TZrBool ZrSystem_Fs_RaiseErrnoIOException(SZrState *state, const TZrChar *action
 
 SZrObject *ZrSystem_Fs_MakeInfoObject(SZrState *state, const SZrLibrary_File_Info *info) {
     SZrObject *object;
+    ZrLibTempValueRoot objectRoot;
     if (state == ZR_NULL || info == ZR_NULL) {
         return ZR_NULL;
     }
@@ -307,18 +396,59 @@ SZrObject *ZrSystem_Fs_MakeInfoObject(SZrState *state, const SZrLibrary_File_Inf
     if (object == ZR_NULL) {
         return ZR_NULL;
     }
+    if (!system_fs_begin_rooted_object(state, object, &objectRoot)) {
+        return ZR_NULL;
+    }
+
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object == ZR_NULL) {
+        ZrLib_TempValueRoot_End(&objectRoot);
+        return ZR_NULL;
+    }
 
     ZrSystem_Fs_WriteStringField(state, object, "path", info->path);
-    ZrSystem_Fs_WriteIntField(state, object, "size", info->size);
-    ZrSystem_Fs_WriteBoolField(state, object, "isFile", info->existence == ZR_LIBRARY_FILE_IS_FILE);
-    ZrSystem_Fs_WriteBoolField(state, object, "isDirectory", info->existence == ZR_LIBRARY_FILE_IS_DIRECTORY);
-    ZrSystem_Fs_WriteIntField(state, object, "modifiedMilliseconds", info->modifiedMilliseconds);
-    ZrSystem_Fs_WriteBoolField(state, object, "exists", info->exists);
-    ZrSystem_Fs_WriteStringField(state, object, "name", info->name);
-    ZrSystem_Fs_WriteStringField(state, object, "extension", info->extension);
-    ZrSystem_Fs_WriteStringField(state, object, "parentPath", info->parentPath);
-    ZrSystem_Fs_WriteIntField(state, object, "createdMilliseconds", info->createdMilliseconds);
-    ZrSystem_Fs_WriteIntField(state, object, "accessedMilliseconds", info->accessedMilliseconds);
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object != ZR_NULL) {
+        ZrSystem_Fs_WriteIntField(state, object, "size", info->size);
+    }
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object != ZR_NULL) {
+        ZrSystem_Fs_WriteBoolField(state, object, "isFile", info->existence == ZR_LIBRARY_FILE_IS_FILE);
+    }
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object != ZR_NULL) {
+        ZrSystem_Fs_WriteBoolField(state, object, "isDirectory", info->existence == ZR_LIBRARY_FILE_IS_DIRECTORY);
+    }
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object != ZR_NULL) {
+        ZrSystem_Fs_WriteIntField(state, object, "modifiedMilliseconds", info->modifiedMilliseconds);
+    }
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object != ZR_NULL) {
+        ZrSystem_Fs_WriteBoolField(state, object, "exists", info->exists);
+    }
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object != ZR_NULL) {
+        ZrSystem_Fs_WriteStringField(state, object, "name", info->name);
+    }
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object != ZR_NULL) {
+        ZrSystem_Fs_WriteStringField(state, object, "extension", info->extension);
+    }
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object != ZR_NULL) {
+        ZrSystem_Fs_WriteStringField(state, object, "parentPath", info->parentPath);
+    }
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object != ZR_NULL) {
+        ZrSystem_Fs_WriteIntField(state, object, "createdMilliseconds", info->createdMilliseconds);
+    }
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object != ZR_NULL) {
+        ZrSystem_Fs_WriteIntField(state, object, "accessedMilliseconds", info->accessedMilliseconds);
+    }
+    object = system_fs_rooted_object(state, &objectRoot);
+    ZrLib_TempValueRoot_End(&objectRoot);
     return object;
 }
 
@@ -344,36 +474,93 @@ TZrBool ZrSystem_Fs_PopulateEntryObject(SZrState *state,
     SZrLibrary_File_Info info;
     SZrObject *parentObject = ZR_NULL;
     SZrObject *infoObject = ZR_NULL;
+    ZrLibTempValueRoot objectRoot;
+    ZrLibTempValueRoot infoRoot;
+    ZrLibTempValueRoot parentRoot;
     const TZrChar *pathSource = fullPathOverride != ZR_NULL ? fullPathOverride : originalPath;
+    TZrBool hasInfoRoot = ZR_FALSE;
+    TZrBool hasParentRoot = ZR_FALSE;
+    TZrBool result = ZR_FALSE;
 
     if (state == ZR_NULL || object == ZR_NULL || pathSource == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!system_fs_begin_rooted_object(state, object, &objectRoot)) {
         return ZR_FALSE;
     }
 
     memset(&info, 0, sizeof(info));
     if (!ZrLibrary_File_QueryInfo((TZrNativeString)pathSource, &info)) {
-        return ZR_FALSE;
+        goto cleanup;
     }
 
     infoObject = ZrSystem_Fs_MakeInfoObject(state, &info);
     if (infoObject == ZR_NULL) {
-        return ZR_FALSE;
+        goto cleanup;
     }
+    if (!system_fs_begin_rooted_object(state, infoObject, &infoRoot)) {
+        goto cleanup;
+    }
+    hasInfoRoot = ZR_TRUE;
     if (info.parentPath[0] != '\0') {
         parentObject = ZrSystem_Fs_NewEntryObject(state, "Folder", info.parentPath, info.parentPath);
+        if (parentObject != ZR_NULL) {
+            if (!system_fs_begin_rooted_object(state, parentObject, &parentRoot)) {
+                goto cleanup;
+            }
+            hasParentRoot = ZR_TRUE;
+        }
+    }
+
+    object = system_fs_rooted_object(state, &objectRoot);
+    infoObject = hasInfoRoot ? system_fs_rooted_object(state, &infoRoot) : infoObject;
+    parentObject = hasParentRoot ? system_fs_rooted_object(state, &parentRoot) : parentObject;
+    if (object == ZR_NULL || infoObject == ZR_NULL) {
+        goto cleanup;
     }
 
     ZrSystem_Fs_WriteStringField(state, object, "path", originalPath != ZR_NULL ? originalPath : info.path);
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object == ZR_NULL) {
+        goto cleanup;
+    }
     ZrSystem_Fs_WriteStringField(state, object, "fullPath", info.path);
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object == ZR_NULL) {
+        goto cleanup;
+    }
     ZrSystem_Fs_WriteStringField(state, object, "name", info.name);
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object == ZR_NULL) {
+        goto cleanup;
+    }
     ZrSystem_Fs_WriteStringField(state, object, "extension", info.extension);
+    object = system_fs_rooted_object(state, &objectRoot);
+    if (object == ZR_NULL) {
+        goto cleanup;
+    }
     if (parentObject != ZR_NULL) {
         ZrSystem_Fs_WriteObjectField(state, object, "parent", parentObject, ZR_VALUE_TYPE_OBJECT);
     } else {
         ZrSystem_Fs_WriteNullField(state, object, "parent");
     }
+    object = system_fs_rooted_object(state, &objectRoot);
+    infoObject = hasInfoRoot ? system_fs_rooted_object(state, &infoRoot) : infoObject;
+    if (object == ZR_NULL || infoObject == ZR_NULL) {
+        goto cleanup;
+    }
     ZrSystem_Fs_WriteObjectField(state, object, "fileInfo", infoObject, ZR_VALUE_TYPE_OBJECT);
-    return ZR_TRUE;
+    result = ZR_TRUE;
+
+cleanup:
+    if (hasParentRoot) {
+        ZrLib_TempValueRoot_End(&parentRoot);
+    }
+    if (hasInfoRoot) {
+        ZrLib_TempValueRoot_End(&infoRoot);
+    }
+    ZrLib_TempValueRoot_End(&objectRoot);
+    return result;
 }
 
 TZrBool ZrSystem_Fs_RefreshEntryObject(SZrState *state,

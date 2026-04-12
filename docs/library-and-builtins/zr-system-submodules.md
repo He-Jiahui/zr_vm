@@ -1,9 +1,13 @@
 ---
 related_code:
   - zr_vm_lib_system/include/zr_vm_lib_system/module.h
+  - zr_vm_lib_system/include/zr_vm_lib_system/gc.h
+  - zr_vm_lib_system/include/zr_vm_lib_system/gc_registry.h
   - zr_vm_lib_system/include/zr_vm_lib_system/fs_registry.h
   - zr_vm_lib_system/include/zr_vm_lib_system/exception_registry.h
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/gc.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/gc_registry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs_registry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs_common.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs_entry.c
@@ -18,6 +22,8 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/compile_expression.c
 implementation_files:
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/gc.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/gc_registry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs_registry.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs_common.c
   - zr_vm_lib_system/src/zr_vm_lib_system/fs_entry.c
@@ -32,10 +38,12 @@ implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compile_expression.c
 plan_sources:
   - user: 2026-03-29 实现“zr.system 模块细分与子模块化方案”
+  - .codex/plans/ZR VM 分区式分代 GC 与作用域逃逸管理设计.md
   - .codex/plans/zr struct 值类型与 native wrapper 分层方案.md
   - .codex/plans/zr.system.fs 对象化文件系统与 FileStream handle_id wrapper 验证.md
 tests:
   - tests/module/test_module_system.c
+  - tests/language_server/test_lsp_interface.c
   - tests/parser/test_type_inference.c
   - tests/system/test_system_fs_module.c
   - tests/ffi/ffi_fixture.c
@@ -57,18 +65,19 @@ doc_type: module-detail
 
 ## Root Module Shape
 
-`%import("zr.system")` 返回的根模块只导出这 6 个字段：
+`%import("zr.system")` 返回的根模块导出这 7 个字段：
 
 - `console: zr.system.console`
 - `fs: zr.system.fs`
 - `env: zr.system.env`
 - `process: zr.system.process`
 - `gc: zr.system.gc`
+- `exception: zr.system.exception`
 - `vm: zr.system.vm`
 
 根模块不再重导出旧的扁平文件系统函数，也不重导出 `SystemFileInfo`、`SystemVmState`、`SystemLoadedModuleInfo` 这类类型值。类型仍然属于各自叶子模块，但会进入全局 type 空间，所以既可以写 `var fs = %import("zr.system.fs"); new fs.File("a.txt");`，也可以在类型推断阶段通过模块字段拿到原型和元信息。
 
-`zr.system.exception` 仍然是独立模块，不属于根模块这 6 个字段之一。文件系统相关失败会抛这个模块里的 `IOException`。
+`zr.system.exception` 仍然是独立叶子模块，但会通过根模块字段和 native module info 一起暴露。文件系统相关失败会抛这个模块里的 `IOException`。
 
 ## Leaf Modules At A Glance
 
@@ -96,10 +105,65 @@ doc_type: module-detail
 
 `zr.system.gc` 暴露：
 
-- `start`
-- `stop`
-- `step`
-- `collect`
+- `enable`
+- `disable`
+- `collect(kind: string = "full")`
+- `set_heap_limit(bytes: int)`
+- `set_budget(microseconds: int)`
+- `get_stats(): SystemGcStats`
+
+`SystemGcStats` 当前字段为：
+
+- `enabled`
+- `heapLimitBytes`
+- `managedMemoryBytes`
+- `gcDebtBytes`
+- `pauseBudgetUs`
+- `remarkBudgetUs`
+- `workerCount`
+- `ignoredObjectCount`
+- `rememberedObjectCount`
+- `regionCount`
+- `edenRegionCount`
+- `survivorRegionCount`
+- `oldRegionCount`
+- `pinnedRegionCount`
+- `largeRegionCount`
+- `permanentRegionCount`
+- `edenUsedBytes`
+- `survivorUsedBytes`
+- `oldUsedBytes`
+- `pinnedUsedBytes`
+- `largeUsedBytes`
+- `permanentUsedBytes`
+- `edenLiveBytes`
+- `survivorLiveBytes`
+- `oldLiveBytes`
+- `pinnedLiveBytes`
+- `largeLiveBytes`
+- `permanentLiveBytes`
+- `lastStepDurationUs`
+- `lastStepWork`
+- `lastCollectionKind`
+- `lastRequestedCollectionKind`
+- `collectionPhase`
+- `minorCollectionCount`
+- `majorCollectionCount`
+- `fullCollectionCount`
+- `minorCollectionTotalDurationUs`
+- `majorCollectionTotalDurationUs`
+- `fullCollectionTotalDurationUs`
+- `minorCollectionMaxDurationUs`
+- `majorCollectionMaxDurationUs`
+- `fullCollectionMaxDurationUs`
+
+这些字段分成三类：
+
+- 控制面快照：`enabled`、`heapLimitBytes`、`gcDebtBytes`、`pauseBudgetUs`、`remarkBudgetUs`、`workerCount`
+- 当前压力形状：`managedMemoryBytes`、`ignoredObjectCount`、`rememberedObjectCount`、各 `*RegionCount`、各 `*UsedBytes`、各 `*LiveBytes`
+- 最近一步与累计遥测：`last*`、`collectionPhase`、各 `*Collection*DurationUs`
+
+region 统计只汇总当前仍有 live object 的 active region，而不是 region descriptor 槽位总数。运行时 bootstrap 期间创建的永久对象也会计入 `permanentRegionCount` / `permanentLiveBytes`，所以这些字段在用户代码尚未分配前就可能非零。
 
 `zr.system.vm` 暴露：
 

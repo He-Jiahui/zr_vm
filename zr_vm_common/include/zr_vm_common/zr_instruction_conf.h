@@ -48,27 +48,35 @@
     Z(TO_OBJECT)                                                                                                       \
     Z(ADD)                                                                                                             \
     Z(ADD_INT)                                                                                                         \
+    Z(ADD_INT_PLAIN_DEST)                                                                                              \
     Z(ADD_INT_CONST)                                                                                                   \
+    Z(ADD_INT_CONST_PLAIN_DEST)                                                                                        \
     Z(ADD_FLOAT)                                                                                                       \
     Z(ADD_STRING)                                                                                                      \
     Z(SUB)                                                                                                             \
     Z(SUB_INT)                                                                                                         \
+    Z(SUB_INT_PLAIN_DEST)                                                                                              \
     Z(SUB_INT_CONST)                                                                                                   \
+    Z(SUB_INT_CONST_PLAIN_DEST)                                                                                        \
     Z(SUB_FLOAT)                                                                                                       \
     Z(MUL)                                                                                                             \
     Z(MUL_SIGNED)                                                                                                      \
+    Z(MUL_SIGNED_PLAIN_DEST)                                                                                           \
     Z(MUL_SIGNED_CONST)                                                                                                \
+    Z(MUL_SIGNED_CONST_PLAIN_DEST)                                                                                     \
     Z(MUL_UNSIGNED)                                                                                                    \
     Z(MUL_FLOAT)                                                                                                       \
     Z(NEG)                                                                                                             \
     Z(DIV)                                                                                                             \
     Z(DIV_SIGNED)                                                                                                      \
     Z(DIV_SIGNED_CONST)                                                                                                \
+    Z(DIV_SIGNED_CONST_PLAIN_DEST)                                                                                     \
     Z(DIV_UNSIGNED)                                                                                                    \
     Z(DIV_FLOAT)                                                                                                       \
     Z(MOD)                                                                                                             \
     Z(MOD_SIGNED)                                                                                                      \
     Z(MOD_SIGNED_CONST)                                                                                                \
+    Z(MOD_SIGNED_CONST_PLAIN_DEST)                                                                                     \
     Z(MOD_UNSIGNED)                                                                                                    \
     Z(MOD_FLOAT)                                                                                                       \
     Z(POW)                                                                                                             \
@@ -109,6 +117,7 @@
     Z(GET_SUB_FUNCTION)                                                                                                \
     Z(JUMP)                                                                                                            \
     Z(JUMP_IF)                                                                                                         \
+    Z(JUMP_IF_GREATER_SIGNED)                                                                                          \
     Z(CREATE_CLOSURE)                                                                                                  \
     Z(CREATE_OBJECT)                                                                                                   \
     Z(CREATE_ARRAY)                                                                                                    \
@@ -154,7 +163,50 @@
     Z(META_SET)                                                                                                        \
     Z(SUPER_META_GET_STATIC_CACHED)                                                                                    \
     Z(SUPER_META_SET_STATIC_CACHED)                                                                                    \
-    Z(NOP)
+    Z(NOP)                                                                                                             \
+    Z(ADD_SIGNED)                                                                                                      \
+    Z(ADD_SIGNED_PLAIN_DEST)                                                                                           \
+    Z(ADD_SIGNED_CONST)                                                                                                \
+    Z(ADD_SIGNED_CONST_PLAIN_DEST)                                                                                     \
+    Z(ADD_UNSIGNED)                                                                                                    \
+    Z(ADD_UNSIGNED_PLAIN_DEST)                                                                                         \
+    Z(ADD_UNSIGNED_CONST)                                                                                              \
+    Z(ADD_UNSIGNED_CONST_PLAIN_DEST)                                                                                   \
+    Z(SUB_SIGNED)                                                                                                      \
+    Z(SUB_SIGNED_PLAIN_DEST)                                                                                           \
+    Z(SUB_SIGNED_CONST)                                                                                                \
+    Z(SUB_SIGNED_CONST_PLAIN_DEST)                                                                                     \
+    Z(SUB_UNSIGNED)                                                                                                    \
+    Z(SUB_UNSIGNED_PLAIN_DEST)                                                                                         \
+    Z(SUB_UNSIGNED_CONST)                                                                                              \
+    Z(SUB_UNSIGNED_CONST_PLAIN_DEST)                                                                                   \
+    Z(MUL_UNSIGNED_PLAIN_DEST)                                                                                         \
+    Z(MUL_UNSIGNED_CONST)                                                                                              \
+    Z(MUL_UNSIGNED_CONST_PLAIN_DEST)                                                                                   \
+    Z(DIV_UNSIGNED_CONST)                                                                                              \
+    Z(DIV_UNSIGNED_CONST_PLAIN_DEST)                                                                                   \
+    Z(MOD_UNSIGNED_CONST)                                                                                              \
+    Z(MOD_UNSIGNED_CONST_PLAIN_DEST)                                                                                   \
+    Z(LOGICAL_EQUAL_BOOL)                                                                                              \
+    Z(LOGICAL_NOT_EQUAL_BOOL)                                                                                          \
+    Z(LOGICAL_EQUAL_SIGNED)                                                                                            \
+    Z(LOGICAL_NOT_EQUAL_SIGNED)                                                                                        \
+    Z(LOGICAL_EQUAL_UNSIGNED)                                                                                          \
+    Z(LOGICAL_NOT_EQUAL_UNSIGNED)                                                                                      \
+    Z(LOGICAL_EQUAL_FLOAT)                                                                                             \
+    Z(LOGICAL_NOT_EQUAL_FLOAT)                                                                                         \
+    Z(LOGICAL_EQUAL_STRING)                                                                                            \
+    Z(LOGICAL_NOT_EQUAL_STRING)                                                                                        \
+    Z(KNOWN_VM_CALL)                                                                                                   \
+    Z(KNOWN_VM_TAIL_CALL)                                                                                              \
+    Z(KNOWN_NATIVE_CALL)                                                                                               \
+    Z(KNOWN_NATIVE_TAIL_CALL)                                                                                          \
+    Z(SUPER_KNOWN_VM_CALL_NO_ARGS)                                                                                     \
+    Z(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS)                                                                                \
+    Z(SUPER_KNOWN_NATIVE_CALL_NO_ARGS)                                                                                 \
+    Z(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS)                                                                            \
+    Z(GET_MEMBER_SLOT)                                                                                                 \
+    Z(SET_MEMBER_SLOT)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

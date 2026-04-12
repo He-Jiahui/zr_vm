@@ -487,7 +487,7 @@ static void compiler_compile_compile_time_runtime_support(SZrCompilerState *cs, 
 }
 
 // 编译脚本
-void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
+ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }

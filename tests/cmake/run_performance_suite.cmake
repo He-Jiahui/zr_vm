@@ -18,6 +18,8 @@ if (NOT DEFINED GENERATED_DIR OR GENERATED_DIR STREQUAL "")
     message(FATAL_ERROR "GENERATED_DIR is required.")
 endif ()
 
+include("${CMAKE_CURRENT_LIST_DIR}/zr_vm_test_host_env.cmake")
+
 file(TO_CMAKE_PATH "${CLI_EXE}" CLI_EXE)
 file(TO_CMAKE_PATH "${PERF_RUNNER_EXE}" PERF_RUNNER_EXE)
 file(TO_CMAKE_PATH "${NATIVE_BENCHMARK_EXE}" NATIVE_BENCHMARK_EXE)
@@ -114,6 +116,16 @@ if (DEFINED ENV{ZR_VM_PERF_ONLY_IMPLEMENTATIONS} AND NOT "$ENV{ZR_VM_PERF_ONLY_I
 endif ()
 if (PERF_ONLY_FILTER_ACTIVE)
     message("ZR_VM_PERF_ONLY_IMPLEMENTATIONS filter active: ${PERF_ONLY_IMPLEMENTATION_LIST}")
+endif ()
+
+set(PERF_ONLY_CASES_FILTER_ACTIVE FALSE)
+set(PERF_ONLY_CASE_LIST "")
+if (DEFINED ENV{ZR_VM_PERF_ONLY_CASES} AND NOT "$ENV{ZR_VM_PERF_ONLY_CASES}" STREQUAL "")
+    set(PERF_ONLY_CASES_FILTER_ACTIVE TRUE)
+    string(REPLACE "," ";" PERF_ONLY_CASE_LIST "$ENV{ZR_VM_PERF_ONLY_CASES}")
+endif ()
+if (PERF_ONLY_CASES_FILTER_ACTIVE)
+    message("ZR_VM_PERF_ONLY_CASES filter active: ${PERF_ONLY_CASE_LIST}")
 endif ()
 
 set(PERF_SUITE_ROOT "${GENERATED_DIR}/performance_suite")
@@ -215,6 +227,51 @@ function(perf_relative_to_c value base out_var)
     math(EXPR ratio_milli "((${value_milli} * 1000) + (${base_milli} / 2)) / ${base_milli}")
     perf_format_milli_decimal("${ratio_milli}" ratio_text)
     set(${out_var} "${ratio_text}" PARENT_SCOPE)
+endfunction()
+
+function(perf_decimal_delta value base out_var)
+    if (value STREQUAL "" OR base STREQUAL "")
+        set(${out_var} "null" PARENT_SCOPE)
+        return()
+    endif ()
+
+    perf_decimal_to_milli("${value}" value_milli)
+    perf_decimal_to_milli("${base}" base_milli)
+    math(EXPR delta_milli "${value_milli} - ${base_milli}")
+    if (delta_milli LESS 0)
+        math(EXPR delta_abs "${delta_milli} * -1")
+        perf_format_milli_decimal("${delta_abs}" delta_text)
+        set(${out_var} "-${delta_text}" PARENT_SCOPE)
+    else ()
+        perf_format_milli_decimal("${delta_milli}" delta_text)
+        set(${out_var} "${delta_text}" PARENT_SCOPE)
+    endif ()
+endfunction()
+
+function(perf_overhead_percent value base out_var)
+    if (value STREQUAL "" OR base STREQUAL "")
+        set(${out_var} "null" PARENT_SCOPE)
+        return()
+    endif ()
+
+    perf_decimal_to_milli("${value}" value_milli)
+    perf_decimal_to_milli("${base}" base_milli)
+    if (base_milli LESS 1)
+        set(${out_var} "null" PARENT_SCOPE)
+        return()
+    endif ()
+
+    math(EXPR delta_milli "${value_milli} - ${base_milli}")
+    if (delta_milli LESS 0)
+        math(EXPR delta_abs "${delta_milli} * -1")
+        math(EXPR percent_milli "((${delta_abs} * 100000) + (${base_milli} / 2)) / ${base_milli}")
+        perf_format_milli_decimal("${percent_milli}" percent_text)
+        set(${out_var} "-${percent_text}" PARENT_SCOPE)
+    else ()
+        math(EXPR percent_milli "((${delta_milli} * 100000) + (${base_milli} / 2)) / ${base_milli}")
+        perf_format_milli_decimal("${percent_milli}" percent_text)
+        set(${out_var} "${percent_text}" PARENT_SCOPE)
+    endif ()
 endfunction()
 
 function(perf_case_matches_tier case_name out_var)
@@ -477,8 +534,19 @@ set(PERF_INSTRUCTION_MARKDOWN_ROWS "")
 set(PERF_INSTRUCTION_JSON_CASES "")
 set(PERF_HOTSPOT_MARKDOWN_CASES "")
 set(PERF_HOTSPOT_JSON_CASES "")
+set(PERF_GC_BASELINE_CASE "gc_fragment_baseline")
+set(PERF_GC_STRESS_CASE "gc_fragment_stress")
+set(PERF_GC_OVERHEAD_MARKDOWN_ROWS "")
+set(PERF_GC_OVERHEAD_JSON_ROWS "")
 
 foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
+    if (PERF_ONLY_CASES_FILTER_ACTIVE)
+        list(FIND PERF_ONLY_CASE_LIST "${case_name}" PERF_ONLY_CASE_IX)
+        if (PERF_ONLY_CASE_IX LESS 0)
+            continue()
+        endif ()
+    endif ()
+
     perf_case_matches_tier("${case_name}" case_enabled)
     if (NOT case_enabled)
         continue()
@@ -973,6 +1041,20 @@ foreach (case_name IN LISTS ZR_VM_BENCHMARK_CASE_NAMES)
         else ()
             set(case_impl_jsons "${case_impl_jsons},\n${json_object}")
         endif ()
+
+        if (case_name STREQUAL PERF_GC_BASELINE_CASE OR case_name STREQUAL PERF_GC_STRESS_CASE)
+            set("PERF_GC_IMPLEMENTATION_NAME_${implementation_id}" "${implementation_name}")
+            set("PERF_GC_LANGUAGE_${implementation_id}" "${language}")
+            set("PERF_GC_STATUS_${case_name}_${implementation_id}" "${status}")
+            set("PERF_GC_NOTE_${case_name}_${implementation_id}" "${note}")
+            if (status STREQUAL "PASS")
+                set("PERF_GC_MEAN_WALL_${case_name}_${implementation_id}" "${mean_wall_ms}")
+                set("PERF_GC_MEAN_PEAK_${case_name}_${implementation_id}" "${mean_peak_mib}")
+            else ()
+                set("PERF_GC_MEAN_WALL_${case_name}_${implementation_id}" "")
+                set("PERF_GC_MEAN_PEAK_${case_name}_${implementation_id}" "")
+            endif ()
+        endif ()
     endforeach ()
 
     perf_escape_json_string("${case_name}" json_case_name)
@@ -1214,6 +1296,125 @@ if (PERF_CASE_COUNT EQUAL 0)
     message(FATAL_ERROR "performance_report selected zero benchmark cases for tier '${PERF_REQUESTED_TIER}'.")
 endif ()
 
+foreach (implementation_id IN LISTS ZR_VM_BENCHMARK_IMPLEMENTATION_ORDER)
+    set(base_status_var "PERF_GC_STATUS_${PERF_GC_BASELINE_CASE}_${implementation_id}")
+    set(stress_status_var "PERF_GC_STATUS_${PERF_GC_STRESS_CASE}_${implementation_id}")
+    set(base_status "${${base_status_var}}")
+    set(stress_status "${${stress_status_var}}")
+
+    if (base_status STREQUAL "" AND stress_status STREQUAL "")
+        continue()
+    endif ()
+
+    set(impl_name_var "PERF_GC_IMPLEMENTATION_NAME_${implementation_id}")
+    set(impl_language_var "PERF_GC_LANGUAGE_${implementation_id}")
+    set(implementation_name "${${impl_name_var}}")
+    set(language "${${impl_language_var}}")
+    if (implementation_name STREQUAL "")
+        set(implementation_name "${implementation_id}")
+    endif ()
+    if (language STREQUAL "")
+        set(language "-")
+    endif ()
+
+    if (base_status STREQUAL "PASS" AND stress_status STREQUAL "PASS")
+        set(base_mean_var "PERF_GC_MEAN_WALL_${PERF_GC_BASELINE_CASE}_${implementation_id}")
+        set(stress_mean_var "PERF_GC_MEAN_WALL_${PERF_GC_STRESS_CASE}_${implementation_id}")
+        set(base_peak_var "PERF_GC_MEAN_PEAK_${PERF_GC_BASELINE_CASE}_${implementation_id}")
+        set(stress_peak_var "PERF_GC_MEAN_PEAK_${PERF_GC_STRESS_CASE}_${implementation_id}")
+        set(base_mean "${${base_mean_var}}")
+        set(stress_mean "${${stress_mean_var}}")
+        set(base_peak "${${base_peak_var}}")
+        set(stress_peak "${${stress_peak_var}}")
+
+        perf_relative_to_c("${stress_mean}" "${base_mean}" stress_vs_baseline)
+        perf_decimal_delta("${stress_mean}" "${base_mean}" wall_delta)
+        perf_overhead_percent("${stress_mean}" "${base_mean}" overhead_pct)
+        perf_decimal_delta("${stress_peak}" "${base_peak}" peak_delta)
+        set(gc_status "PASS")
+        set(gc_note "")
+    else ()
+        set(base_mean "-")
+        set(stress_mean "-")
+        set(stress_vs_baseline "-")
+        set(wall_delta "-")
+        set(overhead_pct "-")
+        set(base_peak "-")
+        set(stress_peak "-")
+        set(peak_delta "-")
+        set(gc_status "SKIP")
+        set(base_note_var "PERF_GC_NOTE_${PERF_GC_BASELINE_CASE}_${implementation_id}")
+        set(stress_note_var "PERF_GC_NOTE_${PERF_GC_STRESS_CASE}_${implementation_id}")
+        set(base_note "${${base_note_var}}")
+        set(stress_note "${${stress_note_var}}")
+        set(gc_note "baseline=${base_status}; stress=${stress_status}")
+        if (NOT base_note STREQUAL "")
+            set(gc_note "${gc_note}; baseline_note=${base_note}")
+        endif ()
+        if (NOT stress_note STREQUAL "")
+            set(gc_note "${gc_note}; stress_note=${stress_note}")
+        endif ()
+    endif ()
+
+    string(APPEND PERF_GC_OVERHEAD_MARKDOWN_ROWS
+            "| ${implementation_name} | ${language} | ${gc_status} | ${base_mean} | ${stress_mean} | ${stress_vs_baseline} | ${wall_delta} | ${overhead_pct} | ${base_peak} | ${stress_peak} | ${peak_delta} |\n")
+
+    if (gc_note STREQUAL "")
+        set(gc_note_json "null")
+    else ()
+        perf_escape_json_string("${gc_note}" gc_note_escaped)
+        set(gc_note_json "\"${gc_note_escaped}\"")
+    endif ()
+    if (stress_vs_baseline STREQUAL "-")
+        set(stress_vs_baseline_json "null")
+    else ()
+        set(stress_vs_baseline_json "\"${stress_vs_baseline}\"")
+    endif ()
+    if (wall_delta STREQUAL "-")
+        set(wall_delta_json "null")
+    else ()
+        set(wall_delta_json "\"${wall_delta}\"")
+    endif ()
+    if (overhead_pct STREQUAL "-")
+        set(overhead_pct_json "null")
+    else ()
+        set(overhead_pct_json "\"${overhead_pct}\"")
+    endif ()
+    if (peak_delta STREQUAL "-")
+        set(peak_delta_json "null")
+    else ()
+        set(peak_delta_json "\"${peak_delta}\"")
+    endif ()
+
+    perf_escape_json_string("${implementation_name}" json_impl_name)
+    perf_escape_json_string("${language}" json_language)
+    string(CONCAT gc_row_json
+            "    {\n"
+            "      \"implementation_id\": \"${implementation_id}\",\n"
+            "      \"implementation_name\": \"${json_impl_name}\",\n"
+            "      \"language\": \"${json_language}\",\n"
+            "      \"status\": \"${gc_status}\",\n"
+            "      \"baseline_mean_wall_ms\": " "\"${base_mean}\"" ",\n"
+            "      \"stress_mean_wall_ms\": " "\"${stress_mean}\"" ",\n"
+            "      \"stress_vs_baseline\": ${stress_vs_baseline_json},\n"
+            "      \"wall_delta_ms\": ${wall_delta_json},\n"
+            "      \"overhead_percent\": ${overhead_pct_json},\n"
+            "      \"baseline_mean_peak_mib\": " "\"${base_peak}\"" ",\n"
+            "      \"stress_mean_peak_mib\": " "\"${stress_peak}\"" ",\n"
+            "      \"peak_delta_mib\": ${peak_delta_json},\n"
+            "      \"note\": ${gc_note_json}\n"
+            "    }")
+    if (PERF_GC_OVERHEAD_JSON_ROWS STREQUAL "")
+        set(PERF_GC_OVERHEAD_JSON_ROWS "${gc_row_json}")
+    else ()
+        set(PERF_GC_OVERHEAD_JSON_ROWS "${PERF_GC_OVERHEAD_JSON_ROWS},\n${gc_row_json}")
+    endif ()
+endforeach ()
+
+if (PERF_GC_OVERHEAD_MARKDOWN_ROWS STREQUAL "")
+    set(PERF_GC_OVERHEAD_MARKDOWN_ROWS "| none | - | SKIP | - | - | - | - | - | - | - | - |\n")
+endif ()
+
 string(TIMESTAMP PERF_GENERATED_AT_UTC "%Y-%m-%dT%H:%M:%SZ" UTC)
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/benchmark_report.md" PERF_MARKDOWN_PATH_NORMALIZED)
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/benchmark_report.json" PERF_JSON_PATH_NORMALIZED)
@@ -1223,6 +1424,8 @@ file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/instruction_report.md" PERF_INSTRUCTION_M
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/instruction_report.json" PERF_INSTRUCTION_JSON_PATH_NORMALIZED)
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/hotspot_report.md" PERF_HOTSPOT_MARKDOWN_PATH_NORMALIZED)
 file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/hotspot_report.json" PERF_HOTSPOT_JSON_PATH_NORMALIZED)
+file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/gc_overhead_report.md" PERF_GC_OVERHEAD_MARKDOWN_PATH_NORMALIZED)
+file(TO_CMAKE_PATH "${PERF_REPORT_DIR}/gc_overhead_report.json" PERF_GC_OVERHEAD_JSON_PATH_NORMALIZED)
 
 string(CONCAT PERF_MARKDOWN_REPORT
         "# ZR VM Performance Report\n\n"
@@ -1252,6 +1455,7 @@ string(APPEND PERF_MARKDOWN_REPORT
         "- Markdown Report: `${PERF_MARKDOWN_PATH_NORMALIZED}`\n"
         "- JSON Report: `${PERF_JSON_PATH_NORMALIZED}`\n"
         "- Comparison Report: `${PERF_COMPARISON_MARKDOWN_PATH_NORMALIZED}`\n"
+        "- GC Overhead Report: `${PERF_GC_OVERHEAD_MARKDOWN_PATH_NORMALIZED}`\n"
         "- Instruction Report: `${PERF_INSTRUCTION_MARKDOWN_PATH_NORMALIZED}`\n"
         "- Hotspot Report: `${PERF_HOTSPOT_MARKDOWN_PATH_NORMALIZED}`\n")
 
@@ -1295,6 +1499,28 @@ file(WRITE
         "}\n")
 
 file(WRITE
+        "${PERF_REPORT_DIR}/gc_overhead_report.md"
+        "# ZR VM GC Overhead Report\n\n"
+        "- Generated At (UTC): ${PERF_GENERATED_AT_UTC}\n"
+        "- Tier: ${PERF_REQUESTED_TIER}\n"
+        "- Baseline Case: `${PERF_GC_BASELINE_CASE}`\n"
+        "- Stress Case: `${PERF_GC_STRESS_CASE}`\n"
+        "- Overhead compares stress against baseline for the same implementation.\n\n"
+        "| implementation | language | status | baseline mean wall ms | stress mean wall ms | stress/baseline | wall delta ms | overhead % | baseline mean peak MiB | stress mean peak MiB | peak delta MiB |\n"
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n"
+        "${PERF_GC_OVERHEAD_MARKDOWN_ROWS}")
+file(WRITE
+        "${PERF_REPORT_DIR}/gc_overhead_report.json"
+        "{\n"
+        "  \"suite\": \"gc_overhead_report\",\n"
+        "  \"generated_at_utc\": \"${PERF_GENERATED_AT_UTC}\",\n"
+        "  \"tier\": \"${PERF_REQUESTED_TIER}\",\n"
+        "  \"baseline_case\": \"${PERF_GC_BASELINE_CASE}\",\n"
+        "  \"stress_case\": \"${PERF_GC_STRESS_CASE}\",\n"
+        "  \"rows\": [\n${PERF_GC_OVERHEAD_JSON_ROWS}\n  ]\n"
+        "}\n")
+
+file(WRITE
         "${PERF_REPORT_DIR}/instruction_report.md"
         "# ZR VM Instruction Report\n\n"
         "- Generated At (UTC): ${PERF_GENERATED_AT_UTC}\n"
@@ -1332,6 +1558,7 @@ file(WRITE
 message("Performance markdown report: ${PERF_REPORT_DIR}/benchmark_report.md")
 message("Performance json report: ${PERF_REPORT_DIR}/benchmark_report.json")
 message("Comparison markdown report: ${PERF_REPORT_DIR}/comparison_report.md")
+message("GC overhead markdown report: ${PERF_REPORT_DIR}/gc_overhead_report.md")
 message("Instruction markdown report: ${PERF_REPORT_DIR}/instruction_report.md")
 message("Hotspot markdown report: ${PERF_REPORT_DIR}/hotspot_report.md")
 if (PERF_CALLGRIND_COUNTING_MODE)

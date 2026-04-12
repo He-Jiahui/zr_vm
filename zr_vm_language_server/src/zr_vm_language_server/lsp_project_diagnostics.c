@@ -1,6 +1,6 @@
 #include "lsp_project_internal.h"
 #include "lsp_metadata_provider.h"
-#include "../../../zr_vm_parser/src/zr_vm_parser/module_init_analysis.h"
+#include "module_init_analysis.h"
 
 #include <stdio.h>
 #include <string.h>

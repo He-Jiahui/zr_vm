@@ -1,0 +1,216 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 54
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 3
+
+CONSTANTS (26):
+  [0] function
+  [1] function
+  [2] function
+  [3] function
+  [4] function
+  [5] function
+  [6] int: 5
+  [7] function
+  [8] function
+  [9] int: 0
+  [10] null
+  [11] string: "BaseHero"
+  [12] string: "zr.builtin.Object"
+  [13] string: "_hp"
+  [14] string: "int"
+  [15] string: "constructor"
+  [16] string: "__get_hp"
+  [17] string: "__set_hp"
+  [18] string: "heal"
+  [19] string: "ScoreBoard"
+  [20] string: "_bonus"
+  [21] string: "__get_bonus"
+  [22] string: "__set_bonus"
+  [23] string: "BossHero"
+  [24] string: "created"
+  [25] string: "total"
+
+LOCAL_VARIABLES (0):
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (0):
+  EXPORTED_SYMBOLS (0):
+  STATIC_IMPORTS (0):
+  MODULE_ENTRY_EFFECTS (0):
+  EXPORTED_CALLABLE_SUMMARIES (0):
+  TOP_LEVEL_CALLABLE_BINDINGS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (1):
+    test classesFullProjectShape()
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+PROTOTYPES (3):
+// ========== PROTOTYPES FROM DATA (count: 3) ==========
+// --- Prototype 1 ---
+class BaseHero : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "_hp",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 0,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__get_hp",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 1,
+      parameterCount: 0,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__set_hp",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 2,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "heal",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 3,
+      parameterCount: 1,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+class ScoreBoard : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "_bonus",
+      access: private (1),
+      static: true,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__get_bonus",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 4,
+      parameterCount: 0,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__set_bonus",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 5,
+      parameterCount: 1,
+      returnType: "<void>"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
+class BossHero : BaseHero {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "created",
+      access: public (0),
+      static: true,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 7,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "total",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 8,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (10):
+  [0] GET_GLOBAL (extra=0)
+  [1] GET_MEMBER (extra=0, operand1=0, operand2=0)
+  [2] GET_CONSTANT (extra=1, operand=6)
+  [3] SET_MEMBER (extra=1, operand1=0, operand2=1)
+  [4] GET_GLOBAL (extra=2)
+  [5] GET_MEMBER (extra=2, operand1=2, operand2=2)
+  [6] GET_CONSTANT (extra=0, operand=9)
+  [7] SET_MEMBER (extra=0, operand1=2, operand2=3)
+  [8] GET_CONSTANT (extra=0, operand=10)
+  [9] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+

@@ -58,6 +58,17 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
                                                        SZrSemanticAnalyzer *analyzer,
                                                        SZrAstNode *ast);
 
+TZrBool ZrLanguageServer_SemanticAnalyzer_BootstrapTypePrototypes(SZrState *state,
+                                                                  SZrSemanticAnalyzer *analyzer,
+                                                                  SZrAstNode *ast);
+
+TZrBool ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *ownerTypeNode,
+        SZrAstNode *functionNode,
+        const SZrType *typeNode,
+        SZrInferredType *outType);
+
 TZrBool ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(SZrSemanticAnalyzer *analyzer,
                                                                   SZrSymbol *symbol,
                                                                   EZrSemanticSymbolKind semanticKind,

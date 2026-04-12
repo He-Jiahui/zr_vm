@@ -98,9 +98,12 @@ static char *read_text_file_owned(const TZrChar *path) {
 
 static SZrFunction *compile_dynamic_foreach_fixture(SZrState *state) {
     const char *source =
-            "var box = { values: [1, 2, 3] };\n"
+            "makeValues() {\n"
+            "    return [1, 2, 3];\n"
+            "}\n"
+            "var values = makeValues();\n"
             "var sum = 0;\n"
-            "for (var item in box.values) {\n"
+            "for (var item in values) {\n"
             "    sum = sum + <int> item;\n"
             "}\n"
             "return sum;\n";
@@ -125,7 +128,7 @@ static void test_dynamic_foreach_emits_semir_dynamic_iterator_contracts(void) {
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("dynamic foreach semir pipeline",
-                 "Testing that foreach over dynamically inferred iterables keeps raw SemIR contracts but quickens ExecBC loop guards into a superinstruction");
+                 "Testing that foreach over a runtime-erased iterable keeps raw SemIR contracts but quickens ExecBC loop guards into a superinstruction");
 
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -178,7 +181,7 @@ static void test_dynamic_foreach_aot_backends_emit_iterator_runtime_contracts(vo
     timer.startTime = clock();
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("dynamic foreach aot pipeline",
-                 "Testing that SemIR-driven AOT artifacts advertise runtime iterator contracts for dynamic foreach lowering");
+                 "Testing that SemIR-driven AOT artifacts advertise runtime iterator contracts for runtime-erased foreach lowering");
 
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
@@ -204,14 +207,14 @@ static void test_dynamic_foreach_aot_backends_emit_iterator_runtime_contracts(vo
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZR AOT C Backend"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "DYN_ITER_INIT"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "DYN_ITER_MOVE_NEXT"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Object_IterInit"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Object_IterMoveNext"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_IterInit"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_IterMoveNext"));
 
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "ZR AOT LLVM Backend"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "DYN_ITER_INIT"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "DYN_ITER_MOVE_NEXT"));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "declare i1 @ZrCore_Object_IterInit"));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "declare i1 @ZrCore_Object_IterMoveNext"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "declare i1 @ZrLibrary_AotRuntime_IterInit"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "declare i1 @ZrLibrary_AotRuntime_IterMoveNext"));
 
         free(cText);
         free(llvmText);

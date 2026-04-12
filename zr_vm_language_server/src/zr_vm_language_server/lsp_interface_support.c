@@ -7,9 +7,10 @@
 #include "lsp_module_metadata.h"
 #include "lsp_project_internal.h"
 #include "lsp_semantic_import_chain.h"
+#include "semantic_analyzer_internal.h"
 
 #include "zr_vm_parser/type_inference.h"
-#include "../../../zr_vm_parser/src/zr_vm_parser/type_inference_internal.h"
+#include "type_inference_internal.h"
 #include "zr_vm_library/file.h"
 
 static TZrBool symbol_name_matches(SZrSymbol *symbol, SZrString *name);
@@ -27,6 +28,11 @@ static void append_type_prototype_member_completions(SZrState *state,
 static TZrBool extract_base_type_name(const TZrChar *typeName,
                                       TZrChar *buffer,
                                       TZrSize bufferSize);
+
+static TZrBool type_prototype_matches_name(const SZrTypePrototypeInfo *prototype, SZrString *typeName) {
+    return prototype != ZR_NULL && prototype->name != ZR_NULL && typeName != ZR_NULL &&
+           ZrCore_String_Equal(prototype->name, typeName);
+}
 
 static void get_string_view(SZrString *value, TZrNativeString *text, TZrSize *length) {
     if (text == ZR_NULL || length == ZR_NULL) {
@@ -623,6 +629,16 @@ static void append_symbol_ffi_hover_metadata(SZrSymbol *symbol,
 
     if (symbol == ZR_NULL || symbol->astNode == ZR_NULL || buffer == ZR_NULL || used == ZR_NULL || bufferSize == 0) {
         return;
+    }
+
+    switch (symbol->astNode->type) {
+        case ZR_AST_STRUCT_DECLARATION:
+        case ZR_AST_STRUCT_FIELD:
+        case ZR_AST_ENUM_DECLARATION:
+        case ZR_AST_ENUM_MEMBER:
+            break;
+        default:
+            return;
     }
 
     decorators = lsp_interface_get_decorator_array_for_node(symbol->astNode);
@@ -1824,15 +1840,13 @@ static const ZrLibTypeDescriptor *find_native_type_descriptor_across_modules(SZr
                                                                              SZrAstNode *ast,
                                                                              const TZrChar *typeName,
                                                                              const ZrLibModuleDescriptor **outModule) {
-    const ZrLibTypeDescriptor *typeDescriptor;
-
-    typeDescriptor = ZrLanguageServer_LspModuleMetadata_FindNativeTypeDescriptor(state, typeName, outModule);
-    if (typeDescriptor != ZR_NULL || state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL) {
-        return typeDescriptor;
+    if (state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL) {
+        return ZrLanguageServer_LspModuleMetadata_FindNativeTypeDescriptor(state, typeName, outModule);
     }
 
     {
         SZrArray bindings;
+        const ZrLibTypeDescriptor *typeDescriptor = ZR_NULL;
 
         ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
         ZrLanguageServer_LspProject_CollectImportBindings(state, ast, &bindings);
@@ -1868,7 +1882,7 @@ static const ZrLibTypeDescriptor *find_native_type_descriptor_across_modules(SZr
         ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
     }
 
-    return ZR_NULL;
+    return ZrLanguageServer_LspModuleMetadata_FindNativeTypeDescriptor(state, typeName, outModule);
 }
 
 static void append_native_type_descriptor_member_completions(SZrState *state,
@@ -2514,14 +2528,24 @@ static const SZrTypeMemberInfo *find_receiver_project_member_recursive(SZrCompil
                                                                        SZrTypePrototypeInfo *prototype,
                                                                        SZrString *memberName,
                                                                        TZrUInt32 depth) {
+    SZrArray membersSnapshot;
+    SZrArray inheritsSnapshot;
+    SZrString *prototypeName;
+    SZrString *extendsTypeName;
+
     if (compilerState == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL ||
         depth > ZR_LSP_MEMBER_RECURSION_MAX_DEPTH) {
         return ZR_NULL;
     }
 
-    for (TZrSize index = 0; index < prototype->members.length; index++) {
+    membersSnapshot = prototype->members;
+    inheritsSnapshot = prototype->inherits;
+    prototypeName = prototype->name;
+    extendsTypeName = prototype->extendsTypeName;
+
+    for (TZrSize index = 0; index < membersSnapshot.length; index++) {
         const SZrTypeMemberInfo *memberInfo =
-            (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&prototype->members, index);
+            (const SZrTypeMemberInfo *)ZrCore_Array_Get(&membersSnapshot, index);
         if (memberInfo == ZR_NULL || memberInfo->name == ZR_NULL ||
             memberInfo->isMetaMethod ||
             receiver_project_member_kind(memberInfo) == ZR_LSP_METADATA_MEMBER_NONE) {
@@ -2533,12 +2557,12 @@ static const SZrTypeMemberInfo *find_receiver_project_member_recursive(SZrCompil
         }
     }
 
-    if (prototype->extendsTypeName != ZR_NULL) {
+    if (extendsTypeName != ZR_NULL) {
         SZrTypePrototypeInfo *basePrototype =
-            find_compiler_type_prototype_inference(compilerState, prototype->extendsTypeName);
+            find_compiler_type_prototype_inference(compilerState, extendsTypeName);
         const SZrTypeMemberInfo *memberInfo;
 
-        if (basePrototype != ZR_NULL && basePrototype != prototype) {
+        if (basePrototype != ZR_NULL && !type_prototype_matches_name(basePrototype, prototypeName)) {
             memberInfo = find_receiver_project_member_recursive(compilerState,
                                                                 basePrototype,
                                                                 memberName,
@@ -2549,8 +2573,8 @@ static const SZrTypeMemberInfo *find_receiver_project_member_recursive(SZrCompil
         }
     }
 
-    for (TZrSize index = 0; index < prototype->inherits.length; index++) {
-        SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&prototype->inherits, index);
+    for (TZrSize index = 0; index < inheritsSnapshot.length; index++) {
+        SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, index);
         SZrTypePrototypeInfo *inheritPrototype;
         const SZrTypeMemberInfo *memberInfo;
 
@@ -2559,7 +2583,7 @@ static const SZrTypeMemberInfo *find_receiver_project_member_recursive(SZrCompil
         }
 
         inheritPrototype = find_compiler_type_prototype_inference(compilerState, *inheritTypeNamePtr);
-        if (inheritPrototype == ZR_NULL || inheritPrototype == prototype) {
+        if (inheritPrototype == ZR_NULL || type_prototype_matches_name(inheritPrototype, prototypeName)) {
             continue;
         }
 
@@ -3628,15 +3652,25 @@ static void append_type_prototype_member_completions(SZrState *state,
                                                      TZrBool wantStatic,
                                                      TZrSize depth,
                                                      SZrArray *result) {
+    SZrArray membersSnapshot;
+    SZrArray inheritsSnapshot;
+    SZrString *prototypeName;
+    SZrString *extendsTypeName;
+
     if (state == ZR_NULL || analyzer == ZR_NULL || prototype == ZR_NULL || result == ZR_NULL ||
         depth > ZR_LSP_MEMBER_RECURSION_MAX_DEPTH) {
         return;
     }
 
-    if (prototype_array_layout_matches(&prototype->members, sizeof(SZrTypeMemberInfo))) {
-        for (TZrSize index = 0; index < prototype->members.length; index++) {
+    membersSnapshot = prototype->members;
+    inheritsSnapshot = prototype->inherits;
+    prototypeName = prototype->name;
+    extendsTypeName = prototype->extendsTypeName;
+
+    if (prototype_array_layout_matches(&membersSnapshot, sizeof(SZrTypeMemberInfo))) {
+        for (TZrSize index = 0; index < membersSnapshot.length; index++) {
             const SZrTypeMemberInfo *member =
-                (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&prototype->members, index);
+                (const SZrTypeMemberInfo *)ZrCore_Array_Get(&membersSnapshot, index);
             const TZrChar *kind = ZR_NULL;
             SZrString *displayName = ZR_NULL;
 
@@ -3670,10 +3704,10 @@ static void append_type_prototype_member_completions(SZrState *state,
         }
     }
 
-    if (prototype->extendsTypeName != ZR_NULL) {
+    if (extendsTypeName != ZR_NULL) {
         const SZrTypePrototypeInfo *basePrototype =
-            find_type_prototype_by_text(analyzer, ZrCore_String_GetNativeString(prototype->extendsTypeName));
-        if (basePrototype != ZR_NULL && basePrototype != prototype) {
+            find_type_prototype_by_text(analyzer, ZrCore_String_GetNativeString(extendsTypeName));
+        if (basePrototype != ZR_NULL && !type_prototype_matches_name(basePrototype, prototypeName)) {
             append_type_prototype_member_completions(state,
                                                      analyzer,
                                                      basePrototype,
@@ -3683,9 +3717,9 @@ static void append_type_prototype_member_completions(SZrState *state,
         }
     }
 
-    if (prototype_array_layout_matches(&prototype->inherits, sizeof(SZrString *))) {
-        for (TZrSize index = 0; index < prototype->inherits.length; index++) {
-            SZrString **inheritPtr = (SZrString **)ZrCore_Array_Get((SZrArray *)&prototype->inherits, index);
+    if (prototype_array_layout_matches(&inheritsSnapshot, sizeof(SZrString *))) {
+        for (TZrSize index = 0; index < inheritsSnapshot.length; index++) {
+            SZrString **inheritPtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, index);
             const SZrTypePrototypeInfo *basePrototype;
 
             if (inheritPtr == ZR_NULL || *inheritPtr == ZR_NULL) {
@@ -3693,7 +3727,7 @@ static void append_type_prototype_member_completions(SZrState *state,
             }
 
             basePrototype = find_type_prototype_by_text(analyzer, ZrCore_String_GetNativeString(*inheritPtr));
-            if (basePrototype != ZR_NULL && basePrototype != prototype) {
+            if (basePrototype != ZR_NULL && !type_prototype_matches_name(basePrototype, prototypeName)) {
                 append_type_prototype_member_completions(state,
                                                          analyzer,
                                                          basePrototype,
@@ -4168,9 +4202,11 @@ static void find_receiver_variable_prototype_recursive(SZrState *state,
 
             ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
             if (varDecl->typeInfo != ZR_NULL) {
-                hasType = ZrParser_AstTypeToInferredType_Convert(analyzer->compilerState,
-                                                                 varDecl->typeInfo,
-                                                                 &inferredType);
+                hasType = ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
+                                                                                          ZR_NULL,
+                                                                                          ZR_NULL,
+                                                                                          varDecl->typeInfo,
+                                                                                          &inferredType);
             } else if (varDecl->value != ZR_NULL && varDecl->value->type == ZR_AST_CONSTRUCT_EXPRESSION) {
                 prototype = resolve_construct_target_prototype_from_node(
                         analyzer,
@@ -4319,13 +4355,14 @@ static void find_construct_initialized_class_symbol_recursive(SZrState *state,
                 break;
             }
 
-            if (varDecl->value->data.constructExpression.target != ZR_NULL &&
-                varDecl->value->data.constructExpression.target->type == ZR_AST_IDENTIFIER_LITERAL) {
+            if (varDecl->value->data.constructExpression.target != ZR_NULL) {
                 SZrString *className =
-                    varDecl->value->data.constructExpression.target->data.identifier.name;
-                SZrSymbol *classSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable,
-                                                                             className,
-                                                                             ZR_NULL);
+                    extract_construct_target_type_name_from_node(varDecl->value->data.constructExpression.target);
+                SZrSymbol *classSymbol = className != ZR_NULL
+                                             ? ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable,
+                                                                                   className,
+                                                                                   ZR_NULL)
+                                             : ZR_NULL;
                 if (classSymbol != ZR_NULL && classSymbol->type == ZR_SYMBOL_CLASS &&
                     node->location.start.offset >= *bestOffset) {
                     *bestClassSymbol = classSymbol;

@@ -20,11 +20,6 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/parser.h"
 
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
-
 #define TEST_START(summary)                                                                                            \
     do {                                                                                                               \
         printf("Unit Test - %s\n", summary);                                                                           \

@@ -140,34 +140,38 @@ TZrBool ZrLanguageServer_FileVersion_UpdateContent(SZrState *state,
     if (state == ZR_NULL || fileVersion == ZR_NULL || content == ZR_NULL) {
         return ZR_FALSE;
     }
-    
-    // 释放旧内容
-    if (fileVersion->content != ZR_NULL) {
-        ZrCore_Memory_RawFree(state->global, fileVersion->content, fileVersion->contentLength + 1);
+
+    /*
+     * 调用方可能传入 fileVersion->content（例如 LSP 从 fileVersion 取文本再交给 UpdateFile）。
+     * 若先释放 fileVersion->content 再 memcpy(content)，则 memcpy 读取的已是被释放内存。
+     */
+    if (fileVersion->content == ZR_NULL || fileVersion->content != (TZrChar *)content) {
+        if (fileVersion->content != ZR_NULL) {
+            ZrCore_Memory_RawFree(state->global, fileVersion->content, fileVersion->contentLength + 1);
+        }
+
+        fileVersion->content = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, contentLength + 1);
+        if (fileVersion->content == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        memcpy(fileVersion->content, content, contentLength);
+        fileVersion->content[contentLength] = '\0';
     }
-    
-    // 复制新内容
-    fileVersion->content = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, contentLength + 1);
-    if (fileVersion->content == ZR_NULL) {
-        return ZR_FALSE;
-    }
-    memcpy(fileVersion->content, content, contentLength);
-    fileVersion->content[contentLength] = '\0';
+
     fileVersion->contentLength = contentLength;
     fileVersion->version = version;
     fileVersion->isDirty = ZR_TRUE;
     fileVersion->lastChangeRange = changeRange;
-    fileVersion->hasIncrementalInfo = ZR_TRUE; // 标记有增量信息
-    
+    fileVersion->hasIncrementalInfo = ZR_TRUE; /* 标记有增量信息 */
+
     clear_parser_diagnostics(state, fileVersion);
-    
-    // 释放旧哈希
+
     if (fileVersion->lastContentHash != ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, fileVersion->lastContentHash, fileVersion->lastContentHashLength + 1);
         fileVersion->lastContentHash = ZR_NULL;
         fileVersion->lastContentHashLength = 0;
     }
-    
+
     return ZR_TRUE;
 }
 

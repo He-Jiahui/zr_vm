@@ -603,6 +603,85 @@ def mixed_service_loop(scale: int) -> int:
     ) % MOD
 
 
+GC_FRAGMENTS = ["amber", "birch", "cedar", "dune", "ember", "frost", "grove", "harbor"]
+
+
+def gc_fragment_for(slot: int) -> str:
+    return GC_FRAGMENTS[slot % len(GC_FRAGMENTS)]
+
+
+def gc_payload_for(seed: int, cycle: int, slot: int) -> str:
+    head = gc_fragment_for(seed + cycle)
+    middle = gc_fragment_for(seed // 3 + slot * 5)
+    tail = gc_fragment_for(seed + cycle * 7 + slot * 11)
+    return f"{head}-{middle}-{tail}:{seed}:{cycle}:{slot}"
+
+
+def gc_fragment_stress(scale: int) -> int:
+    survivors: list[str] = []
+    scratch: list[str] = []
+    anchors: dict[str, int] = {}
+    old_archive: list[str] = []
+    old_lookup: dict[str, str] = {}
+    seed = 29
+    checksum = 0
+    anchor_count = 0
+
+    for cycle in range(36 * scale):
+        scratch.clear()
+        probe_key = ""
+        probe_fallback = 0
+
+        for slot in range(320):
+            seed = (seed * 73 + 19 + cycle + slot) % 10007
+            payload = gc_payload_for(seed, cycle, slot)
+            scratch.append(payload)
+            scratch.append(payload + "|" + gc_fragment_for(seed + slot + 3))
+
+            if slot % 5 == 0:
+                survivors.append(payload + "#hold#" + str(cycle))
+            if slot % 7 == 0:
+                anchor_key = payload + "#anchor#" + str(slot)
+                if anchor_key not in anchors:
+                    anchor_count += 1
+                anchors[anchor_key] = seed + cycle + slot
+            if slot % 11 == 0:
+                shadow_key = payload + "#shadow#" + str(cycle)
+                if shadow_key not in anchors:
+                    anchor_count += 1
+                anchors[shadow_key] = seed * 2 + slot
+            if slot % 17 == 0:
+                archive_value = payload + "#old#" + gc_fragment_for(seed + cycle + slot)
+                old_archive.append(archive_value)
+                old_lookup["slot#" + str(slot % 32)] = archive_value
+            if slot % 13 == 0 and len(survivors) > 24:
+                survivors.pop(0)
+            if slot % 19 == 0 and len(old_archive) > 96:
+                old_archive.pop(0)
+
+            checksum = (checksum * 131 + seed + cycle * 17 + slot * 29 + len(survivors)) % MOD
+            if slot == 0:
+                probe_key = payload + "#anchor#0"
+                probe_fallback = seed + cycle
+
+        scratch.clear()
+        if cycle % 4 == 3:
+            anchors.clear()
+            anchor_count = 0
+        if probe_key in anchors:
+            checksum = (checksum * 137 + anchors[probe_key] + len(survivors) + cycle) % MOD
+        else:
+            checksum = (checksum * 137 + probe_fallback + len(survivors) + cycle) % MOD
+        if "slot#" + str(cycle % 32) in old_lookup:
+            checksum = (checksum * 149 + len(old_archive) * 7 + anchor_count + cycle + 31) % MOD
+        else:
+            checksum = (checksum * 149 + len(old_archive) * 7 + anchor_count + cycle) % MOD
+        if cycle % 9 == 8:
+            survivors.clear()
+
+    return (checksum + len(survivors) * 17 + anchor_count * 19 + len(old_archive) * 23 + seed) % MOD
+
+
 CASE_HANDLERS = {
     "numeric_loops": ("BENCH_NUMERIC_LOOPS_PASS", numeric_loops),
     "dispatch_loops": ("BENCH_DISPATCH_LOOPS_PASS", dispatch_loops),
@@ -618,6 +697,8 @@ CASE_HANDLERS = {
     "array_index_dense": ("BENCH_ARRAY_INDEX_DENSE_PASS", array_index_dense),
     "branch_jump_dense": ("BENCH_BRANCH_JUMP_DENSE_PASS", branch_jump_dense),
     "mixed_service_loop": ("BENCH_MIXED_SERVICE_LOOP_PASS", mixed_service_loop),
+    "gc_fragment_baseline": ("BENCH_GC_FRAGMENT_BASELINE_PASS", gc_fragment_stress),
+    "gc_fragment_stress": ("BENCH_GC_FRAGMENT_STRESS_PASS", gc_fragment_stress),
 }
 
 

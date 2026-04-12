@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_typed_equality",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

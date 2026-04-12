@@ -1,0 +1,6 @@
+{
+  "name": "gc_fragment_stress",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

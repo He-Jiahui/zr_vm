@@ -1,5 +1,6 @@
 #include "lsp_interface_internal.h"
 #include "lsp_project_internal.h"
+#include "semantic_analyzer_internal.h"
 
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/string.h"
@@ -1177,7 +1178,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectFo
                                                                       context,
                                                                       projectFileUri,
                                                                       projectContent,
-                                                                      contentLength);
+                                                                      contentLength,
+                                                                      ZR_TRUE);
     ZrCore_Memory_RawFreeWithType(state->global,
                                   projectContent,
                                   contentLength + 1,
@@ -1495,7 +1497,8 @@ static void project_invalidate_loaded_analyzers(SZrState *state,
 static TZrBool project_reanalyze_loaded_document(SZrState *state,
                                                  SZrLspContext *context,
                                                  SZrLspProjectIndex *projectIndex,
-                                                 SZrString *uri) {
+                                                 SZrString *uri,
+                                                 TZrBool forceSemanticCacheReset) {
     SZrFileVersion *fileVersion;
     SZrSemanticAnalyzer *analyzer;
     FZrIoLoadSource previousSourceLoader = ZR_NULL;
@@ -1503,6 +1506,8 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
     TZrPtr previousSourceLoaderUserData = ZR_NULL;
     SZrLspProjectSourceLoaderContext sourceLoaderContext;
     TZrBool analyzeSuccess;
+    TZrSize currentAstHash;
+    TZrBool sameAstAsCachedAnalysis;
 
     if (state == ZR_NULL || context == ZR_NULL || projectIndex == ZR_NULL || uri == ZR_NULL) {
         return ZR_FALSE;
@@ -1523,7 +1528,12 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
         return ZR_FALSE;
     }
 
-    ZrLanguageServer_SemanticAnalyzer_ClearCache(state, analyzer);
+    currentAstHash = ZrLanguageServer_SemanticAnalyzer_ComputeAstHash(fileVersion->ast);
+    sameAstAsCachedAnalysis = analyzer->enableCache && analyzer->cache != ZR_NULL && analyzer->cache->isValid &&
+                              analyzer->cache->astHash == currentAstHash;
+    if (forceSemanticCacheReset || !sameAstAsCachedAnalysis) {
+        ZrLanguageServer_SemanticAnalyzer_ClearCache(state, analyzer);
+    }
     project_preload_descriptor_plugin_imports(state, projectIndex, fileVersion->ast);
     if (state->global != ZR_NULL) {
         sourceLoaderContext.projectIndex = projectIndex;
@@ -1541,6 +1551,10 @@ static TZrBool project_reanalyze_loaded_document(SZrState *state,
         state->global->userData = previousUserData;
         state->global->sourceLoaderUserData = previousSourceLoaderUserData;
         state->global->sourceLoader = previousSourceLoader;
+    }
+
+    if (!analyzeSuccess) {
+        ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
     }
 
     lsp_project_trace("[lsp_project] reanalyze end uri=%s success=%d\n",
@@ -1784,7 +1798,7 @@ static TZrBool project_ensure_module_loaded(SZrState *state,
                                       ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
     }
 
-    if (!project_reanalyze_loaded_document(state, context, projectIndex, moduleUri)) {
+    if (!project_reanalyze_loaded_document(state, context, projectIndex, moduleUri, ZR_TRUE)) {
         return ZR_FALSE;
     }
 
@@ -2184,14 +2198,175 @@ void ZrLanguageServer_Lsp_ProjectIndexes_Free(SZrState *state, SZrLspContext *co
     ZrCore_Array_Free(state, &context->projectIndexes);
 }
 
+static TZrBool project_uri_contained_in_string_array(SZrArray *uris, SZrString *needle) {
+    TZrSize index;
+
+    if (uris == ZR_NULL || !uris->isValid || needle == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < uris->length; index++) {
+        SZrString **uriPtr = (SZrString **)ZrCore_Array_Get(uris, index);
+        if (uriPtr != ZR_NULL && *uriPtr != ZR_NULL && ZrLanguageServer_Lsp_StringsEqual(*uriPtr, needle)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool project_file_imports_module_name(SZrState *state,
+                                               SZrLspContext *context,
+                                               SZrString *fileUri,
+                                               SZrString *moduleName) {
+    SZrSemanticAnalyzer *analyzer;
+    SZrArray bindings;
+    TZrSize index;
+
+    if (state == ZR_NULL || context == ZR_NULL || fileUri == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, fileUri);
+    if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
+    for (index = 0; index < bindings.length; index++) {
+        SZrLspImportBinding **bindingPtr = (SZrLspImportBinding **)ZrCore_Array_Get(&bindings, index);
+
+        if (bindingPtr != ZR_NULL && *bindingPtr != ZR_NULL && (*bindingPtr)->moduleName != ZR_NULL &&
+            ZrLanguageServer_Lsp_StringsEqual((*bindingPtr)->moduleName, moduleName)) {
+            ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+            return ZR_TRUE;
+        }
+    }
+
+    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+    return ZR_FALSE;
+}
+
+static void project_enqueue_importers_of_module(SZrState *state,
+                                                SZrLspContext *context,
+                                                SZrLspProjectIndex *projectIndex,
+                                                SZrString *importedModuleName,
+                                                SZrString *excludeUri,
+                                                SZrArray *queue,
+                                                SZrArray *discovered) {
+    TZrSize recordIndex;
+
+    if (state == ZR_NULL || context == ZR_NULL || projectIndex == ZR_NULL || importedModuleName == ZR_NULL ||
+        queue == ZR_NULL) {
+        return;
+    }
+
+    for (recordIndex = 0; recordIndex < projectIndex->files.length; recordIndex++) {
+        SZrLspProjectFileRecord **recordPtr =
+            (SZrLspProjectFileRecord **)ZrCore_Array_Get(&projectIndex->files, recordIndex);
+        SZrString *candidateUri;
+
+        if (recordPtr == ZR_NULL || *recordPtr == ZR_NULL || (*recordPtr)->uri == ZR_NULL) {
+            continue;
+        }
+
+        candidateUri = (*recordPtr)->uri;
+        if (excludeUri != ZR_NULL && ZrLanguageServer_Lsp_StringsEqual(candidateUri, excludeUri)) {
+            continue;
+        }
+
+        if (discovered != ZR_NULL && project_uri_contained_in_string_array(discovered, candidateUri)) {
+            continue;
+        }
+
+        if (project_file_imports_module_name(state, context, candidateUri, importedModuleName)) {
+            ZrCore_Array_Push(state, queue, &candidateUri);
+            if (discovered != ZR_NULL) {
+                ZrCore_Array_Push(state, discovered, &candidateUri);
+            }
+        }
+    }
+}
+
+static TZrBool project_refresh_transitive_importers(SZrState *state,
+                                                   SZrLspContext *context,
+                                                   SZrLspProjectIndex *projectIndex,
+                                                   SZrString *changedUri) {
+    SZrArray queue;
+    SZrArray discovered;
+    SZrLspProjectFileRecord *record;
+    TZrSize head;
+
+    if (state == ZR_NULL || context == ZR_NULL || projectIndex == ZR_NULL || changedUri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    record = ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, changedUri);
+    if (record == ZR_NULL || record->moduleName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    ZrCore_Array_Init(state, &queue, sizeof(SZrString *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    ZrCore_Array_Init(state, &discovered, sizeof(SZrString *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    ZrCore_Array_Push(state, &discovered, &changedUri);
+
+    project_enqueue_importers_of_module(state,
+                                       context,
+                                       projectIndex,
+                                       record->moduleName,
+                                       changedUri,
+                                       &queue,
+                                       &discovered);
+
+    head = 0;
+    while (head < queue.length) {
+        SZrString **nextPtr = (SZrString **)ZrCore_Array_Get(&queue, head);
+        SZrString *nextUri;
+
+        head++;
+        if (nextPtr == ZR_NULL || *nextPtr == ZR_NULL) {
+            continue;
+        }
+
+        nextUri = *nextPtr;
+        if (!project_reanalyze_loaded_document(state, context, projectIndex, nextUri, ZR_TRUE) ||
+            !project_register_loaded_document(state, context, projectIndex, nextUri) ||
+            !project_load_imports_from_uri(state, context, projectIndex, nextUri)) {
+            ZrCore_Array_Free(state, &queue);
+            ZrCore_Array_Free(state, &discovered);
+            return ZR_FALSE;
+        }
+
+        record = ZrLanguageServer_LspProject_FindRecordByUri(projectIndex, nextUri);
+        if (record == ZR_NULL || record->moduleName == ZR_NULL) {
+            continue;
+        }
+
+        project_enqueue_importers_of_module(state,
+                                           context,
+                                           projectIndex,
+                                           record->moduleName,
+                                           ZR_NULL,
+                                           &queue,
+                                           &discovered);
+    }
+
+    ZrCore_Array_Free(state, &queue);
+    ZrCore_Array_Free(state, &discovered);
+    return ZR_TRUE;
+}
+
 TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
                                                               const TZrChar *content,
-                                                              TZrSize contentLength) {
+                                                              TZrSize contentLength,
+                                                              TZrBool rescanAllLoadedSources) {
     SZrLspProjectIndex *projectIndex;
     TZrSize existingIndex;
     SZrArray loadedUris;
+    TZrBool projectBootstrap;
 
     ZrCore_Array_Construct(&loadedUris);
 
@@ -2199,9 +2374,10 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
         return ZR_FALSE;
     }
 
-    lsp_project_trace("[lsp_project] refresh begin uri=%s length=%llu\n",
+    lsp_project_trace("[lsp_project] refresh begin uri=%s length=%llu incremental=%d\n",
                       get_string_text(uri),
-                      (unsigned long long)contentLength);
+                      (unsigned long long)contentLength,
+                      (int)(rescanAllLoadedSources ? 0 : 1)); /* 1 = import-only incremental refresh */
 
     if (string_ends_with(uri, ".zrp")) {
         projectIndex = project_index_new_from_document(state, uri, content, contentLength);
@@ -2236,7 +2412,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
                 continue;
             }
 
-            if (!project_reanalyze_loaded_document(state, context, projectIndex, *loadedUriPtr) ||
+            if (!project_reanalyze_loaded_document(state, context, projectIndex, *loadedUriPtr, ZR_TRUE) ||
                 !project_register_loaded_document(state, context, projectIndex, *loadedUriPtr) ||
                 !project_load_imports_from_uri(state, context, projectIndex, *loadedUriPtr)) {
                 ZrCore_Array_Free(state, &loadedUris);
@@ -2254,6 +2430,7 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
         return ZR_TRUE;
     }
 
+    projectBootstrap = ZR_FALSE;
     if (!projectIndex->hasSemanticProjectLoad) {
         if (projectIndex->project == ZR_NULL || projectIndex->project->entry == ZR_NULL ||
             !project_ensure_module_loaded(state, context, projectIndex, projectIndex->project->entry)) {
@@ -2262,9 +2439,10 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
             return ZR_FALSE;
         }
         projectIndex->hasSemanticProjectLoad = ZR_TRUE;
+        projectBootstrap = ZR_TRUE;
     }
 
-    if (!project_reanalyze_loaded_document(state, context, projectIndex, uri) ||
+    if (!project_reanalyze_loaded_document(state, context, projectIndex, uri, ZR_FALSE) ||
         !project_register_loaded_document(state, context, projectIndex, uri) ||
         !project_load_imports_from_uri(state, context, projectIndex, uri) ||
         !project_collect_loaded_source_uris(state, context, projectIndex, &loadedUris)) {
@@ -2273,23 +2451,28 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
         return ZR_FALSE;
     }
 
-    for (TZrSize uriIndex = 0; uriIndex < loadedUris.length; uriIndex++) {
-        SZrString **loadedUriPtr = (SZrString **)ZrCore_Array_Get(&loadedUris, uriIndex);
+    if (projectBootstrap || rescanAllLoadedSources) {
+        for (TZrSize uriIndex = 0; uriIndex < loadedUris.length; uriIndex++) {
+            SZrString **loadedUriPtr = (SZrString **)ZrCore_Array_Get(&loadedUris, uriIndex);
 
-        if (loadedUriPtr == ZR_NULL || *loadedUriPtr == ZR_NULL ||
-            ZrLanguageServer_Lsp_StringsEqual(*loadedUriPtr, uri)) {
-            continue;
-        }
+            if (loadedUriPtr == ZR_NULL || *loadedUriPtr == ZR_NULL ||
+                ZrLanguageServer_Lsp_StringsEqual(*loadedUriPtr, uri)) {
+                continue;
+            }
 
-        if (!project_reanalyze_loaded_document(state, context, projectIndex, *loadedUriPtr) ||
-            !project_register_loaded_document(state, context, projectIndex, *loadedUriPtr) ||
-            !project_load_imports_from_uri(state, context, projectIndex, *loadedUriPtr)) {
-            lsp_project_trace("[lsp_project] refresh secondary-failed uri=%s loaded=%s\n",
-                              get_string_text(uri),
-                              get_string_text(*loadedUriPtr));
-            ZrCore_Array_Free(state, &loadedUris);
-            return ZR_FALSE;
+            if (!project_reanalyze_loaded_document(state, context, projectIndex, *loadedUriPtr, ZR_TRUE) ||
+                !project_register_loaded_document(state, context, projectIndex, *loadedUriPtr) ||
+                !project_load_imports_from_uri(state, context, projectIndex, *loadedUriPtr)) {
+                lsp_project_trace("[lsp_project] refresh secondary-failed uri=%s loaded=%s\n",
+                                  get_string_text(uri),
+                                  get_string_text(*loadedUriPtr));
+                ZrCore_Array_Free(state, &loadedUris);
+                return ZR_FALSE;
+            }
         }
+    } else if (!project_refresh_transitive_importers(state, context, projectIndex, uri)) {
+        ZrCore_Array_Free(state, &loadedUris);
+        return ZR_FALSE;
     }
 
     ZrCore_Array_Free(state, &loadedUris);

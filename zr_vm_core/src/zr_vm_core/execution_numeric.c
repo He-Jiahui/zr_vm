@@ -33,6 +33,23 @@ static SZrTypeValue *execution_restore_stack_destination(SZrState *state,
     return destinationPointer != ZR_NULL ? ZrCore_Stack_GetValue(destinationPointer) : ZR_NULL;
 }
 
+static void execution_refresh_forwarded_value_copy(SZrTypeValue *value) {
+    SZrRawObject *forwardedObject;
+
+    if (value == ZR_NULL || !value->isGarbageCollectable || value->value.object == ZR_NULL) {
+        return;
+    }
+
+    forwardedObject = (SZrRawObject *)value->value.object->garbageCollectMark.forwardingAddress;
+    if (forwardedObject == ZR_NULL) {
+        return;
+    }
+
+    value->value.object = forwardedObject;
+    value->type = (EZrValueType)forwardedObject->type;
+    value->isNative = forwardedObject->isNative;
+}
+
 static TZrBool execution_extract_numeric_double(const SZrTypeValue *value, TZrFloat64 *outValue) {
     if (value == ZR_NULL || outValue == ZR_NULL) {
         return ZR_FALSE;
@@ -296,30 +313,96 @@ TZrBool concat_values_to_destination(SZrState *state,
     SZrTypeValue *resultValue;
     SZrTypeValue stableOpA;
     SZrTypeValue stableOpB;
+    SZrFunctionStackAnchor functionTopAnchor;
+    SZrFunctionStackAnchor activeFunctionTopAnchor;
+    SZrFunctionStackAnchor tempBaseAnchor;
+    SZrFunctionStackAnchor opAAnchor;
+    SZrFunctionStackAnchor opBAnchor;
+    TZrBool hasFunctionTopAnchor = ZR_FALSE;
+    TZrBool hasActiveFunctionTopAnchor = ZR_FALSE;
+    TZrBool hasTempBaseAnchor = ZR_FALSE;
+    TZrBool hasOpAAnchor = ZR_FALSE;
+    TZrBool hasOpBAnchor = ZR_FALSE;
+    const SZrTypeValue *resolvedOpA = opA;
+    const SZrTypeValue *resolvedOpB = opB;
 
     if (state == ZR_NULL || outResult == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    stableOpA = *opA;
-    stableOpB = *opB;
     ZrCore_Value_ResetAsNull(outResult);
 
     savedStackTop = state->stackTop.valuePointer;
     savedStackTopOffset = ZrCore_Stack_SavePointerAsOffset(state, savedStackTop);
     currentCallInfo = state->callInfoList;
-    tempBase = currentCallInfo != ZR_NULL ? currentCallInfo->functionTop.valuePointer : savedStackTop;
-    tempBase = ZrCore_Function_ReserveScratchSlots(state, 2, tempBase);
-    if (currentCallInfo != ZR_NULL) {
-        tempBase = currentCallInfo->functionTop.valuePointer;
+    if (execution_value_points_into_stack(state, opA)) {
+        ZrCore_Function_StackAnchorInit(state, ZR_CAST_STACK_VALUE((TZrPtr)opA), &opAAnchor);
+        hasOpAAnchor = ZR_TRUE;
     }
+    if (execution_value_points_into_stack(state, opB)) {
+        ZrCore_Function_StackAnchorInit(state, ZR_CAST_STACK_VALUE((TZrPtr)opB), &opBAnchor);
+        hasOpBAnchor = ZR_TRUE;
+    }
+    tempBase = currentCallInfo != ZR_NULL ? currentCallInfo->functionTop.valuePointer : savedStackTop;
+    if (currentCallInfo != ZR_NULL && currentCallInfo->functionTop.valuePointer != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(state, currentCallInfo->functionTop.valuePointer, &functionTopAnchor);
+        ZrCore_Function_StackAnchorInit(state, currentCallInfo->functionTop.valuePointer, &activeFunctionTopAnchor);
+        hasFunctionTopAnchor = ZR_TRUE;
+        hasActiveFunctionTopAnchor = ZR_TRUE;
+    }
+    tempBase = ZrCore_Function_ReserveScratchSlots(state, 2, tempBase);
+    if (tempBase == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    ZrCore_Function_StackAnchorInit(state, tempBase, &tempBaseAnchor);
+    hasTempBaseAnchor = ZR_TRUE;
+    if (hasFunctionTopAnchor) {
+        currentCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &functionTopAnchor);
+    }
+
+    if (hasOpAAnchor) {
+        TZrStackValuePointer restoredOpA = ZrCore_Function_StackAnchorRestore(state, &opAAnchor);
+        resolvedOpA = restoredOpA != ZR_NULL ? ZrCore_Stack_GetValue(restoredOpA) : ZR_NULL;
+    }
+    if (hasOpBAnchor) {
+        TZrStackValuePointer restoredOpB = ZrCore_Function_StackAnchorRestore(state, &opBAnchor);
+        resolvedOpB = restoredOpB != ZR_NULL ? ZrCore_Stack_GetValue(restoredOpB) : ZR_NULL;
+    }
+    if (resolvedOpA == ZR_NULL || resolvedOpB == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stableOpA = *resolvedOpA;
+    stableOpB = *resolvedOpB;
+    execution_refresh_forwarded_value_copy(&stableOpA);
+    execution_refresh_forwarded_value_copy(&stableOpB);
     tempBaseOffset = ZrCore_Stack_SavePointerAsOffset(state, tempBase);
 
-    ZrCore_Stack_CopyValue(state, tempBase, &stableOpA);
-    ZrCore_Stack_CopyValue(state, tempBase + 1, &stableOpB);
     state->stackTop.valuePointer = tempBase + 2;
     if (currentCallInfo != ZR_NULL && currentCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         currentCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+        ZrCore_Function_StackAnchorInit(state, currentCallInfo->functionTop.valuePointer, &activeFunctionTopAnchor);
+        hasActiveFunctionTopAnchor = ZR_TRUE;
+    }
+    ZrCore_Stack_CopyValue(state, tempBase, &stableOpA);
+    if (hasTempBaseAnchor) {
+        tempBase = ZrCore_Function_StackAnchorRestore(state, &tempBaseAnchor);
+    }
+    if (hasFunctionTopAnchor) {
+        currentCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
+                                                                                      hasActiveFunctionTopAnchor
+                                                                                              ? &activeFunctionTopAnchor
+                                                                                              : &functionTopAnchor);
+    }
+    ZrCore_Stack_CopyValue(state, tempBase + 1, &stableOpB);
+    if (hasTempBaseAnchor) {
+        tempBase = ZrCore_Function_StackAnchorRestore(state, &tempBaseAnchor);
+    }
+    if (hasFunctionTopAnchor) {
+        currentCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
+                                                                                      hasActiveFunctionTopAnchor
+                                                                                              ? &activeFunctionTopAnchor
+                                                                                              : &functionTopAnchor);
     }
 
     if (safeMode) {
@@ -334,6 +417,9 @@ TZrBool concat_values_to_destination(SZrState *state,
         *outResult = *resultValue;
     }
     state->stackTop.valuePointer = ZrCore_Stack_LoadOffsetToPointer(state, savedStackTopOffset);
+    if (hasFunctionTopAnchor) {
+        currentCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &functionTopAnchor);
+    }
     return ZR_TRUE;
 }
 

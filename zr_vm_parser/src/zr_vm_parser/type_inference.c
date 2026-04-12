@@ -2039,7 +2039,16 @@ static TZrBool ast_type_try_resolve_qualified_inferred_type(SZrCompilerState *cs
                                                 astType->name->data.identifier.name,
                                                 &currentType) &&
         currentType.typeName != ZR_NULL) {
-        ensure_import_module_compile_info(cs, currentType.typeName);
+        if (getenv("ZR_VM_TRACE_PROJECT_STARTUP") != ZR_NULL &&
+            ZrCore_String_GetNativeString(currentType.typeName) != ZR_NULL &&
+            strchr(ZrCore_String_GetNativeString(currentType.typeName), '<') != ZR_NULL) {
+            fprintf(stderr,
+                    "[zr-debug-site] type_inference.currentType=%s\n",
+                    ZrCore_String_GetNativeString(currentType.typeName));
+        }
+        if (find_compiler_type_prototype_inference(cs, currentType.typeName) == ZR_NULL) {
+            ensure_import_module_compile_info(cs, currentType.typeName);
+        }
         resolvedRootFromModuleAlias = type_name_is_module_prototype_inference(cs, currentType.typeName);
     }
 

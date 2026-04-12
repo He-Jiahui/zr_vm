@@ -636,6 +636,8 @@ void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZr
         }
     }
     ZrCore_Value_Copy(state, &pair->value, value);
+    ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->key);
+    ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);
     object->memberVersion++;
     object_refresh_hidden_items_object_cache(state, object, storageKey, pair);
 }
@@ -1173,6 +1175,87 @@ TZrBool ZrCore_Object_GetMember(struct SZrState *state,
     return ZrCore_Object_GetMemberWithKeyUnchecked(state, receiver, memberName, &key, result);
 }
 
+TZrBool ZrCore_Object_GetMemberCachedDescriptorUnchecked(struct SZrState *state,
+                                                         SZrTypeValue *receiver,
+                                                         SZrObjectPrototype *ownerPrototype,
+                                                         TZrUInt32 descriptorIndex,
+                                                         SZrTypeValue *result) {
+    SZrObject *object;
+    const SZrMemberDescriptor *descriptor;
+    const SZrTypeValue *resolvedValue;
+    TZrBool isPrototypeReceiver;
+    SZrTypeValue memberKey;
+
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_GET_MEMBER);
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(ownerPrototype != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+    ZR_ASSERT(receiver->type == ZR_VALUE_TYPE_OBJECT ||
+              receiver->type == ZR_VALUE_TYPE_ARRAY ||
+              receiver->type == ZR_VALUE_TYPE_STRING);
+
+    if (ownerPrototype == ZR_NULL || ownerPrototype->memberDescriptors == ZR_NULL ||
+        descriptorIndex >= ownerPrototype->memberDescriptorCount) {
+        return ZR_FALSE;
+    }
+
+    descriptor = &ownerPrototype->memberDescriptors[descriptorIndex];
+    if (descriptor->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object_make_string_key_unchecked(state, descriptor->name, &memberKey);
+    object = (receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY)
+                     ? ZR_CAST_OBJECT(state, receiver->value.object)
+                     : ZR_NULL;
+    isPrototypeReceiver =
+            (TZrBool)(object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE);
+    if (descriptor->isStatic && !isPrototypeReceiver) {
+        return ZR_FALSE;
+    }
+
+    resolvedValue = object != ZR_NULL ? object_get_own_value_unchecked(state, object, &memberKey) : ZR_NULL;
+    if (resolvedValue != ZR_NULL) {
+        if (object != ZR_NULL && object_module_guard_pending_export(state, object, descriptor->name)) {
+            ZrCore_Value_ResetAsNull(result);
+            return state->threadStatus != ZR_THREAD_STATUS_FINE ? ZR_TRUE : ZR_FALSE;
+        }
+        ZrCore_Value_Copy(state, result, resolvedValue);
+        return ZR_TRUE;
+    }
+
+    if (object != ZR_NULL) {
+        (void)object_module_guard_pending_export(state, object, descriptor->name);
+    }
+
+    if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY && descriptor->getterFunction != ZR_NULL) {
+        return ZrCore_Object_CallFunctionWithReceiver(state,
+                                                      descriptor->getterFunction,
+                                                      receiver,
+                                                      ZR_NULL,
+                                                      0,
+                                                      result);
+    }
+
+    if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY &&
+        descriptor->contractRole == ZR_MEMBER_CONTRACT_ROLE_INDEX_LENGTH) {
+        return object_get_index_length(state, receiver, result);
+    }
+
+    resolvedValue = object_get_prototype_value_unchecked(state, ownerPrototype, &memberKey, ZR_TRUE);
+    if (resolvedValue != ZR_NULL) {
+        if (!descriptor->isStatic || isPrototypeReceiver) {
+            ZrCore_Value_Copy(state, result, resolvedValue);
+            return ZR_TRUE;
+        }
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_ResetAsNull(result);
+    return ZR_FALSE;
+}
+
 TZrBool ZrCore_Object_SetMemberWithKeyUnchecked(struct SZrState *state,
                                                 SZrTypeValue *receiver,
                                                 struct SZrString *memberName,
@@ -1257,6 +1340,91 @@ TZrBool ZrCore_Object_SetMemberWithKeyUnchecked(struct SZrState *state,
     }
 
     ZrCore_Object_SetValue(state, object, memberKey, value);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Object_SetMemberCachedDescriptorUnchecked(struct SZrState *state,
+                                                         SZrTypeValue *receiver,
+                                                         SZrObjectPrototype *ownerPrototype,
+                                                         TZrUInt32 descriptorIndex,
+                                                         const SZrTypeValue *value) {
+    SZrObject *object;
+    const SZrMemberDescriptor *descriptor;
+    const SZrManagedFieldInfo *managedField;
+    const SZrTypeValue *existingValue;
+    const SZrTypeValue *prototypeValue;
+    TZrBool isPrototypeReceiver;
+    SZrTypeValue memberKey;
+
+    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_SET_MEMBER);
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(ownerPrototype != ZR_NULL);
+    ZR_ASSERT(value != ZR_NULL);
+    ZR_ASSERT(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
+
+    if (ownerPrototype == ZR_NULL || ownerPrototype->memberDescriptors == ZR_NULL ||
+        descriptorIndex >= ownerPrototype->memberDescriptorCount) {
+        return ZR_FALSE;
+    }
+
+    descriptor = &ownerPrototype->memberDescriptors[descriptorIndex];
+    if (descriptor->name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object = ZR_CAST_OBJECT(state, receiver->value.object);
+    if (object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object_make_string_key_unchecked(state, descriptor->name, &memberKey);
+    isPrototypeReceiver =
+            (TZrBool)(object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE);
+    if (descriptor->isStatic && !isPrototypeReceiver) {
+        return ZR_FALSE;
+    }
+
+    if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY && descriptor->setterFunction != ZR_NULL) {
+        SZrTypeValue ignoredResult;
+        return ZrCore_Object_CallFunctionWithReceiver(state,
+                                                      descriptor->setterFunction,
+                                                      receiver,
+                                                      value,
+                                                      1,
+                                                      &ignoredResult);
+    }
+
+    if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_FIELD ||
+        descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_STATIC_MEMBER) {
+        if (!descriptor->isWritable) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Object_SetValue(state,
+                               descriptor->isStatic ? &ownerPrototype->super : object,
+                               &memberKey,
+                               value);
+        return ZR_TRUE;
+    }
+
+    existingValue = object_get_own_value_unchecked(state, object, &memberKey);
+    managedField = object_prototype_find_managed_field(ownerPrototype, descriptor->name, ZR_TRUE);
+    if (managedField != ZR_NULL || existingValue != ZR_NULL) {
+        ZrCore_Object_SetValue(state, object, &memberKey, value);
+        return ZR_TRUE;
+    }
+
+    prototypeValue = object_get_prototype_value_unchecked(state, ownerPrototype, &memberKey, ZR_TRUE);
+    if (prototypeValue != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!object_allows_dynamic_member_write(object)) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Object_SetValue(state, object, &memberKey, value);
     return ZR_TRUE;
 }
 

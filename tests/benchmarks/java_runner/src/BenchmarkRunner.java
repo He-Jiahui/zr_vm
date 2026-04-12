@@ -100,6 +100,14 @@ public final class BenchmarkRunner {
                 passBanner = MixedServiceLoopCase.PASS_BANNER;
                 checksum = MixedServiceLoopCase.run(scale);
                 break;
+            case GcFragmentBaselineCase.NAME:
+                passBanner = GcFragmentBaselineCase.PASS_BANNER;
+                checksum = GcFragmentBaselineCase.run(scale);
+                break;
+            case GcFragmentStressCase.NAME:
+                passBanner = GcFragmentStressCase.PASS_BANNER;
+                checksum = GcFragmentStressCase.run(scale);
+                break;
             default:
                 fail("unknown benchmark case: " + caseName);
                 return;

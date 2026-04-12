@@ -441,7 +441,12 @@ static TZrBool runtime_decorator_call_function(SZrState *state,
     TZrStackValuePointer savedStackTop;
     TZrStackValuePointer base;
     SZrFunctionStackAnchor savedStackTopAnchor;
+    SZrFunctionStackAnchor baseAnchor;
+    SZrFunctionStackAnchor originalCallInfoTopAnchor;
+    SZrFunctionStackAnchor activeCallInfoTopAnchor;
     SZrTypeValue copiedResult;
+    TZrBool hasCallInfoTopAnchor = ZR_FALSE;
+    TZrBool hasActiveCallInfoTopAnchor = ZR_FALSE;
 
     if (state == ZR_NULL || callableValue == ZR_NULL || argumentValue == ZR_NULL) {
         return ZR_FALSE;
@@ -452,23 +457,52 @@ static TZrBool runtime_decorator_call_function(SZrState *state,
     base = savedCallInfo != ZR_NULL ? savedCallInfo->functionTop.valuePointer : savedStackTop;
 
     ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
+    ZrCore_Function_StackAnchorInit(state, base, &baseAnchor);
+    if (savedCallInfo != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &originalCallInfoTopAnchor);
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &activeCallInfoTopAnchor);
+        hasCallInfoTopAnchor = ZR_TRUE;
+        hasActiveCallInfoTopAnchor = ZR_TRUE;
+    }
     base = ZrCore_Function_ReserveScratchSlots(state, 2, base);
     if (base == ZR_NULL) {
         return ZR_FALSE;
     }
+    savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+    base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
     if (savedCallInfo != ZR_NULL) {
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &originalCallInfoTopAnchor);
         base = savedCallInfo->functionTop.valuePointer;
     }
 
-    ZrCore_Stack_CopyValue(state, base, callableValue);
-    ZrCore_Stack_CopyValue(state, base + 1, argumentValue);
     state->stackTop.valuePointer = base + 2;
     if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &activeCallInfoTopAnchor);
+        hasActiveCallInfoTopAnchor = ZR_TRUE;
+    }
+    ZrCore_Stack_CopyValue(state, base, callableValue);
+    base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+    if (savedCallInfo != ZR_NULL && hasCallInfoTopAnchor) {
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
+                                                                                    hasActiveCallInfoTopAnchor
+                                                                                            ? &activeCallInfoTopAnchor
+                                                                                            : &originalCallInfoTopAnchor);
+    }
+    ZrCore_Stack_CopyValue(state, base + 1, argumentValue);
+    base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+    if (savedCallInfo != ZR_NULL && hasCallInfoTopAnchor) {
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
+                                                                                    hasActiveCallInfoTopAnchor
+                                                                                            ? &activeCallInfoTopAnchor
+                                                                                            : &originalCallInfoTopAnchor);
     }
 
     base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+    if (savedCallInfo != ZR_NULL && hasCallInfoTopAnchor) {
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &originalCallInfoTopAnchor);
+    }
     if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
         state->stackTop.valuePointer = savedStackTop;
         state->callInfoList = savedCallInfo;
@@ -495,7 +529,12 @@ static TZrBool runtime_decorator_call_meta_function(SZrState *state,
     TZrStackValuePointer savedStackTop;
     TZrStackValuePointer base;
     SZrFunctionStackAnchor savedStackTopAnchor;
+    SZrFunctionStackAnchor baseAnchor;
+    SZrFunctionStackAnchor originalCallInfoTopAnchor;
+    SZrFunctionStackAnchor activeCallInfoTopAnchor;
     SZrTypeValue copiedResult;
+    TZrBool hasCallInfoTopAnchor = ZR_FALSE;
+    TZrBool hasActiveCallInfoTopAnchor = ZR_FALSE;
 
     if (state == ZR_NULL || function == ZR_NULL || selfValue == ZR_NULL || argumentValue == ZR_NULL) {
         return ZR_FALSE;
@@ -506,24 +545,53 @@ static TZrBool runtime_decorator_call_meta_function(SZrState *state,
     base = savedCallInfo != ZR_NULL ? savedCallInfo->functionTop.valuePointer : savedStackTop;
 
     ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
+    ZrCore_Function_StackAnchorInit(state, base, &baseAnchor);
+    if (savedCallInfo != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &originalCallInfoTopAnchor);
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &activeCallInfoTopAnchor);
+        hasCallInfoTopAnchor = ZR_TRUE;
+        hasActiveCallInfoTopAnchor = ZR_TRUE;
+    }
     base = ZrCore_Function_ReserveScratchSlots(state, 3, base);
     if (base == ZR_NULL) {
         return ZR_FALSE;
     }
+    savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+    base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
     if (savedCallInfo != ZR_NULL) {
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &originalCallInfoTopAnchor);
         base = savedCallInfo->functionTop.valuePointer;
     }
 
-    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
-    ZrCore_Stack_CopyValue(state, base + 1, selfValue);
-    ZrCore_Stack_CopyValue(state, base + 2, argumentValue);
     state->stackTop.valuePointer = base + 3;
     if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &activeCallInfoTopAnchor);
+        hasActiveCallInfoTopAnchor = ZR_TRUE;
+    }
+    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    ZrCore_Stack_CopyValue(state, base + 1, selfValue);
+    base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+    if (savedCallInfo != ZR_NULL && hasCallInfoTopAnchor) {
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
+                                                                                    hasActiveCallInfoTopAnchor
+                                                                                            ? &activeCallInfoTopAnchor
+                                                                                            : &originalCallInfoTopAnchor);
+    }
+    ZrCore_Stack_CopyValue(state, base + 2, argumentValue);
+    base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+    if (savedCallInfo != ZR_NULL && hasCallInfoTopAnchor) {
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
+                                                                                    hasActiveCallInfoTopAnchor
+                                                                                            ? &activeCallInfoTopAnchor
+                                                                                            : &originalCallInfoTopAnchor);
     }
 
     base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+    if (savedCallInfo != ZR_NULL && hasCallInfoTopAnchor) {
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &originalCallInfoTopAnchor);
+    }
     if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
         state->stackTop.valuePointer = savedStackTop;
         state->callInfoList = savedCallInfo;

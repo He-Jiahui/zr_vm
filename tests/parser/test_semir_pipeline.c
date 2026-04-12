@@ -15,11 +15,6 @@
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
 
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
-
 typedef struct SZrBinaryFixtureReader {
     const TZrByte *bytes;
     TZrSize length;

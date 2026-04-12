@@ -23,5 +23,7 @@ ZrBenchInt zr_bench_run_object_field_hot(int scale);
 ZrBenchInt zr_bench_run_array_index_dense(int scale);
 ZrBenchInt zr_bench_run_branch_jump_dense(int scale);
 ZrBenchInt zr_bench_run_mixed_service_loop(int scale);
+ZrBenchInt zr_bench_run_gc_fragment_baseline(int scale);
+ZrBenchInt zr_bench_run_gc_fragment_stress(int scale);
 
 #endif

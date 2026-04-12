@@ -19,6 +19,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_runtime_limits_conf.h"
+#include "execution_internal.h"
 
 void ZrCore_Value_Barrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value) {
     if (!value->isGarbageCollectable) {
@@ -280,7 +281,6 @@ TZrBool ZrCore_Value_CompareDirectly(struct SZrState *state, const SZrTypeValue 
 
 SZrString *ZrCore_Value_ConvertToString(struct SZrState *state, SZrTypeValue *value) {
     SZrTypeValue stableValue;
-    SZrFunctionStackAnchor savedStackTopAnchor;
 
     if (!ZrCore_Value_CanValueToString(state, value)) {
         return ZR_NULL;
@@ -290,70 +290,30 @@ SZrString *ZrCore_Value_ConvertToString(struct SZrState *state, SZrTypeValue *va
     // 优先查找并调用 TO_STRING 元方法
     SZrMeta *meta = ZrCore_Value_GetMeta(state, &stableValue, ZR_META_TO_STRING);
     if (meta != ZR_NULL && meta->function != ZR_NULL) {
-        // 保存当前栈状态
         TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
         SZrCallInfo *savedCallInfo = state->callInfoList;
-        TZrStackValuePointer scratchBase =
-                savedCallInfo != ZR_NULL ? savedCallInfo->functionTop.valuePointer : savedStackTop;
-        SZrFunctionStackAnchor scratchBaseAnchor;
-        SZrFunctionStackAnchor callInfoBaseAnchor;
-        SZrFunctionStackAnchor callInfoTopAnchor;
-        TZrBool hasCallInfoAnchors = ZR_FALSE;
-        ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
-        ZrCore_Function_StackAnchorInit(state, scratchBase, &scratchBaseAnchor);
-        if (savedCallInfo != ZR_NULL) {
-            ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &callInfoBaseAnchor);
-            ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &callInfoTopAnchor);
-            hasCallInfoAnchors = ZR_TRUE;
-        }
+        TZrStackValuePointer metaBase = ZR_NULL;
+        TZrStackValuePointer restoredStackTop = savedStackTop;
+        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                               savedCallInfo,
+                                                               savedStackTop,
+                                                               savedCallInfo != ZR_NULL ? savedCallInfo->functionTop.valuePointer
+                                                                                        : savedStackTop,
+                                                               meta,
+                                                               &stableValue,
+                                                               ZR_NULL,
+                                                               ZR_META_CALL_UNARY_ARGUMENT_COUNT,
+                                                               &metaBase,
+                                                               &restoredStackTop);
 
-        // 准备调用元方法：将 meta->function 和 self 放到栈上
-        scratchBase = ZrCore_Function_ReserveScratchSlots(state, 2, scratchBase);
-        savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
-        scratchBase = ZrCore_Function_StackAnchorRestore(state, &scratchBaseAnchor);
-        if (savedCallInfo != ZR_NULL) {
-            savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-            savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
-            scratchBase = savedCallInfo->functionTop.valuePointer;
-        }
-        state->stackTop.valuePointer = scratchBase + 2;
-        if (savedCallInfo != ZR_NULL &&
-            savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
-            savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
-            ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &callInfoBaseAnchor);
-            ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &callInfoTopAnchor);
-        }
-        ZrCore_Stack_CopyValue(state, scratchBase + 1, &stableValue);
-        scratchBase = ZrCore_Function_StackAnchorRestore(state, &scratchBaseAnchor);
-        if (hasCallInfoAnchors) {
-            savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-            savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
-        }
-        ZrCore_Stack_SetRawObjectValue(state, scratchBase, ZR_CAST_RAW_OBJECT_AS_SUPER(meta->function));
-        // 调用元方法
-        scratchBase = ZrCore_Function_CallWithoutYieldAndRestore(state, scratchBase, 1);
-        savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
-        if (hasCallInfoAnchors) {
-            savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-            savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
-        }
-
-        // 检查执行状态
-        if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
-            // 获取返回值
-            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(scratchBase);
-            if (returnValue->type == ZR_VALUE_TYPE_STRING) {
-                SZrString *result = ZR_CAST_STRING(state, returnValue->value.object);
-                // 恢复栈状态
-                state->stackTop.valuePointer = savedStackTop;
-                state->callInfoList = savedCallInfo;
-                return result;
+        state->stackTop.valuePointer = restoredStackTop;
+        state->callInfoList = savedCallInfo;
+        if (metaCallSucceeded && metaBase != ZR_NULL) {
+            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
+            if (returnValue != ZR_NULL && returnValue->type == ZR_VALUE_TYPE_STRING) {
+                return ZR_CAST_STRING(state, returnValue->value.object);
             }
         }
-
-        // 恢复栈状态
-        state->stackTop.valuePointer = savedStackTop;
-        state->callInfoList = savedCallInfo;
     }
 
     // 如果元方法不存在或调用失败，使用现有的直接转换逻辑作为后备
@@ -424,8 +384,10 @@ TZrBool ZrCore_Value_CallMetaMethod(struct SZrState *state, SZrTypeValue *value,
     SZrFunctionStackAnchor savedStackTopAnchor;
     SZrFunctionStackAnchor baseAnchor;
     SZrFunctionStackAnchor callInfoBaseAnchor;
-    SZrFunctionStackAnchor callInfoTopAnchor;
+    SZrFunctionStackAnchor originalCallInfoTopAnchor;
+    SZrFunctionStackAnchor activeCallInfoTopAnchor;
     TZrBool hasCallInfoAnchors = ZR_FALSE;
+    TZrBool hasActiveCallInfoTopAnchor = ZR_FALSE;
 
     if (state == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
@@ -450,15 +412,17 @@ TZrBool ZrCore_Value_CallMetaMethod(struct SZrState *state, SZrTypeValue *value,
     ZrCore_Function_StackAnchorInit(state, base, &baseAnchor);
     if (savedCallInfo != ZR_NULL) {
         ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &callInfoBaseAnchor);
-        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &callInfoTopAnchor);
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &originalCallInfoTopAnchor);
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &activeCallInfoTopAnchor);
         hasCallInfoAnchors = ZR_TRUE;
+        hasActiveCallInfoTopAnchor = ZR_TRUE;
     }
     base = ZrCore_Function_ReserveScratchSlots(state, scratchSlots, base);
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
     if (savedCallInfo != ZR_NULL) {
         savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &originalCallInfoTopAnchor);
         base = savedCallInfo->functionTop.valuePointer;
     }
 
@@ -466,8 +430,8 @@ TZrBool ZrCore_Value_CallMetaMethod(struct SZrState *state, SZrTypeValue *value,
     if (savedCallInfo != ZR_NULL &&
         savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
-        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionBase.valuePointer, &callInfoBaseAnchor);
-        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &callInfoTopAnchor);
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &activeCallInfoTopAnchor);
+        hasActiveCallInfoTopAnchor = ZR_TRUE;
     }
 
     // 将 self 放到栈上
@@ -475,7 +439,10 @@ TZrBool ZrCore_Value_CallMetaMethod(struct SZrState *state, SZrTypeValue *value,
     base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
     if (hasCallInfoAnchors) {
         savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
+                                                                                    hasActiveCallInfoTopAnchor
+                                                                                            ? &activeCallInfoTopAnchor
+                                                                                            : &originalCallInfoTopAnchor);
     }
 
     // 处理可变参数
@@ -488,7 +455,10 @@ TZrBool ZrCore_Value_CallMetaMethod(struct SZrState *state, SZrTypeValue *value,
             base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
             if (hasCallInfoAnchors) {
                 savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-                savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+                savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
+                                                                                            hasActiveCallInfoTopAnchor
+                                                                                                    ? &activeCallInfoTopAnchor
+                                                                                                    : &originalCallInfoTopAnchor);
             }
         }
         va_end(args);
@@ -501,7 +471,7 @@ TZrBool ZrCore_Value_CallMetaMethod(struct SZrState *state, SZrTypeValue *value,
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     if (hasCallInfoAnchors) {
         savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
-        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoTopAnchor);
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &originalCallInfoTopAnchor);
     }
 
     // 检查执行状态

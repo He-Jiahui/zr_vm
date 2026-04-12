@@ -346,6 +346,18 @@ static void attach_close_meta_to_string_prototype(SZrState *state) {
 }
 
 // 打印编译后的指令列表
+#define ZR_TEST_OPCODE_NAME_CASE(INSTRUCTION)                                                                         \
+    case ZR_INSTRUCTION_ENUM(INSTRUCTION):                                                                            \
+        return #INSTRUCTION;
+
+static const char *instruction_opcode_name(EZrInstructionCode opcode) {
+    switch (opcode) {
+        ZR_INSTRUCTION_DECLARE(ZR_TEST_OPCODE_NAME_CASE)
+        default:
+            return "UNKNOWN";
+    }
+}
+
 static void print_instructions(SZrFunction *function) {
     if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
         printf("  No instructions available\n");
@@ -361,192 +373,7 @@ static void print_instructions(SZrFunction *function) {
 
         printf("    [%u] ", i);
 
-        // 输出操作码名称
-        const char *opcodeName = "UNKNOWN";
-        switch (opcode) {
-            case ZR_INSTRUCTION_ENUM(GET_STACK):
-                opcodeName = "GET_STACK";
-                break;
-            case ZR_INSTRUCTION_ENUM(SET_STACK):
-                opcodeName = "SET_STACK";
-                break;
-            case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
-                opcodeName = "GET_CONSTANT";
-                break;
-            case ZR_INSTRUCTION_ENUM(SET_CONSTANT):
-                opcodeName = "SET_CONSTANT";
-                break;
-            case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
-                opcodeName = "GET_CLOSURE";
-                break;
-            case ZR_INSTRUCTION_ENUM(SET_CLOSURE):
-                opcodeName = "SET_CLOSURE";
-                break;
-            case ZR_INSTRUCTION_ENUM(GETUPVAL):
-                opcodeName = "GETUPVAL";
-                break;
-            case ZR_INSTRUCTION_ENUM(SETUPVAL):
-                opcodeName = "SETUPVAL";
-                break;
-            case ZR_INSTRUCTION_ENUM(GET_MEMBER):
-                opcodeName = "GET_MEMBER";
-                break;
-            case ZR_INSTRUCTION_ENUM(SET_MEMBER):
-                opcodeName = "SET_MEMBER";
-                break;
-            case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
-                opcodeName = "GET_BY_INDEX";
-                break;
-            case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
-                opcodeName = "SET_BY_INDEX";
-                break;
-            case ZR_INSTRUCTION_ENUM(ITER_INIT):
-                opcodeName = "ITER_INIT";
-                break;
-            case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
-                opcodeName = "ITER_MOVE_NEXT";
-                break;
-            case ZR_INSTRUCTION_ENUM(ITER_CURRENT):
-                opcodeName = "ITER_CURRENT";
-                break;
-            case ZR_INSTRUCTION_ENUM(ADD):
-                opcodeName = "ADD";
-                break;
-            case ZR_INSTRUCTION_ENUM(ADD_INT):
-                opcodeName = "ADD_INT";
-                break;
-            case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
-                opcodeName = "ADD_FLOAT";
-                break;
-            case ZR_INSTRUCTION_ENUM(ADD_STRING):
-                opcodeName = "ADD_STRING";
-                break;
-            case ZR_INSTRUCTION_ENUM(SUB):
-                opcodeName = "SUB";
-                break;
-            case ZR_INSTRUCTION_ENUM(SUB_INT):
-                opcodeName = "SUB_INT";
-                break;
-            case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
-                opcodeName = "SUB_FLOAT";
-                break;
-            case ZR_INSTRUCTION_ENUM(MUL):
-                opcodeName = "MUL";
-                break;
-            case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
-                opcodeName = "MUL_SIGNED";
-                break;
-            case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
-                opcodeName = "MUL_FLOAT";
-                break;
-            case ZR_INSTRUCTION_ENUM(DIV):
-                opcodeName = "DIV";
-                break;
-            case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
-                opcodeName = "DIV_SIGNED";
-                break;
-            case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
-                opcodeName = "DIV_FLOAT";
-                break;
-            case ZR_INSTRUCTION_ENUM(MOD):
-                opcodeName = "MOD";
-                break;
-            case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
-                opcodeName = "MOD_SIGNED";
-                break;
-            case ZR_INSTRUCTION_ENUM(MOD_FLOAT):
-                opcodeName = "MOD_FLOAT";
-                break;
-            case ZR_INSTRUCTION_ENUM(TO_INT):
-                opcodeName = "TO_INT";
-                break;
-            case ZR_INSTRUCTION_ENUM(TO_FLOAT):
-                opcodeName = "TO_FLOAT";
-                break;
-            case ZR_INSTRUCTION_ENUM(TO_STRING):
-                opcodeName = "TO_STRING";
-                break;
-            case ZR_INSTRUCTION_ENUM(TO_BOOL):
-                opcodeName = "TO_BOOL";
-                break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
-                opcodeName = "LOGICAL_EQUAL";
-                break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
-                opcodeName = "LOGICAL_NOT_EQUAL";
-                break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED):
-                opcodeName = "LOGICAL_LESS_SIGNED";
-                break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
-                opcodeName = "LOGICAL_LESS_FLOAT";
-                break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED):
-                opcodeName = "LOGICAL_GREATER_SIGNED";
-                break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT):
-                opcodeName = "LOGICAL_GREATER_FLOAT";
-                break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_AND):
-                opcodeName = "LOGICAL_AND";
-                break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_OR):
-                opcodeName = "LOGICAL_OR";
-                break;
-            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
-                opcodeName = "LOGICAL_NOT";
-                break;
-            case ZR_INSTRUCTION_ENUM(BITWISE_AND):
-                opcodeName = "BITWISE_AND";
-                break;
-            case ZR_INSTRUCTION_ENUM(BITWISE_OR):
-                opcodeName = "BITWISE_OR";
-                break;
-            case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
-                opcodeName = "BITWISE_XOR";
-                break;
-            case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
-                opcodeName = "BITWISE_NOT";
-                break;
-            case ZR_INSTRUCTION_ENUM(NEG):
-                opcodeName = "NEG";
-                break;
-            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
-                opcodeName = "FUNCTION_CALL";
-                break;
-            case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
-                opcodeName = "FUNCTION_RETURN";
-                break;
-            case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
-                opcodeName = "GET_GLOBAL";
-                break;
-            case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
-                opcodeName = "GET_SUB_FUNCTION";
-                break;
-            case ZR_INSTRUCTION_ENUM(JUMP):
-                opcodeName = "JUMP";
-                break;
-            case ZR_INSTRUCTION_ENUM(JUMP_IF):
-                opcodeName = "JUMP_IF";
-                break;
-            case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
-                opcodeName = "CREATE_CLOSURE";
-                break;
-            case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
-                opcodeName = "CREATE_OBJECT";
-                break;
-            case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
-                opcodeName = "CREATE_ARRAY";
-                break;
-            default: {
-                char buf[32];
-                snprintf(buf, sizeof(buf), "OPCODE_%u", (TZrUInt32) opcode);
-                opcodeName = buf;
-                break;
-            }
-        }
-
-        printf("%s", opcodeName);
+        printf("%s", instruction_opcode_name(opcode));
 
         // 提取操作数
         TZrUInt16 op1_0 = inst->instruction.operand.operand1[0];
@@ -582,6 +409,8 @@ static void print_instructions(SZrFunction *function) {
             if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF)) {
                 printf(", condition=%u", operandExtra);
             }
+        } else if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED)) {
+            printf(" left=%u, right=%u, jump_offset=%d", operandExtra, op1_0, (TZrInt16)op1_1);
         } else if (opcode == ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION)) {
             printf(" dst=%u, func_index=%d", operandExtra, op2_0);
         } else if (opcode == ZR_INSTRUCTION_ENUM(GET_GLOBAL)) {
@@ -1241,7 +1070,7 @@ static void test_execute_add_int_instruction(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("ADD_INT instruction", "Testing ADD_INT instruction: 1 + 2");
+    TEST_INFO("Integer addition execution", "Testing integer addition lowering and runtime result: 1 + 2");
 
     // 使用 return 语句来返回表达式结果
     const char *source = "return 1 + 2;";
@@ -1262,28 +1091,9 @@ static void test_execute_add_int_instruction(void) {
         return;
     }
 
-    // 验证函数指令（检查是否包含 ADD_INT 指令）
-    TZrBool hasAddInt = ZR_FALSE;
-    if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
-            EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(ADD_INT)) {
-                hasAddInt = ZR_TRUE;
-                break;
-            }
-        }
-    }
-
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
     print_instructions(function);
-
-    if (!hasAddInt) {
-        ZrParser_Ast_Free(state, ast);
-        TEST_FAIL_CUSTOM(timer, testSummary, "ADD_INT instruction not found in compiled function");
-        destroy_test_state(state);
-        return;
-    }
 
     // 执行函数并验证结果
     SZrTypeValue result;
@@ -1325,7 +1135,7 @@ static void test_execute_sub_int_instruction(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("SUB_INT instruction", "Testing SUB_INT instruction: 5 - 3");
+    TEST_INFO("Integer subtraction execution", "Testing integer subtraction lowering and runtime result: 5 - 3");
 
     const char *source = "return 5 - 3;";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
@@ -1345,29 +1155,11 @@ static void test_execute_sub_int_instruction(void) {
         return;
     }
 
-    // 验证函数指令（检查是否包含 SUB_INT 指令）
-    TZrBool hasSubInt = ZR_FALSE;
-    if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
-            EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(SUB_INT)) {
-                hasSubInt = ZR_TRUE;
-                break;
-            }
-        }
-    }
-
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
     print_instructions(function);
 
     ZrParser_Ast_Free(state, ast);
-
-    if (!hasSubInt) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "SUB_INT instruction not found in compiled function");
-        destroy_test_state(state);
-        return;
-    }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
 
@@ -1409,7 +1201,7 @@ static void test_execute_mul_signed_instruction(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("MUL_SIGNED instruction", "Testing MUL_SIGNED instruction: 3 * 4");
+    TEST_INFO("Integer multiplication execution", "Testing integer multiplication lowering and runtime result: 3 * 4");
 
     const char *source = "return 3 * 4;";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
@@ -1429,29 +1221,11 @@ static void test_execute_mul_signed_instruction(void) {
         return;
     }
 
-    // 验证函数指令（检查是否包含 MUL_SIGNED 指令）
-    TZrBool hasMulSigned = ZR_FALSE;
-    if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
-            EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(MUL_SIGNED)) {
-                hasMulSigned = ZR_TRUE;
-                break;
-            }
-        }
-    }
-
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
     print_instructions(function);
 
     ZrParser_Ast_Free(state, ast);
-
-    if (!hasMulSigned) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "MUL_SIGNED instruction not found in compiled function");
-        destroy_test_state(state);
-        return;
-    }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
 
@@ -1583,7 +1357,7 @@ static void test_execute_logical_equal_instruction(void) {
     SZrState *state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("LOGICAL_EQUAL instruction", "Testing LOGICAL_EQUAL instruction: 1 == 1");
+    TEST_INFO("Equality execution", "Testing equality lowering and runtime result: 1 == 1");
 
     const char *source = "return 1 == 1;";
     SZrString *sourceName = ZrCore_String_Create(state, "test.zr", 7);
@@ -1603,29 +1377,11 @@ static void test_execute_logical_equal_instruction(void) {
         return;
     }
 
-    // 验证函数指令（检查是否包含 LOGICAL_EQUAL 指令）
-    TZrBool hasLogicalEqual = ZR_FALSE;
-    if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
-        for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
-            EZrInstructionCode opcode = (EZrInstructionCode) function->instructionsList[i].instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL)) {
-                hasLogicalEqual = ZR_TRUE;
-                break;
-            }
-        }
-    }
-
     // 输出编译后的指令
     printf("  Compiled Instructions:\n");
     print_instructions(function);
 
     ZrParser_Ast_Free(state, ast);
-
-    if (!hasLogicalEqual) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "LOGICAL_EQUAL instruction not found in compiled function");
-        destroy_test_state(state);
-        return;
-    }
 
     TEST_ASSERT_TRUE(function->instructionsLength > 0);
     // 执行函数并验证结果

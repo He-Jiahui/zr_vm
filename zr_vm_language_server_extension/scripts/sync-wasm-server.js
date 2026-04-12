@@ -1,13 +1,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { createArtifactLayout } = require('./artifact-layout');
 
-const extensionRoot = path.resolve(__dirname, '..');
-const repositoryRoot = path.resolve(extensionRoot, '..');
-const destinationDir = path.join(extensionRoot, 'out', 'web');
-const requiredFiles = [
-    'zr_vm_language_server.js',
-    'zr_vm_language_server.wasm',
-];
+const layout = createArtifactLayout({
+    repositoryRoot: path.resolve(__dirname, '..', '..'),
+    extensionRoot: path.resolve(__dirname, '..'),
+});
+const extensionRoot = layout.extensionRoot;
+const destinationDir = layout.wasm.bundledDir;
+const requiredFiles = layout.wasm.requiredFiles;
 
 const sourceDir = process.argv[2]
     ? path.resolve(process.argv[2])
@@ -36,17 +37,11 @@ for (const fileName of requiredFiles) {
 }
 
 function resolveDefaultSourceDir() {
-    const candidates = [
-        path.join(repositoryRoot, 'build', 'codex-lsp-wasm', 'wasm'),
-        path.join(repositoryRoot, 'build', 'wasm', 'wasm'),
-        path.join(repositoryRoot, 'build', 'wasm'),
-    ];
-
-    for (const candidate of candidates) {
+    for (const candidate of layout.wasm.sourceCandidates) {
         if (fs.existsSync(candidate)) {
             return candidate;
         }
     }
 
-    return candidates[0];
+    return layout.wasm.sourceCandidates[0];
 }

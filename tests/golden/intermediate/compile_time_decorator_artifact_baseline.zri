@@ -69,7 +69,7 @@ INSTRUCTIONS (5):
   [0] CREATE_CLOSURE (extra=1)
   [1] SET_STACK (extra=0, operand=1)
   [2] GET_STACK (extra=2, operand=0)
-  [3] SUPER_FUNCTION_TAIL_CALL_NO_ARGS (extra=2, operand1=2, operand2=0)
+  [3] SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS (extra=2, operand1=2, operand2=0)
   [4] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
 
 CHILD_FUNCTIONS (1):
@@ -87,10 +87,10 @@ CHILD_FUNCTIONS (1):
       [2] int: 2
 
     LOCAL_VARIABLES (4):
-      [0] seed: offset_activate=0, offset_dead=21
-      [1] fnMeta: offset_activate=4, offset_dead=21
-      [2] classMeta: offset_activate=10, offset_dead=21
-      [3] observed: offset_activate=12, offset_dead=21
+      [0] seed: offset_activate=0, offset_dead=18
+      [1] fnMeta: offset_activate=4, offset_dead=18
+      [2] classMeta: offset_activate=10, offset_dead=18
+      [3] observed: offset_activate=12, offset_dead=18
 
     CLOSURE_VARIABLES (1):
       [0] score: in_stack=true, index=0, type=NULL
@@ -131,29 +131,30 @@ CHILD_FUNCTIONS (1):
       [0] deopt=1 exec=2
       [1] deopt=2 exec=8
 
-    CALLSITE_CACHE_TABLE (0):
+    CALLSITE_CACHE_TABLE (2):
+      [0] kind=MEMBER_GET inst=4 member=0 deopt=0 args=0 hits=0 misses=0
+      [1] kind=MEMBER_GET inst=12 member=0 deopt=0 args=0 hits=0 misses=0
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (19):
+    INSTRUCTIONS (18):
       [0] OPCODE_6 (extra=3)
       [1] SET_STACK (extra=2, operand=3)
       [2] TYPEOF (extra=2, operand1=2, operand2=0)
-      [3] OPCODE_8 (extra=2, operand1=2, operand2=0)
+      [3] OPCODE_188 (extra=2, operand1=2, operand2=0)
       [4] SET_STACK (extra=1, operand=2)
-      [5] OPCODE_88 (extra=4, operand=0)
+      [5] OPCODE_96 (extra=4, operand=0)
       [6] OPCODE_8 (extra=4, operand1=4, operand2=1)
       [7] SET_STACK (extra=3, operand=4)
       [8] TYPEOF (extra=3, operand1=3, operand2=0)
-      [9] OPCODE_8 (extra=3, operand1=3, operand2=0)
+      [9] OPCODE_188 (extra=3, operand1=3, operand2=1)
       [10] SET_STACK (extra=2, operand=3)
       [11] GET_STACK (extra=4, operand=1)
       [12] SET_STACK (extra=3, operand=4)
       [13] GET_STACK (extra=4, operand=2)
       [14] SET_STACK (extra=3, operand=4)
-      [15] GET_STACK (extra=4, operand=0)
-      [16] ADD_INT_CONST (extra=4, left_slot=4, constant_index=1)
-      [17] ADD_INT_CONST (extra=4, left_slot=4, constant_index=2)
-      [18] FUNCTION_RETURN (extra=1, operand1=4, operand2=0)
+      [15] ADD_SIGNED_CONST (extra=4, left_slot=0, constant_index=1)
+      [16] ADD_SIGNED_CONST_PLAIN_DEST (extra=4, left_slot=4, constant_index=2)
+      [17] FUNCTION_RETURN (extra=1, operand1=4, operand2=0)
 
 

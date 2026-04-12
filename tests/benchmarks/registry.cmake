@@ -286,3 +286,33 @@ zr_vm_register_benchmark_case(
         CHECKSUM_CORE "408679425"
         CHECKSUM_PROFILE "408940136"
         CHECKSUM_STRESS "537757139")
+
+zr_vm_register_benchmark_case(
+        gc_fragment_baseline
+        DESCRIPTION "String and container churn without explicit GC forcing; baseline for GC overhead deltas."
+        PASS_BANNER "BENCH_GC_FRAGMENT_BASELINE_PASS"
+        WORKLOAD_TAG "gc,string,container,baseline"
+        PROFILE_SCALE 1
+        TIERS "core;stress;profile"
+        IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "zr_aot_c" "zr_aot_llvm"
+        CORE_IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "zr_aot_c" "zr_aot_llvm"
+        REQUIRE_REAL_AOT
+        CHECKSUM_SMOKE "829044624"
+        CHECKSUM_CORE "857265678"
+        CHECKSUM_PROFILE "829044624"
+        CHECKSUM_STRESS "47994849")
+
+zr_vm_register_benchmark_case(
+        gc_fragment_stress
+        DESCRIPTION "Explicit GC-heavy string and container churn with sustained survivor pressure."
+        PASS_BANNER "BENCH_GC_FRAGMENT_STRESS_PASS"
+        WORKLOAD_TAG "gc,string,container"
+        PROFILE_SCALE 1
+        TIERS "core;stress;profile"
+        IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "zr_aot_c" "zr_aot_llvm"
+        CORE_IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "zr_aot_c" "zr_aot_llvm"
+        REQUIRE_REAL_AOT
+        CHECKSUM_SMOKE "829044624"
+        CHECKSUM_CORE "857265678"
+        CHECKSUM_PROFILE "829044624"
+        CHECKSUM_STRESS "47994849")

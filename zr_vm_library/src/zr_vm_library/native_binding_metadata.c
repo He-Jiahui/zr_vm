@@ -1760,5 +1760,96 @@ void native_registry_resolve_type_relationships(SZrState *state,
 
         ZrCore_ObjectPrototype_SetSuper(state, prototype, superPrototype);
     }
+
+    /*
+     * 继承链在 SetSuper 之后才能完整解析。若某类本应注册的元方法（例如 zr.ffi.SymbolHandle 的 @call）
+     * 未出现在本类 metaTable 中，GetMeta 会沿 superPrototype 落到 zr.builtin.Object 的默认 @call，
+     * 表现为 “object meta method is not implemented”。在关系解析完成后补注册缺失的元方法槽位。
+     */
+    {
+        ZrLibrary_NativeRegistryState *registry = native_registry_get(state->global);
+        TZrSize typeIndex;
+        TZrSize metaIndex;
+
+        if (registry != ZR_NULL) {
+            for (typeIndex = 0; typeIndex < descriptor->typeCount; typeIndex++) {
+                const ZrLibTypeDescriptor *typeDescriptor = &descriptor->types[typeIndex];
+                SZrObjectPrototype *prototype;
+
+                if (typeDescriptor->name == ZR_NULL || typeDescriptor->metaMethodCount == 0 ||
+                    typeDescriptor->metaMethods == ZR_NULL) {
+                    continue;
+                }
+
+                prototype = native_registry_get_module_prototype(state, module, typeDescriptor->name);
+                if (prototype == ZR_NULL) {
+                    continue;
+                }
+
+                for (metaIndex = 0; metaIndex < typeDescriptor->metaMethodCount; metaIndex++) {
+                    const ZrLibMetaMethodDescriptor *metaDescriptor = &typeDescriptor->metaMethods[metaIndex];
+                    SZrTypeValue metaValue;
+                    SZrString *constructorName;
+                    SZrTypeValue constructorKey;
+
+                    if (metaDescriptor->callback == ZR_NULL || metaDescriptor->metaType >= ZR_META_ENUM_MAX) {
+                        continue;
+                    }
+
+                    if (prototype->metaTable.metas[metaDescriptor->metaType] != ZR_NULL) {
+                        continue;
+                    }
+
+                    native_binding_trace_import(state,
+                                                "[zr_native_import] repair_missing_meta module=%s type=%s meta=%d "
+                                                "prototype=%p\n",
+                                                descriptor->moduleName != ZR_NULL ? descriptor->moduleName : "<null>",
+                                                typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
+                                                (int)metaDescriptor->metaType,
+                                                (void *)prototype);
+
+                    if (!native_binding_make_callable_value(state,
+                                                            registry,
+                                                            ZR_LIB_RESOLVED_BINDING_META_METHOD,
+                                                            descriptor,
+                                                            typeDescriptor,
+                                                            prototype,
+                                                            metaDescriptor,
+                                                            &metaValue)) {
+                        native_binding_trace_import(state,
+                                                    "[zr_native_import] repair_missing_meta failed module=%s type=%s "
+                                                    "meta=%d\n",
+                                                    descriptor->moduleName != ZR_NULL ? descriptor->moduleName
+                                                                                      : "<null>",
+                                                    typeDescriptor->name != ZR_NULL ? typeDescriptor->name : "<null>",
+                                                    (int)metaDescriptor->metaType);
+                        continue;
+                    }
+
+                    ZrCore_ObjectPrototype_AddMeta(state,
+                                                     prototype,
+                                                     metaDescriptor->metaType,
+                                                     (SZrFunction *)metaValue.value.object);
+
+                    if (metaDescriptor->metaType == ZR_META_GET_ITEM) {
+                        prototype->indexContract.getByIndexFunction = (SZrFunction *)metaValue.value.object;
+                    } else if (metaDescriptor->metaType == ZR_META_SET_ITEM) {
+                        prototype->indexContract.setByIndexFunction = (SZrFunction *)metaValue.value.object;
+                    }
+
+                    if (metaDescriptor->metaType == ZR_META_CONSTRUCTOR) {
+                        constructorName = native_binding_create_string(state, "__constructor");
+                        if (constructorName == ZR_NULL) {
+                            continue;
+                        }
+
+                        ZrCore_Value_InitAsRawObject(state, &constructorKey, ZR_CAST_RAW_OBJECT_AS_SUPER(constructorName));
+                        constructorKey.type = ZR_VALUE_TYPE_STRING;
+                        ZrCore_Object_SetValue(state, &prototype->super, &constructorKey, &metaValue);
+                    }
+                }
+            }
+        }
+    }
 }
 

@@ -1,5 +1,6 @@
 #include "benchmark_support.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -414,6 +415,250 @@ ZrBenchInt zr_bench_run_string_build(int scale) {
         checksum = zr_bench_mod(checksum + counts[index] * (index + 1));
     }
 
+    return checksum;
+}
+
+static const char *zr_bench_gc_fragment_for(int slot) {
+    static const char *const fragments[] = {"amber", "birch", "cedar", "dune", "ember", "frost", "grove", "harbor"};
+    return fragments[(slot < 0 ? -slot : slot) % 8];
+}
+
+static void zr_bench_gc_payload_for(ZrBenchInt seed, int cycle, int slot, char *buffer, size_t capacity) {
+    snprintf(buffer,
+             capacity,
+             "%s-%s-%s:%" PRId64 ":%d:%d",
+             zr_bench_gc_fragment_for((int)(seed + cycle)),
+             zr_bench_gc_fragment_for((int)(seed / 3 + slot * 5)),
+             zr_bench_gc_fragment_for((int)(seed + cycle * 7 + slot * 11)),
+             seed,
+             cycle,
+             slot);
+}
+
+static char *zr_bench_gc_dup_string(const char *text) {
+    size_t length;
+    char *copy;
+
+    if (text == NULL) {
+        return NULL;
+    }
+
+    length = strlen(text);
+    copy = (char *)malloc(length + 1u);
+    if (copy == NULL) {
+        return NULL;
+    }
+
+    memcpy(copy, text, length + 1u);
+    return copy;
+}
+
+ZrBenchInt zr_bench_run_gc_fragment_baseline(int scale) {
+    return zr_bench_run_gc_fragment_stress(scale);
+}
+
+ZrBenchInt zr_bench_run_gc_fragment_stress(int scale) {
+    char keys[ZR_BENCH_MAX_STRING_KEYS][ZR_BENCH_MAX_STRING_LENGTH];
+    ZrBenchInt values[ZR_BENCH_MAX_STRING_KEYS];
+    char **survivors = NULL;
+    char **oldArchive = NULL;
+    int oldArchiveCount = 0;
+    int oldArchiveCapacity = 0;
+    char oldLookupValues[32][ZR_BENCH_MAX_STRING_LENGTH];
+    int oldLookupUsed[32];
+    char *scratch[640];
+    ZrBenchInt seed = 29;
+    ZrBenchInt checksum = 0;
+    int keyCount = 0;
+    int survivorCount = 0;
+    int survivorCapacity = 0;
+    int cycle;
+    int scratchCount = 0;
+
+    memset(keys, 0, sizeof(keys));
+    memset(values, 0, sizeof(values));
+    memset(oldLookupValues, 0, sizeof(oldLookupValues));
+    memset(oldLookupUsed, 0, sizeof(oldLookupUsed));
+    memset(scratch, 0, sizeof(scratch));
+
+    for (cycle = 0; cycle < 36 * scale; cycle++) {
+        char probeKey[ZR_BENCH_MAX_STRING_LENGTH];
+        ZrBenchInt probeFallback = 0;
+        int slot;
+
+        scratchCount = 0;
+        probeKey[0] = '\0';
+        for (slot = 0; slot < 320; slot++) {
+            char payload[ZR_BENCH_MAX_STRING_LENGTH];
+            char payloadExtra[ZR_BENCH_MAX_STRING_LENGTH];
+            char hold[ZR_BENCH_MAX_STRING_LENGTH];
+            char anchorKey[ZR_BENCH_MAX_STRING_LENGTH];
+            char shadowKey[ZR_BENCH_MAX_STRING_LENGTH];
+            int keyIndex;
+
+            seed = (seed * 73 + 19 + cycle + slot) % 10007;
+            zr_bench_gc_payload_for(seed, cycle, slot, payload, sizeof(payload));
+            snprintf(payloadExtra, sizeof(payloadExtra), "%s|%s", payload, zr_bench_gc_fragment_for((int)(seed + slot + 3)));
+
+            scratch[scratchCount] = zr_bench_gc_dup_string(payload);
+            if (scratch[scratchCount] == NULL) {
+                goto cleanup;
+            }
+            scratchCount++;
+            scratch[scratchCount] = zr_bench_gc_dup_string(payloadExtra);
+            if (scratch[scratchCount] == NULL) {
+                goto cleanup;
+            }
+            scratchCount++;
+
+            if ((slot % 5) == 0) {
+                if (survivorCount == survivorCapacity) {
+                    int nextCapacity = survivorCapacity == 0 ? 128 : survivorCapacity * 2;
+                    char **grown = (char **)realloc(survivors, sizeof(char *) * (size_t)nextCapacity);
+                    if (grown == NULL) {
+                        goto cleanup;
+                    }
+                    memset(grown + survivorCapacity, 0, sizeof(char *) * (size_t)(nextCapacity - survivorCapacity));
+                    survivors = grown;
+                    survivorCapacity = nextCapacity;
+                }
+                snprintf(hold, sizeof(hold), "%s#hold#%d", payload, cycle);
+                survivors[survivorCount] = zr_bench_gc_dup_string(hold);
+                if (survivors[survivorCount] == NULL) {
+                    goto cleanup;
+                }
+                survivorCount++;
+            }
+            if ((slot % 7) == 0) {
+                snprintf(anchorKey, sizeof(anchorKey), "%s#anchor#%d", payload, slot);
+                keyIndex = zr_bench_find_string_key(keys, keyCount, anchorKey);
+                if (keyIndex < 0 && keyCount < ZR_BENCH_MAX_STRING_KEYS) {
+                    keyIndex = keyCount++;
+                    strncpy(keys[keyIndex], anchorKey, sizeof(keys[keyIndex]) - 1u);
+                    keys[keyIndex][sizeof(keys[keyIndex]) - 1u] = '\0';
+                }
+                if (keyIndex >= 0) {
+                    values[keyIndex] = seed + cycle + slot;
+                }
+            }
+            if ((slot % 11) == 0) {
+                snprintf(shadowKey, sizeof(shadowKey), "%s#shadow#%d", payload, cycle);
+                keyIndex = zr_bench_find_string_key(keys, keyCount, shadowKey);
+                if (keyIndex < 0 && keyCount < ZR_BENCH_MAX_STRING_KEYS) {
+                    keyIndex = keyCount++;
+                    strncpy(keys[keyIndex], shadowKey, sizeof(keys[keyIndex]) - 1u);
+                    keys[keyIndex][sizeof(keys[keyIndex]) - 1u] = '\0';
+                }
+                if (keyIndex >= 0) {
+                    values[keyIndex] = seed * 2 + slot;
+                }
+            }
+            if ((slot % 17) == 0) {
+                char archiveValue[ZR_BENCH_MAX_STRING_LENGTH];
+
+                snprintf(archiveValue,
+                         sizeof(archiveValue),
+                         "%s#old#%s",
+                         payload,
+                         zr_bench_gc_fragment_for((int)(seed + cycle + slot)));
+                if (oldArchiveCount == oldArchiveCapacity) {
+                    int nextCapacity = oldArchiveCapacity == 0 ? 128 : oldArchiveCapacity * 2;
+                    char **grown = (char **)realloc(oldArchive, sizeof(char *) * (size_t)nextCapacity);
+                    if (grown == NULL) {
+                        goto cleanup;
+                    }
+                    memset(grown + oldArchiveCapacity, 0, sizeof(char *) * (size_t)(nextCapacity - oldArchiveCapacity));
+                    oldArchive = grown;
+                    oldArchiveCapacity = nextCapacity;
+                }
+                oldArchive[oldArchiveCount] = zr_bench_gc_dup_string(archiveValue);
+                if (oldArchive[oldArchiveCount] == NULL) {
+                    goto cleanup;
+                }
+                oldArchiveCount++;
+                strncpy(oldLookupValues[slot % 32], archiveValue, sizeof(oldLookupValues[slot % 32]) - 1u);
+                oldLookupValues[slot % 32][sizeof(oldLookupValues[slot % 32]) - 1u] = '\0';
+                oldLookupUsed[slot % 32] = 1;
+            }
+            if ((slot % 13) == 0 && survivorCount > 24) {
+                free(survivors[0]);
+                if (survivorCount > 1) {
+                    memmove(&survivors[0], &survivors[1], sizeof(survivors[0]) * (size_t)(survivorCount - 1));
+                }
+                survivorCount--;
+                survivors[survivorCount] = NULL;
+            }
+            if ((slot % 19) == 0 && oldArchiveCount > 96) {
+                free(oldArchive[0]);
+                if (oldArchiveCount > 1) {
+                    memmove(&oldArchive[0], &oldArchive[1], sizeof(oldArchive[0]) * (size_t)(oldArchiveCount - 1));
+                }
+                oldArchiveCount--;
+                oldArchive[oldArchiveCount] = NULL;
+            }
+
+            checksum = zr_bench_mod(checksum * 131 + seed + cycle * 17 + slot * 29 + survivorCount);
+            if (slot == 0) {
+                snprintf(probeKey, sizeof(probeKey), "%s#anchor#0", payload);
+                probeFallback = seed + cycle;
+            }
+        }
+
+        while (scratchCount > 0) {
+            scratchCount--;
+            free(scratch[scratchCount]);
+            scratch[scratchCount] = NULL;
+        }
+
+        if ((cycle % 4) == 3) {
+            keyCount = 0;
+            memset(keys, 0, sizeof(keys));
+            memset(values, 0, sizeof(values));
+        }
+
+        {
+            int probeIndex = zr_bench_find_string_key(keys, keyCount, probeKey);
+            if (probeIndex >= 0) {
+                checksum = zr_bench_mod(checksum * 137 + values[probeIndex] + survivorCount + cycle);
+            } else {
+                checksum = zr_bench_mod(checksum * 137 + probeFallback + survivorCount + cycle);
+            }
+        }
+        if (oldLookupUsed[cycle % 32] != 0) {
+            checksum = zr_bench_mod(checksum * 149 + oldArchiveCount * 7 + keyCount + cycle + 31);
+        } else {
+            checksum = zr_bench_mod(checksum * 149 + oldArchiveCount * 7 + keyCount + cycle);
+        }
+
+        if ((cycle % 9) == 8) {
+            while (survivorCount > 0) {
+                survivorCount--;
+                free(survivors[survivorCount]);
+                survivors[survivorCount] = NULL;
+            }
+        }
+    }
+
+    checksum = zr_bench_mod(checksum + survivorCount * 17 + keyCount * 19 + oldArchiveCount * 23 + seed);
+
+cleanup:
+    while (scratchCount > 0) {
+        scratchCount--;
+        free(scratch[scratchCount]);
+        scratch[scratchCount] = NULL;
+    }
+    while (survivorCount > 0) {
+        survivorCount--;
+        free(survivors[survivorCount]);
+        survivors[survivorCount] = NULL;
+    }
+    while (oldArchiveCount > 0) {
+        oldArchiveCount--;
+        free(oldArchive[oldArchiveCount]);
+        oldArchive[oldArchiveCount] = NULL;
+    }
+    free(survivors);
+    free(oldArchive);
     return checksum;
 }
 

@@ -281,6 +281,39 @@ static void virtual_documents_format_parameters(const ZrLibParameterDescriptor *
     }
 }
 
+static void virtual_documents_format_parameters_with_arity(const ZrLibParameterDescriptor *parameters,
+                                                           TZrSize parameterCount,
+                                                           TZrUInt16 minArgumentCount,
+                                                           TZrUInt16 maxArgumentCount,
+                                                           TZrChar *buffer,
+                                                           TZrSize bufferSize) {
+    virtual_documents_format_parameters(parameters, parameterCount, buffer, bufferSize);
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+    if (buffer[0] != '\0') {
+        return;
+    }
+    if (parameterCount > 0) {
+        return;
+    }
+    if (maxArgumentCount == 0) {
+        return;
+    }
+    if (minArgumentCount == maxArgumentCount) {
+        (void)snprintf(buffer,
+                       bufferSize,
+                       "/* arity %u */",
+                       (unsigned int)minArgumentCount);
+    } else {
+        (void)snprintf(buffer,
+                       bufferSize,
+                       "/* arity %u..%u */",
+                       (unsigned int)minArgumentCount,
+                       (unsigned int)maxArgumentCount);
+    }
+}
+
 static void virtual_documents_format_type_tail(const ZrLibTypeDescriptor *typeDescriptor,
                                                TZrChar *buffer,
                                                TZrSize bufferSize) {
@@ -380,10 +413,12 @@ static void virtual_documents_append_functions(SZrLspVirtualBuilder *builder,
     for (TZrSize index = 0; descriptor != ZR_NULL && index < descriptor->functionCount; index++) {
         const ZrLibFunctionDescriptor *functionDescriptor = &descriptor->functions[index];
 
-        virtual_documents_format_parameters(functionDescriptor->parameters,
-                                            functionDescriptor->parameterCount,
-                                            parameters,
-                                            sizeof(parameters));
+        virtual_documents_format_parameters_with_arity(functionDescriptor->parameters,
+                                                       functionDescriptor->parameterCount,
+                                                       functionDescriptor->minArgumentCount,
+                                                       functionDescriptor->maxArgumentCount,
+                                                       parameters,
+                                                       sizeof(parameters));
         snprintf(suffix,
                  sizeof(suffix),
                  "(%s): %s;\n",
@@ -428,10 +463,12 @@ static void virtual_documents_append_type_methods(SZrLspVirtualBuilder *builder,
     for (TZrSize index = 0; typeDescriptor != ZR_NULL && index < typeDescriptor->methodCount; index++) {
         const ZrLibMethodDescriptor *methodDescriptor = &typeDescriptor->methods[index];
 
-        virtual_documents_format_parameters(methodDescriptor->parameters,
-                                            methodDescriptor->parameterCount,
-                                            parameters,
-                                            sizeof(parameters));
+        virtual_documents_format_parameters_with_arity(methodDescriptor->parameters,
+                                                        methodDescriptor->parameterCount,
+                                                        methodDescriptor->minArgumentCount,
+                                                        methodDescriptor->maxArgumentCount,
+                                                        parameters,
+                                                        sizeof(parameters));
         snprintf(prefix,
                  sizeof(prefix),
                  "        pub %s",
@@ -460,10 +497,12 @@ static void virtual_documents_append_type_meta_methods(SZrLspVirtualBuilder *bui
         const ZrLibMetaMethodDescriptor *metaMethodDescriptor = &typeDescriptor->metaMethods[index];
         const TZrChar *metaName = virtual_documents_meta_method_name(metaMethodDescriptor->metaType);
 
-        virtual_documents_format_parameters(metaMethodDescriptor->parameters,
-                                            metaMethodDescriptor->parameterCount,
-                                            parameters,
-                                            sizeof(parameters));
+        virtual_documents_format_parameters_with_arity(metaMethodDescriptor->parameters,
+                                                         metaMethodDescriptor->parameterCount,
+                                                         metaMethodDescriptor->minArgumentCount,
+                                                         metaMethodDescriptor->maxArgumentCount,
+                                                         parameters,
+                                                         sizeof(parameters));
         snprintf(suffix,
                  sizeof(suffix),
                  "(%s): %s;\n",

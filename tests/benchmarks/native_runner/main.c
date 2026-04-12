@@ -19,6 +19,8 @@ extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_object_field_hot;
 extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_array_index_dense;
 extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_branch_jump_dense;
 extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_mixed_service_loop;
+extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_gc_fragment_baseline;
+extern const ZrBenchCaseDescriptor zr_bench_case_descriptor_gc_fragment_stress;
 
 static void zr_bench_print_usage(const char *executable) {
     fprintf(stderr,
@@ -42,7 +44,9 @@ static const ZrBenchCaseDescriptor *zr_bench_find_case(const char *caseName) {
             &zr_bench_case_descriptor_object_field_hot,
             &zr_bench_case_descriptor_array_index_dense,
             &zr_bench_case_descriptor_branch_jump_dense,
-            &zr_bench_case_descriptor_mixed_service_loop
+            &zr_bench_case_descriptor_mixed_service_loop,
+            &zr_bench_case_descriptor_gc_fragment_baseline,
+            &zr_bench_case_descriptor_gc_fragment_stress
     };
     int index;
 

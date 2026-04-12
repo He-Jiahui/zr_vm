@@ -1,14 +1,18 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { createArtifactLayout } = require('./artifact-layout');
 const {
     requiredRuntimeFiles,
     resolveLatestCompleteNativeAssetDir,
 } = require('./native-asset-selection');
 
-const extensionRoot = path.resolve(__dirname, '..');
-const repositoryRoot = path.resolve(extensionRoot, '..');
-const bundledFolder = `${process.platform}-${process.arch}`;
-const destinationDir = path.join(extensionRoot, 'server', 'native', bundledFolder);
+const layout = createArtifactLayout({
+    repositoryRoot: path.resolve(__dirname, '..', '..'),
+    extensionRoot: path.resolve(__dirname, '..'),
+});
+const extensionRoot = layout.extensionRoot;
+const repositoryRoot = layout.repositoryRoot;
+const destinationDir = layout.native.bundledDir;
 
 const sourceDir = process.argv[2]
     ? path.resolve(process.argv[2])
@@ -48,7 +52,8 @@ for (const fileName of [...requiredFiles, ...optionalFiles]) {
 
 function resolveDefaultSourceDir() {
     return resolveLatestCompleteNativeAssetDir(repositoryRoot, extensionRoot) ||
-        path.join(repositoryRoot, 'build', 'codex-lsp', 'bin');
+        layout.native.buildOutputCandidates.find((candidate) => fs.existsSync(candidate)) ||
+        layout.native.buildOutputCandidates[0];
 }
 
 function collectWindowsNativeAssets(nativeSourceDir) {

@@ -14,6 +14,8 @@ if (NOT DEFINED GENERATED_DIR OR GENERATED_DIR STREQUAL "")
     message(FATAL_ERROR "GENERATED_DIR is required.")
 endif()
 
+include("${CMAKE_CURRENT_LIST_DIR}/zr_vm_test_host_env.cmake")
+
 if (DEFINED TIER AND NOT TIER STREQUAL "")
     string(TOLOWER "${TIER}" PROJECT_REQUESTED_TIER)
 elseif (DEFINED ENV{ZR_VM_TEST_TIER} AND NOT "$ENV{ZR_VM_TEST_TIER}" STREQUAL "")
@@ -60,6 +62,7 @@ file(REMOVE_RECURSE "${PROJECT_FIXTURES_DIR}/.fixture_prepare")
 file(REMOVE_RECURSE "${PROJECT_FIXTURES_DIR}/.run_backup")
 
 set(native_numeric_pipeline_output_dir "${PROJECT_FIXTURES_DIR}/native_numeric_pipeline/bin/out")
+file(TO_CMAKE_PATH "${native_numeric_pipeline_output_dir}" native_numeric_pipeline_output_dir)
 set(native_numeric_pipeline_source_file "${PROJECT_FIXTURES_DIR}/native_numeric_pipeline/src/system_io.zr")
 if (EXISTS "${native_numeric_pipeline_source_file}")
     file(READ "${native_numeric_pipeline_source_file}" native_numeric_pipeline_source_contents)
@@ -80,6 +83,29 @@ endif()
 
 file(REMOVE_RECURSE "${native_numeric_pipeline_output_dir}")
 file(MAKE_DIRECTORY "${native_numeric_pipeline_output_dir}")
+
+set(gc_fragment_stress_output_dir "${PROJECT_FIXTURES_DIR}/gc_fragment_stress/bin/out")
+file(TO_CMAKE_PATH "${gc_fragment_stress_output_dir}" gc_fragment_stress_output_dir)
+set(gc_fragment_stress_source_file "${PROJECT_FIXTURES_DIR}/gc_fragment_stress/src/main.zr")
+if (EXISTS "${gc_fragment_stress_source_file}")
+    file(READ "${gc_fragment_stress_source_file}" gc_fragment_stress_source_contents)
+    string(REPLACE
+            "tests/fixtures/projects/gc_fragment_stress/bin/out"
+            "${gc_fragment_stress_output_dir}"
+            gc_fragment_stress_source_contents
+            "${gc_fragment_stress_source_contents}")
+    file(WRITE "${gc_fragment_stress_source_file}" "${gc_fragment_stress_source_contents}")
+endif()
+
+file(GLOB gc_fragment_stress_bytecode
+        "${PROJECT_FIXTURES_DIR}/gc_fragment_stress/bin/*.zro"
+        "${PROJECT_FIXTURES_DIR}/gc_fragment_stress/bin/*.zri")
+if (NOT gc_fragment_stress_bytecode STREQUAL "")
+    file(REMOVE ${gc_fragment_stress_bytecode})
+endif()
+
+file(REMOVE_RECURSE "${gc_fragment_stress_output_dir}")
+file(MAKE_DIRECTORY "${gc_fragment_stress_output_dir}")
 
 if (DEFINED CMAKE_SHARED_LIBRARY_SUFFIX AND NOT CMAKE_SHARED_LIBRARY_SUFFIX STREQUAL "")
     set(PROJECT_SHARED_LIB_SUFFIX "${CMAKE_SHARED_LIBRARY_SUFFIX}")
@@ -687,6 +713,19 @@ register_project_case("native_complex_capture_probe" "native_complex_capture_pro
 register_project_case("native_numeric_pipeline_banner" "native_numeric_pipeline/native_numeric_pipeline.zrp" "NATIVE_NUMERIC_PIPELINE_PASS" "${COMMON_FAIL_REGEX}|\\[closure\\]" "" "" "tests/fixtures/projects/native_numeric_pipeline/bin/out/report.txt" "NATIVE_NUMERIC_PIPELINE_PASS")
 register_project_case("native_numeric_pipeline_result" "native_numeric_pipeline/native_numeric_pipeline.zrp" "214" "${COMMON_FAIL_REGEX}|\\[closure\\]|null" "" "" "tests/fixtures/projects/native_numeric_pipeline/bin/out/report.txt" "checksum=214")
 register_project_case("native_numeric_pipeline_probe" "native_numeric_pipeline/native_numeric_pipeline_probe.zrp" "probe:vmState" "${COMMON_FAIL_REGEX}|\\[closure\\]" "" "" "" "")
+set(gc_fragment_stress_report_regex
+        "GC_FRAGMENT_STRESS_PASS
+checksum=[0-9]+
+minorSamples=[1-9][0-9]*
+minorMaxStepUs=[1-9][0-9]*
+fullSamples=[1-9][0-9]*
+fullMaxStepUs=[1-9][0-9]*
+peakRememberedObjectCount=[0-9]+
+peakRegionCount=[1-9][0-9]*
+peakOldLiveBytes=[0-9]+
+peakManagedMemoryBytes=[1-9][0-9]*
+peakGcDebtBytes=[0-9]+")
+register_project_case("gc_fragment_stress" "gc_fragment_stress/gc_fragment_stress.zrp" "GC_FRAGMENT_STRESS_PASS" "${COMMON_FAIL_REGEX}|Function value is NULL" "" "" "tests/fixtures/projects/gc_fragment_stress/bin/out/report.txt" "${gc_fragment_stress_report_regex}")
 register_project_case("container_matrix_banner" "container_matrix/container_matrix.zrp" "CONTAINER_MATRIX_PASS" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("container_matrix_result" "container_matrix/container_matrix.zrp" "635" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 register_project_case("network_loopback" "network_loopback/network_loopback.zrp" "NETWORK_LOOPBACK_PASS ping pong echo" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
@@ -694,9 +733,12 @@ register_project_case("network_loopback_binary" "network_loopback/network_loopba
 register_project_case("hello_world_aot_c" "hello_world/hello_world.zrp" "hello world" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("import_basic_aot_c" "import_basic/import_basic.zrp" "hello from import" "${COMMON_FAIL_REGEX}" "" "" "" "")
 register_project_case("benchmark_string_build_aot_c" "benchmark_string_build/benchmark_string_build.zrp" "BENCH_STRING_BUILD_PASS[\\r\\n]+353247225" "${COMMON_FAIL_REGEX}" "" "" "" "")
-register_project_case("aot_module_graph_pipeline" "aot_module_graph_pipeline/aot_module_graph_pipeline.zrp" "AOT_MODULE_GRAPH_PIPELINE_PASS[\n]+102" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "aot_module_graph_pipeline/fixtures/graph_binary_stage_source.zr" "aot_module_graph_pipeline/bin/graph_binary_stage.zro" "" "")
-register_project_case("aot_dynamic_meta_ownership_lab" "aot_dynamic_meta_ownership_lab/aot_dynamic_meta_ownership_lab.zrp" "AOT_DYNAMIC_META_OWNERSHIP_LAB_PASS[\n]+29" "${COMMON_FAIL_REGEX}|Function value is NULL" "" "" "" "")
-register_project_case("aot_eh_tail_gc_stress" "aot_eh_tail_gc_stress/aot_eh_tail_gc_stress.zrp" "AOT_EH_TAIL_GC_STRESS_PASS[\n]+31" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
+register_project_case("aot_module_graph_pipeline" "aot_module_graph_pipeline/aot_module_graph_pipeline.zrp" "AOT_MODULE_GRAPH_PIPELINE_PASS[
+\n]+102" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "aot_module_graph_pipeline/fixtures/graph_binary_stage_source.zr" "aot_module_graph_pipeline/bin/graph_binary_stage.zro" "" "")
+register_project_case("aot_dynamic_meta_ownership_lab" "aot_dynamic_meta_ownership_lab/aot_dynamic_meta_ownership_lab.zrp" "AOT_DYNAMIC_META_OWNERSHIP_LAB_PASS[
+\n]+29" "${COMMON_FAIL_REGEX}|Function value is NULL" "" "" "" "")
+register_project_case("aot_eh_tail_gc_stress" "aot_eh_tail_gc_stress/aot_eh_tail_gc_stress.zrp" "AOT_EH_TAIL_GC_STRESS_PASS[
+\n]+31" "${COMMON_FAIL_REGEX}|null|Function value is NULL" "" "" "" "")
 
 set_project_case_metadata("hello_world" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("import_basic" "smoke;core;stress" "" "OFF")
@@ -731,6 +773,7 @@ set_project_case_metadata("native_complex_capture_probe" "core;stress" "" "OFF")
 set_project_case_metadata("native_numeric_pipeline_banner" "core;stress" "" "OFF")
 set_project_case_metadata("native_numeric_pipeline_result" "core;stress" "" "OFF")
 set_project_case_metadata("native_numeric_pipeline_probe" "core;stress" "" "OFF")
+set_project_case_metadata("gc_fragment_stress" "core;stress" "" "OFF")
 set_project_case_metadata("container_matrix_banner" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("container_matrix_result" "smoke;core;stress" "" "OFF")
 set_project_case_metadata("network_loopback" "core;stress" "" "OFF")

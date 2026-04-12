@@ -7,6 +7,31 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "zr_vm_core/gc.h"
+
+static void zr_module_barrier_string_field(SZrState *state,
+                                           struct SZrObjectModule *module,
+                                           SZrString *stringValue) {
+    if (state == ZR_NULL || module == ZR_NULL || stringValue == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_RawObject_Barrier(state,
+                             ZR_CAST_RAW_OBJECT_AS_SUPER(module),
+                             ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue));
+}
+
+static void zr_module_barrier_hash_pair(SZrState *state,
+                                        struct SZrObjectModule *module,
+                                        SZrHashKeyValuePair *pair) {
+    if (state == ZR_NULL || module == ZR_NULL || pair == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(module), &pair->key);
+    ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(module), &pair->value);
+}
+
 struct SZrObjectModule *ZrCore_Module_Create(SZrState *state) {
     SZrObject *object;
     struct SZrObjectModule *module;
@@ -48,6 +73,8 @@ void ZrCore_Module_SetInfo(SZrState *state,
     module->moduleName = moduleName;
     module->pathHash = pathHash;
     module->fullPath = fullPath;
+    zr_module_barrier_string_field(state, module, moduleName);
+    zr_module_barrier_string_field(state, module, fullPath);
 }
 
 void ZrCore_Module_AddPubExport(SZrState *state,
@@ -72,6 +99,12 @@ void ZrCore_Module_AddPubExport(SZrState *state,
         }
     }
     ZrCore_Value_Copy(state, &pair->value, value);
+    zr_module_barrier_hash_pair(state, module, pair);
+    ZrCore_GarbageCollector_MarkValueEscaped(state,
+                                             value,
+                                             ZR_GARBAGE_COLLECT_ESCAPE_KIND_MODULE_ROOT,
+                                             ZR_GC_SCOPE_DEPTH_NONE,
+                                             ZR_GARBAGE_COLLECT_PROMOTION_REASON_MODULE_ROOT);
 }
 
 void ZrCore_Module_AddProExport(SZrState *state,
@@ -94,6 +127,12 @@ void ZrCore_Module_AddProExport(SZrState *state,
         }
     }
     ZrCore_Value_Copy(state, &pair->value, value);
+    zr_module_barrier_hash_pair(state, module, pair);
+    ZrCore_GarbageCollector_MarkValueEscaped(state,
+                                             value,
+                                             ZR_GARBAGE_COLLECT_ESCAPE_KIND_MODULE_ROOT,
+                                             ZR_GC_SCOPE_DEPTH_NONE,
+                                             ZR_GARBAGE_COLLECT_PROMOTION_REASON_MODULE_ROOT);
 }
 
 const SZrTypeValue *ZrCore_Module_GetPubExport(SZrState *state,
@@ -253,6 +292,7 @@ TZrBool ZrCore_Module_RegisterExportDescriptor(SZrState *state,
         if (existing->name == descriptor->name ||
             (existing->name != ZR_NULL && ZrCore_String_Equal(existing->name, descriptor->name))) {
             *existing = *descriptor;
+            zr_module_barrier_string_field(state, module, existing->name);
             return ZR_TRUE;
         }
     }
@@ -278,6 +318,7 @@ TZrBool ZrCore_Module_RegisterExportDescriptor(SZrState *state,
     newDescriptors[module->exportDescriptorLength] = *descriptor;
     module->exportDescriptors = newDescriptors;
     module->exportDescriptorLength = newLength;
+    zr_module_barrier_string_field(state, module, newDescriptors[newLength - 1].name);
     return ZR_TRUE;
 }
 

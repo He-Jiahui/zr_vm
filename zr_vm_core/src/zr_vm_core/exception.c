@@ -46,6 +46,8 @@
 /* Stack traces expose 0 as "no mapped source line" instead of the debug-hook-only 0xFFFFFFFF sentinel. */
 #define ZR_EXCEPTION_SOURCE_LINE_NONE ((TZrUInt32)0u)
 
+static const TZrChar kZrExceptionDefaultRuntimeStatusFaultMessage[] = "Runtime status fault";
+
 static void exception_set_object_field_cstring(SZrState *state,
                                                SZrObject *object,
                                                const TZrChar *fieldName,
@@ -184,6 +186,28 @@ static TZrBool exception_value_is_error_object(SZrState *state, const SZrTypeVal
     }
 
     return exception_prototype_inherits(object->prototype, state->global->errorPrototype);
+}
+
+static const SZrTypeValue *exception_normalize_status_stack_payload(struct SZrState *state,
+                                                                    const SZrTypeValue *payload) {
+    if (payload == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (payload->type == ZR_VALUE_TYPE_STRING || payload->type == ZR_VALUE_TYPE_NULL) {
+        return payload;
+    }
+
+    if (exception_value_is_error_object(state, payload)) {
+        return payload;
+    }
+
+    /*
+     * The slot below stackTop is not always a diagnostic string after partial native / VM unwinding.
+     * Plain objects stringify as "[object type=…]" and hide the real fault; drop them so status errors
+     * fall back to a stable message source inside exception_create_status_error.
+     */
+    return ZR_NULL;
 }
 
 static SZrObjectPrototype *exception_status_prototype(SZrState *state, EZrThreadStatus status) {
@@ -400,8 +424,9 @@ static TZrBool exception_create_status_error(SZrState *state,
                                              SZrCallInfo *throwCallInfo) {
     SZrObjectPrototype *prototype;
     SZrObject *errorObject;
-    SZrTypeValue selfValue;
     SZrTypeValue memoryMessageValue;
+    SZrTypeValue defaultStatusMessageValue;
+    SZrString *defaultStatusMessageString;
     const SZrTypeValue *messageSource;
 
     if (state == ZR_NULL) {
@@ -419,8 +444,6 @@ static TZrBool exception_create_status_error(SZrState *state,
     }
     ZrCore_Object_Init(state, errorObject);
 
-    ZrCore_Value_InitAsRawObject(state, &selfValue, ZR_CAST_RAW_OBJECT_AS_SUPER(errorObject));
-    selfValue.type = ZR_VALUE_TYPE_OBJECT;
     messageSource = payload;
     if (messageSource == ZR_NULL && status == ZR_THREAD_STATUS_MEMORY_ERROR && state->global != ZR_NULL &&
         state->global->memoryErrorMessage != ZR_NULL) {
@@ -429,11 +452,19 @@ static TZrBool exception_create_status_error(SZrState *state,
         memoryMessageValue.type = ZR_VALUE_TYPE_STRING;
         messageSource = &memoryMessageValue;
     }
-    if (!exception_apply_error_fields(state,
-                                      errorObject,
-                                      messageSource != ZR_NULL ? messageSource : &selfValue,
-                                      payload != ZR_NULL ? payload : &selfValue,
-                                      throwCallInfo)) {
+    if (messageSource == ZR_NULL) {
+        defaultStatusMessageString =
+                ZrCore_String_CreateFromNative(state, kZrExceptionDefaultRuntimeStatusFaultMessage);
+        if (defaultStatusMessageString == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Value_InitAsRawObject(state,
+                                     &defaultStatusMessageValue,
+                                     ZR_CAST_RAW_OBJECT_AS_SUPER(defaultStatusMessageString));
+        defaultStatusMessageValue.type = ZR_VALUE_TYPE_STRING;
+        messageSource = &defaultStatusMessageValue;
+    }
+    if (!exception_apply_error_fields(state, errorObject, messageSource, payload, throwCallInfo)) {
         return ZR_FALSE;
     }
 
@@ -459,6 +490,19 @@ static void exception_throw_on_state(SZrState *state, EZrThreadStatus errorCode)
 
 void ZrCore_Exception_Throw(SZrState *state, EZrThreadStatus errorCode) {
     if (state->exceptionRecoverPoint != ZR_NULL) {
+        /*
+         * Some native paths (for example legacy IO helpers) longjmp with a thread status without
+         * first materializing currentException. Test harness and VM diagnostics assume
+         * hasCurrentException matches recoverable error codes before unwinding.
+         * Debug_RunError already normalizes; this covers raw Throw sites and keeps threadStatus
+         * consistent with exceptionLongJump.status.
+         */
+        if (!state->hasCurrentException &&
+            (errorCode == ZR_THREAD_STATUS_RUNTIME_ERROR || errorCode == ZR_THREAD_STATUS_EXCEPTION_ERROR ||
+             errorCode == ZR_THREAD_STATUS_MEMORY_ERROR)) {
+            (void)ZrCore_Exception_NormalizeStatus(state, errorCode);
+        }
+        state->threadStatus = errorCode;
         state->exceptionRecoverPoint->status = errorCode;
         ZR_EXCEPTION_NATIVE_THROW(state, state->exceptionRecoverPoint);
     }
@@ -589,7 +633,8 @@ TZrBool ZrCore_Exception_NormalizeStatus(struct SZrState *state, EZrThreadStatus
     throwCallInfo = state->callInfoList;
     if (state->stackTop.valuePointer != ZR_NULL && state->stackBase.valuePointer != ZR_NULL &&
         state->stackTop.valuePointer > state->stackBase.valuePointer) {
-        payload = &(state->stackTop.valuePointer - 1)->value;
+        payload = exception_normalize_status_stack_payload(state,
+                                                           &(state->stackTop.valuePointer - 1)->value);
     }
 
     return exception_create_status_error(state, status, payload, throwCallInfo);

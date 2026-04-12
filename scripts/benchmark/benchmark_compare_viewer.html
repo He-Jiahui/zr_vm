@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ZR VM Benchmark 对比可视化</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #3d8bfd;
+      --border: #2a3a52;
+      --good: #3fb950;
+      --bad: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      padding: 1.25rem 1.5rem 3rem;
+    }
+    h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.5rem; }
+    p.lead { color: var(--muted); margin: 0 0 1rem; font-size: 0.95rem; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1.25rem;
+      padding: 0.75rem 1rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .toolbar label { cursor: pointer; color: var(--accent); font-size: 0.9rem; }
+    input[type="file"] { font-size: 0.85rem; max-width: 100%; }
+    .meta {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+    .meta strong { color: var(--text); }
+    section {
+      margin-bottom: 2rem;
+    }
+    h2 {
+      font-size: 1.05rem;
+      margin: 0 0 0.75rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.82rem;
+    }
+    th, td {
+      padding: 0.45rem 0.6rem;
+      text-align: right;
+      border-bottom: 1px solid var(--border);
+    }
+    th:first-child, td:first-child {
+      text-align: left;
+      position: sticky;
+      left: 0;
+      background: var(--panel);
+      z-index: 1;
+      min-width: 8rem;
+    }
+    th { background: #243044; color: var(--muted); font-weight: 600; white-space: nowrap; }
+    tr:hover td { background: rgba(61, 139, 253, 0.06); }
+    .cell-ms { font-variant-numeric: tabular-nums; }
+    .cell-skip { color: var(--muted); }
+    .bar-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      min-width: 120px;
+    }
+    .bar {
+      height: 8px;
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--good), #d29922, var(--bad));
+      opacity: 0.85;
+      min-width: 4px;
+    }
+    .case-block {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      margin-bottom: 1rem;
+    }
+    .case-block h3 {
+      margin: 0 0 0.6rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    .row-bar {
+      display: grid;
+      grid-template-columns: minmax(100px, 140px) 1fr 4rem;
+      gap: 0.5rem;
+      align-items: center;
+      font-size: 0.8rem;
+      margin-bottom: 0.35rem;
+    }
+    .row-bar .name { color: var(--muted); }
+    .row-bar .ms { text-align: right; font-variant-numeric: tabular-nums; }
+    .hint { color: var(--muted); font-size: 0.8rem; margin-top: 1rem; }
+    .err { color: var(--bad); font-size: 0.9rem; }
+    .section-note {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin: -0.2rem 0 0.75rem;
+      max-width: 56rem;
+      line-height: 1.5;
+    }
+    .section-note code { color: var(--accent); font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+  <script id="zr-bench-embed" type="text/plain">__ZR_BENCH_SUMMARY_B64__</script>
+
+  <h1>ZR VM Benchmark 对比可视化</h1>
+  <p class="lead">加载 <code>benchmark_suite_summary.json</code>（由 <code>aggregate_benchmark_summary.py</code> 生成），或使用已嵌入数据的单文件 HTML。</p>
+
+  <div class="toolbar">
+    <label>选择 JSON 文件：<input type="file" id="file-input" accept=".json,application/json" /></label>
+  </div>
+  <div id="error" class="err" hidden></div>
+  <div id="meta" class="meta"></div>
+
+  <section id="sec-matrix">
+    <h2>全量：各 case 平均耗时 (ms) — 相对本行最短值着色</h2>
+    <div id="matrix-container"></div>
+  </section>
+
+  <section id="sec-interpreted">
+    <h2>解释器 / 脚本虚拟机类 — 同类互比</h2>
+    <p class="section-note">仅包含：Python、Node.js、Lua、QuickJS、<code>ZR interp</code>。着色与条形比例均只在<strong>本组</strong>实现之间比较（不与 C / AOT 等混排）。</p>
+    <div id="interpreted-matrix-container"></div>
+  </section>
+
+  <section id="sec-native">
+    <h2>原生 / JIT / AOT 机器码类 — 同类互比</h2>
+    <p class="section-note">仅包含：C、Rust、Java、.NET、<code>ZR binary</code>、<code>ZR aot_c</code>、<code>ZR aot_llvm</code>。Java / .NET 为虚拟机内 JIT 编译到机器码的执行路径。</p>
+    <div id="native-matrix-container"></div>
+  </section>
+
+  <section id="sec-bars">
+    <h2>全量：按 case 条形对比（含所有实现）</h2>
+    <p class="section-note">每个 case 内按耗时升序；若需只看解释器组或只看机器码组，请使用上方分组表。</p>
+    <div id="bars-container"></div>
+  </section>
+
+  <section id="sec-zr-vs">
+    <h2>ZR interp 相对其它语言（来自 comparison_report）</h2>
+    <div id="zr-vs-container"></div>
+  </section>
+
+  <p class="hint">数值来源：<code>benchmark_report.json</code> 中 <code>summary.mean_wall_ms</code>；SKIP/FAIL 显示为 “—”。全量表与各分组表使用同一数据源，分组列由实现名称归类（见各节说明）。</p>
+
+  <script>
+(function () {
+  const $ = function (id) { return document.getElementById(id); };
+
+  function showError(msg) {
+    const el = $("error");
+    el.textContent = msg;
+    el.hidden = !msg;
+  }
+
+  function normalizePayload(root) {
+    if (!root || typeof root !== "object") return null;
+    if (root.schema_version && root.reports && root.reports.benchmark_report) {
+      return root;
+    }
+    if (root.suite === "performance_report") {
+      return {
+        schema_version: 0,
+        reports: { benchmark_report: root },
+        present: ["benchmark_report"],
+        aggregated_at_utc: root.generated_at_utc || "",
+      };
+    }
+    if (root.suite === "comparison_report") {
+      return {
+        schema_version: 0,
+        reports: { comparison_report: root },
+        present: ["comparison_report"],
+        aggregated_at_utc: root.generated_at_utc || "",
+      };
+    }
+    return null;
+  }
+
+  function parseMaybeBundle() {
+    const embed = document.getElementById("zr-bench-embed");
+    if (!embed) return;
+    const t = embed.textContent.trim();
+    if (!t || t.indexOf("__ZR_BENCH_SUMMARY_B64__") >= 0) return;
+    try {
+      const data = JSON.parse(atob(t));
+      const norm = normalizePayload(data);
+      if (norm) renderAll(norm);
+    } catch (e) {
+      showError("嵌入数据解析失败: " + e.message);
+    }
+  }
+
+  function ratioColor(ratio) {
+    const x = Math.max(0, Math.min(1, ratio));
+    const h = 120 - x * 120;
+    return "hsl(" + h + ", 55%, 45%)";
+  }
+
+  /**
+   * interp: 解释器 / 脚本 VM（与同类比较）
+   * native: 静态原生、JIT 机器码、ZR 预编译产物（与同类比较）
+   * other: 不参与上述两表
+   */
+  function implCategory(implName) {
+    const n = (implName || "").trim();
+    if (
+      n === "Python" ||
+      n === "Node.js" ||
+      n === "Lua" ||
+      n === "QuickJS" ||
+      n === "ZR interp"
+    ) {
+      return "interp";
+    }
+    if (
+      n === "C" ||
+      n === "Rust" ||
+      n === "Java" ||
+      n === ".NET" ||
+      n === "ZR binary" ||
+      n === "ZR aot_c" ||
+      n === "ZR aot_llvm"
+    ) {
+      return "native";
+    }
+    return "other";
+  }
+
+  function renderFilteredMatrix(br, category, containerId) {
+    const implSet = {};
+    for (const c of br.cases || []) {
+      for (const im of c.implementations || []) {
+        const name = im.name || "?";
+        if (implCategory(name) === category) {
+          implSet[name] = true;
+        }
+      }
+    }
+    const implNames = Object.keys(implSet).sort();
+    const el = $(containerId);
+    if (!el) return;
+    if (implNames.length === 0) {
+      el.innerHTML = "<p class=\"cell-skip\">本报告中没有属于该分组的实现或尚无 PASS 数据。</p>";
+      return;
+    }
+
+    const rows = [];
+    for (const c of br.cases || []) {
+      const row = { name: c.name, workload_tag: c.workload_tag || "", impl: {} };
+      for (const im of c.implementations || []) {
+        const name = im.name || "?";
+        if (implCategory(name) !== category) continue;
+        let ms = null;
+        if (im.status === "PASS" && im.summary && typeof im.summary.mean_wall_ms === "number") {
+          ms = im.summary.mean_wall_ms;
+        }
+        row.impl[name] = { ms: ms, status: im.status };
+      }
+      rows.push(row);
+    }
+
+    let html = "<div class=\"table-wrap\"><table><thead><tr><th>case</th>";
+    for (const n of implNames) {
+      html += "<th>" + escapeHtml(n) + "</th>";
+    }
+    html += "</tr></thead><tbody>";
+
+    for (const row of rows) {
+      const values = implNames
+        .map(function (n) { return row.impl[n] && row.impl[n].ms; })
+        .filter(function (x) { return typeof x === "number"; });
+      const minV = values.length ? Math.min.apply(null, values) : 1;
+
+      html += "<tr><td><strong>" + escapeHtml(row.name) + "</strong><br/><span class=\"cell-skip\">" +
+        escapeHtml(row.workload_tag) + "</span></td>";
+      for (const n of implNames) {
+        const cell = row.impl[n];
+        if (!cell || cell.ms == null) {
+          html += "<td class=\"cell-skip\">—</td>";
+          continue;
+        }
+        const ratio = minV > 0 ? (cell.ms / minV - 1) / 4 : 0;
+        const col = ratioColor(Math.min(1, Math.max(0, ratio)));
+        html += "<td class=\"cell-ms\" style=\"color:" + col + "\">" + cell.ms.toFixed(3) +
+          "<div class=\"bar-wrap\"><div class=\"bar\" style=\"width:" +
+          Math.min(100, (cell.ms / (minV * 5)) * 100) + "%;background:" + col + "\"></div></div></td>";
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table></div>";
+    el.innerHTML = html;
+  }
+
+  function renderAll(payload) {
+    showError("");
+    const br = payload.reports && payload.reports.benchmark_report;
+    const cr = payload.reports && payload.reports.comparison_report;
+
+    const meta = $("meta");
+    meta.innerHTML =
+      "<strong>聚合时间</strong> " + (payload.aggregated_at_utc || "—") +
+      " &nbsp;|&nbsp; <strong>目录</strong> " + escapeHtml(String(payload.tests_generated_dir || "—")) +
+      " &nbsp;|&nbsp; <strong>包含</strong> " + escapeHtml((payload.present || []).join(", ") || "—");
+
+    if (br && br.cases) {
+      renderMatrix(br);
+      renderFilteredMatrix(br, "interp", "interpreted-matrix-container");
+      renderFilteredMatrix(br, "native", "native-matrix-container");
+      renderBars(br);
+    } else {
+      $("matrix-container").innerHTML = "<p class=\"cell-skip\">无 benchmark_report</p>";
+      $("interpreted-matrix-container").innerHTML = "";
+      $("native-matrix-container").innerHTML = "";
+      $("bars-container").innerHTML = "";
+    }
+
+    if (cr && cr.cases && cr.cases.length) {
+      renderZrVs(cr);
+    } else {
+      $("zr-vs-container").innerHTML = "<p class=\"cell-skip\">无 comparison_report</p>";
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function renderMatrix(br) {
+    const implSet = {};
+    const rows = [];
+    for (const c of br.cases || []) {
+      const row = { name: c.name, workload_tag: c.workload_tag || "", impl: {} };
+      for (const im of c.implementations || []) {
+        const name = im.name || "?";
+        implSet[name] = true;
+        let ms = null;
+        if (im.status === "PASS" && im.summary && typeof im.summary.mean_wall_ms === "number") {
+          ms = im.summary.mean_wall_ms;
+        }
+        row.impl[name] = { ms: ms, status: im.status };
+      }
+      rows.push(row);
+    }
+    const implNames = Object.keys(implSet).sort();
+
+    let html = "<div class=\"table-wrap\"><table><thead><tr><th>case</th>";
+    for (const n of implNames) {
+      html += "<th>" + escapeHtml(n) + "</th>";
+    }
+    html += "</tr></thead><tbody>";
+
+    for (const row of rows) {
+      const values = implNames
+        .map(function (n) { return row.impl[n] && row.impl[n].ms; })
+        .filter(function (x) { return typeof x === "number"; });
+      const minV = values.length ? Math.min.apply(null, values) : 1;
+
+      html += "<tr><td><strong>" + escapeHtml(row.name) + "</strong><br/><span class=\"cell-skip\">" +
+        escapeHtml(row.workload_tag) + "</span></td>";
+      for (const n of implNames) {
+        const cell = row.impl[n];
+        if (!cell || cell.ms == null) {
+          html += "<td class=\"cell-skip\">—</td>";
+          continue;
+        }
+        const ratio = minV > 0 ? (cell.ms / minV - 1) / 4 : 0;
+        const col = ratioColor(Math.min(1, Math.max(0, ratio)));
+        html += "<td class=\"cell-ms\" style=\"color:" + col + "\">" + cell.ms.toFixed(3) +
+          "<div class=\"bar-wrap\"><div class=\"bar\" style=\"width:" +
+          Math.min(100, (cell.ms / (minV * 5)) * 100) + "%;background:" + col + "\"></div></div></td>";
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table></div>";
+    $("matrix-container").innerHTML = html;
+  }
+
+  function renderBars(br) {
+    let html = "";
+    for (const c of br.cases || []) {
+      const items = [];
+      for (const im of c.implementations || []) {
+        if (im.status === "PASS" && im.summary && typeof im.summary.mean_wall_ms === "number") {
+          items.push({ name: im.name || "?", ms: im.summary.mean_wall_ms });
+        }
+      }
+      items.sort(function (a, b) { return a.ms - b.ms; });
+      const maxMs = items.length ? items[items.length - 1].ms : 1;
+
+      html += "<div class=\"case-block\"><h3>" + escapeHtml(c.name) + "</h3>";
+      for (const it of items) {
+        const pct = maxMs > 0 ? (it.ms / maxMs) * 100 : 0;
+        const col = ratioColor(Math.min(1, (it.ms / maxMs)));
+        html += "<div class=\"row-bar\">" +
+          "<span class=\"name\">" + escapeHtml(it.name) + "</span>" +
+          "<div class=\"bar\" style=\"width:" + pct + "%;max-width:100%;background:" + col + "\"></div>" +
+          "<span class=\"ms\">" + it.ms.toFixed(3) + "</span></div>";
+      }
+      html += "</div>";
+    }
+    $("bars-container").innerHTML = html || "<p class=\"cell-skip\">无 PASS 数据</p>";
+  }
+
+  function renderZrVs(cr) {
+    const langs = ["c", "lua", "qjs", "node", "python", "dotnet", "java", "rust"];
+    const labels = { c: "C", lua: "Lua", qjs: "QuickJS", node: "Node", python: "Python", dotnet: ".NET", java: "Java", rust: "Rust" };
+
+    let html = "<div class=\"table-wrap\"><table><thead><tr><th>case</th>";
+    for (const k of langs) {
+      html += "<th>ZR interp vs " + escapeHtml(labels[k]) + "</th>";
+    }
+    html += "</tr></thead><tbody>";
+
+    for (const row of cr.cases || []) {
+      html += "<tr><td><strong>" + escapeHtml(row.name) + "</strong></td>";
+      const rel = row.relative_to || {};
+      for (const k of langs) {
+        const v = rel[k];
+        if (v == null || v === "" || v === "-") {
+          html += "<td class=\"cell-skip\">—</td>";
+        } else {
+          html += "<td class=\"cell-ms\">" + escapeHtml(String(v)) + "×</td>";
+        }
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table></div>";
+    $("zr-vs-container").innerHTML = html;
+  }
+
+  $("file-input").addEventListener("change", function (ev) {
+    const f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = function () {
+      try {
+        const raw = JSON.parse(reader.result);
+        const norm = normalizePayload(raw);
+        if (!norm) {
+          showError("无法识别的 JSON 结构，请使用 benchmark_suite_summary.json 或 benchmark_report.json");
+          return;
+        }
+        renderAll(norm);
+      } catch (e) {
+        showError("JSON 解析失败: " + e.message);
+      }
+    };
+    reader.readAsText(f, "utf-8");
+  });
+
+  parseMaybeBundle();
+  if (!$("meta").innerHTML) {
+    $("meta").innerHTML = "<strong>提示</strong> 请选择 <code>benchmark_suite_summary.json</code>，或使用 <code>aggregate_benchmark_summary.py --bundle-html</code> 生成的单文件 HTML。";
+  }
+})();
+  </script>
+</body>
+</html>

@@ -8,8 +8,6 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/state.h"
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #if defined(_MSC_VER)
@@ -33,117 +31,12 @@ typedef struct SZrObjectLiteralStringCacheEntry {
 } SZrObjectLiteralStringCacheEntry;
 
 typedef struct SZrObjectHotLiteralCache {
-    const SZrGlobalState *cachedGlobal;
-    const void *cachedGarbageCollector;
-    const void *cachedStringTable;
+    TZrUInt64 cachedGlobalCacheIdentity;
     SZrString *itemsField;
     SZrString *lengthField;
     SZrString *capacityField;
     SZrString *addMember;
 } SZrObjectHotLiteralCache;
-
-static TZrBool object_super_array_trace_enabled(void) {
-    static int initialized = 0;
-    static TZrBool enabled = ZR_FALSE;
-
-    if (!initialized) {
-        enabled = getenv("ZR_VM_TRACE_MAP_ARRAY") != ZR_NULL ? ZR_TRUE : ZR_FALSE;
-        initialized = 1;
-    }
-
-    return enabled;
-}
-
-static const char *object_super_array_debug_string(SZrString *value) {
-    return value != ZR_NULL ? ZrCore_String_GetNativeString(value) : "<null>";
-}
-
-static void object_super_array_trace_dump_object_fields(SZrState *state,
-                                                        const char *label,
-                                                        SZrObject *object) {
-    const TZrSize maxDumpedPairs = 32;
-    TZrSize dumpedPairs = 0;
-
-    if (!object_super_array_trace_enabled()) {
-        return;
-    }
-
-    fprintf(stderr,
-            "[map-array-trace] %s object=%p internalType=%d memberVersion=%u nodeMapValid=%d buckets=%p capacity=%llu elementCount=%llu cachedItemsPair=%p cachedItemsObject=%p cachedLengthPair=%p cachedCapacityPair=%p prototype=%s\n",
-            label != ZR_NULL ? label : "object_dump",
-            (void *)object,
-            object != ZR_NULL ? (int)object->internalType : -1,
-            object != ZR_NULL ? (unsigned int)object->memberVersion : 0U,
-            object != ZR_NULL ? (int)object->nodeMap.isValid : 0,
-            object != ZR_NULL ? (void *)object->nodeMap.buckets : ZR_NULL,
-            object != ZR_NULL ? (unsigned long long)object->nodeMap.capacity : 0ULL,
-            object != ZR_NULL ? (unsigned long long)object->nodeMap.elementCount : 0ULL,
-            object != ZR_NULL ? (void *)object->cachedHiddenItemsPair : ZR_NULL,
-            object != ZR_NULL ? (void *)object->cachedHiddenItemsObject : ZR_NULL,
-            object != ZR_NULL ? (void *)object->cachedLengthPair : ZR_NULL,
-            object != ZR_NULL ? (void *)object->cachedCapacityPair : ZR_NULL,
-            object != ZR_NULL && object->prototype != ZR_NULL ? object_super_array_debug_string(object->prototype->name)
-                                                              : "<null>");
-    if (state == ZR_NULL || object == ZR_NULL || !object->nodeMap.isValid || object->nodeMap.buckets == ZR_NULL) {
-        return;
-    }
-
-    for (TZrSize bucketIndex = 0; bucketIndex < object->nodeMap.capacity && dumpedPairs < maxDumpedPairs; bucketIndex++) {
-        for (SZrHashKeyValuePair *pair = object->nodeMap.buckets[bucketIndex];
-             pair != ZR_NULL && dumpedPairs < maxDumpedPairs;
-             pair = pair->next) {
-            const char *keyText = "<non-string>";
-            unsigned long long keyHash = 0ULL;
-            TZrInt64 signedValue = 0;
-            unsigned long long unsignedValue = 0ULL;
-            SZrObject *valueObject = ZR_NULL;
-            int valueInternalType = -1;
-
-            if (pair->key.type == ZR_VALUE_TYPE_STRING && pair->key.value.object != ZR_NULL) {
-                SZrString *keyString = ZR_CAST_STRING(state, pair->key.value.object);
-                if (keyString != ZR_NULL) {
-                    keyText = object_super_array_debug_string(keyString);
-                    keyHash = (unsigned long long)ZR_CAST_RAW_OBJECT_AS_SUPER(keyString)->hash;
-                }
-            }
-
-            if (ZR_VALUE_IS_TYPE_SIGNED_INT(pair->value.type)) {
-                signedValue = pair->value.value.nativeObject.nativeInt64;
-            }
-            if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(pair->value.type)) {
-                unsignedValue = (unsigned long long)pair->value.value.nativeObject.nativeUInt64;
-            }
-            if ((pair->value.type == ZR_VALUE_TYPE_OBJECT || pair->value.type == ZR_VALUE_TYPE_ARRAY) &&
-                pair->value.value.object != ZR_NULL) {
-                valueObject = ZR_CAST_OBJECT(state, pair->value.value.object);
-                valueInternalType = valueObject != ZR_NULL ? (int)valueObject->internalType : -1;
-            }
-
-            fprintf(stderr,
-                    "[map-array-trace] %s field[%llu] bucket=%llu pair=%p keyType=%d key=%s keyHash=%llu valueType=%d valueObject=%p valueInternalType=%d signedValue=%lld unsignedValue=%llu\n",
-                    label != ZR_NULL ? label : "object_dump",
-                    (unsigned long long)dumpedPairs,
-                    (unsigned long long)bucketIndex,
-                    (void *)pair,
-                    (int)pair->key.type,
-                    keyText,
-                    keyHash,
-                    (int)pair->value.type,
-                    (void *)valueObject,
-                    valueInternalType,
-                    (long long)signedValue,
-                    unsignedValue);
-            dumpedPairs++;
-        }
-    }
-
-    if (object->nodeMap.elementCount > dumpedPairs) {
-        fprintf(stderr,
-                "[map-array-trace] %s field_dump_truncated remaining=%llu\n",
-                label != ZR_NULL ? label : "object_dump",
-                (unsigned long long)(object->nodeMap.elementCount - dumpedPairs));
-    }
-}
 
 static ZR_FORCE_INLINE TZrBool object_value_is_plain_primitive(const SZrTypeValue *value) {
     ZR_ASSERT(value != ZR_NULL);
@@ -162,6 +55,13 @@ static ZR_FORCE_INLINE void object_store_plain_int_reuse(SZrTypeValue *destinati
     destination->value.nativeObject.nativeInt64 = value;
     destination->isGarbageCollectable = ZR_FALSE;
     destination->isNative = ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE void object_store_plain_int_assume_normalized(SZrTypeValue *destination, TZrInt64 value) {
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(object_value_is_plain_primitive(destination));
+    destination->type = ZR_VALUE_TYPE_INT64;
+    destination->value.nativeObject.nativeInt64 = value;
 }
 
 static ZR_FORCE_INLINE void object_store_plain_null_reuse(SZrTypeValue *destination) {
@@ -546,30 +446,31 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_add_int_int_pair_assuming_abs
     return pair;
 }
 
-static ZR_FORCE_INLINE void object_init_dense_int_int_pair_assume_fast(
-        SZrHashKeyValuePair *pair,
-        const SZrTypeValue *valueTemplate,
-        TZrInt64 indexValue) {
-    ZR_ASSERT(pair != ZR_NULL);
-    ZR_ASSERT(valueTemplate != ZR_NULL);
-    ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(valueTemplate->type));
-    ZR_ASSERT(object_value_is_plain_primitive(valueTemplate));
+typedef struct ZrSuperArrayAppendBatchCursor {
+    SZrHashSet *nodeMap;
+    SZrHashKeyValuePair **bucketCursor;
+    TZrInt64 currentIndexValue;
+    SZrHashPairPoolBlock *pairBlock;
+} ZrSuperArrayAppendBatchCursor;
 
-    pair->next = ZR_NULL;
-    ZR_VALUE_FAST_SET(&pair->key, nativeInt64, indexValue, ZR_VALUE_TYPE_INT64);
-    pair->value = *valueTemplate;
-}
-
-static ZR_FORCE_INLINE void object_init_dense_int_int_pair_and_bucket_assume_fast(
-        SZrHashKeyValuePair *pair,
-        SZrHashKeyValuePair **bucketSlot,
-        const SZrTypeValue *valueTemplate,
-        TZrInt64 indexValue) {
-    ZR_ASSERT(bucketSlot != ZR_NULL);
-    ZR_ASSERT(*bucketSlot == ZR_NULL);
-    object_init_dense_int_int_pair_assume_fast(pair, valueTemplate, indexValue);
-    *bucketSlot = pair;
-}
+static ZR_FORCE_INLINE void object_super_array_append_batch_cursor_init(ZrSuperArrayAppendBatchCursor *cursor,
+                                                                        SZrHashSet *nodeMap,
+                                                                        TZrSize startIndex);
+static ZR_FORCE_INLINE TZrSize object_super_array_batch_cursor_available_pair_span_assume_available(
+        ZrSuperArrayAppendBatchCursor *cursor);
+static ZR_FORCE_INLINE SZrHashKeyValuePair *object_super_array_batch_cursor_take_pair_span_exact_assume_available(
+        ZrSuperArrayAppendBatchCursor *cursor,
+        TZrSize count);
+static ZR_FORCE_INLINE TZrBool object_super_array_can_take_exact_reserved_pair_span_assume_available(
+        SZrHashSet *nodeMap,
+        TZrSize pairCount);
+static ZR_FORCE_INLINE SZrHashKeyValuePair object_make_dense_int_int_pair_template(TZrInt64 value);
+static ZR_FORCE_INLINE void object_init_dense_int_int_pair_bucket_run_assume_fast(
+        SZrHashKeyValuePair *pairs,
+        SZrHashKeyValuePair **bucketCursor,
+        TZrInt64 startIndexValue,
+        TZrSize pairCount,
+        const SZrHashKeyValuePair *pairTemplate);
 
 static ZR_FORCE_INLINE TZrBool object_add_int_int_pairs_assuming_absent_dense_ready_assume_fast(
         SZrState *state,
@@ -577,10 +478,10 @@ static ZR_FORCE_INLINE TZrBool object_add_int_int_pairs_assuming_absent_dense_re
         TZrSize startIndex,
         TZrSize pairCount,
         TZrInt64 value) {
+    ZrSuperArrayAppendBatchCursor cursor;
+    SZrHashKeyValuePair pairTemplate;
     SZrHashSet *nodeMap;
     TZrSize remaining;
-    TZrSize currentIndex;
-    SZrTypeValue valueTemplate;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(object != ZR_NULL);
@@ -592,66 +493,53 @@ static ZR_FORCE_INLINE TZrBool object_add_int_int_pairs_assuming_absent_dense_re
     ZR_ASSERT(startIndex + pairCount <= nodeMap->capacity);
     ZR_ASSERT(nodeMap->elementCount + pairCount <= nodeMap->resizeThreshold);
     ZR_ASSERT(nodeMap->pairPoolUsed + pairCount <= nodeMap->pairPoolCapacity);
-    ZR_VALUE_FAST_SET(&valueTemplate, nativeInt64, value, ZR_VALUE_TYPE_INT64);
 
-    remaining = pairCount;
-    currentIndex = startIndex;
-    while (remaining > 0) {
-        SZrHashKeyValuePair *pairs;
-        SZrHashKeyValuePair *pairCursor;
-        SZrHashKeyValuePair *pairEnd;
-        SZrHashKeyValuePair **bucketCursor;
-        TZrSize spanCount = remaining;
-        TZrInt64 currentIndexValue;
-
-        pairs = ZrCore_HashSet_TakeReservedPairSpanAssumeAvailable(nodeMap, &spanCount);
-        if (pairs == ZR_NULL || spanCount == 0) {
+    pairTemplate = object_make_dense_int_int_pair_template(value);
+    if (object_super_array_can_take_exact_reserved_pair_span_assume_available(nodeMap, pairCount)) {
+        SZrHashKeyValuePair *pairs =
+                ZrCore_HashSet_TakeReservedPairSpanExactPreferTailAssumeAvailable(nodeMap, pairCount);
+        if (pairs == ZR_NULL) {
             return ZR_FALSE;
         }
 
-        bucketCursor = &nodeMap->buckets[currentIndex];
-        pairCursor = pairs;
-        pairEnd = pairs + spanCount;
-        currentIndexValue = (TZrInt64)currentIndex;
-        while ((TZrSize)(pairEnd - pairCursor) >= 4) {
-            ZR_ASSERT(bucketCursor[0] == ZR_NULL);
-            ZR_ASSERT(bucketCursor[1] == ZR_NULL);
-            ZR_ASSERT(bucketCursor[2] == ZR_NULL);
-            ZR_ASSERT(bucketCursor[3] == ZR_NULL);
+        object_init_dense_int_int_pair_bucket_run_assume_fast(
+                pairs,
+                &nodeMap->buckets[startIndex],
+                (TZrInt64)startIndex,
+                pairCount,
+                &pairTemplate);
+        nodeMap->elementCount += pairCount;
+        return ZR_TRUE;
+    }
 
-            pairCursor[0].next = ZR_NULL;
-            ZR_VALUE_FAST_SET(&pairCursor[0].key, nativeInt64, currentIndexValue, ZR_VALUE_TYPE_INT64);
-            pairCursor[0].value = valueTemplate;
-            bucketCursor[0] = &pairCursor[0];
+    object_super_array_append_batch_cursor_init(&cursor, nodeMap, startIndex);
+    remaining = pairCount;
+    while (remaining > 0) {
+        SZrHashKeyValuePair *pairs;
+        TZrSize spanCount = remaining;
+        TZrSize available = object_super_array_batch_cursor_available_pair_span_assume_available(&cursor);
 
-            pairCursor[1].next = ZR_NULL;
-            ZR_VALUE_FAST_SET(&pairCursor[1].key, nativeInt64, currentIndexValue + 1, ZR_VALUE_TYPE_INT64);
-            pairCursor[1].value = valueTemplate;
-            bucketCursor[1] = &pairCursor[1];
-
-            pairCursor[2].next = ZR_NULL;
-            ZR_VALUE_FAST_SET(&pairCursor[2].key, nativeInt64, currentIndexValue + 2, ZR_VALUE_TYPE_INT64);
-            pairCursor[2].value = valueTemplate;
-            bucketCursor[2] = &pairCursor[2];
-
-            pairCursor[3].next = ZR_NULL;
-            ZR_VALUE_FAST_SET(&pairCursor[3].key, nativeInt64, currentIndexValue + 3, ZR_VALUE_TYPE_INT64);
-            pairCursor[3].value = valueTemplate;
-            bucketCursor[3] = &pairCursor[3];
-
-            pairCursor += 4;
-            bucketCursor += 4;
-            currentIndexValue += 4;
+        if (available == 0) {
+            return ZR_FALSE;
+        }
+        if (available < spanCount) {
+            spanCount = available;
         }
 
-        for (; pairCursor != pairEnd; ++pairCursor, ++bucketCursor, ++currentIndexValue) {
-            ZR_ASSERT(*bucketCursor == ZR_NULL);
-            object_init_dense_int_int_pair_assume_fast(pairCursor, &valueTemplate, currentIndexValue);
-            *bucketCursor = pairCursor;
+        pairs = object_super_array_batch_cursor_take_pair_span_exact_assume_available(&cursor, spanCount);
+        if (pairs == ZR_NULL) {
+            return ZR_FALSE;
         }
 
+        object_init_dense_int_int_pair_bucket_run_assume_fast(
+                pairs,
+                cursor.bucketCursor,
+                cursor.currentIndexValue,
+                spanCount,
+                &pairTemplate);
         nodeMap->elementCount += spanCount;
-        currentIndex += spanCount;
+        cursor.bucketCursor += spanCount;
+        cursor.currentIndexValue += (TZrInt64)spanCount;
         remaining -= spanCount;
     }
 
@@ -659,21 +547,15 @@ static ZR_FORCE_INLINE TZrBool object_add_int_int_pairs_assuming_absent_dense_re
 }
 
 static SZrString *object_cached_string_literal(SZrState *state, const TZrChar *literal) {
-    static const SZrGlobalState *cachedGlobal = ZR_NULL;
-    static const void *cachedGarbageCollector = ZR_NULL;
-    static const void *cachedStringTable = ZR_NULL;
+    static TZrUInt64 cachedGlobalCacheIdentity = 0;
     static SZrObjectLiteralStringCacheEntry cache[ZR_OBJECT_LITERAL_CACHE_CAPACITY];
 
     if (state == ZR_NULL || state->global == ZR_NULL || literal == ZR_NULL) {
         return ZR_NULL;
     }
 
-    if (cachedGlobal != state->global ||
-        cachedGarbageCollector != state->global->garbageCollector ||
-        cachedStringTable != state->global->stringTable) {
-        cachedGlobal = state->global;
-        cachedGarbageCollector = state->global->garbageCollector;
-        cachedStringTable = state->global->stringTable;
+    if (cachedGlobalCacheIdentity != state->global->cacheIdentity) {
+        cachedGlobalCacheIdentity = state->global->cacheIdentity;
         memset(cache, 0, sizeof(cache));
     }
 
@@ -714,13 +596,9 @@ static void object_hot_literal_cache_reset_if_needed(SZrState *state, SZrObjectH
         return;
     }
 
-    if (cache->cachedGlobal != state->global ||
-        cache->cachedGarbageCollector != state->global->garbageCollector ||
-        cache->cachedStringTable != state->global->stringTable) {
+    if (cache->cachedGlobalCacheIdentity != state->global->cacheIdentity) {
         memset(cache, 0, sizeof(*cache));
-        cache->cachedGlobal = state->global;
-        cache->cachedGarbageCollector = state->global->garbageCollector;
-        cache->cachedStringTable = state->global->stringTable;
+        cache->cachedGlobalCacheIdentity = state->global->cacheIdentity;
     }
 }
 
@@ -915,7 +793,11 @@ static ZR_FORCE_INLINE TZrBool object_try_super_array_set_cached_int_field(SZrSt
     }
 
     if (object_value_can_overwrite_without_release(&pair->value)) {
-        object_store_plain_int_reuse(&pair->value, value);
+        if (object_value_is_plain_primitive(&pair->value)) {
+            object_store_plain_int_assume_normalized(&pair->value, value);
+        } else {
+            object_store_plain_int_reuse(&pair->value, value);
+        }
     } else {
         object_assign_int_value_or_copy(state, &pair->value, value);
     }
@@ -944,7 +826,11 @@ static ZR_FORCE_INLINE TZrBool object_try_super_array_set_cached_int_field_assum
     }
 
     if (object_value_can_overwrite_without_release(&pair->value)) {
-        object_store_plain_int_reuse(&pair->value, value);
+        if (object_value_is_plain_primitive(&pair->value)) {
+            object_store_plain_int_assume_normalized(&pair->value, value);
+        } else {
+            object_store_plain_int_reuse(&pair->value, value);
+        }
     } else {
         object_assign_int_value_or_copy(state, &pair->value, value);
     }
@@ -961,7 +847,6 @@ static TZrBool object_try_resolve_super_array_items(SZrState *state,
     SZrObjectPrototype *prototype;
     const SZrTypeValue *itemsValue = ZR_NULL;
     SZrObject *itemsObject;
-    TZrBool trace = object_super_array_trace_enabled();
 
     if (outReceiverObject != ZR_NULL) {
         *outReceiverObject = ZR_NULL;
@@ -1005,14 +890,6 @@ static TZrBool object_try_resolve_super_array_items(SZrState *state,
         prototype = state->global->basicTypeObjectPrototype[receiver->type];
     }
     if (prototype == ZR_NULL || (prototype->protocolMask & ZR_PROTOCOL_BIT(ZR_PROTOCOL_ID_ARRAY_LIKE)) == 0) {
-        if (trace) {
-            fprintf(stderr,
-                    "[map-array-trace] super_array_not_applicable reason=prototype receiverType=%d internalType=%d prototype=%s mask=%llu\n",
-                    (int)receiver->type,
-                    receiverObject != ZR_NULL ? (int)receiverObject->internalType : -1,
-                    prototype != ZR_NULL ? object_super_array_debug_string(prototype->name) : "<null>",
-                    prototype != ZR_NULL ? (unsigned long long)prototype->protocolMask : 0ULL);
-        }
         return ZR_TRUE;
     }
 
@@ -1024,30 +901,11 @@ static TZrBool object_try_resolve_super_array_items(SZrState *state,
     }
     if (itemsValue == ZR_NULL ||
         (itemsValue->type != ZR_VALUE_TYPE_OBJECT && itemsValue->type != ZR_VALUE_TYPE_ARRAY)) {
-        if (trace) {
-            SZrString *hiddenItemsKey = ZrCore_Object_CachedKnownFieldString(state, ZR_OBJECT_HIDDEN_ITEMS_FIELD);
-            fprintf(stderr,
-                    "[map-array-trace] super_array_not_applicable reason=items_value prototype=%s mask=%llu itemsType=%d hiddenKey=%s hiddenHash=%llu\n",
-                    object_super_array_debug_string(prototype->name),
-                    (unsigned long long)prototype->protocolMask,
-                    itemsValue != ZR_NULL ? (int)itemsValue->type : -1,
-                    object_super_array_debug_string(hiddenItemsKey),
-                    hiddenItemsKey != ZR_NULL ? (unsigned long long)ZR_CAST_RAW_OBJECT_AS_SUPER(hiddenItemsKey)->hash
-                                              : 0ULL);
-            object_super_array_trace_dump_object_fields(state, "items_value_receiver", receiverObject);
-        }
         return ZR_TRUE;
     }
 
     itemsObject = ZR_CAST_OBJECT(state, itemsValue->value.object);
     if (itemsObject == ZR_NULL || itemsObject->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
-        if (trace) {
-            fprintf(stderr,
-                    "[map-array-trace] super_array_not_applicable reason=items_object prototype=%s mask=%llu itemsInternalType=%d\n",
-                    object_super_array_debug_string(prototype->name),
-                    (unsigned long long)prototype->protocolMask,
-                    itemsObject != ZR_NULL ? (int)itemsObject->internalType : -1);
-        }
         return ZR_TRUE;
     }
 
@@ -1119,42 +977,130 @@ typedef struct ZrSuperArrayAppendPlan {
     TZrSize requiredLength;
 } ZrSuperArrayAppendPlan;
 
-typedef struct ZrSuperArrayAppendBatchCursor {
-    SZrHashSet *nodeMap;
-    SZrHashKeyValuePair **bucketCursor;
-    TZrInt64 currentIndexValue;
-} ZrSuperArrayAppendBatchCursor;
-
-static ZR_FORCE_INLINE TZrSize object_super_array_target_pair_pool_capacity(const SZrHashSet *nodeMap,
-                                                                            TZrSize requiredAfterAppend,
-                                                                            TZrSize targetCapacity) {
-    TZrSize pairPoolTarget;
-    TZrSize grownCapacity;
-
+static ZR_FORCE_INLINE void object_super_array_append_batch_cursor_init(ZrSuperArrayAppendBatchCursor *cursor,
+                                                                        SZrHashSet *nodeMap,
+                                                                        TZrSize startIndex) {
+    ZR_ASSERT(cursor != ZR_NULL);
     ZR_ASSERT(nodeMap != ZR_NULL);
-    ZR_ASSERT(requiredAfterAppend > 0);
 
-    pairPoolTarget = requiredAfterAppend;
-    if (nodeMap->pairPoolCapacity > 0) {
-        grownCapacity = nodeMap->pairPoolCapacity;
-        if (grownCapacity > ((TZrSize)-1) / ZR_OBJECT_SUPER_ARRAY_GROWTH_FACTOR) {
-            grownCapacity = (TZrSize)-1;
-        } else {
-            grownCapacity *= ZR_OBJECT_SUPER_ARRAY_GROWTH_FACTOR;
+    cursor->nodeMap = nodeMap;
+    cursor->bucketCursor = &nodeMap->buckets[startIndex];
+    cursor->currentIndexValue = (TZrInt64)startIndex;
+    cursor->pairBlock = ZR_NULL;
+}
+
+static ZR_FORCE_INLINE TZrSize object_super_array_batch_cursor_available_pair_span_assume_available(
+        ZrSuperArrayAppendBatchCursor *cursor) {
+    SZrHashPairPoolBlock *block;
+
+    ZR_ASSERT(cursor != ZR_NULL);
+    ZR_ASSERT(cursor->nodeMap != ZR_NULL);
+    ZR_ASSERT(cursor->nodeMap->pairPoolUsed < cursor->nodeMap->pairPoolCapacity);
+
+    block = cursor->pairBlock;
+    if (!(ZR_LIKELY(block != ZR_NULL && block->used < block->capacity))) {
+        block = cursor->nodeMap->pairPoolActive;
+        while (block != ZR_NULL && block->used >= block->capacity) {
+            block = block->next;
         }
-
-        if (grownCapacity > pairPoolTarget) {
-            pairPoolTarget = grownCapacity;
+        ZR_ASSERT(block != ZR_NULL);
+        if (block == ZR_NULL) {
+            return 0;
         }
+        cursor->nodeMap->pairPoolActive = block;
+        cursor->pairBlock = block;
     }
 
-    if (pairPoolTarget > targetCapacity) {
-        pairPoolTarget = targetCapacity;
+    return block->capacity - block->used;
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair *object_super_array_batch_cursor_take_pair_span_exact_assume_available(
+        ZrSuperArrayAppendBatchCursor *cursor,
+        TZrSize count) {
+    SZrHashPairPoolBlock *block;
+    SZrHashKeyValuePair *result;
+
+    ZR_ASSERT(cursor != ZR_NULL);
+    ZR_ASSERT(cursor->nodeMap != ZR_NULL);
+    ZR_ASSERT(count > 0);
+
+    block = cursor->pairBlock;
+    if (!(ZR_LIKELY(block != ZR_NULL && block->used + count <= block->capacity))) {
+        if (object_super_array_batch_cursor_available_pair_span_assume_available(cursor) < count) {
+            return ZR_NULL;
+        }
+        block = cursor->pairBlock;
     }
-    if (pairPoolTarget < requiredAfterAppend) {
-        pairPoolTarget = requiredAfterAppend;
+
+    result = &block->pairs[block->used];
+    cursor->nodeMap->pairPoolUsed += count;
+    block->used += count;
+    cursor->pairBlock = block->used < block->capacity ? block : block->next;
+    if (cursor->pairBlock != ZR_NULL) {
+        cursor->nodeMap->pairPoolActive = cursor->pairBlock;
     }
-    return pairPoolTarget;
+    return result;
+}
+
+static ZR_FORCE_INLINE TZrBool object_super_array_can_take_exact_reserved_pair_span_assume_available(
+        SZrHashSet *nodeMap,
+        TZrSize pairCount) {
+    ZR_ASSERT(nodeMap != ZR_NULL);
+    return pairCount >= ZR_OBJECT_SUPER_ARRAY_EXACT_PAIR_SPAN_MIN_COUNT &&
+           ZrCore_HashSet_HasReservedPairSpanExactPreferTailAssumeAvailable(nodeMap, pairCount);
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair object_make_dense_int_int_pair_template(TZrInt64 value) {
+    SZrHashKeyValuePair pair;
+
+    ZR_VALUE_FAST_SET(&pair.key, nativeInt64, 0, ZR_VALUE_TYPE_INT64);
+    pair.next = ZR_NULL;
+    ZR_VALUE_FAST_SET(&pair.value, nativeInt64, value, ZR_VALUE_TYPE_INT64);
+    return pair;
+}
+
+static ZR_FORCE_INLINE void object_init_dense_int_int_pair_bucket_run_assume_fast(
+        SZrHashKeyValuePair *pairs,
+        SZrHashKeyValuePair **bucketCursor,
+        TZrInt64 startIndexValue,
+        TZrSize pairCount,
+        const SZrHashKeyValuePair *pairTemplate) {
+    TZrSize offset = 0;
+
+    ZR_ASSERT(pairs != ZR_NULL);
+    ZR_ASSERT(bucketCursor != ZR_NULL);
+    ZR_ASSERT(pairTemplate != ZR_NULL);
+
+    while (offset + 4 <= pairCount) {
+        pairs[offset] = *pairTemplate;
+        pairs[offset].key.value.nativeObject.nativeInt64 = startIndexValue + (TZrInt64)offset;
+        ZR_ASSERT(bucketCursor[offset] == ZR_NULL);
+        bucketCursor[offset] = &pairs[offset];
+
+        pairs[offset + 1] = *pairTemplate;
+        pairs[offset + 1].key.value.nativeObject.nativeInt64 = startIndexValue + (TZrInt64)offset + 1;
+        ZR_ASSERT(bucketCursor[offset + 1] == ZR_NULL);
+        bucketCursor[offset + 1] = &pairs[offset + 1];
+
+        pairs[offset + 2] = *pairTemplate;
+        pairs[offset + 2].key.value.nativeObject.nativeInt64 = startIndexValue + (TZrInt64)offset + 2;
+        ZR_ASSERT(bucketCursor[offset + 2] == ZR_NULL);
+        bucketCursor[offset + 2] = &pairs[offset + 2];
+
+        pairs[offset + 3] = *pairTemplate;
+        pairs[offset + 3].key.value.nativeObject.nativeInt64 = startIndexValue + (TZrInt64)offset + 3;
+        ZR_ASSERT(bucketCursor[offset + 3] == ZR_NULL);
+        bucketCursor[offset + 3] = &pairs[offset + 3];
+
+        offset += 4;
+    }
+
+    for (; offset < pairCount; offset++) {
+        pairs[offset] = *pairTemplate;
+        pairs[offset].key.value.nativeObject.nativeInt64 = startIndexValue + (TZrInt64)offset;
+        ZR_ASSERT(bucketCursor[offset] == ZR_NULL);
+        bucketCursor[offset] = &pairs[offset];
+    }
 }
 
 static ZR_FORCE_INLINE TZrBool object_try_super_array_ensure_capacity_for_append(SZrState *state,
@@ -1165,8 +1111,8 @@ static ZR_FORCE_INLINE TZrBool object_try_super_array_ensure_capacity_for_append
     SZrHashKeyValuePair *capacityPair;
     TZrInt64 capacity;
     TZrInt64 targetCapacity;
+    TZrSize pairPoolTarget;
     TZrSize pairPoolUsedAfterAppend;
-    TZrSize pairPoolTargetCapacity;
 
     if (state == ZR_NULL || receiverObject == ZR_NULL || itemsObject == ZR_NULL || appendCount == 0) {
         return ZR_FALSE;
@@ -1193,32 +1139,38 @@ static ZR_FORCE_INLINE TZrBool object_try_super_array_ensure_capacity_for_append
                                                                      ZR_SUPER_ARRAY_FIELD_CAPACITY,
                                                                      0);
     targetCapacity = capacity;
+    if (targetCapacity < (TZrInt64)itemsObject->nodeMap.capacity) {
+        targetCapacity = (TZrInt64)itemsObject->nodeMap.capacity;
+    }
     if (targetCapacity <= 0) {
         targetCapacity = ZR_OBJECT_SUPER_ARRAY_INITIAL_CAPACITY;
     }
-    while ((TZrSize)targetCapacity < requiredLength) {
-        targetCapacity *= ZR_OBJECT_SUPER_ARRAY_GROWTH_FACTOR;
+    if ((TZrSize)targetCapacity < requiredLength) {
+        targetCapacity = (TZrInt64)ZrCore_HashSet_MinDenseSequentialIntKeyCapacity(requiredLength);
     }
 
     if (!object_ensure_node_map_ready(state, itemsObject)) {
         return ZR_FALSE;
     }
 
-    if (!ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacity(state,
-                                                            &itemsObject->nodeMap,
-                                                            (TZrSize)targetCapacity)) {
+    targetCapacity = (TZrInt64)ZrCore_HashSet_RoundUpPowerOfTwoCapacity((TZrSize)targetCapacity);
+    if (!ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacityExact(state,
+                                                                 &itemsObject->nodeMap,
+                                                                 (TZrSize)targetCapacity)) {
         return ZR_FALSE;
     }
 
-    pairPoolTargetCapacity = object_super_array_target_pair_pool_capacity(&itemsObject->nodeMap,
-                                                                          pairPoolUsedAfterAppend,
-                                                                          (TZrSize)targetCapacity);
-    if (itemsObject->nodeMap.pairPoolCapacity < pairPoolTargetCapacity &&
-        !ZrCore_HashSet_EnsurePairPoolForElementCount(state,
-                                                      &itemsObject->nodeMap,
-                                                      pairPoolTargetCapacity)) {
+    /*
+     * Bulk fill prefers pair-pool growth that matches the logical length being
+     * materialized, while the dense bucket array still rounds up to the next
+     * power-of-two capacity for direct indexing. Single-item append keeps the
+     * existing behavior of topping the pool up to the rounded capacity.
+     */
+    pairPoolTarget = appendCount > 1 ? requiredLength : (TZrSize)targetCapacity;
+    if (!ZrCore_HashSet_EnsurePairPoolForElementCount(state, &itemsObject->nodeMap, pairPoolTarget)) {
         return ZR_FALSE;
     }
+    targetCapacity = (TZrInt64)itemsObject->nodeMap.capacity;
 
     if (targetCapacity == capacity) {
         return ZR_TRUE;
@@ -1240,7 +1192,7 @@ static ZR_FORCE_INLINE TZrBool object_super_array_update_cached_length_assume_fa
     if (receiverObject->cachedLengthPair != ZR_NULL) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(receiverObject->cachedLengthPair->value.type));
         ZR_ASSERT(object_value_is_plain_primitive(&receiverObject->cachedLengthPair->value));
-        object_store_plain_int_reuse(&receiverObject->cachedLengthPair->value, (TZrInt64)requiredLength);
+        object_store_plain_int_assume_normalized(&receiverObject->cachedLengthPair->value, (TZrInt64)requiredLength);
         receiverObject->memberVersion++;
         return ZR_TRUE;
     }
@@ -1311,7 +1263,6 @@ static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plan_assume_fas
     SZrObject *itemsObject = ZR_NULL;
     TZrSize length;
     TZrSize requiredLength;
-    TZrBool trace = object_super_array_trace_enabled();
 
     if (plan == ZR_NULL) {
         return ZR_FALSE;
@@ -1321,11 +1272,6 @@ static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plan_assume_fas
     ZR_ASSERT(receiver != ZR_NULL);
 
     if (!zr_super_array_resolve_items_cached_assume_fast(state, receiver, &receiverObject, &itemsObject)) {
-        if (trace) {
-            fprintf(stderr,
-                    "[map-array-trace] append_plan resolve_items_failed receiverType=%d\n",
-                    (int)receiver->type);
-        }
         return ZR_FALSE;
     }
 
@@ -1336,35 +1282,18 @@ static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plan_assume_fas
 
     requiredLength = length + appendCount;
     if (appendCount > 0 &&
-        !object_super_array_can_append_dense_int_batch_assume_fast(receiverObject, itemsObject, length, appendCount) &&
+        !((appendCount == 1 && object_super_array_can_append_dense_int_assume_fast(receiverObject,
+                                                                                   itemsObject,
+                                                                                   length)) ||
+          object_super_array_can_append_dense_int_batch_assume_fast(receiverObject,
+                                                                    itemsObject,
+                                                                    length,
+                                                                    appendCount)) &&
         !object_try_super_array_ensure_capacity_for_append(state,
                                                            receiverObject,
                                                            itemsObject,
                                                            requiredLength,
                                                            appendCount)) {
-        if (trace) {
-            TZrInt64 cachedLength = receiverObject->cachedLengthPair != ZR_NULL
-                                            ? object_super_array_pair_int_or_default(receiverObject->cachedLengthPair, -1)
-                                            : -1;
-            TZrInt64 cachedCapacity = receiverObject->cachedCapacityPair != ZR_NULL
-                                              ? object_super_array_pair_int_or_default(receiverObject->cachedCapacityPair, -1)
-                                              : -1;
-
-            fprintf(stderr,
-                    "[map-array-trace] append_plan ensure_capacity_failed proto=%s receiverInternal=%d itemsInternal=%d length=%llu required=%llu cachedLength=%lld cachedCapacity=%lld nodeCap=%llu resizeThreshold=%llu pairPoolUsed=%llu pairPoolCapacity=%llu\n",
-                    receiverObject->prototype != ZR_NULL ? object_super_array_debug_string(receiverObject->prototype->name)
-                                                         : "<null>",
-                    (int)receiverObject->internalType,
-                    (int)itemsObject->internalType,
-                    (unsigned long long)length,
-                    (unsigned long long)requiredLength,
-                    (long long)cachedLength,
-                    (long long)cachedCapacity,
-                    (unsigned long long)itemsObject->nodeMap.capacity,
-                    (unsigned long long)itemsObject->nodeMap.resizeThreshold,
-                    (unsigned long long)itemsObject->nodeMap.pairPoolUsed,
-                    (unsigned long long)itemsObject->nodeMap.pairPoolCapacity);
-        }
         return ZR_FALSE;
     }
 
@@ -1375,53 +1304,97 @@ static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plan_assume_fas
     return ZR_TRUE;
 }
 
-static ZR_FORCE_INLINE TZrSize object_super_array_peek_reserved_pair_span_assume_available(SZrHashSet *set) {
-    SZrHashPairPoolBlock *block;
+static ZR_FORCE_INLINE TZrBool object_super_array_try_prepare_append_plans4_cached_from_stack_assume_fast(
+        SZrState *state,
+        TZrStackValuePointer receiverBase,
+        TZrSize appendCount,
+        ZrSuperArrayAppendPlan *plans,
+        TZrBool *outHandled) {
+    TZrSize index;
 
-    ZR_ASSERT(set != ZR_NULL);
-    ZR_ASSERT(set->pairPoolUsed < set->pairPoolCapacity);
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiverBase != ZR_NULL);
+    ZR_ASSERT(plans != ZR_NULL);
+    ZR_ASSERT(outHandled != ZR_NULL);
 
-    block = set->pairPoolActive;
-    if (!(ZR_LIKELY(block != ZR_NULL && block->used < block->capacity))) {
-        while (block != ZR_NULL && block->used >= block->capacity) {
-            block = block->next;
+    *outHandled = ZR_TRUE;
+    for (index = 0; index < 4; index++) {
+        SZrObject *receiverObject = ZR_NULL;
+        SZrObject *itemsObject = ZR_NULL;
+        TZrSize length;
+        TZrSize requiredLength;
+
+        if (!zr_super_array_try_resolve_items_cached_only_assume_fast(
+                    state, &receiverBase[index].value, &receiverObject, &itemsObject)) {
+            *outHandled = ZR_FALSE;
+            return ZR_TRUE;
         }
-        ZR_ASSERT(block != ZR_NULL);
-        if (block == ZR_NULL) {
-            return 0;
+
+        length = itemsObject->nodeMap.elementCount;
+        if ((TZrUInt64)appendCount > (TZrUInt64)((TZrSize)-1) - (TZrUInt64)length) {
+            return ZR_FALSE;
         }
-        set->pairPoolActive = block;
+        requiredLength = length + appendCount;
+
+        plans[index].receiverObject = receiverObject;
+        plans[index].itemsObject = itemsObject;
+        plans[index].length = length;
+        plans[index].requiredLength = requiredLength;
     }
 
-    return block->capacity - block->used;
-}
-
-static ZR_FORCE_INLINE SZrHashKeyValuePair *object_super_array_take_reserved_pair_span_exact_assume_available(
-        SZrHashSet *set,
-        TZrSize count) {
-    SZrHashKeyValuePair *pairs;
-    TZrSize takeCount;
-
-    ZR_ASSERT(set != ZR_NULL);
-    ZR_ASSERT(count > 0);
-
-    takeCount = count;
-    pairs = ZrCore_HashSet_TakeReservedPairSpanAssumeAvailable(set, &takeCount);
-    ZR_ASSERT(pairs != ZR_NULL);
-    ZR_ASSERT(takeCount == count);
-    if (pairs == ZR_NULL || takeCount != count) {
-        return ZR_NULL;
+    if (appendCount == 0) {
+        return ZR_TRUE;
     }
 
-    return pairs;
+    for (index = 0; index < 4; index++) {
+        SZrObject *receiverObject = plans[index].receiverObject;
+        SZrObject *itemsObject = plans[index].itemsObject;
+        TZrSize length = plans[index].length;
+
+        if ((appendCount == 1 &&
+             object_super_array_can_append_dense_int_assume_fast(receiverObject, itemsObject, length)) ||
+            object_super_array_can_append_dense_int_batch_assume_fast(
+                    receiverObject, itemsObject, length, appendCount)) {
+            continue;
+        }
+
+        if (!object_try_super_array_ensure_capacity_for_append(
+                    state, receiverObject, itemsObject, plans[index].requiredLength, appendCount)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
 }
 
 static ZR_FORCE_INLINE TZrBool object_super_array_update_cached_lengths4_assume_fast(
         SZrState *state,
         const ZrSuperArrayAppendPlan *plans) {
+    TZrSize index;
+
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(plans != ZR_NULL);
 
+    for (index = 0; index < 4; index++) {
+        SZrObject *receiverObject = plans[index].receiverObject;
+        SZrHashKeyValuePair *lengthPair = receiverObject != ZR_NULL ? receiverObject->cachedLengthPair : ZR_NULL;
+
+        if (lengthPair == ZR_NULL ||
+            !ZR_VALUE_IS_TYPE_SIGNED_INT(lengthPair->value.type) ||
+            !object_value_is_plain_primitive(&lengthPair->value)) {
+            goto object_super_array_update_cached_lengths4_fallback;
+        }
+    }
+
+    for (index = 0; index < 4; index++) {
+        SZrObject *receiverObject = plans[index].receiverObject;
+        object_store_plain_int_assume_normalized(&receiverObject->cachedLengthPair->value,
+                                                 (TZrInt64)plans[index].requiredLength);
+        receiverObject->memberVersion++;
+    }
+    return ZR_TRUE;
+
+object_super_array_update_cached_lengths4_fallback:
     return object_super_array_update_cached_length_assume_fast(state,
                                                                plans[0].receiverObject,
                                                                plans[0].requiredLength) &&
@@ -1441,91 +1414,65 @@ static ZR_FORCE_INLINE TZrBool object_add_int_int_pairs4_assuming_absent_dense_r
         const ZrSuperArrayAppendPlan *plans,
         TZrSize pairCount,
         TZrInt64 value) {
-    ZrSuperArrayAppendBatchCursor cursor0;
-    ZrSuperArrayAppendBatchCursor cursor1;
-    ZrSuperArrayAppendBatchCursor cursor2;
-    ZrSuperArrayAppendBatchCursor cursor3;
-    SZrTypeValue valueTemplate;
+    ZrSuperArrayAppendBatchCursor cursors[4];
+    SZrHashKeyValuePair *pairSpans[4];
+    SZrHashKeyValuePair pairTemplate;
     TZrSize remaining;
+    TZrSize index;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(plans != ZR_NULL);
     ZR_ASSERT(pairCount > 0);
     ZR_UNUSED_PARAMETER(state);
 
-    cursor0.nodeMap = &plans[0].itemsObject->nodeMap;
-    cursor1.nodeMap = &plans[1].itemsObject->nodeMap;
-    cursor2.nodeMap = &plans[2].itemsObject->nodeMap;
-    cursor3.nodeMap = &plans[3].itemsObject->nodeMap;
-    cursor0.bucketCursor = &cursor0.nodeMap->buckets[plans[0].length];
-    cursor1.bucketCursor = &cursor1.nodeMap->buckets[plans[1].length];
-    cursor2.bucketCursor = &cursor2.nodeMap->buckets[plans[2].length];
-    cursor3.bucketCursor = &cursor3.nodeMap->buckets[plans[3].length];
-    cursor0.currentIndexValue = (TZrInt64)plans[0].length;
-    cursor1.currentIndexValue = (TZrInt64)plans[1].length;
-    cursor2.currentIndexValue = (TZrInt64)plans[2].length;
-    cursor3.currentIndexValue = (TZrInt64)plans[3].length;
-    ZR_ASSERT(plans[0].length + pairCount <= cursor0.nodeMap->capacity);
-    ZR_ASSERT(plans[1].length + pairCount <= cursor1.nodeMap->capacity);
-    ZR_ASSERT(plans[2].length + pairCount <= cursor2.nodeMap->capacity);
-    ZR_ASSERT(plans[3].length + pairCount <= cursor3.nodeMap->capacity);
-    ZR_ASSERT(cursor0.nodeMap->elementCount + pairCount <= cursor0.nodeMap->resizeThreshold);
-    ZR_ASSERT(cursor1.nodeMap->elementCount + pairCount <= cursor1.nodeMap->resizeThreshold);
-    ZR_ASSERT(cursor2.nodeMap->elementCount + pairCount <= cursor2.nodeMap->resizeThreshold);
-    ZR_ASSERT(cursor3.nodeMap->elementCount + pairCount <= cursor3.nodeMap->resizeThreshold);
-    ZR_ASSERT(cursor0.nodeMap->pairPoolUsed + pairCount <= cursor0.nodeMap->pairPoolCapacity);
-    ZR_ASSERT(cursor1.nodeMap->pairPoolUsed + pairCount <= cursor1.nodeMap->pairPoolCapacity);
-    ZR_ASSERT(cursor2.nodeMap->pairPoolUsed + pairCount <= cursor2.nodeMap->pairPoolCapacity);
-    ZR_ASSERT(cursor3.nodeMap->pairPoolUsed + pairCount <= cursor3.nodeMap->pairPoolCapacity);
-    ZR_VALUE_FAST_SET(&valueTemplate, nativeInt64, value, ZR_VALUE_TYPE_INT64);
+    pairTemplate = object_make_dense_int_int_pair_template(value);
+    if (pairCount >= ZR_OBJECT_SUPER_ARRAY_EXACT_PAIR_SPAN_MIN_COUNT) {
+        TZrBool canTakeExact = ZR_TRUE;
+
+        for (index = 0; index < 4; index++) {
+            SZrHashSet *nodeMap = &plans[index].itemsObject->nodeMap;
+
+            ZR_ASSERT(plans[index].length + pairCount <= nodeMap->capacity);
+            ZR_ASSERT(nodeMap->elementCount + pairCount <= nodeMap->resizeThreshold);
+            ZR_ASSERT(nodeMap->pairPoolUsed + pairCount <= nodeMap->pairPoolCapacity);
+            if (!object_super_array_can_take_exact_reserved_pair_span_assume_available(nodeMap, pairCount)) {
+                canTakeExact = ZR_FALSE;
+                break;
+            }
+        }
+
+        if (canTakeExact) {
+            for (index = 0; index < 4; index++) {
+                SZrHashSet *nodeMap = &plans[index].itemsObject->nodeMap;
+                pairSpans[index] = ZrCore_HashSet_TakeReservedPairSpanExactPreferTailAssumeAvailable(nodeMap, pairCount);
+                if (pairSpans[index] == ZR_NULL) {
+                    return ZR_FALSE;
+                }
+                object_init_dense_int_int_pair_bucket_run_assume_fast(pairSpans[index],
+                                                                      &nodeMap->buckets[plans[index].length],
+                                                                      (TZrInt64)plans[index].length,
+                                                                      pairCount,
+                                                                      &pairTemplate);
+                nodeMap->elementCount += pairCount;
+            }
+            return ZR_TRUE;
+        }
+    }
+
+    for (index = 0; index < 4; index++) {
+        cursors[index].nodeMap = &plans[index].itemsObject->nodeMap;
+        object_super_array_append_batch_cursor_init(&cursors[index], cursors[index].nodeMap, plans[index].length);
+        ZR_ASSERT(plans[index].length + pairCount <= cursors[index].nodeMap->capacity);
+        ZR_ASSERT(cursors[index].nodeMap->elementCount + pairCount <= cursors[index].nodeMap->resizeThreshold);
+        ZR_ASSERT(cursors[index].nodeMap->pairPoolUsed + pairCount <= cursors[index].nodeMap->pairPoolCapacity);
+    }
 
     remaining = pairCount;
     while (remaining > 0) {
-        TZrSize spanCount;
-        SZrHashKeyValuePair *pairs0;
-        SZrHashKeyValuePair *pairs1;
-        SZrHashKeyValuePair *pairs2;
-        SZrHashKeyValuePair *pairs3;
-        SZrHashKeyValuePair **bucket0;
-        SZrHashKeyValuePair **bucket1;
-        SZrHashKeyValuePair **bucket2;
-        SZrHashKeyValuePair **bucket3;
-        TZrInt64 index0;
-        TZrInt64 index1;
-        TZrInt64 index2;
-        TZrInt64 index3;
-        TZrSize offset;
+        TZrSize spanCount = remaining;
 
-        spanCount = remaining;
-        {
-            TZrSize available = object_super_array_peek_reserved_pair_span_assume_available(cursor0.nodeMap);
-            if (available == 0) {
-                return ZR_FALSE;
-            }
-            if (available < spanCount) {
-                spanCount = available;
-            }
-        }
-        {
-            TZrSize available = object_super_array_peek_reserved_pair_span_assume_available(cursor1.nodeMap);
-            if (available == 0) {
-                return ZR_FALSE;
-            }
-            if (available < spanCount) {
-                spanCount = available;
-            }
-        }
-        {
-            TZrSize available = object_super_array_peek_reserved_pair_span_assume_available(cursor2.nodeMap);
-            if (available == 0) {
-                return ZR_FALSE;
-            }
-            if (available < spanCount) {
-                spanCount = available;
-            }
-        }
-        {
-            TZrSize available = object_super_array_peek_reserved_pair_span_assume_available(cursor3.nodeMap);
+        for (index = 0; index < 4; index++) {
+            TZrSize available = object_super_array_batch_cursor_available_pair_span_assume_available(&cursors[index]);
             if (available == 0) {
                 return ZR_FALSE;
             }
@@ -1534,128 +1481,24 @@ static ZR_FORCE_INLINE TZrBool object_add_int_int_pairs4_assuming_absent_dense_r
             }
         }
 
-        pairs0 = object_super_array_take_reserved_pair_span_exact_assume_available(cursor0.nodeMap, spanCount);
-        pairs1 = object_super_array_take_reserved_pair_span_exact_assume_available(cursor1.nodeMap, spanCount);
-        pairs2 = object_super_array_take_reserved_pair_span_exact_assume_available(cursor2.nodeMap, spanCount);
-        pairs3 = object_super_array_take_reserved_pair_span_exact_assume_available(cursor3.nodeMap, spanCount);
-        if (pairs0 == ZR_NULL || pairs1 == ZR_NULL || pairs2 == ZR_NULL || pairs3 == ZR_NULL) {
-            return ZR_FALSE;
+        for (index = 0; index < 4; index++) {
+            pairSpans[index] =
+                    object_super_array_batch_cursor_take_pair_span_exact_assume_available(&cursors[index], spanCount);
+            if (pairSpans[index] == ZR_NULL) {
+                return ZR_FALSE;
+            }
         }
 
-        bucket0 = cursor0.bucketCursor;
-        bucket1 = cursor1.bucketCursor;
-        bucket2 = cursor2.bucketCursor;
-        bucket3 = cursor3.bucketCursor;
-        index0 = cursor0.currentIndexValue;
-        index1 = cursor1.currentIndexValue;
-        index2 = cursor2.currentIndexValue;
-        index3 = cursor3.currentIndexValue;
-
-        offset = 0;
-        while (offset + 4 <= spanCount) {
-            TZrInt64 offsetValue = (TZrInt64)offset;
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs0[offset],
-                                                                  &bucket0[offset],
-                                                                  &valueTemplate,
-                                                                  index0 + offsetValue);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs1[offset],
-                                                                  &bucket1[offset],
-                                                                  &valueTemplate,
-                                                                  index1 + offsetValue);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs2[offset],
-                                                                  &bucket2[offset],
-                                                                  &valueTemplate,
-                                                                  index2 + offsetValue);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs3[offset],
-                                                                  &bucket3[offset],
-                                                                  &valueTemplate,
-                                                                  index3 + offsetValue);
-
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs0[offset + 1],
-                                                                  &bucket0[offset + 1],
-                                                                  &valueTemplate,
-                                                                  index0 + offsetValue + 1);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs1[offset + 1],
-                                                                  &bucket1[offset + 1],
-                                                                  &valueTemplate,
-                                                                  index1 + offsetValue + 1);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs2[offset + 1],
-                                                                  &bucket2[offset + 1],
-                                                                  &valueTemplate,
-                                                                  index2 + offsetValue + 1);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs3[offset + 1],
-                                                                  &bucket3[offset + 1],
-                                                                  &valueTemplate,
-                                                                  index3 + offsetValue + 1);
-
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs0[offset + 2],
-                                                                  &bucket0[offset + 2],
-                                                                  &valueTemplate,
-                                                                  index0 + offsetValue + 2);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs1[offset + 2],
-                                                                  &bucket1[offset + 2],
-                                                                  &valueTemplate,
-                                                                  index1 + offsetValue + 2);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs2[offset + 2],
-                                                                  &bucket2[offset + 2],
-                                                                  &valueTemplate,
-                                                                  index2 + offsetValue + 2);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs3[offset + 2],
-                                                                  &bucket3[offset + 2],
-                                                                  &valueTemplate,
-                                                                  index3 + offsetValue + 2);
-
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs0[offset + 3],
-                                                                  &bucket0[offset + 3],
-                                                                  &valueTemplate,
-                                                                  index0 + offsetValue + 3);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs1[offset + 3],
-                                                                  &bucket1[offset + 3],
-                                                                  &valueTemplate,
-                                                                  index1 + offsetValue + 3);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs2[offset + 3],
-                                                                  &bucket2[offset + 3],
-                                                                  &valueTemplate,
-                                                                  index2 + offsetValue + 3);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs3[offset + 3],
-                                                                  &bucket3[offset + 3],
-                                                                  &valueTemplate,
-                                                                  index3 + offsetValue + 3);
-            offset += 4;
+        for (index = 0; index < 4; index++) {
+            object_init_dense_int_int_pair_bucket_run_assume_fast(pairSpans[index],
+                                                                  cursors[index].bucketCursor,
+                                                                  cursors[index].currentIndexValue,
+                                                                  spanCount,
+                                                                  &pairTemplate);
+            cursors[index].nodeMap->elementCount += spanCount;
+            cursors[index].bucketCursor += spanCount;
+            cursors[index].currentIndexValue += (TZrInt64)spanCount;
         }
-
-        for (; offset < spanCount; ++offset) {
-            TZrInt64 offsetValue = (TZrInt64)offset;
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs0[offset],
-                                                                  &bucket0[offset],
-                                                                  &valueTemplate,
-                                                                  index0 + offsetValue);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs1[offset],
-                                                                  &bucket1[offset],
-                                                                  &valueTemplate,
-                                                                  index1 + offsetValue);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs2[offset],
-                                                                  &bucket2[offset],
-                                                                  &valueTemplate,
-                                                                  index2 + offsetValue);
-            object_init_dense_int_int_pair_and_bucket_assume_fast(&pairs3[offset],
-                                                                  &bucket3[offset],
-                                                                  &valueTemplate,
-                                                                  index3 + offsetValue);
-        }
-
-        cursor0.nodeMap->elementCount += spanCount;
-        cursor1.nodeMap->elementCount += spanCount;
-        cursor2.nodeMap->elementCount += spanCount;
-        cursor3.nodeMap->elementCount += spanCount;
-        cursor0.bucketCursor = bucket0 + spanCount;
-        cursor1.bucketCursor = bucket1 + spanCount;
-        cursor2.bucketCursor = bucket2 + spanCount;
-        cursor3.bucketCursor = bucket3 + spanCount;
-        cursor0.currentIndexValue = index0 + (TZrInt64)spanCount;
-        cursor1.currentIndexValue = index1 + (TZrInt64)spanCount;
-        cursor2.currentIndexValue = index2 + (TZrInt64)spanCount;
-        cursor3.currentIndexValue = index3 + (TZrInt64)spanCount;
         remaining -= spanCount;
     }
 
@@ -1667,7 +1510,6 @@ static ZR_FORCE_INLINE TZrBool object_super_array_commit_append_plan_assume_fast
                                                                                  TZrInt64 value) {
     TZrSize appendCount;
     SZrHashKeyValuePair *pair;
-    TZrBool trace = object_super_array_trace_enabled();
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(plan != ZR_NULL);
@@ -1686,19 +1528,6 @@ static ZR_FORCE_INLINE TZrBool object_super_array_commit_append_plan_assume_fast
                                                                                (TZrInt64)plan->length,
                                                                                value);
         if (pair == ZR_NULL) {
-            if (trace) {
-                fprintf(stderr,
-                        "[map-array-trace] append_commit add_pair_failed proto=%s length=%llu required=%llu nodeCap=%llu pairPoolUsed=%llu pairPoolCapacity=%llu value=%lld\n",
-                        plan->receiverObject->prototype != ZR_NULL
-                                ? object_super_array_debug_string(plan->receiverObject->prototype->name)
-                                : "<null>",
-                        (unsigned long long)plan->length,
-                        (unsigned long long)plan->requiredLength,
-                        (unsigned long long)plan->itemsObject->nodeMap.capacity,
-                        (unsigned long long)plan->itemsObject->nodeMap.pairPoolUsed,
-                        (unsigned long long)plan->itemsObject->nodeMap.pairPoolCapacity,
-                        (long long)value);
-            }
             return ZR_FALSE;
         }
     } else if (!object_add_int_int_pairs_assuming_absent_dense_ready_assume_fast(state,
@@ -1706,30 +1535,10 @@ static ZR_FORCE_INLINE TZrBool object_super_array_commit_append_plan_assume_fast
                                                                                   plan->length,
                                                                                   appendCount,
                                                                                   value)) {
-        if (trace) {
-            fprintf(stderr,
-                    "[map-array-trace] append_commit add_pairs_failed proto=%s length=%llu required=%llu appendCount=%llu value=%lld\n",
-                    plan->receiverObject->prototype != ZR_NULL
-                            ? object_super_array_debug_string(plan->receiverObject->prototype->name)
-                            : "<null>",
-                    (unsigned long long)plan->length,
-                    (unsigned long long)plan->requiredLength,
-                    (unsigned long long)appendCount,
-                    (long long)value);
-        }
         return ZR_FALSE;
     }
 
     if (!object_super_array_update_cached_length_assume_fast(state, plan->receiverObject, plan->requiredLength)) {
-        if (trace) {
-            fprintf(stderr,
-                    "[map-array-trace] append_commit update_length_failed proto=%s required=%llu cachedLengthPair=%p\n",
-                    plan->receiverObject->prototype != ZR_NULL
-                            ? object_super_array_debug_string(plan->receiverObject->prototype->name)
-                            : "<null>",
-                    (unsigned long long)plan->requiredLength,
-                    (void *)plan->receiverObject->cachedLengthPair);
-        }
         return ZR_FALSE;
     }
 
@@ -1756,29 +1565,30 @@ static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plans4_from_sta
         TZrStackValuePointer receiverBase,
         TZrSize appendCount,
         ZrSuperArrayAppendPlan *plans) {
-    SZrTypeValue *receiver0;
-    SZrTypeValue *receiver1;
-    SZrTypeValue *receiver2;
-    SZrTypeValue *receiver3;
+    TZrBool handled = ZR_FALSE;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(receiverBase != ZR_NULL);
     ZR_ASSERT(plans != ZR_NULL);
 
-    receiver0 = &receiverBase[0].value;
-    receiver1 = &receiverBase[1].value;
-    receiver2 = &receiverBase[2].value;
-    receiver3 = &receiverBase[3].value;
-    if (!object_super_array_prepare_append_plan_assume_fast(state, receiver0, appendCount, &plans[0])) {
+    if (!object_super_array_try_prepare_append_plans4_cached_from_stack_assume_fast(
+                state, receiverBase, appendCount, plans, &handled)) {
         return ZR_FALSE;
     }
-    if (!object_super_array_prepare_append_plan_assume_fast(state, receiver1, appendCount, &plans[1])) {
+    if (handled) {
+        return ZR_TRUE;
+    }
+
+    if (!object_super_array_prepare_append_plan_assume_fast(state, &receiverBase[0].value, appendCount, &plans[0])) {
         return ZR_FALSE;
     }
-    if (!object_super_array_prepare_append_plan_assume_fast(state, receiver2, appendCount, &plans[2])) {
+    if (!object_super_array_prepare_append_plan_assume_fast(state, &receiverBase[1].value, appendCount, &plans[1])) {
         return ZR_FALSE;
     }
-    if (!object_super_array_prepare_append_plan_assume_fast(state, receiver3, appendCount, &plans[3])) {
+    if (!object_super_array_prepare_append_plan_assume_fast(state, &receiverBase[2].value, appendCount, &plans[2])) {
+        return ZR_FALSE;
+    }
+    if (!object_super_array_prepare_append_plan_assume_fast(state, &receiverBase[3].value, appendCount, &plans[3])) {
         return ZR_FALSE;
     }
 

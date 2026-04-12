@@ -1,6 +1,7 @@
 #include "lsp_interface_internal.h"
+#include "semantic_analyzer_internal.h"
 
-#include "../../../zr_vm_parser/src/zr_vm_parser/type_inference_internal.h"
+#include "type_inference_internal.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -31,6 +32,19 @@ typedef struct SZrLspGenericBinding {
     TZrBool isBound;
     SZrInferredType inferredType;
 } SZrLspGenericBinding;
+
+typedef struct SZrSignatureTypeResolutionContext SZrSignatureTypeResolutionContext;
+
+static TZrBool signature_convert_ast_type_with_context(
+        SZrCompilerState *compilerState,
+        SZrType *sourceType,
+        const SZrSignatureTypeResolutionContext *context,
+        SZrInferredType *outType);
+
+static TZrBool signature_type_prototype_matches_name(const SZrTypePrototypeInfo *prototype, SZrString *typeName) {
+    return prototype != ZR_NULL && prototype->name != ZR_NULL && typeName != ZR_NULL &&
+           ZrCore_String_Equal(prototype->name, typeName);
+}
 
 static const TZrChar *signature_exact_type_failure_text(void) {
     return "cannot infer exact type";
@@ -1330,7 +1344,7 @@ static void signature_find_named_value_type_recursive(SZrCompilerState *compiler
 
             ZrParser_InferredType_Init(compilerState->state, &candidateType, ZR_VALUE_TYPE_OBJECT);
             if (varDecl->typeInfo != ZR_NULL &&
-                ZrParser_AstTypeToInferredType_Convert(compilerState, varDecl->typeInfo, &candidateType)) {
+                signature_convert_ast_type_with_context(compilerState, varDecl->typeInfo, ZR_NULL, &candidateType)) {
                 *bestOffset = node->location.start.offset;
                 ZrParser_InferredType_Free(compilerState->state, bestType);
                 ZrParser_InferredType_Copy(compilerState->state, bestType, &candidateType);
@@ -1343,9 +1357,10 @@ static void signature_find_named_value_type_recursive(SZrCompilerState *compiler
                 varDecl->value->type == ZR_AST_CONSTRUCT_EXPRESSION &&
                 varDecl->value->data.constructExpression.target != ZR_NULL &&
                 varDecl->value->data.constructExpression.target->type == ZR_AST_TYPE &&
-                ZrParser_AstTypeToInferredType_Convert(compilerState,
-                                                       &varDecl->value->data.constructExpression.target->data.type,
-                                                       &candidateType)) {
+                signature_convert_ast_type_with_context(compilerState,
+                                                        &varDecl->value->data.constructExpression.target->data.type,
+                                                        ZR_NULL,
+                                                        &candidateType)) {
                 *bestOffset = node->location.start.offset;
                 ZrParser_InferredType_Free(compilerState->state, bestType);
                 ZrParser_InferredType_Copy(compilerState->state, bestType, &candidateType);
@@ -1616,11 +1631,11 @@ static TZrBool signature_build_specialized_type_name(SZrCompilerState *compilerS
     return *outTypeName != ZR_NULL;
 }
 
-typedef struct SZrSignatureTypeResolutionContext {
+struct SZrSignatureTypeResolutionContext {
     SZrTypePrototypeInfo *typePrototype;
     SZrAstNode *typeNode;
     SZrAstNode *functionNode;
-} SZrSignatureTypeResolutionContext;
+};
 
 typedef struct SZrSignatureCompilerContextSnapshot {
     SZrTypePrototypeInfo *typePrototype;
@@ -1676,6 +1691,7 @@ static TZrBool signature_convert_ast_type_with_context(
         SZrType *sourceType,
         const SZrSignatureTypeResolutionContext *context,
         SZrInferredType *outType) {
+    SZrSemanticAnalyzer analyzer;
     SZrSignatureCompilerContextSnapshot snapshot;
     TZrBool success;
 
@@ -1684,8 +1700,16 @@ static TZrBool signature_convert_ast_type_with_context(
     }
 
     memset(&snapshot, 0, sizeof(snapshot));
+    memset(&analyzer, 0, sizeof(analyzer));
+    analyzer.state = compilerState->state;
+    analyzer.compilerState = compilerState;
+    analyzer.semanticContext = compilerState->semanticContext;
     signature_push_type_resolution_context(compilerState, context, &snapshot);
-    success = ZrParser_AstTypeToInferredType_Convert(compilerState, sourceType, outType);
+    success = ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(&analyzer,
+                                                                              ZR_NULL,
+                                                                              ZR_NULL,
+                                                                              sourceType,
+                                                                              outType);
     signature_pop_type_resolution_context(compilerState, &snapshot);
     return success;
 }
@@ -1761,13 +1785,21 @@ static SZrTypeMemberInfo *signature_find_member_recursive(SZrCompilerState *comp
                                                           SZrTypePrototypeInfo *prototype,
                                                           SZrString *memberName,
                                                           TZrUInt32 depth) {
+    SZrArray membersSnapshot;
+    SZrArray inheritsSnapshot;
+    SZrString *prototypeName;
+
     if (compilerState == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL ||
         depth > ZR_LSP_AST_RECURSION_MAX_DEPTH) {
         return ZR_NULL;
     }
 
-    for (TZrSize index = 0; index < prototype->members.length; index++) {
-        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&prototype->members, index);
+    membersSnapshot = prototype->members;
+    inheritsSnapshot = prototype->inherits;
+    prototypeName = prototype->name;
+
+    for (TZrSize index = 0; index < membersSnapshot.length; index++) {
+        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&membersSnapshot, index);
         if (memberInfo != ZR_NULL &&
             memberInfo->name != ZR_NULL &&
             ZrCore_String_Equal(memberInfo->name, memberName)) {
@@ -1775,8 +1807,8 @@ static SZrTypeMemberInfo *signature_find_member_recursive(SZrCompilerState *comp
         }
     }
 
-    for (TZrSize index = 0; index < prototype->inherits.length; index++) {
-        SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&prototype->inherits, index);
+    for (TZrSize index = 0; index < inheritsSnapshot.length; index++) {
+        SZrString **inheritTypeNamePtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, index);
         SZrTypePrototypeInfo *inheritPrototype;
         SZrTypeMemberInfo *inheritedMember;
 
@@ -1785,7 +1817,8 @@ static SZrTypeMemberInfo *signature_find_member_recursive(SZrCompilerState *comp
         }
 
         inheritPrototype = find_compiler_type_prototype_inference(compilerState, *inheritTypeNamePtr);
-        if (inheritPrototype == ZR_NULL || inheritPrototype == prototype) {
+        if (inheritPrototype == ZR_NULL ||
+            signature_type_prototype_matches_name(inheritPrototype, prototypeName)) {
             continue;
         }
 
@@ -2771,7 +2804,7 @@ static TZrBool signature_bind_explicit_generic_argument(SZrCompilerState *compil
         return ZR_FALSE;
     }
 
-    return ZrParser_AstTypeToInferredType_Convert(compilerState, &argumentNode->data.type, result);
+    return signature_convert_ast_type_with_context(compilerState, &argumentNode->data.type, ZR_NULL, result);
 }
 
 static TZrBool signature_resolve_member_call_signature_locally(SZrState *state,
@@ -3021,6 +3054,7 @@ static TZrBool signature_resolve_direct_base_type(SZrState *state,
                                                   SZrAstNode *ownerTypeNode,
                                                   SZrInferredType *result) {
     SZrAstNode *inheritNode;
+    SZrSignatureTypeResolutionContext context;
 
     if (result != ZR_NULL) {
         ZrParser_InferredType_Init(state, result, ZR_VALUE_TYPE_OBJECT);
@@ -3037,7 +3071,9 @@ static TZrBool signature_resolve_direct_base_type(SZrState *state,
         return ZR_FALSE;
     }
 
-    return ZrParser_AstTypeToInferredType_Convert(compilerState, &inheritNode->data.type, result) &&
+    memset(&context, 0, sizeof(context));
+    context.typeNode = ownerTypeNode;
+    return signature_convert_ast_type_with_context(compilerState, &inheritNode->data.type, &context, result) &&
            result->typeName != ZR_NULL;
 }
 
@@ -3045,20 +3081,28 @@ static const SZrTypeMemberInfo *signature_find_type_meta_member_recursive(SZrCom
                                                                           SZrTypePrototypeInfo *prototype,
                                                                           EZrMetaType metaType,
                                                                           TZrUInt32 depth) {
+    SZrArray membersSnapshot;
+    SZrArray inheritsSnapshot;
+    SZrString *prototypeName;
+
     if (compilerState == ZR_NULL || prototype == ZR_NULL || depth > ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH) {
         return ZR_NULL;
     }
 
-    for (TZrSize index = 0; index < prototype->members.length; index++) {
+    membersSnapshot = prototype->members;
+    inheritsSnapshot = prototype->inherits;
+    prototypeName = prototype->name;
+
+    for (TZrSize index = 0; index < membersSnapshot.length; index++) {
         const SZrTypeMemberInfo *memberInfo =
-            (const SZrTypeMemberInfo *)ZrCore_Array_Get(&prototype->members, index);
+            (const SZrTypeMemberInfo *)ZrCore_Array_Get(&membersSnapshot, index);
         if (memberInfo != ZR_NULL && memberInfo->isMetaMethod && memberInfo->metaType == metaType) {
             return memberInfo;
         }
     }
 
-    for (TZrSize index = 0; index < prototype->inherits.length; index++) {
-        SZrString **superNamePtr = (SZrString **)ZrCore_Array_Get(&prototype->inherits, index);
+    for (TZrSize index = 0; index < inheritsSnapshot.length; index++) {
+        SZrString **superNamePtr = (SZrString **)ZrCore_Array_Get(&inheritsSnapshot, index);
         SZrTypePrototypeInfo *superPrototype;
         const SZrTypeMemberInfo *resolvedMember;
 
@@ -3067,7 +3111,8 @@ static const SZrTypeMemberInfo *signature_find_type_meta_member_recursive(SZrCom
         }
 
         superPrototype = find_compiler_type_prototype_inference(compilerState, *superNamePtr);
-        if (superPrototype == ZR_NULL || superPrototype == prototype) {
+        if (superPrototype == ZR_NULL ||
+            signature_type_prototype_matches_name(superPrototype, prototypeName)) {
             continue;
         }
 

@@ -19,6 +19,13 @@ static TZrSize zr_hash_pair_pool_block_bytes(TZrSize capacity) {
     return sizeof(SZrHashPairPoolBlock) + extraPairs * sizeof(SZrHashKeyValuePair);
 }
 
+static ZR_FORCE_INLINE void zr_hash_set_zero_bucket_slots(SZrHashKeyValuePair **bucketSlots, TZrSize slotCount) {
+    ZR_ASSERT(bucketSlots != ZR_NULL || slotCount == 0);
+    if (slotCount > 0) {
+        ZrCore_Memory_RawSet(bucketSlots, 0, slotCount * sizeof(*bucketSlots));
+    }
+}
+
 static void zr_hash_pair_pool_release(SZrGlobalState *global, SZrHashSet *set) {
     SZrHashPairPoolBlock *block;
 
@@ -38,6 +45,7 @@ static void zr_hash_pair_pool_release(SZrGlobalState *global, SZrHashSet *set) {
 
     set->pairPoolHead = ZR_NULL;
     set->pairPoolActive = ZR_NULL;
+    set->pairPoolTail = ZR_NULL;
     set->pairPoolCapacity = 0;
     set->pairPoolUsed = 0;
 }
@@ -65,7 +73,6 @@ TZrBool ZrCore_HashSet_EnsurePairPoolForElementCount(SZrState *state, SZrHashSet
     TZrSize additionalCapacity;
     TZrSize blockBytes;
     SZrHashPairPoolBlock *block;
-    SZrHashPairPoolBlock *tail;
 
     if (state == ZR_NULL || set == ZR_NULL || !set->isValid || elementCount <= set->pairPoolCapacity) {
         return state != ZR_NULL && set != ZR_NULL;
@@ -86,12 +93,14 @@ TZrBool ZrCore_HashSet_EnsurePairPoolForElementCount(SZrState *state, SZrHashSet
     if (set->pairPoolHead == ZR_NULL) {
         set->pairPoolHead = block;
         set->pairPoolActive = block;
+        set->pairPoolTail = block;
     } else {
-        tail = set->pairPoolHead;
-        while (tail->next != ZR_NULL) {
-            tail = tail->next;
+        ZR_ASSERT(set->pairPoolTail != ZR_NULL);
+        set->pairPoolTail->next = block;
+        set->pairPoolTail = block;
+        if (set->pairPoolActive == ZR_NULL || set->pairPoolActive->used >= set->pairPoolActive->capacity) {
+            set->pairPoolActive = block;
         }
-        tail->next = block;
     }
     set->pairPoolCapacity += additionalCapacity;
     return ZR_TRUE;
@@ -140,7 +149,7 @@ TZrBool ZrCore_HashSet_Rehash(SZrState *state, SZrHashSet *set, TZrSize newCapac
     set->capacity = newCapacity;
     set->bucketSize = newBucketCount;
     set->resizeThreshold = newCapacity * ZR_HASH_SET_MAX_LOAD_NUMERATOR / ZR_HASH_SET_MAX_LOAD_DENOMINATOR;
-    ZrCore_Memory_RawSet(set->buckets + oldCapacity, 0, newBucketCount - oldBucketCount);
+    zr_hash_set_zero_bucket_slots(set->buckets + oldCapacity, newCapacity - oldCapacity);
     for (TZrSize i = 0; i < oldCapacity; i++) {
         SZrHashKeyValuePair *objectPtr = newBuckets[i];
         newBuckets[i] = ZR_NULL;
@@ -217,7 +226,7 @@ TZrBool ZrCore_HashSet_GrowDenseSequentialIntKeys(SZrState *state, SZrHashSet *s
      * full capacity avoids premature resize checks on this specialized path.
      */
     set->resizeThreshold = newCapacity;
-    ZrCore_Memory_RawSet(set->buckets + oldCapacity, 0, newBucketCount - oldBucketCount);
+    zr_hash_set_zero_bucket_slots(set->buckets + oldCapacity, newCapacity - oldCapacity);
     return ZR_TRUE;
 }
 

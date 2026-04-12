@@ -1,8 +1,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { resolvePreferredCliSetting } from './executablePath';
-import { pickLatestExistingDirectoryWithFiles, pickLatestExistingPath } from './nativePathSelection';
+import assetLayout from '../asset-layout.json';
+import { resolveConfiguredPath, resolvePreferredCliSetting } from './executablePath';
+import {
+    pickFirstExistingDirectoryWithFiles,
+    pickFirstExistingPath,
+    pickLatestExistingDirectoryWithFiles,
+    pickLatestExistingPath,
+} from './nativePathSelection';
 
 export const LANGUAGE_SERVER_CONFIG_SECTION = 'zr.languageServer';
 export const DEBUG_CONFIG_SECTION = 'zr.debug';
@@ -25,64 +31,35 @@ const WINDOWS_REQUIRED_RUNTIME_FILES = [
 ];
 
 function executableName(kind: NativeBinaryKind): string {
-    switch (kind) {
-        case 'cli':
-            return process.platform === 'win32' ? 'zr_vm_cli.exe' : 'zr_vm_cli';
-        case 'languageServer':
-        default:
-            return process.platform === 'win32'
-                ? 'zr_vm_language_server_stdio.exe'
-                : 'zr_vm_language_server_stdio';
-    }
+    const executable = assetLayout.native.executables[kind] as Record<string, string>;
+    return executable[process.platform] ?? executable.default;
 }
 
-function defaultAssetDirs(extensionRoot: string): string[] {
-    const buildRoot = path.join(extensionRoot, '..', 'build');
-
-    return dedupePaths([
-        path.join(extensionRoot, 'server', 'native', `${process.platform}-${process.arch}`),
-        path.join(extensionRoot, 'server'),
-        ...collectBuildCandidateDirs(buildRoot),
-    ]);
+function renderPathTemplate(template: string, replacements: Record<string, string> = {}): string {
+    const rendered = Object.entries(replacements).reduce(
+        (value, [key, replacement]) => value.replace(new RegExp(`\\{${key}\\}`, 'g'), replacement),
+        template,
+    );
+    const segments = rendered
+        .split(/[\\/]+/)
+        .filter((segment) => segment.length > 0 && segment !== '.');
+    return segments.length > 0 ? path.join(...segments) : '.';
 }
 
-function collectBuildCandidateDirs(buildRoot: string): string[] {
-    const seedDirs = [
-        path.join(buildRoot, 'codex-lsp', 'bin', 'Debug'),
-        path.join(buildRoot, 'codex-lsp', 'bin'),
-        path.join(buildRoot, 'codex-msvc-debug', 'bin', 'Debug'),
-        path.join(buildRoot, 'codex-msvc-debug', 'bin'),
-    ];
-    const scannedDirs: string[] = [];
-
-    try {
-        for (const entry of fs.readdirSync(buildRoot, { withFileTypes: true })) {
-            if (!entry.isDirectory()) {
-                continue;
-            }
-
-            const candidateBinDir = path.join(buildRoot, entry.name, 'bin');
-            scannedDirs.push(candidateBinDir);
-            scannedDirs.push(path.join(candidateBinDir, 'Debug'));
-            scannedDirs.push(path.join(candidateBinDir, 'Release'));
-            scannedDirs.push(path.join(candidateBinDir, 'RelWithDebInfo'));
-        }
-    } catch {
-        // Ignore missing build roots and fall back to bundled assets.
-    }
-
-    return dedupePaths([...seedDirs, ...scannedDirs]);
+function resolveBundledNativeAssetDir(extensionRoot: string): string {
+    return path.join(
+        extensionRoot,
+        renderPathTemplate(assetLayout.native.bundledRelativeDir, {
+            platform: process.platform,
+            arch: process.arch,
+        }),
+    );
 }
 
 function requiredRuntimeFiles(): string[] {
-    if (process.platform === 'win32') {
-        return WINDOWS_REQUIRED_RUNTIME_FILES;
-    }
-
-    return [
-        executableName('languageServer'),
-        executableName('cli'),
-    ];
+    const filesByPlatform = assetLayout.native.requiredRuntimeFiles as Record<string, string[]>;
+    const files = filesByPlatform[process.platform] ?? filesByPlatform.default;
+    return Array.isArray(files) ? [...files] : WINDOWS_REQUIRED_RUNTIME_FILES;
 }
 
 function dedupePaths(paths: string[]): string[] {
@@ -102,11 +79,57 @@ function dedupePaths(paths: string[]): string[] {
     return result;
 }
 
+function resolveTemplateDirs(baseDir: string, templates: string[]): string[] {
+    return templates.map((template) => {
+        const relativePath = renderPathTemplate(template);
+        return relativePath === '.'
+            ? path.resolve(baseDir)
+            : path.resolve(baseDir, relativePath);
+    });
+}
+
+function collectBuildCandidateDirs(buildRoot: string): string[] {
+    const scannedDirs: string[] = [];
+
+    try {
+        for (const entry of fs.readdirSync(buildRoot, { withFileTypes: true })) {
+            if (!entry.isDirectory()) {
+                continue;
+            }
+
+            scannedDirs.push(
+                ...resolveTemplateDirs(
+                    path.join(buildRoot, entry.name),
+                    assetLayout.native.scannedBuildSubdirs,
+                ),
+            );
+        }
+    } catch {
+        // Ignore missing build roots and fall back to bundled assets.
+    }
+
+    return dedupePaths(scannedDirs);
+}
+
+function orderedWorkspaceFolderPaths(): string[] {
+    const activeWorkspaceFolder = vscode.window.activeTextEditor?.document
+        ? vscode.workspace.getWorkspaceFolder(vscode.window.activeTextEditor.document.uri)
+        : undefined;
+    const allWorkspaceFolders = vscode.workspace.workspaceFolders ?? [];
+    const ordered = [
+        activeWorkspaceFolder?.uri.fsPath,
+        ...allWorkspaceFolders.map((folder) => folder.uri.fsPath),
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0);
+
+    return dedupePaths(ordered);
+}
+
 function resolveNativeAssetDirectory(context: vscode.ExtensionContext): string | undefined {
-    return pickLatestExistingDirectoryWithFiles(
-        defaultAssetDirs(context.extensionPath),
-        requiredRuntimeFiles(),
-    );
+    const bundledDir = resolveBundledNativeAssetDir(context.extensionPath);
+    const buildCandidateDirs = collectBuildCandidateDirs(path.join(context.extensionPath, '..', 'build'));
+
+    return pickFirstExistingDirectoryWithFiles([bundledDir], requiredRuntimeFiles()) ??
+        pickLatestExistingDirectoryWithFiles(buildCandidateDirs, requiredRuntimeFiles());
 }
 
 function resolveNativeExecutable(
@@ -116,9 +139,13 @@ function resolveNativeExecutable(
 ): string | undefined {
     const extensionRoot = context.extensionPath;
     const fileName = executableName(kind);
-    const explicitPath = (configuredPath ?? '').trim();
-    if (explicitPath.length > 0) {
-        return fs.existsSync(explicitPath) ? explicitPath : undefined;
+    const explicitPath = resolveConfiguredPath({
+        configuredPath,
+        workspaceFolderPaths: orderedWorkspaceFolderPaths(),
+        extensionPath: extensionRoot,
+    });
+    if (explicitPath) {
+        return explicitPath;
     }
 
     const assetDirectory = resolveNativeAssetDirectory(context);
@@ -126,17 +153,17 @@ function resolveNativeExecutable(
         return path.join(assetDirectory, fileName);
     }
 
-    return pickLatestExistingPath(
-        defaultAssetDirs(extensionRoot).map((directory) => path.join(directory, fileName)),
-    );
+    const bundledExecutable = path.join(resolveBundledNativeAssetDir(extensionRoot), fileName);
+    const buildExecutables = collectBuildCandidateDirs(path.join(extensionRoot, '..', 'build'))
+        .map((directory) => path.join(directory, fileName));
+
+    return pickFirstExistingPath([bundledExecutable]) ??
+        pickLatestExistingPath(buildExecutables);
 }
 
 export function bundledNativeExecutablePath(context: vscode.ExtensionContext, kind: NativeBinaryKind): string {
     return path.join(
-        context.extensionPath,
-        'server',
-        'native',
-        `${process.platform}-${process.arch}`,
+        resolveBundledNativeAssetDir(context.extensionPath),
         executableName(kind),
     );
 }

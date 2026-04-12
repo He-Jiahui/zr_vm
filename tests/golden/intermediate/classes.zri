@@ -1,0 +1,333 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 116
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 2
+
+CONSTANTS (40):
+  [0] function
+  [1] function
+  [2] function
+  [3] function
+  [4] function
+  [5] function
+  [6] function
+  [7] function
+  [8] function
+  [9] function
+  [10] int: 100
+  [11] function
+  [12] function
+  [13] null
+  [14] string: "BaseClass"
+  [15] string: "zr.builtin.Object"
+  [16] string: "baseValue"
+  [17] string: "int"
+  [18] string: "constructor"
+  [19] string: "getValue"
+  [20] string: "DerivedClass"
+  [21] string: "derivedValue"
+  [22] string: "getDerivedValue"
+  [23] string: "MethodTest"
+  [24] string: "value"
+  [25] string: "add"
+  [26] string: "multiply"
+  [27] string: "PropertyTest"
+  [28] string: "_value"
+  [29] string: "__get_value"
+  [30] string: "__set_value"
+  [31] string: "StaticTest"
+  [32] string: "staticValue"
+  [33] string: "getStaticValue"
+  [34] string: "AccessModifierTest"
+  [35] string: "publicVar"
+  [36] string: "privateVar"
+  [37] string: "protectedVar"
+  [38] string: "getPrivateVar"
+  [39] string: "getProtectedVar"
+
+LOCAL_VARIABLES (0):
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (0):
+  EXPORTED_SYMBOLS (0):
+  STATIC_IMPORTS (0):
+  MODULE_ENTRY_EFFECTS (0):
+  EXPORTED_CALLABLE_SUMMARIES (0):
+  TOP_LEVEL_CALLABLE_BINDINGS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (1):
+    test classesTest()
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (0):
+
+EH_TABLE (0):
+
+PROTOTYPES (6):
+// ========== PROTOTYPES FROM DATA (count: 6) ==========
+// --- Prototype 1 ---
+class BaseClass : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "baseValue",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 0,
+      parameterCount: 0,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "getValue",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 1,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+class DerivedClass : BaseClass {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "derivedValue",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 2,
+      parameterCount: 0,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "getDerivedValue",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 3,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
+class MethodTest : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "value",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 4,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "add",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 5,
+      parameterCount: 1,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "multiply",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 6,
+      parameterCount: 1,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 4 ---
+class PropertyTest : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "_value",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__get_value",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 7,
+      parameterCount: 0,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "__set_value",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 8,
+      parameterCount: 1,
+      returnType: "<void>"
+    }
+  ]
+}
+
+// --- Prototype 5 ---
+class StaticTest : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "staticValue",
+      access: public (0),
+      static: true,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "getStaticValue",
+      access: public (0),
+      static: true,
+      isMetaMethod: false,
+      functionConstantIndex: 9,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 6 ---
+class AccessModifierTest : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "publicVar",
+      access: public (0),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "privateVar",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_FIELD (17),
+      name: "protectedVar",
+      access: protected (2),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "getPrivateVar",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 11,
+      parameterCount: 0,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "getProtectedVar",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 12,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (6):
+  [0] GET_GLOBAL (extra=0)
+  [1] GET_MEMBER (extra=0, operand1=0, operand2=0)
+  [2] GET_CONSTANT (extra=1, operand=10)
+  [3] SET_MEMBER (extra=1, operand1=0, operand2=1)
+  [4] GET_CONSTANT (extra=0, operand=13)
+  [5] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+

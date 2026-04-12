@@ -39,6 +39,10 @@ ZR_LIBRARY_API const ZrLibModuleDescriptor *ZrLibrary_NativeRegistry_FindModule(
 ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetModuleInfo(SZrGlobalState *global,
                                                               const TZrChar *moduleName,
                                                               ZrLibRegisteredModuleInfo *outInfo);
+ZR_LIBRARY_API TZrSize ZrLibrary_NativeRegistry_GetModuleCount(SZrGlobalState *global);
+ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetModuleInfoAt(SZrGlobalState *global,
+                                                                TZrSize index,
+                                                                ZrLibRegisteredModuleInfo *outInfo);
 ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetModuleInfoBySourcePath(SZrGlobalState *global,
                                                                           const TZrChar *sourcePath,
                                                                           ZrLibRegisteredModuleInfo *outInfo);

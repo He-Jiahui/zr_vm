@@ -61,6 +61,7 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
 
     // hash
     TZrUInt64 hashSeed;
+    TZrUInt64 cacheIdentity;
 
     // String Table
     struct SZrStringTable *stringTable;

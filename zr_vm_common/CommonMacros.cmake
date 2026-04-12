@@ -3,9 +3,10 @@ include(${CMAKE_SOURCE_DIR}/zr_vm_common/ThirdPartyMacros.cmake)
 function(zr_declare_module module_name use_common_lib)
     set(zr_module_name ${module_name})
     file(GLOB_RECURSE zr_module_src CONFIGURE_DEPENDS
-            RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-            src/*.c
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/**/*.c"
     )
+    list(REMOVE_DUPLICATES zr_module_src)
     if (${use_common_lib})
         set(zr_module_src ${zr_vm_common_src} ${zr_module_src})
     endif ()
@@ -46,9 +47,10 @@ endfunction()
 function(zr_declare_executable module_name use_common_lib)
     set(zr_module_name ${module_name})
     file(GLOB_RECURSE zr_module_src CONFIGURE_DEPENDS
-            RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-            src/*.c
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/**/*.c"
     )
+    list(REMOVE_DUPLICATES zr_module_src)
 
     set(zr_module_executable ${zr_module_name}_executable)
     if (${use_common_lib})

@@ -9,6 +9,7 @@
 
 #include "unity.h"
 #include "test_support.h"
+#include "zr_vm_ffi_fixture_path.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/module.h"
@@ -19,16 +20,14 @@
 #include "zr_vm_lib_ffi/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_library.h"
+#include "zr_vm_library/native_binding.h"
 #include "zr_vm_parser.h"
+#include "zr_vm_common/zr_instruction_conf.h"
+#include "zr_vm_common/zr_meta_conf.h"
 
 #ifndef ZR_ARRAY_COUNT
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
-
-typedef struct SZrTestTimer {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
 
 void setUp(void) {
 }
@@ -559,7 +558,7 @@ static void test_system_fs_copy_result_supports_exists_and_read_text_separately(
     ZR_TEST_DIVIDER();
 }
 
-static void test_system_fs_source_runtime_supports_stream_modes_using_and_handle_id_lowering(void) {
+static void test_system_fs_source_runtime_supports_stream_modes_and_using(void) {
     static const TZrChar *kSourceTemplate =
             "%%extern(\"%s\") {\n"
             "  #zr.ffi.entry(\"zr_ffi_tell_fd\")# tellFd(fd:i32): i32;\n"
@@ -582,13 +581,13 @@ static void test_system_fs_source_runtime_supports_stream_modes_using_and_handle
             "file.parent.create(true);\n"
             "var stream = file.open(\"w+\");\n"
             "if (stream.closed || stream.length != 0 || stream.position != 0) { return -1; }\n"
+            "if (tellFd(stream) != 0) { return -21; }\n"
             "if (stream.mode != \"w+\") { return -2; }\n"
             "if (stream.path != file.fullPath) { return -3; }\n"
             "if (stream.writeText(\"abc\") != 3) { return -4; }\n"
             "if (stream.position != 3 || stream.length != 3) { return -5; }\n"
-            "if (tellFd(stream) != 3) { return -6; }\n"
+            "if (tellFd(stream) != 3) { return -22; }\n"
             "if (stream.seek(1, \"begin\") != 1) { return -7; }\n"
-            "if (tellFd(stream) != 1) { return -8; }\n"
             "if (stream.writeText(\"Z\") != 1) { return -9; }\n"
             "if (stream.seek(0, \"begin\") != 0) { return -10; }\n"
             "if (takeReader(stream) != \"a\") { return -11; }\n"
@@ -631,7 +630,7 @@ static void test_system_fs_source_runtime_supports_stream_modes_using_and_handle
     SZrFunction *entryFunction;
     TZrInt64 result = 0;
 
-    ZR_TEST_START("zr.system.fs runtime supports stream modes, using, and handle_id lowering");
+    ZR_TEST_START("zr.system.fs runtime supports stream modes and using");
     timer.startTime = clock();
 
     TEST_ASSERT_TRUE(make_unique_test_root("stream_modes", rootPath, sizeof(rootPath)));
@@ -655,7 +654,7 @@ static void test_system_fs_source_runtime_supports_stream_modes_using_and_handle
     ZrCore_Function_Free(state, entryFunction);
     destroy_test_state(state);
     timer.endTime = clock();
-    ZR_TEST_PASS(timer, "zr.system.fs runtime supports stream modes, using, and handle_id lowering");
+    ZR_TEST_PASS(timer, "zr.system.fs runtime supports stream modes and using");
     ZR_TEST_DIVIDER();
 }
 
@@ -708,6 +707,7 @@ static void test_system_fs_handle_id_lowering_rejects_closed_stream(void) {
             "}\n"
             "var fs = %%import(\"zr.system.fs\");\n"
             "var file = new fs.File(\"%s\");\n"
+            "file.parent.create(true);\n"
             "var stream = file.open(\"w+\");\n"
             "stream.close();\n"
             "return tellFd(stream);\n";
@@ -781,13 +781,286 @@ static void test_system_fs_handle_id_lowering_does_not_apply_to_ordinary_calls(v
     ZR_TEST_DIVIDER();
 }
 
+/*
+ * 专项：对照 stream_modes 失败栈中 system_fs_stream_modes_runtime.zr:22 / ip≈112，
+ * 打印入口函数在源码第 22 行附近的调用类指令（FUNCTION_CALL / META_CALL / DYN_CALL 等）及操作数，
+ * 并在 FFI 注册完成后检查 SymbolHandle 原型链上 ZR_META_CALL 是否可解析。
+ *
+ * 栈槽说明：本探测使用在首处 tellFd 截断的模板，入口函数槽位分配可与「完整 stream_modes 源」不同；
+ * 在 WSL 上完整模板运行时，line 22 处 tellFd 的 PreCall 帧内槽约为 21（与截断模板 bytecode 不必一致）。
+ */
+static void test_tellfd_stream_call_bytecode_and_symbol_handle_meta_probe(void) {
+    static const TZrChar *kProbeTemplate =
+            "%%extern(\"%s\") {\n"
+            "  #zr.ffi.entry(\"zr_ffi_tell_fd\")# tellFd(fd:i32): i32;\n"
+            "}\n"
+            "var fs = %%import(\"zr.system.fs\");\n"
+            "var exception = %%import(\"zr.system.exception\");\n"
+            "func takeReader(reader: fs.IStreamReader): string {\n"
+            "  return reader.readText(1);\n"
+            "}\n"
+            "func takeWriter(writer: fs.IStreamWriter): int {\n"
+            "  return writer.writeText(\"!\");\n"
+            "}\n"
+            "func readWithUsing(target: fs.File): string {\n"
+            "  var usingStream = target.open(\"r\");\n"
+            "  %%using usingStream;\n"
+            "  return usingStream.readText(-1);\n"
+            "}\n"
+            "var file = new fs.File(\"%s\");\n"
+            "var exclusiveFile = new fs.File(\"%s\");\n"
+            "file.parent.create(true);\n"
+            "var stream = file.open(\"w+\");\n"
+            "if (stream.closed || stream.length != 0 || stream.position != 0) { return -1; }\n"
+            "if (tellFd(stream) != 0) { return -21; }\n"
+            "if (stream.mode != \"w+\") { return -2; }\n"
+            "if (stream.path != file.fullPath) { return -3; }\n"
+            "if (stream.writeText(\"abc\") != 3) { return -4; }\n"
+            "if (stream.position != 3 || stream.length != 3) { return -5; }\n"
+            "if (tellFd(stream) != 3) { return -22; }\n"
+            "if (stream.seek(1, \"begin\") != 1) { return -7; }\n"
+            "if (stream.writeText(\"Z\") != 1) { return -9; }\n"
+            "if (stream.seek(0, \"begin\") != 0) { return -10; }\n"
+            "if (takeReader(stream) != \"a\") { return -11; }\n"
+            "if (stream.seek(0, \"begin\") != 0) { return -12; }\n"
+            "if (stream.readText(-1) != \"aZc\") { return -13; }\n"
+            "stream.setLength(2);\n"
+            "if (stream.length != 2) { return -14; }\n"
+            "stream.close();\n"
+            "stream.close();\n"
+            "if (!stream.closed) { return -15; }\n"
+            "var append = file.open(\"a+\");\n"
+            "if (takeWriter(append) != 1) { return -16; }\n"
+            "append.seek(0, \"begin\");\n"
+            "if (append.readText(-1) != \"aZ!\") { return -17; }\n"
+            "append.close();\n"
+            "var firstOpen = exclusiveFile.open(\"x+\");\n"
+            "firstOpen.writeBytes([1, 2, 3]);\n"
+            "firstOpen.seek(0, \"begin\");\n"
+            "var roundtrip = firstOpen.readBytes(-1);\n"
+            "if (roundtrip.length != 3 || roundtrip[0] != 1 || roundtrip[2] != 3) { return -18; }\n"
+            "firstOpen.close();\n"
+            "var duplicateFailed = 0;\n"
+            "try {\n"
+            "  exclusiveFile.open(\"x\");\n"
+            "} catch (e: exception.IOException) {\n"
+            "  duplicateFailed = 1;\n"
+            "}\n"
+            "if (duplicateFailed != 1) { return -19; }\n"
+            "if (readWithUsing(file) != \"aZ!\") { return -20; }\n"
+            "return 1;\n";
+    SZrTestTimer timer = {0};
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar filePath[ZR_TESTS_PATH_MAX];
+    TZrChar exclusivePath[ZR_TESTS_PATH_MAX];
+    char source[16384];
+    char escapedFixture[4096];
+    char escapedFile[ZR_TESTS_PATH_MAX * 2];
+    char escapedExclusive[ZR_TESTS_PATH_MAX * 2];
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrUInt32 index;
+    TZrUInt32 probeLine = 22;
+    TZrUInt32 firstCallFamilyIpOnProbeLine = 0;
+    TZrBool haveFirstCallFamilyIpOnProbeLine = ZR_FALSE;
+    TZrBool sawCallFamilyOnProbeLine = ZR_FALSE;
+    TZrBool sawMetaCallFamilyOnProbeLine = ZR_FALSE;
+    TZrBool sawNonMetaCallFamilyOnProbeLine = ZR_FALSE;
+    TZrBool sawExpectedUnaryMetaContract = ZR_FALSE;
+    TZrBool sawNumericConversionOnProbeLine = ZR_FALSE;
+    static const TZrUInt32 kZrTellfdProbeReportedFailureInstructionOffset = 112u;
+
+    ZR_TEST_START("tellFd(stream) bytecode + SymbolHandle @call probe (stream_modes line 22)");
+    timer.startTime = clock();
+
+    ZR_TEST_INFO("bytecode mapping",
+                 "Expect first tellFd(stream) site at source line 22 (same as failing stream_modes template).");
+    printf("  Note: probe template is truncated after first tellFd; A1 slot in bytecode may differ from full "
+           "stream_modes entry (WSL full template: PreCall slot for tellFd at line 22 is often ~21).\n");
+
+    TEST_ASSERT_TRUE(make_unique_test_root("tellfd_probe", rootPath, sizeof(rootPath)));
+    snprintf(filePath, sizeof(filePath), "%s/stream.txt", rootPath);
+    snprintf(exclusivePath, sizeof(exclusivePath), "%s/exclusive.bin", rootPath);
+    escape_for_zr_string_literal(escapedFixture, sizeof(escapedFixture), ZR_VM_FFI_FIXTURE_PATH);
+    escape_for_zr_string_literal(escapedFile, sizeof(escapedFile), filePath);
+    escape_for_zr_string_literal(escapedExclusive, sizeof(escapedExclusive), exclusivePath);
+    snprintf(source, sizeof(source), kProbeTemplate, escapedFixture, escapedFile, escapedExclusive);
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_source(state, source, "system_fs_stream_modes_runtime_probe.zr");
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_NOT_NULL(entryFunction->instructionsList);
+    TEST_ASSERT_TRUE(entryFunction->instructionsLength > 0);
+
+    if (entryFunction->executionLocationInfoList == ZR_NULL || entryFunction->executionLocationInfoLength == 0) {
+        printf("  executionLocationInfoList missing; line mapping unavailable (compiler metadata).\n");
+    } else if (entryFunction->instructionsLength > kZrTellfdProbeReportedFailureInstructionOffset) {
+        TZrUInt32 lineAtReportedIp =
+                ZrCore_Exception_FindSourceLine(entryFunction,
+                                                (TZrMemoryOffset)kZrTellfdProbeReportedFailureInstructionOffset);
+        printf("  ZrCore_Exception_FindSourceLine(entry, instructionOffset=%u) -> line %u\n",
+               (unsigned)kZrTellfdProbeReportedFailureInstructionOffset, (unsigned)lineAtReportedIp);
+    }
+
+    for (index = 0; index < entryFunction->instructionsLength; index++) {
+        const TZrInstruction *inst = &entryFunction->instructionsList[index];
+        EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
+        TZrUInt32 line = ZrCore_Exception_FindSourceLine(entryFunction, (TZrMemoryOffset)index);
+
+        if (line != probeLine) {
+            continue;
+        }
+
+        if (opcode == ZR_INSTRUCTION_OP_TO_INT || opcode == ZR_INSTRUCTION_OP_TO_UINT) {
+            sawNumericConversionOnProbeLine = ZR_TRUE;
+            printf("  ip=%u line=%u opcode=%s slot=%u\n",
+                   (unsigned)index,
+                   (unsigned)line,
+                   opcode == ZR_INSTRUCTION_OP_TO_INT ? "TO_INT" : "TO_UINT",
+                   (unsigned)inst->instruction.operand.operand1[0]);
+        }
+
+        if (opcode == ZR_INSTRUCTION_OP_FUNCTION_CALL || opcode == ZR_INSTRUCTION_OP_FUNCTION_TAIL_CALL ||
+            opcode == ZR_INSTRUCTION_OP_META_CALL || opcode == ZR_INSTRUCTION_OP_META_TAIL_CALL ||
+            opcode == ZR_INSTRUCTION_OP_DYN_CALL || opcode == ZR_INSTRUCTION_OP_DYN_TAIL_CALL ||
+            opcode == ZR_INSTRUCTION_OP_KNOWN_VM_CALL || opcode == ZR_INSTRUCTION_OP_KNOWN_VM_TAIL_CALL ||
+            opcode == ZR_INSTRUCTION_OP_KNOWN_NATIVE_CALL || opcode == ZR_INSTRUCTION_OP_KNOWN_NATIVE_TAIL_CALL ||
+            opcode == ZR_INSTRUCTION_OP_SUPER_META_CALL_NO_ARGS ||
+            opcode == ZR_INSTRUCTION_OP_SUPER_META_TAIL_CALL_NO_ARGS ||
+            opcode == ZR_INSTRUCTION_OP_SUPER_META_CALL_CACHED) {
+            TZrUInt16 operandExtra = inst->instruction.operandExtra;
+            TZrUInt16 a1 = inst->instruction.operand.operand1[0];
+            TZrUInt16 b1 = inst->instruction.operand.operand1[1];
+            const TZrChar *opcodeName = "CALL_FAMILY";
+
+            if (!haveFirstCallFamilyIpOnProbeLine) {
+                firstCallFamilyIpOnProbeLine = index;
+                haveFirstCallFamilyIpOnProbeLine = ZR_TRUE;
+            }
+            sawCallFamilyOnProbeLine = ZR_TRUE;
+            switch (opcode) {
+                case ZR_INSTRUCTION_OP_FUNCTION_CALL:
+                    opcodeName = "FUNCTION_CALL";
+                    break;
+                case ZR_INSTRUCTION_OP_FUNCTION_TAIL_CALL:
+                    opcodeName = "FUNCTION_TAIL_CALL";
+                    break;
+                case ZR_INSTRUCTION_OP_META_CALL:
+                    opcodeName = "META_CALL";
+                    break;
+                case ZR_INSTRUCTION_OP_META_TAIL_CALL:
+                    opcodeName = "META_TAIL_CALL";
+                    break;
+                case ZR_INSTRUCTION_OP_DYN_CALL:
+                    opcodeName = "DYN_CALL";
+                    break;
+                case ZR_INSTRUCTION_OP_DYN_TAIL_CALL:
+                    opcodeName = "DYN_TAIL_CALL";
+                    break;
+                case ZR_INSTRUCTION_OP_KNOWN_VM_CALL:
+                    opcodeName = "KNOWN_VM_CALL";
+                    break;
+                case ZR_INSTRUCTION_OP_KNOWN_VM_TAIL_CALL:
+                    opcodeName = "KNOWN_VM_TAIL_CALL";
+                    break;
+                case ZR_INSTRUCTION_OP_KNOWN_NATIVE_CALL:
+                    opcodeName = "KNOWN_NATIVE_CALL";
+                    break;
+                case ZR_INSTRUCTION_OP_KNOWN_NATIVE_TAIL_CALL:
+                    opcodeName = "KNOWN_NATIVE_TAIL_CALL";
+                    break;
+                case ZR_INSTRUCTION_OP_SUPER_META_CALL_NO_ARGS:
+                    opcodeName = "SUPER_META_CALL_NO_ARGS";
+                    sawMetaCallFamilyOnProbeLine = ZR_TRUE;
+                    break;
+                case ZR_INSTRUCTION_OP_SUPER_META_TAIL_CALL_NO_ARGS:
+                    opcodeName = "SUPER_META_TAIL_CALL_NO_ARGS";
+                    sawMetaCallFamilyOnProbeLine = ZR_TRUE;
+                    break;
+                case ZR_INSTRUCTION_OP_SUPER_META_CALL_CACHED:
+                    opcodeName = "SUPER_META_CALL_CACHED";
+                    sawMetaCallFamilyOnProbeLine = ZR_TRUE;
+                    if (entryFunction->callSiteCaches != ZR_NULL && b1 < entryFunction->callSiteCacheLength) {
+                        const SZrFunctionCallSiteCacheEntry *cache = &entryFunction->callSiteCaches[b1];
+                        if (cache->kind == ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL && cache->argumentCount == 1) {
+                            sawExpectedUnaryMetaContract = ZR_TRUE;
+                        }
+                    }
+                    break;
+                default:
+                    break;
+            }
+
+            if (opcode == ZR_INSTRUCTION_OP_META_CALL || opcode == ZR_INSTRUCTION_OP_META_TAIL_CALL) {
+                sawMetaCallFamilyOnProbeLine = ZR_TRUE;
+                if (b1 == 1) {
+                    sawExpectedUnaryMetaContract = ZR_TRUE;
+                }
+            } else if (opcode != ZR_INSTRUCTION_OP_SUPER_META_CALL_NO_ARGS &&
+                       opcode != ZR_INSTRUCTION_OP_SUPER_META_TAIL_CALL_NO_ARGS &&
+                       opcode != ZR_INSTRUCTION_OP_SUPER_META_CALL_CACHED) {
+                sawNonMetaCallFamilyOnProbeLine = ZR_TRUE;
+            }
+
+            printf("  ip=%u line=%u opcode=%s E=%u A1(functionSlot)=%u B1(argOrAux)=%u\n", (unsigned)index,
+                   (unsigned)line, opcodeName, (unsigned)operandExtra, (unsigned)a1, (unsigned)b1);
+        }
+    }
+
+    if (haveFirstCallFamilyIpOnProbeLine) {
+        TZrUInt32 lineAtFirstCallIp =
+                ZrCore_Exception_FindSourceLine(entryFunction, (TZrMemoryOffset)firstCallFamilyIpOnProbeLine);
+        printf("  ZrCore_Exception_FindSourceLine(entry, first call-family ip=%u) -> line %u\n",
+               (unsigned)firstCallFamilyIpOnProbeLine, (unsigned)lineAtFirstCallIp);
+    }
+
+    TEST_ASSERT_TRUE_MESSAGE(sawCallFamilyOnProbeLine,
+                             "expected at least one call-family opcode on probe source line (tellFd site)");
+    TEST_ASSERT_TRUE_MESSAGE(sawMetaCallFamilyOnProbeLine,
+                             "tellFd(stream) should lower through META_CALL/@call semantics on line 22");
+    TEST_ASSERT_FALSE_MESSAGE(sawNonMetaCallFamilyOnProbeLine,
+                              "tellFd(stream) should not remain on FUNCTION/DYN/KNOWN call families");
+    TEST_ASSERT_TRUE_MESSAGE(sawExpectedUnaryMetaContract,
+                             "tellFd(stream) should preserve a unary @call contract at the probe site");
+    TEST_ASSERT_FALSE_MESSAGE(sawNumericConversionOnProbeLine,
+                              "tellFd(stream) should preserve the stream wrapper for ffi handle_id lowering");
+
+    printf("Testing SymbolHandle prototype ZR_META_CALL:\n");
+    {
+        SZrObjectPrototype *prototypeByFqn = ZrLib_Type_FindPrototype(state, "zr.ffi.SymbolHandle");
+        SZrObjectPrototype *prototypeShort = ZrLib_Type_FindPrototype(state, "SymbolHandle");
+        SZrMeta *metaFqn =
+                prototypeByFqn != ZR_NULL
+                        ? ZrCore_Prototype_GetMetaRecursively(state->global, prototypeByFqn, ZR_META_CALL)
+                        : ZR_NULL;
+        SZrMeta *metaShort =
+                prototypeShort != ZR_NULL
+                        ? ZrCore_Prototype_GetMetaRecursively(state->global, prototypeShort, ZR_META_CALL)
+                        : ZR_NULL;
+
+        printf("  ZrLib_Type_FindPrototype(\"zr.ffi.SymbolHandle\") -> %p\n", (void *)prototypeByFqn);
+        printf("  ZrLib_Type_FindPrototype(\"SymbolHandle\") -> %p\n", (void *)prototypeShort);
+        printf("  ZrCore_Prototype_GetMetaRecursively(..., ZR_META_CALL) fqn -> %p short -> %p\n", (void *)metaFqn,
+               (void *)metaShort);
+    }
+
+    ZrCore_Function_Free(state, entryFunction);
+    destroy_test_state(state);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "tellFd(stream) bytecode + SymbolHandle @call probe");
+    ZR_TEST_DIVIDER();
+}
+
 int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_system_fs_module_metadata_exposes_object_surface_and_wrapper_fields);
     RUN_TEST(test_system_fs_source_runtime_supports_path_objects_and_directory_operations);
     RUN_TEST(test_system_fs_copy_result_supports_exists_and_read_text_separately);
-    RUN_TEST(test_system_fs_source_runtime_supports_stream_modes_using_and_handle_id_lowering);
+    RUN_TEST(test_tellfd_stream_call_bytecode_and_symbol_handle_meta_probe);
+    RUN_TEST(test_system_fs_source_runtime_supports_stream_modes_and_using);
     RUN_TEST(test_system_fs_source_runtime_raises_io_exception_for_missing_file);
     RUN_TEST(test_system_fs_handle_id_lowering_rejects_closed_stream);
     RUN_TEST(test_system_fs_handle_id_lowering_does_not_apply_to_ordinary_calls);

@@ -284,6 +284,27 @@ void zr_ffi_set_hidden_value(SZrState *state, SZrObject *object, const char *fie
     ZrLib_Object_SetFieldCString(state, object, fieldName, value);
 }
 
+static SZrObject *zr_ffi_new_instance_for_module_type(SZrState *state, const char *typeName) {
+    char qualified[160];
+    SZrObject *object;
+    int written;
+
+    if (state == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    written = snprintf(qualified, sizeof(qualified), "zr.ffi.%s", typeName);
+    if (written < 0 || (TZrSize)written >= sizeof(qualified)) {
+        return ZR_NULL;
+    }
+
+    object = ZrLib_Type_NewInstance(state, qualified);
+    if (object == ZR_NULL) {
+        object = ZrLib_Type_NewInstance(state, typeName);
+    }
+    return object;
+}
+
 SZrObject *zr_ffi_get_self_object(const ZrLibCallContext *context) {
     SZrTypeValue *selfValue;
 
@@ -312,7 +333,7 @@ SZrObject *zr_ffi_new_handle_object_with_finalizer(SZrState *state, const char *
         return ZR_NULL;
     }
 
-    object = ZrLib_Type_NewInstance(state, typeName);
+    object = zr_ffi_new_instance_for_module_type(state, typeName);
     if (object == ZR_NULL) {
         ZrLib_TempValueRoot_End(&objectRoot);
         return ZR_NULL;

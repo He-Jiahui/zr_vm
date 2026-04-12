@@ -16,7 +16,7 @@
 		}],
 	"instructions":	[{
 			"index":	0,
-			"opcode":	92,
+			"opcode":	101,
 			"operandExtra":	1
 		}, {
 			"index":	1,
@@ -28,7 +28,7 @@
 			"operandExtra":	1
 		}, {
 			"index":	3,
-			"opcode":	87,
+			"opcode":	95,
 			"operandExtra":	1
 		}]
 }

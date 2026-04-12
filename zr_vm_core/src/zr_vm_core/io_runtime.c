@@ -31,6 +31,9 @@ static TZrBool io_runtime_copy_callable_summaries(SZrState *state,
 static TZrBool io_runtime_copy_top_level_callable_bindings(SZrState *state,
                                                            const SZrIoFunction *source,
                                                            SZrFunction *function);
+static TZrBool io_runtime_copy_escape_metadata(SZrState *state,
+                                               const SZrIoFunction *source,
+                                               SZrFunction *function);
 
 static void io_runtime_init_inline_function(SZrState *state, SZrFunction *function) {
     ZrCore_Memory_RawSet(function, 0, sizeof(*function));
@@ -586,6 +589,8 @@ static TZrBool io_runtime_populate_function(SZrState *state,
                     (TZrMemoryOffset)source->localVariables[index].instructionStartIndex;
             function->localVariableList[index].offsetDead =
                     (TZrMemoryOffset)source->localVariables[index].instructionEndIndex;
+            function->localVariableList[index].scopeDepth = source->localVariables[index].scopeDepth;
+            function->localVariableList[index].escapeFlags = source->localVariables[index].escapeFlags;
         }
         function->localVariableLength = (TZrUInt32)source->localVariablesLength;
     }
@@ -605,6 +610,8 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             function->closureValueList[index].inStack = source->closureVariables[index].inStack ? ZR_TRUE : ZR_FALSE;
             function->closureValueList[index].index = source->closureVariables[index].index;
             function->closureValueList[index].valueType = (EZrValueType)source->closureVariables[index].valueType;
+            function->closureValueList[index].scopeDepth = source->closureVariables[index].scopeDepth;
+            function->closureValueList[index].escapeFlags = source->closureVariables[index].escapeFlags;
         }
         function->closureValueLength = (TZrUInt32)source->closureVariablesLength;
     }
@@ -864,6 +871,10 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             }
         }
         function->compileTimeFunctionInfoLength = (TZrUInt32)source->compileTimeFunctionInfosLength;
+    }
+
+    if (!io_runtime_copy_escape_metadata(state, source, function)) {
+        return ZR_FALSE;
     }
 
     if (source->testInfosLength > 0) {
@@ -1152,6 +1163,54 @@ static TZrBool io_runtime_copy_top_level_callable_bindings(SZrState *state,
         function->topLevelCallableBindings[index].reserved0 = source->topLevelCallableBindings[index].reserved0;
     }
     function->topLevelCallableBindingLength = (TZrUInt32)source->topLevelCallableBindingsLength;
+    return ZR_TRUE;
+}
+
+static TZrBool io_runtime_copy_escape_metadata(SZrState *state,
+                                               const SZrIoFunction *source,
+                                               SZrFunction *function) {
+    SZrGlobalState *global;
+
+    if (state == ZR_NULL || source == ZR_NULL || function == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    global = state->global;
+    if (source->escapeBindingLength > 0 && source->escapeBindings != ZR_NULL) {
+        TZrSize bytes = sizeof(SZrFunctionEscapeBinding) * source->escapeBindingLength;
+        function->escapeBindings = (SZrFunctionEscapeBinding *)ZrCore_Memory_RawMallocWithType(
+                global,
+                bytes,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->escapeBindings == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawSet(function->escapeBindings, 0, bytes);
+        for (TZrSize index = 0; index < source->escapeBindingLength; index++) {
+            function->escapeBindings[index].name = source->escapeBindings[index].name;
+            function->escapeBindings[index].slotOrIndex = source->escapeBindings[index].slotOrIndex;
+            function->escapeBindings[index].scopeDepth = source->escapeBindings[index].scopeDepth;
+            function->escapeBindings[index].escapeFlags = source->escapeBindings[index].escapeFlags;
+            function->escapeBindings[index].bindingKind = source->escapeBindings[index].bindingKind;
+            function->escapeBindings[index].reserved0 = source->escapeBindings[index].reserved0;
+            function->escapeBindings[index].reserved1 = source->escapeBindings[index].reserved1;
+        }
+        function->escapeBindingLength = (TZrUInt32)source->escapeBindingLength;
+    }
+
+    if (source->returnEscapeSlotCount > 0 && source->returnEscapeSlots != ZR_NULL) {
+        TZrSize bytes = sizeof(TZrUInt32) * source->returnEscapeSlotCount;
+        function->returnEscapeSlots = (TZrUInt32 *)ZrCore_Memory_RawMallocWithType(global,
+                                                                                    bytes,
+                                                                                    ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->returnEscapeSlots == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        ZrCore_Memory_RawCopy(function->returnEscapeSlots, source->returnEscapeSlots, bytes);
+        function->returnEscapeSlotCount = (TZrUInt32)source->returnEscapeSlotCount;
+    }
+
     return ZR_TRUE;
 }
 

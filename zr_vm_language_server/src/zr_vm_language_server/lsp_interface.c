@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <string.h>
 
+#include "zr_vm_core/task_runtime.h"
 #include "zr_vm_parser/compiler.h"
 
 #include "zr_vm_lib_ffi/module.h"
@@ -18,6 +19,9 @@
 #include "zr_vm_lib_system/module.h"
 #if defined(ZR_VM_LSP_HAS_NETWORK_LIB)
 #include "zr_vm_lib_network/module.h"
+#endif
+#if defined(ZR_VM_LSP_HAS_THREAD_LIB)
+#include "zr_vm_lib_thread/module.h"
 #endif
 
 static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suffix);
@@ -60,6 +64,24 @@ static TZrBool lsp_try_append_symbol_inlay_hint(SZrState *state,
                                                 SZrSymbol *symbol,
                                                 SZrLspRange range,
                                                 SZrArray *result);
+
+static void lsp_register_builtin_native_libraries(SZrState *state) {
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return;
+    }
+
+    ZrVmLibMath_Register(state->global);
+    ZrVmLibSystem_Register(state->global);
+    ZrVmLibContainer_Register(state->global);
+    ZrVmLibFfi_Register(state->global);
+    ZrCore_TaskRuntime_RegisterBuiltins(state->global);
+#if defined(ZR_VM_LSP_HAS_NETWORK_LIB)
+    ZrVmLibNetwork_Register(state->global);
+#endif
+#if defined(ZR_VM_LSP_HAS_THREAD_LIB)
+    ZrVmThread_Register(state->global);
+#endif
+}
 static const TZrChar *lsp_signature_label_text(SZrLspSignatureHelp *help);
 
 static TZrBool lsp_string_ends_with_native(SZrString *value, const TZrChar *suffix) {
@@ -500,13 +522,7 @@ SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
                       ZR_LSP_PROJECT_INDEX_INITIAL_CAPACITY);
     context->clientSelectedZrpNativePath = ZR_NULL;
 
-    ZrVmLibMath_Register(state->global);
-    ZrVmLibSystem_Register(state->global);
-    ZrVmLibContainer_Register(state->global);
-    ZrVmLibFfi_Register(state->global);
-#if defined(ZR_VM_LSP_HAS_NETWORK_LIB)
-    ZrVmLibNetwork_Register(state->global);
-#endif
+    lsp_register_builtin_native_libraries(state);
     
     if (context->parser == ZR_NULL) {
         ZrCore_Memory_RawFree(state->global, context, sizeof(SZrLspContext));
@@ -745,7 +761,12 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
 
     if (lsp_string_ends_with_native(uri, ".zrp")) {
         return allowProjectRefresh
-                   ? ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state, context, uri, content, contentLength)
+                   ? ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
+                                                                            context,
+                                                                            uri,
+                                                                            content,
+                                                                            contentLength,
+                                                                            ZR_TRUE)
                    : ZR_TRUE;
     }
     
@@ -791,17 +812,23 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
                            ? ZrLanguageServer_LspProject_GetOrCreateForUri(state, context, uri)
                            : ZrLanguageServer_LspProject_FindProjectForUri(context, uri);
         if (allowProjectRefresh && projectIndex != ZR_NULL) {
-            return ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
-                                                                         context,
-                                                                         uri,
-                                                                         content,
-                                                                         contentLength);
+            TZrBool refreshed = ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
+                                                                                      context,
+                                                                                      uri,
+                                                                                      content,
+                                                                                      contentLength,
+                                                                                      ZR_FALSE);
+            if (!refreshed) {
+                ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
+            }
+            return refreshed;
         }
 
         analyzeSuccess = projectIndex != ZR_NULL
                              ? ZrLanguageServer_Lsp_ProjectAnalyzeDocument(state, context, uri, analyzer, ast)
                              : ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast);
         if (!analyzeSuccess) {
+            ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
             return ZR_FALSE;
         }
 
@@ -865,13 +892,31 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
 
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
     if (analyzer == ZR_NULL) {
+        if (fileVersion->ast != ZR_NULL && !fileVersion->usesFallbackAst) {
+            SZrFileRange hintLocation;
+            SZrDiagnostic *hintDiagnostic;
+
+            hintLocation = ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 1, 1),
+                                                     ZrParser_FilePosition_Create(0, 1, 1),
+                                                     uri);
+            hintDiagnostic = ZrLanguageServer_Diagnostic_New(
+                state,
+                ZR_DIAGNOSTIC_HINT,
+                hintLocation,
+                "Semantic analysis is unavailable for this document version; types and navigation may be stale. Edit to retry.",
+                "zr_semantic_unavailable");
+            if (hintDiagnostic != ZR_NULL) {
+                ZrLanguageServer_Lsp_AppendDiagnostic(state, result, hintDiagnostic);
+                ZrLanguageServer_Diagnostic_Free(state, hintDiagnostic);
+            }
+        }
         return ZR_TRUE;
     }
 
     ZrCore_Array_Init(state, &diagnostics, sizeof(SZrDiagnostic *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
     if (!ZrLanguageServer_SemanticAnalyzer_GetDiagnostics(state, analyzer, &diagnostics)) {
         ZrCore_Array_Free(state, &diagnostics);
-        return ZR_FALSE;
+        return ZR_TRUE;
     }
 
     for (TZrSize i = 0; i < diagnostics.length; i++) {
@@ -898,7 +943,7 @@ TZrBool ZrLanguageServer_Lsp_GetDiagnostics(SZrState *state,
             }
             ZrCore_Array_Free(state, &importDiagnostics);
         }
-        return ZR_FALSE;
+        return ZR_TRUE;
     }
 
     if (importDiagnostics.isValid) {

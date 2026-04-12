@@ -649,7 +649,12 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
     unsigned char *returnStorage = ZR_NULL;
     TZrBool callSucceeded = ZR_FALSE;
 #endif
-    if (selfObject == ZR_NULL || symbolData == ZR_NULL || symbolData->base.kind != ZR_FFI_HANDLE_SYMBOL) {
+    if (selfObject == ZR_NULL || symbolData == ZR_NULL) {
+        zr_ffi_raise_error(state, ZR_FFI_ERROR_MARSHAL, "symbol invoke requires a valid SymbolHandle");
+        return ZR_FALSE;
+    }
+    if (symbolData->base.kind != ZR_FFI_HANDLE_SYMBOL) {
+        zr_ffi_raise_error(state, ZR_FFI_ERROR_MARSHAL, "symbol handle has unexpected internal kind");
         return ZR_FALSE;
     }
     if (symbolData->closed) {
@@ -657,6 +662,7 @@ TZrBool zr_ffi_symbol_invoke_array(SZrState *state,
         return ZR_FALSE;
     }
     if (argumentsArray == ZR_NULL) {
+        zr_ffi_raise_error(state, ZR_FFI_ERROR_MARSHAL, "symbol invoke requires an arguments array");
         return ZR_FALSE;
     }
     ownerValue = zr_ffi_find_field_raw(state, selfObject, ZR_FFI_HIDDEN_OWNER_FIELD);

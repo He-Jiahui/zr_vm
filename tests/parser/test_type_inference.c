@@ -23,16 +23,11 @@
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_library/native_registry.h"
-#include "../../zr_vm_parser/src/zr_vm_parser/type_inference_internal.h"
+#include "test_support.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h"
 
 extern void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);
 extern void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
-
-// 测试时间测量结构
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
 
 // 测试日志宏（符合测试规范）
 #define TEST_START(summary)                                                                                            \
@@ -341,18 +336,13 @@ static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSi
 
 // 创建测试用的SZrState
 static SZrState *create_test_state(void) {
-    SZrCallbackGlobal callbacks = {0};
-    SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, &callbacks);
-    if (!global)
-        return ZR_NULL;
+    SZrState *mainState = ZrTests_State_Create(ZR_NULL);
 
-    SZrState *mainState = global->mainThreadState;
-    if (mainState) {
-        ZrCore_GlobalState_InitRegistry(mainState, global);
-        ZrVmLibContainer_Register(global);
-        ZrVmLibMath_Register(global);
-        ZrVmLibSystem_Register(global);
-        ZrVmLibFfi_Register(global);
+    if (mainState != ZR_NULL && mainState->global != ZR_NULL) {
+        ZrVmLibContainer_Register(mainState->global);
+        ZrVmLibMath_Register(mainState->global);
+        ZrVmLibSystem_Register(mainState->global);
+        ZrVmLibFfi_Register(mainState->global);
     }
 
     return mainState;
@@ -368,12 +358,8 @@ static TZrBool register_probe_native_module(SZrState *state) {
 
 // 销毁测试用的SZrState
 static void destroy_test_state(SZrState *state) {
-    if (!state)
-        return;
-
-    SZrGlobalState *global = state->global;
-    if (global) {
-        ZrCore_GlobalState_Free(global);
+    if (state != ZR_NULL) {
+        ZrTests_State_Destroy(state);
     }
 }
 

@@ -931,19 +931,10 @@ static TZrInt64 meta_neg_bool(SZrState *state) {
 
 // OBJECT 未实现元方法的默认处理（抛出错误）
 static TZrInt64 meta_object_not_implemented(SZrState *state) {
-    // 抛出未实现元方法异常
-    // 获取元方法类型（从调用栈中获取）
-    SZrCallInfo *callInfo = state->callInfoList;
-    if (callInfo != ZR_NULL) {
-        // 抛出运行时错误：未实现的元方法
-        // 注意：这里使用运行时错误状态，表示元方法未实现
-        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+    if (state == ZR_NULL) {
+        return 0;
     }
-    // 如果无法抛出异常，返回null
-    TZrStackValuePointer base = callInfo->functionBase.valuePointer;
-    ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(base));
-    state->stackTop.valuePointer = base + 1;
-    return 1;
+    ZrCore_Debug_RunError(state, "object meta method is not implemented");
 }
 
 // ==================== Meta Method Registration Functions ====================

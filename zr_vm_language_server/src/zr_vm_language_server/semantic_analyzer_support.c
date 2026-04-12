@@ -324,6 +324,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
 
     ZrParser_CompilerState_Init(analyzer->compilerState, state);
     analyzer->compilerState->scriptAst = ast;
+    analyzer->compilerState->suppressErrorOutput = ZR_TRUE;
     if (analyzer->compilerState->typeEnv != ZR_NULL) {
         analyzer->compilerState->typeEnv->semanticContext =
             analyzer->compilerState->semanticContext;
@@ -341,6 +342,10 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
         ZrParser_HirModule_New(state, analyzer->compilerState->semanticContext, ast);
     analyzer->semanticContext = analyzer->compilerState->semanticContext;
     analyzer->hirModule = analyzer->compilerState->hirModule;
+
+    if (!ZrLanguageServer_SemanticAnalyzer_BootstrapTypePrototypes(state, analyzer, ast)) {
+        return ZR_FALSE;
+    }
 
     return analyzer->semanticContext != ZR_NULL;
 }
@@ -560,15 +565,18 @@ static SZrInferredType *create_field_symbol_type(SZrState *state,
         return typeInfo;
     }
 
-    if (analyzer != ZR_NULL && analyzer->compilerState != ZR_NULL &&
-        ZrParser_AstTypeToInferredType_Convert(analyzer->compilerState, fieldType, typeInfo)) {
+    if (analyzer != ZR_NULL &&
+        ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
+                                                                        ZR_NULL,
+                                                                        ZR_NULL,
+                                                                        fieldType,
+                                                                        typeInfo)) {
         return typeInfo;
     }
 
     ZrParser_InferredType_Free(state, typeInfo);
-    ZrParser_InferredType_Init(state, typeInfo, ZR_VALUE_TYPE_OBJECT);
-    typeInfo->ownershipQualifier = fieldType->ownershipQualifier;
-    return typeInfo;
+    ZrCore_Memory_RawFree(state->global, typeInfo, sizeof(SZrInferredType));
+    return ZR_NULL;
 }
 
 static void record_field_cleanup_step(SZrSemanticAnalyzer *analyzer,
@@ -633,6 +641,15 @@ void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *stat
     }
 
     typeInfo = create_field_symbol_type(state, analyzer, fieldType);
+    if (typeInfo == ZR_NULL && fieldType != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(
+                state,
+                analyzer,
+                ZR_DIAGNOSTIC_ERROR,
+                fieldType->name != ZR_NULL ? fieldType->name->location : fieldNode->location,
+                "cannot infer exact type",
+                "cannot_infer_exact_type");
+    }
     if (fieldType != ZR_NULL) {
         ownershipQualifier = fieldType->ownershipQualifier;
     }

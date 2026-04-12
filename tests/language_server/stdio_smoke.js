@@ -124,8 +124,11 @@ function createWatchedProjectFixture() {
     };
 }
 
-function regenerateWatchedBinaryMetadataFixture(serverPath, rootPath) {
-    const cliPath = path.join(path.dirname(serverPath), `zr_vm_cli${path.extname(serverPath)}`);
+function regenerateWatchedBinaryMetadataFixture(serverPath, rootPath, cliPathOptional) {
+    const cliPath =
+        typeof cliPathOptional === 'string' && cliPathOptional.length > 0
+            ? cliPathOptional
+            : path.join(path.dirname(serverPath), `zr_vm_cli${path.extname(serverPath)}`);
     const projectPath = path.join(rootPath, 'aot_module_graph_pipeline.zrp');
     const tempBinarySourcePath = path.join(rootPath, 'src', 'graph_binary_stage.zr');
     const compileResult = spawnSync(cliPath, [
@@ -156,7 +159,7 @@ function regenerateWatchedBinaryMetadataFixture(serverPath, rootPath) {
     }
 }
 
-function createWatchedBinaryMetadataFixture(serverPath) {
+function createWatchedBinaryMetadataFixture(serverPath, cliPathOptional) {
     const sourceFixtureRoot = path.join(__dirname,
         '..',
         'fixtures',
@@ -176,7 +179,7 @@ function createWatchedBinaryMetadataFixture(serverPath) {
     fs.copyFileSync(binarySourceFixturePath, tempBinarySourcePath);
     removePathSync(binaryPath, { force: true });
     removePathSync(binaryIntermediatePath, { force: true });
-    regenerateWatchedBinaryMetadataFixture(serverPath, rootPath);
+    regenerateWatchedBinaryMetadataFixture(serverPath, rootPath, cliPathOptional);
 
     return {
         rootPath,
@@ -483,9 +486,10 @@ class LspClient {
 
 async function main() {
     const serverPath = process.argv[2];
+    const cliPathOptional = process.argv[3];
     assert(serverPath, 'Expected server executable path as argv[2]');
     const watchedFixture = createWatchedProjectFixture();
-    const watchedBinaryFixture = createWatchedBinaryMetadataFixture(serverPath);
+    const watchedBinaryFixture = createWatchedBinaryMetadataFixture(serverPath, cliPathOptional);
     const importDiagnosticsFixture = createImportDiagnosticsFixture();
     watchedFixtureRootToCleanup = watchedFixture.rootPath;
     watchedBinaryFixtureRootToCleanup = watchedBinaryFixture.rootPath;
@@ -1067,6 +1071,7 @@ async function main() {
     client.notify('exit', null);
     const exitCode = await client.waitForExit();
     assert(exitCode === 0, `server exited with ${exitCode}. stderr=${client.stderr()}`);
+    assert(client.stderr().trim() === '', `language server stderr must stay empty during stdio smoke. stderr=${client.stderr()}`);
     cleanupPath(watchedFixtureRootToCleanup);
     cleanupPath(watchedBinaryFixtureRootToCleanup);
     cleanupPath(importDiagnosticsFixtureRootToCleanup);

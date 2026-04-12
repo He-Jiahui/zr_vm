@@ -35,21 +35,15 @@ static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state);
 static TZrInt64 zr_container_linked_list_iterator_move_next_native(SZrState *state);
 
 static SZrString *zr_container_cached_field_string(SZrState *state, const TZrChar *fieldName) {
-    static const SZrGlobalState *cachedGlobal = ZR_NULL;
-    static const void *cachedGarbageCollector = ZR_NULL;
-    static const void *cachedStringTable = ZR_NULL;
+    static TZrUInt64 cachedGlobalCacheIdentity = 0;
     static ZrContainerFieldStringCacheEntry cache[ZR_CONTAINER_FIELD_CACHE_CAPACITY];
 
     if (state == ZR_NULL || state->global == ZR_NULL || fieldName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    if (cachedGlobal != state->global ||
-        cachedGarbageCollector != state->global->garbageCollector ||
-        cachedStringTable != state->global->stringTable) {
-        cachedGlobal = state->global;
-        cachedGarbageCollector = state->global->garbageCollector;
-        cachedStringTable = state->global->stringTable;
+    if (cachedGlobalCacheIdentity != state->global->cacheIdentity) {
+        cachedGlobalCacheIdentity = state->global->cacheIdentity;
         memset(cache, 0, sizeof(cache));
     }
 
@@ -100,9 +94,7 @@ static TZrBool zr_container_make_field_key(SZrState *state, const TZrChar *field
 
 static SZrObjectPrototype *zr_container_iterator_runtime_prototype(SZrState *state,
                                                                    FZrNativeFunction moveNextFunction) {
-    static const SZrGlobalState *cachedGlobal = ZR_NULL;
-    static const void *cachedGarbageCollector = ZR_NULL;
-    static const void *cachedStringTable = ZR_NULL;
+    static TZrUInt64 cachedGlobalCacheIdentity = 0;
     static SZrObjectPrototype *arrayIteratorPrototype = ZR_NULL;
     static SZrObjectPrototype *linkedIteratorPrototype = ZR_NULL;
     static SZrString *currentMemberName = ZR_NULL;
@@ -112,12 +104,8 @@ static SZrObjectPrototype *zr_container_iterator_runtime_prototype(SZrState *sta
         return ZR_NULL;
     }
 
-    if (cachedGlobal != state->global ||
-        cachedGarbageCollector != state->global->garbageCollector ||
-        cachedStringTable != state->global->stringTable) {
-        cachedGlobal = state->global;
-        cachedGarbageCollector = state->global->garbageCollector;
-        cachedStringTable = state->global->stringTable;
+    if (cachedGlobalCacheIdentity != state->global->cacheIdentity) {
+        cachedGlobalCacheIdentity = state->global->cacheIdentity;
         arrayIteratorPrototype = ZR_NULL;
         linkedIteratorPrototype = ZR_NULL;
         currentMemberName = ZR_NULL;

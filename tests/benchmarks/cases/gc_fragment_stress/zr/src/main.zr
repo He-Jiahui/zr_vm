@@ -1,0 +1,185 @@
+var benchConfig = %import("bench_config");
+var system = %import("zr.system");
+var container = %import("zr.container");
+
+toText(value: int): string {
+    return <string> value;
+}
+
+fragment(slot: int): string {
+    var normalized = slot % 8;
+    if (normalized == 0) {
+        return "amber";
+    }
+    if (normalized == 1) {
+        return "birch";
+    }
+    if (normalized == 2) {
+        return "cedar";
+    }
+    if (normalized == 3) {
+        return "dune";
+    }
+    if (normalized == 4) {
+        return "ember";
+    }
+    if (normalized == 5) {
+        return "frost";
+    }
+    if (normalized == 6) {
+        return "grove";
+    }
+    return "harbor";
+}
+
+payload(seed: int, cycle: int, slot: int): string {
+    var head = fragment(seed + cycle);
+    var middle = fragment(seed / 3 + slot * 5);
+    var tail = fragment(seed + cycle * 7 + slot * 11);
+    return head + "-" + middle + "-" + tail + ":" + toText(seed) + ":" + toText(cycle) + ":" + toText(slot);
+}
+
+publishArchivedGlobal(slot: int, value: string) {
+    var bucket = slot % 8;
+    var archiveBox = { value: value, slot: slot };
+    if (bucket == 0) {
+        gcOld0 = archiveBox;
+        return;
+    }
+    if (bucket == 1) {
+        gcOld1 = archiveBox;
+        return;
+    }
+    if (bucket == 2) {
+        gcOld2 = archiveBox;
+        return;
+    }
+    if (bucket == 3) {
+        gcOld3 = archiveBox;
+        return;
+    }
+    if (bucket == 4) {
+        gcOld4 = archiveBox;
+        return;
+    }
+    if (bucket == 5) {
+        gcOld5 = archiveBox;
+        return;
+    }
+    if (bucket == 6) {
+        gcOld6 = archiveBox;
+        return;
+    }
+    gcOld7 = archiveBox;
+}
+
+var scale = benchConfig.scale();
+var survivors = new container.Array<string>();
+var scratch = new container.Array<string>();
+var anchors = new container.Map<string, int>();
+var oldArchive = new container.Array<string>();
+var oldLookup = new container.Map<string, string>();
+var anchorCount = 0;
+var seed = 29;
+var checksum = 0;
+var cycle = 0;
+var mod = 1000000007;
+
+system.gc.enable();
+system.gc.set_budget(400);
+gcArchiveRoot = oldArchive;
+gcLookupRoot = oldLookup;
+
+while (cycle < 36 * scale) {
+    var slot = 0;
+    var probeKey = "";
+    var probeFallback = 0;
+
+    while (slot < 320) {
+        seed = (seed * 73 + 19 + cycle + slot) % 10007;
+
+        var payloadText = payload(seed, cycle, slot);
+        var scratchText = payloadText + "|" + fragment(seed + slot + 3);
+        scratch.add(payloadText);
+        scratch.add(scratchText);
+
+        if (slot % 5 == 0) {
+            survivors.add(payloadText + "#hold#" + toText(cycle));
+        }
+
+        if (slot % 7 == 0) {
+            var anchorKey = payloadText + "#anchor#" + toText(slot);
+            if (anchors[anchorKey] == null) {
+                anchorCount = anchorCount + 1;
+            }
+            anchors[anchorKey] = seed + cycle + slot;
+        }
+
+        if (slot % 11 == 0) {
+            var shadowKey = payloadText + "#shadow#" + toText(cycle);
+            if (anchors[shadowKey] == null) {
+                anchorCount = anchorCount + 1;
+            }
+            anchors[shadowKey] = seed * 2 + slot;
+        }
+
+        if (slot % 17 == 0) {
+            var archiveValue = payloadText + "#old#" + fragment(seed + cycle + slot);
+            oldArchive.add(archiveValue);
+            oldLookup["slot#" + toText(slot % 32)] = archiveValue;
+            publishArchivedGlobal(slot, archiveValue);
+        }
+
+        if (slot % 13 == 0 && survivors.length > 24) {
+            survivors.removeAt(0);
+        }
+        if (slot % 19 == 0 && oldArchive.length > 96) {
+            oldArchive.removeAt(0);
+        }
+
+        checksum = (checksum * 131 + seed + cycle * 17 + slot * 29 + survivors.length) % mod;
+
+        if (slot == 0) {
+            probeKey = payloadText + "#anchor#0";
+            probeFallback = seed + cycle;
+        }
+
+        slot = slot + 1;
+    }
+
+    scratch.clear();
+
+    if (cycle % 4 == 3) {
+        anchors.clear();
+        anchorCount = 0;
+    }
+
+    var probeValue = anchors[probeKey];
+    if (probeValue != null) {
+        checksum = (checksum * 137 + (probeValue + 0) + survivors.length + cycle) % mod;
+    } else {
+        checksum = (checksum * 137 + probeFallback + survivors.length + cycle) % mod;
+    }
+
+    if (oldLookup["slot#" + toText(cycle % 32)] != null) {
+        checksum = (checksum * 149 + oldArchive.length * 7 + anchorCount + cycle + 31) % mod;
+    } else {
+        checksum = (checksum * 149 + oldArchive.length * 7 + anchorCount + cycle) % mod;
+    }
+
+    if (cycle % 6 == 5) {
+        system.gc.collect("full");
+    } else {
+        system.gc.collect("minor");
+    }
+
+    if (cycle % 9 == 8) {
+        survivors.clear();
+    }
+
+    cycle = cycle + 1;
+}
+
+checksum = (checksum + survivors.length * 17 + anchorCount * 19 + oldArchive.length * 23 + seed) % mod;
+
+return "BENCH_GC_FRAGMENT_STRESS_PASS\n" + <string> checksum;

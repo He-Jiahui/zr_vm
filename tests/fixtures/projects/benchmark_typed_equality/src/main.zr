@@ -1,0 +1,40 @@
+var benchConfig = %import("bench_config");
+
+var scale = benchConfig.scale();
+var rounds = 14000 * scale;
+var checksum = 0;
+var counter = 0;
+var signedLeft: int = 17;
+var signedRight: int = 29;
+var unsignedLeft: uint = <uint>23;
+var unsignedRight: uint = <uint>31;
+var stableFlag: bool = true;
+var leftText: string = "alpha";
+var rightText: string = "alpha";
+var leftFloat: float = 1.5;
+var rightFloat: float = 1.5;
+
+while (counter <= rounds - 1) {
+    var boolEq: bool = stableFlag == true;
+    var signedNe: bool = signedLeft != signedRight;
+    var unsignedNe: bool = unsignedLeft != unsignedRight;
+    var floatEq: bool = leftFloat == rightFloat;
+    var stringEq: bool = leftText == rightText;
+
+    checksum = checksum +
+        (boolEq ? 3 : 5) +
+        (signedNe ? 7 : 11) +
+        (unsignedNe ? 13 : 17) +
+        (floatEq ? 19 : 23) +
+        (stringEq ? 29 : 31);
+
+    signedLeft = (signedLeft + 3) % 97;
+    signedRight = (signedRight + 5) % 97;
+    unsignedLeft = (unsignedLeft + <uint>7) % <uint>101;
+    unsignedRight = (unsignedRight + <uint>11) % <uint>101;
+
+    checksum = checksum % 1000000007;
+    counter = counter + 1;
+}
+
+return "BENCH_TYPED_EQUALITY_PASS\n" + <string> checksum;

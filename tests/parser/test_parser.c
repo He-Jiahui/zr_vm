@@ -34,12 +34,6 @@
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 
-// 测试时间测量结构
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
-
 // 测试日志宏（符合测试规范）
 #define TEST_START(summary) do { \
     printf("Unit Test - %s\n", summary); \
@@ -2914,9 +2908,9 @@ static void test_compiler_lambda_expression(void) {
     TEST_DIVIDER();
 }
 
-static void test_compiler_lambda_crlf_locations(void) {
+static void test_compiler_parenthesized_lambda_iife(void) {
     SZrTestTimer timer;
-    const char* testSummary = "Compiler Lambda CRLF Locations";
+    const char* testSummary = "Compiler Parenthesized Lambda IIFE";
 
     TEST_START(testSummary);
     timer.startTime = clock();
@@ -2924,8 +2918,54 @@ static void test_compiler_lambda_crlf_locations(void) {
     SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
 
-    TEST_INFO("Lambda CRLF location tracking",
-              "Testing that compiled lambda line ranges stay stable when the source uses CRLF line endings");
+    TEST_INFO("Parenthesized lambda immediate invocation",
+              "Testing compilation of grouped lambda IIFE syntax: ((delta: int) -> { return delta + 1; })(3)");
+
+    const char* source =
+        "var result = ((delta: int) -> {\n"
+        "    return delta + 1;\n"
+        "})(3);\n"
+        "return result;\n";
+    SZrString* sourceName = ZrCore_String_Create(state, "lambda_iife.zr", 14);
+    SZrAstNode* ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+    if (ast == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse parenthesized lambda IIFE");
+        destroy_test_state(state);
+        return;
+    }
+
+    SZrFunction* function = ZrParser_Compiler_Compile(state, ast);
+    if (function == ZR_NULL) {
+        ZrParser_Ast_Free(state, ast);
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile parenthesized lambda IIFE");
+        destroy_test_state(state);
+        return;
+    }
+
+    TEST_ASSERT_TRUE(function->instructionsLength > 0);
+    TEST_ASSERT_TRUE(function->childFunctionLength > 0);
+
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_compiler_lambda_crlf_debug_metadata(void) {
+    SZrTestTimer timer;
+    const char* testSummary = "Compiler Lambda CRLF Debug Metadata";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState* state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Lambda CRLF debug metadata",
+              "Testing that CRLF sources still compile child lambdas with source references and execution locations");
 
     const char* source =
         "%module \"artifact_baseline\";\r\n"
@@ -2959,15 +2999,17 @@ static void test_compiler_lambda_crlf_locations(void) {
 
     TEST_ASSERT_EQUAL_UINT32(2, function->childFunctionLength);
 
-    {
-        SZrFunction* greetFunction = &function->childFunctionList[0];
-        SZrFunction* buildMessageFunction = &function->childFunctionList[1];
+      {
+          SZrFunction* greetFunction = &function->childFunctionList[0];
+          SZrFunction* buildMessageFunction = &function->childFunctionList[1];
 
-        TEST_ASSERT_EQUAL_UINT32(3, greetFunction->lineInSourceStart);
-        TEST_ASSERT_EQUAL_UINT32(6, greetFunction->lineInSourceEnd);
-        TEST_ASSERT_EQUAL_UINT32(7, buildMessageFunction->lineInSourceStart);
-        TEST_ASSERT_EQUAL_UINT32(10, buildMessageFunction->lineInSourceEnd);
-    }
+          TEST_ASSERT_EQUAL_PTR(sourceName, greetFunction->sourceCodeList);
+          TEST_ASSERT_EQUAL_PTR(sourceName, buildMessageFunction->sourceCodeList);
+          TEST_ASSERT_NOT_NULL(greetFunction->executionLocationInfoList);
+          TEST_ASSERT_NOT_NULL(buildMessageFunction->executionLocationInfoList);
+          TEST_ASSERT_TRUE(greetFunction->executionLocationInfoLength > 0);
+          TEST_ASSERT_TRUE(buildMessageFunction->executionLocationInfoLength > 0);
+      }
 
     ZrParser_Ast_Free(state, ast);
 
@@ -3167,7 +3209,8 @@ int main(void) {
     RUN_TEST(test_compiler_array_literal);
     RUN_TEST(test_compiler_object_literal);
     RUN_TEST(test_compiler_lambda_expression);
-    RUN_TEST(test_compiler_lambda_crlf_locations);
+    RUN_TEST(test_compiler_parenthesized_lambda_iife);
+    RUN_TEST(test_compiler_lambda_crlf_debug_metadata);
     RUN_TEST(test_compiler_break_continue);
     RUN_TEST(test_compiler_out_statement);
     

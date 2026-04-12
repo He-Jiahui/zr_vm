@@ -34,46 +34,7 @@
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
-
-// 测试时间测量结构
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
-
-// 测试日志宏（符合测试规范）
-#define TEST_START(summary) do { \
-    printf("Unit Test - %s\n", summary); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_INFO(summary, details) do { \
-    printf("Testing %s:\n %s\n", summary, details); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_PASS_CUSTOM(timer, summary) do { \
-    double elapsed = ((double)(timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
-    printf("Pass - Cost Time:%.3fms - %s\n", elapsed, summary); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_FAIL_CUSTOM(timer, summary, reason) do { \
-    clock_t failureTime = clock(); \
-    double elapsed = ((double)(failureTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0; \
-    printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_DIVIDER() do { \
-    printf("----------\n"); \
-    fflush(stdout); \
-} while(0)
-
-#define TEST_MODULE_DIVIDER() do { \
-    printf("==========\n"); \
-    fflush(stdout); \
-} while(0)
+#include "zr_test_log_macros.h"
 
 // realpath 兼容函数（MSVC使用_fullpath）
 #ifdef _MSC_VER
@@ -270,26 +231,26 @@ static void parse_reference_fixture_expect_diagnostic(const char* relativePath,
 }
 
 // 测试字符字面量解析
-static void test_char_literals_parsing(void) {
+void test_char_literals_parsing(void) {
     SZrTestTimer timer;
     const char* testSummary = "Character Literals Parsing";
     
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
     
     SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
-    TEST_INFO("Character literals parsing", 
+    ZR_TEST_INFO("Character literals parsing", 
               "Testing parsing of character literals with various escape sequences");
     
     size_t fileSize;
     char* source = read_test_file("test_char_literals.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_char_literals.zr file");
+        ZR_TEST_FAIL(timer, testSummary, "Cannot find test_char_literals.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -299,9 +260,10 @@ static void test_char_literals_parsing(void) {
     free(source);
     
     if (ast == ZR_NULL) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_char_literals.zr file");
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse test_char_literals.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -312,32 +274,32 @@ static void test_char_literals_parsing(void) {
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
 // 测试字符字面量编译
-static void test_char_literals_compilation(void) {
+void test_char_literals_compilation(void) {
     SZrTestTimer timer;
     const char* testSummary = "Character Literals Compilation";
     
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
     
     SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
-    TEST_INFO("Character literals compilation", 
+    ZR_TEST_INFO("Character literals compilation", 
               "Testing compilation of character literals to VM instructions");
     
     size_t fileSize;
     char* source = read_test_file("test_char_literals.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_char_literals.zr file");
+        ZR_TEST_FAIL(timer, testSummary, "Cannot find test_char_literals.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -347,9 +309,10 @@ static void test_char_literals_compilation(void) {
     free(source);
     
     if (ast == ZR_NULL) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_char_literals.zr file");
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse test_char_literals.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -358,41 +321,42 @@ static void test_char_literals_compilation(void) {
     
     if (function == ZR_NULL) {
         ZrParser_Ast_Free(state, ast);
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile AST to instructions");
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to compile AST to instructions");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
 // 测试基本类型转换解析
-static void test_type_cast_basic_parsing(void) {
+void test_type_cast_basic_parsing(void) {
     SZrTestTimer timer;
     const char* testSummary = "Basic Type Cast Parsing";
     
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
     
     SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
-    TEST_INFO("Basic type cast parsing", 
+    ZR_TEST_INFO("Basic type cast parsing", 
               "Testing parsing of basic type cast expressions: <int>, <float>, <string>, <bool>");
     
     size_t fileSize;
     char* source = read_test_file("test_type_cast_basic.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_type_cast_basic.zr file");
+        ZR_TEST_FAIL(timer, testSummary, "Cannot find test_type_cast_basic.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -402,9 +366,10 @@ static void test_type_cast_basic_parsing(void) {
     free(source);
     
     if (ast == ZR_NULL) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_type_cast_basic.zr file");
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse test_type_cast_basic.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -415,32 +380,32 @@ static void test_type_cast_basic_parsing(void) {
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
 // 测试基本类型转换编译
-static void test_type_cast_basic_compilation(void) {
+void test_type_cast_basic_compilation(void) {
     SZrTestTimer timer;
     const char* testSummary = "Basic Type Cast Compilation";
     
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
     
     SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
-    TEST_INFO("Basic type cast compilation", 
+    ZR_TEST_INFO("Basic type cast compilation", 
               "Testing compilation of basic type cast expressions to conversion instructions");
     
     size_t fileSize;
     char* source = read_test_file("test_type_cast_basic.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_type_cast_basic.zr file");
+        ZR_TEST_FAIL(timer, testSummary, "Cannot find test_type_cast_basic.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -450,9 +415,10 @@ static void test_type_cast_basic_compilation(void) {
     free(source);
     
     if (ast == ZR_NULL) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_type_cast_basic.zr file");
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse test_type_cast_basic.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -461,41 +427,42 @@ static void test_type_cast_basic_compilation(void) {
     
     if (function == ZR_NULL) {
         ZrParser_Ast_Free(state, ast);
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to compile AST to instructions");
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to compile AST to instructions");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
 // 测试结构体类型转换解析
-static void test_type_cast_struct_parsing(void) {
+void test_type_cast_struct_parsing(void) {
     SZrTestTimer timer;
     const char* testSummary = "Struct Type Cast Parsing";
     
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
     
     SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
-    TEST_INFO("Struct type cast parsing", 
+    ZR_TEST_INFO("Struct type cast parsing", 
               "Testing parsing of struct type cast expressions: <StructType>");
     
     size_t fileSize;
     char* source = read_test_file("test_type_cast_struct.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_type_cast_struct.zr file");
+        ZR_TEST_FAIL(timer, testSummary, "Cannot find test_type_cast_struct.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -505,9 +472,10 @@ static void test_type_cast_struct_parsing(void) {
     free(source);
     
     if (ast == ZR_NULL) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_type_cast_struct.zr file");
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse test_type_cast_struct.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -518,32 +486,32 @@ static void test_type_cast_struct_parsing(void) {
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
 // 测试类类型转换解析
-static void test_type_cast_class_parsing(void) {
+void test_type_cast_class_parsing(void) {
     SZrTestTimer timer;
     const char* testSummary = "Class Type Cast Parsing";
     
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
     
     SZrState* state = create_test_state();
     TEST_ASSERT_NOT_NULL(state);
     
-    TEST_INFO("Class type cast parsing", 
+    ZR_TEST_INFO("Class type cast parsing", 
               "Testing parsing of class type cast expressions: <ClassName>");
     
     size_t fileSize;
     char* source = read_test_file("test_type_cast_class.zr", &fileSize);
     if (source == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, testSummary, "Cannot find test_type_cast_class.zr file");
+        ZR_TEST_FAIL(timer, testSummary, "Cannot find test_type_cast_class.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -553,9 +521,10 @@ static void test_type_cast_class_parsing(void) {
     free(source);
     
     if (ast == ZR_NULL) {
-        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse test_type_cast_class.zr file");
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse test_type_cast_class.zr file");
         destroy_test_state(state);
-        TEST_DIVIDER();
+        ZR_TEST_DIVIDER();
         return;
     }
     
@@ -566,12 +535,59 @@ static void test_type_cast_class_parsing(void) {
     ZrParser_Ast_Free(state, ast);
     
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_core_semantics_manifest_inventory(void) {
+void test_relational_less_than_does_not_emit_speculative_type_cast_diagnostic(void) {
+    SZrTestTimer timer;
+    const char* testSummary = "Relational Less Than Does Not Emit Speculative Type Cast Diagnostic";
+    const char* source =
+            "var left = 4;\n"
+            "var right = 8;\n"
+            "var flag = left < right;\n"
+            "return flag;";
+    const char* sourcePath = "relational_less_than_no_speculative_type_cast_diagnostic.zr";
+    SZrState* state = ZR_NULL;
+    SZrString* sourceName = ZR_NULL;
+    SZrParserState parserState;
+    SZrAstNode* ast = ZR_NULL;
+    SZrCapturedParserDiagnostic diagnostic;
+
+    ZR_TEST_START(testSummary);
+    timer.startTime = clock();
+
+    memset(&diagnostic, 0, sizeof(diagnostic));
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)sourcePath, (TZrSize)strlen(sourcePath));
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ZrParser_State_Init(&parserState, state, source, strlen(source), sourceName);
+    parserState.errorCallback = capture_reference_parser_error;
+    parserState.errorUserData = &diagnostic;
+    parserState.suppressErrorOutput = ZR_TRUE;
+
+    ast = ZrParser_ParseWithState(&parserState);
+
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_FALSE(parserState.hasError);
+    TEST_ASSERT_FALSE(diagnostic.reported);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    ZrParser_Ast_Free(state, ast);
+    ZrParser_State_Free(&parserState);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+void test_reference_core_semantics_manifest_inventory(void) {
     static const struct {
         const char* manifestPath;
         const char* featureGroup;
@@ -587,7 +603,7 @@ static void test_reference_core_semantics_manifest_inventory(void) {
     const char* testSummary = "Reference Core Semantics Manifest Inventory";
     size_t totalCases = 0;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     for (size_t i = 0; i < sizeof(kManifests) / sizeof(kManifests[0]); i++) {
@@ -603,11 +619,11 @@ static void test_reference_core_semantics_manifest_inventory(void) {
     TEST_ASSERT_TRUE(totalCases >= 36);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_full_stack_manifest_inventory(void) {
+void test_reference_full_stack_manifest_inventory(void) {
     static const struct {
         const char* manifestPath;
         const char* domainSlug;
@@ -650,7 +666,7 @@ static void test_reference_full_stack_manifest_inventory(void) {
     const char* testSummary = "Reference Full Stack Manifest Inventory";
     size_t totalCases = 0;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     for (size_t i = 0; i < sizeof(kManifests) / sizeof(kManifests[0]); i++) {
@@ -680,11 +696,11 @@ static void test_reference_full_stack_manifest_inventory(void) {
     TEST_ASSERT_TRUE(totalCases >= 120);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_full_stack_aot_matrix_fields_are_present(void) {
+void test_reference_full_stack_aot_matrix_fields_are_present(void) {
     static const char *kManifestPaths[] = {
         "core_semantics/lexing_literals_diagnostics/manifest.json",
         "core_semantics/expressions_precedence_chains/manifest.json",
@@ -727,7 +743,7 @@ static void test_reference_full_stack_aot_matrix_fields_are_present(void) {
     SZrTestTimer timer;
     const char *testSummary = "Reference Full Stack AOT Matrix Fields Are Present";
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     for (size_t manifestIndex = 0; manifestIndex < sizeof(kManifestPaths) / sizeof(kManifestPaths[0]); manifestIndex++) {
@@ -757,11 +773,11 @@ static void test_reference_full_stack_aot_matrix_fields_are_present(void) {
     }
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_full_stack_priority_cases_are_present(void) {
+void test_reference_full_stack_priority_cases_are_present(void) {
     static const char* kPriorityCaseIds[] = {
         "lexing-unclosed-string",
         "lexing-invalid-hex-escape",
@@ -810,7 +826,7 @@ static void test_reference_full_stack_priority_cases_are_present(void) {
     const char* testSummary = "Reference Full Stack Priority Cases Are Present";
     char* manifestTexts[sizeof(kManifestPaths) / sizeof(kManifestPaths[0])] = {0};
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     for (size_t manifestIndex = 0; manifestIndex < sizeof(kManifestPaths) / sizeof(kManifestPaths[0]); manifestIndex++) {
@@ -836,11 +852,11 @@ static void test_reference_full_stack_priority_cases_are_present(void) {
     }
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_full_stack_master_matrix_document_exists(void) {
+void test_reference_full_stack_master_matrix_document_exists(void) {
     static const char* kRequiredPhrases[] = {
         "ZR 全栈参考语言共性测试矩阵",
         "Lexing/Literals/Diagnostics",
@@ -875,7 +891,7 @@ static void test_reference_full_stack_master_matrix_document_exists(void) {
     size_t docSize = 0;
     char* docText = ZR_NULL;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     docText = read_repo_doc_file("reference-alignment/full-stack-test-matrix.md", &docSize);
@@ -889,11 +905,11 @@ static void test_reference_full_stack_master_matrix_document_exists(void) {
     free(docText);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_testing_validation_index_mentions_aot_matrix_tiers(void) {
+void test_testing_validation_index_mentions_aot_matrix_tiers(void) {
     static const char *kRequiredPhrases[] = {
         "Testing And Validation",
         "smoke/core/stress",
@@ -910,7 +926,7 @@ static void test_testing_validation_index_mentions_aot_matrix_tiers(void) {
     size_t docSize = 0;
     char *docText = ZR_NULL;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     docText = read_repo_doc_file("testing-and-validation/index.md", &docSize);
@@ -923,11 +939,11 @@ static void test_testing_validation_index_mentions_aot_matrix_tiers(void) {
     free(docText);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_projects_suite_registers_aot_large_fixtures(void) {
+void test_projects_suite_registers_aot_large_fixtures(void) {
     static const char *kRequiredPhrases[] = {
         "register_project_case(\"aot_module_graph_pipeline\"",
         "register_project_case(\"aot_dynamic_meta_ownership_lab\"",
@@ -944,7 +960,7 @@ static void test_projects_suite_registers_aot_large_fixtures(void) {
     size_t fileSize = 0;
     char *fileText = ZR_NULL;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     fileText = read_tests_repo_file("cmake/run_projects_suite.cmake", &fileSize);
@@ -957,11 +973,11 @@ static void test_projects_suite_registers_aot_large_fixtures(void) {
     free(fileText);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_execution_order_doc_mentions_current_suites_and_tiers(void) {
+void test_execution_order_doc_mentions_current_suites_and_tiers(void) {
     static const char *kRequiredPhrases[] = {
         "core_runtime",
         "language_pipeline",
@@ -981,7 +997,7 @@ static void test_execution_order_doc_mentions_current_suites_and_tiers(void) {
     size_t docSize = 0;
     char *docText = ZR_NULL;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     docText = read_tests_repo_file("TEST_EXECUTION_ORDER.md", &docSize);
@@ -994,11 +1010,11 @@ static void test_execution_order_doc_mentions_current_suites_and_tiers(void) {
     free(docText);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_core_semantics_matrix_document_exists(void) {
+void test_reference_core_semantics_matrix_document_exists(void) {
     static const char* kRequiredPhrases[] = {
         "ZR 核心语义 capability matrix",
         "字面量与转义",
@@ -1026,7 +1042,7 @@ static void test_reference_core_semantics_matrix_document_exists(void) {
     size_t docSize = 0;
     char* docText = ZR_NULL;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     docText = read_repo_doc_file("reference-alignment/core-semantics-matrix.md", &docSize);
@@ -1040,11 +1056,11 @@ static void test_reference_core_semantics_matrix_document_exists(void) {
     free(docText);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_unclosed_string_fixture_surfaces_invalid_literal_node(void) {
+void test_reference_unclosed_string_fixture_surfaces_invalid_literal_node(void) {
     SZrTestTimer timer;
     const char* testSummary = "Reference Unclosed String Fixture Surfaces Invalid Literal Node";
     size_t fileSize = 0;
@@ -1055,7 +1071,7 @@ static void test_reference_unclosed_string_fixture_surfaces_invalid_literal_node
     SZrAstNode* declaration = ZR_NULL;
     SZrAstNode* literal = ZR_NULL;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     state = create_test_state();
@@ -1083,12 +1099,12 @@ static void test_reference_unclosed_string_fixture_surfaces_invalid_literal_node
     ZrParser_Ast_Free(state, ast);
     free(source);
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_invalid_hex_escape_fixture_surfaces_invalid_literal_node(void) {
+void test_reference_invalid_hex_escape_fixture_surfaces_invalid_literal_node(void) {
     SZrTestTimer timer;
     const char* testSummary = "Reference Invalid Hex Escape Fixture Surfaces Invalid Literal Node";
     size_t fileSize = 0;
@@ -1099,7 +1115,7 @@ static void test_reference_invalid_hex_escape_fixture_surfaces_invalid_literal_n
     SZrAstNode* declaration = ZR_NULL;
     SZrAstNode* literal = ZR_NULL;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     state = create_test_state();
@@ -1128,12 +1144,12 @@ static void test_reference_invalid_hex_escape_fixture_surfaces_invalid_literal_n
     free(source);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_multiline_literal_fixture_surfaces_invalid_literal_node(void) {
+void test_reference_multiline_literal_fixture_surfaces_invalid_literal_node(void) {
     SZrTestTimer timer;
     const char* testSummary = "Reference Multiline Literal Fixture Surfaces Invalid Literal Node";
     size_t fileSize = 0;
@@ -1144,7 +1160,7 @@ static void test_reference_multiline_literal_fixture_surfaces_invalid_literal_no
     SZrAstNode* declaration = ZR_NULL;
     SZrAstNode* literal = ZR_NULL;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     state = create_test_state();
@@ -1174,12 +1190,12 @@ static void test_reference_multiline_literal_fixture_surfaces_invalid_literal_no
     free(source);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_invalid_char_width_fixture_surfaces_invalid_char_literal_node(void) {
+void test_reference_invalid_char_width_fixture_surfaces_invalid_char_literal_node(void) {
     SZrTestTimer timer;
     const char* testSummary = "Reference Invalid Char Width Fixture Surfaces Invalid Char Literal Node";
     size_t fileSize = 0;
@@ -1190,7 +1206,7 @@ static void test_reference_invalid_char_width_fixture_surfaces_invalid_char_lite
     SZrAstNode* declaration = ZR_NULL;
     SZrAstNode* literal = ZR_NULL;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     state = create_test_state();
@@ -1220,12 +1236,12 @@ static void test_reference_invalid_char_width_fixture_surfaces_invalid_char_lite
     ZrParser_Ast_Free(state, ast);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_const_reassign_fixture_is_rejected(void) {
+void test_reference_const_reassign_fixture_is_rejected(void) {
     SZrTestTimer timer;
     const char* testSummary = "Reference Const Reassign Fixture Is Rejected";
     size_t fileSize = 0;
@@ -1234,7 +1250,7 @@ static void test_reference_const_reassign_fixture_is_rejected(void) {
     SZrString* sourceName = ZR_NULL;
     SZrFunction* function = ZR_NULL;
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     state = create_test_state();
@@ -1250,12 +1266,12 @@ static void test_reference_const_reassign_fixture_is_rejected(void) {
     free(source);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
+    ZR_TEST_PASS(timer, testSummary);
     destroy_test_state(state);
-    TEST_DIVIDER();
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_constructor_const_control_flow_fixture_matrix(void) {
+void test_reference_constructor_const_control_flow_fixture_matrix(void) {
     static const struct {
         const char* relativePath;
         TZrBool expectCompileSuccess;
@@ -1270,7 +1286,7 @@ static void test_reference_constructor_const_control_flow_fixture_matrix(void) {
     SZrTestTimer timer;
     const char* testSummary = "Reference Constructor Const Control Flow Fixture Matrix";
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     for (size_t index = 0; index < sizeof(kFixtures) / sizeof(kFixtures[0]); index++) {
@@ -1303,11 +1319,11 @@ static void test_reference_constructor_const_control_flow_fixture_matrix(void) {
     }
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_expressions_fixture_matrix(void) {
+void test_reference_expressions_fixture_matrix(void) {
     static const struct {
         const char* relativePath;
         TZrInt64 expectedValue;
@@ -1326,7 +1342,7 @@ static void test_reference_expressions_fixture_matrix(void) {
     SZrTestTimer timer;
     const char* testSummary = "Reference Expressions Fixture Matrix";
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     for (size_t index = 0; index < sizeof(kPassFixtures) / sizeof(kPassFixtures[0]); index++) {
@@ -1340,11 +1356,11 @@ static void test_reference_expressions_fixture_matrix(void) {
     }
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_types_casts_const_fixture_matrix(void) {
+void test_reference_types_casts_const_fixture_matrix(void) {
     static const struct {
         const char* relativePath;
         TZrInt64 expectedValue;
@@ -1358,7 +1374,7 @@ static void test_reference_types_casts_const_fixture_matrix(void) {
     SZrTestTimer timer;
     const char* testSummary = "Reference Types Casts Const Fixture Matrix";
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     for (size_t index = 0; index < sizeof(kPassFixtures) / sizeof(kPassFixtures[0]); index++) {
@@ -1371,11 +1387,11 @@ static void test_reference_types_casts_const_fixture_matrix(void) {
     }
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
 
-static void test_reference_construct_target_misuse_fixture_matrix(void) {
+void test_reference_construct_target_misuse_fixture_matrix(void) {
     static const char* kFailFixtures[] = {
         "core_semantics/object_member_index_construct_target/prototype_misuse_reject_fail.zr",
         "core_semantics/object_member_index_construct_target/new_misuse_reject_fail.zr",
@@ -1383,7 +1399,7 @@ static void test_reference_construct_target_misuse_fixture_matrix(void) {
     SZrTestTimer timer;
     const char* testSummary = "Reference Construct Target Misuse Fixture Matrix";
 
-    TEST_START(testSummary);
+    ZR_TEST_START(testSummary);
     timer.startTime = clock();
 
     for (size_t index = 0; index < sizeof(kFailFixtures) / sizeof(kFailFixtures[0]); index++) {
@@ -1391,49 +1407,7 @@ static void test_reference_construct_target_misuse_fixture_matrix(void) {
     }
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, testSummary);
-    TEST_DIVIDER();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
 }
-
-// 主测试函数
-int main(void) {
-    UNITY_BEGIN();
-    
-    TEST_MODULE_DIVIDER();
-    
-    // 字符字面量测试
-    RUN_TEST(test_char_literals_parsing);
-    RUN_TEST(test_char_literals_compilation);
-    
-    TEST_MODULE_DIVIDER();
-    
-    // 类型转换测试
-    RUN_TEST(test_type_cast_basic_parsing);
-    RUN_TEST(test_type_cast_basic_compilation);
-    RUN_TEST(test_type_cast_struct_parsing);
-    RUN_TEST(test_type_cast_class_parsing);
-    RUN_TEST(test_reference_core_semantics_manifest_inventory);
-    RUN_TEST(test_reference_full_stack_manifest_inventory);
-    RUN_TEST(test_reference_full_stack_aot_matrix_fields_are_present);
-    RUN_TEST(test_reference_full_stack_priority_cases_are_present);
-    RUN_TEST(test_reference_full_stack_master_matrix_document_exists);
-    RUN_TEST(test_reference_core_semantics_matrix_document_exists);
-    RUN_TEST(test_testing_validation_index_mentions_aot_matrix_tiers);
-    RUN_TEST(test_projects_suite_registers_aot_large_fixtures);
-    RUN_TEST(test_execution_order_doc_mentions_current_suites_and_tiers);
-    RUN_TEST(test_reference_unclosed_string_fixture_surfaces_invalid_literal_node);
-    RUN_TEST(test_reference_invalid_hex_escape_fixture_surfaces_invalid_literal_node);
-    RUN_TEST(test_reference_multiline_literal_fixture_surfaces_invalid_literal_node);
-    RUN_TEST(test_reference_invalid_char_width_fixture_surfaces_invalid_char_literal_node);
-    RUN_TEST(test_reference_const_reassign_fixture_is_rejected);
-    RUN_TEST(test_reference_constructor_const_control_flow_fixture_matrix);
-    RUN_TEST(test_reference_expressions_fixture_matrix);
-    RUN_TEST(test_reference_types_casts_const_fixture_matrix);
-    RUN_TEST(test_reference_construct_target_misuse_fixture_matrix);
-    
-    TEST_MODULE_DIVIDER();
-    
-    return UNITY_END();
-}
-
 

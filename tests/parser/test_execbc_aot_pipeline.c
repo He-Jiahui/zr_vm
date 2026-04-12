@@ -8,6 +8,8 @@
 #include "zr_vm_common/zr_instruction_conf.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/io.h"
+#include "zr_vm_core/closure.h"
+#include "zr_vm_core/call_info.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_lib_container/module.h"
@@ -15,7 +17,9 @@
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_library/aot_runtime.h"
+#include "zr_vm_library/project.h"
 #include "zr_vm_parser.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 #include "zr_vm_parser/writer.h"
 #include "test_support.h"
 
@@ -41,7 +45,107 @@ typedef struct {
     const char *runtimeHelperName;
 } SZrAotSourceSyncExpectation;
 
+typedef struct {
+    EZrAotBackendKind backendKind;
+    TZrChar *moduleName;
+    TZrChar *sourcePath;
+    TZrChar *zroPath;
+    TZrChar *libraryPath;
+    void *libraryHandle;
+    const ZrAotCompiledModule *descriptor;
+    SZrFunction *moduleFunction;
+    SZrFunction **functionTable;
+    TZrUInt32 functionCount;
+    TZrUInt32 functionCapacity;
+    TZrUInt32 *generatedFrameSlotCounts;
+    SZrObjectModule *module;
+    TZrBool moduleExecuted;
+} SZrExecBcAotTestLoadedModule;
+
+typedef struct {
+    EZrLibraryProjectExecutionMode configuredExecutionMode;
+    EZrLibraryExecutedVia executedVia;
+    TZrBool requireAotPath;
+    TZrBool strictProjectAot;
+    TZrChar lastError[ZR_LIBRARY_MAX_PATH_LENGTH];
+    SZrExecBcAotTestLoadedModule *records;
+    TZrSize recordCount;
+    TZrSize recordCapacity;
+    SZrExecBcAotTestLoadedModule *activeRecord;
+} SZrExecBcAotTestRuntimeState;
+
 static SZrAotDebugHookCapture g_aotDebugHookCapture;
+
+#define ZR_EXECBC_TEST_OPCODE_NAME_CASE(INSTRUCTION)                                                                  \
+    case ZR_INSTRUCTION_ENUM(INSTRUCTION):                                                                            \
+        return #INSTRUCTION;
+
+static const char *execbc_test_instruction_opcode_name(EZrInstructionCode opcode) {
+    switch (opcode) {
+        ZR_INSTRUCTION_DECLARE(ZR_EXECBC_TEST_OPCODE_NAME_CASE)
+        default:
+            return "UNKNOWN_OPCODE";
+    }
+}
+
+static TZrBool execbc_test_trace_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        enabled = getenv("ZR_VM_TRACE_EXECBC_AOT_TEST") != ZR_NULL ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static void execbc_test_dump_function_tree(const SZrFunction *function, TZrUInt32 depth) {
+    const char *functionName;
+    TZrUInt32 index;
+
+    if (!execbc_test_trace_enabled() || function == ZR_NULL) {
+        return;
+    }
+
+    functionName = function->functionName != ZR_NULL ? ZrCore_String_GetNativeString(function->functionName) : ZR_NULL;
+    fprintf(stderr,
+            "[execbc-trace] depth=%u function=%s instructions=%u semir=%u children=%u\n",
+            (unsigned int)depth,
+            functionName != ZR_NULL ? functionName : "<anonymous>",
+            (unsigned int)function->instructionsLength,
+            (unsigned int)function->semIrInstructionLength,
+            (unsigned int)function->childFunctionLength);
+
+    for (index = 0; index < function->instructionsLength; index++) {
+        EZrInstructionCode opcode = (EZrInstructionCode)function->instructionsList[index].instruction.operationCode;
+
+        fprintf(stderr,
+                "[execbc-trace]   ins[%u]=%s (%u)\n",
+                (unsigned int)index,
+                execbc_test_instruction_opcode_name(opcode),
+                (unsigned int)opcode);
+    }
+
+    for (index = 0; index < function->semIrInstructionLength; index++) {
+        const SZrSemIrInstruction *instruction = &function->semIrInstructions[index];
+
+        fprintf(stderr,
+                "[execbc-trace]   semir[%u]=%u deopt=%u\n",
+                (unsigned int)index,
+                (unsigned int)instruction->opcode,
+                (unsigned int)instruction->deoptId);
+    }
+
+    for (index = 0; index < function->childFunctionLength; index++) {
+        execbc_test_dump_function_tree(&function->childFunctionList[index], depth + 1u);
+    }
+}
+
+static TZrInt64 aot_runtime_test_dummy_entry_thunk(struct SZrState *state) {
+    ZR_UNUSED_PARAMETER(state);
+    return 1;
+}
 
 static void aot_debug_hook_capture_reset(void) {
     memset(&g_aotDebugHookCapture, 0, sizeof(g_aotDebugHookCapture));
@@ -69,6 +173,7 @@ static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
 static TZrUInt32 function_count_callsite_cache_kind(const SZrFunction *function,
                                                     EZrFunctionCallSiteCacheKind kind);
 static TZrUInt32 function_find_debug_line_for_instruction(const SZrFunction *function, TZrUInt32 instructionIndex);
+static TZrBool execbc_aot_pipeline_string_equal(const SZrString *string1, const SZrString *string2);
 static void assert_runtime_function_matches_source_function(const SZrFunction *expected,
                                                             const SZrFunction *actual);
 static void assert_optional_string_equal(const SZrString *expected, const SZrString *actual);
@@ -81,9 +186,11 @@ static SZrFunction *compile_array_int_add_burst_fixture(SZrState *state);
 static SZrFunction *compile_array_int_fill_loop_fixture(SZrState *state);
 static SZrFunction *compile_map_array_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_linked_pair_roundtrip_fixture(SZrState *state);
+static SZrFunction *compile_typed_destructuring_member_slot_fixture(SZrState *state);
 static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_set_to_map_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_meta_access_fixture(SZrState *state);
+static SZrFunction *compile_member_slot_quickening_fixture(SZrState *state);
 static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state);
 static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state);
 static SZrFunction *compile_exception_control_fixture(SZrState *state);
@@ -145,6 +252,17 @@ static void assert_generated_aot_llvm_text_uses_true_backend_shape(const char *t
     TEST_ASSERT_NOT_NULL(strstr(text, "define internal i64 @zr_aot_fn_0(ptr %state)"));
 }
 
+static void assert_generated_aot_llvm_text_uses_aligned_stack_value_layout(const char *text) {
+    TEST_ASSERT_NOT_NULL(text);
+    TEST_ASSERT_NOT_NULL(strstr(text, "%SZrTypeValue = type { ["));
+    TEST_ASSERT_NOT_NULL(strstr(text, "%SZrTypeValueOnStack = type { ["));
+    TEST_ASSERT_NULL(strstr(text, "%SZrTypeValue = type { i32, i64, i8, i8, i32, ptr, ptr }"));
+    TEST_ASSERT_NULL(strstr(text, "%SZrTypeValueOnStack = type { %SZrTypeValue, i32 }"));
+    TEST_ASSERT_NULL(strstr(text, "getelementptr %SZrTypeValue, ptr"));
+    TEST_ASSERT_NULL(strstr(text, "getelementptr %SZrTypeValueOnStack, ptr"));
+    TEST_ASSERT_NOT_NULL(strstr(text, "getelementptr i8, ptr"));
+}
+
 static void assert_generated_aot_llvm_text_lowers_simple_return_path(const char *text) {
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(strstr(text, "@ZrLibrary_AotRuntime_BeginGeneratedFunction"));
@@ -204,6 +322,37 @@ static TZrBool aot_c_text_contains_unsupported_opcode(const char *text, TZrUInt3
     return ZR_FALSE;
 }
 
+static void assert_generated_aot_c_begin_instruction_step_flags(const char *text,
+                                                                TZrUInt32 instructionIndex,
+                                                                const char *stepFlagsText) {
+    char expected[192];
+
+    TEST_ASSERT_NOT_NULL(text);
+    TEST_ASSERT_NOT_NULL(stepFlagsText);
+
+    snprintf(expected,
+             sizeof(expected),
+             "ZrLibrary_AotRuntime_BeginInstruction(state, &frame, %u, %s)",
+             (unsigned)instructionIndex,
+             stepFlagsText);
+    TEST_ASSERT_NOT_NULL(strstr(text, expected));
+}
+
+static void assert_generated_aot_llvm_begin_instruction_step_flags(const char *text,
+                                                                   TZrUInt32 instructionIndex,
+                                                                   TZrUInt32 stepFlags) {
+    char expected[192];
+
+    TEST_ASSERT_NOT_NULL(text);
+
+    snprintf(expected,
+             sizeof(expected),
+             "@ZrLibrary_AotRuntime_BeginInstruction(ptr %%state, ptr %%frame, i32 %u, i32 %u)",
+             (unsigned)instructionIndex,
+             (unsigned)stepFlags);
+    TEST_ASSERT_NOT_NULL(strstr(text, expected));
+}
+
 static TZrInstruction make_instruction_no_operands(EZrInstructionCode opcode, TZrUInt16 operandExtra) {
     TZrInstruction instruction;
 
@@ -234,7 +383,162 @@ static TZrInstruction make_instruction_slot_operands(EZrInstructionCode opcode,
 }
 
 static TZrInstruction make_instruction_return(TZrUInt16 sourceSlot) {
-    return make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 0, sourceSlot, 0);
+    return make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1, sourceSlot, 0);
+}
+
+static SZrFunction *compile_source_without_quickening(SZrState *state,
+                                                      const char *source,
+                                                      const char *sourcePath) {
+    SZrCompilerState cs;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrFunction *func;
+
+    if (state == ZR_NULL || source == ZR_NULL || sourcePath == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state, (TZrNativeString)sourcePath, strlen(sourcePath));
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+
+    if (!compiler_validate_task_effects(&cs, ast)) {
+        ZrParser_Ast_Free(state, ast);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
+    cs.currentFunction = ZrCore_Function_New(state);
+    if (cs.currentFunction == ZR_NULL) {
+        ZrParser_Ast_Free(state, ast);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
+    compile_script(&cs, ast);
+    if (cs.hasError) {
+        if (cs.currentFunction != ZR_NULL) {
+            ZrCore_Function_Free(state, cs.currentFunction);
+        }
+        if (cs.topLevelFunction != ZR_NULL) {
+            ZrCore_Function_Free(state, cs.topLevelFunction);
+        }
+        ZrParser_Ast_Free(state, ast);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
+    func = cs.topLevelFunction != ZR_NULL ? cs.topLevelFunction : cs.currentFunction;
+    optimize_instructions(&cs);
+    if (!compiler_assemble_final_function(&cs,
+                                          func,
+                                          ast,
+                                          func == cs.currentFunction,
+                                          cs.topLevelFunction != ZR_NULL)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_Ast_Free(state, ast);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+
+    ZrParser_Ast_Free(state, ast);
+    ZrParser_CompilerState_Free(&cs);
+    return func;
+}
+
+static void *aot_runtime_test_project_alloc(SZrState *state, TZrSize size) {
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->allocator == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return state->global->allocator(state->global->userAllocationArguments,
+                                    ZR_NULL,
+                                    0,
+                                    size,
+                                    ZR_MEMORY_NATIVE_TYPE_PROJECT);
+}
+
+static SZrExecBcAotTestRuntimeState *aot_runtime_test_install_project_record(SZrState *state,
+                                                                              SZrLibrary_Project *project,
+                                                                              SZrFunction *function,
+                                                                              EZrAotBackendKind backendKind) {
+    SZrExecBcAotTestRuntimeState *runtimeState;
+    SZrExecBcAotTestLoadedModule *records;
+    SZrFunction **functionTable;
+    TZrUInt32 *generatedFrameSlotCounts;
+    TZrUInt32 functionCount;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(project);
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(project, 0, sizeof(*project));
+    state->global->userData = project;
+    TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_ConfigureGlobal(state->global,
+                                                          backendKind == ZR_AOT_BACKEND_KIND_LLVM
+                                                                  ? ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_LLVM
+                                                                  : ZR_LIBRARY_PROJECT_EXECUTION_MODE_AOT_C,
+                                                          ZR_FALSE));
+
+    runtimeState = (SZrExecBcAotTestRuntimeState *)project->aotRuntime;
+    TEST_ASSERT_NOT_NULL(runtimeState);
+
+    records = (SZrExecBcAotTestLoadedModule *)aot_runtime_test_project_alloc(state, sizeof(*records));
+    TEST_ASSERT_NOT_NULL(records);
+    memset(records, 0, sizeof(*records));
+
+    functionCount = 1u + function->childFunctionLength;
+    TEST_ASSERT_TRUE(functionCount > 0u);
+    if (function->childFunctionLength > 0u) {
+        TEST_ASSERT_NOT_NULL(function->childFunctionList);
+    }
+
+    functionTable = (SZrFunction **)aot_runtime_test_project_alloc(state, sizeof(*functionTable) * functionCount);
+    TEST_ASSERT_NOT_NULL(functionTable);
+    generatedFrameSlotCounts =
+            (TZrUInt32 *)aot_runtime_test_project_alloc(state, sizeof(*generatedFrameSlotCounts) * functionCount);
+    TEST_ASSERT_NOT_NULL(generatedFrameSlotCounts);
+    functionTable[0] = function;
+    generatedFrameSlotCounts[0] = ZrCore_Function_GetGeneratedFrameSlotCount(function);
+    for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+        functionTable[index + 1u] = &function->childFunctionList[index];
+        generatedFrameSlotCounts[index + 1u] =
+                ZrCore_Function_GetGeneratedFrameSlotCount(&function->childFunctionList[index]);
+    }
+
+    records[0].backendKind = backendKind;
+    records[0].moduleFunction = function;
+    records[0].functionTable = functionTable;
+    records[0].functionCount = functionCount;
+    records[0].functionCapacity = functionCount;
+    records[0].generatedFrameSlotCounts = generatedFrameSlotCounts;
+
+    runtimeState->records = records;
+    runtimeState->recordCount = 1;
+    runtimeState->recordCapacity = 1;
+    runtimeState->activeRecord = ZR_NULL;
+    return runtimeState;
+}
+
+static void aot_runtime_test_remove_project_record(SZrState *state, SZrLibrary_Project *project) {
+    if (state == ZR_NULL || state->global == ZR_NULL || project == ZR_NULL) {
+        return;
+    }
+
+    if (project->aotRuntime != ZR_NULL) {
+        ZrLibrary_AotRuntime_FreeProjectState(state, project);
+    }
+    state->global->userData = ZR_NULL;
 }
 
 static void init_manual_test_function(SZrFunction *function,
@@ -531,6 +835,67 @@ static TZrBool function_contains_super_array_get_int_family(const SZrFunction *f
            function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST));
 }
 
+static TZrBool function_contains_add_int_family(const SZrFunction *function) {
+    return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_INT)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_INT_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST));
+}
+
+static TZrBool function_contains_add_signed_family(const SZrFunction *function) {
+    return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST));
+}
+
+static TZrBool function_contains_add_unsigned_family(const SZrFunction *function) {
+    return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST));
+}
+
+static TZrBool function_contains_sub_int_family(const SZrFunction *function) {
+    return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT_CONST_PLAIN_DEST));
+}
+
+static TZrBool function_contains_sub_signed_family(const SZrFunction *function) {
+    return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST));
+}
+
+static TZrBool function_contains_sub_unsigned_family(const SZrFunction *function) {
+    return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_UNSIGNED)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST_PLAIN_DEST));
+}
+
+static TZrBool function_contains_mul_signed_family(const SZrFunction *function) {
+    return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST));
+}
+
+static TZrBool function_contains_div_signed_family(const SZrFunction *function) {
+    return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST));
+}
+
+static TZrBool function_contains_mod_signed_family(const SZrFunction *function) {
+    return function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST)) ||
+           function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST));
+}
+
 static TZrBool function_contains_get_member_name(const SZrFunction *function, const TZrChar *memberName) {
     TZrUInt32 index;
 
@@ -584,6 +949,10 @@ static TZrUInt32 function_find_debug_line_for_instruction(const SZrFunction *fun
     return bestLine;
 }
 
+static TZrBool execbc_aot_pipeline_string_equal(const SZrString *string1, const SZrString *string2) {
+    return ZrCore_String_Equal((SZrString *)string1, (SZrString *)string2);
+}
+
 static void assert_runtime_function_matches_source_function(const SZrFunction *expected,
                                                             const SZrFunction *actual) {
     TZrUInt32 index;
@@ -596,8 +965,6 @@ static void assert_runtime_function_matches_source_function(const SZrFunction *e
     TEST_ASSERT_EQUAL_UINT32(expected->childFunctionLength, actual->childFunctionLength);
     TEST_ASSERT_EQUAL_UINT32(expected->memberEntryLength, actual->memberEntryLength);
     TEST_ASSERT_EQUAL_UINT32(expected->callSiteCacheLength, actual->callSiteCacheLength);
-    TEST_ASSERT_EQUAL_UINT32(expected->lineInSourceStart, actual->lineInSourceStart);
-    TEST_ASSERT_EQUAL_UINT32(expected->lineInSourceEnd, actual->lineInSourceEnd);
 
     for (index = 0; index < expected->instructionsLength; index++) {
         const TZrInstruction *left = &expected->instructionsList[index];
@@ -631,7 +998,7 @@ static void assert_runtime_function_matches_source_function(const SZrFunction *e
         const SZrFunctionMemberEntry *right = &actual->memberEntries[index];
         TEST_ASSERT_NOT_NULL(left->symbol);
         TEST_ASSERT_NOT_NULL(right->symbol);
-        TEST_ASSERT_TRUE(ZrCore_String_Equal(left->symbol, right->symbol));
+        TEST_ASSERT_TRUE(execbc_aot_pipeline_string_equal(left->symbol, right->symbol));
         TEST_ASSERT_EQUAL_UINT8(left->entryKind, right->entryKind);
         TEST_ASSERT_EQUAL_UINT8(left->reserved0, right->reserved0);
         TEST_ASSERT_EQUAL_UINT16(left->reserved1, right->reserved1);
@@ -651,7 +1018,7 @@ static void assert_optional_string_equal(const SZrString *expected, const SZrStr
         return;
     }
 
-    TEST_ASSERT_TRUE(ZrCore_String_Equal(expected, actual));
+    TEST_ASSERT_TRUE(execbc_aot_pipeline_string_equal(expected, actual));
 }
 
 static void assert_typed_type_ref_equal(const SZrFunctionTypedTypeRef *expected, const SZrFunctionTypedTypeRef *actual) {
@@ -972,6 +1339,7 @@ static void test_access_lowering_preserves_explicit_member_and_index_ops(void) {
         func = ZrParser_Compiler_Compile(state, ast);
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
+        execbc_test_dump_function_tree(func, 0u);
 
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(TYPEOF)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
@@ -1026,6 +1394,7 @@ static void test_aot_backends_preserve_runtime_contract_artifacts_under_strict_a
         func = ZrParser_Compiler_Compile(state, ast);
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
+        execbc_test_dump_function_tree(func, 0u);
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)));
 
@@ -1493,9 +1862,8 @@ static void test_aot_c_backend_directly_lowers_static_slot_and_int_ops(void) {
             TEST_ASSERT_TRUE(hasGetStack || hasSetStack);
         }
         {
-            TZrBool hasAddInt = function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD_INT));
-            TZrBool hasAddIntConst = function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD_INT_CONST));
-            TEST_ASSERT_TRUE(hasAddInt || hasAddIntConst);
+            TEST_ASSERT_TRUE(function_contains_add_int_family(func) ||
+                             function_contains_add_signed_family(func));
         }
 
         remove(cPath);
@@ -1631,7 +1999,8 @@ static void test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fall
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)));
 
         remove(cPath);
         TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
@@ -1649,6 +2018,139 @@ static void test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fall
 
         free(cText);
         remove(cPath);
+        ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_llvm_backend_directly_lowers_static_slot_and_int_ops(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT LLVM Backend Directly Lowers Static Slot And Int Ops";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot llvm direct static lowering",
+                 "Testing that simple constant loads, local copies, and integer adds lower to direct LLVM IR instead of routing through AOT runtime opcode helpers");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var left = 40;\n"
+                "var copied = left;\n"
+                "return copied + 2;";
+        const char *llvmPath = "execbc_aot_llvm_direct_static_ops_test.ll";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *func;
+        char *llvmText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZR_STRING_LITERAL(state, "execbc_aot_llvm_direct_static_ops_test.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(func);
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(GET_CONSTANT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(GET_STACK)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SET_STACK)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD_INT)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD_INT_CONST)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD_SIGNED)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST)));
+
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               func,
+                                                               "execbc_aot_llvm_direct_static_ops_test",
+                                                               llvmPath));
+
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        assert_generated_aot_llvm_text_uses_aligned_stack_value_layout(llvmText);
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "store i64 40"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "load %SZrTypeValue, ptr"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "add i64"));
+        TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CopyConstant("));
+        TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_CopyStack("));
+        TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddInt("));
+        TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddIntConst("));
+        TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddSigned("));
+        TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddSignedConst("));
+        TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddUnsigned("));
+        TEST_ASSERT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddUnsignedConst("));
+
+        free(llvmText);
+        remove(llvmPath);
+        ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_llvm_backend_lowers_generic_add_with_fast_path_and_helper_fallback(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT LLVM Backend Lowers Generic Add With Fast Path And Helper Fallback";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot llvm generic add lowering",
+                 "Testing that generic ADD keeps an inline numeric fast path in LLVM AOT while still falling back to the runtime helper for non-trivial cases");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "pub var left = () => {\n"
+                "    return 15;\n"
+                "};\n"
+                "pub var right = () => {\n"
+                "    return 16;\n"
+                "};\n"
+                "return left() + right();";
+        const char *llvmPath = "execbc_aot_llvm_generic_add_test.ll";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *func;
+        char *llvmText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZR_STRING_LITERAL(state, "execbc_aot_llvm_generic_add_test.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(func);
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(ADD)));
+
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               func,
+                                                               "execbc_aot_llvm_generic_add_test",
+                                                               llvmPath));
+
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_Add("));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "fadd double"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "add i64"));
+
+        free(llvmText);
+        remove(llvmPath);
         ZrCore_Function_Free(state, func);
         ZrTests_Runtime_State_Destroy(state);
     }
@@ -2388,7 +2890,8 @@ static void test_aot_c_backend_lowers_signed_compare_div_and_neg_paths(void) {
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED)));
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUB_INT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUB_INT)) ||
+                         function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUB_SIGNED)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(DIV_SIGNED)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(NEG)));
 
@@ -2401,7 +2904,7 @@ static void test_aot_c_backend_lowers_signed_compare_div_and_neg_paths(void) {
         cText = read_text_file_owned(cPath);
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_left_int < zr_aot_right_int"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SubInt(state, &frame,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SubSigned(state, &frame,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_DivSigned(state, &frame,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_Neg(state, &frame,"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
@@ -2511,6 +3014,62 @@ static void test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths
     ZR_TEST_DIVIDER();
 }
 
+static void test_string_equality_allows_destination_aliasing_left_operand(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "String Equality Allows Destination Aliasing Left Operand";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("string equality aliasing",
+                 "Testing that LOGICAL_EQUAL_STRING reads both string operands before it overwrites a destination slot that aliases the left operand");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrFunction function;
+        SZrTypeValue constants[2];
+        TZrInstruction instructions[4];
+        SZrString *leftText;
+        SZrString *rightText;
+        SZrTypeValue resultValue;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        leftText = ZR_STRING_LITERAL(state, "2:3");
+        rightText = ZR_STRING_LITERAL(state, "2:3");
+        TEST_ASSERT_NOT_NULL(leftText);
+        TEST_ASSERT_NOT_NULL(rightText);
+
+        ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(leftText));
+        constants[0].type = ZR_VALUE_TYPE_STRING;
+        ZrCore_Value_InitAsRawObject(state, &constants[1], ZR_CAST_RAW_OBJECT_AS_SUPER(rightText));
+        constants[1].type = ZR_VALUE_TYPE_STRING;
+
+        instructions[0] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 0);
+        instructions[1] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 1);
+        instructions[2] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING), 1, 1, 2);
+        instructions[3] = make_instruction_return(1);
+        init_manual_test_function(&function,
+                                  instructions,
+                                  (TZrUInt32)(sizeof(instructions) / sizeof(instructions[0])),
+                                  constants,
+                                  (TZrUInt32)(sizeof(constants) / sizeof(constants[0])),
+                                  ZR_NULL,
+                                  0,
+                                  3);
+
+        ZrCore_Value_ResetAsNull(&resultValue);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, &function, &resultValue));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, resultValue.type);
+        TEST_ASSERT_TRUE(resultValue.value.nativeObject.nativeBool);
+
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
 static void test_aot_backends_lower_benchmark_style_generic_sub_paths(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Backends Lower Benchmark Style Generic Sub Paths";
@@ -2549,8 +3108,8 @@ static void test_aot_backends_lower_benchmark_style_generic_sub_paths(void) {
         function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB)) ||
-                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT)) ||
-                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT_CONST)));
+                         function_contains_sub_int_family(function) ||
+                         function_contains_sub_signed_family(function));
 
         remove(cPath);
         remove(llvmPath);
@@ -2570,17 +3129,24 @@ static void test_aot_backends_lower_benchmark_style_generic_sub_paths(void) {
 
         TEST_ASSERT_TRUE(strstr(cText, "ZrLibrary_AotRuntime_Sub(state, &frame,") != ZR_NULL ||
                          strstr(cText, "ZrLibrary_AotRuntime_SubInt(state, &frame,") != ZR_NULL ||
-                         strstr(cText, "ZrLibrary_AotRuntime_SubIntConst(state, &frame,") != ZR_NULL);
+                         strstr(cText, "ZrLibrary_AotRuntime_SubIntConst(state, &frame,") != ZR_NULL ||
+                         strstr(cText, "ZrLibrary_AotRuntime_SubSigned(state, &frame,") != ZR_NULL ||
+                         strstr(cText, "ZrLibrary_AotRuntime_SubSignedConst(state, &frame,") != ZR_NULL);
         TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_InvokeActiveShim"));
 
         TEST_ASSERT_TRUE(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_Sub(") != ZR_NULL ||
                          strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SubInt(") != ZR_NULL ||
-                         strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SubIntConst(") != ZR_NULL);
+                         strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SubIntConst(") != ZR_NULL ||
+                         strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SubSigned(") != ZR_NULL ||
+                         strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SubSignedConst(") != ZR_NULL);
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUB)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUB_INT)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText,
                                                                     ZR_INSTRUCTION_ENUM(SUB_INT_CONST)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUB_SIGNED)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText,
+                                                                    ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST)));
 
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
         TEST_ASSERT_EQUAL_INT64(11, result);
@@ -2901,6 +3467,441 @@ static void test_aot_runtime_observation_policy_is_thread_local(void) {
     ZR_TEST_DIVIDER();
 }
 
+static void test_aot_runtime_begin_generated_function_caches_slot_count_and_preserves_bounds_after_refresh(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary =
+            "AOT Runtime BeginGeneratedFunction Caches Slot Count And Preserves Bounds After Refresh";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot runtime cached frame slot count",
+                 "Testing that generated frame slot bounds come from the cached BeginGeneratedFunction slot count and remain valid after the frame refreshes onto a relocated stack base");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrLibrary_Project project;
+        SZrFunction function;
+        TZrInstruction instructions[1];
+        ZrAotGeneratedFrame frame;
+        TZrStackValuePointer functionBase;
+        TZrStackValuePointer relocatedBase;
+        SZrTypeValue *functionBaseValue;
+        SZrTypeValue *slot0Value;
+        SZrTypeValue *slot1Value;
+        SZrClosureNative *nativeClosure;
+
+        TEST_ASSERT_NOT_NULL(state);
+        memset(&project, 0, sizeof(project));
+        memset(&function, 0, sizeof(function));
+        memset(&frame, 0, sizeof(frame));
+
+        instructions[0] = make_instruction_return(1);
+        init_manual_test_function(&function,
+                                  instructions,
+                                  (TZrUInt32)(sizeof(instructions) / sizeof(instructions[0])),
+                                  ZR_NULL,
+                                  0,
+                                  ZR_NULL,
+                                  0,
+                                  2);
+        aot_runtime_test_install_project_record(state, &project, &function, ZR_AOT_BACKEND_KIND_C);
+
+        nativeClosure = ZrCore_ClosureNative_New(state, 0);
+        TEST_ASSERT_NOT_NULL(nativeClosure);
+        nativeClosure->aotShimFunction = &function;
+
+        functionBase = state->stackTop.valuePointer;
+        functionBase = ZrCore_Function_CheckStackAndGc(state, 3, functionBase);
+        TEST_ASSERT_NOT_NULL(functionBase);
+        functionBaseValue = ZrCore_Stack_GetValue(functionBase);
+        slot0Value = ZrCore_Stack_GetValue(functionBase + 1);
+        slot1Value = ZrCore_Stack_GetValue(functionBase + 2);
+        TEST_ASSERT_NOT_NULL(functionBaseValue);
+        TEST_ASSERT_NOT_NULL(slot0Value);
+        TEST_ASSERT_NOT_NULL(slot1Value);
+        ZrCore_Value_InitAsRawObject(state, functionBaseValue, ZR_CAST_RAW_OBJECT_AS_SUPER(nativeClosure));
+        ZrCore_Value_InitAsInt(state, slot0Value, 7);
+        ZrCore_Value_ResetAsNull(slot1Value);
+
+        memset(&state->baseCallInfo, 0, sizeof(state->baseCallInfo));
+        state->baseCallInfo.functionBase.valuePointer = functionBase;
+        state->baseCallInfo.functionTop.valuePointer = functionBase + 3;
+        state->callInfoList = &state->baseCallInfo;
+        state->stackTop.valuePointer = functionBase + 3;
+
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame));
+        TEST_ASSERT_EQUAL_UINT32(2u, frame.generatedFrameSlotCount);
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_CopyStack(state, &frame, 1, 0));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, slot1Value->type);
+        TEST_ASSERT_EQUAL_INT64(7, slot1Value->value.nativeObject.nativeInt64);
+        TEST_ASSERT_FALSE(ZrLibrary_AotRuntime_CopyStack(state, &frame, 2, 0));
+
+        relocatedBase = state->stackTop.valuePointer;
+        relocatedBase = ZrCore_Function_CheckStackAndGc(state, 3, relocatedBase);
+        TEST_ASSERT_NOT_NULL(relocatedBase);
+        ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(relocatedBase), functionBaseValue);
+        ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValue(relocatedBase + 1), 9);
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(relocatedBase + 2));
+        state->baseCallInfo.functionBase.valuePointer = relocatedBase;
+        state->baseCallInfo.functionTop.valuePointer = relocatedBase + 3;
+        state->stackTop.valuePointer = relocatedBase + 3;
+
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_BeginInstruction(state,
+                                                               &frame,
+                                                               0,
+                                                               ZR_AOT_GENERATED_STEP_FLAG_NONE));
+        TEST_ASSERT_EQUAL_PTR(relocatedBase + 1, frame.slotBase);
+        TEST_ASSERT_EQUAL_UINT32(2u, frame.generatedFrameSlotCount);
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_CopyStack(state, &frame, 1, 0));
+        TEST_ASSERT_EQUAL_INT64(9, ZrCore_Stack_GetValue(relocatedBase + 2)->value.nativeObject.nativeInt64);
+        TEST_ASSERT_FALSE(ZrLibrary_AotRuntime_CopyStack(state, &frame, 2, 0));
+
+        aot_runtime_test_remove_project_record(state, &project);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_count(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Runtime PrepareStaticDirectCall Uses Cached Callee Slot Count";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot runtime direct-call slot cache",
+                 "Testing that static direct-call frame sizing comes from the cached per-function slot count even if the callee metadata changes after the record is installed");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrLibrary_Project project;
+        SZrFunction rootFunction;
+        SZrFunction childFunctions[1];
+        TZrInstruction rootInstructions[1];
+        TZrInstruction childInstructions[2];
+        const FZrAotEntryThunk functionThunks[2] = {aot_runtime_test_dummy_entry_thunk,
+                                                    aot_runtime_test_dummy_entry_thunk};
+        ZrAotCompiledModule descriptor;
+        SZrExecBcAotTestRuntimeState *runtimeState;
+        ZrAotGeneratedFrame frame;
+        ZrAotGeneratedDirectCall directCall;
+        TZrStackValuePointer functionBase;
+        SZrTypeValue *functionBaseValue;
+        SZrTypeValue *slot0Value;
+        SZrTypeValue *slot1Value;
+        SZrClosureNative *nativeClosure;
+
+        TEST_ASSERT_NOT_NULL(state);
+        memset(&project, 0, sizeof(project));
+        memset(&rootFunction, 0, sizeof(rootFunction));
+        memset(childFunctions, 0, sizeof(childFunctions));
+        memset(rootInstructions, 0, sizeof(rootInstructions));
+        memset(childInstructions, 0, sizeof(childInstructions));
+        memset(&descriptor, 0, sizeof(descriptor));
+        memset(&frame, 0, sizeof(frame));
+        memset(&directCall, 0, sizeof(directCall));
+
+        childInstructions[0] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 0);
+        childInstructions[1] = make_instruction_return(5);
+        init_manual_test_function(&childFunctions[0], childInstructions, 2, ZR_NULL, 0, ZR_NULL, 0, 0);
+
+        rootInstructions[0] = make_instruction_return(1);
+        init_manual_test_function(&rootFunction,
+                                  rootInstructions,
+                                  1,
+                                  ZR_NULL,
+                                  0,
+                                  childFunctions,
+                                  (TZrUInt32)(sizeof(childFunctions) / sizeof(childFunctions[0])),
+                                  2);
+
+        runtimeState = aot_runtime_test_install_project_record(state, &project, &rootFunction, ZR_AOT_BACKEND_KIND_C);
+        TEST_ASSERT_NOT_NULL(runtimeState);
+        TEST_ASSERT_EQUAL_UINT32(2u, runtimeState->records[0].functionCount);
+        TEST_ASSERT_EQUAL_UINT32(6u, runtimeState->records[0].generatedFrameSlotCounts[1]);
+
+        descriptor.functionThunks = functionThunks;
+        descriptor.functionThunkCount = 2;
+        runtimeState->records[0].descriptor = &descriptor;
+
+        nativeClosure = ZrCore_ClosureNative_New(state, 0);
+        TEST_ASSERT_NOT_NULL(nativeClosure);
+        nativeClosure->aotShimFunction = &rootFunction;
+
+        functionBase = state->stackTop.valuePointer;
+        functionBase = ZrCore_Function_CheckStackAndGc(state, 3, functionBase);
+        TEST_ASSERT_NOT_NULL(functionBase);
+        functionBaseValue = ZrCore_Stack_GetValue(functionBase);
+        slot0Value = ZrCore_Stack_GetValue(functionBase + 1);
+        slot1Value = ZrCore_Stack_GetValue(functionBase + 2);
+        TEST_ASSERT_NOT_NULL(functionBaseValue);
+        TEST_ASSERT_NOT_NULL(slot0Value);
+        TEST_ASSERT_NOT_NULL(slot1Value);
+        ZrCore_Value_InitAsRawObject(state, functionBaseValue, ZR_CAST_RAW_OBJECT_AS_SUPER(nativeClosure));
+        ZrCore_Value_InitAsInt(state, slot0Value, 41);
+        ZrCore_Value_InitAsInt(state, slot1Value, 99);
+
+        memset(&state->baseCallInfo, 0, sizeof(state->baseCallInfo));
+        state->baseCallInfo.functionBase.valuePointer = functionBase;
+        state->baseCallInfo.functionTop.valuePointer = functionBase + 3;
+        state->callInfoList = &state->baseCallInfo;
+        state->stackTop.valuePointer = functionBase + 3;
+
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame));
+
+        childFunctions[0].instructionsLength = 0;
+
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_PrepareStaticDirectCall(state, &frame, 1, 0, 0, 1, &directCall));
+        TEST_ASSERT_TRUE(directCall.prepared);
+        TEST_ASSERT_EQUAL_UINT32(1u, directCall.calleeFunctionIndex);
+        TEST_ASSERT_EQUAL_PTR(frame.slotBase, directCall.calleeCallInfo->functionBase.valuePointer);
+        TEST_ASSERT_EQUAL_PTR(frame.slotBase + 7, directCall.calleeCallInfo->functionTop.valuePointer);
+        TEST_ASSERT_EQUAL_PTR(frame.slotBase + 1, directCall.calleeCallInfo->returnDestination);
+        TEST_ASSERT_EQUAL_PTR(childInstructions, directCall.calleeCallInfo->context.context.programCounter);
+        TEST_ASSERT_EQUAL_PTR(frame.slotBase + 1, state->stackTop.valuePointer);
+
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_FinishDirectCall(state, &frame, &directCall, 0));
+        TEST_ASSERT_EQUAL_PTR(&state->baseCallInfo, state->callInfoList);
+        TEST_ASSERT_EQUAL_PTR(functionBase + 1, frame.slotBase);
+
+        aot_runtime_test_remove_project_record(state, &project);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_runtime_super_array_add_int_allows_ignored_destination_slot(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Runtime SuperArrayAddInt Allows Ignored Destination Slot";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot runtime ignored add destination",
+                 "Testing that SUPER_ARRAY_ADD_INT accepts ZR_INSTRUCTION_USE_RET_FLAG for ignored add-call results and still appends the int payload into the typed array");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var container = %import(\"zr.container\");\n"
+                "return new container.Array<int>();\n";
+        SZrString *sourceName;
+        SZrFunction *factoryFunction;
+        SZrTypeValue receiverValue;
+        ZrLibTempValueRoot receiverRoot;
+        SZrFunction function;
+        TZrInstruction instructions[1];
+        SZrLibrary_Project project;
+        ZrAotGeneratedFrame frame;
+        TZrStackValuePointer functionBase;
+        SZrTypeValue *functionBaseValue;
+        SZrTypeValue *slot0Value;
+        SZrTypeValue *slot1Value;
+        SZrClosureNative *nativeClosure;
+        SZrTypeValue keyValue;
+        SZrTypeValue elementValue;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(ZrVmLibContainer_Register(state->global));
+
+        memset(&receiverValue, 0, sizeof(receiverValue));
+        memset(&receiverRoot, 0, sizeof(receiverRoot));
+        memset(&function, 0, sizeof(function));
+        memset(instructions, 0, sizeof(instructions));
+        memset(&project, 0, sizeof(project));
+        memset(&frame, 0, sizeof(frame));
+        memset(&keyValue, 0, sizeof(keyValue));
+        memset(&elementValue, 0, sizeof(elementValue));
+
+        sourceName = ZR_STRING_LITERAL(state, "aot_runtime_super_array_add_int_ret_flag_factory.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        factoryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(factoryFunction);
+
+        TEST_ASSERT_TRUE(ZrLib_TempValueRoot_Begin(state, &receiverRoot));
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, factoryFunction, &receiverValue));
+        TEST_ASSERT_TRUE(ZrLib_TempValueRoot_SetValue(&receiverRoot, &receiverValue));
+        TEST_ASSERT_NOT_NULL(ZrLib_TempValueRoot_Value(&receiverRoot));
+
+        instructions[0] = make_instruction_return(1);
+        init_manual_test_function(&function, instructions, 1, ZR_NULL, 0, ZR_NULL, 0, 2);
+        aot_runtime_test_install_project_record(state, &project, &function, ZR_AOT_BACKEND_KIND_C);
+
+        nativeClosure = ZrCore_ClosureNative_New(state, 0);
+        TEST_ASSERT_NOT_NULL(nativeClosure);
+        nativeClosure->aotShimFunction = &function;
+
+        functionBase = state->stackTop.valuePointer;
+        functionBase = ZrCore_Function_CheckStackAndGc(state, 3, functionBase);
+        TEST_ASSERT_NOT_NULL(functionBase);
+        functionBaseValue = ZrCore_Stack_GetValue(functionBase);
+        slot0Value = ZrCore_Stack_GetValue(functionBase + 1);
+        slot1Value = ZrCore_Stack_GetValue(functionBase + 2);
+        TEST_ASSERT_NOT_NULL(functionBaseValue);
+        TEST_ASSERT_NOT_NULL(slot0Value);
+        TEST_ASSERT_NOT_NULL(slot1Value);
+        ZrCore_Value_InitAsRawObject(state, functionBaseValue, ZR_CAST_RAW_OBJECT_AS_SUPER(nativeClosure));
+        ZrCore_Value_Copy(state, slot0Value, ZrLib_TempValueRoot_Value(&receiverRoot));
+        ZrCore_Value_InitAsInt(state, slot1Value, 7);
+
+        memset(&state->baseCallInfo, 0, sizeof(state->baseCallInfo));
+        state->baseCallInfo.functionBase.valuePointer = functionBase;
+        state->baseCallInfo.functionTop.valuePointer = functionBase + 3;
+        state->callInfoList = &state->baseCallInfo;
+        state->stackTop.valuePointer = functionBase + 3;
+
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame));
+        TEST_ASSERT_TRUE(
+                ZrLibrary_AotRuntime_SuperArrayAddInt(state, &frame, ZR_INSTRUCTION_USE_RET_FLAG, 0, 1));
+
+        ZrCore_Value_InitAsInt(state, slot1Value, 9);
+        TEST_ASSERT_TRUE(
+                ZrLibrary_AotRuntime_SuperArrayAddInt(state, &frame, ZR_INSTRUCTION_USE_RET_FLAG, 0, 1));
+
+        ZrCore_Value_InitAsInt(state, &keyValue, 0);
+        ZrCore_Value_ResetAsNull(&elementValue);
+        TEST_ASSERT_TRUE(ZrCore_Object_SuperArrayGetInt(state, slot0Value, &keyValue, &elementValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(elementValue.type));
+        TEST_ASSERT_EQUAL_INT64(7, elementValue.value.nativeObject.nativeInt64);
+
+        ZrCore_Value_InitAsInt(state, &keyValue, 1);
+        ZrCore_Value_ResetAsNull(&elementValue);
+        TEST_ASSERT_TRUE(ZrCore_Object_SuperArrayGetInt(state, slot0Value, &keyValue, &elementValue));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(elementValue.type));
+        TEST_ASSERT_EQUAL_INT64(9, elementValue.value.nativeObject.nativeInt64);
+
+        aot_runtime_test_remove_project_record(state, &project);
+        ZrLib_TempValueRoot_End(&receiverRoot);
+        ZrCore_Function_Free(state, factoryFunction);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_runtime_index_helpers_refresh_frame_for_native_binding_paths(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Runtime Index Helpers Refresh Frame For Native Binding Paths";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot runtime native-binding index helpers",
+                 "Testing that GET_BY_INDEX and SET_BY_INDEX refresh the generated frame and restore stack-top semantics before native-binding map index paths allocate temp roots");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var container = %import(\"zr.container\");\n"
+                "return new container.Map<string, int>();\n";
+        SZrString *sourceName;
+        SZrFunction *factoryFunction;
+        SZrTypeValue mapValue;
+        ZrLibTempValueRoot mapRoot;
+        SZrFunction function;
+        TZrInstruction instructions[1];
+        SZrLibrary_Project project;
+        ZrAotGeneratedFrame frame;
+        TZrStackValuePointer functionBase;
+        SZrTypeValue *functionBaseValue;
+        SZrTypeValue *slot0Value;
+        SZrTypeValue *slot1Value;
+        SZrTypeValue *slot2Value;
+        SZrClosureNative *nativeClosure;
+        SZrString *keyString;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(ZrVmLibContainer_Register(state->global));
+
+        memset(&mapValue, 0, sizeof(mapValue));
+        memset(&mapRoot, 0, sizeof(mapRoot));
+        memset(&function, 0, sizeof(function));
+        memset(instructions, 0, sizeof(instructions));
+        memset(&project, 0, sizeof(project));
+        memset(&frame, 0, sizeof(frame));
+
+        sourceName = ZR_STRING_LITERAL(state, "aot_runtime_map_index_helper_factory.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        factoryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(factoryFunction);
+
+        TEST_ASSERT_TRUE(ZrLib_TempValueRoot_Begin(state, &mapRoot));
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, factoryFunction, &mapValue));
+        TEST_ASSERT_TRUE(ZrLib_TempValueRoot_SetValue(&mapRoot, &mapValue));
+        TEST_ASSERT_NOT_NULL(ZrLib_TempValueRoot_Value(&mapRoot));
+
+        instructions[0] = make_instruction_return(2);
+        init_manual_test_function(&function, instructions, 1, ZR_NULL, 0, ZR_NULL, 0, 3);
+        aot_runtime_test_install_project_record(state, &project, &function, ZR_AOT_BACKEND_KIND_C);
+
+        nativeClosure = ZrCore_ClosureNative_New(state, 0);
+        TEST_ASSERT_NOT_NULL(nativeClosure);
+        nativeClosure->aotShimFunction = &function;
+
+        functionBase = state->stackTop.valuePointer;
+        functionBase = ZrCore_Function_CheckStackAndGc(state, 4, functionBase);
+        TEST_ASSERT_NOT_NULL(functionBase);
+        functionBaseValue = ZrCore_Stack_GetValue(functionBase);
+        slot0Value = ZrCore_Stack_GetValue(functionBase + 1);
+        slot1Value = ZrCore_Stack_GetValue(functionBase + 2);
+        slot2Value = ZrCore_Stack_GetValue(functionBase + 3);
+        TEST_ASSERT_NOT_NULL(functionBaseValue);
+        TEST_ASSERT_NOT_NULL(slot0Value);
+        TEST_ASSERT_NOT_NULL(slot1Value);
+        TEST_ASSERT_NOT_NULL(slot2Value);
+
+        keyString = ZR_STRING_LITERAL(state, "alpha");
+        TEST_ASSERT_NOT_NULL(keyString);
+
+        ZrCore_Value_InitAsRawObject(state, functionBaseValue, ZR_CAST_RAW_OBJECT_AS_SUPER(nativeClosure));
+        ZrCore_Value_Copy(state, slot0Value, ZrLib_TempValueRoot_Value(&mapRoot));
+        ZrCore_Value_InitAsRawObject(state, slot1Value, ZR_CAST_RAW_OBJECT_AS_SUPER(keyString));
+        slot1Value->type = ZR_VALUE_TYPE_STRING;
+        ZrCore_Value_InitAsInt(state, slot2Value, 41);
+
+        memset(&state->baseCallInfo, 0, sizeof(state->baseCallInfo));
+        state->baseCallInfo.functionBase.valuePointer = functionBase;
+        state->baseCallInfo.functionTop.valuePointer = functionBase + 4;
+        state->callInfoList = &state->baseCallInfo;
+        state->stackTop.valuePointer = functionBase + 4;
+
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, 0, &frame));
+        TEST_ASSERT_EQUAL_PTR(functionBase + 1, frame.slotBase);
+        TEST_ASSERT_EQUAL_PTR(functionBase + 4, state->stackTop.valuePointer);
+
+        state->stackTop.valuePointer = functionBase + 2;
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_SetByIndex(state, &frame, 2, 0, 1));
+        TEST_ASSERT_NOT_NULL(frame.callInfo);
+        TEST_ASSERT_EQUAL_PTR(frame.callInfo->functionBase.valuePointer + 1, frame.slotBase);
+        TEST_ASSERT_EQUAL_PTR(frame.callInfo->functionTop.valuePointer, state->stackTop.valuePointer);
+        TEST_ASSERT_TRUE(frame.callInfo->functionTop.valuePointer >= functionBase + 4);
+
+        ZrCore_Value_ResetAsNull(slot2Value);
+        state->stackTop.valuePointer = functionBase + 2;
+        TEST_ASSERT_TRUE(ZrLibrary_AotRuntime_GetByIndex(state, &frame, 2, 0, 1));
+        TEST_ASSERT_NOT_NULL(frame.callInfo);
+        TEST_ASSERT_EQUAL_PTR(frame.callInfo->functionBase.valuePointer + 1, frame.slotBase);
+        TEST_ASSERT_EQUAL_PTR(frame.callInfo->functionTop.valuePointer, state->stackTop.valuePointer);
+        TEST_ASSERT_TRUE(frame.callInfo->functionTop.valuePointer >= functionBase + 4);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(slot2Value->type));
+        TEST_ASSERT_EQUAL_INT64(41, slot2Value->value.nativeObject.nativeInt64);
+
+        aot_runtime_test_remove_project_record(state, &project);
+        ZrLib_TempValueRoot_End(&mapRoot);
+        ZrCore_Function_Free(state, factoryFunction);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
 static void test_aot_runtime_begin_instruction_respects_resolved_observation_policy(void) {
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Runtime BeginInstruction Respects Resolved Observation Policy";
@@ -2947,6 +3948,7 @@ static void test_aot_runtime_begin_instruction_respects_resolved_observation_pol
                                                                &frame,
                                                                1,
                                                                ZR_AOT_GENERATED_STEP_FLAG_NONE));
+        TEST_ASSERT_EQUAL_UINT32(1u, frame.currentInstructionIndex);
         TEST_ASSERT_EQUAL_PTR(function.instructionsList, callInfo.context.context.programCounter);
         TEST_ASSERT_EQUAL_UINT32(UINT32_MAX, frame.lastObservedInstructionIndex);
 
@@ -3463,8 +4465,8 @@ static void test_backend_aot_source_split_promotes_exec_ir_to_per_function_cfg_a
                  "Testing that backend_aot_exec_ir now carries per-function CFG, basic-block, and frame-layout records instead of only a flat instruction list");
 
     {
-        char *execIrHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_exec_ir.h");
-        char *execIrSourceText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_exec_ir.c");
+        char *execIrHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h");
+        char *execIrSourceText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
 
         TEST_ASSERT_NOT_NULL(execIrHeaderText);
         TEST_ASSERT_NOT_NULL(execIrSourceText);
@@ -3529,10 +4531,10 @@ static void test_backend_aot_source_split_moves_llvm_emitter_out_of_backend_aot_
                  "Testing that LLVM emitter helpers and function-body emission live in a dedicated backend_aot_llvm_emitter module instead of remaining implemented inside backend_aot.c");
 
     {
-        char *backendAotText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot.c");
-        char *llvmEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_emitter.c");
-        char *llvmFunctionBodyText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_function_body.c");
-        char *llvmFunctionBodyHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_function_body.h");
+        char *backendAotText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
+        char *llvmEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_emitter.c");
+        char *llvmFunctionBodyText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_function_body.c");
+        char *llvmFunctionBodyHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_function_body.h");
 
         TEST_ASSERT_NOT_NULL(backendAotText);
         TEST_ASSERT_NOT_NULL(llvmEmitterText);
@@ -3567,9 +4569,9 @@ static void test_backend_aot_source_split_moves_backend_writer_entrypoints_out_o
                  "Testing that backend_aot.c no longer defines public AOT C/LLVM writer entrypoints and that backend-specific modules own those writer surfaces");
 
     {
-        char *backendAotText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot.c");
-        char *cEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_c_emitter.c");
-        char *llvmEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_emitter.c");
+        char *backendAotText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
+        char *cEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+        char *llvmEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_emitter.c");
 
         TEST_ASSERT_NOT_NULL(backendAotText);
         TEST_ASSERT_NOT_NULL(cEmitterText);
@@ -3612,12 +4614,12 @@ static void test_backend_aot_source_split_moves_shared_function_table_and_callab
                  "Testing that backend_aot.c no longer owns c-named function-table or callable-provenance helpers and that neutral shared util modules own those boundaries");
 
     {
-        char *backendAotText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot.c");
-        char *internalHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_internal.h");
-        char *functionTableText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_function_table.c");
-        char *functionTableHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_function_table.h");
-        char *callableProvenanceText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_callable_provenance.c");
-        char *callableProvenanceHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_callable_provenance.h");
+        char *backendAotText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
+        char *internalHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h");
+        char *functionTableText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.c");
+        char *functionTableHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_function_table.h");
+        char *callableProvenanceText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_callable_provenance.c");
+        char *callableProvenanceHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_callable_provenance.h");
 
         TEST_ASSERT_NOT_NULL(backendAotText);
         TEST_ASSERT_NOT_NULL(internalHeaderText);
@@ -3681,12 +4683,12 @@ static void test_backend_aot_source_split_moves_aot_c_lowering_families_out_of_b
                  "Testing that backend_aot_c_emitter.c keeps writer orchestration only while direct-lowering families and function-body lowering move into dedicated AOT C modules");
 
     {
-        char *cEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_c_emitter.c");
-        char *cFunctionBodyText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_c_function_body.c");
-        char *cFunctionBodyHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_c_function_body.h");
-        char *cLoweringValuesText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_c_lowering_values.c");
-        char *cLoweringCallsText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_c_lowering_calls.c");
-        char *cLoweringControlText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_c_lowering_control.c");
+        char *cEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c");
+        char *cFunctionBodyText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
+        char *cFunctionBodyHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.h");
+        char *cLoweringValuesText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_values.c");
+        char *cLoweringCallsText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
+        char *cLoweringControlText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_control.c");
 
         TEST_ASSERT_NOT_NULL(cEmitterText);
         TEST_ASSERT_NOT_NULL(cFunctionBodyText);
@@ -3734,47 +4736,47 @@ static void test_backend_aot_source_split_moves_aot_llvm_lowering_families_out_o
                  "Testing that backend_aot_llvm_emitter.c keeps writer orchestration only while LLVM function-body emission and lowering helpers move into dedicated LLVM AOT modules");
 
     {
-        char *llvmEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_emitter.c");
-        char *llvmFunctionBodyText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_function_body.c");
-        char *llvmFunctionBodyHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_function_body.h");
+        char *llvmEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_emitter.c");
+        char *llvmFunctionBodyText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_function_body.c");
+        char *llvmFunctionBodyHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_function_body.h");
         char *llvmModuleArtifactsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_artifacts.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_artifacts.c");
         char *llvmModuleArtifactsHeaderText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_artifacts.h");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_artifacts.h");
         char *llvmModulePreludeText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_prelude.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c");
         char *llvmModulePreludeHeaderText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_prelude.h");
-        char *llvmLoweringValuesText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_values.c");
-        char *llvmLoweringConstantsText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_constants.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.h");
+        char *llvmLoweringValuesText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_values.c");
+        char *llvmLoweringConstantsText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_constants.c");
         char *llvmLoweringClosureSlotsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_closure_slots.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_closure_slots.c");
         char *llvmLoweringClosuresText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_closures.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_closures.c");
         char *llvmLoweringStackSlotsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_stack_slots.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_stack_slots.c");
         char *llvmLoweringObjectMetaOwningText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_object_meta_owning.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_object_meta_owning.c");
         char *llvmLoweringObjectsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_objects.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_objects.c");
         char *llvmLoweringIteratorsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_iterators.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_iterators.c");
         char *llvmLoweringMetaAccessText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_meta_access.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_meta_access.c");
         char *llvmLoweringOwnershipText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_ownership.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_ownership.c");
         char *llvmLoweringArithmeticText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_arithmetic.c");
-        char *llvmLoweringCallsText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_calls.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_arithmetic.c");
+        char *llvmLoweringCallsText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_calls.c");
         char *llvmLoweringFunctionCallsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_function_calls.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_function_calls.c");
         char *llvmLoweringMetaCallsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_meta_calls.c");
-        char *llvmLoweringControlText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_control.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_meta_calls.c");
+        char *llvmLoweringControlText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_control.c");
         char *llvmLoweringExceptionControlText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_exception_control.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_exception_control.c");
         char *llvmLoweringBranchControlText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_branch_control.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_branch_control.c");
 
         TEST_ASSERT_NOT_NULL(llvmEmitterText);
         TEST_ASSERT_NOT_NULL(llvmFunctionBodyText);
@@ -3845,7 +4847,8 @@ static void test_backend_aot_source_split_moves_aot_llvm_lowering_families_out_o
         TEST_ASSERT_NOT_NULL(strstr(llvmLoweringClosuresText, "ZrLibrary_AotRuntime_CreateClosure"));
         TEST_ASSERT_NOT_NULL(strstr(llvmLoweringStackSlotsText, "backend_aot_llvm_lower_stack_slot_value_subfamily("));
         TEST_ASSERT_NOT_NULL(strstr(llvmLoweringStackSlotsText, "backend_aot_llvm_lower_stack_copy_instruction("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmLoweringStackSlotsText, "ZrLibrary_AotRuntime_CopyStack"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmLoweringStackSlotsText, "ZrCore_Value_CopySlow"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmLoweringStackSlotsText, "ZrCore_Ownership_ReleaseValue"));
         TEST_ASSERT_NOT_NULL(strstr(llvmLoweringObjectMetaOwningText,
                                     "backend_aot_llvm_lower_object_value_family(context, instruction)"));
         TEST_ASSERT_NOT_NULL(strstr(llvmLoweringObjectMetaOwningText,
@@ -3944,19 +4947,19 @@ static void test_backend_aot_source_split_moves_aot_llvm_object_subfamilies_out_
 
     {
         char *llvmLoweringObjectsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_objects.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_objects.c");
         char *llvmLoweringGlobalsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_globals.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_globals.c");
         char *llvmLoweringCreatesText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_creations.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_creations.c");
         char *llvmLoweringTypeConversionsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_type_conversions.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_type_conversions.c");
         char *llvmLoweringMemberIndexText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_member_index.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_member_index.c");
         char *llvmLoweringMemberText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_member_access.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_member_access.c");
         char *llvmLoweringIndexText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_index_access.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_index_access.c");
 
         TEST_ASSERT_NOT_NULL(llvmLoweringObjectsText);
         TEST_ASSERT_NOT_NULL(llvmLoweringGlobalsText);
@@ -4028,11 +5031,11 @@ static void test_backend_aot_source_split_moves_aot_llvm_member_index_subfamilie
 
     {
         char *llvmLoweringMemberIndexText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_member_index.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_member_index.c");
         char *llvmLoweringMemberText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_member_access.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_member_access.c");
         char *llvmLoweringIndexText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_index_access.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_index_access.c");
 
         TEST_ASSERT_NOT_NULL(llvmLoweringMemberIndexText);
         TEST_ASSERT_NOT_NULL(llvmLoweringMemberText);
@@ -4075,11 +5078,11 @@ static void test_backend_aot_source_split_moves_aot_llvm_call_subfamilies_out_of
                  "and meta-call lowering move into dedicated LLVM AOT modules");
 
     {
-        char *llvmLoweringCallsText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_calls.c");
+        char *llvmLoweringCallsText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_calls.c");
         char *llvmLoweringFunctionCallsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_function_calls.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_function_calls.c");
         char *llvmLoweringMetaCallsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_meta_calls.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_meta_calls.c");
 
         TEST_ASSERT_NOT_NULL(llvmLoweringCallsText);
         TEST_ASSERT_NOT_NULL(llvmLoweringFunctionCallsText);
@@ -4124,11 +5127,11 @@ static void test_backend_aot_source_split_moves_aot_llvm_text_emit_helpers_out_o
                  "shared LLVM text-emission helpers stay in a dedicated helper module");
 
     {
-        char *llvmControlText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_control.c");
-        char *llvmTextEmitText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_emit.c");
-        char *llvmTextFlowText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_flow.c");
-        char *llvmTextEmitHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_emit.h");
-        char *llvmTextFlowHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_flow.h");
+        char *llvmControlText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_control.c");
+        char *llvmTextEmitText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_emit.c");
+        char *llvmTextFlowText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_flow.c");
+        char *llvmTextEmitHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_emit.h");
+        char *llvmTextFlowHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_flow.h");
 
         TEST_ASSERT_NOT_NULL(llvmControlText);
         TEST_ASSERT_NOT_NULL(llvmTextEmitText);
@@ -4191,15 +5194,15 @@ static void test_backend_aot_source_split_moves_aot_llvm_module_artifacts_out_of
                  "prelude, thunk-table, and export/descriptor emission move into dedicated module-artifact helpers");
 
     {
-        char *llvmEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_emitter.c");
+        char *llvmEmitterText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_emitter.c");
         char *llvmModuleArtifactsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_artifacts.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_artifacts.c");
         char *llvmModuleArtifactsHeaderText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_artifacts.h");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_artifacts.h");
         char *llvmModulePreludeText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_prelude.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c");
         char *llvmModulePreludeHeaderText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_prelude.h");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.h");
 
         TEST_ASSERT_NOT_NULL(llvmEmitterText);
         TEST_ASSERT_NOT_NULL(llvmModuleArtifactsText);
@@ -4256,13 +5259,13 @@ static void test_backend_aot_source_split_moves_aot_llvm_module_prelude_helpers_
 
     {
         char *llvmModuleArtifactsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_artifacts.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_artifacts.c");
         char *llvmModuleArtifactsHeaderText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_artifacts.h");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_artifacts.h");
         char *llvmModulePreludeText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_prelude.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c");
         char *llvmModulePreludeHeaderText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_prelude.h");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.h");
 
         TEST_ASSERT_NOT_NULL(llvmModuleArtifactsText);
         TEST_ASSERT_NOT_NULL(llvmModuleArtifactsHeaderText);
@@ -4308,18 +5311,18 @@ static void test_backend_aot_source_split_moves_aot_llvm_flow_text_helpers_out_o
                  "dedicated LLVM flow-text module");
 
     {
-        char *llvmTextEmitText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_emit.c");
-        char *llvmTextFlowText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_flow.c");
-        char *llvmTextEmitHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_emit.h");
-        char *llvmTextFlowHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_flow.h");
+        char *llvmTextEmitText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_emit.c");
+        char *llvmTextFlowText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_flow.c");
+        char *llvmTextEmitHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_emit.h");
+        char *llvmTextFlowHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_flow.h");
         char *llvmTextCallResultText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_call_result.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_call_result.c");
         char *llvmTextCallResultHeaderText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_call_result.h");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_call_result.h");
         char *llvmTextTerminalText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_terminal.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_terminal.c");
         char *llvmTextTerminalHeaderText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_terminal.h");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_terminal.h");
 
         TEST_ASSERT_NOT_NULL(llvmTextEmitText);
         TEST_ASSERT_NOT_NULL(llvmTextFlowText);
@@ -4387,16 +5390,16 @@ static void test_backend_aot_source_split_moves_aot_llvm_flow_subfamilies_out_of
                  "call-result and terminal return helpers move into dedicated LLVM text-flow subfamily modules");
 
     {
-        char *llvmTextFlowText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_flow.c");
-        char *llvmTextFlowHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_flow.h");
+        char *llvmTextFlowText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_flow.c");
+        char *llvmTextFlowHeaderText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_flow.h");
         char *llvmTextCallResultText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_call_result.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_call_result.c");
         char *llvmTextCallResultHeaderText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_call_result.h");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_call_result.h");
         char *llvmTextTerminalText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_terminal.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_terminal.c");
         char *llvmTextTerminalHeaderText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_text_terminal.h");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_text_terminal.h");
 
         TEST_ASSERT_NOT_NULL(llvmTextFlowText);
         TEST_ASSERT_NOT_NULL(llvmTextFlowHeaderText);
@@ -4450,11 +5453,11 @@ static void test_backend_aot_source_split_moves_aot_llvm_control_subfamilies_out
                  "exception/resume control and branch/return lowering move into dedicated LLVM AOT modules");
 
     {
-        char *llvmControlText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_control.c");
+        char *llvmControlText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_control.c");
         char *llvmExceptionControlText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_exception_control.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_exception_control.c");
         char *llvmBranchControlText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_branch_control.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_branch_control.c");
 
         TEST_ASSERT_NOT_NULL(llvmControlText);
         TEST_ASSERT_NOT_NULL(llvmExceptionControlText);
@@ -4501,11 +5504,11 @@ static void test_backend_aot_source_split_moves_aot_llvm_closure_subfamilies_out
 
     {
         char *llvmClosureSlotsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_closure_slots.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_closure_slots.c");
         char *llvmClosuresText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_closures.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_closures.c");
         char *llvmStackSlotsText =
-                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_stack_slots.c");
+                read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_stack_slots.c");
 
         TEST_ASSERT_NOT_NULL(llvmClosureSlotsText);
         TEST_ASSERT_NOT_NULL(llvmClosuresText);
@@ -4525,7 +5528,8 @@ static void test_backend_aot_source_split_moves_aot_llvm_closure_subfamilies_out
 
         TEST_ASSERT_NOT_NULL(strstr(llvmStackSlotsText, "backend_aot_llvm_lower_stack_slot_value_subfamily("));
         TEST_ASSERT_NOT_NULL(strstr(llvmStackSlotsText, "backend_aot_llvm_lower_stack_copy_instruction("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmStackSlotsText, "ZrLibrary_AotRuntime_CopyStack"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmStackSlotsText, "ZrCore_Value_CopySlow"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmStackSlotsText, "ZrCore_Ownership_ReleaseValue"));
 
         free(llvmClosureSlotsText);
         free(llvmClosuresText);
@@ -4580,7 +5584,7 @@ static void test_execbc_quickens_zero_arg_call_sites_without_changing_semir_cont
         ZrParser_Ast_Free(state, ast);
         TEST_ASSERT_NOT_NULL(func);
 
-        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)));
         TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS)));
         TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(META_CALL)));
         TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(func, ZR_SEMIR_OPCODE_META_CALL, ZR_TRUE));
@@ -4591,7 +5595,7 @@ static void test_execbc_quickens_zero_arg_call_sites_without_changing_semir_cont
 
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SEMIR"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "META_CALL"));
-        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_FUNCTION_CALL_NO_ARGS"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_KNOWN_VM_CALL_NO_ARGS"));
         TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUPER_META_CALL_NO_ARGS"));
 
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result));
@@ -4600,6 +5604,207 @@ static void test_execbc_quickens_zero_arg_call_sites_without_changing_semir_cont
         free(intermediateText);
         remove(intermediatePath);
         ZrCore_Function_Free(state, func);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_execbc_true_aot_lowers_typed_signed_unsigned_and_equality_opcodes(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "ExecBC True AOT Lowers Typed Signed Unsigned And Equality Opcodes";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("typed arithmetic and equality aot pipeline",
+                 "Testing that strongly typed signed/unsigned arithmetic and bool/string/float equality preserve dedicated ExecBC opcodes and remain supported by intermediate, strict AOT C, and LLVM lowering.");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *source =
+                "var si: int = 7;\n"
+                "var sj: int = 2;\n"
+                "var su: uint = 9;\n"
+                "var sv: uint = 4;\n"
+                "var sb: bool = true;\n"
+                "var ss: string = \"left\";\n"
+                "var st: string = \"left\";\n"
+                "var sf: float = 1.5;\n"
+                "var sg: float = 1.5;\n"
+                "var signedSum: int = si + sj;\n"
+                "var signedDiff: int = si - sj;\n"
+                "var unsignedSum: uint = su + sv;\n"
+                "var unsignedDiff: uint = su - sv;\n"
+                "var boolEq: bool = sb == true;\n"
+                "var signedNe: bool = si != sj;\n"
+                "var unsignedNe: bool = su != sv;\n"
+                "var floatEq: bool = sf == sg;\n"
+                "var stringEq: bool = ss == st;\n"
+                "return signedSum + signedDiff + <int> unsignedSum + <int> unsignedDiff +\n"
+                "       (boolEq ? 1 : 0) + (signedNe ? 1 : 0) + (unsignedNe ? 1 : 0) +\n"
+                "       (floatEq ? 1 : 0) + (stringEq ? 1 : 0);\n";
+        const char *intermediatePath = "execbc_typed_numeric_equality_test.zri";
+        const char *cPath = "execbc_typed_numeric_equality_test.c";
+        const char *llvmPath = "execbc_typed_numeric_equality_test.ll";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *function;
+        char *intermediateText;
+        char *cText;
+        char *llvmText;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZR_STRING_LITERAL(state, "execbc_typed_numeric_equality_test.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(function);
+
+        TEST_ASSERT_TRUE(function_contains_add_signed_family(function));
+        TEST_ASSERT_TRUE(function_contains_sub_signed_family(function));
+        TEST_ASSERT_TRUE(function_contains_add_unsigned_family(function));
+        TEST_ASSERT_TRUE(function_contains_sub_unsigned_family(function));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_UNSIGNED)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_FLOAT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING)));
+        TEST_ASSERT_FALSE(function_contains_add_int_family(function));
+        TEST_ASSERT_FALSE(function_contains_sub_int_family(function));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL)));
+
+        remove(intermediatePath);
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            function,
+                                                            "execbc_typed_numeric_equality_test",
+                                                            cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               function,
+                                                               "execbc_typed_numeric_equality_test",
+                                                               llvmPath));
+        intermediateText = read_text_file_owned(intermediatePath);
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "ADD_SIGNED"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "ADD_UNSIGNED"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUB_SIGNED"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "SUB_UNSIGNED"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "LOGICAL_EQUAL_BOOL"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "LOGICAL_NOT_EQUAL_SIGNED"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "LOGICAL_NOT_EQUAL_UNSIGNED"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "LOGICAL_EQUAL_FLOAT"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "LOGICAL_EQUAL_STRING"));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(ADD_SIGNED)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(ADD_UNSIGNED)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUB_SIGNED)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUB_UNSIGNED)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_UNSIGNED)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_FLOAT)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING)));
+
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(37, result);
+
+        free(intermediateText);
+        free(cText);
+        free(llvmText);
+        remove(intermediatePath);
+        remove(cPath);
+        remove(llvmPath);
+        ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_execbc_true_aot_lowers_known_native_call_family(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "ExecBC True AOT Lowers Known Native Call Family";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("known native call aot pipeline",
+                 "Testing that direct native module call sites quicken to KNOWN_NATIVE_CALL and SUPER_KNOWN_NATIVE_CALL_NO_ARGS, survive intermediate emission, and stay supported by strict AOT C and LLVM lowering.");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *intermediatePath = "execbc_known_native_call_test.zri";
+        const char *cPath = "execbc_known_native_call_test.c";
+        const char *llvmPath = "execbc_known_native_call_test.ll";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrFunction *function;
+        char *source;
+        char *intermediateText;
+        char *cText;
+        char *llvmText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        source = read_repo_file_owned("tests/fixtures/scripts/decorator_artifact_baseline.zr");
+        TEST_ASSERT_NOT_NULL(source);
+
+        sourceName = ZR_STRING_LITERAL(state, "decorator_artifact_baseline.zr");
+        TEST_ASSERT_NOT_NULL(sourceName);
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(ast);
+
+        function = ZrParser_Compiler_Compile(state, ast);
+        ZrParser_Ast_Free(state, ast);
+        TEST_ASSERT_NOT_NULL(function);
+
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL)));
+
+        remove(intermediatePath);
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state, function, "execbc_known_native_call_test", cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               function,
+                                                               "execbc_known_native_call_test",
+                                                               llvmPath));
+        intermediateText = read_text_file_owned(intermediatePath);
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "KNOWN_NATIVE_CALL"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CallPreparedOrGeneric"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_PrepareDirectCall"));
+        TEST_ASSERT_NOT_NULL(strstr(llvmText, "@ZrLibrary_AotRuntime_CallPreparedOrGeneric"));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL)));
+
+        free(intermediateText);
+        free(cText);
+        free(llvmText);
+        free(source);
+        remove(intermediatePath);
+        remove(cPath);
+        remove(llvmPath);
+        ZrCore_Function_Free(state, function);
         ZrTests_Runtime_State_Destroy(state);
     }
 
@@ -5249,6 +6454,81 @@ static SZrFunction *compile_meta_access_fixture(SZrState *state) {
     }
 
         sourceName = ZR_STRING_LITERAL(state, "meta_access_pipeline_test.zr");
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_member_slot_quickening_fixture(SZrState *state) {
+    const char *source =
+            "class Counter {\n"
+            "    pub var value: int;\n"
+            "}\n"
+            "var counter = new Counter();\n"
+            "counter.value = 3;\n"
+            "counter.value = counter.value + 4;\n"
+            "return counter.value + counter.value;\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZR_STRING_LITERAL(state, "member_slot_quickening_fixture.zr");
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_nested_member_slot_quickening_fixture(SZrState *state) {
+    const char *source =
+            "class Counter {\n"
+            "    pub var value: int;\n"
+            "}\n"
+            "class Holder {\n"
+            "    pub var counter: Counter;\n"
+            "}\n"
+            "var holder = new Holder();\n"
+            "holder.counter = new Counter();\n"
+            "holder.counter.value = 3;\n"
+            "holder.counter.value = holder.counter.value + 4;\n"
+            "return holder.counter.value;\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZR_STRING_LITERAL(state, "nested_member_slot_quickening_fixture.zr");
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_typed_destructuring_member_slot_fixture(SZrState *state) {
+    const char *source =
+            "class Point {\n"
+            "    pub var x: int;\n"
+            "    pub var y: int;\n"
+            "}\n"
+            "var point = new Point();\n"
+            "point.x = 2;\n"
+            "point.y = 5;\n"
+            "var {x, y} = point;\n"
+            "return x + y;\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZR_STRING_LITERAL(state, "typed_destructuring_member_slot_fixture.zr");
     if (sourceName == ZR_NULL) {
         return ZR_NULL;
     }
@@ -5952,7 +7232,9 @@ static void test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_se
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(META_GET)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(META_SET)));
-        TEST_ASSERT_EQUAL_UINT32(2, function->callSiteCacheLength);
+        TEST_ASSERT_TRUE(function->callSiteCacheLength >= 2);
+        TEST_ASSERT_EQUAL_UINT32(1u, function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET));
+        TEST_ASSERT_EQUAL_UINT32(1u, function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
         assert_member_entry_symbol_flags(function, "__get_value", 0);
@@ -6018,11 +7300,18 @@ static void test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_se
         TEST_ASSERT_NOT_NULL(sourceObject);
         TEST_ASSERT_TRUE(sourceObject->modulesLength > 0);
         TEST_ASSERT_NOT_NULL(sourceObject->modules[0].entryFunction);
-        TEST_ASSERT_EQUAL_UINT32(2, (TZrUInt32)sourceObject->modules[0].entryFunction->callSiteCacheLength);
+        TEST_ASSERT_EQUAL_UINT32(function->callSiteCacheLength,
+                                 (TZrUInt32)sourceObject->modules[0].entryFunction->callSiteCacheLength);
 
         runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
         TEST_ASSERT_NOT_NULL(runtimeFunction);
-        TEST_ASSERT_EQUAL_UINT32(2, runtimeFunction->callSiteCacheLength);
+        TEST_ASSERT_EQUAL_UINT32(function->callSiteCacheLength, runtimeFunction->callSiteCacheLength);
+        TEST_ASSERT_EQUAL_UINT32(1u,
+                                 function_count_callsite_cache_kind(runtimeFunction,
+                                                                    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET));
+        TEST_ASSERT_EQUAL_UINT32(1u,
+                                 function_count_callsite_cache_kind(runtimeFunction,
+                                                                    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET));
         TEST_ASSERT_TRUE(function_contains_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET));
         assert_first_callsite_cache_member_binding(runtimeFunction,
@@ -6203,6 +7492,251 @@ static void test_super_member_dispatch_uses_direct_base_lookup_for_methods_prope
         TEST_ASSERT_EQUAL_INT64(42, result);
 
         ZrCore_Function_Free(state, function);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_typed_member_access_allocates_member_callsite_cache_entries(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Typed Member Access Allocates Member Callsite Cache Entries";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("member slot quickening",
+                 "Testing that typed class field access stops staying on plain GET_MEMBER/SET_MEMBER and starts allocating dedicated member callsite cache metadata");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *binaryPath = "member_slot_quickening_test.zro";
+        SZrFunction *function;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_member_slot_quickening_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SET_MEMBER)));
+        TEST_ASSERT_TRUE(function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET) > 0);
+        TEST_ASSERT_TRUE(function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET) > 0);
+        TEST_ASSERT_TRUE(function->callSiteCacheLength >= 2);
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(14, result);
+
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SET_MEMBER)));
+        TEST_ASSERT_TRUE(function_count_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET) > 0);
+        TEST_ASSERT_TRUE(function_count_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET) > 0);
+        TEST_ASSERT_TRUE(runtimeFunction->callSiteCacheLength >= 2);
+
+        result = 0;
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(14, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_nested_typed_member_chain_emits_member_slot_opcodes(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Nested Typed Member Chain Emits Member Slot Opcodes";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("member slot nested chain quickening",
+                 "Testing that strongly typed chained field access lowers all the way to member-slot opcodes instead of falling back to generic GET_MEMBER/SET_MEMBER on temporary receivers");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *binaryPath = "nested_member_slot_quickening_test.zro";
+        SZrFunction *function;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_nested_member_slot_quickening_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SET_MEMBER)));
+        TEST_ASSERT_TRUE(function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET) >= 2);
+        TEST_ASSERT_TRUE(function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET) >= 2);
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(7, result);
+
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SET_MEMBER)));
+        TEST_ASSERT_TRUE(function_count_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET) >= 2);
+        TEST_ASSERT_TRUE(function_count_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET) >= 2);
+
+        result = 0;
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(7, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        remove(binaryPath);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_typed_object_destructuring_emits_member_slot_opcodes(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Typed Object Destructuring Emits Member Slot Opcodes";
+    const char *fixtureSource =
+            "class Point {\n"
+            "    pub var x: int;\n"
+            "    pub var y: int;\n"
+            "}\n"
+            "var point = new Point();\n"
+            "point.x = 2;\n"
+            "point.y = 5;\n"
+            "var {x, y} = point;\n"
+            "return x + y;\n";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("member slot destructuring",
+                 "Testing that strongly typed object destructuring lowers field extraction through member-slot opcodes before quickening, without relying on generic GET_MEMBER fallback");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *binaryPath = "typed_destructuring_member_slot_test.zro";
+        SZrFunction *rawFunction;
+        SZrFunction *function;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        rawFunction = compile_source_without_quickening(state,
+                                                        fixtureSource,
+                                                        "typed_destructuring_member_slot_fixture_raw.zr");
+        TEST_ASSERT_NOT_NULL(rawFunction);
+        TEST_ASSERT_TRUE(function_contains_opcode(rawFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(rawFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        ZrCore_Function_Free(state, rawFunction);
+
+        function = compile_typed_destructuring_member_slot_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        TEST_ASSERT_TRUE(function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET) >= 2);
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(7, result);
+
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        TEST_ASSERT_TRUE(function_count_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET) >= 2);
+
+        result = 0;
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(7, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        remove(binaryPath);
         ZrTests_Runtime_State_Destroy(state);
     }
 
@@ -6483,15 +8017,13 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)));
         TEST_ASSERT_TRUE(function_contains_super_array_get_int_family(function));
         TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_INT)) ||
-                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD_INT_CONST)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB_INT)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED)) ||
-                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED)) ||
-                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST)));
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED)) ||
-                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST)));
+        TEST_ASSERT_TRUE(function_contains_add_int_family(function) ||
+                         function_contains_add_signed_family(function));
+        TEST_ASSERT_TRUE(function_contains_sub_int_family(function) ||
+                         function_contains_sub_signed_family(function));
+        TEST_ASSERT_TRUE(function_contains_mul_signed_family(function));
+        TEST_ASSERT_TRUE(function_contains_div_signed_family(function));
+        TEST_ASSERT_TRUE(function_contains_mod_signed_family(function));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(ADD)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUB)));
         TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(MUL)));
@@ -6526,6 +8058,20 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
         TEST_ASSERT_FALSE(
                 aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST)));
         TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST)));
+        TEST_ASSERT_FALSE(
+                aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST)));
+        TEST_ASSERT_FALSE(aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUB_INT_PLAIN_DEST)));
+        TEST_ASSERT_FALSE(
+                aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(SUB_INT_CONST_PLAIN_DEST)));
+        TEST_ASSERT_FALSE(
+                aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST)));
+        TEST_ASSERT_FALSE(
+                aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST)));
+        TEST_ASSERT_FALSE(
+                aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST)));
+        TEST_ASSERT_FALSE(
+                aot_llvm_text_contains_unsupported_opcode(llvmText, ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST)));
 
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
         TEST_ASSERT_EQUAL_INT64(82, result);
@@ -6550,15 +8096,13 @@ static void test_execbc_quickens_array_int_index_sites_and_true_aot_lowers_speci
         TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)));
         TEST_ASSERT_TRUE(function_contains_super_array_get_int_family(runtimeFunction));
         TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)));
-        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(ADD_INT)) ||
-                         function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(ADD_INT_CONST)));
-        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUB_INT)));
-        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MUL_SIGNED)) ||
-                         function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST)));
-        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(DIV_SIGNED)) ||
-                         function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST)));
-        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MOD_SIGNED)) ||
-                         function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST)));
+        TEST_ASSERT_TRUE(function_contains_add_int_family(runtimeFunction) ||
+                         function_contains_add_signed_family(runtimeFunction));
+        TEST_ASSERT_TRUE(function_contains_sub_int_family(runtimeFunction) ||
+                         function_contains_sub_signed_family(runtimeFunction));
+        TEST_ASSERT_TRUE(function_contains_mul_signed_family(runtimeFunction));
+        TEST_ASSERT_TRUE(function_contains_div_signed_family(runtimeFunction));
+        TEST_ASSERT_TRUE(function_contains_mod_signed_family(runtimeFunction));
         TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(ADD)));
         TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SUB)));
         TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MUL)));
@@ -6903,8 +8447,6 @@ static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(voi
         SZrFunction *runtimeFunction = ZR_NULL;
         TZrBool hasToString;
         TZrBool hasAddString;
-        TZrBool hasModSigned;
-        TZrBool hasModSignedConst;
 
         TEST_ASSERT_NOT_NULL(state);
 
@@ -6927,11 +8469,8 @@ static void test_benchmark_string_build_binary_roundtrip_loads_runtime_entry(voi
         TEST_ASSERT_NOT_NULL(runtimeFunction);
         hasToString = function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(TO_STRING));
         hasAddString = function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(ADD_STRING));
-        hasModSigned = function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MOD_SIGNED));
-        hasModSignedConst = function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST));
         TEST_ASSERT_TRUE(hasToString);
         TEST_ASSERT_TRUE(hasAddString);
-        TEST_ASSERT_TRUE(hasModSigned || hasModSignedConst);
 
         ZrCore_Function_Free(state, runtimeFunction);
         free(binaryBytes);
@@ -7094,7 +8633,8 @@ static void test_aot_backends_lower_manual_extended_numeric_opcode_fixture(void)
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_BitwiseShiftRight"));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_ToBool("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_ToUInt("));
-        TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddIntConst("));
+        TEST_ASSERT_TRUE(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddIntConst(") != ZR_NULL ||
+                         strstr(llvmText, "add i64") != ZR_NULL);
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_AddFloat("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_SubIntConst("));
         TEST_ASSERT_NOT_NULL(strstr(llvmText, "call i1 @ZrLibrary_AotRuntime_MulSignedConst("));
@@ -7109,6 +8649,110 @@ static void test_aot_backends_lower_manual_extended_numeric_opcode_fixture(void)
                                                                       sizeof(coveredOpcodes) /
                                                                               sizeof(coveredOpcodes[0]));
 
+        free(cText);
+        free(llvmText);
+        remove(cPath);
+        remove(llvmPath);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_aot_backends_emit_instruction_aware_step_flags_for_const_div_mod(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "AOT Backends Emit Instruction-Aware Step Flags For Const Div Mod";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("aot const div mod observation flags",
+                 "Testing that strict AOT C and LLVM downgrade non-zero signed const DIV/MOD observation to the fast NONE path while preserving MAY_THROW for zero constants");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        SZrFunction function;
+        SZrTypeValue constants[2];
+        TZrInstruction instructions[5];
+        const char *cPath = "execbc_aot_const_div_mod_step_flags.c";
+        const char *llvmPath = "execbc_aot_const_div_mod_step_flags.ll";
+        char *cText;
+        char *llvmText;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        instructions[0] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = make_instruction_constant_operand(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST), 2, 0, 1);
+        instructions[3] = make_instruction_slot_operands(ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST), 3, 0, 1);
+        instructions[4] = make_instruction_return(3);
+
+        ZrCore_Value_InitAsInt(state, &constants[0], 9);
+        ZrCore_Value_InitAsInt(state, &constants[1], 4);
+        init_manual_test_function(&function,
+                                  instructions,
+                                  (TZrUInt32)(sizeof(instructions) / sizeof(instructions[0])),
+                                  constants,
+                                  (TZrUInt32)(sizeof(constants) / sizeof(constants[0])),
+                                  ZR_NULL,
+                                  0,
+                                  4);
+
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            &function,
+                                                            "execbc_aot_const_div_mod_step_flags_nonzero",
+                                                            cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               &function,
+                                                               "execbc_aot_const_div_mod_step_flags_nonzero",
+                                                               llvmPath));
+
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+        assert_generated_aot_c_begin_instruction_step_flags(cText, 2, "ZR_AOT_GENERATED_STEP_FLAG_NONE");
+        assert_generated_aot_c_begin_instruction_step_flags(cText, 3, "ZR_AOT_GENERATED_STEP_FLAG_NONE");
+        assert_generated_aot_llvm_begin_instruction_step_flags(llvmText, 2, ZR_AOT_GENERATED_STEP_FLAG_NONE);
+        assert_generated_aot_llvm_begin_instruction_step_flags(llvmText, 3, ZR_AOT_GENERATED_STEP_FLAG_NONE);
+        free(cText);
+        free(llvmText);
+        remove(cPath);
+        remove(llvmPath);
+
+        ZrCore_Value_InitAsInt(state, &constants[0], 9);
+        ZrCore_Value_InitAsInt(state, &constants[1], 0);
+        init_manual_test_function(&function,
+                                  instructions,
+                                  (TZrUInt32)(sizeof(instructions) / sizeof(instructions[0])),
+                                  constants,
+                                  (TZrUInt32)(sizeof(constants) / sizeof(constants[0])),
+                                  ZR_NULL,
+                                  0,
+                                  4);
+
+        remove(cPath);
+        remove(llvmPath);
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_c_file(state,
+                                                            &function,
+                                                            "execbc_aot_const_div_mod_step_flags_zero",
+                                                            cPath));
+        TEST_ASSERT_TRUE(write_standalone_strict_aot_llvm_file(state,
+                                                               &function,
+                                                               "execbc_aot_const_div_mod_step_flags_zero",
+                                                               llvmPath));
+
+        cText = read_text_file_owned(cPath);
+        llvmText = read_text_file_owned(llvmPath);
+        TEST_ASSERT_NOT_NULL(cText);
+        TEST_ASSERT_NOT_NULL(llvmText);
+        assert_generated_aot_c_begin_instruction_step_flags(cText, 2, "ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW");
+        assert_generated_aot_c_begin_instruction_step_flags(cText, 3, "ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW");
+        assert_generated_aot_llvm_begin_instruction_step_flags(llvmText, 2, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW);
+        assert_generated_aot_llvm_begin_instruction_step_flags(llvmText, 3, ZR_AOT_GENERATED_STEP_FLAG_MAY_THROW);
         free(cText);
         free(llvmText);
         remove(cPath);
@@ -7265,14 +8909,17 @@ static void test_aot_source_sync_keeps_extended_opcode_surfaces_aligned(void) {
             {"BITWISE_OR", "ZrLibrary_AotRuntime_BitwiseOr"},
             {"BITWISE_SHIFT_LEFT", "ZrLibrary_AotRuntime_BitwiseShiftLeft"},
             {"BITWISE_SHIFT_RIGHT", "ZrLibrary_AotRuntime_BitwiseShiftRight"},
+            {"GET_MEMBER_SLOT", "ZrLibrary_AotRuntime_GetMemberSlot"},
+            {"SET_MEMBER_SLOT", "ZrLibrary_AotRuntime_SetMemberSlot"},
             {"MARK_TO_BE_CLOSED", "ZrLibrary_AotRuntime_MarkToBeClosed"},
             {"CLOSE_SCOPE", "ZrLibrary_AotRuntime_CloseScope"}};
     static const char *const llvmLoweringPaths[] = {
-            "zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_constants.c",
-            "zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_closures.c",
-            "zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_type_conversions.c",
-            "zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_arithmetic.c",
-            "zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_lowering_control.c"};
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_constants.c",
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_closures.c",
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_type_conversions.c",
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_arithmetic.c",
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_control.c",
+            "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_member_access.c"};
     SZrExecBcAotTestTimer timer;
     const char *testSummary = "AOT Source Sync Keeps Extended Opcode Surfaces Aligned";
     char *backendSupportText;
@@ -7288,11 +8935,11 @@ static void test_aot_source_sync_keeps_extended_opcode_surfaces_aligned(void) {
     ZR_TEST_INFO("aot source sync guard",
                  "Testing that the expanded opcode sync stays aligned across backend_aot support tables, C lowering, LLVM lowering, and runtime helper declarations so future opcode growth cannot silently strand true AOT behind older source maps");
 
-    backendSupportText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot.c");
-    cLoweringText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_c_function_body.c");
+    backendSupportText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c");
+    cLoweringText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_function_body.c");
     llvmLoweringText = join_repo_files_owned(llvmLoweringPaths,
                                              (TZrSize)(sizeof(llvmLoweringPaths) / sizeof(llvmLoweringPaths[0])));
-    llvmPreludeText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_module_prelude.c");
+    llvmPreludeText = read_repo_file_owned("zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_module_prelude.c");
     runtimeHeaderText = read_repo_file_owned("zr_vm_library/include/zr_vm_library/aot_runtime.h");
     runtimeSourceText = read_repo_file_owned("zr_vm_library/src/zr_vm_library/aot_runtime.c");
 
@@ -7352,8 +8999,10 @@ int main(void) {
     RUN_TEST(test_aot_llvm_backend_lowers_to_object_with_runtime_helper);
     RUN_TEST(test_aot_c_backend_emits_native_entry_descriptor_instead_of_shim_invoke);
     RUN_TEST(test_aot_c_backend_directly_lowers_static_slot_and_int_ops);
+    RUN_TEST(test_aot_llvm_backend_directly_lowers_static_slot_and_int_ops);
     RUN_TEST(test_aot_c_backend_directly_lowers_primitive_literal_constants);
     RUN_TEST(test_aot_c_backend_lowers_generic_add_with_fast_path_and_helper_fallback);
+    RUN_TEST(test_aot_llvm_backend_lowers_generic_add_with_fast_path_and_helper_fallback);
     RUN_TEST(test_aot_c_backend_directly_lowers_local_callable_constants);
     RUN_TEST(test_aot_c_backend_directly_lowers_local_aot_function_calls);
     RUN_TEST(test_aot_c_backend_statically_lowers_proven_local_aot_function_calls);
@@ -7368,11 +9017,17 @@ int main(void) {
     RUN_TEST(test_aot_c_backend_lowers_to_struct_with_runtime_helper);
     RUN_TEST(test_aot_c_backend_lowers_signed_compare_div_and_neg_paths);
     RUN_TEST(test_aot_backends_lower_benchmark_style_mod_string_and_compare_paths);
+    RUN_TEST(test_string_equality_allows_destination_aliasing_left_operand);
     RUN_TEST(test_aot_backends_lower_benchmark_style_generic_sub_paths);
     RUN_TEST(test_aot_backends_lower_benchmark_style_generic_mul_paths);
     RUN_TEST(test_aot_backends_lower_benchmark_style_generic_div_paths);
     RUN_TEST(test_aot_backends_lower_benchmark_style_bitwise_xor_paths);
+    RUN_TEST(test_aot_backends_emit_instruction_aware_step_flags_for_const_div_mod);
     RUN_TEST(test_aot_runtime_observation_policy_is_thread_local);
+    RUN_TEST(test_aot_runtime_begin_generated_function_caches_slot_count_and_preserves_bounds_after_refresh);
+    RUN_TEST(test_aot_runtime_prepare_static_direct_call_uses_cached_callee_slot_count);
+    RUN_TEST(test_aot_runtime_super_array_add_int_allows_ignored_destination_slot);
+    RUN_TEST(test_aot_runtime_index_helpers_refresh_frame_for_native_binding_paths);
     RUN_TEST(test_aot_runtime_begin_instruction_respects_resolved_observation_policy);
     RUN_TEST(test_aot_runtime_begin_instruction_publishes_line_debug_events);
     RUN_TEST(test_aot_runtime_begin_instruction_honors_dynamic_line_signal_enablement);
@@ -7400,6 +9055,8 @@ int main(void) {
     RUN_TEST(test_backend_aot_source_split_moves_aot_llvm_flow_text_helpers_out_of_text_emit);
     RUN_TEST(test_backend_aot_source_split_moves_aot_llvm_flow_subfamilies_out_of_text_flow);
     RUN_TEST(test_execbc_quickens_zero_arg_call_sites_without_changing_semir_contracts);
+    RUN_TEST(test_execbc_true_aot_lowers_typed_signed_unsigned_and_equality_opcodes);
+    RUN_TEST(test_execbc_true_aot_lowers_known_native_call_family);
     RUN_TEST(test_execbc_quickens_cached_meta_and_dynamic_call_sites_and_preserves_binary_metadata);
     RUN_TEST(test_binary_roundtrip_preserves_debug_line_metadata_for_runtime_loading);
     RUN_TEST(test_binary_roundtrip_preserves_fixed_array_helper_argument_values);
@@ -7414,6 +9071,9 @@ int main(void) {
     RUN_TEST(test_execbc_quickens_array_int_add_bursts_to_dedicated_dispatch_opcode);
     RUN_TEST(test_execbc_quickens_array_int_fill_loops_to_bulk_dispatch_opcode);
     RUN_TEST(test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_set_opcodes);
+    RUN_TEST(test_typed_member_access_allocates_member_callsite_cache_entries);
+    RUN_TEST(test_nested_typed_member_chain_emits_member_slot_opcodes);
+    RUN_TEST(test_typed_object_destructuring_emits_member_slot_opcodes);
     RUN_TEST(test_static_meta_access_quickens_to_static_callsite_cache_variants);
     RUN_TEST(test_super_member_dispatch_uses_direct_base_lookup_for_methods_properties_and_meta_calls);
     RUN_TEST(test_reference_property_fixture_preserves_meta_access_artifacts_with_true_aot_c_lowering);

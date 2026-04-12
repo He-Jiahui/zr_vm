@@ -27,6 +27,8 @@ doc_type: testing-guide
 
 `performance_report` 是专门的 benchmark/reporting suite，不承担功能回归阈值判断。
 
+默认 **不会** 把它注册进 CTest：在 `tests/CMakeLists.txt` 中 `ZR_VM_REGISTER_PERFORMANCE_CTEST` 默认为 `OFF`，日常 `ctest` 只跑语言与功能回归；长耗时跨语言性能任务在需要时显式开启或改用构建目标 `run_performance_suite`（见下文「Validation Commands」）。
+
 它的职责只有四件事：
 
 - 从 `tests/benchmarks` 发现 benchmark case 和实现矩阵
@@ -206,20 +208,47 @@ JSON 结构：
 
 ## Validation Commands
 
+### Register `performance_report` in CTest
+
+首次需在配置阶段打开开关（缓存变量，会写入 CMake 缓存）：
+
+```bash
+cmake -S . -B build/codex-wsl-gcc-debug -DZR_VM_REGISTER_PERFORMANCE_CTEST=ON
+cmake --build build/codex-wsl-gcc-debug -j 8
+```
+
+开启后，`performance_report` 会带上 CTest 标签 `benchmark` 与 `long_running`，可单独筛选：例如 `ctest -L benchmark` 只跑该类测试。
+
+### Run without CTest（与 `performance_report` 同源脚本）
+
+不改缓存也可直接跑同一套 `tests/cmake/run_performance_suite.cmake`：
+
+```bash
+cmake --build build/codex-wsl-gcc-debug --target run_performance_suite
+```
+
+环境变量 `ZR_VM_TEST_TIER`、`ZR_VM_PERF_WARMUP`、`ZR_VM_PERF_ITERATIONS` 等对 CTest 与自定义目标均生效（由 `run_performance_suite.cmake` 读取）。
+
 ### Windows MSVC
 
 ```powershell
 . 'C:/Users/HeJiahui/.codex/skills/using-vsdevcmd/scripts/Import-VsDevCmdEnvironment.ps1'
+cmake -S . -B build/codex-msvc-debug -G "Visual Studio 17 2022" -A x64 -DZR_VM_REGISTER_PERFORMANCE_CTEST=ON
+cmake --build build/codex-msvc-debug --config Debug
 ctest --test-dir build/codex-msvc-debug -C Debug --output-on-failure -R '^performance_report$'
 ```
 
 ### WSL gcc
 
 ```bash
+cmake -S . -B build/codex-wsl-gcc-debug -DZR_VM_REGISTER_PERFORMANCE_CTEST=ON
+cmake --build build/codex-wsl-gcc-debug -j 8
 ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure -R '^performance_report$'
 ```
 
 ### Override Sampling Counts
+
+需已用 `-DZR_VM_REGISTER_PERFORMANCE_CTEST=ON` 配置过构建树，否则改用 `run_performance_suite` 目标。
 
 ```powershell
 . 'C:/Users/HeJiahui/.codex/skills/using-vsdevcmd/scripts/Import-VsDevCmdEnvironment.ps1'

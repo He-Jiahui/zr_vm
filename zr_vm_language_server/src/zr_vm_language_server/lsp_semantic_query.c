@@ -450,7 +450,7 @@ static TZrBool semantic_query_try_get_analyzer_for_uri(SZrState *state,
     }
 
     if (sourceBuffer == ZR_NULL) {
-        return ZR_TRUE;
+        return ZR_FALSE;
     }
 
     if (!ZrLanguageServer_Lsp_UpdateDocumentCore(state,
@@ -477,10 +477,11 @@ static TZrBool semantic_query_try_get_analyzer_for_uri(SZrState *state,
     }
 
     analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
-    if (analyzer != ZR_NULL && analyzer->ast != ZR_NULL) {
-        *outAnalyzer = analyzer;
+    if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
+        return ZR_FALSE;
     }
 
+    *outAnalyzer = analyzer;
     return ZR_TRUE;
 }
 
@@ -2030,13 +2031,14 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
 
     projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
     query->projectIndex = projectIndex;
-    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
-    if (analyzer == ZR_NULL) {
-        analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    if (!semantic_query_try_get_analyzer_for_uri(state, context, uri, &analyzer) || analyzer == ZR_NULL ||
+        analyzer->ast == ZR_NULL) {
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        return ZR_FALSE;
     }
     query->analyzer = analyzer;
 
-    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
     if (analyzer != ZR_NULL && analyzer->ast != ZR_NULL) {
         ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
         if (ZrLanguageServer_LspSemanticImportChain_ResolveAtRange(state,

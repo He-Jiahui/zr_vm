@@ -81,7 +81,10 @@ static void execution_meta_clear_pic_slot(SZrFunctionCallSitePicSlot *slot) {
     slot->cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
 }
 
-static void execution_meta_clear_cache_entry(SZrFunctionCallSiteCacheEntry *entry) {
+static void execution_meta_clear_cache_entry(SZrFunction *function,
+                                             TZrUInt16 cacheIndex,
+                                             SZrFunctionCallSiteCacheEntry *entry,
+                                             const TZrChar *reason) {
     TZrUInt32 index;
 
     if (entry == ZR_NULL) {
@@ -178,7 +181,9 @@ static TZrBool execution_meta_resolve_call_target(SZrState *state,
     return ZR_FALSE;
 }
 
-static void execution_meta_store_pic_slot(SZrFunctionCallSiteCacheEntry *entry,
+static void execution_meta_store_pic_slot(SZrFunction *functionOwner,
+                                          TZrUInt16 cacheIndex,
+                                          SZrFunctionCallSiteCacheEntry *entry,
                                           SZrObjectPrototype *receiverPrototype,
                                           SZrObjectPrototype *ownerPrototype,
                                           SZrFunction *function,
@@ -241,6 +246,8 @@ static void execution_meta_shift_arguments_and_store_callable(SZrState *state,
 }
 
 static void execution_meta_refresh_cache(SZrState *state,
+                                         SZrFunction *functionOwner,
+                                         TZrUInt16 cacheIndex,
                                          SZrFunctionCallSiteCacheEntry *entry,
                                          SZrTypeValue *receiver,
                                          SZrString *memberName) {
@@ -261,7 +268,9 @@ static void execution_meta_refresh_cache(SZrState *state,
         return;
     }
 
-    execution_meta_store_pic_slot(entry,
+    execution_meta_store_pic_slot(functionOwner,
+                                  cacheIndex,
+                                  entry,
                                   receiverPrototype,
                                   ownerPrototype,
                                   function,
@@ -270,6 +279,8 @@ static void execution_meta_refresh_cache(SZrState *state,
 }
 
 static TZrBool execution_meta_try_cached_call(SZrState *state,
+                                              SZrFunction *function,
+                                              TZrUInt16 cacheIndex,
                                               SZrFunctionCallSiteCacheEntry *entry,
                                               SZrTypeValue *receiver,
                                               const SZrTypeValue *arguments,
@@ -300,17 +311,17 @@ static TZrBool execution_meta_try_cached_call(SZrState *state,
             continue;
         }
         if (slot->cachedOwnerPrototype == ZR_NULL || slot->cachedFunction == ZR_NULL) {
-            execution_meta_clear_cache_entry(entry);
+            execution_meta_clear_cache_entry(function, cacheIndex, entry, "missing-owner-or-function");
             return ZR_FALSE;
         }
         if (slot->cachedReceiverPrototype->super.memberVersion != slot->cachedReceiverVersion ||
             slot->cachedOwnerPrototype->super.memberVersion != slot->cachedOwnerVersion) {
-            execution_meta_clear_cache_entry(entry);
+            execution_meta_clear_cache_entry(function, cacheIndex, entry, "version-mismatch");
             return ZR_FALSE;
         }
         if (requireStaticMode &&
             ((slot->cachedIsStatic ? ZR_TRUE : ZR_FALSE) != (expectedStatic ? ZR_TRUE : ZR_FALSE))) {
-            execution_meta_clear_cache_entry(entry);
+            execution_meta_clear_cache_entry(function, cacheIndex, entry, "static-mode-mismatch");
             return ZR_FALSE;
         }
         if (!ZrCore_Object_InvokeResolvedFunction(state,
@@ -320,7 +331,7 @@ static TZrBool execution_meta_try_cached_call(SZrState *state,
                                                   arguments,
                                                   argumentCount,
                                                   result)) {
-            execution_meta_clear_cache_entry(entry);
+            execution_meta_clear_cache_entry(function, cacheIndex, entry, "invoke-resolved-failed");
             return ZR_FALSE;
         }
 
@@ -331,7 +342,9 @@ static TZrBool execution_meta_try_cached_call(SZrState *state,
     return ZR_FALSE;
 }
 
-static void execution_meta_validate_cache_static_mode(SZrFunctionCallSiteCacheEntry *entry,
+static void execution_meta_validate_cache_static_mode(SZrFunction *function,
+                                                      TZrUInt16 cacheIndex,
+                                                      SZrFunctionCallSiteCacheEntry *entry,
                                                       TZrBool requireStaticMode,
                                                       TZrBool expectedStatic) {
     TZrUInt32 slotIndex;
@@ -343,7 +356,7 @@ static void execution_meta_validate_cache_static_mode(SZrFunctionCallSiteCacheEn
     for (slotIndex = 0; slotIndex < entry->picSlotCount; slotIndex++) {
         if ((entry->picSlots[slotIndex].cachedIsStatic ? ZR_TRUE : ZR_FALSE) !=
             (expectedStatic ? ZR_TRUE : ZR_FALSE)) {
-            execution_meta_clear_cache_entry(entry);
+            execution_meta_clear_cache_entry(function, cacheIndex, entry, "post-refresh-static-mode-mismatch");
             return;
         }
     }
@@ -385,12 +398,12 @@ static TZrBool execution_meta_prepare_cached_call_target_internal(SZrState *stat
                 continue;
             }
             if (slot->cachedOwnerPrototype == ZR_NULL || slot->cachedFunction == ZR_NULL) {
-                execution_meta_clear_cache_entry(entry);
+                execution_meta_clear_cache_entry(function, cacheIndex, entry, "prepare-missing-owner-or-function");
                 return ZR_FALSE;
             }
             if (slot->cachedReceiverPrototype->super.memberVersion != slot->cachedReceiverVersion ||
                 slot->cachedOwnerPrototype->super.memberVersion != slot->cachedOwnerVersion) {
-                execution_meta_clear_cache_entry(entry);
+                execution_meta_clear_cache_entry(function, cacheIndex, entry, "prepare-version-mismatch");
                 return ZR_FALSE;
             }
 
@@ -407,7 +420,9 @@ static TZrBool execution_meta_prepare_cached_call_target_internal(SZrState *stat
 
     entry->runtimeMissCount++;
     execution_meta_shift_arguments_and_store_callable(state, stackPointer, resolvedFunction);
-    execution_meta_store_pic_slot(entry,
+    execution_meta_store_pic_slot(function,
+                                  cacheIndex,
+                                  entry,
                                   receiverPrototype,
                                   ownerPrototype,
                                   resolvedFunction,
@@ -488,7 +503,16 @@ static TZrBool execution_meta_get_cached_member_internal(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (execution_meta_try_cached_call(state, entry, receiver, ZR_NULL, 0, result, ZR_TRUE, expectedStatic)) {
+    if (execution_meta_try_cached_call(state,
+                                       function,
+                                       cacheIndex,
+                                       entry,
+                                       receiver,
+                                       ZR_NULL,
+                                       0,
+                                       result,
+                                       ZR_TRUE,
+                                       expectedStatic)) {
         return ZR_TRUE;
     }
 
@@ -503,8 +527,8 @@ static TZrBool execution_meta_get_cached_member_internal(SZrState *state,
         return ZR_FALSE;
     }
 
-    execution_meta_refresh_cache(state, entry, &stableReceiver, memberName);
-    execution_meta_validate_cache_static_mode(entry, ZR_TRUE, expectedStatic);
+    execution_meta_refresh_cache(state, function, cacheIndex, entry, &stableReceiver, memberName);
+    execution_meta_validate_cache_static_mode(function, cacheIndex, entry, ZR_TRUE, expectedStatic);
     return ZR_TRUE;
 }
 
@@ -599,6 +623,8 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
     hasReceiverAnchor = execution_meta_try_anchor_stack_value(state, receiverAndResult, &receiverAnchor);
     ZrCore_Value_ResetAsNull(&setterResult);
     if (execution_meta_try_cached_call(state,
+                                       function,
+                                       cacheIndex,
                                        entry,
                                        &stableReceiver,
                                        &stableAssignedValue,
@@ -623,8 +649,8 @@ static TZrBool execution_meta_set_cached_member_internal(SZrState *state,
         return ZR_FALSE;
     }
 
-    execution_meta_refresh_cache(state, entry, &stableReceiver, memberName);
-    execution_meta_validate_cache_static_mode(entry, ZR_TRUE, expectedStatic);
+    execution_meta_refresh_cache(state, function, cacheIndex, entry, &stableReceiver, memberName);
+    execution_meta_validate_cache_static_mode(function, cacheIndex, entry, ZR_TRUE, expectedStatic);
     return ZR_TRUE;
 }
 

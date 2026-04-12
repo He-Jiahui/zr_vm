@@ -1,0 +1,310 @@
+var system = %import("zr.system");
+var container = %import("zr.container");
+
+toText(value: int): string {
+    return <string> value;
+}
+
+fragmentFor(slot: int): string {
+    var normalized = slot % 8;
+    if (normalized == 0) {
+        return "amber";
+    }
+    if (normalized == 1) {
+        return "birch";
+    }
+    if (normalized == 2) {
+        return "cedar";
+    }
+    if (normalized == 3) {
+        return "dune";
+    }
+    if (normalized == 4) {
+        return "ember";
+    }
+    if (normalized == 5) {
+        return "frost";
+    }
+    if (normalized == 6) {
+        return "grove";
+    }
+    return "harbor";
+}
+
+payloadFor(seed: int, cycle: int, slot: int): string {
+    var head = fragmentFor(seed + cycle);
+    var middle = fragmentFor(seed / 3 + slot * 5);
+    var tail = fragmentFor(seed + cycle * 7 + slot * 11);
+    return head + "-" + middle + "-" + tail + ":" + toText(seed) + ":" + toText(cycle) + ":" + toText(slot);
+}
+
+publishArchivedGlobal(slot: int, value: string) {
+    var bucket = slot % 8;
+    var archiveBox = { value: value, slot: slot };
+    if (bucket == 0) {
+        gcOld0 = archiveBox;
+        return;
+    }
+    if (bucket == 1) {
+        gcOld1 = archiveBox;
+        return;
+    }
+    if (bucket == 2) {
+        gcOld2 = archiveBox;
+        return;
+    }
+    if (bucket == 3) {
+        gcOld3 = archiveBox;
+        return;
+    }
+    if (bucket == 4) {
+        gcOld4 = archiveBox;
+        return;
+    }
+    if (bucket == 5) {
+        gcOld5 = archiveBox;
+        return;
+    }
+    if (bucket == 6) {
+        gcOld6 = archiveBox;
+        return;
+    }
+    gcOld7 = archiveBox;
+}
+
+writeReport(checksum: int,
+            minorSamples: int,
+            minorMaxStepUs: int,
+            fullSamples: int,
+            fullMaxStepUs: int,
+            peakRememberedObjectCount: int,
+            peakRegionCount: int,
+            peakOldLiveBytes: int,
+            peakManagedMemoryBytes: int,
+            peakGcDebtBytes: int): string {
+    var outDir = "tests/fixtures/projects/gc_fragment_stress/bin/out";
+    var reportPath = outDir + "/report.txt";
+    var banner = "GC_FRAGMENT_STRESS_PASS";
+    var text = banner +
+               "\nchecksum=" + toText(checksum) +
+               "\nminorSamples=" + toText(minorSamples) +
+               "\nminorMaxStepUs=" + toText(minorMaxStepUs) +
+               "\nfullSamples=" + toText(fullSamples) +
+               "\nfullMaxStepUs=" + toText(fullMaxStepUs) +
+               "\npeakRememberedObjectCount=" + toText(peakRememberedObjectCount) +
+               "\npeakRegionCount=" + toText(peakRegionCount) +
+               "\npeakOldLiveBytes=" + toText(peakOldLiveBytes) +
+               "\npeakManagedMemoryBytes=" + toText(peakManagedMemoryBytes) +
+               "\npeakGcDebtBytes=" + toText(peakGcDebtBytes);
+    system.fs.createDirectories(outDir);
+    system.fs.writeText(reportPath, text);
+    return system.fs.readText(reportPath);
+}
+
+runStress(): int {
+    var survivors = new container.Array<string>();
+    var scratch = new container.Array<string>();
+    var anchors = new container.Map<string, int>();
+    var oldArchive = new container.Array<string>();
+    var oldLookup = new container.Map<string, string>();
+    var seed = 29;
+    var cycle = 0;
+    var checksum = 0;
+    var minorSamples = 0;
+    var minorMaxStepUs = 0;
+    var fullSamples = 0;
+    var fullMaxStepUs = 0;
+    var peakRememberedObjectCount = 0;
+    var peakRegionCount = 0;
+    var peakOldLiveBytes = 0;
+    var peakManagedMemoryBytes = 0;
+    var peakGcDebtBytes = 0;
+
+    system.gc.enable();
+    system.gc.set_heap_limit(0);
+    system.gc.set_budget(800);
+    gcArchiveRoot = oldArchive;
+    gcLookupRoot = oldLookup;
+
+    while (cycle < 36) {
+        scratch.clear();
+
+        var slot = 0;
+        while (slot < 320) {
+            seed = (seed * 73 + 19 + cycle + slot) % 10007;
+            var payload = payloadFor(seed, cycle, slot);
+            scratch.add(payload);
+            scratch.add(payload + "|" + fragmentFor(seed + slot + 3));
+
+            if (slot % 5 == 0) {
+                survivors.add(payload + "#hold#" + toText(cycle));
+            }
+            if (slot % 7 == 0) {
+                anchors[payload + "#anchor#" + toText(slot)] = seed + cycle + slot;
+            }
+            if (slot % 11 == 0) {
+                anchors[payload + "#shadow#" + toText(cycle)] = seed * 2 + slot;
+            }
+            if (slot % 17 == 0) {
+                var archiveValue = payload + "#old#" + fragmentFor(seed + cycle + slot);
+                oldArchive.add(archiveValue);
+                oldLookup["slot#" + toText(slot % 32)] = archiveValue;
+                publishArchivedGlobal(slot, archiveValue);
+            }
+            if (slot % 13 == 0 && survivors.length > 24) {
+                survivors.removeAt(0);
+            }
+            if (slot % 19 == 0 && oldArchive.length > 96) {
+                oldArchive.removeAt(0);
+            }
+
+            checksum = (checksum * 131 + seed + cycle * 17 + slot * 29) % 1000000007;
+            slot = slot + 1;
+        }
+
+        scratch.clear();
+        if (cycle % 4 == 3) {
+            anchors.clear();
+        }
+        if (oldLookup["slot#" + toText(cycle % 32)] != null) {
+            checksum = (checksum * 149 + oldArchive.length * 7 + cycle + 31) % 1000000007;
+        } else {
+            checksum = (checksum * 149 + oldArchive.length * 7 + cycle) % 1000000007;
+        }
+
+        var preStats = system.gc.get_stats();
+        var preRememberedObjectCount = <int> preStats.rememberedObjectCount;
+        var preRegionCount = <int> preStats.regionCount;
+        var preOldLiveBytes = <int> preStats.oldLiveBytes;
+        var preManagedMemoryBytes = <int> preStats.managedMemoryBytes;
+        var preGcDebtBytes = <int> preStats.gcDebtBytes;
+        if (preRememberedObjectCount > peakRememberedObjectCount) {
+            peakRememberedObjectCount = preRememberedObjectCount;
+        }
+        if (preRegionCount > peakRegionCount) {
+            peakRegionCount = preRegionCount;
+        }
+        if (preOldLiveBytes > peakOldLiveBytes) {
+            peakOldLiveBytes = preOldLiveBytes;
+        }
+        if (preManagedMemoryBytes > peakManagedMemoryBytes) {
+            peakManagedMemoryBytes = preManagedMemoryBytes;
+        }
+        if (preGcDebtBytes > peakGcDebtBytes) {
+            peakGcDebtBytes = preGcDebtBytes;
+        }
+
+        if (cycle % 6 == 5) {
+            system.gc.collect("full");
+            var fullStats = system.gc.get_stats();
+            var fullRememberedObjectCount = <int> fullStats.rememberedObjectCount;
+            var fullRegionCount = <int> fullStats.regionCount;
+            var fullOldLiveBytes = <int> fullStats.oldLiveBytes;
+            var fullManagedMemoryBytes = <int> fullStats.managedMemoryBytes;
+            var fullGcDebtBytes = <int> fullStats.gcDebtBytes;
+            fullSamples = fullSamples + 1;
+            if (fullStats.lastStepDurationUs > fullMaxStepUs) {
+                fullMaxStepUs = fullStats.lastStepDurationUs;
+            }
+            if (fullRememberedObjectCount > peakRememberedObjectCount) {
+                peakRememberedObjectCount = fullRememberedObjectCount;
+            }
+            if (fullRegionCount > peakRegionCount) {
+                peakRegionCount = fullRegionCount;
+            }
+            if (fullOldLiveBytes > peakOldLiveBytes) {
+                peakOldLiveBytes = fullOldLiveBytes;
+            }
+            if (fullManagedMemoryBytes > peakManagedMemoryBytes) {
+                peakManagedMemoryBytes = fullManagedMemoryBytes;
+            }
+            if (fullGcDebtBytes > peakGcDebtBytes) {
+                peakGcDebtBytes = fullGcDebtBytes;
+            }
+            checksum = (checksum * 137 + fullStats.lastStepWork + fullSamples * 19 + survivors.length + cycle) %
+                       1000000007;
+        } else {
+            system.gc.collect("minor");
+            var minorStats = system.gc.get_stats();
+            var minorRememberedObjectCount = <int> minorStats.rememberedObjectCount;
+            var minorRegionCount = <int> minorStats.regionCount;
+            var minorOldLiveBytes = <int> minorStats.oldLiveBytes;
+            var minorManagedMemoryBytes = <int> minorStats.managedMemoryBytes;
+            var minorGcDebtBytes = <int> minorStats.gcDebtBytes;
+            minorSamples = minorSamples + 1;
+            if (minorStats.lastStepDurationUs > minorMaxStepUs) {
+                minorMaxStepUs = minorStats.lastStepDurationUs;
+            }
+            if (minorRememberedObjectCount > peakRememberedObjectCount) {
+                peakRememberedObjectCount = minorRememberedObjectCount;
+            }
+            if (minorRegionCount > peakRegionCount) {
+                peakRegionCount = minorRegionCount;
+            }
+            if (minorOldLiveBytes > peakOldLiveBytes) {
+                peakOldLiveBytes = minorOldLiveBytes;
+            }
+            if (minorManagedMemoryBytes > peakManagedMemoryBytes) {
+                peakManagedMemoryBytes = minorManagedMemoryBytes;
+            }
+            if (minorGcDebtBytes > peakGcDebtBytes) {
+                peakGcDebtBytes = minorGcDebtBytes;
+            }
+            checksum = (checksum * 139 + minorStats.lastStepWork + minorSamples * 17 + survivors.length + cycle) %
+                       1000000007;
+        }
+
+        if (cycle % 9 == 8) {
+            survivors.clear();
+        }
+        cycle = cycle + 1;
+    }
+
+    scratch.clear();
+    anchors.clear();
+    survivors.clear();
+    system.gc.collect("full");
+
+    var finalStats = system.gc.get_stats();
+    var finalRememberedObjectCount = <int> finalStats.rememberedObjectCount;
+    var finalRegionCount = <int> finalStats.regionCount;
+    var finalOldLiveBytes = <int> finalStats.oldLiveBytes;
+    var finalManagedMemoryBytes = <int> finalStats.managedMemoryBytes;
+    var finalGcDebtBytes = <int> finalStats.gcDebtBytes;
+    fullSamples = fullSamples + 1;
+    if (finalStats.lastStepDurationUs > fullMaxStepUs) {
+        fullMaxStepUs = finalStats.lastStepDurationUs;
+    }
+    if (finalRememberedObjectCount > peakRememberedObjectCount) {
+        peakRememberedObjectCount = finalRememberedObjectCount;
+    }
+    if (finalRegionCount > peakRegionCount) {
+        peakRegionCount = finalRegionCount;
+    }
+    if (finalOldLiveBytes > peakOldLiveBytes) {
+        peakOldLiveBytes = finalOldLiveBytes;
+    }
+    if (finalManagedMemoryBytes > peakManagedMemoryBytes) {
+        peakManagedMemoryBytes = finalManagedMemoryBytes;
+    }
+    if (finalGcDebtBytes > peakGcDebtBytes) {
+        peakGcDebtBytes = finalGcDebtBytes;
+    }
+    checksum = (checksum * 149 + finalStats.lastStepWork + fullSamples * 23 + oldArchive.length * 23 + seed) %
+               1000000007;
+
+    var report = writeReport(checksum,
+                             minorSamples,
+                             minorMaxStepUs,
+                             fullSamples,
+                             fullMaxStepUs,
+                             peakRememberedObjectCount,
+                             peakRegionCount,
+                             peakOldLiveBytes,
+                             peakManagedMemoryBytes,
+                             peakGcDebtBytes);
+    system.console.printLine(report);
+    return checksum;
+}
+
+return runStress();

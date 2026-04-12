@@ -24,12 +24,6 @@
 #include "zr_vm_common/zr_io_conf.h"
 #include "zr_vm_common/zr_instruction_conf.h"
 
-// 测试时间测量结构
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
-
 // 测试日志宏（符合测试规范）
 #define TEST_START(summary) do { \
     printf("Unit Test - %s\n", summary); \

@@ -96,7 +96,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser semir raw deopt none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_semir.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c",
         pattern=r"TZrUInt32\s+deoptId\s*=\s*0\s*;",
         target="ZR_RUNTIME_SEMIR_DEOPT_ID_NONE",
         layer="common",
@@ -104,7 +104,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser quickening raw deopt none fallback",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_quickening.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c",
         pattern=r"compiler_quickening_find_deopt_id\s*\([^)]*\)\s*\{[\s\S]*?return\s+0\s*;[\s\S]*?return\s+0\s*;",
         target="ZR_RUNTIME_SEMIR_DEOPT_ID_NONE",
         layer="common",
@@ -120,7 +120,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser import-metadata fallback capacity",
-        path="zr_vm_parser/src/zr_vm_parser/type_inference_import_metadata.c",
+        path="zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c",
         pattern=r"\b4096\b",
         target="ZR_VM_READ_ALL_IO_FALLBACK_CAPACITY",
         layer="common",
@@ -144,7 +144,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="compile-time projection depth raw literals",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_instruction.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_instruction.c",
         pattern=r"ZR_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH|depth\s*>\s*64\b|visitedCount\s*>=\s*64\b|visitedObjects\s*\[\s*64\s*\]",
         target="ZR_PARSER_COMPILE_TIME_RUNTIME_SAFE_MAX_DEPTH",
         layer="common",
@@ -514,7 +514,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser compiler-state local capacities",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_state.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_state.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&cs->[A-Za-z0-9_]+,\s*sizeof\([^)]+\),\s*(4|8|16|32|64)\)",
         target="ZR_PARSER_INITIAL_CAPACITY_* / ZR_PARSER_INSTRUCTION_INITIAL_CAPACITY",
         layer="common",
@@ -522,7 +522,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser compile-expression recursive depth literal",
-        path="zr_vm_parser/src/zr_vm_parser/compile_expression_types.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c",
         pattern=r"depth\s*>\s*32\b",
         target="ZR_PARSER_RECURSIVE_MEMBER_LOOKUP_MAX_DEPTH",
         layer="common",
@@ -530,7 +530,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser type-inference core buffers and depth literal",
-        path="zr_vm_parser/src/zr_vm_parser/type_inference_core.c",
+        path="zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c",
         pattern=r"depth\s*>\s*32\b|sizeBuffer\s*\[\s*32\s*\]|elementTypeBuffer\s*\[\s*128\s*\]|"
         r"errorMessage\s*\[\s*256\s*\]|genericDiagnostic\s*\[\s*256\s*\]|errorMsg\s*\[\s*256\s*\]|"
         r"buffer\s*\[\s*512\s*\]|ZrCore_Array_Init\(state,\s*outArgumentTypeNames,\s*sizeof\(SZrString \*\),\s*2\)",
@@ -540,7 +540,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser class prototype capacities and error buffer",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_class.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c",
         pattern=r"errorMsg\s*\[\s*256\s*\]|ZrCore_Array_Init\(cs->state,\s*&info\.(inherits|implements|members),\s*sizeof\([^)]+\),\s*(2|4|16)\)",
         target="zr_parser_conf.h",
         layer="common",
@@ -548,7 +548,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser struct formatting buffers and prototype capacities",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_struct.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c",
         pattern=r"integerBuffer\s*\[\s*64\s*\]|buffer\s*\[\s*1024\s*\]|"
         r"ZrCore_Array_Init\(cs->state,\s*&info\.(inherits|implements|members),\s*sizeof\([^)]+\),\s*(2|4|16)\)",
         target="zr_parser_conf.h",
@@ -557,7 +557,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser interface prototype capacities",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_interface.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_interface.c",
         pattern=r"ZrCore_Array_Init\(cs->state,\s*&info\.(inherits|members),\s*sizeof\([^)]+\),\s*(4|8)\)",
         target="ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_INITIAL_CAPACITY_SMALL",
         layer="common",
@@ -565,7 +565,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser extern declaration prototype capacities",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c",
         pattern=r"ZrCore_Array_Init\(cs->state,\s*&info\.(inherits|implements|members),\s*sizeof\([^)]+\),\s*(2|4|8)\)",
         target="zr_parser_conf.h",
         layer="common",
@@ -573,7 +573,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser import-metadata prototype capacities",
-        path="zr_vm_parser/src/zr_vm_parser/type_inference_import_metadata.c",
+        path="zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&info->(inherits|implements|genericParameters|members),\s*sizeof\([^)]+\),\s*(2|4)\)",
         target="ZR_PARSER_INITIAL_CAPACITY_PAIR / ZR_PARSER_INITIAL_CAPACITY_TINY",
         layer="common",
@@ -581,7 +581,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser native type prototype capacities and buffers",
-        path="zr_vm_parser/src/zr_vm_parser/type_inference_native.c",
+        path="zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&info->(inherits|implements|genericParameters|members),\s*sizeof\([^)]+\),\s*(2|8)\)|"
         r"ZrCore_Array_Init\(state,\s*&genericInfo\.constraintTypeNames,\s*sizeof\(SZrString \*\),\s*2\)|"
         r"errorMessage\s*\[\s*256\s*\]|genericDiagnostic\s*\[\s*256\s*\]|nestedBuffer\s*\[\s*128\s*\]",
@@ -609,7 +609,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser compile-time executor buffers and bindings capacity",
-        path="zr_vm_parser/src/zr_vm_parser/compile_time_executor_support.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor_support.c",
         pattern=r"msg\s*\[\s*256\s*\]|ZrCore_Array_Init\(cs->state,\s*&frame->bindings,\s*sizeof\(SZrCompileTimeBinding\),\s*4\)",
         target="ZR_PARSER_ERROR_BUFFER_LENGTH / ZR_PARSER_INITIAL_CAPACITY_TINY",
         layer="common",
@@ -1074,7 +1074,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser-state raw error, snippet, and module-path buffers",
-        path="zr_vm_parser/src/zr_vm_parser/parser_state.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_state.c",
         pattern=r"errorMsg\s*\[\s*256\s*\]|buffer\s*\[\s*1024\s*\]|snippet\s*\[\s*128\s*\]",
         target="ZR_PARSER_ERROR_BUFFER_LENGTH / ZR_PARSER_DECLARATION_BUFFER_LENGTH / ZR_PARSER_TYPE_NAME_BUFFER_LENGTH",
         layer="common",
@@ -1082,7 +1082,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser writer-intermediate raw type buffers",
-        path="zr_vm_parser/src/zr_vm_parser/writer_intermediate.c",
+        path="zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c",
         pattern=r"(typeBuffer|valueTypeBuffer|paramBuffer|returnTypeBuffer)\s*\[\s*128\s*\]",
         target="ZR_PARSER_TYPE_NAME_BUFFER_LENGTH",
         layer="common",
@@ -1090,7 +1090,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser extern helper synthetic-name buffer",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_extern_helpers.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_helpers.c",
         pattern=r"buffer\s*\[\s*96\s*\]",
         target="ZR_PARSER_GENERATED_NAME_BUFFER_LENGTH",
         layer="common",
@@ -1098,7 +1098,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser statement helper raw buffers",
-        path="zr_vm_parser/src/zr_vm_parser/compile_statement.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c",
         pattern=r"buffer\s*\[\s*64\s*\]|errorMsg\s*\[\s*256\s*\]",
         target="ZR_PARSER_GENERATED_NAME_BUFFER_LENGTH / ZR_PARSER_ERROR_BUFFER_LENGTH",
         layer="common",
@@ -1106,7 +1106,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser generic-call helper buffers",
-        path="zr_vm_parser/src/zr_vm_parser/type_inference_generic_calls.c",
+        path="zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_generic_calls.c",
         pattern=r"detailBuffer\s*\[\s*256\s*\]|integerBuffer\s*\[\s*64\s*\]",
         target="ZR_PARSER_ERROR_BUFFER_LENGTH / ZR_PARSER_INTEGER_BUFFER_LENGTH",
         layer="common",
@@ -1114,7 +1114,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser passing-mode diagnostic detail buffer",
-        path="zr_vm_parser/src/zr_vm_parser/type_inference_passing_modes.c",
+        path="zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_passing_modes.c",
         pattern=r"errorBuffer\s*\[\s*160\s*\]",
         target="ZR_PARSER_DETAIL_BUFFER_LENGTH",
         layer="common",
@@ -1122,7 +1122,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser closure identifier collection capacity",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_closure.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_closure.c",
         pattern=r"ZrCore_Array_Init\(cs->state,\s*&identifierNames,\s*sizeof\(SZrString \*\),\s*16\)",
         target="ZR_PARSER_INITIAL_CAPACITY_MEDIUM",
         layer="common",
@@ -1130,7 +1130,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser binding parameter-type capacity",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_bindings.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c",
         pattern=r"ZrCore_Array_Init\(cs->state,\s*&paramTypes,\s*sizeof\(SZrInferredType\),\s*8\)",
         target="ZR_PARSER_INITIAL_CAPACITY_SMALL",
         layer="common",
@@ -1138,7 +1138,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser primary-expression helper buffers and capacities",
-        path="zr_vm_parser/src/zr_vm_parser/parser_expression_primary.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c",
         pattern=r"ZrCore_Array_Init\(ps->state,\s*names,\s*sizeof\(SZrString \*\),\s*4\)|"
         r"ZrParser_AstNodeArray_New\(ps->state,\s*4\)|errorMsg\s*\[\s*256\s*\]",
         target="ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_ERROR_BUFFER_LENGTH",
@@ -1155,7 +1155,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser class member collection capacity",
-        path="zr_vm_parser/src/zr_vm_parser/parser_class.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_class.c",
         pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*8\)",
         target="ZR_PARSER_INITIAL_CAPACITY_SMALL",
         layer="common",
@@ -1163,7 +1163,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser extern member and declaration capacities",
-        path="zr_vm_parser/src/zr_vm_parser/parser_extern.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_extern.c",
         pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*(4|8)\)",
         target="ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_INITIAL_CAPACITY_SMALL",
         layer="common",
@@ -1171,7 +1171,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser interface member collection capacity",
-        path="zr_vm_parser/src/zr_vm_parser/parser_interface.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_interface.c",
         pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*8\)",
         target="ZR_PARSER_INITIAL_CAPACITY_SMALL",
         layer="common",
@@ -1179,7 +1179,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser literal collection capacities",
-        path="zr_vm_parser/src/zr_vm_parser/parser_literals.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_literals.c",
         pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*(4|8)\)",
         target="ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_INITIAL_CAPACITY_SMALL",
         layer="common",
@@ -1187,7 +1187,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser statement collection capacities",
-        path="zr_vm_parser/src/zr_vm_parser/parser_statements.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c",
         pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*(4|8)\)",
         target="ZR_PARSER_INITIAL_CAPACITY_TINY / ZR_PARSER_INITIAL_CAPACITY_SMALL",
         layer="common",
@@ -1195,7 +1195,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser struct member collection capacity",
-        path="zr_vm_parser/src/zr_vm_parser/parser_struct.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_struct.c",
         pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*8\)",
         target="ZR_PARSER_INITIAL_CAPACITY_SMALL",
         layer="common",
@@ -1203,7 +1203,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser type collection capacities",
-        path="zr_vm_parser/src/zr_vm_parser/parser_types.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_types.c",
         pattern=r"ZrParser_AstNodeArray_New\(ps->state,\s*4\)",
         target="ZR_PARSER_INITIAL_CAPACITY_TINY",
         layer="common",
@@ -1235,7 +1235,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser-state diagnostic snippet window",
-        path="zr_vm_parser/src/zr_vm_parser/parser_state.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_state.c",
         pattern=r"column\s*>\s*20\b|snippetStart\s*=\s*pos\s*-\s*20\b|displayColumn\s*=\s*21\b|lineEnd\s*-\s*pos\s*<\s*20\b",
         target="ZR_PARSER_ERROR_SNIPPET_CONTEXT_RADIUS / ZR_PARSER_ERROR_SNIPPET_FOCUS_COLUMN",
         layer="common",
@@ -1243,7 +1243,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser class-support diagnostics",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_class_support.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c",
         pattern=r"errorMsg\s*\[\s*256\s*\]",
         target="ZR_PARSER_ERROR_BUFFER_LENGTH",
         layer="common",
@@ -1251,7 +1251,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser generic-semantics diagnostics",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_generic_semantics.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_generic_semantics.c",
         pattern=r"errorBuffer\s*\[\s*256\s*\]",
         target="ZR_PARSER_ERROR_BUFFER_LENGTH",
         layer="common",
@@ -1259,7 +1259,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser compile-expression diagnostics",
-        path="zr_vm_parser/src/zr_vm_parser/compile_expression.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c",
         pattern=r"errorMsg\s*\[\s*256\s*\]",
         target="ZR_PARSER_ERROR_BUFFER_LENGTH",
         layer="common",
@@ -1267,7 +1267,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser compile-expression-call diagnostics",
-        path="zr_vm_parser/src/zr_vm_parser/compile_expression_call.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c",
         pattern=r"errorMsg\s*\[\s*256\s*\]",
         target="ZR_PARSER_ERROR_BUFFER_LENGTH",
         layer="common",
@@ -1275,7 +1275,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser compile-time executor diagnostics",
-        path="zr_vm_parser/src/zr_vm_parser/compile_time_executor.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_time_executor.c",
         pattern=r"message\s*\[\s*256\s*\]",
         target="ZR_PARSER_ERROR_BUFFER_LENGTH",
         layer="common",
@@ -1283,7 +1283,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser declaration diagnostics",
-        path="zr_vm_parser/src/zr_vm_parser/parser_declarations.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c",
         pattern=r"errorMsg\s*\[\s*256\s*\]",
         target="ZR_PARSER_ERROR_BUFFER_LENGTH",
         layer="common",
@@ -1291,7 +1291,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser extern diagnostics",
-        path="zr_vm_parser/src/zr_vm_parser/parser_extern.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_extern.c",
         pattern=r"errorMsg\s*\[\s*256\s*\]",
         target="ZR_PARSER_ERROR_BUFFER_LENGTH",
         layer="common",
@@ -1383,7 +1383,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser bindings raw UINT32 none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_bindings.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c",
         pattern=r"\(TZrUInt32\)-1",
         target="ZR_PARSER_U32_NONE / ZR_PARSER_SLOT_NONE / ZR_PARSER_MEMBER_ID_NONE",
         layer="common",
@@ -1391,7 +1391,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser expression-support raw UINT32 none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compile_expression_support.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c",
         pattern=r"\(TZrUInt32\)-1",
         target="ZR_PARSER_U32_NONE / ZR_PARSER_SLOT_NONE / ZR_PARSER_MEMBER_ID_NONE / ZR_PARSER_INDEX_NONE",
         layer="common",
@@ -1399,7 +1399,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser expression-types raw UINT32 none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compile_expression_types.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c",
         pattern=r"\(TZrUInt32\)-1",
         target="ZR_PARSER_U32_NONE / ZR_PARSER_SLOT_NONE / ZR_PARSER_MEMBER_ID_NONE / ZR_PARSER_INDEX_NONE",
         layer="common",
@@ -1447,7 +1447,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser expression-values raw UINT32 none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compile_expression_values.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c",
         pattern=r"\(TZrUInt32\)-1",
         target="ZR_PARSER_U32_NONE / ZR_PARSER_SLOT_NONE / ZR_PARSER_MEMBER_ID_NONE / ZR_PARSER_INDEX_NONE",
         layer="common",
@@ -1455,7 +1455,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser compile-expression raw UINT32 none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compile_expression.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c",
         pattern=r"\(TZrUInt32\)-1",
         target="ZR_PARSER_U32_NONE / ZR_PARSER_SLOT_NONE / ZR_PARSER_MEMBER_ID_NONE / ZR_PARSER_INDEX_NONE",
         layer="common",
@@ -1463,7 +1463,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser class-support raw UINT32 none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_class_support.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c",
         pattern=r"\(TZrUInt32\)-1",
         target="ZR_PARSER_U32_NONE / ZR_PARSER_SLOT_NONE / ZR_PARSER_MEMBER_ID_NONE",
         layer="common",
@@ -1471,7 +1471,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser closure raw UINT32 none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_closure.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_closure.c",
         pattern=r"\(TZrUInt32\)-1",
         target="ZR_PARSER_U32_NONE / ZR_PARSER_SLOT_NONE / ZR_PARSER_INDEX_NONE",
         layer="common",
@@ -1479,7 +1479,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser extern-declaration raw UINT32 none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c",
         pattern=r"\(TZrUInt32\)-1",
         target="ZR_PARSER_SLOT_NONE",
         layer="common",
@@ -1487,7 +1487,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser function raw slot-none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_function.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_function.c",
         pattern=r"functionVarIndex\s*==\s*\(TZrUInt32\)-1",
         target="ZR_PARSER_SLOT_NONE",
         layer="common",
@@ -1495,7 +1495,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser extern-emit raw member-or-slot none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_extern_emit.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_emit.c",
         pattern=r"\(TZrUInt32\)-1",
         target="ZR_PARSER_MEMBER_ID_NONE / ZR_PARSER_SLOT_NONE",
         layer="common",
@@ -1503,7 +1503,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser instruction raw member-id none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_instruction.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_instruction.c",
         pattern=r"return\s+\(TZrUInt32\)-1;",
         target="ZR_PARSER_MEMBER_ID_NONE",
         layer="common",
@@ -1511,7 +1511,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser locals raw slot-or-index none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_locals.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_locals.c",
         pattern=r"\(TZrUInt32\)\s*-1|"
         r"if\s*\(cs == ZR_NULL \|\| cs->hasError \|\| name == ZR_NULL\)\s*\{\s*return 0;\s*\}|"
         r"if\s*\(cs == ZR_NULL \|\| name == ZR_NULL\)\s*\{\s*return 0;\s*\}|"
@@ -1522,7 +1522,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser locals raw constant-index none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_locals.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_locals.c",
         pattern=r"compiler_get_cached_null_constant_index\s*\([^)]*\)\s*\{[\s\S]*?return 0;\s*\}|"
         r"generate_function_reference_path_constant\s*\([^)]*\)\s*\{[\s\S]*?return 0;",
         target="ZR_PARSER_INDEX_NONE",
@@ -1531,7 +1531,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser expression-call raw slot-none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compile_expression_call.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_call.c",
         pattern=r"\(TZrUInt32\)-1",
         target="ZR_PARSER_SLOT_NONE",
         layer="common",
@@ -1539,7 +1539,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser statement raw slot-none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compile_statement.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c",
         pattern=r"existingLocalSlot\s*!=\s*\(TZrUInt32\)-1",
         target="ZR_PARSER_SLOT_NONE",
         layer="common",
@@ -1547,7 +1547,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser class-support raw signed index-none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_class_support.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c",
         pattern=r"return\s+-1;|trackedIndex\s*<\s*0",
         target="ZR_PARSER_I32_NONE",
         layer="common",
@@ -1555,7 +1555,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser generic-semantics raw signed index-none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_generic_semantics.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_generic_semantics.c",
         pattern=r"return\s+-1;|trackedIndex\s*>=\s*0",
         target="ZR_PARSER_I32_NONE",
         layer="common",
@@ -1563,7 +1563,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser generic-call raw signed index-none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/type_inference_generic_calls.c",
+        path="zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_generic_calls.c",
         pattern=r"return\s+-1;|bindingIndex\s*>=\s*0",
         target="ZR_PARSER_I32_NONE",
         layer="common",
@@ -1579,7 +1579,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser-state raw EOZ comparison",
-        path="zr_vm_parser/src/zr_vm_parser/parser_state.c",
+        path="zr_vm_parser/src/zr_vm_parser/parser/parser_state.c",
         pattern=r"currentChar\s*==\s*-1",
         target="ZR_PARSER_LEXER_EOZ",
         layer="common",
@@ -1587,7 +1587,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser scope raw label-id none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_scope.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_scope.c",
         pattern=r"return\s+\(TZrSize\)\s*-1;",
         target="ZR_PARSER_LABEL_ID_NONE",
         layer="common",
@@ -1595,7 +1595,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser flow raw finally-label none sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compile_statement_flow.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c",
         pattern=r"finallyLabelId\s*!=\s*\(TZrSize\)-1|finallyLabelId\s*=\s*hasFinally\s*\?\s*create_label\(cs\)\s*:\s*\(TZrSize\)-1",
         target="ZR_PARSER_LABEL_ID_NONE",
         layer="common",
@@ -1603,7 +1603,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser flow raw stack-slot bind sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/compile_statement_flow.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_statement_flow.c",
         pattern=r"bind_existing_stack_slot_as_local_var\s*\([^)]*\)\s*\{[\s\S]*?return\s+0\s*;[\s\S]*?return\s+0\s*;",
         target="ZR_PARSER_SLOT_NONE",
         layer="common",
@@ -1611,7 +1611,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser type-inference generic-start local sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/type_inference_core.c",
+        path="zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c",
         pattern=r"genericStart\s*=\s*\(TZrSize\)-1|genericStart\s*==\s*\(TZrSize\)-1",
         target="ZR_TYPE_INFERENCE_GENERIC_START_NOT_FOUND",
         layer="module",
@@ -1619,7 +1619,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser type-inference overload-score local sentinel",
-        path="zr_vm_parser/src/zr_vm_parser/type_inference_core.c",
+        path="zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c",
         pattern=r"return\s+-1;|score\s*<\s*0",
         target="ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE",
         layer="module",
@@ -1643,7 +1643,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser quickening local zero member-flags fallback",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_quickening.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c",
         pattern=r"compiler_quickening_member_entry_flags\s*\([^)]*\)\s*\{[\s\S]*?return\s+0\s*;",
         target="ZR_COMPILER_QUICKENING_MEMBER_FLAGS_NONE",
         layer="module",
@@ -1667,7 +1667,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser semir local helper capacities and id base",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_semir.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c",
         pattern=r"typedLocalBindingLength\s*\+\s*1|ownershipStates\s*\[\s*8\s*\]|nextDeoptId\s*=\s*1|nextDeoptId\s*-\s*1",
         target="ZR_SEMIR_TYPE_TABLE_DEFAULT_ENTRY_COUNT / ZR_SEMIR_OWNERSHIP_STATE_TABLE_CAPACITY / ZR_SEMIR_DEOPT_ID_FIRST",
         layer="module",
@@ -1675,7 +1675,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser semir local default indexes",
-        path="zr_vm_parser/src/zr_vm_parser/compiler_semir.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c",
         pattern=r"if\s*\(typeTable == ZR_NULL \|\| ioCount == ZR_NULL \|\| typeRef == ZR_NULL\)\s*\{\s*return 0;\s*\}|"
         r"if\s*\(function == ZR_NULL \|\| typeTable == ZR_NULL \|\| function->typedLocalBindings == ZR_NULL\)\s*\{\s*return 0;\s*\}|"
         r"return 0;\s*\}\s*static TZrUInt32 semir_ensure_ownership_state|"
@@ -1686,7 +1686,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="backend aot local empty count and root index",
-        path="zr_vm_parser/src/zr_vm_parser/backend_aot.c",
+        path="zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c",
         pattern=r"TZrUInt32\s+count\s*=\s*0\s*;|if\s*\(function == ZR_NULL\)\s*\{\s*return 0;\s*\}|entry->flatIndex == 0|functionTable\.count > 0",
         target="ZR_AOT_COUNT_NONE / ZR_AOT_FUNCTION_TREE_ROOT_INDEX",
         layer="module",
@@ -1694,7 +1694,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="backend aot empty embedded blob byte",
-        path="zr_vm_parser/src/zr_vm_parser/backend_aot.c",
+        path="zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c",
         pattern=r"fprintf\(file,\s*\"    0x00\\n\"\);",
         target="ZR_AOT_EMBEDDED_BLOB_EMPTY_BYTE",
         layer="module",
@@ -1712,7 +1712,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="parser semantic shared id boundaries in compile_statement.c",
-        path="zr_vm_parser/src/zr_vm_parser/compile_statement.c",
+        path="zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c",
         pattern=r"TZrTypeId\s+typeId\s*=\s*0;|if\s*\(cs == ZR_NULL \|\| resource == ZR_NULL \|\| cs->semanticContext == ZR_NULL\)\s*\{\s*return 0;|"
         r"resource->data\.identifier\.name == ZR_NULL\)\s*\{\s*return 0;|TZrLifetimeRegionId\s+regionId\s*=\s*0;|"
         r"TZrSymbolId\s+symbolId\s*=\s*0;|typeId,\s*0,\s*resource,\s*resource->location\)",

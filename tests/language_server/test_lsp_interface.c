@@ -619,14 +619,18 @@ static const TZrChar *g_callbacks_fixture =
     "    var exportedValue = system.vm.callModuleExport(\"callbacks\", \"summarizeCallback\", [callbackValue]);\n"
     "    var modules = system.vm.loadedModules();\n"
     "    var state = system.vm.state();\n"
-    "    system.gc.stop();\n"
-    "    system.gc.step();\n"
-    "    system.gc.start();\n"
-    "    system.gc.collect();\n"
+    "    system.gc.disable();\n"
+    "    system.gc.collect(\"minor\");\n"
+    "    system.gc.enable();\n"
+    "    system.gc.set_heap_limit(8192);\n"
+    "    system.gc.set_budget(2000);\n"
+    "    var gcStats = system.gc.get_stats();\n"
+    "    system.gc.collect(\"full\");\n"
     "    system.console.printErrorLine(\"native numeric pipeline stderr ready\");\n"
     "    return {\n"
     "        checksum: exportedValue + signalInfo.magnitude + tensorInfo.sum + tensorInfo.mean;\n"
     "        loadedModuleCount: state.loadedModuleCount;\n"
+    "        gcPhase: gcStats.collectionPhase;\n"
     "        moduleNames: modules;\n"
     "    };\n"
     "}\n"
@@ -4519,6 +4523,212 @@ static void test_lsp_native_import_definition_uses_virtual_declaration_uri(SZrSt
     TEST_PASS(timer, "LSP Native Import Definition Uses Virtual Declaration URI");
 }
 
+static void test_lsp_native_network_tcp_leaf_virtual_declaration_renders_and_import_targets_uri(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *tcpVirtualUri;
+    SZrString *sourceUri;
+    SZrString *documentText = ZR_NULL;
+    const TZrChar *renderedText;
+    const TZrChar *importContent =
+        "var tcpLeaf = %import(\"zr.network.tcp\");\n"
+        "run() {\n"
+        "    return tcpLeaf;\n"
+        "}\n";
+    SZrLspPosition tcpImportLiteralPosition;
+    SZrArray definitions;
+
+    TEST_START("LSP Native Network TCP Leaf Virtual Declaration Renders And Import Targets URI");
+    TEST_INFO("zr.network.tcp leaf module",
+              "Leaf module zr.network.tcp should render a zr-decompiled virtual document and %import should navigate to the same URI (moduleLinks / dotted native name).");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Native Network TCP Leaf Virtual Declaration Renders And Import Targets URI",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    tcpVirtualUri = ZrCore_String_Create(state,
+                                         "zr-decompiled:/zr.network.tcp.zr",
+                                         strlen("zr-decompiled:/zr.network.tcp.zr"));
+    if (tcpVirtualUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetNativeDeclarationDocument(state, context, tcpVirtualUri, &documentText) ||
+        documentText == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Network TCP Leaf Virtual Declaration Renders And Import Targets URI",
+                  "Failed to resolve the zr.network.tcp decompiled declaration document");
+        return;
+    }
+
+    renderedText = test_string_ptr(documentText);
+    if (renderedText == ZR_NULL ||
+        strstr(renderedText, "%extern(\"zr.network.tcp\")") == ZR_NULL ||
+        strstr(renderedText, "listen") == ZR_NULL ||
+        strstr(renderedText, "TcpListener") == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Network TCP Leaf Virtual Declaration Renders And Import Targets URI",
+                  "Expected zr.network.tcp virtual text to include extern header, listen, and TcpListener metadata");
+        return;
+    }
+
+    sourceUri = ZrCore_String_Create(state, "file:///native_import_zr_network_tcp_leaf.zr", 44);
+    if (sourceUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, sourceUri, importContent, strlen(importContent), 1) ||
+        !lsp_find_position_for_substring(importContent, "\"zr.network.tcp\"", 0, 1, &tcpImportLiteralPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Network TCP Leaf Virtual Declaration Renders And Import Targets URI",
+                  "Failed to prepare zr.network.tcp import definition fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, sourceUri, tcpImportLiteralPosition, &definitions) ||
+        !location_array_contains_uri_text(&definitions, "zr-decompiled:/zr.network.tcp.zr")) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Network TCP Leaf Virtual Declaration Renders And Import Targets URI",
+                  "Expected goto definition on %import(\"zr.network.tcp\") to include zr-decompiled:/zr.network.tcp.zr");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &definitions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Native Network TCP Leaf Virtual Declaration Renders And Import Targets URI");
+}
+
+static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var task = %import(\"zr.task\");\n"
+        "var thread = %import(\"zr.thread\");\n"
+        "run() {\n"
+        "    var pending = task.spawn;\n"
+        "    return thread.spawnThread;\n"
+        "}\n";
+    SZrLspPosition taskImportPosition;
+    SZrLspPosition threadImportPosition;
+    SZrLspHover *hover = ZR_NULL;
+    SZrArray definitions;
+    SZrString *taskDeclarationUri = ZR_NULL;
+    SZrString *threadDeclarationUri = ZR_NULL;
+    SZrString *documentText = ZR_NULL;
+    const TZrChar *renderedText;
+
+    TEST_START("LSP Auto Registers Linked Native Libraries For Import Metadata");
+    TEST_INFO("Linked native library imports",
+              "The LSP context should auto-register every linked builtin library so zr.task/zr.thread imports immediately surface native metadata and completions.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Auto Registers Linked Native Libraries For Import Metadata",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///native_import_all_libraries.zr", 38);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "\"zr.task\"", 0, 1, &taskImportPosition) ||
+        !lsp_find_position_for_substring(content, "\"zr.thread\"", 0, 1, &threadImportPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Auto Registers Linked Native Libraries For Import Metadata",
+                  "Failed to prepare linked native-library import metadata fixture");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, taskImportPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "module <zr.task>") ||
+        !hover_contains_text(hover, "Source: native builtin")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Auto Registers Linked Native Libraries For Import Metadata",
+                  "Hover on %import(\"zr.task\") should resolve through auto-registered native builtin metadata");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, threadImportPosition, &definitions) ||
+        !location_array_contains_uri_text(&definitions, "zr-decompiled:/zr.thread.zr")) {
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Auto Registers Linked Native Libraries For Import Metadata",
+                  "Goto definition on %import(\"zr.thread\") should resolve through the auto-registered zr-decompiled virtual document");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    taskDeclarationUri = ZrCore_String_Create(state,
+                                              "zr-decompiled:/zr.task.zr",
+                                              strlen("zr-decompiled:/zr.task.zr"));
+    threadDeclarationUri = ZrCore_String_Create(state,
+                                                "zr-decompiled:/zr.thread.zr",
+                                                strlen("zr-decompiled:/zr.thread.zr"));
+    if (taskDeclarationUri == ZR_NULL || threadDeclarationUri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Auto Registers Linked Native Libraries For Import Metadata",
+                  "Failed to allocate the zr-decompiled declaration URIs for linked native modules");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetNativeDeclarationDocument(state, context, taskDeclarationUri, &documentText) ||
+        documentText == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Auto Registers Linked Native Libraries For Import Metadata",
+                  "Failed to render the auto-registered zr.task declaration document");
+        return;
+    }
+    renderedText = test_string_ptr(documentText);
+    if (renderedText == ZR_NULL ||
+        strstr(renderedText, "%extern(\"zr.task\")") == ZR_NULL ||
+        strstr(renderedText, "pub __createTaskRunner(") == ZR_NULL ||
+        strstr(renderedText, "pub interface IScheduler") == ZR_NULL ||
+        strstr(renderedText, "pub class TaskRunner<T>") == ZR_NULL ||
+        strstr(renderedText, "pub class Task<T>") == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Auto Registers Linked Native Libraries For Import Metadata",
+                  "The auto-registered zr.task decompiled document should expose the built-in scheduler/task metadata registered by the runtime descriptor");
+        return;
+    }
+
+    documentText = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetNativeDeclarationDocument(state, context, threadDeclarationUri, &documentText) ||
+        documentText == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Auto Registers Linked Native Libraries For Import Metadata",
+                  "Failed to render the auto-registered zr.thread declaration document");
+        return;
+    }
+    renderedText = test_string_ptr(documentText);
+    if (renderedText == ZR_NULL ||
+        strstr(renderedText, "%extern(\"zr.thread\")") == ZR_NULL ||
+        strstr(renderedText, "pub spawnThread(") == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Auto Registers Linked Native Libraries For Import Metadata",
+                  "The auto-registered zr.thread decompiled document should expose spawnThread declarations");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Auto Registers Linked Native Libraries For Import Metadata");
+}
+
 static void test_lsp_project_modules_summarize_project_native_and_binary_modules(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5257,6 +5467,9 @@ int main(void) {
     test_lsp_project_references_include_imported_function_usage(state);
     TEST_DIVIDER();
 
+    test_lsp_native_network_tcp_leaf_virtual_declaration_renders_and_import_targets_uri(state);
+    TEST_DIVIDER();
+
     test_lsp_project_workspace_symbols_include_imported_exports(state);
     TEST_DIVIDER();
 
@@ -5354,6 +5567,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_native_import_definition_uses_virtual_declaration_uri(state);
+    TEST_DIVIDER();
+
+    test_lsp_auto_registers_linked_native_libraries_for_import_metadata(state);
     TEST_DIVIDER();
 
     test_lsp_project_modules_summarize_project_native_and_binary_modules(state);

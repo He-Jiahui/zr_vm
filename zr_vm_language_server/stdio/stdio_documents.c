@@ -399,21 +399,23 @@ int update_document_contents(SZrStdioServer *server,
                              const char *content,
                              size_t contentLength,
                              TZrSize version) {
+    int updateOk;
+
     if (server == ZR_NULL || uri == ZR_NULL || content == NULL) {
         return 0;
     }
 
-    if (!ZrLanguageServer_Lsp_UpdateDocument(
-            server->state,
-            server->context,
-            uri,
-            content,
-            (TZrSize)contentLength,
-            version)) {
-        return 0;
-    }
+    updateOk = ZrLanguageServer_Lsp_UpdateDocument(
+                   server->state,
+                   server->context,
+                   uri,
+                   content,
+                   (TZrSize)contentLength,
+                   version)
+                   ? 1
+                   : 0;
     publish_diagnostics(server, uri);
-    return 1;
+    return updateOk;
 }
 
 int update_document_contents_from_disk(SZrStdioServer *server, SZrString *uri) {

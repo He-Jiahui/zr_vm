@@ -26,6 +26,7 @@ static void native_string_push_string_to_stack(SZrNativeStringFormatBuffer *buff
     SZrState *state = buffer->state;
     SZrString *str = ZrCore_String_Create(state, string, length);
     ZrCore_Stack_SetRawObjectValue(buffer->state, state->stackTop.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(str));
+    ZrCore_Stack_GetValue(state->stackTop.valuePointer)->type = ZR_VALUE_TYPE_STRING;
     state->stackTop.valuePointer += 1;
     if (!buffer->isOnStack) {
         buffer->isOnStack = ZR_TRUE;
@@ -114,6 +115,7 @@ static void zr_string_collapse_stack_window(SZrState *state,
 
     if (result != ZR_NULL) {
         ZrCore_Stack_SetRawObjectValue(state, firstSlot, ZR_CAST_RAW_OBJECT_AS_SUPER(result));
+        ZrCore_Stack_GetValue(firstSlot)->type = ZR_VALUE_TYPE_STRING;
     } else {
         ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(firstSlot));
     }

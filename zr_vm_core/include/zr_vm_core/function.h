@@ -338,7 +338,9 @@ typedef enum EZrFunctionCallSiteCacheKind {
     ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL = 5,
     ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL = 6,
     ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL = 7,
-    ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL = 8
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL = 8,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET = 9,
+    ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET = 10
 } EZrFunctionCallSiteCacheKind;
 
 typedef struct SZrFunctionCallSitePicSlot {
@@ -394,6 +396,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     SZrTypeValue *constantValueList;
     SZrFunctionLocalVariable *localVariableList;
     struct SZrFunction *childFunctionList;
+    struct SZrFunction *ownerFunction;
     // function debug info
     SZrFunctionExecutionLocationInfo *executionLocationInfoList;
     SZrFunctionCatchClauseInfo *catchClauseList;
@@ -506,10 +509,15 @@ ZR_CORE_API TZrStackValuePointer ZrCore_Function_StackAnchorRestore(struct SZrSt
                                                                const SZrFunctionStackAnchor *anchor);
 
 ZR_CORE_API void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *function);
+ZR_CORE_API void ZrCore_Function_DetachOwnedBuffers(SZrFunction *function);
 
 ZR_CORE_API TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(const SZrFunction *function);
 
 ZR_CORE_API TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function);
+ZR_CORE_API TZrBool ZrCore_Function_ApplyReturnEscape(struct SZrState *state,
+                                                      const SZrFunction *function,
+                                                      TZrUInt32 stackSlot,
+                                                      const SZrTypeValue *value);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CheckStackAndAnchor(struct SZrState *state,
                                                                 TZrSize size,
@@ -537,14 +545,26 @@ ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, 
                                                   TZrSize resultCount, TZrStackValuePointer returnDestination);
 
 ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownValue(struct SZrState *state,
-                                                            TZrStackValuePointer stackPointer,
-                                                            struct SZrTypeValue *callableValue,
-                                                            TZrSize resultCount,
-                                                            TZrStackValuePointer returnDestination);
+                                                             TZrStackValuePointer stackPointer,
+                                                             struct SZrTypeValue *callableValue,
+                                                             TZrSize resultCount,
+                                                             TZrStackValuePointer returnDestination);
+
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownVmValue(struct SZrState *state,
+                                                             TZrStackValuePointer stackPointer,
+                                                             struct SZrTypeValue *callableValue,
+                                                             TZrSize resultCount,
+                                                             TZrStackValuePointer returnDestination);
+
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownNativeValue(struct SZrState *state,
+                                                                 TZrStackValuePointer stackPointer,
+                                                                 struct SZrTypeValue *callableValue,
+                                                                 TZrSize resultCount,
+                                                                 TZrStackValuePointer returnDestination);
 
 ZR_CORE_API TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
-                                                 struct SZrCallInfo *callInfo,
-                                                 TZrStackValuePointer stackPointer);
+                                                  struct SZrCallInfo *callInfo,
+                                                  TZrStackValuePointer stackPointer);
 
 ZR_CORE_API void ZrCore_Function_PostCall(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount);
 #endif // ZR_VM_CORE_FUNCTION_H

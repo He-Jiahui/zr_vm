@@ -146,7 +146,7 @@
               },
               "cliPath": {
                 "type": "string",
-                "description": "Optional absolute path to zr_vm_cli."
+                "description": "Optional path to zr_vm_cli. Relative paths resolve against the active workspace folder."
               },
               "args": {
                 "type": "array",
@@ -293,7 +293,7 @@
         "zr.executablePath": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to the default zr_vm_cli executable used for running and debugging .zrp projects."
+          "description": "Path to the default zr_vm_cli executable used for running and debugging .zrp projects. Relative paths resolve against the active workspace folder, then the extension install."
         },
         "zr.languageServer.enable": {
           "type": "boolean",
@@ -323,27 +323,31 @@
         "zr.languageServer.native.path": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to a custom zr_vm_language_server_stdio executable."
+          "description": "Path to a custom zr_vm_language_server_stdio executable. Relative paths resolve against the active workspace folder, then the extension install."
         },
         "zr.debug.cli.path": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to a custom zr_vm_cli executable used for ZR desktop debugging.",
+          "description": "Path to a custom zr_vm_cli executable used for ZR desktop debugging. Relative paths resolve against the active workspace folder, then the extension install.",
           "deprecationMessage": "Use zr.executablePath instead. This setting remains as a backward-compatible fallback."
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile && npm run build:native && npm run sync:native && npm run build:wasm && npm run sync:wasm",
+    "vscode:prepublish": "npm run compile && npm run bundle:servers",
     "clean:out": "node ./scripts/clean-output.js",
     "compile": "npm run clean:out && tsc -p ./ && node ./scripts/build-web-worker.js",
     "watch": "tsc -watch -p ./",
     "build:native": "node ./scripts/build-native-server.js",
     "build:wasm": "node ./scripts/build-wasm-server.js",
+    "build:servers": "npm run build:native && npm run build:wasm",
     "sync:native": "node ./scripts/sync-native-server.js",
     "sync:wasm": "node ./scripts/sync-wasm-server.js",
+    "sync:servers": "npm run sync:native && npm run sync:wasm",
+    "bundle:servers": "npm run build:servers && npm run sync:servers",
     "package:vsix": "powershell -ExecutionPolicy Bypass -File ./scripts/package-vsix.ps1",
+    "test:unit": "node --test test/*.test.js",
     "test:e2e:desktop": "npm run compile && npm run build:native && node ./scripts/run-electron-smoke.js",
     "test:e2e:desktop:debug": "npm run compile && npm run build:native && set ZR_TEST_SMOKE_FOCUS=debug&& node ./scripts/run-electron-smoke.js",
     "test:e2e:web": "npm run compile && npm run build:wasm && npm run sync:wasm && node ./scripts/run-web-smoke.js",

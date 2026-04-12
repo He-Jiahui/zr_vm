@@ -44,51 +44,7 @@
 #include "zr_vm_core/value.h"
 #include "zr_vm_parser.h"
 #include "test_support.h"
-
-// 测试时间测量结构
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
-
-// 测试日志宏（符合测试规范）
-#define TEST_START(summary)                                                                                            \
-    do {                                                                                                               \
-        printf("Unit Test - %s\n", summary);                                                                           \
-        fflush(stdout);                                                                                                \
-    } while (0)
-
-#define TEST_INFO(summary, details)                                                                                    \
-    do {                                                                                                               \
-        printf("Testing %s:\n %s\n", summary, details);                                                                \
-        fflush(stdout);                                                                                                \
-    } while (0)
-
-#define TEST_PASS_CUSTOM(timer, summary)                                                                               \
-    do {                                                                                                               \
-        double elapsed = ((double) (timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0;                       \
-        printf("Pass - Cost Time:%.3fms - %s\n", elapsed, summary);                                                    \
-        fflush(stdout);                                                                                                \
-    } while (0)
-
-#define TEST_FAIL_CUSTOM(timer, summary, reason)                                                                       \
-    do {                                                                                                               \
-        double elapsed = ((double) (timer.endTime - timer.startTime) / CLOCKS_PER_SEC) * 1000.0;                       \
-        printf("Fail - Cost Time:%.3fms - %s:\n %s\n", elapsed, summary, reason);                                      \
-        fflush(stdout);                                                                                                \
-    } while (0)
-
-#define TEST_DIVIDER()                                                                                                 \
-    do {                                                                                                               \
-        printf("----------\n");                                                                                        \
-        fflush(stdout);                                                                                                \
-    } while (0)
-
-#define TEST_MODULE_DIVIDER()                                                                                          \
-    do {                                                                                                               \
-        printf("==========\n");                                                                                        \
-        fflush(stdout);                                                                                                \
-    } while (0)
+#include "zr_test_log_macros.h"
 
 // realpath 兼容函数（MSVC使用_fullpath）
 #ifdef _MSC_VER
@@ -253,28 +209,28 @@ static void set_test_object_object_field(SZrState *state,
 }
 
 // 测试函数前向声明
-static void test_struct_prototype_compilation(void);
-static void test_class_prototype_compilation(void);
-static void test_prototype_creation_functions(void);
-static void test_prototype_inheritance(void);
-static void test_prototype_module_export(void);
-static void test_struct_field_offsets(void);
-static void test_prototype_inheritance_loading(void);
-static void test_struct_value_copy_clones_nested_storage(void);
+void test_struct_prototype_compilation(void);
+void test_class_prototype_compilation(void);
+void test_prototype_creation_functions(void);
+void test_prototype_inheritance(void);
+void test_prototype_module_export(void);
+void test_struct_field_offsets(void);
+void test_prototype_inheritance_loading(void);
+void test_struct_value_copy_clones_nested_storage(void);
 
 // 测试 struct prototype 编译时收集
-static void test_struct_prototype_compilation(void) {
-    TEST_START("Struct Prototype Compilation");
+void test_struct_prototype_compilation(void) {
+    ZR_TEST_START("Struct Prototype Compilation");
     SZrTestTimer timer;
     timer.startTime = clock();
     timer.endTime = timer.startTime; // 初始化 endTime 以避免未初始化警告
 
-    TEST_INFO("Struct prototype compilation", "Testing that struct declarations are collected during compilation");
+    ZR_TEST_INFO("Struct prototype compilation", "Testing that struct declarations are collected during compilation");
 
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12345, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Struct Prototype Compilation", "Failed to create global state");
+        ZR_TEST_FAIL(timer, "Struct Prototype Compilation", "Failed to create global state");
         return;
     }
 
@@ -285,7 +241,7 @@ static void test_struct_prototype_compilation(void) {
     if (testFile == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Struct Prototype Compilation", "Test file not found");
+        ZR_TEST_FAIL(timer, "Struct Prototype Compilation", "Test file not found");
         return;
     }
 
@@ -295,7 +251,7 @@ static void test_struct_prototype_compilation(void) {
         free(testFile);
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Struct Prototype Compilation", "Failed to read test file");
+        ZR_TEST_FAIL(timer, "Struct Prototype Compilation", "Failed to read test file");
         return;
     }
 
@@ -310,7 +266,7 @@ static void test_struct_prototype_compilation(void) {
         free(testFile);
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Struct Prototype Compilation", "Compilation failed");
+        ZR_TEST_FAIL(timer, "Struct Prototype Compilation", "Compilation failed");
         return;
     }
 
@@ -431,22 +387,22 @@ static void test_struct_prototype_compilation(void) {
     timer.endTime = clock();
 
 
-    TEST_PASS_CUSTOM(timer, "Struct Prototype Compilation");
+    ZR_TEST_PASS(timer, "Struct Prototype Compilation");
 }
 
 // 测试 class prototype 编译时收集
-static void test_class_prototype_compilation(void) {
-    TEST_START("Class Prototype Compilation");
+void test_class_prototype_compilation(void) {
+    ZR_TEST_START("Class Prototype Compilation");
     SZrTestTimer timer;
     timer.startTime = clock();
     timer.endTime = timer.startTime; // 初始化 endTime 以避免未初始化警告
 
-    TEST_INFO("Class prototype compilation", "Testing that class declarations are collected during compilation");
+    ZR_TEST_INFO("Class prototype compilation", "Testing that class declarations are collected during compilation");
 
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12346, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Failed to create global state");
+        ZR_TEST_FAIL(timer, "Class Prototype Compilation", "Failed to create global state");
         return;
     }
 
@@ -457,7 +413,7 @@ static void test_class_prototype_compilation(void) {
     if (testFile == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Test file not found");
+        ZR_TEST_FAIL(timer, "Class Prototype Compilation", "Test file not found");
         return;
     }
 
@@ -467,7 +423,7 @@ static void test_class_prototype_compilation(void) {
         free(testFile);
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Failed to read test file");
+        ZR_TEST_FAIL(timer, "Class Prototype Compilation", "Failed to read test file");
         return;
     }
 
@@ -482,7 +438,7 @@ static void test_class_prototype_compilation(void) {
         free(testFile);
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Compilation failed");
+        ZR_TEST_FAIL(timer, "Class Prototype Compilation", "Compilation failed");
         return;
     }
 
@@ -573,25 +529,25 @@ static void test_class_prototype_compilation(void) {
     timer.endTime = clock();
 
     if (hasPrototypeData || hasPrototypeInfo) {
-        TEST_PASS_CUSTOM(timer, "Class Prototype Compilation");
+        ZR_TEST_PASS(timer, "Class Prototype Compilation");
     } else {
-        TEST_FAIL_CUSTOM(timer, "Class Prototype Compilation", "Prototype information not found");
+        ZR_TEST_FAIL(timer, "Class Prototype Compilation", "Prototype information not found");
     }
 }
 
 // 测试 prototype 运行时创建函数
-static void test_prototype_creation_functions(void) {
-    TEST_START("Prototype Creation Functions");
+void test_prototype_creation_functions(void) {
+    ZR_TEST_START("Prototype Creation Functions");
     SZrTestTimer timer;
     timer.startTime = clock();
     timer.endTime = timer.startTime; // 初始化 endTime 以避免未初始化警告
 
-    TEST_INFO("Prototype creation functions", "Testing ZrCore_ObjectPrototype_New and ZrCore_StructPrototype_New functions");
+    ZR_TEST_INFO("Prototype creation functions", "Testing ZrCore_ObjectPrototype_New and ZrCore_StructPrototype_New functions");
 
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12347, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "Failed to create global state");
+        ZR_TEST_FAIL(timer, "Prototype Creation Functions", "Failed to create global state");
         return;
     }
 
@@ -602,7 +558,7 @@ static void test_prototype_creation_functions(void) {
     if (typeName == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "Failed to create type name string");
+        ZR_TEST_FAIL(timer, "Prototype Creation Functions", "Failed to create type name string");
         return;
     }
 
@@ -611,7 +567,7 @@ static void test_prototype_creation_functions(void) {
     if (structPrototype == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "Failed to create StructPrototype");
+        ZR_TEST_FAIL(timer, "Prototype Creation Functions", "Failed to create StructPrototype");
         return;
     }
 
@@ -619,14 +575,14 @@ static void test_prototype_creation_functions(void) {
     if (structPrototype->super.name != typeName) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "StructPrototype name mismatch");
+        ZR_TEST_FAIL(timer, "Prototype Creation Functions", "StructPrototype name mismatch");
         return;
     }
 
     if (structPrototype->super.type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "StructPrototype type mismatch");
+        ZR_TEST_FAIL(timer, "Prototype Creation Functions", "StructPrototype type mismatch");
         return;
     }
 
@@ -639,7 +595,7 @@ static void test_prototype_creation_functions(void) {
     if (className == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "Failed to create class name string");
+        ZR_TEST_FAIL(timer, "Prototype Creation Functions", "Failed to create class name string");
         return;
     }
 
@@ -647,7 +603,7 @@ static void test_prototype_creation_functions(void) {
     if (classPrototype == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "Failed to create ObjectPrototype");
+        ZR_TEST_FAIL(timer, "Prototype Creation Functions", "Failed to create ObjectPrototype");
         return;
     }
 
@@ -655,14 +611,14 @@ static void test_prototype_creation_functions(void) {
     if (classPrototype->name != className) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "ObjectPrototype name mismatch");
+        ZR_TEST_FAIL(timer, "Prototype Creation Functions", "ObjectPrototype name mismatch");
         return;
     }
 
     if (classPrototype->type != ZR_OBJECT_PROTOTYPE_TYPE_CLASS) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Creation Functions", "ObjectPrototype type mismatch");
+        ZR_TEST_FAIL(timer, "Prototype Creation Functions", "ObjectPrototype type mismatch");
         return;
     }
 
@@ -679,22 +635,22 @@ static void test_prototype_creation_functions(void) {
 
     ZrCore_GlobalState_Free(global);
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, "Prototype Creation Functions");
+    ZR_TEST_PASS(timer, "Prototype Creation Functions");
 }
 
 // 测试 prototype 继承关系设置
-static void test_prototype_inheritance(void) {
-    TEST_START("Prototype Inheritance");
+void test_prototype_inheritance(void) {
+    ZR_TEST_START("Prototype Inheritance");
     SZrTestTimer timer;
     timer.startTime = clock();
     timer.endTime = timer.startTime; // 初始化 endTime 以避免未初始化警告
 
-    TEST_INFO("Prototype inheritance", "Testing ZrCore_ObjectPrototype_SetSuper function");
+    ZR_TEST_INFO("Prototype inheritance", "Testing ZrCore_ObjectPrototype_SetSuper function");
 
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12348, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Inheritance", "Failed to create global state");
+        ZR_TEST_FAIL(timer, "Prototype Inheritance", "Failed to create global state");
         return;
     }
 
@@ -706,7 +662,7 @@ static void test_prototype_inheritance(void) {
     if (parentPrototype == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Inheritance", "Failed to create parent prototype");
+        ZR_TEST_FAIL(timer, "Prototype Inheritance", "Failed to create parent prototype");
         return;
     }
 
@@ -716,7 +672,7 @@ static void test_prototype_inheritance(void) {
     if (childPrototype == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Inheritance", "Failed to create child prototype");
+        ZR_TEST_FAIL(timer, "Prototype Inheritance", "Failed to create child prototype");
         return;
     }
 
@@ -727,28 +683,28 @@ static void test_prototype_inheritance(void) {
     if (childPrototype->superPrototype != parentPrototype) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Inheritance", "Inheritance relationship not set correctly");
+        ZR_TEST_FAIL(timer, "Prototype Inheritance", "Inheritance relationship not set correctly");
         return;
     }
 
     ZrCore_GlobalState_Free(global);
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, "Prototype Inheritance");
+    ZR_TEST_PASS(timer, "Prototype Inheritance");
 }
 
 // 测试 prototype 模块导出
-static void test_prototype_module_export(void) {
-    TEST_START("Prototype Module Export");
+void test_prototype_module_export(void) {
+    ZR_TEST_START("Prototype Module Export");
     SZrTestTimer timer;
     timer.startTime = clock();
     timer.endTime = timer.startTime; // 初始化 endTime 以避免未初始化警告
 
-    TEST_INFO("Prototype module export", "Testing that prototypes are exported to module correctly");
+    ZR_TEST_INFO("Prototype module export", "Testing that prototypes are exported to module correctly");
 
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12349, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Failed to create global state");
+        ZR_TEST_FAIL(timer, "Prototype Module Export", "Failed to create global state");
         return;
     }
 
@@ -759,7 +715,7 @@ static void test_prototype_module_export(void) {
     if (module == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Failed to create module");
+        ZR_TEST_FAIL(timer, "Prototype Module Export", "Failed to create module");
         return;
     }
 
@@ -773,7 +729,7 @@ static void test_prototype_module_export(void) {
     if (prototype == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Failed to create prototype");
+        ZR_TEST_FAIL(timer, "Prototype Module Export", "Failed to create prototype");
         return;
     }
 
@@ -789,14 +745,14 @@ static void test_prototype_module_export(void) {
     if (exportedValue == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Prototype not found in module exports");
+        ZR_TEST_FAIL(timer, "Prototype Module Export", "Prototype not found in module exports");
         return;
     }
 
     if (exportedValue->type != ZR_VALUE_TYPE_OBJECT) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Exported value type mismatch");
+        ZR_TEST_FAIL(timer, "Prototype Module Export", "Exported value type mismatch");
         return;
     }
 
@@ -804,28 +760,28 @@ static void test_prototype_module_export(void) {
     if (exportedPrototype != prototype) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Module Export", "Exported prototype mismatch");
+        ZR_TEST_FAIL(timer, "Prototype Module Export", "Exported prototype mismatch");
         return;
     }
 
     ZrCore_GlobalState_Free(global);
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, "Prototype Module Export");
+    ZR_TEST_PASS(timer, "Prototype Module Export");
 }
 
 // 测试 struct 字段偏移量
-static void test_struct_field_offsets(void) {
-    TEST_START("Struct Field Offsets");
+void test_struct_field_offsets(void) {
+    ZR_TEST_START("Struct Field Offsets");
     SZrTestTimer timer;
     timer.startTime = clock();
     timer.endTime = timer.startTime;
 
-    TEST_INFO("Struct field offsets", "Testing that struct fields have correct offsets in keyOffsetMap");
+    ZR_TEST_INFO("Struct field offsets", "Testing that struct fields have correct offsets in keyOffsetMap");
 
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12350, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Struct Field Offsets", "Failed to create global state");
+        ZR_TEST_FAIL(timer, "Struct Field Offsets", "Failed to create global state");
         return;
     }
 
@@ -836,7 +792,7 @@ static void test_struct_field_offsets(void) {
     if (testFile == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Struct Field Offsets", "Test file not found");
+        ZR_TEST_FAIL(timer, "Struct Field Offsets", "Test file not found");
         return;
     }
 
@@ -846,7 +802,7 @@ static void test_struct_field_offsets(void) {
         free(testFile);
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Struct Field Offsets", "Failed to read test file");
+        ZR_TEST_FAIL(timer, "Struct Field Offsets", "Failed to read test file");
         return;
     }
 
@@ -859,7 +815,7 @@ static void test_struct_field_offsets(void) {
         free(testFile);
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Struct Field Offsets", "Compilation failed");
+        ZR_TEST_FAIL(timer, "Struct Field Offsets", "Compilation failed");
         return;
     }
 
@@ -909,23 +865,23 @@ static void test_struct_field_offsets(void) {
     ZrCore_GlobalState_Free(global);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, "Struct Field Offsets");
+    ZR_TEST_PASS(timer, "Struct Field Offsets");
 }
 
 // 测试继承关系的完整加载
-static void test_prototype_inheritance_loading(void) {
-    TEST_START("Prototype Inheritance Loading");
+void test_prototype_inheritance_loading(void) {
+    ZR_TEST_START("Prototype Inheritance Loading");
     SZrTestTimer timer;
     timer.startTime = clock();
     timer.endTime = timer.startTime;
 
-    TEST_INFO("Prototype inheritance loading",
+    ZR_TEST_INFO("Prototype inheritance loading",
               "Testing that inheritance relationships are correctly loaded from constants");
 
     SZrGlobalState *global = ZrCore_GlobalState_New(test_allocator, ZR_NULL, 12351, ZR_NULL);
     if (global == ZR_NULL) {
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Inheritance Loading", "Failed to create global state");
+        ZR_TEST_FAIL(timer, "Prototype Inheritance Loading", "Failed to create global state");
         return;
     }
 
@@ -936,7 +892,7 @@ static void test_prototype_inheritance_loading(void) {
     if (testFile == ZR_NULL) {
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Inheritance Loading", "Test file not found");
+        ZR_TEST_FAIL(timer, "Prototype Inheritance Loading", "Test file not found");
         return;
     }
 
@@ -946,7 +902,7 @@ static void test_prototype_inheritance_loading(void) {
         free(testFile);
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Inheritance Loading", "Failed to read test file");
+        ZR_TEST_FAIL(timer, "Prototype Inheritance Loading", "Failed to read test file");
         return;
     }
 
@@ -959,7 +915,7 @@ static void test_prototype_inheritance_loading(void) {
         free(testFile);
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_FAIL_CUSTOM(timer, "Prototype Inheritance Loading", "Compilation failed");
+        ZR_TEST_FAIL(timer, "Prototype Inheritance Loading", "Compilation failed");
         return;
     }
 
@@ -1014,12 +970,12 @@ static void test_prototype_inheritance_loading(void) {
     ZrCore_GlobalState_Free(global);
 
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, "Prototype Inheritance Loading");
+    ZR_TEST_PASS(timer, "Prototype Inheritance Loading");
 }
 
-static void test_struct_value_copy_clones_nested_storage(void) {
-    TEST_START("Struct Value Copy Clones Nested Storage");
-    TEST_INFO("Struct copy semantics",
+void test_struct_value_copy_clones_nested_storage(void) {
+    ZR_TEST_START("Struct Value Copy Clones Nested Storage");
+    ZR_TEST_INFO("Struct copy semantics",
               "Copying a struct value should allocate a distinct boxed object and recursively clone nested struct storage");
 
     {
@@ -1102,40 +1058,8 @@ static void test_struct_value_copy_clones_nested_storage(void) {
 
         ZrCore_GlobalState_Free(global);
         timer.endTime = clock();
-        TEST_PASS_CUSTOM(timer, "Struct Value Copy Clones Nested Storage");
+        ZR_TEST_PASS(timer, "Struct Value Copy Clones Nested Storage");
     }
 
-    TEST_DIVIDER();
-}
-
-// 主测试函数
-int main(void) {
-    UNITY_BEGIN();
-
-    TEST_MODULE_DIVIDER();
-    RUN_TEST(test_struct_prototype_compilation);
-    TEST_DIVIDER();
-
-    RUN_TEST(test_class_prototype_compilation);
-    TEST_DIVIDER();
-
-    RUN_TEST(test_prototype_creation_functions);
-    TEST_DIVIDER();
-
-    RUN_TEST(test_prototype_inheritance);
-    TEST_DIVIDER();
-
-    RUN_TEST(test_prototype_module_export);
-    TEST_DIVIDER();
-
-    RUN_TEST(test_struct_field_offsets);
-    TEST_DIVIDER();
-
-    RUN_TEST(test_prototype_inheritance_loading);
-    TEST_DIVIDER();
-
-    RUN_TEST(test_struct_value_copy_clones_nested_storage);
-    TEST_MODULE_DIVIDER();
-
-    return UNITY_END();
+    ZR_TEST_DIVIDER();
 }

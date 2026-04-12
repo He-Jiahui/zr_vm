@@ -5,6 +5,7 @@
 
 #include "unity.h"
 #include "runtime_support.h"
+#include "zr_vm_ffi_fixture_path.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
@@ -23,11 +24,6 @@
 #ifndef ZR_ARRAY_COUNT
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
-
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
 
 static TZrPtr test_allocator(TZrPtr userData, TZrPtr pointer, TZrSize originalSize, TZrSize newSize, TZrInt64 flag) {
     ZR_UNUSED_PARAMETER(userData);

@@ -1,0 +1,6 @@
+{
+  "name": "benchmark_known_call",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

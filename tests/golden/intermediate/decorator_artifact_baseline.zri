@@ -222,7 +222,7 @@ INSTRUCTIONS (56):
   [9] GET_CONSTANT (extra=7, operand=9)
   [10] GET_CONSTANT (extra=8, operand=10)
   [11] GET_STACK (extra=9, operand=3)
-  [12] FUNCTION_CALL (extra=5, operand1=5, operand2=4)
+  [12] KNOWN_NATIVE_CALL (extra=5, operand1=5, operand2=4)
   [13] GET_GLOBAL (extra=6)
   [14] GET_MEMBER (extra=6, operand1=6, operand2=2)
   [15] SET_STACK (extra=5, operand=6)
@@ -233,7 +233,7 @@ INSTRUCTIONS (56):
   [20] GET_CONSTANT (extra=9, operand=12)
   [21] GET_CONSTANT (extra=10, operand=13)
   [22] GET_STACK (extra=11, operand=5)
-  [23] FUNCTION_CALL (extra=7, operand1=7, operand2=4)
+  [23] KNOWN_NATIVE_CALL (extra=7, operand1=7, operand2=4)
   [24] GET_GLOBAL (extra=8)
   [25] GET_MEMBER (extra=8, operand1=8, operand2=3)
   [26] SET_STACK (extra=7, operand=8)
@@ -244,7 +244,7 @@ INSTRUCTIONS (56):
   [31] GET_CONSTANT (extra=11, operand=15)
   [32] GET_CONSTANT (extra=12, operand=16)
   [33] GET_STACK (extra=13, operand=7)
-  [34] FUNCTION_CALL (extra=9, operand1=9, operand2=4)
+  [34] KNOWN_NATIVE_CALL (extra=9, operand1=9, operand2=4)
   [35] GET_GLOBAL (extra=9)
   [36] GET_MEMBER (extra=9, operand1=9, operand2=1)
   [37] GET_GLOBAL (extra=11)
@@ -253,7 +253,7 @@ INSTRUCTIONS (56):
   [40] GET_CONSTANT (extra=11, operand=17)
   [41] GET_STACK (extra=12, operand=9)
   [42] GET_STACK (extra=13, operand=10)
-  [43] FUNCTION_CALL (extra=11, operand1=11, operand2=2)
+  [43] KNOWN_NATIVE_CALL (extra=11, operand1=11, operand2=2)
   [44] CREATE_CLOSURE (extra=11)
   [45] SET_STACK (extra=1, operand=11)
   [46] GET_STACK (extra=13, operand=0)
@@ -261,7 +261,7 @@ INSTRUCTIONS (56):
   [48] GET_CONSTANT (extra=13, operand=19)
   [49] GET_STACK (extra=14, operand=1)
   [50] GET_STACK (extra=15, operand=12)
-  [51] FUNCTION_CALL (extra=13, operand1=13, operand2=2)
+  [51] KNOWN_NATIVE_CALL (extra=13, operand1=13, operand2=2)
   [52] SET_STACK (extra=1, operand=13)
   [53] GET_STACK (extra=13, operand=1)
   [54] SUPER_FUNCTION_TAIL_CALL_NO_ARGS (extra=13, operand1=13, operand2=0)
@@ -282,7 +282,7 @@ CHILD_FUNCTIONS (2):
       [2] null
 
     LOCAL_VARIABLES (1):
-      [0] target: offset_activate=0, offset_dead=7
+      [0] target: offset_activate=0, offset_dead=6
 
     CLOSURE_VARIABLES (0):
 
@@ -310,18 +310,18 @@ CHILD_FUNCTIONS (2):
 
     DEOPT_MAP (0):
 
-    CALLSITE_CACHE_TABLE (0):
+    CALLSITE_CACHE_TABLE (1):
+      [0] kind=MEMBER_GET inst=2 member=0 deopt=0 args=0 hits=0 misses=0
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (7):
+    INSTRUCTIONS (6):
       [0] GET_CONSTANT (extra=1, operand=0)
-      [1] GET_STACK (extra=2, operand=0)
-      [2] OPCODE_8 (extra=2, operand1=2, operand2=0)
-      [3] GET_CONSTANT (extra=3, operand=1)
-      [4] OPCODE_11 (extra=1, operand1=2, operand2=3)
-      [5] GET_CONSTANT (extra=1, operand=2)
-      [6] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+      [1] OPCODE_188 (extra=2, operand1=0, operand2=0)
+      [2] GET_CONSTANT (extra=3, operand=1)
+      [3] OPCODE_11 (extra=1, operand1=2, operand2=3)
+      [4] GET_CONSTANT (extra=1, operand=2)
+      [5] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
 
   [1] FUNCTION:
     NAME: verifyDecorators
@@ -341,12 +341,12 @@ CHILD_FUNCTIONS (2):
       [6] int: 16
 
     LOCAL_VARIABLES (6):
-      [0] seed: offset_activate=0, offset_dead=83
-      [1] typeMeta: offset_activate=5, offset_dead=83
-      [2] fieldMeta: offset_activate=15, offset_dead=83
-      [3] methodMeta: offset_activate=25, offset_dead=83
-      [4] propertyMeta: offset_activate=35, offset_dead=83
-      [5] functionMeta: offset_activate=40, offset_dead=83
+      [0] seed: offset_activate=0, offset_dead=62
+      [1] typeMeta: offset_activate=5, offset_dead=62
+      [2] fieldMeta: offset_activate=15, offset_dead=62
+      [3] methodMeta: offset_activate=25, offset_dead=62
+      [4] propertyMeta: offset_activate=35, offset_dead=62
+      [5] functionMeta: offset_activate=40, offset_dead=62
 
     CLOSURE_VARIABLES (1):
       [0] verifyDecorators: in_stack=true, index=1, type=NULL
@@ -398,42 +398,47 @@ CHILD_FUNCTIONS (2):
       [3] deopt=4 exec=29
       [4] deopt=5 exec=38
 
-    CALLSITE_CACHE_TABLE (0):
+    CALLSITE_CACHE_TABLE (5):
+      [0] kind=MEMBER_GET inst=5 member=1 deopt=0 args=0 hits=0 misses=0
+      [1] kind=MEMBER_GET inst=13 member=2 deopt=0 args=0 hits=0 misses=0
+      [2] kind=MEMBER_GET inst=26 member=2 deopt=0 args=0 hits=0 misses=0
+      [3] kind=MEMBER_GET inst=39 member=2 deopt=0 args=0 hits=0 misses=0
+      [4] kind=MEMBER_GET inst=47 member=1 deopt=0 args=0 hits=0 misses=0
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (68):
-      [0] OPCODE_88 (extra=3, operand=0)
+    INSTRUCTIONS (62):
+      [0] OPCODE_96 (extra=3, operand=0)
       [1] OPCODE_8 (extra=3, operand1=3, operand2=0)
       [2] SET_STACK (extra=2, operand=3)
       [3] TYPEOF (extra=2, operand1=2, operand2=0)
-      [4] OPCODE_8 (extra=2, operand1=2, operand2=1)
+      [4] OPCODE_188 (extra=2, operand1=2, operand2=0)
       [5] SET_STACK (extra=1, operand=2)
-      [6] OPCODE_88 (extra=4, operand=0)
+      [6] OPCODE_96 (extra=4, operand=0)
       [7] OPCODE_8 (extra=4, operand1=4, operand2=0)
       [8] SET_STACK (extra=3, operand=4)
       [9] TYPEOF (extra=3, operand1=3, operand2=0)
-      [10] OPCODE_8 (extra=3, operand1=3, operand2=2)
+      [10] OPCODE_188 (extra=3, operand1=3, operand2=1)
       [11] OPCODE_8 (extra=3, operand1=3, operand2=3)
       [12] GET_CONSTANT (extra=4, operand=1)
       [13] OPCODE_10 (extra=3, operand1=3, operand2=4)
       [14] OPCODE_8 (extra=3, operand1=3, operand2=1)
       [15] SET_STACK (extra=2, operand=3)
-      [16] OPCODE_88 (extra=5, operand=0)
+      [16] OPCODE_96 (extra=5, operand=0)
       [17] OPCODE_8 (extra=5, operand1=5, operand2=0)
       [18] SET_STACK (extra=4, operand=5)
       [19] TYPEOF (extra=4, operand1=4, operand2=0)
-      [20] OPCODE_8 (extra=4, operand1=4, operand2=2)
+      [20] OPCODE_188 (extra=4, operand1=4, operand2=2)
       [21] OPCODE_8 (extra=4, operand1=4, operand2=4)
       [22] GET_CONSTANT (extra=5, operand=1)
       [23] OPCODE_10 (extra=4, operand1=4, operand2=5)
       [24] OPCODE_8 (extra=4, operand1=4, operand2=1)
       [25] SET_STACK (extra=3, operand=4)
-      [26] OPCODE_88 (extra=6, operand=0)
+      [26] OPCODE_96 (extra=6, operand=0)
       [27] OPCODE_8 (extra=6, operand1=6, operand2=0)
       [28] SET_STACK (extra=5, operand=6)
       [29] TYPEOF (extra=5, operand1=5, operand2=0)
-      [30] OPCODE_8 (extra=5, operand1=5, operand2=2)
+      [30] OPCODE_188 (extra=5, operand1=5, operand2=3)
       [31] OPCODE_8 (extra=5, operand1=5, operand2=5)
       [32] GET_CONSTANT (extra=6, operand=1)
       [33] OPCODE_10 (extra=5, operand1=5, operand2=6)
@@ -442,34 +447,28 @@ CHILD_FUNCTIONS (2):
       [36] OPCODE_6 (extra=7)
       [37] SET_STACK (extra=6, operand=7)
       [38] TYPEOF (extra=6, operand1=6, operand2=0)
-      [39] OPCODE_8 (extra=6, operand1=6, operand2=1)
+      [39] OPCODE_188 (extra=6, operand1=6, operand2=4)
       [40] SET_STACK (extra=5, operand=6)
-      [41] GET_STACK (extra=6, operand=1)
-      [42] OPCODE_8 (extra=6, operand1=6, operand2=6)
-      [43] OPCODE_91 (extra=6, operand=2)
-      [44] ADD_INT_CONST (extra=0, left_slot=0, constant_index=2)
-      [45] OPCODE_90 (extra=0, operand=0)
-      [46] GET_STACK (extra=7, operand=2)
-      [47] OPCODE_8 (extra=7, operand1=7, operand2=7)
-      [48] OPCODE_91 (extra=7, operand=2)
-      [49] ADD_INT_CONST (extra=0, left_slot=0, constant_index=3)
-      [50] OPCODE_90 (extra=0, operand=0)
-      [51] GET_STACK (extra=8, operand=3)
-      [52] OPCODE_8 (extra=8, operand1=8, operand2=8)
-      [53] OPCODE_91 (extra=8, operand=2)
-      [54] ADD_INT_CONST (extra=0, left_slot=0, constant_index=4)
-      [55] OPCODE_90 (extra=0, operand=0)
-      [56] GET_STACK (extra=9, operand=4)
-      [57] OPCODE_8 (extra=9, operand1=9, operand2=9)
-      [58] OPCODE_91 (extra=9, operand=2)
-      [59] ADD_INT_CONST (extra=0, left_slot=0, constant_index=5)
-      [60] OPCODE_90 (extra=0, operand=0)
-      [61] GET_STACK (extra=10, operand=5)
-      [62] OPCODE_8 (extra=10, operand1=10, operand2=10)
-      [63] OPCODE_91 (extra=10, operand=2)
-      [64] ADD_INT_CONST (extra=0, left_slot=0, constant_index=6)
-      [65] OPCODE_90 (extra=0, operand=0)
-      [66] GET_STACK (extra=6, operand=0)
-      [67] FUNCTION_RETURN (extra=1, operand1=6, operand2=0)
+      [41] OPCODE_8 (extra=6, operand1=1, operand2=6)
+      [42] OPCODE_99 (extra=6, operand=2)
+      [43] ADD_SIGNED_CONST (extra=0, left_slot=0, constant_index=2)
+      [44] OPCODE_98 (extra=0, operand=0)
+      [45] OPCODE_8 (extra=7, operand1=2, operand2=7)
+      [46] OPCODE_99 (extra=7, operand=2)
+      [47] ADD_SIGNED_CONST (extra=0, left_slot=0, constant_index=3)
+      [48] OPCODE_98 (extra=0, operand=0)
+      [49] OPCODE_8 (extra=8, operand1=3, operand2=8)
+      [50] OPCODE_99 (extra=8, operand=2)
+      [51] ADD_SIGNED_CONST (extra=0, left_slot=0, constant_index=4)
+      [52] OPCODE_98 (extra=0, operand=0)
+      [53] OPCODE_8 (extra=9, operand1=4, operand2=9)
+      [54] OPCODE_99 (extra=9, operand=2)
+      [55] ADD_SIGNED_CONST (extra=0, left_slot=0, constant_index=5)
+      [56] OPCODE_98 (extra=0, operand=0)
+      [57] OPCODE_8 (extra=10, operand1=5, operand2=10)
+      [58] OPCODE_99 (extra=10, operand=2)
+      [59] ADD_SIGNED_CONST (extra=0, left_slot=0, constant_index=6)
+      [60] OPCODE_98 (extra=0, operand=0)
+      [61] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
 
 

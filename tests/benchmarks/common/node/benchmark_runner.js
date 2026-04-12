@@ -678,6 +678,99 @@ function mixedServiceLoop(scale) {
     ) % MOD;
 }
 
+const GC_FRAGMENTS = ["amber", "birch", "cedar", "dune", "ember", "frost", "grove", "harbor"];
+
+function gcFragmentFor(slot) {
+    return GC_FRAGMENTS[slot % GC_FRAGMENTS.length];
+}
+
+function gcPayloadFor(seed, cycle, slot) {
+    const head = gcFragmentFor(seed + cycle);
+    const middle = gcFragmentFor(Math.floor(seed / 3) + slot * 5);
+    const tail = gcFragmentFor(seed + cycle * 7 + slot * 11);
+    return `${head}-${middle}-${tail}:${seed}:${cycle}:${slot}`;
+}
+
+function gcFragmentStress(scale) {
+    const survivors = [];
+    const scratch = [];
+    const anchors = new Map();
+    const oldArchive = [];
+    const oldLookup = new Map();
+    let seed = 29;
+    let checksum = 0;
+    let anchorCount = 0;
+
+    for (let cycle = 0; cycle < 36 * scale; cycle += 1) {
+        scratch.length = 0;
+        let probeKey = "";
+        let probeFallback = 0;
+
+        for (let slot = 0; slot < 320; slot += 1) {
+            seed = (seed * 73 + 19 + cycle + slot) % 10007;
+            const payload = gcPayloadFor(seed, cycle, slot);
+            scratch.push(payload);
+            scratch.push(`${payload}|${gcFragmentFor(seed + slot + 3)}`);
+
+            if (slot % 5 === 0) {
+                survivors.push(`${payload}#hold#${cycle}`);
+            }
+            if (slot % 7 === 0) {
+                const anchorKey = `${payload}#anchor#${slot}`;
+                if (!anchors.has(anchorKey)) {
+                    anchorCount += 1;
+                }
+                anchors.set(anchorKey, seed + cycle + slot);
+            }
+            if (slot % 11 === 0) {
+                const shadowKey = `${payload}#shadow#${cycle}`;
+                if (!anchors.has(shadowKey)) {
+                    anchorCount += 1;
+                }
+                anchors.set(shadowKey, seed * 2 + slot);
+            }
+            if (slot % 17 === 0) {
+                const archiveValue = `${payload}#old#${gcFragmentFor(seed + cycle + slot)}`;
+                oldArchive.push(archiveValue);
+                oldLookup.set(`slot#${slot % 32}`, archiveValue);
+            }
+            if (slot % 13 === 0 && survivors.length > 24) {
+                survivors.shift();
+            }
+            if (slot % 19 === 0 && oldArchive.length > 96) {
+                oldArchive.shift();
+            }
+
+            checksum = (checksum * 131 + seed + cycle * 17 + slot * 29 + survivors.length) % MOD;
+            if (slot === 0) {
+                probeKey = `${payload}#anchor#0`;
+                probeFallback = seed + cycle;
+            }
+        }
+
+        scratch.length = 0;
+        if (cycle % 4 === 3) {
+            anchors.clear();
+            anchorCount = 0;
+        }
+        if (anchors.has(probeKey)) {
+            checksum = (checksum * 137 + anchors.get(probeKey) + survivors.length + cycle) % MOD;
+        } else {
+            checksum = (checksum * 137 + probeFallback + survivors.length + cycle) % MOD;
+        }
+        if (oldLookup.has(`slot#${cycle % 32}`)) {
+            checksum = (checksum * 149 + oldArchive.length * 7 + anchorCount + cycle + 31) % MOD;
+        } else {
+            checksum = (checksum * 149 + oldArchive.length * 7 + anchorCount + cycle) % MOD;
+        }
+        if (cycle % 9 === 8) {
+            survivors.length = 0;
+        }
+    }
+
+    return (checksum + survivors.length * 17 + anchorCount * 19 + oldArchive.length * 23 + seed) % MOD;
+}
+
 const CASE_HANDLERS = {
     numeric_loops: ["BENCH_NUMERIC_LOOPS_PASS", numericLoops],
     dispatch_loops: ["BENCH_DISPATCH_LOOPS_PASS", dispatchLoops],
@@ -693,6 +786,8 @@ const CASE_HANDLERS = {
     array_index_dense: ["BENCH_ARRAY_INDEX_DENSE_PASS", arrayIndexDense],
     branch_jump_dense: ["BENCH_BRANCH_JUMP_DENSE_PASS", branchJumpDense],
     mixed_service_loop: ["BENCH_MIXED_SERVICE_LOOP_PASS", mixedServiceLoop],
+    gc_fragment_baseline: ["BENCH_GC_FRAGMENT_BASELINE_PASS", gcFragmentStress],
+    gc_fragment_stress: ["BENCH_GC_FRAGMENT_STRESS_PASS", gcFragmentStress],
 };
 
 function runMain(caseName) {

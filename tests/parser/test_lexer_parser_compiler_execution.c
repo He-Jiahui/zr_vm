@@ -50,12 +50,6 @@
 #include "zr_vm_core/stack.h"
 #include "test_support.h"
 
-// 测试时间测量结构
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
-
 // 测试日志宏（符合测试规范）
 #define TEST_START(summary) do { \
     printf("Unit Test - %s\n", summary); \

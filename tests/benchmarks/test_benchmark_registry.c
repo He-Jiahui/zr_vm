@@ -185,11 +185,14 @@ int main(void) {
             "object_field_hot",
             "array_index_dense",
             "branch_jump_dense",
-            "mixed_service_loop"
+            "mixed_service_loop",
+            "gc_fragment_baseline",
+            "gc_fragment_stress"
     };
     char registryPath[ZR_TESTS_PATH_MAX];
     char readmePath[ZR_TESTS_PATH_MAX];
     char nativeRunnerPath[ZR_TESTS_PATH_MAX];
+    char testsCmakePath[ZR_TESTS_PATH_MAX];
     char rustRunnerManifestPath[ZR_TESTS_PATH_MAX];
     char rustRunnerMainPath[ZR_TESTS_PATH_MAX];
     char dotnetRunnerProjectPath[ZR_TESTS_PATH_MAX];
@@ -214,6 +217,10 @@ int main(void) {
         !snprintf(nativeRunnerPath,
                   sizeof(nativeRunnerPath),
                   "%s/../tests/benchmarks/native_runner/main.c",
+                  ZR_VM_TESTS_SOURCE_DIR) ||
+        !snprintf(testsCmakePath,
+                  sizeof(testsCmakePath),
+                  "%s/../tests/CMakeLists.txt",
                   ZR_VM_TESTS_SOURCE_DIR) ||
         !snprintf(rustRunnerManifestPath,
                   sizeof(rustRunnerManifestPath),
@@ -246,6 +253,7 @@ int main(void) {
     failures += benchmark_registry_expect_file(registryPath, "benchmark registry");
     failures += benchmark_registry_expect_file(readmePath, "benchmark README");
     failures += benchmark_registry_expect_file(nativeRunnerPath, "native benchmark runner");
+    failures += benchmark_registry_expect_file(testsCmakePath, "tests CMake benchmark registration");
     failures += benchmark_registry_expect_file(rustRunnerManifestPath, "Rust benchmark runner manifest");
     failures += benchmark_registry_expect_file(rustRunnerMainPath, "Rust benchmark runner");
     failures += benchmark_registry_expect_file(dotnetRunnerProjectPath, ".NET benchmark runner project");
@@ -269,6 +277,14 @@ int main(void) {
     failures += benchmark_registry_expect_file_contains(readmePath,
                                                         "comparison_report",
                                                         "README comparison report");
+    failures += benchmark_registry_expect_file_contains(
+            testsCmakePath,
+            "tests/benchmarks/cases/gc_fragment_stress/c/benchmark_case.c",
+            "gc_fragment_stress native runner CMake registration");
+    failures += benchmark_registry_expect_file_contains(
+            testsCmakePath,
+            "tests/benchmarks/cases/gc_fragment_baseline/c/benchmark_case.c",
+            "gc_fragment_baseline native runner CMake registration");
 
     for (index = 0; index < sizeof(benchmarkCases) / sizeof(benchmarkCases[0]); index++) {
         char casePath[ZR_TESTS_PATH_MAX];

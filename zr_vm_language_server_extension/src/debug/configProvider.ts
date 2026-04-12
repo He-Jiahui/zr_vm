@@ -90,7 +90,7 @@ class ZrDebugConfigurationProvider implements vscode.DebugConfigurationProvider 
         const cliPath = resolveNativeCliPath(this.context);
         if (!cliPath) {
             void vscode.window.showErrorMessage(
-                'Unable to locate zr_vm_cli. Set zr.executablePath or build/sync the native assets.',
+                'Unable to locate zr_vm_cli. Set zr.executablePath (relative or absolute) or build/sync the native assets.',
             );
             return undefined;
         }

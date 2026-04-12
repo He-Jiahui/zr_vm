@@ -1,37 +1,18 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+    collectNativeBuildCandidateDirs,
+    createArtifactLayout,
+    nativeExecutableName,
+    nativeRequiredRuntimeFiles,
+} = require('./artifact-layout');
 
 function executableName(kind) {
-    if (kind === 'cli') {
-        return process.platform === 'win32' ? 'zr_vm_cli.exe' : 'zr_vm_cli';
-    }
-
-    return process.platform === 'win32'
-        ? 'zr_vm_language_server_stdio.exe'
-        : 'zr_vm_language_server_stdio';
+    return nativeExecutableName(kind);
 }
 
 function requiredRuntimeFiles() {
-    if (process.platform === 'win32') {
-        return [
-            'zr_vm_language_server_stdio.exe',
-            'zr_vm_cli.exe',
-            'zr_vm_core.dll',
-            'zr_vm_debug.dll',
-            'zr_vm_language_server.dll',
-            'zr_vm_library.dll',
-            'zr_vm_parser.dll',
-            'zr_vm_lib_container.dll',
-            'zr_vm_lib_ffi.dll',
-            'zr_vm_lib_math.dll',
-            'zr_vm_lib_system.dll',
-        ];
-    }
-
-    return [
-        executableName('languageServer'),
-        executableName('cli'),
-    ];
+    return nativeRequiredRuntimeFiles();
 }
 
 function dedupePaths(values) {
@@ -52,32 +33,14 @@ function dedupePaths(values) {
 }
 
 function collectBuildCandidateDirs(repositoryRoot) {
-    const buildRoot = path.join(repositoryRoot, 'build');
-    const seedDirs = [
-        path.join(buildRoot, 'codex-lsp', 'bin', 'Debug'),
-        path.join(buildRoot, 'codex-lsp', 'bin'),
-        path.join(buildRoot, 'codex-msvc-debug', 'bin', 'Debug'),
-        path.join(buildRoot, 'codex-msvc-debug', 'bin'),
-    ];
-    const scannedDirs = [];
-
-    try {
-        for (const entry of fs.readdirSync(buildRoot, { withFileTypes: true })) {
-            if (!entry.isDirectory()) {
-                continue;
-            }
-
-            const candidateBinDir = path.join(buildRoot, entry.name, 'bin');
-            scannedDirs.push(candidateBinDir);
-            scannedDirs.push(path.join(candidateBinDir, 'Debug'));
-            scannedDirs.push(path.join(candidateBinDir, 'Release'));
-            scannedDirs.push(path.join(candidateBinDir, 'RelWithDebInfo'));
-        }
-    } catch {
-        // Ignore missing build roots and fall back to bundled assets.
-    }
-
-    return dedupePaths([...seedDirs, ...scannedDirs]);
+    const layout = createArtifactLayout({ repositoryRoot });
+    return dedupePaths(
+        collectNativeBuildCandidateDirs(
+            layout.buildRoot,
+            layout.native.buildDir,
+            layout.nativeBuildConfig,
+        ),
+    );
 }
 
 function pickLatestExistingDirectoryWithFiles(candidates, requiredFiles) {
@@ -116,23 +79,30 @@ function pickLatestExistingDirectoryWithFiles(candidates, requiredFiles) {
 }
 
 function resolveLatestCompleteNativeAssetDir(repositoryRoot, extensionRoot) {
+    const layout = createArtifactLayout({ repositoryRoot, extensionRoot });
     return pickLatestExistingDirectoryWithFiles(
-        collectBuildCandidateDirs(repositoryRoot),
-        requiredRuntimeFiles(),
+        collectNativeBuildCandidateDirs(
+            layout.buildRoot,
+            layout.native.buildDir,
+            layout.nativeBuildConfig,
+        ),
+        layout.native.requiredRuntimeFiles,
     );
 }
 
 function resolveLatestRunnableNativeAssetDir(repositoryRoot, extensionRoot) {
-    const bundledDir = path.join(extensionRoot, 'server', 'native', `${process.platform}-${process.arch}`);
-    const extensionServerDir = path.join(extensionRoot, 'server');
+    const layout = createArtifactLayout({ repositoryRoot, extensionRoot });
 
     return pickLatestExistingDirectoryWithFiles(
         [
-            ...collectBuildCandidateDirs(repositoryRoot),
-            bundledDir,
-            extensionServerDir,
+            ...collectNativeBuildCandidateDirs(
+                layout.buildRoot,
+                layout.native.buildDir,
+                layout.nativeBuildConfig,
+            ),
+            layout.native.bundledDir,
         ],
-        requiredRuntimeFiles(),
+        layout.native.requiredRuntimeFiles,
     );
 }
 

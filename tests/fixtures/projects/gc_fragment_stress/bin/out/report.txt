@@ -1,0 +1,11 @@
+GC_FRAGMENT_STRESS_PASS
+checksum=277574166
+minorSamples=30
+minorMaxStepUs=57841
+fullSamples=7
+fullMaxStepUs=255958
+peakRememberedObjectCount=1246
+peakRegionCount=435
+peakOldLiveBytes=17515522
+peakManagedMemoryBytes=18485367
+peakGcDebtBytes=156833232

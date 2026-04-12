@@ -48,6 +48,7 @@ struct SZrHashSet {
     TZrSize resizeThreshold;
     struct SZrHashPairPoolBlock *pairPoolHead;
     struct SZrHashPairPoolBlock *pairPoolActive;
+    struct SZrHashPairPoolBlock *pairPoolTail;
     TZrSize pairPoolCapacity;
     TZrSize pairPoolUsed;
     TZrBool isValid;
@@ -63,6 +64,7 @@ ZR_FORCE_INLINE void ZrCore_HashSet_Construct(SZrHashSet *set) {
     set->resizeThreshold = 0;
     set->pairPoolHead = ZR_NULL;
     set->pairPoolActive = ZR_NULL;
+    set->pairPoolTail = ZR_NULL;
     set->pairPoolCapacity = 0;
     set->pairPoolUsed = 0;
     set->isValid = ZR_FALSE;
@@ -104,21 +106,19 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_TakeReservedPairAssum
     ZR_ASSERT(set->pairPoolUsed < set->pairPoolCapacity);
 
     block = set->pairPoolActive;
-    if (ZR_LIKELY(block != ZR_NULL && block->used < block->capacity)) {
-        set->pairPoolUsed++;
-        return &block->pairs[block->used++];
+    if (!(ZR_LIKELY(block != ZR_NULL && block->used < block->capacity))) {
+        while (block != ZR_NULL && block->used >= block->capacity) {
+            block = block->next;
+        }
+
+        ZR_ASSERT(block != ZR_NULL);
+        if (block == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        set->pairPoolActive = block;
     }
 
-    while (block != ZR_NULL && block->used >= block->capacity) {
-        block = block->next;
-    }
-
-    ZR_ASSERT(block != ZR_NULL);
-    if (block == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    set->pairPoolActive = block;
     set->pairPoolUsed++;
     return &block->pairs[block->used++];
 }
@@ -156,6 +156,105 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_TakeReservedPairSpanA
     return result;
 }
 
+static ZR_FORCE_INLINE TZrBool ZrCore_HashSet_HasReservedPairSpanExactAssumeAvailable(SZrHashSet *set,
+                                                                                       TZrSize count) {
+    struct SZrHashPairPoolBlock *block;
+
+    ZR_ASSERT(set != ZR_NULL);
+    ZR_ASSERT(count > 0);
+    ZR_ASSERT(set->pairPoolUsed < set->pairPoolCapacity);
+
+    block = set->pairPoolActive;
+    while (block != ZR_NULL && block->used >= block->capacity) {
+        block = block->next;
+    }
+    if (block == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    while (block != ZR_NULL) {
+        if (block->used + count <= block->capacity) {
+            return ZR_TRUE;
+        }
+        block = block->next;
+    }
+
+    return ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_TakeReservedPairSpanExactAssumeAvailable(SZrHashSet *set,
+                                                                                                      TZrSize count) {
+    struct SZrHashPairPoolBlock *block;
+    SZrHashKeyValuePair *result;
+
+    ZR_ASSERT(set != ZR_NULL);
+    ZR_ASSERT(count > 0);
+    ZR_ASSERT(set->pairPoolUsed < set->pairPoolCapacity);
+
+    block = set->pairPoolActive;
+    while (block != ZR_NULL && block->used >= block->capacity) {
+        block = block->next;
+    }
+    if (block == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    while (block != ZR_NULL) {
+        if (block->used + count <= block->capacity) {
+            result = &block->pairs[block->used];
+            block->used += count;
+            set->pairPoolUsed += count;
+            if (block == set->pairPoolActive && block->used >= block->capacity) {
+                set->pairPoolActive = block->next;
+            }
+            return result;
+        }
+        block = block->next;
+    }
+
+    return ZR_NULL;
+}
+
+static ZR_FORCE_INLINE TZrBool ZrCore_HashSet_HasReservedPairSpanExactPreferTailAssumeAvailable(SZrHashSet *set,
+                                                                                                 TZrSize count) {
+    struct SZrHashPairPoolBlock *tail;
+
+    ZR_ASSERT(set != ZR_NULL);
+    ZR_ASSERT(count > 0);
+    ZR_ASSERT(set->pairPoolUsed < set->pairPoolCapacity);
+
+    tail = set->pairPoolTail;
+    if (ZR_LIKELY(tail != ZR_NULL && tail->used + count <= tail->capacity)) {
+        return ZR_TRUE;
+    }
+
+    return ZrCore_HashSet_HasReservedPairSpanExactAssumeAvailable(set, count);
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair *ZrCore_HashSet_TakeReservedPairSpanExactPreferTailAssumeAvailable(
+        SZrHashSet *set,
+        TZrSize count) {
+    struct SZrHashPairPoolBlock *tail;
+    SZrHashKeyValuePair *result;
+
+    ZR_ASSERT(set != ZR_NULL);
+    ZR_ASSERT(count > 0);
+    ZR_ASSERT(set->pairPoolUsed < set->pairPoolCapacity);
+
+    tail = set->pairPoolTail;
+    if (ZR_LIKELY(tail != ZR_NULL && tail->used + count <= tail->capacity)) {
+        result = &tail->pairs[tail->used];
+        tail->used += count;
+        set->pairPoolUsed += count;
+        if (tail == set->pairPoolActive && tail->used >= tail->capacity) {
+            set->pairPoolActive = tail->next;
+        }
+        return result;
+    }
+
+    return ZrCore_HashSet_TakeReservedPairSpanExactAssumeAvailable(set, count);
+}
+
 ZR_FORCE_INLINE TZrSize ZrCore_HashSet_MinCapacityForElementCount(TZrSize elementCount) {
     TZrSize capacity = 1;
 
@@ -166,14 +265,29 @@ ZR_FORCE_INLINE TZrSize ZrCore_HashSet_MinCapacityForElementCount(TZrSize elemen
     return capacity;
 }
 
-ZR_FORCE_INLINE TZrSize ZrCore_HashSet_MinDenseSequentialIntKeyCapacity(TZrSize elementCount) {
-    TZrSize capacity = 1;
+ZR_FORCE_INLINE TZrSize ZrCore_HashSet_RoundUpPowerOfTwoCapacity(TZrSize minimumCapacity) {
+    TZrUInt32 shift;
 
-    while (capacity < elementCount) {
-        capacity *= ZR_HASH_SET_CAPACITY_GROWTH_FACTOR;
+    if (minimumCapacity <= 1) {
+        return 1;
+    }
+    if (minimumCapacity != 0 && (minimumCapacity & (minimumCapacity - 1)) == 0) {
+        return minimumCapacity;
     }
 
-    return capacity;
+    minimumCapacity--;
+    for (shift = 1; shift < (TZrUInt32)(sizeof(TZrSize) * 8u); shift <<= 1u) {
+        minimumCapacity |= minimumCapacity >> shift;
+    }
+    return minimumCapacity + 1;
+}
+
+ZR_FORCE_INLINE TZrSize ZrCore_HashSet_MinDenseSequentialIntKeyCapacity(TZrSize elementCount) {
+    return ZrCore_HashSet_RoundUpPowerOfTwoCapacity(elementCount);
+}
+
+ZR_FORCE_INLINE TZrBool ZrCore_HashSet_IsPowerOfTwoCapacity(TZrSize capacity) {
+    return capacity != 0 && (capacity & (capacity - 1)) == 0;
 }
 
 ZR_FORCE_INLINE TZrBool ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacity(struct SZrState *state,
@@ -183,6 +297,13 @@ ZR_FORCE_INLINE TZrBool ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacity(struc
 
     if (state == ZR_NULL || set == ZR_NULL || !set->isValid || set->buckets == ZR_NULL || set->capacity == 0) {
         return ZR_FALSE;
+    }
+
+    if (elementCount <= set->capacity) {
+        if (set->resizeThreshold < set->capacity) {
+            set->resizeThreshold = set->capacity;
+        }
+        return ZR_TRUE;
     }
 
     requiredCapacity = ZrCore_HashSet_MinDenseSequentialIntKeyCapacity(elementCount);
@@ -199,6 +320,39 @@ ZR_FORCE_INLINE TZrBool ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacity(struc
     if (set->resizeThreshold < set->capacity) {
         set->resizeThreshold = set->capacity;
     }
+    return ZR_TRUE;
+}
+
+ZR_FORCE_INLINE TZrBool ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacityExact(struct SZrState *state,
+                                                                                 SZrHashSet *set,
+                                                                                 TZrSize requiredCapacity) {
+    if (state == ZR_NULL || set == ZR_NULL || !set->isValid || set->buckets == ZR_NULL || set->capacity == 0 ||
+        requiredCapacity == 0) {
+        return ZR_FALSE;
+    }
+
+    ZR_ASSERT(ZrCore_HashSet_IsPowerOfTwoCapacity(requiredCapacity));
+    if (requiredCapacity > set->capacity) {
+        return ZrCore_HashSet_GrowDenseSequentialIntKeys(state, set, requiredCapacity);
+    }
+
+    if (set->resizeThreshold < set->capacity) {
+        set->resizeThreshold = set->capacity;
+    }
+    return ZR_TRUE;
+}
+
+ZR_FORCE_INLINE TZrBool ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacityAndPairPoolExact(struct SZrState *state,
+                                                                                             SZrHashSet *set,
+                                                                                             TZrSize requiredCapacity) {
+    if (!ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacityExact(state, set, requiredCapacity)) {
+        return ZR_FALSE;
+    }
+
+    if (set->pairPoolCapacity < requiredCapacity) {
+        return ZrCore_HashSet_EnsurePairPoolForElementCount(state, set, requiredCapacity);
+    }
+
     return ZR_TRUE;
 }
 
@@ -239,6 +393,11 @@ ZR_FORCE_INLINE void ZrCore_HashSet_Init(struct SZrState *state, SZrHashSet *set
     set->capacity = 0;
     set->resizeThreshold = 0;
     set->bucketSize = 0;
+    set->pairPoolHead = ZR_NULL;
+    set->pairPoolActive = ZR_NULL;
+    set->pairPoolTail = ZR_NULL;
+    set->pairPoolCapacity = 0;
+    set->pairPoolUsed = 0;
     set->isValid = ZrCore_HashSet_Rehash(state, set, capacity);
 }
 

@@ -59,13 +59,13 @@ CHILD_FUNCTIONS (1):
     END_LINE: 11
     PARAMETERS: 2
     HAS_VAR_ARGS: false
-    STACK_SIZE: 4
+    STACK_SIZE: 3
 
     CONSTANTS (0):
 
     LOCAL_VARIABLES (2):
-      [0] value: offset_activate=0, offset_dead=4
-      [1] other: offset_activate=0, offset_dead=4
+      [0] value: offset_activate=0, offset_dead=2
+      [1] other: offset_activate=0, offset_dead=2
 
     CLOSURE_VARIABLES (0):
 
@@ -98,10 +98,8 @@ CHILD_FUNCTIONS (1):
 
     EH_TABLE (0):
 
-    INSTRUCTIONS (4):
-      [0] GET_STACK (extra=2, operand=0)
-      [1] GET_STACK (extra=3, operand=1)
-      [2] ADD_INT (extra=2, operand1=2, operand2=3)
-      [3] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
+    INSTRUCTIONS (2):
+      [0] ADD_SIGNED (extra=2, operand1=0, operand2=1)
+      [1] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
 
 

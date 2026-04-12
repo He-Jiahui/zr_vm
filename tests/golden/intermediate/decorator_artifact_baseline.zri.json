@@ -103,7 +103,7 @@
 		}],
 	"instructions":	[{
 			"index":	0,
-			"opcode":	92,
+			"opcode":	101,
 			"operandExtra":	2
 		}, {
 			"index":	1,
@@ -111,7 +111,7 @@
 			"operandExtra":	0
 		}, {
 			"index":	2,
-			"opcode":	88,
+			"opcode":	96,
 			"operandExtra":	4
 		}, {
 			"index":	3,
@@ -123,7 +123,7 @@
 			"operandExtra":	3
 		}, {
 			"index":	5,
-			"opcode":	88,
+			"opcode":	96,
 			"operandExtra":	4
 		}, {
 			"index":	6,
@@ -151,11 +151,11 @@
 			"operandExtra":	9
 		}, {
 			"index":	12,
-			"opcode":	85,
+			"opcode":	182,
 			"operandExtra":	5
 		}, {
 			"index":	13,
-			"opcode":	88,
+			"opcode":	96,
 			"operandExtra":	6
 		}, {
 			"index":	14,
@@ -167,7 +167,7 @@
 			"operandExtra":	5
 		}, {
 			"index":	16,
-			"opcode":	88,
+			"opcode":	96,
 			"operandExtra":	6
 		}, {
 			"index":	17,
@@ -195,11 +195,11 @@
 			"operandExtra":	11
 		}, {
 			"index":	23,
-			"opcode":	85,
+			"opcode":	182,
 			"operandExtra":	7
 		}, {
 			"index":	24,
-			"opcode":	88,
+			"opcode":	96,
 			"operandExtra":	8
 		}, {
 			"index":	25,
@@ -211,7 +211,7 @@
 			"operandExtra":	7
 		}, {
 			"index":	27,
-			"opcode":	88,
+			"opcode":	96,
 			"operandExtra":	8
 		}, {
 			"index":	28,
@@ -239,11 +239,11 @@
 			"operandExtra":	13
 		}, {
 			"index":	34,
-			"opcode":	85,
+			"opcode":	182,
 			"operandExtra":	9
 		}, {
 			"index":	35,
-			"opcode":	88,
+			"opcode":	96,
 			"operandExtra":	9
 		}, {
 			"index":	36,
@@ -251,7 +251,7 @@
 			"operandExtra":	9
 		}, {
 			"index":	37,
-			"opcode":	88,
+			"opcode":	96,
 			"operandExtra":	11
 		}, {
 			"index":	38,
@@ -275,11 +275,11 @@
 			"operandExtra":	13
 		}, {
 			"index":	43,
-			"opcode":	85,
+			"opcode":	182,
 			"operandExtra":	11
 		}, {
 			"index":	44,
-			"opcode":	92,
+			"opcode":	101,
 			"operandExtra":	11
 		}, {
 			"index":	45,
@@ -307,7 +307,7 @@
 			"operandExtra":	15
 		}, {
 			"index":	51,
-			"opcode":	85,
+			"opcode":	182,
 			"operandExtra":	13
 		}, {
 			"index":	52,
@@ -319,11 +319,11 @@
 			"operandExtra":	13
 		}, {
 			"index":	54,
-			"opcode":	122,
+			"opcode":	131,
 			"operandExtra":	13
 		}, {
 			"index":	55,
-			"opcode":	87,
+			"opcode":	95,
 			"operandExtra":	1
 		}]
 }

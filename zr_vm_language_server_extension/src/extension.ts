@@ -121,7 +121,7 @@ async function startClient(
     const serverPath = resolveNativeLanguageServerPath(context, config);
     if (serverPath === undefined) {
         void vscode.window.showErrorMessage(
-            'Unable to locate zr_vm_language_server_stdio. Set zr.languageServer.native.path or build the native server.',
+            'Unable to locate zr_vm_language_server_stdio. Set zr.languageServer.native.path (relative or absolute) or build the native server.',
         );
         return;
     }

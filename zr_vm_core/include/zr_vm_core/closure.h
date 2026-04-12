@@ -28,6 +28,10 @@ struct ZR_STRUCT_ALIGN SZrClosureValue {
     SZrRawObject super;
     TZrStackPointer value;
     union TZrClosureLink link;
+    TZrUInt32 captureScopeDepth;
+    TZrUInt32 captureEscapeFlags;
+    TZrUInt32 anchoredEscapeFlags;
+    TZrUInt32 anchoredPromotionReason;
 };
 
 typedef struct SZrClosureValue SZrClosureValue;
@@ -87,6 +91,20 @@ ZR_CORE_API TZrSize ZrCore_Closure_CloseRegisteredValues(struct SZrState *state,
 ZR_CORE_API void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *function,
                                       SZrClosureValue **closureValueList, TZrStackValuePointer base,
                                       TZrStackValuePointer closurePointer);
+
+ZR_CORE_API void ZrCore_ClosureValue_SetCaptureMetadata(SZrClosureValue *closureValue,
+                                                        TZrUInt32 scopeDepth,
+                                                        TZrUInt32 escapeFlags);
+
+ZR_CORE_API void ZrCore_ClosureValue_AnchorEscape(struct SZrState *state,
+                                                  SZrClosureValue *closureValue,
+                                                  TZrUInt32 escapeFlags,
+                                                  EZrGarbageCollectPromotionReason promotionReason);
+
+ZR_CORE_API void ZrCore_Closure_PropagateEscapeFromObject(struct SZrState *state,
+                                                          SZrRawObject *closureObject,
+                                                          TZrUInt32 escapeFlags,
+                                                          EZrGarbageCollectPromotionReason promotionReason);
 
 ZR_CORE_API struct SZrFunction *ZrCore_Closure_GetMetadataFunctionFromValue(struct SZrState *state,
                                                                             const SZrTypeValue *value);

@@ -4,8 +4,6 @@
 
 #include "zr_vm_core/function.h"
 
-#include <stdlib.h>
-
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/gc.h"
@@ -18,6 +16,8 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+
+#include "zr_vm_core/call_info.h"
 
 /*
  * VM call setup/teardown stays on the main interpreter path. Keep the public
@@ -98,6 +98,7 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->childFunctionList = ZR_NULL;
     function->childFunctionLength = 0;
     function->childFunctionGraphIsBorrowed = ZR_FALSE;
+    function->ownerFunction = ZR_NULL;
     function->instructionsList = ZR_NULL;
     function->instructionsLength = 0;
     function->executionLocationInfoList = ZR_NULL;
@@ -381,6 +382,7 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
                 break;
 
             case ZR_INSTRUCTION_ENUM(GET_MEMBER):
+            case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
             case ZR_INSTRUCTION_ENUM(META_GET):
             case ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED):
             case ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED):
@@ -389,6 +391,7 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
                 break;
 
             case ZR_INSTRUCTION_ENUM(SET_MEMBER):
+            case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):
             case ZR_INSTRUCTION_ENUM(META_SET):
             case ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED):
             case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):
@@ -408,23 +411,34 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
 
             case ZR_INSTRUCTION_ENUM(ADD):
             case ZR_INSTRUCTION_ENUM(ADD_INT):
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
+            case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
             case ZR_INSTRUCTION_ENUM(ADD_STRING):
             case ZR_INSTRUCTION_ENUM(SUB):
             case ZR_INSTRUCTION_ENUM(SUB_INT):
+            case ZR_INSTRUCTION_ENUM(SUB_SIGNED):
+            case ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST):
+            case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
             case ZR_INSTRUCTION_ENUM(MUL):
             case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
             case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
             case ZR_INSTRUCTION_ENUM(DIV):
             case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
             case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
             case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
+            case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(MOD):
             case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
             case ZR_INSTRUCTION_ENUM(MOD_FLOAT):
+            case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(POW):
             case ZR_INSTRUCTION_ENUM(POW_SIGNED):
             case ZR_INSTRUCTION_ENUM(POW_UNSIGNED):
@@ -443,6 +457,16 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
             case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_BOOL):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_FLOAT):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_FLOAT):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_STRING):
             case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED):
             case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED):
             case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT):
@@ -461,6 +485,10 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
 
             case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
             case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
+            case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
+            case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(DYN_CALL):
             case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(META_CALL):
@@ -471,6 +499,10 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
 
             case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
             case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS):
+            case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):
+            case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS):
+            case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS):
+            case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS):
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS):
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS):
             case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS):
@@ -486,6 +518,10 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
 
             case ZR_INSTRUCTION_ENUM(JUMP_IF):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
+                function_note_generated_frame_slot(operandA1, &slotCount);
                 break;
 
             case ZR_INSTRUCTION_ENUM(THROW):
@@ -511,9 +547,107 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
     return slotCount;
 }
 
+static TZrBool function_has_return_escape_slot(const SZrFunction *function, TZrUInt32 stackSlot) {
+    if (function == ZR_NULL || function->returnEscapeSlots == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0; index < function->returnEscapeSlotCount; index++) {
+        if (function->returnEscapeSlots[index] == stackSlot) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static const SZrFunctionLocalVariable *function_find_local_escape_variable(const SZrFunction *function,
+                                                                           TZrUInt32 stackSlot) {
+    if (function == ZR_NULL || function->localVariableList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0; index < function->localVariableLength; index++) {
+        const SZrFunctionLocalVariable *local = &function->localVariableList[index];
+        if (local->stackSlot == stackSlot &&
+            (local->escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_RETURN) != 0u) {
+            return local;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const SZrFunctionEscapeBinding *function_find_return_escape_binding(const SZrFunction *function,
+                                                                           TZrUInt32 stackSlot) {
+    if (function == ZR_NULL || function->escapeBindings == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0; index < function->escapeBindingLength; index++) {
+        const SZrFunctionEscapeBinding *binding = &function->escapeBindings[index];
+        EZrFunctionEscapeBindingKind bindingKind = (EZrFunctionEscapeBindingKind)binding->bindingKind;
+
+        if (binding->slotOrIndex != stackSlot) {
+            continue;
+        }
+
+        if ((bindingKind == ZR_FUNCTION_ESCAPE_BINDING_KIND_LOCAL ||
+             bindingKind == ZR_FUNCTION_ESCAPE_BINDING_KIND_RETURN_SLOT) &&
+            (binding->escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_RETURN) != 0u) {
+            return binding;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+TZrBool ZrCore_Function_ApplyReturnEscape(struct SZrState *state,
+                                          const SZrFunction *function,
+                                          TZrUInt32 stackSlot,
+                                          const SZrTypeValue *value) {
+    TZrUInt32 escapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_RETURN;
+    TZrUInt32 scopeDepth = ZR_GC_SCOPE_DEPTH_NONE;
+    const SZrFunctionLocalVariable *localVariable;
+    const SZrFunctionEscapeBinding *binding;
+
+    if (state == ZR_NULL || function == ZR_NULL || value == ZR_NULL || !function_has_return_escape_slot(function, stackSlot)) {
+        return ZR_FALSE;
+    }
+
+    localVariable = function_find_local_escape_variable(function, stackSlot);
+    if (localVariable != ZR_NULL) {
+        escapeFlags |= localVariable->escapeFlags;
+        scopeDepth = localVariable->scopeDepth;
+    } else {
+        binding = function_find_return_escape_binding(function, stackSlot);
+        if (binding != ZR_NULL) {
+            escapeFlags |= binding->escapeFlags;
+            scopeDepth = binding->scopeDepth;
+        }
+    }
+
+    ZrCore_GarbageCollector_MarkValueEscaped(state,
+                                             value,
+                                             escapeFlags,
+                                             scopeDepth,
+                                             ZR_GARBAGE_COLLECT_PROMOTION_REASON_ESCAPE);
+    return ZR_TRUE;
+}
+
 void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *function) {
-    if (function == ZR_NULL || function->constantValueList == ZR_NULL || function->childFunctionList == ZR_NULL ||
-        function->childFunctionLength == 0) {
+    if (function == ZR_NULL || function->childFunctionList == ZR_NULL || function->childFunctionLength == 0) {
+        return;
+    }
+
+    for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+        SZrFunction *childFunction = &function->childFunctionList[childIndex];
+
+        childFunction->ownerFunction = function;
+        ZrCore_Function_RebindConstantFunctionValuesToChildren(childFunction);
+    }
+
+    if (function->constantValueList == ZR_NULL || function->constantValueLength == 0) {
         return;
     }
 
@@ -564,6 +698,98 @@ TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(const SZrFuncti
     return function_validate_create_closure_targets_in_child_graph_recursive(function);
 }
 
+static void function_reset_to_tombstone(SZrFunction *function) {
+    if (function == ZR_NULL) {
+        return;
+    }
+
+    function->instructionsList = ZR_NULL;
+    function->instructionsLength = 0;
+    function->childFunctionList = ZR_NULL;
+    function->childFunctionLength = 0;
+    function->childFunctionGraphIsBorrowed = ZR_FALSE;
+    function->ownerFunction = ZR_NULL;
+    function->constantValueList = ZR_NULL;
+    function->constantValueLength = 0;
+    function->localVariableList = ZR_NULL;
+    function->localVariableLength = 0;
+    function->closureValueList = ZR_NULL;
+    function->closureValueLength = 0;
+    function->executionLocationInfoList = ZR_NULL;
+    function->executionLocationInfoLength = 0;
+    function->lineInSourceList = ZR_NULL;
+    function->catchClauseList = ZR_NULL;
+    function->catchClauseCount = 0;
+    function->exceptionHandlerList = ZR_NULL;
+    function->exceptionHandlerCount = 0;
+    function->exportedVariables = ZR_NULL;
+    function->exportedVariableLength = 0;
+    function->typedExportedSymbols = ZR_NULL;
+    function->typedExportedSymbolLength = 0;
+    function->typedLocalBindings = ZR_NULL;
+    function->typedLocalBindingLength = 0;
+    function->staticImports = ZR_NULL;
+    function->staticImportLength = 0;
+    function->moduleEntryEffects = ZR_NULL;
+    function->moduleEntryEffectLength = 0;
+    function->exportedCallableSummaries = ZR_NULL;
+    function->exportedCallableSummaryLength = 0;
+    function->topLevelCallableBindings = ZR_NULL;
+    function->topLevelCallableBindingLength = 0;
+    function->parameterMetadata = ZR_NULL;
+    function->parameterMetadataCount = 0;
+    function->compileTimeFunctionInfos = ZR_NULL;
+    function->compileTimeFunctionInfoLength = 0;
+    function->compileTimeVariableInfos = ZR_NULL;
+    function->compileTimeVariableInfoLength = 0;
+    function->escapeBindings = ZR_NULL;
+    function->escapeBindingLength = 0;
+    function->returnEscapeSlots = ZR_NULL;
+    function->returnEscapeSlotCount = 0;
+    function->testInfos = ZR_NULL;
+    function->testInfoLength = 0;
+    function->decoratorNames = ZR_NULL;
+    function->decoratorCount = 0;
+    function->memberEntries = ZR_NULL;
+    function->memberEntryLength = 0;
+    function->prototypeData = ZR_NULL;
+    function->prototypeDataLength = 0;
+    function->prototypeCount = 0;
+    function->semIrTypeTable = ZR_NULL;
+    function->semIrTypeTableLength = 0;
+    function->semIrOwnershipTable = ZR_NULL;
+    function->semIrOwnershipTableLength = 0;
+    function->semIrEffectTable = ZR_NULL;
+    function->semIrEffectTableLength = 0;
+    function->semIrBlockTable = ZR_NULL;
+    function->semIrBlockTableLength = 0;
+    function->semIrInstructions = ZR_NULL;
+    function->semIrInstructionLength = 0;
+    function->semIrDeoptTable = ZR_NULL;
+    function->semIrDeoptTableLength = 0;
+    function->callSiteCaches = ZR_NULL;
+    function->callSiteCacheLength = 0;
+    function->prototypeInstances = ZR_NULL;
+    function->prototypeInstancesLength = 0;
+    function->functionName = ZR_NULL;
+    function->sourceCodeList = ZR_NULL;
+    function->sourceHash = ZR_NULL;
+    function->runtimeDecoratorMetadata = ZR_NULL;
+    function->runtimeDecoratorDecorators = ZR_NULL;
+    function->hasDecoratorMetadata = ZR_FALSE;
+    ZrCore_Value_ResetAsNull(&function->decoratorMetadataValue);
+    function->parameterCount = 0;
+    function->hasVariableArguments = ZR_FALSE;
+    function->stackSize = 0;
+    function->lineInSourceStart = 0;
+    function->lineInSourceEnd = 0;
+    function->cachedStatelessClosure = ZR_NULL;
+}
+
+void ZrCore_Function_DetachOwnedBuffers(SZrFunction *function) {
+    function_reset_to_tombstone(function);
+}
+
 void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     SZrGlobalState *global = state->global;
     ZR_ASSERT(function != ZR_NULL);
@@ -589,6 +815,13 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     if (function->cachedStatelessClosure != ZR_NULL) {
         function->cachedStatelessClosure->function = ZR_NULL;
         function->cachedStatelessClosure = ZR_NULL;
+    }
+    if (!function->childFunctionGraphIsBorrowed &&
+        function->childFunctionList != ZR_NULL &&
+        function->childFunctionLength > 0) {
+        for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+            ZrCore_Function_Free(state, &function->childFunctionList[childIndex]);
+        }
     }
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
         ZR_MEMORY_RAW_FREE_LIST(global, function->instructionsList, function->instructionsLength);
@@ -779,7 +1012,10 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
                                       sizeof(SZrFunctionCallSiteCacheEntry) * function->callSiteCacheLength,
                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
-    // prototypeInstances 不需要手动释放，它们由GC管理（作为对象引用）
+    // prototypeInstances 不需要手动释放，它们由GC管理（作为对象引用）。
+    // Reset the function to a GC-safe tombstone because the raw object itself
+    // stays on the GC list until the collector later reclaims it.
+    function_reset_to_tombstone(function);
 
     // ZrCore_Memory_RawFreeWithType(global, function, sizeof(SZrFunction), ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     // function is object, gc free it automatically.
@@ -1646,15 +1882,68 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_vm(struct SZrState *state,
 }
 
 SZrCallInfo *ZrCore_Function_PreCallKnownValue(struct SZrState *state,
-                                         TZrStackValuePointer stackPointer,
-                                         SZrTypeValue *callableValue,
-                                         TZrSize resultCount,
-                                         TZrStackValuePointer returnDestination) {
+                                          TZrStackValuePointer stackPointer,
+                                          SZrTypeValue *callableValue,
+                                          TZrSize resultCount,
+                                          TZrStackValuePointer returnDestination) {
     return function_pre_call_dispatch(state, stackPointer, callableValue, resultCount, returnDestination);
 }
 
+SZrCallInfo *ZrCore_Function_PreCallKnownVmValue(struct SZrState *state,
+                                            TZrStackValuePointer stackPointer,
+                                            SZrTypeValue *callableValue,
+                                            TZrSize resultCount,
+                                            TZrStackValuePointer returnDestination) {
+    SZrFunction *function = ZR_NULL;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(stackPointer != ZR_NULL);
+    ZR_ASSERT(callableValue != ZR_NULL);
+
+    if (!function_prepare_vm_callable_value(state, stackPointer, &callableValue, &function)) {
+        return ZR_NULL;
+    }
+
+    ZR_ASSERT(function != ZR_NULL);
+    return function_pre_call_vm(state, stackPointer, resultCount, returnDestination, function);
+}
+
+SZrCallInfo *ZrCore_Function_PreCallKnownNativeValue(struct SZrState *state,
+                                                TZrStackValuePointer stackPointer,
+                                                SZrTypeValue *callableValue,
+                                                TZrSize resultCount,
+                                                TZrStackValuePointer returnDestination) {
+    FZrNativeFunction nativeFunction = ZR_NULL;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(stackPointer != ZR_NULL);
+    ZR_ASSERT(callableValue != ZR_NULL);
+
+    switch (callableValue->type) {
+        case ZR_VALUE_TYPE_FUNCTION:
+        case ZR_VALUE_TYPE_CLOSURE: {
+            SZrClosureNative *nativeClosure;
+
+            ZR_ASSERT(callableValue->isNative);
+            nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, callableValue->value.object);
+            ZR_ASSERT(nativeClosure != ZR_NULL);
+            nativeFunction = nativeClosure->nativeFunction;
+        } break;
+        case ZR_VALUE_TYPE_NATIVE_POINTER:
+            nativeFunction = ZR_CAST_FUNCTION_POINTER(callableValue);
+            break;
+        default:
+            ZR_ASSERT(ZR_FALSE && "known native call requires native callable");
+            return ZR_NULL;
+    }
+
+    ZR_ASSERT(nativeFunction != ZR_NULL);
+    function_pre_call_native(state, stackPointer, resultCount, nativeFunction, returnDestination);
+    return ZR_NULL;
+}
+
 SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, TZrStackValuePointer stackPointer, TZrSize resultCount,
-                               TZrStackValuePointer returnDestination) {
+                                TZrStackValuePointer returnDestination) {
     SZrProfileRuntime *profileRuntime =
             (state != ZR_NULL && state->global != ZR_NULL) ? state->global->profileRuntime : ZR_NULL;
 

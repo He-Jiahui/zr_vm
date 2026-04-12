@@ -6,11 +6,11 @@ FUNCTION: <anonymous>
   END_LINE: 155
   PARAMETERS: 0
   HAS_VAR_ARGS: false
-  STACK_SIZE: 26
+  STACK_SIZE: 14
 
 CONSTANTS (14):
   [0] function
-  [1] function
+  [1] null
   [2] function
   [3] function
   [4] function
@@ -22,41 +22,45 @@ CONSTANTS (14):
   [10] function
   [11] function
   [12] function
-  [13] null
+  [13] function
 
 LOCAL_VARIABLES (13):
-  [0] arithmetic_test: offset_activate=1, offset_dead=13
-  [1] logical_test: offset_activate=2, offset_dead=13
-  [2] comparison_test: offset_activate=3, offset_dead=13
-  [3] bitwise_test: offset_activate=4, offset_dead=13
-  [4] branch_test: offset_activate=5, offset_dead=13
-  [5] while_test: offset_activate=6, offset_dead=13
-  [6] for_test: offset_activate=7, offset_dead=13
-  [7] foreach_test: offset_activate=8, offset_dead=13
-  [8] function_test: offset_activate=9, offset_dead=13
-  [9] call_function_test: offset_activate=10, offset_dead=13
-  [10] variable_declaration_test: offset_activate=11, offset_dead=13
-  [11] return_test: offset_activate=12, offset_dead=13
-  [12] break_continue_test: offset_activate=13, offset_dead=13
+  [0] arithmetic_test: offset_activate=1, offset_dead=26
+  [1] logical_test: offset_activate=3, offset_dead=26
+  [2] comparison_test: offset_activate=5, offset_dead=26
+  [3] bitwise_test: offset_activate=7, offset_dead=26
+  [4] branch_test: offset_activate=9, offset_dead=26
+  [5] while_test: offset_activate=11, offset_dead=26
+  [6] for_test: offset_activate=13, offset_dead=26
+  [7] foreach_test: offset_activate=15, offset_dead=26
+  [8] function_test: offset_activate=17, offset_dead=26
+  [9] call_function_test: offset_activate=19, offset_dead=26
+  [10] variable_declaration_test: offset_activate=21, offset_dead=26
+  [11] return_test: offset_activate=23, offset_dead=26
+  [12] break_continue_test: offset_activate=25, offset_dead=26
 
 CLOSURE_VARIABLES (0):
 
 TYPE_METADATA:
   LOCAL_BINDINGS (13):
-    [0] arithmetic_test: function
-    [1] logical_test: function
-    [2] comparison_test: function
-    [3] bitwise_test: function
-    [4] branch_test: function
-    [5] while_test: function
-    [6] for_test: function
-    [7] foreach_test: function
-    [8] function_test: function
-    [9] call_function_test: function
-    [10] variable_declaration_test: function
-    [11] return_test: function
-    [12] break_continue_test: function
+    [0] arithmetic_test: %func()->int
+    [1] logical_test: %func()->int
+    [2] comparison_test: %func()->int
+    [3] bitwise_test: %func()->int
+    [4] branch_test: %func(int)->int
+    [5] while_test: %func()->int
+    [6] for_test: %func()->int
+    [7] foreach_test: %func()->int
+    [8] function_test: %func(int, int)->int
+    [9] call_function_test: %func()->int
+    [10] variable_declaration_test: %func()->int
+    [11] return_test: %func()->int
+    [12] break_continue_test: %func()->int
   EXPORTED_SYMBOLS (0):
+  STATIC_IMPORTS (0):
+  MODULE_ENTRY_EFFECTS (0):
+  EXPORTED_CALLABLE_SUMMARIES (0):
+  TOP_LEVEL_CALLABLE_BINDINGS (0):
   COMPILE_TIME_VARIABLES (0):
   COMPILE_TIME_FUNCTIONS (0):
   TESTS (1):
@@ -78,20 +82,904 @@ CALLSITE_CACHE_TABLE (0):
 
 EH_TABLE (0):
 
-INSTRUCTIONS (15):
-  [0] CREATE_CLOSURE (extra=0)
-  [1] CREATE_CLOSURE (extra=1)
+INSTRUCTIONS (28):
+  [0] CREATE_CLOSURE (extra=1)
+  [1] SET_STACK (extra=0, operand=1)
   [2] CREATE_CLOSURE (extra=2)
-  [3] CREATE_CLOSURE (extra=3)
-  [4] CREATE_CLOSURE (extra=4)
-  [5] CREATE_CLOSURE (extra=5)
-  [6] CREATE_CLOSURE (extra=6)
-  [7] CREATE_CLOSURE (extra=7)
-  [8] CREATE_CLOSURE (extra=8)
-  [9] CREATE_CLOSURE (extra=9)
-  [10] CREATE_CLOSURE (extra=10)
-  [11] CREATE_CLOSURE (extra=11)
-  [12] CREATE_CLOSURE (extra=12)
-  [13] GET_CONSTANT (extra=13, operand=13)
-  [14] FUNCTION_RETURN (extra=1, operand1=13, operand2=0)
+  [3] SET_STACK (extra=1, operand=2)
+  [4] CREATE_CLOSURE (extra=3)
+  [5] SET_STACK (extra=2, operand=3)
+  [6] CREATE_CLOSURE (extra=4)
+  [7] SET_STACK (extra=3, operand=4)
+  [8] CREATE_CLOSURE (extra=5)
+  [9] SET_STACK (extra=4, operand=5)
+  [10] CREATE_CLOSURE (extra=6)
+  [11] SET_STACK (extra=5, operand=6)
+  [12] CREATE_CLOSURE (extra=7)
+  [13] SET_STACK (extra=6, operand=7)
+  [14] CREATE_CLOSURE (extra=8)
+  [15] SET_STACK (extra=7, operand=8)
+  [16] CREATE_CLOSURE (extra=9)
+  [17] SET_STACK (extra=8, operand=9)
+  [18] CREATE_CLOSURE (extra=10)
+  [19] SET_STACK (extra=9, operand=10)
+  [20] CREATE_CLOSURE (extra=11)
+  [21] SET_STACK (extra=10, operand=11)
+  [22] CREATE_CLOSURE (extra=12)
+  [23] SET_STACK (extra=11, operand=12)
+  [24] CREATE_CLOSURE (extra=13)
+  [25] SET_STACK (extra=12, operand=13)
+  [26] GET_CONSTANT (extra=13, operand=1)
+  [27] FUNCTION_RETURN (extra=1, operand1=13, operand2=0)
+
+CHILD_FUNCTIONS (13):
+  [0] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 4
+    END_LINE: 14
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 10
+
+    CONSTANTS (3):
+      [0] int: 10
+      [1] null
+      [2] int: 20
+
+    LOCAL_VARIABLES (7):
+      [0] a: offset_activate=1, offset_dead=12
+      [1] b: offset_activate=2, offset_dead=12
+      [2] add: offset_activate=3, offset_dead=12
+      [3] sub: offset_activate=4, offset_dead=12
+      [4] mul: offset_activate=5, offset_dead=12
+      [5] div: offset_activate=6, offset_dead=12
+      [6] mod: offset_activate=7, offset_dead=12
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (7):
+        [0] a: int
+        [1] b: int
+        [2] add: int
+        [3] sub: int
+        [4] mul: int
+        [5] div: int
+        [6] mod: int
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (12):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] GET_CONSTANT (extra=1, operand=2)
+      [2] ADD_SIGNED (extra=2, operand1=0, operand2=1)
+      [3] SUB_SIGNED (extra=3, operand1=0, operand2=1)
+      [4] MUL_SIGNED (extra=4, operand1=0, operand2=1)
+      [5] DIV_SIGNED (extra=5, operand1=1, operand2=0)
+      [6] MOD_SIGNED (extra=6, operand1=1, operand2=0)
+      [7] ADD_SIGNED_PLAIN_DEST (extra=9, operand1=2, operand2=3)
+      [8] ADD_SIGNED_PLAIN_DEST (extra=7, operand1=9, operand2=4)
+      [9] ADD_SIGNED_PLAIN_DEST (extra=7, operand1=7, operand2=5)
+      [10] ADD_SIGNED_PLAIN_DEST (extra=7, operand1=7, operand2=6)
+      [11] FUNCTION_RETURN (extra=1, operand1=7, operand2=0)
+
+  [1] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 16
+    END_LINE: 30
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 7
+
+    CONSTANTS (6):
+      [0] bool: true
+      [1] null
+      [2] bool: false
+      [3] int: 1
+      [4] int: 2
+      [5] int: 3
+
+    LOCAL_VARIABLES (5):
+      [0] a: offset_activate=1, offset_dead=28
+      [1] b: offset_activate=2, offset_dead=28
+      [2] and: offset_activate=8, offset_dead=28
+      [3] or: offset_activate=15, offset_dead=28
+      [4] not: offset_activate=17, offset_dead=28
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (5):
+        [0] a: bool
+        [1] b: bool
+        [2] and: object
+        [3] or: object
+        [4] not: bool
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (28):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] GET_CONSTANT (extra=2, operand=2)
+      [2] SET_STACK (extra=1, operand=2)
+      [3] GET_STACK (extra=3, operand=0)
+      [4] SET_STACK (extra=4, operand=3)
+      [5] OPCODE_99 (extra=3, operand=2)
+      [6] GET_STACK (extra=5, operand=1)
+      [7] SET_STACK (extra=4, operand=5)
+      [8] SET_STACK (extra=2, operand=4)
+      [9] GET_STACK (extra=4, operand=0)
+      [10] SET_STACK (extra=5, operand=4)
+      [11] OPCODE_99 (extra=4, operand=1)
+      [12] OPCODE_98 (extra=0, operand=2)
+      [13] GET_STACK (extra=6, operand=1)
+      [14] SET_STACK (extra=5, operand=6)
+      [15] SET_STACK (extra=3, operand=5)
+      [16] OPCODE_70 (extra=5)
+      [17] SET_STACK (extra=4, operand=5)
+      [18] OPCODE_99 (extra=2, operand=3)
+      [19] GET_CONSTANT (extra=5, operand=3)
+      [20] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+      [21] OPCODE_98 (extra=0, operand=6)
+      [22] OPCODE_99 (extra=3, operand=3)
+      [23] GET_CONSTANT (extra=5, operand=4)
+      [24] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+      [25] OPCODE_98 (extra=0, operand=2)
+      [26] GET_CONSTANT (extra=5, operand=5)
+      [27] FUNCTION_RETURN (extra=1, operand1=5, operand2=0)
+
+  [2] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 32
+    END_LINE: 47
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 11
+
+    CONSTANTS (5):
+      [0] int: 10
+      [1] null
+      [2] int: 20
+      [3] int: 1
+      [4] int: 0
+
+    LOCAL_VARIABLES (8):
+      [0] a: offset_activate=1, offset_dead=22
+      [1] b: offset_activate=2, offset_dead=22
+      [2] eq: offset_activate=3, offset_dead=22
+      [3] ne: offset_activate=4, offset_dead=22
+      [4] lt: offset_activate=5, offset_dead=22
+      [5] gt: offset_activate=7, offset_dead=22
+      [6] le: offset_activate=9, offset_dead=22
+      [7] ge: offset_activate=10, offset_dead=22
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (8):
+        [0] a: int
+        [1] b: int
+        [2] eq: bool
+        [3] ne: bool
+        [4] lt: bool
+        [5] gt: bool
+        [6] le: bool
+        [7] ge: bool
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (22):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] GET_CONSTANT (extra=1, operand=2)
+      [2] LOGICAL_EQUAL_SIGNED (extra=2, operand1=0, operand2=1)
+      [3] LOGICAL_NOT_EQUAL_SIGNED (extra=3, operand1=0, operand2=1)
+      [4] OPCODE_76 (extra=7, operand2=65536, operand1=0, operand1_1=1)
+      [5] SET_STACK (extra=4, operand=7)
+      [6] OPCODE_73 (extra=8, operand2=65536, operand1=0, operand1_1=1)
+      [7] SET_STACK (extra=5, operand=8)
+      [8] OPCODE_84 (extra=6, operand2=65536, operand1=0, operand1_1=1)
+      [9] OPCODE_81 (extra=10, operand2=65536, operand1=0, operand1_1=1)
+      [10] SET_STACK (extra=7, operand=10)
+      [11] GET_STACK (extra=8, operand=4)
+      [12] SET_STACK (extra=9, operand=8)
+      [13] OPCODE_99 (extra=8, operand=2)
+      [14] GET_STACK (extra=10, operand=3)
+      [15] SET_STACK (extra=9, operand=10)
+      [16] OPCODE_99 (extra=9, operand=3)
+      [17] GET_CONSTANT (extra=8, operand=3)
+      [18] FUNCTION_RETURN (extra=1, operand1=8, operand2=0)
+      [19] OPCODE_98 (extra=0, operand=2)
+      [20] GET_CONSTANT (extra=8, operand=4)
+      [21] FUNCTION_RETURN (extra=1, operand1=8, operand2=0)
+
+  [3] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 49
+    END_LINE: 59
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 10
+
+    CONSTANTS (4):
+      [0] int: 5
+      [1] null
+      [2] int: 3
+      [3] int: 1
+
+    LOCAL_VARIABLES (7):
+      [0] a: offset_activate=1, offset_dead=21
+      [1] b: offset_activate=2, offset_dead=21
+      [2] and: offset_activate=3, offset_dead=21
+      [3] or: offset_activate=5, offset_dead=21
+      [4] xor: offset_activate=7, offset_dead=21
+      [5] shl: offset_activate=11, offset_dead=21
+      [6] shr: offset_activate=15, offset_dead=21
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (7):
+        [0] a: int
+        [1] b: int
+        [2] and: int
+        [3] or: int
+        [4] xor: int
+        [5] shl: int
+        [6] shr: int
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (21):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] GET_CONSTANT (extra=1, operand=2)
+      [2] OPCODE_88 (extra=5, operand1=0, operand2=1)
+      [3] SET_STACK (extra=2, operand=5)
+      [4] OPCODE_89 (extra=6, operand1=0, operand2=1)
+      [5] SET_STACK (extra=3, operand=6)
+      [6] OPCODE_90 (extra=7, operand1=0, operand2=1)
+      [7] SET_STACK (extra=4, operand=7)
+      [8] GET_STACK (extra=6, operand=0)
+      [9] GET_CONSTANT (extra=7, operand=3)
+      [10] OPCODE_67 (extra=8, operand2=458758, operand1=6, operand1_1=7)
+      [11] SET_STACK (extra=5, operand=8)
+      [12] GET_STACK (extra=7, operand=0)
+      [13] GET_CONSTANT (extra=8, operand=3)
+      [14] OPCODE_69 (extra=9, operand2=524295, operand1=7, operand1_1=8)
+      [15] SET_STACK (extra=6, operand=9)
+      [16] ADD_SIGNED (extra=9, operand1=2, operand2=3)
+      [17] ADD_SIGNED (extra=7, operand1=9, operand2=4)
+      [18] ADD_SIGNED_PLAIN_DEST (extra=7, operand1=7, operand2=5)
+      [19] ADD_SIGNED_PLAIN_DEST (extra=7, operand1=7, operand2=6)
+      [20] FUNCTION_RETURN (extra=1, operand1=7, operand2=0)
+
+  [4] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 61
+    END_LINE: 70
+    PARAMETERS: 1
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 3
+
+    CONSTANTS (5):
+      [0] int: 10
+      [1] int: 1
+      [2] int: 5
+      [3] int: 2
+      [4] int: 3
+
+    LOCAL_VARIABLES (1):
+      [0] x: offset_activate=0, offset_dead=14
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (1):
+        [0] x: int
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (14):
+      [0] GET_CONSTANT (extra=2, operand=0)
+      [1] OPCODE_73 (extra=1, operand2=131072, operand1=0, operand1_1=2)
+      [2] OPCODE_99 (extra=1, operand=3)
+      [3] GET_CONSTANT (extra=1, operand=1)
+      [4] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+      [5] OPCODE_98 (extra=0, operand=8)
+      [6] GET_CONSTANT (extra=2, operand=2)
+      [7] OPCODE_73 (extra=1, operand2=131072, operand1=0, operand1_1=2)
+      [8] OPCODE_99 (extra=1, operand=3)
+      [9] GET_CONSTANT (extra=1, operand=3)
+      [10] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+      [11] OPCODE_98 (extra=0, operand=2)
+      [12] GET_CONSTANT (extra=1, operand=4)
+      [13] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+
+  [5] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 72
+    END_LINE: 81
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 8
+
+    CONSTANTS (4):
+      [0] int: 0
+      [1] null
+      [2] int: 10
+      [3] int: 1
+
+    LOCAL_VARIABLES (2):
+      [0] i: offset_activate=1, offset_dead=9
+      [1] sum: offset_activate=2, offset_dead=9
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (2):
+        [0] i: int
+        [1] sum: int
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (9):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] GET_CONSTANT (extra=1, operand=0)
+      [2] GET_CONSTANT (extra=3, operand=2)
+      [3] OPCODE_76 (extra=2, operand2=196608, operand1=0, operand1_1=3)
+      [4] OPCODE_99 (extra=2, operand=3)
+      [5] ADD_SIGNED (extra=1, operand1=1, operand2=0)
+      [6] ADD_SIGNED_CONST_PLAIN_DEST (extra=0, left_slot=0, constant_index=3)
+      [7] OPCODE_98 (extra=0, operand=-6)
+      [8] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+
+  [6] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 83
+    END_LINE: 90
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 8
+
+    CONSTANTS (4):
+      [0] int: 0
+      [1] null
+      [2] int: 10
+      [3] int: 1
+
+    LOCAL_VARIABLES (2):
+      [0] sum: offset_activate=1, offset_dead=9
+      [1] i: offset_activate=2, offset_dead=8
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (2):
+        [0] sum: int
+        [1] i: int
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (9):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] GET_CONSTANT (extra=1, operand=0)
+      [2] GET_CONSTANT (extra=3, operand=2)
+      [3] OPCODE_76 (extra=2, operand2=196609, operand1=1, operand1_1=3)
+      [4] OPCODE_99 (extra=2, operand=3)
+      [5] ADD_SIGNED (extra=0, operand1=0, operand2=1)
+      [6] ADD_SIGNED_CONST_PLAIN_DEST (extra=1, left_slot=1, constant_index=3)
+      [7] OPCODE_98 (extra=0, operand=-6)
+      [8] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+
+  [7] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 92
+    END_LINE: 100
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 9
+
+    CONSTANTS (7):
+      [0] int: 1
+      [1] int: 0
+      [2] null
+      [3] int: 2
+      [4] int: 3
+      [5] int: 4
+      [6] int: 5
+
+    LOCAL_VARIABLES (3):
+      [0] arr: offset_activate=16, offset_dead=26
+      [1] sum: offset_activate=18, offset_dead=26
+      [2] item: offset_activate=20, offset_dead=25
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (3):
+        [0] arr: int[]
+        [1] sum: int
+        [2] item: object
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (26):
+      [0] CREATE_ARRAY (extra=1)
+      [1] GET_CONSTANT (extra=3, operand=0)
+      [2] GET_CONSTANT (extra=4, operand=1)
+      [3] OPCODE_11 (extra=3, operand1=1, operand2=4)
+      [4] GET_CONSTANT (extra=3, operand=3)
+      [5] GET_CONSTANT (extra=4, operand=0)
+      [6] OPCODE_11 (extra=3, operand1=1, operand2=4)
+      [7] GET_CONSTANT (extra=3, operand=4)
+      [8] GET_CONSTANT (extra=4, operand=3)
+      [9] OPCODE_11 (extra=3, operand1=1, operand2=4)
+      [10] GET_CONSTANT (extra=3, operand=5)
+      [11] GET_CONSTANT (extra=4, operand=4)
+      [12] OPCODE_11 (extra=3, operand1=1, operand2=4)
+      [13] GET_CONSTANT (extra=3, operand=6)
+      [14] GET_CONSTANT (extra=4, operand=5)
+      [15] OPCODE_11 (extra=3, operand1=1, operand2=4)
+      [16] SET_STACK (extra=0, operand=1)
+      [17] GET_CONSTANT (extra=1, operand=1)
+      [18] GET_STACK (extra=3, operand=0)
+      [19] OPCODE_19 (extra=4, operand1=3, operand2=0)
+      [20] OPCODE_20 (extra=5, operand1=4, operand2=0)
+      [21] OPCODE_99 (extra=5, operand=3)
+      [22] OPCODE_21 (extra=2, operand1=4, operand2=0)
+      [23] ADD_SIGNED (extra=1, operand1=1, operand2=2)
+      [24] OPCODE_98 (extra=0, operand=-5)
+      [25] FUNCTION_RETURN (extra=1, operand1=1, operand2=0)
+
+  [8] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 102
+    END_LINE: 105
+    PARAMETERS: 2
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 3
+
+    CONSTANTS (0):
+
+    LOCAL_VARIABLES (2):
+      [0] a: offset_activate=0, offset_dead=2
+      [1] b: offset_activate=0, offset_dead=2
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (2):
+        [0] a: int
+        [1] b: int
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (2):
+      [0] ADD_SIGNED (extra=2, operand1=0, operand2=1)
+      [1] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
+
+  [9] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 106
+    END_LINE: 109
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 3
+
+    CONSTANTS (3):
+      [0] int: 10
+      [1] int: 20
+      [2] null
+
+    LOCAL_VARIABLES (0):
+
+    CLOSURE_VARIABLES (1):
+      [0] function_test: in_stack=true, index=8, type=NULL
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (0):
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (5):
+      [0] OPCODE_6 (extra=0)
+      [1] GET_CONSTANT (extra=1, operand=0)
+      [2] GET_CONSTANT (extra=2, operand=1)
+      [3] OPCODE_94 (extra=0, operand1=0, operand2=2)
+      [4] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+
+  [10] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 111
+    END_LINE: 117
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 6
+
+    CONSTANTS (3):
+      [0] int: 10
+      [1] null
+      [2] int: 20
+
+    LOCAL_VARIABLES (3):
+      [0] a: offset_activate=1, offset_dead=4
+      [1] b: offset_activate=2, offset_dead=4
+      [2] c: offset_activate=3, offset_dead=4
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (3):
+        [0] a: int
+        [1] b: int
+        [2] c: int
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (4):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] GET_CONSTANT (extra=1, operand=2)
+      [2] ADD_SIGNED (extra=2, operand1=0, operand2=1)
+      [3] FUNCTION_RETURN (extra=1, operand1=2, operand2=0)
+
+  [11] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 119
+    END_LINE: 122
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 1
+
+    CONSTANTS (1):
+      [0] int: 42
+
+    LOCAL_VARIABLES (0):
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (0):
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (2):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+
+  [12] FUNCTION:
+    NAME: <anonymous>
+    START_LINE: 124
+    END_LINE: 137
+    PARAMETERS: 0
+    HAS_VAR_ARGS: false
+    STACK_SIZE: 16
+
+    CONSTANTS (6):
+      [0] int: 0
+      [1] null
+      [2] int: 20
+      [3] int: 2
+      [4] int: 15
+      [5] int: 1
+
+    LOCAL_VARIABLES (2):
+      [0] sum: offset_activate=1, offset_dead=20
+      [1] i: offset_activate=2, offset_dead=19
+
+    CLOSURE_VARIABLES (0):
+
+    TYPE_METADATA:
+      LOCAL_BINDINGS (2):
+        [0] sum: int
+        [1] i: int
+      EXPORTED_SYMBOLS (0):
+      STATIC_IMPORTS (0):
+      MODULE_ENTRY_EFFECTS (0):
+      EXPORTED_CALLABLE_SUMMARIES (0):
+      TOP_LEVEL_CALLABLE_BINDINGS (0):
+      COMPILE_TIME_VARIABLES (0):
+      COMPILE_TIME_FUNCTIONS (0):
+      TESTS (0):
+
+    TYPE_TABLE (0):
+
+    OWNERSHIP_TABLE (0):
+
+    EFFECT_TABLE (0):
+
+    BLOCK_GRAPH (0):
+
+    SEMIR (0):
+
+    DEOPT_MAP (0):
+
+    CALLSITE_CACHE_TABLE (0):
+
+    EH_TABLE (0):
+
+    INSTRUCTIONS (20):
+      [0] GET_CONSTANT (extra=0, operand=0)
+      [1] GET_CONSTANT (extra=1, operand=0)
+      [2] GET_CONSTANT (extra=3, operand=2)
+      [3] OPCODE_76 (extra=2, operand2=196609, operand1=1, operand1_1=3)
+      [4] OPCODE_99 (extra=2, operand=14)
+      [5] MOD_SIGNED_CONST (extra=2, left_slot=1, constant_index=3)
+      [6] GET_CONSTANT (extra=3, operand=0)
+      [7] LOGICAL_EQUAL_SIGNED (extra=2, operand1=2, operand2=3)
+      [8] OPCODE_99 (extra=2, operand=2)
+      [9] OPCODE_98 (extra=0, operand=-8)
+      [10] OPCODE_98 (extra=0, operand=0)
+      [11] GET_CONSTANT (extra=3, operand=4)
+      [12] OPCODE_73 (extra=2, operand2=196609, operand1=1, operand1_1=3)
+      [13] OPCODE_99 (extra=2, operand=2)
+      [14] OPCODE_98 (extra=0, operand=4)
+      [15] OPCODE_98 (extra=0, operand=0)
+      [16] ADD_SIGNED (extra=0, operand1=0, operand2=1)
+      [17] ADD_SIGNED_CONST_PLAIN_DEST (extra=1, left_slot=1, constant_index=5)
+      [18] OPCODE_98 (extra=0, operand=-17)
+      [19] FUNCTION_RETURN (extra=1, operand1=0, operand2=0)
+
 

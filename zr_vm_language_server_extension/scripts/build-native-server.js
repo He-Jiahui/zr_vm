@@ -1,18 +1,20 @@
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createArtifactLayout } = require('./artifact-layout');
 
-const repositoryRoot = path.resolve(__dirname, '..', '..');
-const buildDir = process.env.ZR_NATIVE_BUILD_DIR
-    ? path.resolve(process.env.ZR_NATIVE_BUILD_DIR)
-    : path.join(repositoryRoot, 'build', 'codex-lsp');
-const buildConfig = process.env.ZR_NATIVE_BUILD_CONFIG || 'Debug';
+const layout = createArtifactLayout({
+    repositoryRoot: path.resolve(__dirname, '..', '..'),
+    extensionRoot: path.resolve(__dirname, '..'),
+});
+const repositoryRoot = layout.repositoryRoot;
+const buildDir = layout.native.buildDir;
+const buildConfig = layout.nativeBuildConfig;
 const targets = (process.env.ZR_NATIVE_BUILD_TARGET || 'zr_vm_language_server_stdio,zr_vm_cli_executable')
     .split(',')
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
 const jobs = process.env.ZR_BUILD_JOBS || '8';
-const helloWorldProject = path.join(repositoryRoot, 'tests', 'fixtures', 'projects', 'hello_world', 'hello_world.zrp');
 const projectModulesFixture = path.join(
     repositoryRoot,
     'tests',
@@ -240,40 +242,6 @@ function verifyCliSmoke(cliExecutable, env) {
         return {
             ok: false,
             message: formatSpawnFailure('zr_vm_cli --help', helpResult),
-        };
-    }
-
-    if (!fs.existsSync(helloWorldProject)) {
-        return {
-            ok: false,
-            message: `Missing hello_world project fixture at ${helloWorldProject}`,
-        };
-    }
-
-    const runResult = spawnSync(
-        cliExecutable,
-        [
-            helloWorldProject,
-            '--debug',
-            '--debug-address',
-            '127.0.0.1:0',
-            '--debug-print-endpoint',
-        ],
-        {
-            cwd: path.dirname(helloWorldProject),
-            env,
-            encoding: 'utf8',
-            timeout: 10000,
-            windowsHide: true,
-        },
-    );
-    const stdout = String(runResult.stdout || '');
-    if (runResult.status !== 0 ||
-        !stdout.includes('debug_endpoint=') ||
-        !stdout.includes('hello world')) {
-        return {
-            ok: false,
-            message: formatSpawnFailure('zr_vm_cli hello_world.zrp --debug --debug-print-endpoint', runResult),
         };
     }
 

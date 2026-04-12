@@ -343,6 +343,14 @@ static TZrBool is_integer_type(EZrValueType type) {
     return ZR_VALUE_IS_TYPE_SIGNED_INT(type) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(type);
 }
 
+static TZrBool is_signed_integer_type(EZrValueType type) {
+    return ZR_VALUE_IS_TYPE_SIGNED_INT(type);
+}
+
+static TZrBool is_unsigned_integer_type(EZrValueType type) {
+    return ZR_VALUE_IS_TYPE_UNSIGNED_INT(type);
+}
+
 // 检查类型是否为浮点类型
 static TZrBool is_float_type(EZrValueType type) {
     return ZR_VALUE_IS_TYPE_FLOAT(type);
@@ -760,9 +768,16 @@ EZrInstructionCode ZrParser_InferredType_GetConversionOpcode(const SZrInferredTy
     if (is_integer_type(fromType->baseType) && is_float_type(toType->baseType)) {
         return ZR_INSTRUCTION_ENUM(TO_FLOAT);
     }
-    
-    // 浮点到整数：使用TO_INT
-    if (is_float_type(fromType->baseType) && is_integer_type(toType->baseType)) {
+
+    // 转换到无符号整数时，确保运行时值也进入无符号通道。
+    if (is_unsigned_integer_type(toType->baseType) &&
+        !is_unsigned_integer_type(fromType->baseType)) {
+        return ZR_INSTRUCTION_ENUM(TO_UINT);
+    }
+
+    // 转换到有符号整数时，确保运行时值也进入有符号通道。
+    if (is_signed_integer_type(toType->baseType) &&
+        !is_signed_integer_type(fromType->baseType)) {
         return ZR_INSTRUCTION_ENUM(TO_INT);
     }
     
@@ -776,9 +791,9 @@ EZrInstructionCode ZrParser_InferredType_GetConversionOpcode(const SZrInferredTy
         return ZR_INSTRUCTION_ENUM(TO_STRING);
     }
     
-    // TODO: 整数类型之间的转换（简化处理，不需要转换指令，运行时处理）
+    // 相同符号域的整数之间暂时仍视为无需额外转换指令。
     if (is_integer_type(fromType->baseType) && is_integer_type(toType->baseType)) {
-        return ZR_INSTRUCTION_ENUM(ENUM_MAX); // 不需要转换指令
+        return ZR_INSTRUCTION_ENUM(ENUM_MAX);
     }
     
     return ZR_INSTRUCTION_ENUM(ENUM_MAX);

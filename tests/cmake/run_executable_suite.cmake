@@ -1,14 +1,14 @@
 if (NOT DEFINED SUITE_NAME OR SUITE_NAME STREQUAL "")
     set(SUITE_NAME "unnamed_suite")
-endif()
+endif ()
 
 if (NOT DEFINED EXECUTABLES OR EXECUTABLES STREQUAL "")
     message(FATAL_ERROR "No executables were provided for suite '${SUITE_NAME}'.")
-endif()
+endif ()
 
 if (NOT DEFINED RUN_WORKING_DIRECTORY OR RUN_WORKING_DIRECTORY STREQUAL "")
     set(RUN_WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}")
-endif()
+endif ()
 
 if (DEFINED TIER AND NOT TIER STREQUAL "")
     string(TOLOWER "${TIER}" REQUESTED_TIER)
@@ -27,6 +27,16 @@ elseif (REQUESTED_TIER STREQUAL "stress" AND DEFINED EXECUTABLES_STRESS AND NOT 
     set(SELECTED_EXECUTABLES "${EXECUTABLES_STRESS}")
 endif ()
 
+set(CLI_EXE "")
+foreach (_zr_suite_exe_candidate IN LISTS SELECTED_EXECUTABLES)
+    if (NOT _zr_suite_exe_candidate STREQUAL "")
+        set(CLI_EXE "${_zr_suite_exe_candidate}")
+        break()
+    endif ()
+endforeach ()
+
+include("${CMAKE_CURRENT_LIST_DIR}/zr_vm_test_host_env.cmake")
+
 message("==========")
 message("Running suite: ${SUITE_NAME}")
 if (NOT REQUESTED_TIER STREQUAL "")
@@ -34,31 +44,31 @@ if (NOT REQUESTED_TIER STREQUAL "")
 endif ()
 message("==========")
 
-foreach(executable_path IN LISTS SELECTED_EXECUTABLES)
+foreach (executable_path IN LISTS SELECTED_EXECUTABLES)
     if (executable_path STREQUAL "")
         continue()
-    endif()
+    endif ()
 
     get_filename_component(executable_name "${executable_path}" NAME)
     message("---- ${executable_name}")
 
     execute_process(
-        COMMAND "${executable_path}"
-        WORKING_DIRECTORY "${RUN_WORKING_DIRECTORY}"
-        RESULT_VARIABLE executable_result
-        OUTPUT_VARIABLE executable_stdout
-        ERROR_VARIABLE executable_stderr
+            COMMAND "${executable_path}"
+            WORKING_DIRECTORY "${RUN_WORKING_DIRECTORY}"
+            RESULT_VARIABLE executable_result
+            OUTPUT_VARIABLE executable_stdout
+            ERROR_VARIABLE executable_stderr
     )
 
     if (NOT executable_stdout STREQUAL "")
         message("${executable_stdout}")
-    endif()
+    endif ()
 
     if (NOT executable_stderr STREQUAL "")
         message("${executable_stderr}")
-    endif()
+    endif ()
 
     if (NOT executable_result EQUAL 0)
         message(FATAL_ERROR "Suite '${SUITE_NAME}' failed while running '${executable_name}' with exit code ${executable_result}.")
-    endif()
-endforeach()
+    endif ()
+endforeach ()

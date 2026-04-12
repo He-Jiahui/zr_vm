@@ -73,6 +73,8 @@ struct SZrIoFunctionLocalVariable {
     TZrUInt64 instructionEndIndex;
     TZrUInt64 startLine; // debug
     TZrUInt64 endLine; // debug
+    TZrUInt32 scopeDepth;
+    TZrUInt32 escapeFlags;
 };
 
 typedef struct SZrIoFunctionLocalVariable SZrIoFunctionLocalVariable;
@@ -82,6 +84,8 @@ struct SZrIoFunctionClosureVariable {
     TZrUInt8 inStack;
     TZrUInt32 index;
     TZrUInt32 valueType;
+    TZrUInt32 scopeDepth;
+    TZrUInt32 escapeFlags;
 };
 
 typedef struct SZrIoFunctionClosureVariable SZrIoFunctionClosureVariable;
@@ -221,6 +225,16 @@ typedef struct SZrIoFunctionCompileTimeFunctionInfo {
     TZrUInt32 lineInSourceStart;
     TZrUInt32 lineInSourceEnd;
 } SZrIoFunctionCompileTimeFunctionInfo;
+
+typedef struct SZrIoFunctionEscapeBinding {
+    struct SZrString *name;
+    TZrUInt32 slotOrIndex;
+    TZrUInt32 scopeDepth;
+    TZrUInt32 escapeFlags;
+    TZrUInt8 bindingKind;
+    TZrUInt8 reserved0;
+    TZrUInt16 reserved1;
+} SZrIoFunctionEscapeBinding;
 
 typedef struct SZrIoFunctionTestInfo {
     struct SZrString *name;
@@ -372,6 +386,10 @@ struct SZrIoFunction {
     SZrIoFunctionCompileTimeVariableInfo *compileTimeVariableInfos;
     TZrSize compileTimeFunctionInfosLength;
     SZrIoFunctionCompileTimeFunctionInfo *compileTimeFunctionInfos;
+    TZrSize escapeBindingLength;
+    SZrIoFunctionEscapeBinding *escapeBindings;
+    TZrSize returnEscapeSlotCount;
+    TZrUInt32 *returnEscapeSlots;
     TZrSize testInfosLength;
     SZrIoFunctionTestInfo *testInfos;
     TZrUInt8 hasDecoratorMetadata;

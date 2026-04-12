@@ -32,12 +32,13 @@ while (outer <= outerLimit - 1) {
         hits = hits + 1;
         var label = labelFor(outer + inner);
         var key = label + "_slot";
-        if (buckets[key] == null) {
+        var cell = buckets[key];
+        if (cell == null) {
             buckets[key] = 0;
+            cell = 0;
         }
-        var existing = buckets[key] + 0;
-        buckets[key] = (existing + left + right + hits) % 1000000007;
-        var updated = buckets[key] + 0;
+        buckets[key] = (cell + left + right + hits) % 1000000007;
+        var updated = buckets[key];
         checksum = (checksum + updated + left + hits) % 1000000007;
         inner = inner + 1;
     }

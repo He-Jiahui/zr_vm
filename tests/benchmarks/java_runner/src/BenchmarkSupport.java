@@ -764,6 +764,87 @@ final class BenchmarkSupport {
                         + counters[length - 1]);
     }
 
+    private static String gcFragmentFor(int slot) {
+        String[] fragments = new String[] {"amber", "birch", "cedar", "dune", "ember", "frost", "grove", "harbor"};
+        return fragments[Math.floorMod(slot, fragments.length)];
+    }
+
+    private static String gcPayloadFor(long seed, int cycle, int slot) {
+        String head = gcFragmentFor((int) (seed + cycle));
+        String middle = gcFragmentFor((int) (seed / 3 + slot * 5L));
+        String tail = gcFragmentFor((int) (seed + cycle * 7L + slot * 11L));
+        return head + "-" + middle + "-" + tail + ":" + seed + ":" + cycle + ":" + slot;
+    }
+
+    static long gcFragmentStress(int scale) {
+        ArrayList<String> survivors = new ArrayList<>();
+        ArrayList<String> scratch = new ArrayList<>();
+        HashMap<String, Long> anchors = new HashMap<>();
+        long seed = 29;
+        long checksum = 0;
+        int anchorCount = 0;
+
+        for (int cycle = 0; cycle < 36 * scale; cycle++) {
+            scratch.clear();
+            String probeKey = "";
+            long probeFallback = 0;
+
+            for (int slot = 0; slot < 320; slot++) {
+                seed = (seed * 73 + 19 + cycle + slot) % 10007;
+                String payload = gcPayloadFor(seed, cycle, slot);
+                scratch.add(payload);
+                scratch.add(payload + "|" + gcFragmentFor((int) (seed + slot + 3)));
+
+                if (slot % 5 == 0) {
+                    survivors.add(payload + "#hold#" + cycle);
+                }
+                if (slot % 7 == 0) {
+                    String anchorKey = payload + "#anchor#" + slot;
+                    if (!anchors.containsKey(anchorKey)) {
+                        anchorCount++;
+                    }
+                    anchors.put(anchorKey, seed + cycle + slot);
+                }
+                if (slot % 11 == 0) {
+                    String shadowKey = payload + "#shadow#" + cycle;
+                    if (!anchors.containsKey(shadowKey)) {
+                        anchorCount++;
+                    }
+                    anchors.put(shadowKey, seed * 2 + slot);
+                }
+                if (slot % 13 == 0 && survivors.size() > 24) {
+                    survivors.remove(0);
+                }
+
+                checksum = modReduce(checksum * 131 + seed + cycle * 17L + slot * 29L + survivors.size());
+                if (slot == 0) {
+                    probeKey = payload + "#anchor#0";
+                    probeFallback = seed + cycle;
+                }
+            }
+
+            scratch.clear();
+            if (cycle % 4 == 3) {
+                anchors.clear();
+                anchorCount = 0;
+            }
+            if (anchors.containsKey(probeKey)) {
+                checksum = modReduce(checksum * 137 + anchors.get(probeKey) + survivors.size() + cycle);
+            } else {
+                checksum = modReduce(checksum * 137 + probeFallback + survivors.size() + cycle);
+            }
+            if (cycle % 9 == 8) {
+                survivors.clear();
+            }
+        }
+
+        return modReduce(checksum + survivors.size() * 17L + anchorCount * 19L + seed);
+    }
+
+    static long gcFragmentBaseline(int scale) {
+        return gcFragmentStress(scale);
+    }
+
     private static long routeService(Service service, long value, long ticket) {
         return service.handle(value, ticket);
     }

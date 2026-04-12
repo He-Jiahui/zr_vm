@@ -29,14 +29,17 @@ static void semantic_free_collected_generic_parameters(SZrState *state,
     ZrCore_Array_Free(state, genericParameters);
 }
 
-static SZrString *semantic_extract_generic_argument_name_string(SZrCompilerState *compilerState,
+static SZrString *semantic_extract_generic_argument_name_string(SZrSemanticAnalyzer *analyzer,
                                                                 SZrAstNode *node) {
     SZrInferredType inferredType;
     SZrString *typeName = ZR_NULL;
+    SZrState *state;
 
-    if (compilerState == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_TYPE) {
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || node == ZR_NULL || node->type != ZR_AST_TYPE) {
         return ZR_NULL;
     }
+
+    state = analyzer->compilerState->state;
 
     if (node->data.type.name != ZR_NULL &&
         node->data.type.name->type == ZR_AST_IDENTIFIER_LITERAL &&
@@ -44,21 +47,30 @@ static SZrString *semantic_extract_generic_argument_name_string(SZrCompilerState
         return node->data.type.name->data.identifier.name;
     }
 
-    ZrParser_InferredType_Init(compilerState->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
-    if (ZrParser_AstTypeToInferredType_Convert(compilerState, &node->data.type, &inferredType)) {
+    ZrParser_InferredType_Init(state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
+                                                                        ZR_NULL,
+                                                                        ZR_NULL,
+                                                                        &node->data.type,
+                                                                        &inferredType)) {
         typeName = inferredType.typeName;
     }
-    ZrParser_InferredType_Free(compilerState->state, &inferredType);
+    ZrParser_InferredType_Free(state, &inferredType);
     return typeName;
 }
 
-static void semantic_collect_generic_parameter_info(SZrCompilerState *compilerState,
+static void semantic_collect_generic_parameter_info(SZrSemanticAnalyzer *analyzer,
                                                     SZrArray *genericParameters,
                                                     SZrGenericDeclaration *genericDeclaration) {
-    if (compilerState == ZR_NULL || genericParameters == ZR_NULL || genericDeclaration == ZR_NULL ||
+    SZrCompilerState *compilerState;
+
+    if (analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL || genericParameters == ZR_NULL ||
+        genericDeclaration == ZR_NULL ||
         genericDeclaration->params == ZR_NULL) {
         return;
     }
+
+    compilerState = analyzer->compilerState;
 
     if (!genericParameters->isValid || genericParameters->head == ZR_NULL ||
         genericParameters->capacity == 0 || genericParameters->elementSize == 0) {
@@ -94,11 +106,11 @@ static void semantic_collect_generic_parameter_info(SZrCompilerState *compilerSt
 
         if (parameter->genericTypeConstraints != ZR_NULL) {
             for (TZrSize constraintIndex = 0;
-                 constraintIndex < parameter->genericTypeConstraints->count;
+                constraintIndex < parameter->genericTypeConstraints->count;
                  constraintIndex++) {
                 SZrAstNode *constraintNode = parameter->genericTypeConstraints->nodes[constraintIndex];
                 SZrString *constraintName =
-                    semantic_extract_generic_argument_name_string(compilerState, constraintNode);
+                    semantic_extract_generic_argument_name_string(analyzer, constraintNode);
 
                 if (constraintName != ZR_NULL) {
                     ZrCore_Array_Push(compilerState->state, &genericInfo.constraintTypeNames, &constraintName);
@@ -144,6 +156,34 @@ static SZrInferredType *allocate_object_type_info(SZrState *state) {
     }
 
     return typeInfo;
+}
+
+static SZrInferredType *create_type_info_from_type_node_with_callable_context(SZrState *state,
+                                                                             SZrSemanticAnalyzer *analyzer,
+                                                                             const SZrType *typeNode,
+                                                                             SZrAstNode *callableDeclarationNode) {
+    SZrInferredType *typeInfo;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || typeNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    typeInfo = allocate_object_type_info(state);
+    if (typeInfo == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
+                                                                        ZR_NULL,
+                                                                        callableDeclarationNode,
+                                                                        typeNode,
+                                                                        typeInfo)) {
+        return typeInfo;
+    }
+
+    ZrParser_InferredType_Free(state, typeInfo);
+    ZrCore_Memory_RawFree(state->global, typeInfo, sizeof(SZrInferredType));
+    return ZR_NULL;
 }
 
 static void copy_inferred_type_into(SZrState *state,
@@ -255,20 +295,12 @@ static SZrInferredType *create_type_info_from_type_node(SZrState *state,
 
     if (typeNode != ZR_NULL &&
         analyzer != ZR_NULL &&
-        analyzer->compilerState != ZR_NULL &&
-        ZrParser_AstTypeToInferredType_Convert(analyzer->compilerState, typeNode, typeInfo)) {
+        ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
+                                                                        ZR_NULL,
+                                                                        ZR_NULL,
+                                                                        typeNode,
+                                                                        typeInfo)) {
         return typeInfo;
-    }
-
-    if (typeNode != ZR_NULL && analyzer != ZR_NULL) {
-        ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(state,
-                                                                         analyzer,
-                                                                         typeNode->name != ZR_NULL
-                                                                                 ? typeNode->name->location
-                                                                                 : ZrParser_FileRange_Create(
-                                                                                           ZrParser_FilePosition_Create(0, 0, 0),
-                                                                                           ZrParser_FilePosition_Create(0, 0, 0),
-                                                                                           ZR_NULL));
     }
 
     if (typeInfo != ZR_NULL) {
@@ -289,7 +321,14 @@ static SZrInferredType *create_type_info_for_variable(SZrState *state,
     }
 
     if (varDecl->typeInfo != ZR_NULL) {
-        return create_type_info_from_type_node(state, analyzer, varDecl->typeInfo);
+        typeInfo = create_type_info_from_type_node(state, analyzer, varDecl->typeInfo);
+        if (typeInfo == ZR_NULL) {
+            semantic_add_cannot_infer_exact_type_diagnostic(
+                    state,
+                    analyzer,
+                    varDecl->typeInfo->name != ZR_NULL ? varDecl->typeInfo->name->location : varDecl->pattern->location);
+        }
+        return typeInfo;
     }
 
     if (varDecl->value != ZR_NULL) {
@@ -502,6 +541,7 @@ static SZrInferredType *create_type_info_for_callable_return(SZrState *state,
                                                              const SZrType *returnTypeNode,
                                                              SZrAstNodeArray *params,
                                                              SZrAstNode *body,
+                                                             SZrAstNode *callableDeclarationNode,
                                                              SZrFileRange diagnosticLocation) {
     SZrInferredType inferredReturnType;
     SZrInferredType *typeInfo = ZR_NULL;
@@ -513,7 +553,14 @@ static SZrInferredType *create_type_info_for_callable_return(SZrState *state,
     }
 
     if (returnTypeNode != ZR_NULL) {
-        return create_type_info_from_type_node(state, analyzer, returnTypeNode);
+        typeInfo = create_type_info_from_type_node_with_callable_context(state,
+                                                                         analyzer,
+                                                                         returnTypeNode,
+                                                                         callableDeclarationNode);
+        if (typeInfo == ZR_NULL) {
+            semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+        }
+        return typeInfo;
     }
 
     ZrParser_InferredType_Init(state, &inferredReturnType, ZR_VALUE_TYPE_NULL);
@@ -533,7 +580,10 @@ static SZrInferredType *create_type_info_for_callable_return(SZrState *state,
                 continue;
             }
 
-            paramTypeInfo = create_type_info_from_type_node(state, analyzer, parameter->typeInfo);
+            paramTypeInfo = create_type_info_from_type_node_with_callable_context(state,
+                                                                                  analyzer,
+                                                                                  parameter->typeInfo,
+                                                                                  callableDeclarationNode);
             if (paramTypeInfo == ZR_NULL) {
                 semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, paramNode->location);
                 continue;
@@ -588,7 +638,7 @@ static void register_function_type_binding_in_env(SZrState *state,
 
     ZrCore_Array_Construct(&genericParameters);
     ZrCore_Array_Construct(&parameterPassingModes);
-    semantic_collect_generic_parameter_info(compilerState, &genericParameters, funcDecl->generic);
+    semantic_collect_generic_parameter_info(analyzer, &genericParameters, funcDecl->generic);
     semantic_collect_parameter_passing_modes(state, &parameterPassingModes, funcDecl->params);
     declarationNode = compilerState->currentFunctionNode;
     resolvedReturnTypeInfo =
@@ -597,6 +647,7 @@ static void register_function_type_binding_in_env(SZrState *state,
                                              funcDecl->returnType,
                                              funcDecl->params,
                                              funcDecl->body,
+                                             declarationNode,
                                              declarationNode != ZR_NULL
                                                  ? declarationNode->location
                                                  : funcDecl->nameLocation);
@@ -621,10 +672,17 @@ static void register_function_type_binding_in_env(SZrState *state,
                 continue;
             }
 
+            ZrParser_InferredType_Init(state, &paramType, ZR_VALUE_TYPE_OBJECT);
             if (paramNode->data.parameter.typeInfo != ZR_NULL) {
-                if (!ZrParser_AstTypeToInferredType_Convert(compilerState,
-                                                            paramNode->data.parameter.typeInfo,
-                                                            &paramType)) {
+                if (!ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
+                            analyzer,
+                            ZR_NULL,
+                            declarationNode,
+                            paramNode->data.parameter.typeInfo,
+                            &paramType)) {
+                    semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, paramNode->location);
+                    ZrParser_InferredType_Free(state, &paramType);
+                    hasUnresolvedParameter = ZR_TRUE;
                     continue;
                 }
             } else {
@@ -702,9 +760,21 @@ static void register_extern_function_type_binding_in_env(SZrState *state,
         return;
     }
 
-    if (funcDecl->returnType != ZR_NULL &&
-        !ZrParser_AstTypeToInferredType_Convert(compilerState, funcDecl->returnType, &returnType)) {
-        return;
+    if (funcDecl->returnType != ZR_NULL) {
+        ZrParser_InferredType_Init(state, &returnType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
+                                                                             ZR_NULL,
+                                                                             declarationNode,
+                                                                             funcDecl->returnType,
+                                                                             &returnType)) {
+            semantic_add_cannot_infer_exact_type_diagnostic(state,
+                                                            analyzer,
+                                                            funcDecl->returnType->name != ZR_NULL
+                                                                ? funcDecl->returnType->name->location
+                                                                : declarationNode->location);
+            ZrParser_InferredType_Free(state, &returnType);
+            return;
+        }
     }
 
     if (funcDecl->returnType == ZR_NULL) {
@@ -729,10 +799,16 @@ static void register_extern_function_type_binding_in_env(SZrState *state,
                 continue;
             }
 
+            ZrParser_InferredType_Init(state, &paramType, ZR_VALUE_TYPE_OBJECT);
             if (paramNode->data.parameter.typeInfo != ZR_NULL) {
-                if (!ZrParser_AstTypeToInferredType_Convert(compilerState,
-                                                            paramNode->data.parameter.typeInfo,
-                                                            &paramType)) {
+                if (!ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(
+                            analyzer,
+                            ZR_NULL,
+                            declarationNode,
+                            paramNode->data.parameter.typeInfo,
+                            &paramType)) {
+                    semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, paramNode->location);
+                    ZrParser_InferredType_Free(state, &paramType);
                     continue;
                 }
             } else {
@@ -1610,6 +1686,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                                   funcDecl->returnType,
                                                                   funcDecl->params,
                                                                   funcDecl->body,
+                                                                  node,
                                                                   node->location);
                 ZrLanguageServer_SymbolTable_AddSymbolEx(state, analyzer->symbolTable,
                                          ZR_SYMBOL_FUNCTION, name,
@@ -1986,6 +2063,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                                           method->returnType,
                                                                           method->params,
                                                                           method->body,
+                                                                          classMember,
                                                                           classMember->location);
                         if (memberName != ZR_NULL) {
                             ZrLanguageServer_SymbolTable_AddSymbolEx(state,
@@ -2183,6 +2261,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                                                           method->returnType,
                                                                           method->params,
                                                                           method->body,
+                                                                          structMember,
                                                                           structMember->location);
 
                         if (memberName != ZR_NULL) {

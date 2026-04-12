@@ -1,0 +1,21 @@
+var benchConfig = %import("bench_config");
+
+answer(): int {
+    return 11;
+}
+
+bonus(): int {
+    return 17;
+}
+
+var scale = benchConfig.scale();
+var checksum = 0;
+
+checksum = checksum + answer() * scale;
+checksum = checksum + bonus() * scale;
+checksum = checksum + answer() + bonus();
+checksum = checksum + answer() * (scale + 1);
+checksum = checksum + bonus() * (scale + 1);
+checksum = checksum + answer() + answer() + bonus();
+
+return "BENCH_KNOWN_CALL_PASS\n" + <string> checksum;

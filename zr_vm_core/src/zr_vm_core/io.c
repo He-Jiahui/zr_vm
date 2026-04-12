@@ -8,6 +8,7 @@
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/exception.h"
 
 #define ZR_IO_MALLOC_NATIVE_DATA(GLOBAL, SIZE) ZrCore_Memory_RawMallocWithType(GLOBAL, (SIZE), ZR_MEMORY_NATIVE_TYPE_IO);
@@ -293,6 +294,13 @@ static void io_read_function_local_variables(SZrIo *io, SZrIoFunctionLocalVariab
         ZR_IO_READ_NATIVE_TYPE(io, variable->instructionEndIndex, TZrUInt64);
         ZR_IO_READ_NATIVE_TYPE(io, variable->startLine, TZrUInt64);
         ZR_IO_READ_NATIVE_TYPE(io, variable->endLine, TZrUInt64);
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_ESCAPE_METADATA) {
+            ZR_IO_READ_NATIVE_TYPE(io, variable->scopeDepth, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, variable->escapeFlags, TZrUInt32);
+        } else {
+            variable->scopeDepth = 0;
+            variable->escapeFlags = 0;
+        }
     }
 }
 
@@ -303,6 +311,13 @@ static void io_read_function_closure_variables(SZrIo *io, SZrIoFunctionClosureVa
         ZR_IO_READ_NATIVE_TYPE(io, variable->inStack, TZrUInt8);
         ZR_IO_READ_NATIVE_TYPE(io, variable->index, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, variable->valueType, TZrUInt32);
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_ESCAPE_METADATA) {
+            ZR_IO_READ_NATIVE_TYPE(io, variable->scopeDepth, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, variable->escapeFlags, TZrUInt32);
+        } else {
+            variable->scopeDepth = 0;
+            variable->escapeFlags = 0;
+        }
     }
 }
 
@@ -616,6 +631,23 @@ static void io_read_function_compile_time_function_infos(SZrIo *io,
         io_read_function_metadata_parameters(io, &infos[index].parameters, &infos[index].parameterCount);
         ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceStart, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, infos[index].lineInSourceEnd, TZrUInt32);
+    }
+}
+
+static void io_read_function_escape_bindings(SZrIo *io,
+                                             SZrIoFunctionEscapeBinding *bindings,
+                                             TZrSize count) {
+    for (TZrSize index = 0; index < count; index++) {
+        SZrIoFunctionEscapeBinding *binding = &bindings[index];
+
+        ZrCore_Memory_RawSet(binding, 0, sizeof(*binding));
+        binding->name = io_read_string_with_length(io);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->slotOrIndex, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->scopeDepth, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->escapeFlags, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->bindingKind, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->reserved0, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, binding->reserved1, TZrUInt16);
     }
 }
 
@@ -1065,6 +1097,10 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->compileTimeVariableInfos = ZR_NULL;
         function->compileTimeFunctionInfosLength = 0;
         function->compileTimeFunctionInfos = ZR_NULL;
+        function->escapeBindingLength = 0;
+        function->escapeBindings = ZR_NULL;
+        function->returnEscapeSlotCount = 0;
+        function->returnEscapeSlots = ZR_NULL;
         function->testInfosLength = 0;
         function->testInfos = ZR_NULL;
         function->hasDecoratorMetadata = ZR_FALSE;
@@ -1118,6 +1154,30 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
                     io_read_function_compile_time_function_infos(io,
                                                                  function->compileTimeFunctionInfos,
                                                                  function->compileTimeFunctionInfosLength);
+                }
+            }
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_ESCAPE_METADATA) {
+                ZR_IO_READ_NATIVE_TYPE(io, function->escapeBindingLength, TZrSize);
+                if (function->escapeBindingLength > 0) {
+                    function->escapeBindings =
+                            ZR_IO_MALLOC_NATIVE_DATA(global,
+                                                     sizeof(SZrIoFunctionEscapeBinding) *
+                                                             function->escapeBindingLength);
+                    if (function->escapeBindings != ZR_NULL) {
+                        io_read_function_escape_bindings(io,
+                                                         function->escapeBindings,
+                                                         function->escapeBindingLength);
+                    }
+                }
+                ZR_IO_READ_NATIVE_TYPE(io, function->returnEscapeSlotCount, TZrSize);
+                if (function->returnEscapeSlotCount > 0) {
+                    function->returnEscapeSlots =
+                            ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(TZrUInt32) * function->returnEscapeSlotCount);
+                    if (function->returnEscapeSlots != ZR_NULL) {
+                        ZrCore_Io_Read(io,
+                                       (TZrBytePtr)function->returnEscapeSlots,
+                                       sizeof(TZrUInt32) * function->returnEscapeSlotCount);
+                    }
                 }
             }
             ZR_IO_READ_NATIVE_TYPE(io, function->testInfosLength, TZrSize);
@@ -1427,7 +1487,7 @@ TZrSize ZrCore_Io_Read(SZrIo *io, TZrBytePtr buffer, TZrSize size) {
         if (io->remained == 0) {
             if (!io_refill(io)) {
                 if (io->state != ZR_NULL) {
-                    ZrCore_Exception_Throw(io->state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+                    ZrCore_Debug_RunError(io->state, "io read refill failed");
                 }
                 return requestedSize - size;
             }
@@ -1462,7 +1522,7 @@ SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
     ZR_IO_READ_NATIVE_TYPE(io, source->isDebug, TZrBool);
     ZrCore_Io_Read(io, (TZrBytePtr) source->optional, sizeof(source->optional));
     if (source->versionPatch < ZR_IO_SOURCE_PATCH_HAS_MODULE_INIT_METADATA) {
-        ZrCore_Exception_Throw(io->state, ZR_THREAD_STATUS_RUNTIME_ERROR);
+        ZrCore_Debug_RunError(io->state, "io source version is too old for this runtime");
         return ZR_NULL;
     }
     ZR_IO_READ_NATIVE_TYPE(io, source->modulesLength, TZrSize);

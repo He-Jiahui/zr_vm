@@ -178,6 +178,54 @@ TZrBool ZrLibrary_NativeRegistry_GetModuleInfo(SZrGlobalState *global,
     return ZR_TRUE;
 }
 
+TZrSize ZrLibrary_NativeRegistry_GetModuleCount(SZrGlobalState *global) {
+    ZrLibrary_NativeRegistryState *registry;
+
+    if (global == ZR_NULL) {
+        return 0;
+    }
+
+    registry = native_registry_get(global);
+    if (registry == ZR_NULL || !registry->moduleRecords.isValid) {
+        return 0;
+    }
+
+    return registry->moduleRecords.length;
+}
+
+TZrBool ZrLibrary_NativeRegistry_GetModuleInfoAt(SZrGlobalState *global,
+                                                 TZrSize index,
+                                                 ZrLibRegisteredModuleInfo *outInfo) {
+    ZrLibrary_NativeRegistryState *registry;
+    const ZrLibRegisteredModuleRecord *record;
+
+    if (outInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    memset(outInfo, 0, sizeof(*outInfo));
+    if (global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    registry = native_registry_get(global);
+    if (registry == ZR_NULL || !registry->moduleRecords.isValid || index >= registry->moduleRecords.length) {
+        return ZR_FALSE;
+    }
+
+    record = (const ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(&registry->moduleRecords, index);
+    if (record == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    outInfo->descriptor = record->descriptor;
+    outInfo->moduleName = record->moduleName;
+    outInfo->sourcePath = record->sourcePath;
+    outInfo->registrationKind = record->registrationKind;
+    outInfo->isDescriptorPlugin = record->isDescriptorPlugin;
+    return ZR_TRUE;
+}
+
 static TZrChar native_registry_normalize_path_char(TZrChar value) {
     if (value == '\\') {
         value = '/';

@@ -34,6 +34,25 @@ export function pickLatestExistingPath(
     return bestCandidate;
 }
 
+export function pickFirstExistingPath(
+    candidates: string[],
+    options?: {
+        existsSync?: (candidate: string) => boolean;
+    },
+): string | undefined {
+    const existsSync = options?.existsSync ?? fs.existsSync;
+
+    for (const candidate of candidates) {
+        if (!candidate || !existsSync(candidate)) {
+            continue;
+        }
+
+        return candidate;
+    }
+
+    return undefined;
+}
+
 export function pickLatestExistingDirectoryWithFiles(
     candidates: string[],
     requiredFiles: string[],
@@ -76,4 +95,27 @@ export function pickLatestExistingDirectoryWithFiles(
     }
 
     return bestCandidate;
+}
+
+export function pickFirstExistingDirectoryWithFiles(
+    candidates: string[],
+    requiredFiles: string[],
+    options?: {
+        existsSync?: (candidate: string) => boolean;
+    },
+): string | undefined {
+    const existsSync = options?.existsSync ?? fs.existsSync;
+
+    for (const candidate of candidates) {
+        if (!candidate || !existsSync(candidate)) {
+            continue;
+        }
+
+        const normalizedCandidate = path.resolve(candidate);
+        if (requiredFiles.every((fileName) => existsSync(path.join(normalizedCandidate, fileName)))) {
+            return normalizedCandidate;
+        }
+    }
+
+    return undefined;
 }

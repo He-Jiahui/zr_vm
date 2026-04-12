@@ -402,6 +402,8 @@ static void write_function_local_variables(FILE *file, SZrFunction *function) {
         }
         fwrite(&startLineLocal, sizeof(TZrUInt64), 1, file);
         fwrite(&endLineLocal, sizeof(TZrUInt64), 1, file);
+        fwrite(&local->scopeDepth, sizeof(TZrUInt32), 1, file);
+        fwrite(&local->escapeFlags, sizeof(TZrUInt32), 1, file);
     }
 }
 
@@ -419,6 +421,8 @@ static void write_function_closure_variables(SZrState *state, FILE *file, SZrFun
         fwrite(&inStack, sizeof(TZrUInt8), 1, file);
         fwrite(&index, sizeof(TZrUInt32), 1, file);
         fwrite(&valueType, sizeof(TZrUInt32), 1, file);
+        fwrite(&closure->scopeDepth, sizeof(TZrUInt32), 1, file);
+        fwrite(&closure->escapeFlags, sizeof(TZrUInt32), 1, file);
     }
 }
 
@@ -1029,6 +1033,29 @@ static TZrBool write_function_compile_time_metadata(FILE *file, SZrState *state,
     return ZR_TRUE;
 }
 
+static void write_function_escape_metadata(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt64 bindingCount = function != ZR_NULL ? function->escapeBindingLength : 0;
+    TZrUInt64 returnSlotCount = function != ZR_NULL ? function->returnEscapeSlotCount : 0;
+
+    fwrite(&bindingCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < bindingCount; index++) {
+        const SZrFunctionEscapeBinding *binding = &function->escapeBindings[index];
+
+        write_string_with_length(state, file, binding->name);
+        fwrite(&binding->slotOrIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->scopeDepth, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->escapeFlags, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->bindingKind, sizeof(TZrUInt8), 1, file);
+        fwrite(&binding->reserved0, sizeof(TZrUInt8), 1, file);
+        fwrite(&binding->reserved1, sizeof(TZrUInt16), 1, file);
+    }
+
+    fwrite(&returnSlotCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < returnSlotCount; index++) {
+        fwrite(&function->returnEscapeSlots[index], sizeof(TZrUInt32), 1, file);
+    }
+}
+
 static TZrBool write_function_decorator_metadata(FILE *file, SZrState *state, SZrFunction *function) {
     TZrUInt8 hasDecoratorMetadata = (function != ZR_NULL && function->hasDecoratorMetadata) ? ZR_TRUE : ZR_FALSE;
     TZrUInt64 decoratorCount = function != ZR_NULL ? function->decoratorCount : 0;
@@ -1352,6 +1379,7 @@ static TZrBool write_io_function_internal(SZrState *state,
     if (!write_function_compile_time_metadata(file, state, function)) {
         return ZR_FALSE;
     }
+    write_function_escape_metadata(file, state, function);
     if (!write_function_test_metadata(file, state, function)) {
         return ZR_FALSE;
     }

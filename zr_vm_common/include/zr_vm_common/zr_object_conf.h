@@ -203,6 +203,7 @@ struct SZrGarbageCollectionObjectMark {
     EZrGarbageCollectIncrementalObjectStatus status;
     EZrGarbageCollectGenerationalObjectStatus generationalStatus;
     EZrGarbageCollectGeneration generation;
+    TZrUInt32 minorScanEpoch;
     EZrGarbageCollectHeapGenerationKind heapGenerationKind;
     EZrGarbageCollectRegionKind regionKind;
     EZrGarbageCollectStorageKind storageKind;

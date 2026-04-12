@@ -119,6 +119,34 @@ static TZrBool function_tree_contains_callsite_cache_kind(const SZrFunction *fun
     return ZR_FALSE;
 }
 
+static const SZrFunctionCallSiteCacheEntry *function_tree_find_first_callsite_cache_kind(
+        const SZrFunction *function,
+        EZrFunctionCallSiteCacheKind kind) {
+    TZrUInt32 index;
+    TZrUInt32 childIndex;
+    const SZrFunctionCallSiteCacheEntry *found;
+
+    if (function != ZR_NULL && function->callSiteCaches != ZR_NULL) {
+        for (index = 0; index < function->callSiteCacheLength; index++) {
+            if ((EZrFunctionCallSiteCacheKind)function->callSiteCaches[index].kind == kind) {
+                return &function->callSiteCaches[index];
+            }
+        }
+    }
+    if (function == ZR_NULL || function->childFunctionList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+        found = function_tree_find_first_callsite_cache_kind(&function->childFunctionList[childIndex], kind);
+        if (found != ZR_NULL) {
+            return found;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -232,6 +260,7 @@ static void test_meta_call_emits_semir_meta_runtime_contracts(void) {
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         SZrFunction *function;
+        const SZrFunctionCallSiteCacheEntry *metaCache;
         const char *intermediatePath = "meta_call_pipeline_test.zri";
         char *intermediateText;
         TZrInt64 result = 0;
@@ -240,13 +269,14 @@ static void test_meta_call_emits_semir_meta_runtime_contracts(void) {
 
         function = compile_meta_call_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED)));
-        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DYN_CALL)));
-        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(META_CALL)));
-        TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCacheLength);
-        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL, function->callSiteCaches[0].kind);
-        TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCaches[0].argumentCount);
-        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_CALL, ZR_TRUE));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(DYN_CALL)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(META_CALL)));
+        TEST_ASSERT_TRUE(function_tree_contains_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_CALL, ZR_TRUE));
+        metaCache = function_tree_find_first_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL);
+        TEST_ASSERT_NOT_NULL(metaCache);
+        TEST_ASSERT_EQUAL_UINT32(1, metaCache->argumentCount);
 
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
         intermediateText = read_text_file_owned(intermediatePath);

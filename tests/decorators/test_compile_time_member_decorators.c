@@ -19,11 +19,6 @@
 #define ZR_ARRAY_COUNT(value) (sizeof(value) / sizeof((value)[0]))
 #endif
 
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
-
 typedef ZrTestsFixtureSource SZrModuleFixtureSource;
 
 #define MODULE_FIXTURE_SOURCE_TEXT(pathValue, sourceValue) ZR_TESTS_FIXTURE_SOURCE_TEXT(pathValue, sourceValue)

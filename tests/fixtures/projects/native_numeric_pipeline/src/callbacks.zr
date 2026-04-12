@@ -17,10 +17,13 @@ runCallbacksImpl(lin, signal, tensor) {
     var exportedValue = system.vm.callModuleExport("callbacks", "summarizeCallback", [callbackValue]);
     var modules = system.vm.loadedModules();
     var state = system.vm.state();
-    system.gc.stop();
-    system.gc.step();
-    system.gc.start();
-    system.gc.collect();
+    system.gc.disable();
+    system.gc.collect("minor");
+    system.gc.enable();
+    system.gc.set_heap_limit(0);
+    system.gc.set_budget(2000);
+    system.gc.get_stats();
+    system.gc.collect("full");
     system.console.printErrorLine("native numeric pipeline stderr ready");
     return {
         checksum: exportedValue + signalInfo.magnitude + tensorInfo.sum + tensorInfo.mean;

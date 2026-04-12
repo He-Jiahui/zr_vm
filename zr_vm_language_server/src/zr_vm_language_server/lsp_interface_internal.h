@@ -155,7 +155,8 @@ TZrBool ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(SZrState *state,
                                                               SZrLspContext *context,
                                                               SZrString *uri,
                                                               const TZrChar *content,
-                                                              TZrSize contentLength);
+                                                              TZrSize contentLength,
+                                                              TZrBool rescanAllLoadedSources);
 TZrBool ZrLanguageServer_Lsp_ProjectAnalyzeDocument(SZrState *state,
                                                     SZrLspContext *context,
                                                     SZrString *uri,

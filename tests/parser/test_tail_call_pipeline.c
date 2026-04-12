@@ -88,6 +88,80 @@ static TZrBool semir_contains_opcode_with_deopt(const SZrFunction *function,
     return ZR_FALSE;
 }
 
+static TZrBool semir_tree_contains_opcode_with_deopt(const SZrFunction *function,
+                                                     EZrSemIrOpcode opcode,
+                                                     TZrBool requireDeopt) {
+    TZrUInt32 childIndex;
+
+    if (semir_contains_opcode_with_deopt(function, opcode, requireDeopt)) {
+        return ZR_TRUE;
+    }
+    if (function == ZR_NULL || function->childFunctionList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+        if (semir_tree_contains_opcode_with_deopt(&function->childFunctionList[childIndex], opcode, requireDeopt)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool function_tree_contains_callsite_cache_kind(const SZrFunction *function,
+                                                          EZrFunctionCallSiteCacheKind kind) {
+    TZrUInt32 index;
+    TZrUInt32 childIndex;
+
+    if (function != ZR_NULL && function->callSiteCaches != ZR_NULL) {
+        for (index = 0; index < function->callSiteCacheLength; index++) {
+            if ((EZrFunctionCallSiteCacheKind)function->callSiteCaches[index].kind == kind) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    if (function == ZR_NULL || function->childFunctionList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+        if (function_tree_contains_callsite_cache_kind(&function->childFunctionList[childIndex], kind)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static const SZrFunctionCallSiteCacheEntry *function_tree_find_first_callsite_cache_kind(
+        const SZrFunction *function,
+        EZrFunctionCallSiteCacheKind kind) {
+    TZrUInt32 index;
+    TZrUInt32 childIndex;
+    const SZrFunctionCallSiteCacheEntry *found;
+
+    if (function != ZR_NULL && function->callSiteCaches != ZR_NULL) {
+        for (index = 0; index < function->callSiteCacheLength; index++) {
+            if ((EZrFunctionCallSiteCacheKind)function->callSiteCaches[index].kind == kind) {
+                return &function->callSiteCaches[index];
+            }
+        }
+    }
+    if (function == ZR_NULL || function->childFunctionList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+        found = function_tree_find_first_callsite_cache_kind(&function->childFunctionList[childIndex], kind);
+        if (found != ZR_NULL) {
+            return found;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
     long fileSize;
@@ -242,6 +316,7 @@ static void test_dynamic_tail_call_emits_semir_runtime_contracts(void) {
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         SZrFunction *function;
+        const SZrFunctionCallSiteCacheEntry *dynTailCache;
         const char *intermediatePath = "dynamic_tail_call_pipeline_test.zri";
         char *intermediateText;
         TZrInt64 result = 0;
@@ -250,13 +325,15 @@ static void test_dynamic_tail_call_emits_semir_runtime_contracts(void) {
 
         function = compile_dynamic_tail_call_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED)));
-        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)));
-        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)));
-        TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCacheLength);
-        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL, function->callSiteCaches[0].kind);
-        TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCaches[0].argumentCount);
-        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_DYN_TAIL_CALL, ZR_TRUE));
+        TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)));
+        TEST_ASSERT_TRUE(function_tree_contains_callsite_cache_kind(function,
+                                                                    ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_DYN_TAIL_CALL, ZR_TRUE));
+        dynTailCache = function_tree_find_first_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL);
+        TEST_ASSERT_NOT_NULL(dynTailCache);
+        TEST_ASSERT_EQUAL_UINT32(1, dynTailCache->argumentCount);
 
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
         intermediateText = read_text_file_owned(intermediatePath);
@@ -294,6 +371,7 @@ static void test_meta_tail_call_emits_semir_runtime_contracts(void) {
     {
         SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
         SZrFunction *function;
+        const SZrFunctionCallSiteCacheEntry *metaTailCache;
         const char *intermediatePath = "meta_tail_call_pipeline_test.zri";
         char *intermediateText;
         TZrInt64 result = 0;
@@ -303,13 +381,15 @@ static void test_meta_tail_call_emits_semir_runtime_contracts(void) {
         function = compile_meta_tail_call_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
         TEST_ASSERT_TRUE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED)));
-        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(META_CALL)));
-        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(META_TAIL_CALL)));
-        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)));
-        TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCacheLength);
-        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL, function->callSiteCaches[0].kind);
-        TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCaches[0].argumentCount);
-        TEST_ASSERT_TRUE(semir_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_TAIL_CALL, ZR_TRUE));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(META_CALL)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(META_TAIL_CALL)));
+        TEST_ASSERT_FALSE(function_tree_contains_opcode(function, ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)));
+        TEST_ASSERT_TRUE(function_tree_contains_callsite_cache_kind(function,
+                                                                    ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL));
+        TEST_ASSERT_TRUE(semir_tree_contains_opcode_with_deopt(function, ZR_SEMIR_OPCODE_META_TAIL_CALL, ZR_TRUE));
+        metaTailCache = function_tree_find_first_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL);
+        TEST_ASSERT_NOT_NULL(metaTailCache);
+        TEST_ASSERT_EQUAL_UINT32(1, metaTailCache->argumentCount);
 
         TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath));
         intermediateText = read_text_file_owned(intermediatePath);
@@ -425,7 +505,8 @@ static void test_direct_tail_call_reuses_call_info_frame(void) {
 
         function = compile_direct_tail_reuse_fixture(state);
         TEST_ASSERT_NOT_NULL(function);
-        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)) ||
+                         function_contains_opcode(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)));
 
         TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
         TEST_ASSERT_EQUAL_INT64(8, result);

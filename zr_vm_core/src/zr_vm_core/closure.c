@@ -12,6 +12,32 @@
 #define MAX_DELTA ((256UL << ((sizeof(state->stackBase.valuePointer->toBeClosedValueOffset) - 1) * 8)) - 1)
 #define ZR_CLOSURE_CLOSED_COUNT_NONE ((TZrSize)0)
 
+static TZrUInt32 closure_merge_scope_depth(TZrUInt32 currentScopeDepth, TZrUInt32 incomingScopeDepth) {
+    if (currentScopeDepth == ZR_GC_SCOPE_DEPTH_NONE) {
+        return incomingScopeDepth;
+    }
+    if (incomingScopeDepth == ZR_GC_SCOPE_DEPTH_NONE) {
+        return currentScopeDepth;
+    }
+    return currentScopeDepth < incomingScopeDepth ? currentScopeDepth : incomingScopeDepth;
+}
+
+static void closure_value_apply_anchored_escape_to_closed_value(SZrState *state, SZrClosureValue *closureValue) {
+    TZrUInt32 propagatedEscapeFlags;
+
+    if (state == ZR_NULL || closureValue == ZR_NULL || !ZrCore_ClosureValue_IsClosed(closureValue) ||
+        closureValue->anchoredEscapeFlags == ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE) {
+        return;
+    }
+
+    propagatedEscapeFlags = closureValue->captureEscapeFlags | closureValue->anchoredEscapeFlags;
+    ZrCore_GarbageCollector_MarkValueEscaped(state,
+                                             &closureValue->link.closedValue,
+                                             propagatedEscapeFlags,
+                                             closureValue->captureScopeDepth,
+                                             (EZrGarbageCollectPromotionReason)closureValue->anchoredPromotionReason);
+}
+
 SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closureValueCount) {
     TZrSize extraCaptureCount = closureValueCount > 1 ? closureValueCount - 1 : 0;
     TZrSize extraOwnerBytes = closureValueCount * sizeof(SZrRawObject *);
@@ -50,6 +76,10 @@ void ZrCore_Closure_InitValue(struct SZrState *state, SZrClosure *closure) {
         // if value is on stack
         closureValue->value.valuePointer = ZR_CAST_STACK_VALUE(&closureValue->link.closedValue);
         ZrCore_Value_ResetAsNull(&closureValue->value.valuePointer->value);
+        closureValue->captureScopeDepth = ZR_GC_SCOPE_DEPTH_NONE;
+        closureValue->captureEscapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE;
+        closureValue->anchoredEscapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE;
+        closureValue->anchoredPromotionReason = (TZrUInt32)ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE;
         closure->closureValuesExtend[i] = closureValue;
         ZrCore_RawObject_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure), ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue));
     }
@@ -63,6 +93,10 @@ static SZrClosureValue *closure_value_new(struct SZrState *state, TZrStackValueP
     closureValue->value.valuePointer = stackPointer;
     closureValue->link.next = next;
     closureValue->link.previous = previous;
+    closureValue->captureScopeDepth = ZR_GC_SCOPE_DEPTH_NONE;
+    closureValue->captureEscapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE;
+    closureValue->anchoredEscapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE;
+    closureValue->anchoredPromotionReason = (TZrUInt32)ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE;
     if (next) {
         next->link.previous = &closureValue->link.next;
     }
@@ -95,6 +129,110 @@ SZrClosureValue *ZrCore_Closure_FindOrCreateValue(struct SZrState *state, TZrSta
         closureValues = &closureValue->link.next;
     }
     return closure_value_new(state, stackPointer, closureValues);
+}
+
+void ZrCore_ClosureValue_SetCaptureMetadata(SZrClosureValue *closureValue,
+                                            TZrUInt32 scopeDepth,
+                                            TZrUInt32 escapeFlags) {
+    if (closureValue == ZR_NULL) {
+        return;
+    }
+
+    closureValue->captureScopeDepth = closure_merge_scope_depth(closureValue->captureScopeDepth, scopeDepth);
+    closureValue->captureEscapeFlags |= escapeFlags;
+}
+
+void ZrCore_ClosureValue_AnchorEscape(SZrState *state,
+                                      SZrClosureValue *closureValue,
+                                      TZrUInt32 escapeFlags,
+                                      EZrGarbageCollectPromotionReason promotionReason) {
+    if (state == ZR_NULL || closureValue == ZR_NULL || escapeFlags == ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE) {
+        return;
+    }
+
+    closureValue->anchoredEscapeFlags |= escapeFlags;
+    if (closureValue->anchoredPromotionReason == (TZrUInt32)ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE ||
+        closureValue->anchoredPromotionReason == (TZrUInt32)ZR_GARBAGE_COLLECT_PROMOTION_REASON_SURVIVAL) {
+        closureValue->anchoredPromotionReason = (TZrUInt32)promotionReason;
+    }
+
+    ZrCore_GarbageCollector_MarkRawObjectEscaped(state,
+                                                 ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue),
+                                                 escapeFlags,
+                                                 closureValue->captureScopeDepth,
+                                                 promotionReason);
+    closure_value_apply_anchored_escape_to_closed_value(state, closureValue);
+}
+
+void ZrCore_Closure_PropagateEscapeFromObject(SZrState *state,
+                                              SZrRawObject *closureObject,
+                                              TZrUInt32 escapeFlags,
+                                              EZrGarbageCollectPromotionReason promotionReason) {
+    if (state == ZR_NULL || closureObject == ZR_NULL || escapeFlags == ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE ||
+        closureObject->type != ZR_RAW_OBJECT_TYPE_CLOSURE) {
+        return;
+    }
+
+    if (!closureObject->isNative) {
+        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, closureObject);
+        if (closure == ZR_NULL) {
+            return;
+        }
+
+        for (TZrUInt32 captureIndex = 0; captureIndex < closure->closureValueCount; captureIndex++) {
+            SZrClosureValue *closureValue = closure->closureValuesExtend[captureIndex];
+
+            if (closureValue == ZR_NULL) {
+                continue;
+            }
+
+            if (closure->function != ZR_NULL &&
+                closure->function->closureValueList != ZR_NULL &&
+                captureIndex < closure->function->closureValueLength) {
+                const SZrFunctionClosureVariable *closureVariable = &closure->function->closureValueList[captureIndex];
+                ZrCore_ClosureValue_SetCaptureMetadata(closureValue,
+                                                      closureVariable->scopeDepth,
+                                                      closureVariable->escapeFlags);
+            }
+
+            ZrCore_ClosureValue_AnchorEscape(state, closureValue, escapeFlags, promotionReason);
+        }
+        return;
+    }
+
+    {
+        SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, closureObject);
+        SZrFunction *metadataFunction = closure != ZR_NULL ? closure->aotShimFunction : ZR_NULL;
+        TZrUInt32 captureCount = closure != ZR_NULL ? (TZrUInt32)closure->closureValueCount : 0u;
+
+        for (TZrUInt32 captureIndex = 0; captureIndex < captureCount; captureIndex++) {
+            TZrUInt32 captureScopeDepth = ZR_GC_SCOPE_DEPTH_NONE;
+            TZrUInt32 captureEscapeFlags = ZR_GARBAGE_COLLECT_ESCAPE_KIND_NONE;
+            SZrRawObject *captureOwner;
+            SZrTypeValue *captureValue;
+
+            if (metadataFunction != ZR_NULL &&
+                metadataFunction->closureValueList != ZR_NULL &&
+                captureIndex < metadataFunction->closureValueLength) {
+                captureScopeDepth = metadataFunction->closureValueList[captureIndex].scopeDepth;
+                captureEscapeFlags = metadataFunction->closureValueList[captureIndex].escapeFlags;
+            }
+
+            captureOwner = ZrCore_ClosureNative_GetCaptureOwner(closure, captureIndex);
+            captureValue = ZrCore_ClosureNative_GetCaptureValue(closure, captureIndex);
+            if (captureOwner != ZR_NULL && captureOwner->type == ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE) {
+                SZrClosureValue *closureValue = (SZrClosureValue *)captureOwner;
+                ZrCore_ClosureValue_SetCaptureMetadata(closureValue, captureScopeDepth, captureEscapeFlags);
+                ZrCore_ClosureValue_AnchorEscape(state, closureValue, escapeFlags, promotionReason);
+            } else if (captureValue != ZR_NULL) {
+                ZrCore_GarbageCollector_MarkValueEscaped(state,
+                                                         captureValue,
+                                                         escapeFlags | captureEscapeFlags,
+                                                         captureScopeDepth,
+                                                         promotionReason);
+            }
+        }
+    }
 }
 
 static TZrBool closure_value_check_close_meta(struct SZrState *state, TZrStackValuePointer stackPointer) {
@@ -190,6 +328,7 @@ void ZrCore_Closure_CloseStackValue(struct SZrState *state, TZrStackValuePointer
         ZrCore_Value_ResetAsNull(slot);
         ZrCore_Value_Copy(state, slot, sourceValue);
         closureValue->value.valuePointer = ZR_CAST_STACK_VALUE(slot);
+        closure_value_apply_anchored_escape_to_closed_value(state, closureValue);
         SZrRawObject *rawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue);
         if (ZrCore_RawObject_IsWaitToScan(rawObject) || ZrCore_RawObject_IsReferenced(rawObject)) {
             ZrCore_RawObject_MarkAsReferenced(rawObject);
@@ -256,6 +395,11 @@ void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *func
             closure->closureValuesExtend[i] = ZrCore_Closure_FindOrCreateValue(state, base + closureValue->index);
         } else {
             closure->closureValuesExtend[i] = closureValueList[closureValue->index];
+        }
+        if (closure->closureValuesExtend[i] != ZR_NULL) {
+            ZrCore_ClosureValue_SetCaptureMetadata(closure->closureValuesExtend[i],
+                                                  closureValue->scopeDepth,
+                                                  closureValue->escapeFlags);
         }
         ZrCore_RawObject_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure),
                            ZR_CAST_RAW_OBJECT_AS_SUPER(closure->closureValuesExtend[i]));

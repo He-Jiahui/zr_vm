@@ -1,7 +1,15 @@
 # ZR VM Benchmarks
 
 `tests/benchmarks` is the single source of truth for the cross-language
-benchmark suite consumed by `performance_report`.
+benchmark suite driven by `tests/cmake/run_performance_suite.cmake`.
+
+**CTest:** `performance_report` is registered only when
+`ZR_VM_REGISTER_PERFORMANCE_CTEST=ON` (default `OFF` so default `ctest` stays
+fast). **Without that flag**, run the same suite via the build target
+`run_performance_suite` or invoke `cmake -P tests/cmake/run_performance_suite.cmake`
+with the same `-DCLI_EXE=...` arguments as in `tests/CMakeLists.txt`.
+
+**Light check:** `zr_vm_benchmark_registry_test` / CTest `benchmark_registry` remains in the default test set and validates `registry.cmake` layout only.
 
 ## Layout
 
@@ -65,12 +73,21 @@ avoiding runtime dependencies on generated CLI argument parsing support.
 - `smoke`
   Runs `numeric_loops`, `sort_array`, `prime_trial_division`
 - `core`
-  Runs all 8 benchmark cases
+  Runs all registered core-tier benchmark cases
 - `stress`
-  Runs all 8 benchmark cases at the largest scale
+  Runs all registered stress-tier benchmark cases at the largest scale
 - `profile`
   Runs profile-enabled cases with smaller per-case scales for opcode counters,
   hotspot capture, and slow-path analysis.
+
+GC pressure work uses a paired benchmark shape:
+
+- `gc_fragment_baseline`
+  Same allocation and survivor workload without explicit `system.gc.collect(...)`
+  forcing, used as the control.
+- `gc_fragment_stress`
+  Same logical workload with explicit minor/full collections in the ZR fixture,
+  used to estimate high-pressure GC overhead against the baseline.
 
 Scale is fixed in `registry.cmake`:
 
@@ -110,6 +127,34 @@ export ZR_VM_PERF_ONLY_IMPLEMENTATIONS=zr_aot_c,zr_aot_llvm
 ctest -R '^performance_report$' --test-dir build/benchmark-gcc-release --output-on-failure
 ```
 
+To run only selected benchmark case ids (comma-separated), set
+**`ZR_VM_PERF_ONLY_CASES`** before `ctest`. This is useful for focused GC or
+hotspot diagnosis without paying for the whole core tier.
+
+Example:
+
+```bash
+export ZR_VM_TEST_TIER=core
+export ZR_VM_PERF_ONLY_CASES=gc_fragment_baseline,gc_fragment_stress
+export ZR_VM_PERF_ONLY_IMPLEMENTATIONS=c,zr_interp,zr_binary,zr_aot_c,zr_aot_llvm
+ctest -R '^performance_report$' --test-dir build/benchmark-gcc-release --output-on-failure
+```
+
+For the paired GC overhead cases at `stress` tier, `ctest -R '^performance_report$'`
+can hit the registered `performance_report` timeout (`TIMEOUT 1800`). Use the
+direct helper instead; it invokes the same `run_performance_suite.cmake`
+pipeline without the CTest timeout wrapper:
+
+```bash
+bash scripts/benchmark/run_gc_overhead_stress.sh [build/benchmark-gcc-release]
+```
+
+The helper defaults to:
+
+- `ZR_VM_TEST_TIER=stress`
+- `ZR_VM_PERF_ONLY_CASES=gc_fragment_baseline,gc_fragment_stress`
+- `ZR_VM_PERF_ONLY_IMPLEMENTATIONS=c,zr_interp,zr_binary,zr_aot_c,zr_aot_llvm`
+
 ## Report Shape
 
 `tests/cmake/run_performance_suite.cmake` emits:
@@ -122,6 +167,10 @@ ctest -R '^performance_report$' --test-dir build/benchmark-gcc-release --output-
   WSL callgrind summaries, top hot functions, helper hotspots, and dispatch hotspot sections.
 - `comparison_report.md/json`
   `ZR interp` relative-to-language ratios across `C`, `Lua`, `QuickJS`, `Node`, `Python`, `.NET`, `Java`, and `Rust`.
+- `gc_overhead_report.md/json`
+  Paired `gc_fragment_baseline` vs `gc_fragment_stress` deltas per implementation:
+  baseline/stress mean wall ms, stress-to-baseline ratio, wall-time delta,
+  overhead percent, and mean-peak-MiB delta.
 
 Benchmark Release build (before CSV): `scripts/benchmark/build_benchmark_release.sh gcc|clang` writes to `build/benchmark-gcc-release` or `build/benchmark-clang-release`. On Windows, `pwsh ./scripts/benchmark/build_benchmark_release.ps1 -Toolchain gcc|clang|msvc` uses WSL for gcc/clang and `build/benchmark-msvc-release` for MSVC.
 
@@ -164,5 +213,6 @@ the current core-gated milestone and do not block core runtime performance work.
    `zr_vm_native_benchmark_runner` in `tests/CMakeLists.txt`.
 5. Re-run:
    `zr_vm_benchmark_registry_test`
-   and
+   and either `cmake --build <build> --target run_performance_suite` or, if the
+   tree was configured with `-DZR_VM_REGISTER_PERFORMANCE_CTEST=ON`,
    `ctest -R '^performance_report$'`

@@ -4,7 +4,7 @@
 
 ## 活跃 Suite
 
-当前有效的 CTest 入口固定为 10 个：
+文档级“主链路”聚合入口仍以如下 **9 个** 为核心（默认 `ctest` 会跑它们，以及其它在 `tests/CMakeLists.txt` 中注册的独立用例，例如 `benchmark_registry`、`system_fs` 等）：
 
 1. `core_runtime`
 2. `language_pipeline`
@@ -15,7 +15,8 @@
 7. `cli_args`
 8. `cli_integration`
 9. `golden_regression`
-10. `performance_report`
+
+**可选（长耗时）：** `performance_report` 仅在配置时设置 **`ZR_VM_REGISTER_PERFORMANCE_CTEST=ON`** 时注册；标签为 `benchmark`、`long_running`。不注册时可用构建目标 **`run_performance_suite`** 运行同一套 `run_performance_suite.cmake`（见 `docs/testing-and-validation/ctest-performance-reporting.md`）。
 
 不再把旧的单个二进制入口描述为“活跃 suite”。诸如 `zr_vm_gc_test`、`zr_vm_parser_test`、`zr_vm_scripts_test` 这类目标只作为 suite 内部实现细节存在，由 `tests/cmake/run_executable_suite.cmake`、`tests/cmake/run_projects_suite.cmake`、`tests/cmake/run_cli_suite.cmake` 统一编排。
 
@@ -60,9 +61,10 @@
 - 覆盖范围：`tests/golden/` 下的 AST / `.zri` / `.zro` / AOT-C / AOT-LLVM 快照。
 - 角色：锁定稳定 artifact contract，而不是仅比较“能不能生成”。
 
-### `performance_report`
+### `performance_report`（可选）
 - 覆盖范围：`tests/benchmarks/` 下跨语言 benchmark 集合的运行态耗时与峰值内存。
 - 角色：生成 `tests_generated/performance/benchmark_report.md` 与 `.json`，输出 `case x implementation` 长表报告，并显式记录 `SKIP`/`FAIL`。
+- 注册条件：`cmake -DZR_VM_REGISTER_PERFORMANCE_CTEST=ON`。未注册时用 `cmake --build <dir> --target run_performance_suite`。
 
 ## Tier 过滤
 
@@ -101,9 +103,9 @@
 7. `cli_args`
 8. `cli_integration`
 9. `golden_regression`
-10. `performance_report`
+10. （可选）`performance_report` 或 `run_performance_suite`
 
-其中 `golden_regression` 保持最后执行，用于在功能与项目工作流已确认有效后，再锁定 `.zri/.zro/AOT C/AOT LLVM` 漂移。
+其中 `golden_regression` 保持靠后执行，用于在功能与项目工作流已确认有效后，再锁定 `.zri/.zro/AOT C/AOT LLVM` 漂移。跨语言性能报告仅在显式开启或单独跑目标时执行，避免拖慢默认回归。
 
 ## 资产布局
 
@@ -172,7 +174,7 @@ ZR_VM_PERF_WARMUP=2 ZR_VM_PERF_ITERATIONS=6 ctest --test-dir build/codex-wsl-gcc
 
 ## 维护规则
 
-1. 新增功能回归覆盖优先并入现有功能 suite；`performance_report` 作为专门的 benchmark/reporting 入口保留，不再把性能采集塞回功能回归脚本。
+1. 新增功能回归覆盖优先并入现有功能 suite；`performance_report` / `run_performance_suite` 作为专门的 benchmark/reporting 入口保留（CTest 默认不注册），不再把性能采集塞回功能回归脚本。
 2. AOT 测试继续复用 `tests/fixtures/reference/core_semantics/`，不新开平行 reference 根目录。
 3. `smoke/core/stress` 作为标签/runner filter/CI job 维度叠加，不改一级 suite 组织。
 4. 正式矩阵中的 AOT case 必须同时具备前端 `source` oracle 和至少一个后端 `artifact/parity/probe` oracle。

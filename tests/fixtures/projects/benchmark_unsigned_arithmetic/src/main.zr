@@ -1,0 +1,24 @@
+var benchConfig = %import("bench_config");
+
+var scale = benchConfig.scale();
+var rounds = 22000 * scale;
+var counter = 0;
+var offset: uint = <uint>0;
+var seed: uint = <uint>17;
+var checksum: uint = <uint>0;
+
+while (counter <= rounds - 1) {
+    seed = (seed + <uint>13) * <uint>7;
+    seed = seed - <uint>5;
+    seed = seed / <uint>3;
+    seed = seed * <uint>11 + offset;
+
+    var residue: uint = seed % <uint>97;
+    checksum = (checksum + seed + residue) % <uint>1000000007;
+
+    seed = seed + <uint>19;
+    offset = offset + <uint>1;
+    counter = counter + 1;
+}
+
+return "BENCH_UNSIGNED_ARITHMETIC_PASS\n" + <string> <int> checksum;

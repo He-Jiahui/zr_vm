@@ -122,7 +122,17 @@ static void semantic_typecheck_register_variable_binding(SZrState *state,
 
     ZrParser_InferredType_Init(state, &bindingType, ZR_VALUE_TYPE_OBJECT);
     if (typeNode != ZR_NULL) {
-        semantic_type_from_ast(state, analyzer, typeNode, &bindingType);
+        if (!semantic_type_from_ast(state, analyzer, typeNode, &bindingType)) {
+            semantic_add_cannot_infer_exact_type_diagnostic(
+                    state,
+                    analyzer,
+                    typeNode->name != ZR_NULL ? typeNode->name->location : ZrParser_FileRange_Create(
+                                                                          ZrParser_FilePosition_Create(0, 0, 0),
+                                                                          ZrParser_FilePosition_Create(0, 0, 0),
+                                                                          ZR_NULL));
+            ZrParser_InferredType_Free(state, &bindingType);
+            return;
+        }
     } else if (valueNode != ZR_NULL) {
         if (!semantic_infer_node_type(state, analyzer, valueNode, &bindingType)) {
             if (analyzer->compilerState != ZR_NULL && analyzer->compilerState->hasError) {
@@ -1100,27 +1110,17 @@ static TZrBool semantic_type_from_ast(SZrState *state,
     }
 
     if (typeNode != ZR_NULL &&
-        analyzer->compilerState != ZR_NULL &&
-        ZrParser_AstTypeToInferredType_Convert(analyzer->compilerState, typeNode, result)) {
+        ZrLanguageServer_SemanticAnalyzer_BuildDeclaredTypeInferredType(analyzer,
+                                                                        ZR_NULL,
+                                                                        analyzer->compilerState != ZR_NULL
+                                                                            ? analyzer->compilerState->currentFunctionNode
+                                                                            : ZR_NULL,
+                                                                        typeNode,
+                                                                        result)) {
         return ZR_TRUE;
     }
 
-    if (typeNode != ZR_NULL) {
-        ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(state,
-                                                                         analyzer,
-                                                                         typeNode->name != ZR_NULL
-                                                                                 ? typeNode->name->location
-                                                                                 : ZrParser_FileRange_Create(
-                                                                                           ZrParser_FilePosition_Create(0, 0, 0),
-                                                                                           ZrParser_FilePosition_Create(0, 0, 0),
-                                                                                           ZR_NULL));
-    }
-
-    ZrParser_InferredType_Init(state, result, ZR_VALUE_TYPE_OBJECT);
-    if (typeNode != ZR_NULL) {
-        result->ownershipQualifier = typeNode->ownershipQualifier;
-    }
-    return ZR_TRUE;
+    return ZR_FALSE;
 }
 
 static TZrBool semantic_infer_node_type(SZrState *state,
@@ -1170,7 +1170,17 @@ static TZrBool semantic_call_matches_parameters(SZrState *state,
 
         ZrParser_InferredType_Init(state, &expectedType, ZR_VALUE_TYPE_OBJECT);
         ZrParser_InferredType_Init(state, &actualType, ZR_VALUE_TYPE_OBJECT);
-        semantic_type_from_ast(state, analyzer, paramNode->data.parameter.typeInfo, &expectedType);
+        if (!semantic_type_from_ast(state, analyzer, paramNode->data.parameter.typeInfo, &expectedType)) {
+            ZrParser_InferredType_Free(state, &actualType);
+            ZrParser_InferredType_Free(state, &expectedType);
+            semantic_add_cannot_infer_exact_type_diagnostic(
+                    state,
+                    analyzer,
+                    paramNode->data.parameter.typeInfo != ZR_NULL && paramNode->data.parameter.typeInfo->name != ZR_NULL
+                        ? paramNode->data.parameter.typeInfo->name->location
+                        : paramNode->location);
+            return ZR_FALSE;
+        }
         if (!semantic_infer_node_type(state, analyzer, argNode, &actualType)) {
             ZrParser_InferredType_Free(state, &actualType);
             ZrParser_InferredType_Free(state, &expectedType);
@@ -1524,7 +1534,15 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
 
                 ZrParser_InferredType_Init(state, &expectedType, ZR_VALUE_TYPE_OBJECT);
                 ZrParser_InferredType_Init(state, &valueType, ZR_VALUE_TYPE_OBJECT);
-                semantic_type_from_ast(state, analyzer, varDecl->typeInfo, &expectedType);
+                if (!semantic_type_from_ast(state, analyzer, varDecl->typeInfo, &expectedType)) {
+                    semantic_add_cannot_infer_exact_type_diagnostic(
+                            state,
+                            analyzer,
+                            varDecl->typeInfo->name != ZR_NULL ? varDecl->typeInfo->name->location : node->location);
+                    ZrParser_InferredType_Free(state, &valueType);
+                    ZrParser_InferredType_Free(state, &expectedType);
+                    break;
+                }
                 hasValueType = semantic_infer_node_type(state, analyzer, varDecl->value, &valueType);
                 if (!hasValueType) {
                     semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, varDecl->value->location);
@@ -1568,11 +1586,19 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
 
                     ZrParser_InferredType_Init(state, &expectedType, ZR_VALUE_TYPE_OBJECT);
                     ZrParser_InferredType_Init(state, &actualType, ZR_VALUE_TYPE_OBJECT);
-                    semantic_type_from_ast(state, analyzer, returnTypeNode, &expectedType);
+                    if (!semantic_type_from_ast(state, analyzer, returnTypeNode, &expectedType)) {
+                        semantic_add_cannot_infer_exact_type_diagnostic(
+                                state,
+                                analyzer,
+                                returnTypeNode->name != ZR_NULL ? returnTypeNode->name->location : node->location);
+                        ZrParser_InferredType_Free(state, &actualType);
+                        ZrParser_InferredType_Free(state, &expectedType);
+                        break;
+                    }
                     compatible = semantic_infer_node_type(state, analyzer, returnStmt->expr, &actualType) &&
                                  analyzer->compilerState != ZR_NULL &&
                                  ZrParser_AssignmentCompatibility_Check(analyzer->compilerState,
-                                                                        &expectedType,
+                                                                         &expectedType,
                                                                         &actualType,
                                                                         returnStmt->expr->location);
                     ZrParser_InferredType_Free(state, &actualType);

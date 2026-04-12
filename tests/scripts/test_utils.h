@@ -19,12 +19,7 @@
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_common/zr_common_conf.h"
-
-// 测试时间测量结构
-typedef struct {
-    clock_t startTime;
-    clock_t endTime;
-} SZrTestTimer;
+#include "zr_test_log_macros.h"
 
 // 测试结果结构
 typedef struct {

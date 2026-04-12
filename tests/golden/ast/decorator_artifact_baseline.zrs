@@ -1,0 +1,16 @@
+// ZR Syntax Tree File (.zrs)
+// Generated from parsed AST
+
+SCRIPT [line:1:col:2]
+  module:   MODULE_DECLARATION [line:1:col:2]
+    STRING_LITERAL [line:1:col:1]
+  value: "decorator_artifact_baseline"
+  statements (8):
+    CLASS_DECLARATION [line:3:col:1]
+    FUNCTION_DECLARATION [line:9:col:1]
+    CLASS_DECLARATION [line:13:col:1]
+    CLASS_DECLARATION [line:19:col:1]
+    CLASS_DECLARATION [line:25:col:1]
+    CLASS_DECLARATION [line:31:col:1]
+    FUNCTION_DECLARATION [line:49:col:1]
+    RETURN_STATEMENT [line:76:col:8]

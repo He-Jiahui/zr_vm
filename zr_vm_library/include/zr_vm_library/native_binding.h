@@ -112,6 +112,7 @@ typedef struct ZrLibTempValueRoot {
     TZrStackValuePointer savedCallInfoTopPointer;
     TZrStackValuePointer savedCallInfoReturnPointer;
     TZrStackValuePointer slotPointer;
+    TZrStackValuePointer stackBasePointer;
     TZrBool hasSavedCallInfoBase;
     TZrBool hasSavedCallInfoTop;
     TZrBool hasSavedCallInfoReturn;

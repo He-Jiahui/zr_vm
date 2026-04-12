@@ -1497,6 +1497,28 @@ static void test_semantic_analyzer_records_owned_field_cleanup_metadata(SZrState
             return;
         }
 
+        if (handleSymbol->typeInfo == ZR_NULL ||
+            resourceSymbol->typeInfo == ZR_NULL ||
+            handleSymbol->typeInfo->typeName == ZR_NULL ||
+            resourceSymbol->typeInfo->typeName == ZR_NULL ||
+            strcmp(ZrCore_String_GetNativeString(handleSymbol->typeInfo->typeName), "Resource") != 0 ||
+            strcmp(ZrCore_String_GetNativeString(resourceSymbol->typeInfo->typeName), "Resource") != 0 ||
+            handleSymbol->typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+            resourceSymbol->typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
+            (handleSymbol->typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
+             handleSymbol->typeInfo->typeName == ZR_NULL &&
+             handleSymbol->typeInfo->elementTypes.length == 0) ||
+            (resourceSymbol->typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
+             resourceSymbol->typeInfo->typeName == ZR_NULL &&
+             resourceSymbol->typeInfo->elementTypes.length == 0)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Records Owned Field Cleanup Metadata",
+                      "Explicit ownership field annotations must preserve the exact declared Resource type in metadata");
+            return;
+        }
+
         firstStep = (const SZrDeterministicCleanupStep *)ZrCore_Array_Get(&analyzer->semanticContext->cleanupPlan, 0);
         secondStep = (const SZrDeterministicCleanupStep *)ZrCore_Array_Get(&analyzer->semanticContext->cleanupPlan, 1);
         if (firstStep == ZR_NULL || secondStep == ZR_NULL) {
@@ -2151,6 +2173,91 @@ static void test_semantic_analyzer_generic_function_symbols_surface_signature_de
     TEST_PASS(timer, "Semantic Analyzer Generic Function Symbols Surface Signature Detail");
 }
 
+static void test_semantic_analyzer_generic_call_infers_type_argument_without_explicit_close(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Generic Call Infers Type Argument Without Explicit Close");
+
+    TEST_INFO("Call-site generic inference",
+              "id<T>(x: T): T with id(1) should close T to int so the local binding hover exposes int");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "func id<T>(x: T): T {\n"
+            "    return x;\n"
+            "}\n"
+            "func use(): void {\n"
+            "    var inferredFromCall = id(1);\n"
+            "}\n";
+        SZrString *sourceName =
+            ZrCore_String_Create(state, "generic_call_inference_without_close_test.zr", 44);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange hoverPosition;
+        SZrHoverInfo *hoverInfo = ZR_NULL;
+        const char *hoverText;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Call Infers Type Argument Without Explicit Close",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Call Infers Type Argument Without Explicit Close",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Call Infers Type Argument Without Explicit Close",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (count_diagnostics_with_code(analyzer, "compiler_error") != 0 || analyzer->diagnostics.length != 0) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Call Infers Type Argument Without Explicit Close",
+                      "Generic call inference should not emit diagnostics");
+            return;
+        }
+
+        hoverPosition = file_range_for_nth_substring(testCode, "inferredFromCall", 0, ZR_FALSE);
+        if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
+            hoverInfo == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Call Infers Type Argument Without Explicit Close",
+                      "Failed to get hover info for inferred local");
+            return;
+        }
+
+        hoverText = hover_contents_string(hoverInfo);
+        if (hoverText == ZR_NULL || strstr(hoverText, "inferredFromCall") == ZR_NULL ||
+            strstr(hoverText, "int") == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Generic Call Infers Type Argument Without Explicit Close",
+                      hoverText != ZR_NULL ? hoverText : "<null hover>");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Generic Call Infers Type Argument Without Explicit Close");
+}
+
 static void test_semantic_analyzer_function_signatures_preserve_ownership_qualifiers(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Function Signatures Preserve Ownership Qualifiers");
@@ -2179,6 +2286,10 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
         SZrHoverInfo *hoverInfo = ZR_NULL;
         const char *detailText;
         const char *hoverText;
+        SZrString *takeName;
+        SZrString *seedName;
+        SZrSymbol *takeSymbol;
+        SZrSymbol *seedSymbol;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
@@ -2201,6 +2312,28 @@ static void test_semantic_analyzer_function_signatures_preserve_ownership_qualif
             TEST_FAIL(timer,
                       "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers",
                       "Failed to analyze AST");
+            return;
+        }
+
+        takeName = ZrCore_String_Create(state, "take", 4);
+        seedName = ZrCore_String_Create(state, "seed", 4);
+        takeSymbol = lookup_symbol_any_scope_by_type(state, analyzer->symbolTable, takeName, ZR_SYMBOL_FUNCTION);
+        seedSymbol = lookup_symbol_any_scope_by_type(state, analyzer->symbolTable, seedName, ZR_SYMBOL_PARAMETER);
+        if (takeSymbol == ZR_NULL ||
+            seedSymbol == ZR_NULL ||
+            takeSymbol->typeInfo == ZR_NULL ||
+            takeSymbol->typeInfo->typeName == ZR_NULL ||
+            seedSymbol->typeInfo == ZR_NULL ||
+            seedSymbol->typeInfo->typeName == ZR_NULL ||
+            strcmp(ZrCore_String_GetNativeString(takeSymbol->typeInfo->typeName), "Hero") != 0 ||
+            strcmp(ZrCore_String_GetNativeString(seedSymbol->typeInfo->typeName), "Hero") != 0 ||
+            takeSymbol->typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+            seedSymbol->typeInfo->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_SHARED) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Function Signatures Preserve Ownership Qualifiers",
+                      "Function return and parameter metadata must preserve the exact declared Hero type and ownership qualifiers");
             return;
         }
 
@@ -2410,6 +2543,113 @@ static void test_semantic_analyzer_generic_type_symbols_surface_signature_detail
     }
 
     TEST_PASS(timer, "Semantic Analyzer Generic Type Symbols Surface Signature Detail");
+}
+
+static void test_semantic_analyzer_closed_generic_receiver_calls_stay_local_to_type_metadata(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata");
+
+    TEST_INFO("Closed generic receiver calls",
+              "Calling members on a closed generic local such as Box<int> should resolve through the local type prototype graph instead of falling back to import metadata loading");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "class Matrix<T, const N: int> { }\n"
+            "class Box<T> {\n"
+            "    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }\n"
+            "}\n"
+            "func use(): void {\n"
+            "    var box = new Box<int>();\n"
+            "    var m = new Matrix<int, 2 + 2>();\n"
+            "    var shaped = box.shape(m);\n"
+            "    shaped;\n"
+            "}\n";
+        SZrString *sourceName =
+            ZrCore_String_Create(state, "closed_generic_receiver_metadata_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange hoverPosition;
+        SZrHoverInfo *hoverInfo = ZR_NULL;
+        const TZrChar *hoverText;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        if (count_diagnostics_with_code(analyzer, "compiler_error") != 0 ||
+            analyzer->diagnostics.length != 0) {
+            SZrDiagnostic **diagPtr = analyzer->diagnostics.length > 0
+                                              ? (SZrDiagnostic **)ZrCore_Array_Get(&analyzer->diagnostics, 0)
+                                              : ZR_NULL;
+            SZrDiagnostic *diag = diagPtr != ZR_NULL ? *diagPtr : ZR_NULL;
+            TZrChar message[256];
+
+            snprintf(message,
+                     sizeof(message),
+                     "%s: %s (line %d)",
+                     diag != ZR_NULL && diag->code != ZR_NULL
+                         ? ZrCore_String_GetNativeString(diag->code)
+                         : "<no code>",
+                     diag != ZR_NULL && diag->message != ZR_NULL
+                         ? ZrCore_String_GetNativeString(diag->message)
+                         : "<no message>",
+                     diag != ZR_NULL ? diag->location.start.line : -1);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata",
+                      message);
+            return;
+        }
+
+        hoverPosition = file_range_for_nth_substring(testCode, "shaped;", 0, ZR_FALSE);
+        if (!ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, hoverPosition, &hoverInfo) ||
+            hoverInfo == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata",
+                      "Failed to collect hover info for shaped local");
+            return;
+        }
+
+        hoverText = hover_contents_string(hoverInfo);
+        if (hoverText == ZR_NULL || strstr(hoverText, "Resolved Type: Matrix<int, 4>") == ZR_NULL) {
+            ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata",
+                      hoverText != ZR_NULL ? hoverText : "<null hover>");
+            return;
+        }
+
+        ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Closed Generic Receiver Calls Stay Local To Type Metadata");
 }
 
 static void test_semantic_analyzer_reports_invalid_interface_variance_positions(SZrState *state) {
@@ -3636,10 +3876,16 @@ int main(void) {
     test_semantic_analyzer_generic_function_symbols_surface_signature_detail(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_generic_call_infers_type_argument_without_explicit_close(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_function_signatures_preserve_ownership_qualifiers(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_generic_type_symbols_surface_signature_detail(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_closed_generic_receiver_calls_stay_local_to_type_metadata(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_invalid_interface_variance_positions(state);

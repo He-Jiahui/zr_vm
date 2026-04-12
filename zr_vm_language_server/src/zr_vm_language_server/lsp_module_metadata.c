@@ -3,7 +3,7 @@
 
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_registry.h"
-#include "../../../zr_vm_parser/src/zr_vm_parser/module_init_analysis.h"
+#include "module_init_analysis.h"
 
 #include <ctype.h>
 #include <string.h>
@@ -263,6 +263,69 @@ static TZrBool module_metadata_try_load_project_native_plugin(SZrState *state,
     return ZrLibrary_NativeRegistry_EnsureProjectDescriptorPlugin(state, projectDirectory, moduleName);
 }
 
+static const ZrLibModuleDescriptor *module_metadata_try_resolve_via_parent_module_links(
+    SZrState *state,
+    SZrLspProjectIndex *projectIndex,
+    const TZrChar *moduleName,
+    EZrLspImportedModuleSourceKind *outSourceKind) {
+    const TZrChar *lastDot;
+    TZrChar parentName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize parentLen;
+    const TZrChar *childSegment;
+    const ZrLibModuleDescriptor *parentDescriptor;
+    TZrSize linkIndex;
+
+    if (state == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    lastDot = strrchr(moduleName, '.');
+    if (lastDot == ZR_NULL || lastDot == moduleName) {
+        return ZR_NULL;
+    }
+
+    parentLen = (TZrSize)(lastDot - moduleName);
+    if (parentLen == 0 || parentLen + 1 >= sizeof(parentName)) {
+        return ZR_NULL;
+    }
+
+    memcpy(parentName, moduleName, parentLen);
+    parentName[parentLen] = '\0';
+    childSegment = lastDot + 1;
+    if (childSegment[0] == '\0') {
+        return ZR_NULL;
+    }
+
+    if (projectIndex != ZR_NULL) {
+        module_metadata_try_load_project_native_plugin(state, projectIndex, parentName);
+    }
+
+    parentDescriptor = module_metadata_find_registered_native_module(state, parentName, outSourceKind);
+    if (parentDescriptor == ZR_NULL) {
+        parentDescriptor =
+            module_metadata_try_resolve_via_parent_module_links(state, projectIndex, parentName, outSourceKind);
+    }
+
+    if (parentDescriptor == ZR_NULL || parentDescriptor->moduleLinks == ZR_NULL ||
+        parentDescriptor->moduleLinkCount == 0) {
+        return ZR_NULL;
+    }
+
+    for (linkIndex = 0; linkIndex < parentDescriptor->moduleLinkCount; linkIndex++) {
+        const ZrLibModuleLinkDescriptor *link = &parentDescriptor->moduleLinks[linkIndex];
+
+        if (link->moduleName != ZR_NULL && strcmp(link->moduleName, moduleName) == 0) {
+            return module_metadata_find_registered_native_module(state, link->moduleName, outSourceKind);
+        }
+
+        if (link->name != ZR_NULL && strcmp(link->name, childSegment) == 0 && link->moduleName != ZR_NULL) {
+            return module_metadata_find_registered_native_module(state, link->moduleName, outSourceKind);
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static const ZrLibModuleDescriptor *module_metadata_resolve_native_module_descriptor_internal(
     SZrState *state,
     SZrLspProjectIndex *projectIndex,
@@ -275,6 +338,11 @@ static const ZrLibModuleDescriptor *module_metadata_resolve_native_module_descri
     }
 
     descriptor = module_metadata_find_registered_native_module(state, moduleName, outSourceKind);
+    if (descriptor != ZR_NULL) {
+        return descriptor;
+    }
+
+    descriptor = module_metadata_try_resolve_via_parent_module_links(state, projectIndex, moduleName, outSourceKind);
     if (descriptor != ZR_NULL) {
         return descriptor;
     }
@@ -403,11 +471,6 @@ const ZrLibModuleDescriptor *ZrLanguageServer_LspModuleMetadata_ResolveNativeMod
 const ZrLibTypeDescriptor *ZrLanguageServer_LspModuleMetadata_FindNativeTypeDescriptor(SZrState *state,
                                                                                        const TZrChar *typeName,
                                                                                        const ZrLibModuleDescriptor **outModule) {
-    static const TZrChar *builtinModules[] = {
-        "zr.math",
-        "zr.container",
-        "zr.system"
-    };
     const ZrLibModuleDescriptor *module;
     const ZrLibTypeDescriptor *typeDescriptor;
     const TZrChar *lastDot;
@@ -437,8 +500,15 @@ const ZrLibTypeDescriptor *ZrLanguageServer_LspModuleMetadata_FindNativeTypeDesc
         }
     }
 
-    for (TZrSize index = 0; index < sizeof(builtinModules) / sizeof(builtinModules[0]); index++) {
-        module = ZrLanguageServer_LspModuleMetadata_ResolveNativeModuleDescriptor(state, builtinModules[index], ZR_NULL);
+    for (TZrSize index = 0; index < ZrLibrary_NativeRegistry_GetModuleCount(state->global); index++) {
+        ZrLibRegisteredModuleInfo moduleInfo;
+
+        memset(&moduleInfo, 0, sizeof(moduleInfo));
+        if (!ZrLibrary_NativeRegistry_GetModuleInfoAt(state->global, index, &moduleInfo)) {
+            continue;
+        }
+
+        module = moduleInfo.descriptor;
         typeDescriptor = module_metadata_find_type_descriptor_in_module(module, typeName);
         if (typeDescriptor != ZR_NULL) {
             if (outModule != ZR_NULL) {

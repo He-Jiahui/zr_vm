@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdarg.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #if defined(_WIN32)
@@ -195,8 +196,8 @@ ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_flip_mode(int32_t modeValue) {
 
 ZR_FFI_FIXTURE_EXPORT int32_t zr_ffi_tell_fd(int32_t fd) {
 #if defined(_WIN32)
-    return (int32_t)_lseeki64(fd, 0, SEEK_CUR);
+    return (int32_t)_lseeki64((int)fd, 0, SEEK_CUR);
 #else
-    return (int32_t)lseek(fd, 0, SEEK_CUR);
+    return (int32_t)lseek((int)fd, 0, SEEK_CUR);
 #endif
 }
