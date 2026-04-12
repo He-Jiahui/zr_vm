@@ -36,7 +36,6 @@
 
 typedef struct ZrLibraryProjectExecuteRequest {
     SZrFunction *function;
-    SZrClosure *closure;
     TZrStackValuePointer resultBase;
     TZrBool callCompleted;
 } ZrLibraryProjectExecuteRequest;
@@ -294,7 +293,6 @@ static void library_project_execute_body(SZrState *state, TZrPtr arguments) {
 
     ignoredClosure = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closure->function = request->function;
-    request->closure = closure;
     ZrCore_Closure_InitValue(state, closure);
 
     base = state->stackTop.valuePointer;
@@ -329,23 +327,14 @@ static EZrThreadStatus library_project_execute_function(SZrState *state, SZrFunc
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     status = ZrCore_Exception_TryRun(state, library_project_execute_body, &request);
     if (status != ZR_THREAD_STATUS_FINE) {
-        if (request.closure != ZR_NULL) {
-            request.closure->function = ZR_NULL;
-        }
         return library_project_normalize_failure(state, status);
     }
 
     if (!request.callCompleted || request.resultBase == ZR_NULL) {
-        if (request.closure != ZR_NULL) {
-            request.closure->function = ZR_NULL;
-        }
         return library_project_normalize_failure(state, state->threadStatus);
     }
 
     ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(request.resultBase));
-    if (request.closure != ZR_NULL) {
-        request.closure->function = ZR_NULL;
-    }
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     return ZR_THREAD_STATUS_FINE;
 }

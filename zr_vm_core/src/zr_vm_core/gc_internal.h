@@ -31,10 +31,19 @@ TZrBool garbage_collector_remembered_registry_contains(SZrGarbageCollector *coll
 TZrBool garbage_collector_ensure_remembered_registry_capacity(SZrGlobalState *global, TZrSize minCapacity);
 TZrBool garbage_collector_object_can_hold_gc_references(const SZrRawObject *object);
 TZrSize garbage_collector_get_object_base_size(SZrState *state, SZrRawObject *object);
+TZrBool garbage_collector_callsite_sanitize_tracing_enabled(void);
 void garbage_collector_sanitize_callsite_cache_pic(const SZrFunction *function,
                                                    TZrUInt32 cacheIndex,
                                                    const TZrChar *phase,
                                                    SZrFunctionCallSiteCacheEntry *cacheEntry);
+void garbage_collector_record_callsite_cache_pic_write(
+        const SZrFunction *function,
+        TZrUInt32 cacheIndex,
+        TZrUInt32 slotIndex,
+        const TZrChar *writer,
+        const TZrChar *action,
+        const SZrFunctionCallSiteCacheEntry *cacheEntry,
+        const SZrFunctionCallSitePicSlot *slot);
 SZrRawObject *garbage_collector_new_raw_object_in_region(SZrState *state,
                                                          EZrValueType type,
                                                          TZrSize size,
@@ -73,6 +82,7 @@ void garbage_collector_run_generational_step(SZrState *state);
 void garbage_collector_mark_object(SZrState *state, SZrRawObject *object);
 void garbage_collector_mark_value(SZrState *state, SZrTypeValue *value);
 TZrSize garbage_collector_mark_string_roots(SZrState *state);
+TZrSize garbage_collector_mark_ignored_roots(SZrState *state);
 void garbage_collector_link_to_gray_list(SZrRawObject *object, SZrRawObject **list);
 void garbage_collector_to_gc_list_and_mark_wait_to_scan(SZrRawObject *object, SZrRawObject **list);
 

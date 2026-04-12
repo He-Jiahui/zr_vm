@@ -18,7 +18,6 @@
 
 typedef struct ZrTestsRuntimeExecuteRequest {
     SZrFunction *function;
-    SZrClosure *closure;
     TZrStackValuePointer resultBase;
     TZrBool callCompleted;
 } ZrTestsRuntimeExecuteRequest;
@@ -321,7 +320,6 @@ static void zr_tests_runtime_execute_body(SZrState *state, TZrPtr arguments) {
 
     ignoredClosure = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closure->function = request->function;
-    request->closure = closure;
     ZrCore_Closure_InitValue(state, closure);
 
     base = state->stackTop.valuePointer;
@@ -418,22 +416,15 @@ TZrBool ZrTests_Runtime_Function_ExecuteCaptureFailure(SZrState *state, SZrFunct
 
     ZrCore_Value_ResetAsNull(result);
     request.function = function;
-    request.closure = ZR_NULL;
     request.resultBase = ZR_NULL;
     request.callCompleted = ZR_FALSE;
     ZrTests_Runtime_CrashScope_Begin(state);
     status = ZrCore_Exception_TryRun(state, zr_tests_runtime_execute_body, &request);
     ZrTests_Runtime_CrashScope_End(state);
     if (status != ZR_THREAD_STATUS_FINE) {
-        if (request.closure != ZR_NULL) {
-            request.closure->function = ZR_NULL;
-        }
         return zr_tests_runtime_capture_failure(state, status);
     }
     if (!request.callCompleted || request.resultBase == ZR_NULL) {
-        if (request.closure != ZR_NULL) {
-            request.closure->function = ZR_NULL;
-        }
         if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
             return zr_tests_runtime_capture_failure(state, state->threadStatus);
         }
@@ -441,9 +432,6 @@ TZrBool ZrTests_Runtime_Function_ExecuteCaptureFailure(SZrState *state, SZrFunct
     }
 
     ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(request.resultBase));
-    if (request.closure != ZR_NULL) {
-        request.closure->function = ZR_NULL;
-    }
     return ZR_TRUE;
 }
 

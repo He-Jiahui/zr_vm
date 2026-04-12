@@ -9,7 +9,8 @@
   },
   "categories": [
     "Programming Languages",
-    "Linters"
+    "Linters",
+    "Debuggers"
   ],
   "activationEvents": [
     "onLanguage:zr",
@@ -30,6 +31,14 @@
   "main": "./out/extension.js",
   "browser": "./out/browser.js",
   "contributes": {
+    "breakpoints": [
+      {
+        "language": "zr"
+      },
+      {
+        "language": "zr-project"
+      }
+    ],
     "languages": [
       {
         "id": "zr",
@@ -54,10 +63,6 @@
       }
     ],
     "jsonValidation": [
-      {
-        "fileMatch": "*.zrp",
-        "url": "./schemas/zrp.schema.json"
-      },
       {
         "fileMatch": "**/*.zrp",
         "url": "./schemas/zrp.schema.json"
@@ -192,7 +197,7 @@
             "type": "zr",
             "name": "ZR: Launch Project",
             "request": "launch",
-            "project": "${workspaceFolder}/import_basic.zrp",
+            "project": "${workspaceFolder}/project.zrp",
             "cwd": "${workspaceFolder}",
             "executionMode": "interp",
             "stopOnEntry": true

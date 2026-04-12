@@ -61,6 +61,7 @@ static TZrBool compiler_refresh_borrowed_child_function_graph(SZrState *state,
     function->childFunctionLength = sourceRoot->childFunctionLength;
     function->childFunctionGraphIsBorrowed = ZR_TRUE;
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
+    ZrCore_Function_ClearChildOwnerLinks(function);
     return ZR_TRUE;
 }
 

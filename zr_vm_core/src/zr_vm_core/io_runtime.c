@@ -1003,6 +1003,7 @@ static TZrBool io_runtime_populate_function(SZrState *state,
     }
 
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
+    ZrCore_Function_ClearChildOwnerLinks(function);
 
     return ZR_TRUE;
 }

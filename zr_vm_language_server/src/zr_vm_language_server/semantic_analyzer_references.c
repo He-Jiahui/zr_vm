@@ -284,6 +284,20 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
             break;
         }
 
+        case ZR_AST_IF_EXPRESSION: {
+            SZrIfExpression *ifExpr = &node->data.ifExpression;
+            if (ifExpr->condition != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, ifExpr->condition);
+            }
+            if (ifExpr->thenExpr != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, ifExpr->thenExpr);
+            }
+            if (ifExpr->elseExpr != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, ifExpr->elseExpr);
+            }
+            break;
+        }
+
         case ZR_AST_RETURN_STATEMENT: {
             SZrReturnStatement *returnStmt = &node->data.returnStatement;
             if (returnStmt->expr != ZR_NULL) {
@@ -291,7 +305,31 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
             }
             break;
         }
-        
+
+        case ZR_AST_BREAK_CONTINUE_STATEMENT:
+            if (node->data.breakContinueStatement.expr != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.breakContinueStatement.expr);
+            }
+            break;
+
+        case ZR_AST_THROW_STATEMENT:
+            if (node->data.throwStatement.expr != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.throwStatement.expr);
+            }
+            break;
+
+        case ZR_AST_OUT_STATEMENT:
+            if (node->data.outStatement.expr != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.outStatement.expr);
+            }
+            break;
+
         case ZR_AST_EXPRESSION_STATEMENT: {
             // 表达式语句：递归处理表达式
             SZrExpressionStatement *exprStmt = &node->data.expressionStatement;
@@ -376,6 +414,89 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
             break;
         }
 
+        case ZR_AST_WHILE_LOOP:
+            if (node->data.whileLoop.cond != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, node->data.whileLoop.cond);
+            }
+            if (node->data.whileLoop.block != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.whileLoop.block);
+            }
+            break;
+
+        case ZR_AST_FOR_LOOP:
+            if (node->data.forLoop.init != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, node->data.forLoop.init);
+            }
+            if (node->data.forLoop.cond != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, node->data.forLoop.cond);
+            }
+            if (node->data.forLoop.step != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, node->data.forLoop.step);
+            }
+            if (node->data.forLoop.block != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, node->data.forLoop.block);
+            }
+            break;
+
+        case ZR_AST_FOREACH_LOOP:
+            if (node->data.foreachLoop.typeInfo != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, node->data.foreachLoop.typeInfo);
+            }
+            if (node->data.foreachLoop.expr != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, node->data.foreachLoop.expr);
+            }
+            if (node->data.foreachLoop.block != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.foreachLoop.block);
+            }
+            break;
+
+        case ZR_AST_CATCH_CLAUSE:
+            if (node->data.catchClause.pattern != ZR_NULL &&
+                node->data.catchClause.pattern->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < node->data.catchClause.pattern->count; i++) {
+                    if (node->data.catchClause.pattern->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                                   analyzer,
+                                                                                   node->data.catchClause.pattern->nodes[i]);
+                    }
+                }
+            }
+            if (node->data.catchClause.block != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.catchClause.block);
+            }
+            break;
+
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
+            if (node->data.tryCatchFinallyStatement.block != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.tryCatchFinallyStatement.block);
+            }
+            if (node->data.tryCatchFinallyStatement.catchClauses != ZR_NULL &&
+                node->data.tryCatchFinallyStatement.catchClauses->nodes != ZR_NULL) {
+                for (TZrSize i = 0; i < node->data.tryCatchFinallyStatement.catchClauses->count; i++) {
+                    if (node->data.tryCatchFinallyStatement.catchClauses->nodes[i] != ZR_NULL) {
+                        ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(
+                            state,
+                            analyzer,
+                            node->data.tryCatchFinallyStatement.catchClauses->nodes[i]);
+                    }
+                }
+            }
+            if (node->data.tryCatchFinallyStatement.finallyBlock != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(
+                    state,
+                    analyzer,
+                    node->data.tryCatchFinallyStatement.finallyBlock);
+            }
+            break;
+
         case ZR_AST_TEMPLATE_STRING_LITERAL: {
             SZrTemplateStringLiteral *templateLiteral = &node->data.templateStringLiteral;
             ZrLanguageServer_SemanticAnalyzer_RecordTemplateStringSegments(analyzer, node);
@@ -418,6 +539,17 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
             }
             break;
         }
+
+        case ZR_AST_TYPE_CAST_EXPRESSION:
+            if (node->data.typeCastExpression.targetType != ZR_NULL) {
+                semantic_collect_references_from_type_info(state, analyzer, node->data.typeCastExpression.targetType);
+            }
+            if (node->data.typeCastExpression.expression != ZR_NULL) {
+                ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state,
+                                                                           analyzer,
+                                                                           node->data.typeCastExpression.expression);
+            }
+            break;
         
         case ZR_AST_ASSIGNMENT_EXPRESSION: {
             // 赋值表达式：递归处理左右操作数

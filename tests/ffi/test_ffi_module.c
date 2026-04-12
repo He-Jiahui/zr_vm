@@ -172,7 +172,6 @@ static void escape_for_zr_string_literal(char *destination, size_t destinationSi
 
 typedef struct ZrFfiExecuteCaptureRequest {
     SZrFunction *function;
-    SZrClosure *closure;
     TZrStackValuePointer resultBase;
     TZrBool callCompleted;
 } ZrFfiExecuteCaptureRequest;
@@ -180,6 +179,7 @@ typedef struct ZrFfiExecuteCaptureRequest {
 static void zr_ffi_execute_capture_body(SZrState *state, TZrPtr arguments) {
     ZrFfiExecuteCaptureRequest *request = (ZrFfiExecuteCaptureRequest *)arguments;
     SZrClosure *closure;
+    TZrBool ignoredClosure = ZR_FALSE;
     TZrStackValuePointer base;
     SZrFunctionStackAnchor baseAnchor;
     SZrTypeValue *closureValue;
@@ -193,8 +193,8 @@ static void zr_ffi_execute_capture_body(SZrState *state, TZrPtr arguments) {
         return;
     }
 
+    ignoredClosure = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closure->function = request->function;
-    request->closure = closure;
     ZrCore_Closure_InitValue(state, closure);
 
     base = state->stackTop.valuePointer;
@@ -206,6 +206,10 @@ static void zr_ffi_execute_capture_body(SZrState *state, TZrPtr arguments) {
     closureValue->isGarbageCollectable = ZR_TRUE;
     closureValue->isNative = ZR_FALSE;
     state->stackTop.valuePointer++;
+
+    if (ignoredClosure) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    }
 
     request->resultBase = ZrCore_Function_CallAndRestoreAnchor(state, &baseAnchor, 1);
     request->callCompleted = (TZrBool)(state->threadStatus == ZR_THREAD_STATUS_FINE);
@@ -235,9 +239,6 @@ static EZrThreadStatus execute_function_capture_status(SZrState *state,
             ZrCore_Value_ResetAsNull(result);
             ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(request.resultBase));
         }
-        if (request.closure != ZR_NULL) {
-            request.closure->function = ZR_NULL;
-        }
         return ZR_THREAD_STATUS_FINE;
     }
 
@@ -248,10 +249,6 @@ static EZrThreadStatus execute_function_capture_status(SZrState *state,
             strncpy(errorBuffer, nativeError, errorBufferSize - 1);
             errorBuffer[errorBufferSize - 1] = '\0';
         }
-    }
-
-    if (request.closure != ZR_NULL) {
-        request.closure->function = ZR_NULL;
     }
 
     if (status != ZR_THREAD_STATUS_FINE) {

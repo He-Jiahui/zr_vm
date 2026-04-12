@@ -52,6 +52,12 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
     private terminated = false;
     private launchMode = false;
     private launchSourceContext: LaunchSourceContext | undefined;
+    /**
+     * VS Code may dispatch DAP requests concurrently (async handlers without awaiting the previous one).
+     * `setBreakpoints` must run only after `launch`/`attach` has connected `this.client`, otherwise
+     * `requireClient()` fails and breakpoints never bind.
+     */
+    private requestChain: Promise<void> = Promise.resolve();
 
     readonly onDidSendMessage = this.emitter.event;
 
@@ -70,9 +76,11 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
             return;
         }
 
-        void this.dispatchRequest(request).catch((error) => {
-            this.sendErrorResponse(request, error instanceof Error ? error.message : String(error));
-        });
+        this.requestChain = this.requestChain.then(() =>
+            this.dispatchRequest(request).catch((error) => {
+                this.sendErrorResponse(request, error instanceof Error ? error.message : String(error));
+            }),
+        );
     }
 
     private async dispatchRequest(request: DapRequest): Promise<void> {

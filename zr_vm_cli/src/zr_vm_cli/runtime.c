@@ -29,7 +29,6 @@
 
 typedef struct ZrCliExecuteRequest {
     SZrFunction *function;
-    SZrClosure *closure;
     TZrStackValuePointer resultBase;
     TZrBool callCompleted;
 } ZrCliExecuteRequest;
@@ -81,7 +80,6 @@ static void zr_cli_runtime_execute_body(SZrState *state, TZrPtr arguments) {
 
     ignoredClosure = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closure->function = request->function;
-    request->closure = closure;
     ZrCore_Closure_InitValue(state, closure);
 
     base = state->stackTop.valuePointer;
@@ -312,23 +310,14 @@ static TZrBool zr_cli_runtime_execute_function(SZrState *state, SZrFunction *fun
     state->threadStatus = ZR_THREAD_STATUS_FINE;
     status = ZrCore_Exception_TryRun(state, zr_cli_runtime_execute_body, &request);
     if (status != ZR_THREAD_STATUS_FINE) {
-        if (request.closure != ZR_NULL) {
-            request.closure->function = ZR_NULL;
-        }
         return zr_cli_runtime_capture_failure(state, status);
     }
 
     if (!request.callCompleted || request.resultBase == ZR_NULL) {
-        if (request.closure != ZR_NULL) {
-            request.closure->function = ZR_NULL;
-        }
         return zr_cli_runtime_capture_failure(state, state->threadStatus);
     }
 
     ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(request.resultBase));
-    if (request.closure != ZR_NULL) {
-        request.closure->function = ZR_NULL;
-    }
     return ZR_TRUE;
 }
 
@@ -543,6 +532,15 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
         return 1;
     }
 
+#if ZR_VM_BUILD_AOT == 0
+    if (command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_C ||
+        command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_LLVM) {
+        ZrCore_Log_Error(ZR_NULL,
+                         "AOT execution modes require a zr_vm build with -DZR_VM_BUILD_AOT=ON\n");
+        return 1;
+    }
+#endif
+
     zr_cli_runtime_trace("create project global '%s'", command->projectPath);
     global = ZrCli_Project_CreateProjectGlobal(command->projectPath);
     zr_cli_runtime_trace("global=%p", (void *)global);
@@ -728,6 +726,7 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
             executedVia = "binary";
             break;
 
+#if ZR_VM_BUILD_AOT
         case ZR_CLI_EXECUTION_MODE_AOT_C:
             success = ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result);
             executedVia = ZrLibrary_AotRuntime_ExecutedViaName(ZrLibrary_AotRuntime_GetExecutedVia(global));
@@ -737,6 +736,7 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
             success = ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_LLVM, &result);
             executedVia = ZrLibrary_AotRuntime_ExecutedViaName(ZrLibrary_AotRuntime_GetExecutedVia(global));
             break;
+#endif
 
         default:
             ZrCore_Log_Error(state, "unknown execution mode: %d\n", (int)command->executionMode);

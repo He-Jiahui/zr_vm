@@ -191,6 +191,48 @@ static TZrUInt32 garbage_collector_merge_scope_depth(TZrUInt32 currentScopeDepth
     return currentScopeDepth < incomingScopeDepth ? currentScopeDepth : incomingScopeDepth;
 }
 
+static TZrBool garbage_collector_collection_is_marking_roots(const SZrGlobalState *global,
+                                                             const SZrGarbageCollector *collector) {
+    if (global == ZR_NULL || collector == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE ||
+        collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_SWEEP ||
+        collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_COMPACT) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_GarbageCollector_IsInvariant((SZrGlobalState *)global) ||
+           collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_MARK ||
+           collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_EVACUATE ||
+           collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT ||
+           collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_REMARK;
+}
+
+static void garbage_collector_mark_ignored_root_if_needed(SZrState *state, SZrRawObject *object) {
+    SZrGlobalState *global;
+    SZrGarbageCollector *collector;
+
+    if (state == ZR_NULL || object == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
+        return;
+    }
+
+    global = state->global;
+    collector = global->garbageCollector;
+    if (!garbage_collector_collection_is_marking_roots(global, collector)) {
+        return;
+    }
+
+    if (object->type >= ZR_RAW_OBJECT_TYPE_CLOSURE_ENUM_MAX ||
+        object->type == ZR_RAW_OBJECT_TYPE_INVALID ||
+        ZrCore_RawObject_IsReleased(object)) {
+        return;
+    }
+
+    garbage_collector_mark_object(state, object);
+}
+
 static EZrGarbageCollectPromotionReason garbage_collector_promotion_reason_from_escape_flags(
         TZrUInt32 escapeFlags,
         EZrGarbageCollectPromotionReason promotionReason) {
@@ -499,6 +541,7 @@ TZrBool ZrCore_GarbageCollector_IgnoreObject(SZrState *state, SZrRawObject *obje
     }
 
     if (garbage_collector_ignore_registry_contains(collector, object)) {
+        garbage_collector_mark_ignored_root_if_needed(state, object);
         return ZR_TRUE;
     }
 
@@ -507,6 +550,7 @@ TZrBool ZrCore_GarbageCollector_IgnoreObject(SZrState *state, SZrRawObject *obje
     }
 
     collector->ignoredObjects[collector->ignoredObjectCount++] = object;
+    garbage_collector_mark_ignored_root_if_needed(state, object);
     return ZR_TRUE;
 }
 

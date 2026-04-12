@@ -2331,6 +2331,153 @@ static void test_lsp_function_prepare_rename_uses_name_range(SZrState *state) {
     TEST_PASS(timer, "LSP Function Prepare Rename Uses Name Range");
 }
 
+static void test_lsp_callable_assignment_surfaces_exact_signature_and_parameter_scope(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class BaseHero {\n"
+        "    pri var _hp: int = 0;\n"
+        "    pub @constructor(seed: int) {\n"
+        "        this._hp = seed;\n"
+        "    }\n"
+        "    pub get hp: int {\n"
+        "        return this._hp;\n"
+        "    }\n"
+        "    pub set hp(v: int) {\n"
+        "        this._hp = v;\n"
+        "    }\n"
+        "    pub heal(amount: int): int {\n"
+        "        this.hp = this.hp + amount;\n"
+        "        return this.hp;\n"
+        "    }\n"
+        "}\n"
+        "class BossHero: BaseHero {\n"
+        "    pub @constructor(seed: int) super(seed) { }\n"
+        "    pub prepare(amount: int): int {\n"
+        "        this.hp = this.hp + amount;\n"
+        "        return this.hp;\n"
+        "    }\n"
+        "    pub afterBattle(amount: int): int {\n"
+        "        return this.heal(amount);\n"
+        "    }\n"
+        "}\n"
+        "runBossScenarioImpl(seed: int, prepareAmount: int, battleAmount: int) {\n"
+        "    var boss = new BossHero(seed);\n"
+        "    boss.prepare(prepareAmount);\n"
+        "    return boss.afterBattle(battleAmount) + boss.heal(0);\n"
+        "}\n"
+        "pub var runBossScenario = runBossScenarioImpl;\n"
+        "useScenario(): int {\n"
+        "    return runBossScenario(30, 7, 5);\n"
+        "}\n";
+    SZrLspPosition callTargetPosition;
+    SZrLspPosition signaturePosition;
+    SZrLspPosition parameterUsePosition;
+    SZrLspPosition bossUsePosition;
+    SZrLspPosition parameterDeclarationPosition;
+    SZrLspSignatureHelp *help = ZR_NULL;
+    SZrLspHover *hover = ZR_NULL;
+    SZrString *placeholder = ZR_NULL;
+    SZrLspRange range;
+
+    TEST_START("LSP Callable Assignment Surfaces Exact Signature And Parameter Scope");
+    TEST_INFO("Callable value inference / scope",
+              "Function values assigned through pub var should stay callable, and body-local parameter/receiver hover must resolve through the method scope without drifting.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Callable Assignment Surfaces Exact Signature And Parameter Scope",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                               "file:///callable_assignment_scope.zr",
+                               strlen("file:///callable_assignment_scope.zr"));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "runBossScenario(30, 7, 5)", 0, 0, &callTargetPosition) ||
+        !lsp_find_position_for_substring(content, "runBossScenario(30, 7, 5)", 0, 16, &signaturePosition) ||
+        !lsp_find_position_for_substring(content, "boss.prepare(prepareAmount);", 0, 13, &parameterUsePosition) ||
+        !lsp_find_position_for_substring(content, "boss.prepare(prepareAmount);", 0, 0, &bossUsePosition) ||
+        !lsp_find_position_for_substring(content, "prepareAmount: int", 0, 0, &parameterDeclarationPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Callable Assignment Surfaces Exact Signature And Parameter Scope",
+                  "Failed to prepare callable-assignment fixture positions");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, signaturePosition, &help) ||
+        help == ZR_NULL ||
+        !signature_help_contains_text(help, "seed: int") ||
+        !signature_help_contains_text(help, "prepareAmount: int") ||
+        !signature_help_contains_text(help, "battleAmount: int") ||
+        !signature_help_contains_text(help, ": int")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Callable Assignment Surfaces Exact Signature And Parameter Scope",
+                  "Calling a pub var bound to a function should expose the callable signature instead of degrading to a non-callable/int value");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, callTargetPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "prepareAmount: int") ||
+        !hover_contains_text(hover, "battleAmount: int") ||
+        hover_contains_text(hover, "cannot infer exact type")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Callable Assignment Surfaces Exact Signature And Parameter Scope",
+                  "Hover on the assigned callable should preserve the exact function value signature");
+        return;
+    }
+
+    hover = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, parameterUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "prepareAmount") ||
+        !hover_contains_text(hover, "int")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Callable Assignment Surfaces Exact Signature And Parameter Scope",
+                  "Hover inside the function body should resolve the parameter binding to int");
+        return;
+    }
+
+    hover = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, bossUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "boss") ||
+        !hover_contains_text(hover, "BossHero")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Callable Assignment Surfaces Exact Signature And Parameter Scope",
+                  "Hover inside the function body should resolve the local receiver variable to BossHero");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_PrepareRename(state, context, uri, parameterDeclarationPosition, &range, &placeholder) ||
+        placeholder == ZR_NULL ||
+        strcmp(test_string_ptr(placeholder), "prepareAmount") != 0 ||
+        !lsp_range_equals(range,
+                          parameterDeclarationPosition.line,
+                          parameterDeclarationPosition.character,
+                          parameterDeclarationPosition.line,
+                          parameterDeclarationPosition.character + 13)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Callable Assignment Surfaces Exact Signature And Parameter Scope",
+                  "Parameter prepare-rename should use the parameter identifier span instead of the owner fallback range");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Callable Assignment Surfaces Exact Signature And Parameter Scope");
+}
+
 static void test_lsp_closed_generic_type_display_and_definition(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -4472,6 +4619,56 @@ static void test_lsp_native_declaration_document_renders_virtual_zr_source(SZrSt
     TEST_PASS(timer, "LSP Native Declaration Document Renders Virtual ZR Source");
 }
 
+static void test_lsp_native_console_virtual_document_prefers_descriptor_signatures(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrString *documentText = ZR_NULL;
+    const TZrChar *renderedText;
+
+    TEST_START("LSP Native Console Virtual Document Prefers Descriptor Signatures");
+    TEST_INFO("Native declaration signature rendering",
+              "Console virtual declarations should render descriptor/native-hint signatures instead of falling back to arity comments.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Native Console Virtual Document Prefers Descriptor Signatures",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                               "zr-decompiled:/zr.system.console.zr",
+                               strlen("zr-decompiled:/zr.system.console.zr"));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetNativeDeclarationDocument(state, context, uri, &documentText) ||
+        documentText == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Console Virtual Document Prefers Descriptor Signatures",
+                  "Failed to resolve the zr.system.console decompiled declaration document");
+        return;
+    }
+
+    renderedText = test_string_ptr(documentText);
+    if (renderedText == ZR_NULL ||
+        strstr(renderedText, "%extern(\"zr.system.console\")") == ZR_NULL ||
+        strstr(renderedText, "pub print(value: any): null;") == ZR_NULL ||
+        strstr(renderedText, "pub printLine(value: any): null;") == ZR_NULL ||
+        strstr(renderedText, "pub readLine(): string?;") == ZR_NULL ||
+        strstr(renderedText, "/* arity 1 */") != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Native Console Virtual Document Prefers Descriptor Signatures",
+                  renderedText != ZR_NULL ? renderedText : "<null virtual document>");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Native Console Virtual Document Prefers Descriptor Signatures");
+}
+
 static void test_lsp_native_import_definition_uses_virtual_declaration_uri(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -5402,6 +5599,239 @@ static void test_lsp_semantic_query_external_metadata_references_and_highlights(
     TEST_PASS(timer, "LSP Semantic Query External Metadata References And Highlights");
 }
 
+static void test_lsp_top_level_script_return_semantics_match_compiler(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *implicitUri = ZR_NULL;
+    SZrString *explicitUri = ZR_NULL;
+    const TZrChar *implicitContent =
+        "var checksum = 1;\n"
+        "checksum = checksum + 1;\n";
+    const TZrChar *explicitContent =
+        "var checksum = 1;\n"
+        "checksum = checksum + 1;\n"
+        "return checksum;\n";
+    SZrArray diagnostics;
+    SZrLspPosition returnValuePosition;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP Top Level Script Return Semantics Match Compiler");
+    TEST_INFO("Top-level script returns",
+              "Module top-level code should allow both implicit null returns and explicit return expressions without function-return provability diagnostics.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Top Level Script Return Semantics Match Compiler",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    implicitUri = ZrCore_String_Create(state,
+                                       "file:///top_level_implicit_return.zr",
+                                       strlen("file:///top_level_implicit_return.zr"));
+    explicitUri = ZrCore_String_Create(state,
+                                       "file:///top_level_explicit_return.zr",
+                                       strlen("file:///top_level_explicit_return.zr"));
+    if (implicitUri == ZR_NULL ||
+        explicitUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             context,
+                                             implicitUri,
+                                             implicitContent,
+                                             strlen(implicitContent),
+                                             1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             context,
+                                             explicitUri,
+                                             explicitContent,
+                                             strlen(explicitContent),
+                                             1) ||
+        !lsp_find_position_for_substring(explicitContent, "return checksum;", 0, 7, &returnValuePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Top Level Script Return Semantics Match Compiler",
+                  "Failed to prepare top-level script return fixtures");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, implicitUri, &diagnostics) ||
+        diagnostic_array_contains_message(&diagnostics, "return type not provable")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Top Level Script Return Semantics Match Compiler",
+                  "Top-level scripts without an explicit return should not be forced through function-return provability checks");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, explicitUri, &diagnostics) ||
+        diagnostic_array_contains_message(&diagnostics, "return type not provable")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Top Level Script Return Semantics Match Compiler",
+                  "Explicit top-level return expressions should be accepted as script entry returns");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, explicitUri, returnValuePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "checksum") ||
+        !hover_contains_text(hover, "int")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Top Level Script Return Semantics Match Compiler",
+                  "Top-level return expressions should still surface the resolved expression type in hover");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Top Level Script Return Semantics Match Compiler");
+}
+
+static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *mainUri = ZR_NULL;
+    SZrLspPosition bucketHoverPosition;
+    SZrLspPosition oddLoHoverPosition;
+    SZrLspPosition itemHoverPosition;
+    SZrArray diagnostics;
+    SZrLspHover *hover = ZR_NULL;
+    TZrChar projectPath[1024];
+    TZrChar mainPath[1024];
+    TZrChar *projectContent = ZR_NULL;
+    TZrChar *mainContent = ZR_NULL;
+    TZrSize projectLength = 0;
+    TZrSize mainLength = 0;
+
+    TEST_START("LSP Container Matrix Project Infers Bucket And Foreach Types");
+    TEST_INFO("Project generics / foreach inference",
+              "Computed map access, nullable bucket locals, foreach item bindings, and all-path returns should resolve cleanly in the container_matrix fixture.");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/container_matrix/container_matrix.zrp",
+                                   projectPath,
+                                   sizeof(projectPath)) ||
+        !build_fixture_native_path("tests/fixtures/projects/container_matrix/src/main.zr",
+                                   mainPath,
+                                   sizeof(mainPath))) {
+        TEST_FAIL(timer,
+                  "LSP Container Matrix Project Infers Bucket And Foreach Types",
+                  "Failed to build container_matrix fixture paths");
+        return;
+    }
+
+    projectContent = read_fixture_text_file(projectPath, &projectLength);
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    if (projectContent == ZR_NULL || mainContent == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        TEST_FAIL(timer,
+                  "LSP Container Matrix Project Infers Bucket And Foreach Types",
+                  "Failed to read container_matrix fixture content");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        free(projectContent);
+        free(mainContent);
+        TEST_FAIL(timer,
+                  "LSP Container Matrix Project Infers Bucket And Foreach Types",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    projectUri = create_file_uri_from_native_path(state, projectPath);
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    if (projectUri == ZR_NULL ||
+        mainUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, projectUri, projectContent, projectLength, 1) ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
+        !lsp_find_position_for_substring(mainContent, "var bucket = buckets[label];", 0, 4, &bucketHoverPosition) ||
+        !lsp_find_position_for_substring(mainContent, "var oddLo: Array<int> = buckets[\"odd_lo\"];", 0, 4, &oddLoHoverPosition) ||
+        !lsp_find_position_for_substring(mainContent, "<int> item", 1, 6, &itemHoverPosition)) {
+        free(projectContent);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Matrix Project Infers Bucket And Foreach Types",
+                  "Failed to open container_matrix fixture or compute hover positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 8);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, mainUri, &diagnostics) ||
+        diagnostic_array_contains_message(&diagnostics, "return type not provable") ||
+        diagnostic_array_contains_message(&diagnostics, "cannot infer exact type")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        free(projectContent);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Matrix Project Infers Bucket And Foreach Types",
+                  "container_matrix should not report return-provability or exact-type failures for labelFor, bucket access, or foreach item bindings");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, bucketHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "bucket") ||
+        !hover_contains_text(hover, "Array<int>") ||
+        hover_contains_text(hover, "object") ||
+        hover_contains_text(hover, "cannot infer exact type")) {
+        free(projectContent);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Matrix Project Infers Bucket And Foreach Types",
+                  "Hover on the computed bucket local should preserve the closed Array<int> type");
+        return;
+    }
+
+    hover = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, oddLoHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "oddLo") ||
+        !hover_contains_text(hover, "Array<int>")) {
+        free(projectContent);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Matrix Project Infers Bucket And Foreach Types",
+                  "Hover on bucket extraction into oddLo should resolve the specialized Array<int> type");
+        return;
+    }
+
+    hover = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, itemHoverPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "item") ||
+        !hover_contains_text(hover, "int") ||
+        hover_contains_text(hover, "object") ||
+        hover_contains_text(hover, "cannot infer exact type")) {
+        free(projectContent);
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Container Matrix Project Infers Bucket And Foreach Types",
+                  "Hover inside the oddLo foreach loop should bind item to the concrete int element type");
+        return;
+    }
+
+    free(projectContent);
+    free(mainContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Container Matrix Project Infers Bucket And Foreach Types");
+}
+
 // 主测试函数
 int main(void) {
     printf("==========\n");
@@ -5494,6 +5924,9 @@ int main(void) {
     test_lsp_function_prepare_rename_uses_name_range(state);
     TEST_DIVIDER();
 
+    test_lsp_callable_assignment_surfaces_exact_signature_and_parameter_scope(state);
+    TEST_DIVIDER();
+
     test_lsp_closed_generic_type_display_and_definition(state);
     TEST_DIVIDER();
 
@@ -5566,6 +5999,9 @@ int main(void) {
     test_lsp_native_declaration_document_renders_virtual_zr_source(state);
     TEST_DIVIDER();
 
+    test_lsp_native_console_virtual_document_prefers_descriptor_signatures(state);
+    TEST_DIVIDER();
+
     test_lsp_native_import_definition_uses_virtual_declaration_uri(state);
     TEST_DIVIDER();
 
@@ -5599,6 +6035,12 @@ int main(void) {
     test_lsp_semantic_query_external_metadata_references_and_highlights(state);
     TEST_DIVIDER();
 
+    test_lsp_top_level_script_return_semantics_match_compiler(state);
+    TEST_DIVIDER();
+
+    test_lsp_container_matrix_project_infers_bucket_and_foreach_types(state);
+    TEST_DIVIDER();
+
     // 清理
     ZrCore_GlobalState_Free(global);
     
@@ -5608,4 +6050,3 @@ int main(void) {
     
     return 0;
 }
-

@@ -77,6 +77,24 @@ void tearDown(void) {
     // Unity框架会自动调用，这里不需要额外输出
 }
 
+static TZrBool gc_test_collector_contains_object(SZrState *state, SZrRawObject *target) {
+    SZrRawObject *object;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL || target == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object = state->global->garbageCollector->gcObjectList;
+    while (object != ZR_NULL) {
+        if (object == target) {
+            return ZR_TRUE;
+        }
+        object = object->next;
+    }
+
+    return ZR_FALSE;
+}
+
 // 测试基础类型
 static void test_basic_types(void) {
     SZrTestTimer timer;
@@ -747,8 +765,8 @@ static void test_gc_ignore_registry_and_phase_metadata(void) {
 
     {
         SZrGarbageCollector* gc = state->global->garbageCollector;
-        SZrRawObject* ignoredObject =
-            createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+        SZrClosure *ignoredClosure = ZrCore_Closure_New(state, 0u);
+        SZrRawObject* ignoredObject = ZR_CAST_RAW_OBJECT_AS_SUPER(ignoredClosure);
         TEST_ASSERT_NOT_NULL(ignoredObject);
 
         TEST_INFO("Initial phased-GC metadata",
@@ -793,6 +811,7 @@ static void test_gc_ignore_registry_and_phase_metadata(void) {
                          gc->gcLastCompletedRunningStatus ==
                              ZR_GARBAGE_COLLECT_RUNNING_STATUS_SWEEP_END);
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, ignoredObject));
+        TEST_ASSERT_TRUE(gc_test_collector_contains_object(state, ignoredObject));
     }
 
     destroyTestState(state);
@@ -1732,7 +1751,8 @@ static void test_gc_pinning_marks_object_non_moving(void) {
     TEST_ASSERT_NOT_NULL(state);
 
     {
-        SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+        SZrObjectModule *pinnedModule = ZrCore_Module_Create(state);
+        SZrRawObject *object = ZR_CAST_RAW_OBJECT_AS_SUPER(pinnedModule);
 
         TEST_ASSERT_NOT_NULL(object);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PIN_KIND_NONE, object->garbageCollectMark.pinFlags);
@@ -1770,7 +1790,7 @@ static void test_gc_region_allocator_reuses_emptied_eden_region_after_permanent_
 
     {
         SZrGarbageCollector *gc = state->global->garbageCollector;
-        TZrSize objectSize = sizeof(SZrRawObject);
+        TZrSize objectSize = sizeof(SZrObject);
         SZrRawObject *object;
         TZrUInt32 edenRegionId;
         TZrUInt32 permanentRegionId;
@@ -1890,7 +1910,7 @@ static void test_gc_region_allocator_reassigns_pinned_object_region(void) {
 
     {
         SZrGarbageCollector *gc = state->global->garbageCollector;
-        TZrSize objectSize = sizeof(SZrRawObject);
+        TZrSize objectSize = sizeof(SZrObject);
         SZrRawObject *object;
         SZrRawObject *reusedObject;
         TZrUInt32 edenRegionId;
@@ -3168,4 +3188,3 @@ int main(void) {
     
     return UNITY_END();
 }
-

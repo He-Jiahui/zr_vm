@@ -6,6 +6,9 @@
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 void free_resolved_call_signature(SZrState *state, SZrResolvedCallSignature *signature);
+TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
+                                                         const SZrInferredType *iterableType,
+                                                         SZrInferredType *outType);
 static TZrBool semantic_type_from_ast(SZrState *state,
                                       SZrSemanticAnalyzer *analyzer,
                                       const SZrType *typeNode,
@@ -170,6 +173,48 @@ static void semantic_typecheck_register_parameter_bindings(SZrState *state,
                                                      param->typeInfo,
                                                      ZR_NULL);
     }
+}
+
+static void semantic_typecheck_register_foreach_binding(SZrState *state,
+                                                        SZrSemanticAnalyzer *analyzer,
+                                                        SZrForeachLoop *foreachLoop,
+                                                        SZrFileRange diagnosticLocation) {
+    SZrString *name;
+    SZrInferredType bindingType;
+    TZrBool hasBindingType = ZR_FALSE;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || foreachLoop == ZR_NULL ||
+        analyzer->compilerState == ZR_NULL || analyzer->compilerState->typeEnv == ZR_NULL) {
+        return;
+    }
+
+    name = ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(state, foreachLoop->pattern);
+    if (name == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(state, &bindingType, ZR_VALUE_TYPE_OBJECT);
+    if (foreachLoop->typeInfo != ZR_NULL) {
+        hasBindingType = semantic_type_from_ast(state, analyzer, foreachLoop->typeInfo, &bindingType);
+    } else if (foreachLoop->expr != ZR_NULL) {
+        SZrInferredType iterableType;
+
+        ZrParser_InferredType_Init(state, &iterableType, ZR_VALUE_TYPE_OBJECT);
+        if (semantic_infer_node_type(state, analyzer, foreachLoop->expr, &iterableType)) {
+            hasBindingType =
+                bind_foreach_element_type_from_inferred_iterable(analyzer->compilerState, &iterableType, &bindingType);
+        }
+        ZrParser_InferredType_Free(state, &iterableType);
+    }
+
+    if (!hasBindingType) {
+        semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+        ZrParser_InferredType_Free(state, &bindingType);
+        return;
+    }
+
+    ZrParser_TypeEnvironment_RegisterVariable(state, analyzer->compilerState->typeEnv, name, &bindingType);
+    ZrParser_InferredType_Free(state, &bindingType);
 }
 
 static SZrString *semantic_typecheck_extract_owner_type_name(SZrAstNode *ownerTypeNode) {
@@ -1381,8 +1426,61 @@ static TZrBool semantic_is_boolean_literal(SZrAstNode *node, TZrBool *outValue) 
 }
 
 static TZrBool semantic_statement_definitely_exits(SZrAstNode *node) {
-    return node != ZR_NULL &&
-           (node->type == ZR_AST_RETURN_STATEMENT || node->type == ZR_AST_THROW_STATEMENT);
+    if (node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_RETURN_STATEMENT:
+        case ZR_AST_THROW_STATEMENT:
+            return ZR_TRUE;
+
+        case ZR_AST_BLOCK:
+            if (node->data.block.body != ZR_NULL && node->data.block.body->nodes != ZR_NULL) {
+                for (TZrSize index = 0; index < node->data.block.body->count; index++) {
+                    if (semantic_statement_definitely_exits(node->data.block.body->nodes[index])) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+            return ZR_FALSE;
+
+        case ZR_AST_IF_EXPRESSION:
+            return node->data.ifExpression.thenExpr != ZR_NULL &&
+                   node->data.ifExpression.elseExpr != ZR_NULL &&
+                   semantic_statement_definitely_exits(node->data.ifExpression.thenExpr) &&
+                   semantic_statement_definitely_exits(node->data.ifExpression.elseExpr);
+
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT: {
+            SZrTryCatchFinallyStatement *tryStatement = &node->data.tryCatchFinallyStatement;
+            TZrBool allCatchClausesExit = ZR_TRUE;
+
+            if (tryStatement->finallyBlock != ZR_NULL &&
+                semantic_statement_definitely_exits(tryStatement->finallyBlock)) {
+                return ZR_TRUE;
+            }
+
+            if (!semantic_statement_definitely_exits(tryStatement->block)) {
+                return ZR_FALSE;
+            }
+
+            if (tryStatement->catchClauses != ZR_NULL) {
+                for (TZrSize index = 0; index < tryStatement->catchClauses->count; index++) {
+                    SZrAstNode *catchNode = tryStatement->catchClauses->nodes[index];
+                    if (catchNode == ZR_NULL || catchNode->type != ZR_AST_CATCH_CLAUSE ||
+                        !semantic_statement_definitely_exits(catchNode->data.catchClause.block)) {
+                        allCatchClausesExit = ZR_FALSE;
+                        break;
+                    }
+                }
+            }
+
+            return allCatchClausesExit;
+        }
+
+        default:
+            return ZR_FALSE;
+    }
 }
 
 static const SZrType *semantic_find_enclosing_return_type(SZrSymbolTable *table, SZrFileRange position) {
@@ -2008,6 +2106,23 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->cond);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->step);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->block);
+            break;
+        }
+
+        case ZR_AST_FOREACH_LOOP: {
+            SZrForeachLoop *foreachLoop = &node->data.foreachLoop;
+            SZrTypeEnvironment *savedTypeEnv =
+                semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
+
+            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, foreachLoop->expr);
+            semantic_typecheck_register_foreach_binding(state,
+                                                        analyzer,
+                                                        foreachLoop,
+                                                        foreachLoop->pattern != ZR_NULL
+                                                            ? foreachLoop->pattern->location
+                                                            : node->location);
+            ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, foreachLoop->block);
+            semantic_typecheck_pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
             break;
         }
         

@@ -3,6 +3,7 @@
 //
 
 #include "semantic_analyzer_internal.h"
+#include "lsp_interface_internal.h"
 
 SZrString *ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(SZrState *state, SZrAstNode *node) {
     if (node == ZR_NULL || state == ZR_NULL) {
@@ -77,10 +78,7 @@ void ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(SZrState 
         return;
     }
 
-    range = symbol->selectionRange;
-    if (range.start.offset == 0 && range.end.offset == 0) {
-        range = symbol->location;
-    }
+    range = ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol);
 
     ZrLanguageServer_ReferenceTracker_AddReference(state,
                                                    analyzer->referenceTracker,

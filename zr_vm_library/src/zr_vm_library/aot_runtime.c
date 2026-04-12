@@ -855,6 +855,7 @@ static TZrBool aot_runtime_build_function_table(SZrState *state,
     }
 
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
+    ZrCore_Function_ClearChildOwnerLinks(function);
     capacity = aot_runtime_count_function_graph_capacity(state, function);
     if (capacity == 0) {
         return ZR_TRUE;

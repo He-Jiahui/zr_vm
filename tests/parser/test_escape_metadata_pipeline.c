@@ -24,6 +24,8 @@ void test_runtime_returned_callable_capture_marks_closed_capture_object(void);
 void test_runtime_global_callable_capture_marks_closed_capture_object(void);
 void test_binary_roundtrip_runtime_returned_callable_capture_preserves_closed_capture_escape_flags(void);
 void test_binary_roundtrip_runtime_global_callable_capture_preserves_closed_capture_escape_flags(void);
+void test_runtime_compiled_child_functions_detach_owner_links(void);
+void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void);
 
 static void fixture_reader_close_noop(SZrState *state, TZrPtr customData) {
     ZR_UNUSED_PARAMETER(state);
@@ -269,7 +271,6 @@ static void assert_runtime_returned_closure_capture_has_escape_flags(const TZrCh
     TEST_ASSERT_NOT_NULL(captureValue);
     assert_runtime_result_has_escape_flags(captureValue, expectedCaptureFlags);
 
-    ZrCore_Function_Free(state, function);
     if (binaryPathOrNull != ZR_NULL) {
         remove(binaryPathOrNull);
     }
@@ -298,6 +299,19 @@ static const SZrFunction *find_named_function_recursive(const SZrFunction *funct
     }
 
     return ZR_NULL;
+}
+
+static void assert_runtime_child_owner_links_detached_recursive(const SZrFunction *function) {
+    TZrUInt32 index;
+
+    TEST_ASSERT_NOT_NULL(function);
+
+    for (index = 0; index < function->childFunctionLength; index++) {
+        const SZrFunction *childFunction = &function->childFunctionList[index];
+
+        TEST_ASSERT_NULL(childFunction->ownerFunction);
+        assert_runtime_child_owner_links_detached_recursive(childFunction);
+    }
 }
 
 static const SZrFunctionLocalVariable *find_local_variable_by_name(const SZrFunction *function, const char *name) {
@@ -799,6 +813,69 @@ void test_binary_roundtrip_preserves_escape_metadata_summaries(void) {
     ZrCore_Io_Free(state->global, io);
     free(binaryBytes);
     remove(binaryPath);
+    ZrTests_Runtime_State_Destroy(state);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+void test_runtime_compiled_child_functions_detach_owner_links(void) {
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Runtime Compiled Child Functions Detach Owner Links";
+    SZrState *state;
+    SZrFunction *runtimeFunction;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("runtime child-function owner links",
+                 "Testing that runtime-compiled child function graphs clear ownerFunction back-links so nested callables do not retain stale parent pointers across GC");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(state->global));
+
+    runtimeFunction = compile_escape_metadata_fixture(state);
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+    assert_runtime_child_owner_links_detached_recursive(runtimeFunction);
+
+    ZrCore_Function_Free(state, runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+void test_binary_roundtrip_runtime_child_functions_detach_owner_links(void) {
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Binary Roundtrip Runtime Child Functions Detach Owner Links";
+    const TZrChar *binaryPath = "escape_metadata_owner_links_roundtrip.zro";
+    SZrState *state;
+    SZrFunction *sourceFunction;
+    SZrFunction *runtimeFunction;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("runtime child-function owner links roundtrip",
+                 "Testing that .zro runtime loading also clears child ownerFunction back-links so imported nested callables do not keep stale parent references");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(state->global));
+
+    sourceFunction = compile_escape_metadata_fixture(state);
+    TEST_ASSERT_NOT_NULL(sourceFunction);
+    TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, sourceFunction, binaryPath));
+
+    runtimeFunction = load_runtime_entry_from_binary_file(state, binaryPath);
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+    assert_runtime_child_owner_links_detached_recursive(runtimeFunction);
+
+    ZrCore_Function_Free(state, runtimeFunction);
+    ZrCore_Function_Free(state, sourceFunction);
     ZrTests_Runtime_State_Destroy(state);
 
     timer.endTime = clock();

@@ -281,10 +281,81 @@ static void virtual_documents_format_parameters(const ZrLibParameterDescriptor *
     }
 }
 
+static const TZrChar *virtual_documents_find_type_hint_signature(const ZrLibModuleDescriptor *descriptor,
+                                                                 const TZrChar *symbolName,
+                                                                 const TZrChar *symbolKind) {
+    if (descriptor == ZR_NULL || symbolName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < descriptor->typeHintCount; index++) {
+        const ZrLibTypeHintDescriptor *typeHint = &descriptor->typeHints[index];
+        if (typeHint->symbolName == ZR_NULL ||
+            strcmp(typeHint->symbolName, symbolName) != 0 ||
+            (symbolKind != ZR_NULL && typeHint->symbolKind != ZR_NULL &&
+             strcmp(typeHint->symbolKind, symbolKind) != 0)) {
+            continue;
+        }
+
+        if (typeHint->signature != ZR_NULL && typeHint->signature[0] != '\0') {
+            return typeHint->signature;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool virtual_documents_try_extract_parameters_from_signature(const TZrChar *signatureText,
+                                                                       TZrChar *buffer,
+                                                                       TZrSize bufferSize) {
+    const TZrChar *openParen;
+    const TZrChar *cursor;
+    TZrInt32 depth = 0;
+    TZrSize parameterLength;
+
+    if (buffer != ZR_NULL && bufferSize > 0) {
+        buffer[0] = '\0';
+    }
+    if (signatureText == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    openParen = strchr(signatureText, '(');
+    if (openParen == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (cursor = openParen; *cursor != '\0'; cursor++) {
+        if (*cursor == '(') {
+            depth++;
+            continue;
+        }
+        if (*cursor != ')') {
+            continue;
+        }
+
+        depth--;
+        if (depth != 0) {
+            continue;
+        }
+
+        parameterLength = (TZrSize)(cursor - openParen - 1);
+        if (parameterLength + 1 > bufferSize) {
+            return ZR_FALSE;
+        }
+        memcpy(buffer, openParen + 1, parameterLength);
+        buffer[parameterLength] = '\0';
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 static void virtual_documents_format_parameters_with_arity(const ZrLibParameterDescriptor *parameters,
                                                            TZrSize parameterCount,
                                                            TZrUInt16 minArgumentCount,
                                                            TZrUInt16 maxArgumentCount,
+                                                           const TZrChar *signatureHint,
                                                            TZrChar *buffer,
                                                            TZrSize bufferSize) {
     virtual_documents_format_parameters(parameters, parameterCount, buffer, bufferSize);
@@ -295,6 +366,10 @@ static void virtual_documents_format_parameters_with_arity(const ZrLibParameterD
         return;
     }
     if (parameterCount > 0) {
+        return;
+    }
+    if (signatureHint != ZR_NULL &&
+        virtual_documents_try_extract_parameters_from_signature(signatureHint, buffer, bufferSize)) {
         return;
     }
     if (maxArgumentCount == 0) {
@@ -412,11 +487,14 @@ static void virtual_documents_append_functions(SZrLspVirtualBuilder *builder,
 
     for (TZrSize index = 0; descriptor != ZR_NULL && index < descriptor->functionCount; index++) {
         const ZrLibFunctionDescriptor *functionDescriptor = &descriptor->functions[index];
+        const TZrChar *signatureHint =
+            virtual_documents_find_type_hint_signature(descriptor, functionDescriptor->name, "function");
 
         virtual_documents_format_parameters_with_arity(functionDescriptor->parameters,
                                                        functionDescriptor->parameterCount,
                                                        functionDescriptor->minArgumentCount,
                                                        functionDescriptor->maxArgumentCount,
+                                                       signatureHint,
                                                        parameters,
                                                        sizeof(parameters));
         snprintf(suffix,
@@ -467,6 +545,7 @@ static void virtual_documents_append_type_methods(SZrLspVirtualBuilder *builder,
                                                         methodDescriptor->parameterCount,
                                                         methodDescriptor->minArgumentCount,
                                                         methodDescriptor->maxArgumentCount,
+                                                        ZR_NULL,
                                                         parameters,
                                                         sizeof(parameters));
         snprintf(prefix,
@@ -501,6 +580,7 @@ static void virtual_documents_append_type_meta_methods(SZrLspVirtualBuilder *bui
                                                          metaMethodDescriptor->parameterCount,
                                                          metaMethodDescriptor->minArgumentCount,
                                                          metaMethodDescriptor->maxArgumentCount,
+                                                         ZR_NULL,
                                                          parameters,
                                                          sizeof(parameters));
         snprintf(suffix,

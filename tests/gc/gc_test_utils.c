@@ -8,6 +8,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
 
 // 简单的测试分配器
@@ -72,6 +73,12 @@ void destroyTestState(SZrState* state) {
 // 创建测试对象
 SZrRawObject* createTestObject(SZrState* state, EZrValueType type, TZrSize size) {
     if (!state || !state->global) return NULL;
+
+    if (type == ZR_VALUE_TYPE_OBJECT && size < sizeof(SZrObject)) {
+        size = sizeof(SZrObject);
+    } else if (type == ZR_VALUE_TYPE_STRING && size < sizeof(SZrString)) {
+        size = sizeof(SZrString);
+    }
     
     return ZrCore_RawObject_New(state, type, size, ZR_FALSE);
 }

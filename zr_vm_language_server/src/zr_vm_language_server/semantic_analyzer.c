@@ -896,6 +896,72 @@ static const SZrInferredType *semantic_symbol_display_type_info(SZrSemanticAnaly
     return symbol->typeInfo;
 }
 
+static SZrString *semantic_extract_direct_identifier_name(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return node->data.identifier.name;
+    }
+
+    if (node->type == ZR_AST_PRIMARY_EXPRESSION &&
+        node->data.primaryExpression.property != ZR_NULL &&
+        node->data.primaryExpression.property->type == ZR_AST_IDENTIFIER_LITERAL &&
+        (node->data.primaryExpression.members == ZR_NULL ||
+         node->data.primaryExpression.members->count == 0)) {
+        return node->data.primaryExpression.property->data.identifier.name;
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool semantic_ast_can_supply_signature(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (node->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+        case ZR_AST_CLASS_METHOD:
+        case ZR_AST_STRUCT_METHOD:
+        case ZR_AST_CLASS_META_FUNCTION:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static SZrSymbol *semantic_resolve_callable_signature_symbol(SZrSemanticAnalyzer *analyzer,
+                                                             SZrSymbol *symbol,
+                                                             const SZrInferredType *displayTypeInfo) {
+    SZrString *sourceName;
+    SZrFileRange lookupPosition;
+
+    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL || symbol == ZR_NULL ||
+        displayTypeInfo == ZR_NULL || displayTypeInfo->baseType != ZR_VALUE_TYPE_CLOSURE ||
+        symbol->astNode == ZR_NULL || symbol->astNode->type != ZR_AST_VARIABLE_DECLARATION) {
+        return ZR_NULL;
+    }
+
+    sourceName = semantic_extract_direct_identifier_name(symbol->astNode->data.variableDeclaration.value);
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    lookupPosition = symbol->astNode->data.variableDeclaration.value != ZR_NULL
+                         ? symbol->astNode->data.variableDeclaration.value->location
+                         : symbol->location;
+    symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, sourceName, lookupPosition);
+    if (symbol != ZR_NULL && semantic_ast_can_supply_signature(symbol->astNode)) {
+        return symbol;
+    }
+
+    return ZR_NULL;
+}
+
 static const TZrChar *semantic_symbol_kind_text(EZrSymbolType type) {
     switch (type) {
         case ZR_SYMBOL_FUNCTION: return "function";
@@ -2073,6 +2139,10 @@ static void semantic_build_symbol_detail(SZrState *state,
                                                               ? symbol->accessModifier
                                                               : ZR_ACCESS_PRIVATE);
     const SZrInferredType *displayTypeInfo = semantic_symbol_display_type_info(analyzer, symbol);
+    SZrSymbol *signatureSymbol = semantic_resolve_callable_signature_symbol(analyzer, symbol, displayTypeInfo);
+    const SZrInferredType *signatureTypeInfo =
+        signatureSymbol != ZR_NULL ? semantic_symbol_display_type_info(analyzer, signatureSymbol) : displayTypeInfo;
+    SZrAstNode *signatureNode = signatureSymbol != ZR_NULL ? signatureSymbol->astNode : (symbol != ZR_NULL ? symbol->astNode : ZR_NULL);
 
     if (buffer == ZR_NULL || bufferSize == 0) {
         return;
@@ -2081,11 +2151,11 @@ static void semantic_build_symbol_detail(SZrState *state,
     buffer[0] = '\0';
     if (state != ZR_NULL &&
         symbol != ZR_NULL &&
-        symbol->astNode != ZR_NULL &&
+        signatureNode != ZR_NULL &&
         semantic_build_ast_signature(state,
                                      compilerState,
-                                     displayTypeInfo,
-                                     symbol->astNode,
+                                     signatureTypeInfo,
+                                     signatureNode,
                                      signatureBuffer,
                                      sizeof(signatureBuffer))) {
         snprintf(buffer, bufferSize, "%s %s", accessText, signatureBuffer);
@@ -2642,6 +2712,14 @@ SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *an
         return ZR_NULL;
     }
 
+    hoverTypeInfo = semantic_find_type_node_at_position(analyzer->ast, position);
+    if (hoverTypeInfo != ZR_NULL) {
+        symbol = semantic_lookup_type_symbol_at_position(analyzer->state, analyzer, hoverTypeInfo, position);
+        if (symbol != ZR_NULL) {
+            return symbol;
+        }
+    }
+
     if (analyzer->referenceTracker != ZR_NULL) {
         reference = ZrLanguageServer_ReferenceTracker_FindReferenceAt(analyzer->referenceTracker, position);
         if (reference != ZR_NULL) {
@@ -2652,14 +2730,6 @@ SZrSymbol *ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(SZrSemanticAnalyzer *an
     symbol = ZrLanguageServer_SymbolTable_FindDefinition(analyzer->symbolTable, position);
     if (symbol != ZR_NULL) {
         return symbol;
-    }
-
-    hoverTypeInfo = semantic_find_type_node_at_position(analyzer->ast, position);
-    if (hoverTypeInfo != ZR_NULL) {
-        symbol = semantic_lookup_type_symbol_at_position(analyzer->state, analyzer, hoverTypeInfo, position);
-        if (symbol != ZR_NULL) {
-            return symbol;
-        }
     }
 
     return ZR_NULL;
@@ -2724,6 +2794,9 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
     const TZrChar *resolvedTypeText = ZR_NULL;
     TZrBool hasResolvedType = ZR_FALSE;
     const SZrInferredType *displayTypeInfo = ZR_NULL;
+    SZrSymbol *signatureSymbol = ZR_NULL;
+    const SZrInferredType *signatureTypeInfo = ZR_NULL;
+    SZrAstNode *signatureNode = ZR_NULL;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -2761,6 +2834,10 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
     kindText = semantic_symbol_kind_text_for_symbol(analyzer, symbol);
     accessText = semantic_access_modifier_text(symbol->accessModifier);
     displayTypeInfo = semantic_symbol_display_type_info(analyzer, symbol);
+    signatureSymbol = semantic_resolve_callable_signature_symbol(analyzer, symbol, displayTypeInfo);
+    signatureTypeInfo = signatureSymbol != ZR_NULL ? semantic_symbol_display_type_info(analyzer, signatureSymbol)
+                                                   : displayTypeInfo;
+    signatureNode = signatureSymbol != ZR_NULL ? signatureSymbol->astNode : symbol->astNode;
     if (semantic_symbol_is_ffi_extern(analyzer, symbol)) {
         sourceText = "ffi extern";
     }
@@ -2784,8 +2861,8 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(SZrState *state,
     }
     if (semantic_build_ast_signature(state,
                                      analyzer->compilerState,
-                                     displayTypeInfo,
-                                     symbol->astNode,
+                                     signatureTypeInfo,
+                                     signatureNode,
                                      signatureBuffer,
                                      sizeof(signatureBuffer))) {
         if (hasResolvedType) {

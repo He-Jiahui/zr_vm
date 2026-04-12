@@ -101,4 +101,9 @@ ZR_PARSER_API TZrBool ZrParser_LiteralRange_Check(SZrCompilerState *cs, SZrAstNo
 // 数组索引边界检查函数
 ZR_PARSER_API TZrBool ZrParser_ArrayIndexBounds_Check(SZrCompilerState *cs, SZrAstNode *indexExpr, const SZrInferredType *arrayType, SZrFileRange location);
 
+// 从 foreach 可迭代对象推断元素类型
+ZR_PARSER_API TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
+                                                                       const SZrInferredType *iterableType,
+                                                                       SZrInferredType *outType);
+
 #endif //ZR_VM_PARSER_TYPE_INFERENCE_H

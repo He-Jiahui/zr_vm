@@ -506,9 +506,10 @@ ZR_CORE_API void ZrCore_Function_StackAnchorInit(struct SZrState *state,
                                            SZrFunctionStackAnchor *anchor);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_StackAnchorRestore(struct SZrState *state,
-                                                               const SZrFunctionStackAnchor *anchor);
+                                                                const SZrFunctionStackAnchor *anchor);
 
 ZR_CORE_API void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *function);
+ZR_CORE_API void ZrCore_Function_ClearChildOwnerLinks(SZrFunction *function);
 ZR_CORE_API void ZrCore_Function_DetachOwnedBuffers(SZrFunction *function);
 
 ZR_CORE_API TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(const SZrFunction *function);

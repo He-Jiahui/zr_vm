@@ -1991,9 +1991,9 @@ static TZrBool prototype_bind_protocol_argument_recursive(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
-TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
-                                                         const SZrInferredType *iterableType,
-                                                         SZrInferredType *outType) {
+ZR_PARSER_API TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
+                                                                       const SZrInferredType *iterableType,
+                                                                       SZrInferredType *outType) {
     static const EZrProtocolId kForeachProtocols[] = {
             ZR_PROTOCOL_ID_ITERABLE,
             ZR_PROTOCOL_ID_ARRAY_LIKE,

@@ -293,6 +293,7 @@ typedef struct SZrGenericDeclaration {
 // 参数
 typedef struct SZrParameter {
     SZrIdentifier *name;
+    SZrFileRange nameLocation;
     SZrType *typeInfo; // 可选
     SZrAstNode *defaultValue; // 可选表达式
     TZrBool isConst; // 是否为 const 参数

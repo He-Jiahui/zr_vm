@@ -12,6 +12,11 @@ endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/zr_vm_test_host_env.cmake")
 
+# Passed from tests/CMakeLists.txt add_test; default ON so manual -P runs stay full-suite.
+if (NOT DEFINED ZR_VM_BUILD_AOT)
+    set(ZR_VM_BUILD_AOT ON)
+endif ()
+
 if (DEFINED TIER AND NOT TIER STREQUAL "")
     string(TOLOWER "${TIER}" CLI_REQUESTED_TIER)
 elseif (DEFINED ENV{ZR_VM_TEST_TIER} AND NOT "$ENV{ZR_VM_TEST_TIER}" STREQUAL "")
@@ -515,7 +520,7 @@ if (run_project_module_interp)
 endif()
 
 cli_case_matches_tier("smoke;core;stress" run_project_module_aot_error)
-if (run_project_module_aot_error)
+if (run_project_module_aot_error AND ZR_VM_BUILD_AOT)
     message("---- project_module_aot_error")
     cli_copy_fixture("cli_args" cli_args_module_aot_dir)
     cli_run_split("project_module_aot_error"
@@ -621,7 +626,7 @@ if (run_compile_passthrough_error)
 endif()
 
 cli_case_matches_tier("smoke;core;stress" run_compile_aot_c)
-if (run_compile_aot_c)
+if (run_compile_aot_c AND ZR_VM_BUILD_AOT)
     message("---- compile_aot_c_and_run")
     cli_copy_fixture("hello_world" compile_aot_c_dir)
     file(REMOVE_RECURSE "${compile_aot_c_dir}/bin")
@@ -658,7 +663,7 @@ if (run_compile_aot_c)
 endif()
 
 cli_case_matches_tier("core;stress" run_aot_c_without_zro)
-if (run_aot_c_without_zro)
+if (run_aot_c_without_zro AND ZR_VM_BUILD_AOT)
     message("---- run_aot_c_without_zro")
     cli_copy_fixture("hello_world" no_zro_aot_c_dir)
     file(REMOVE_RECURSE "${no_zro_aot_c_dir}/bin")
@@ -690,7 +695,7 @@ if (run_aot_c_without_zro)
 endif()
 
 cli_case_matches_tier("core;stress" run_compile_aot_c_binary_import)
-if (run_compile_aot_c_binary_import)
+if (run_compile_aot_c_binary_import AND ZR_VM_BUILD_AOT)
     message("---- compile_aot_c_binary_import")
     cli_copy_fixture("import_binary" binary_import_aot_c_dir)
     file(REMOVE_RECURSE "${binary_import_aot_c_dir}/bin")
@@ -750,7 +755,7 @@ if (run_compile_aot_c_binary_import)
 endif()
 
 cli_case_matches_tier("core;stress" run_compile_aot_c_binary_const_import)
-if (run_compile_aot_c_binary_const_import)
+if (run_compile_aot_c_binary_const_import AND ZR_VM_BUILD_AOT)
     message("---- compile_aot_c_binary_const_import")
     cli_copy_fixture("import_binary_const" binary_const_import_aot_c_dir)
     file(REMOVE_RECURSE "${binary_const_import_aot_c_dir}/bin")
@@ -804,7 +809,7 @@ if (run_compile_aot_c_binary_const_import)
 endif()
 
 cli_case_matches_tier("core;stress" run_compile_aot_c_unsupported_lowering)
-if (run_compile_aot_c_unsupported_lowering)
+if (run_compile_aot_c_unsupported_lowering AND ZR_VM_BUILD_AOT)
     message("---- compile_aot_c_unsupported_lowering")
     cli_copy_fixture("hello_world" unsupported_aot_c_dir)
     file(REMOVE_RECURSE "${unsupported_aot_c_dir}/bin")
@@ -832,7 +837,7 @@ if (run_compile_aot_c_unsupported_lowering)
 endif()
 
 cli_case_matches_tier("core;stress" run_aot_c_missing_artifacts)
-if (run_aot_c_missing_artifacts)
+if (run_aot_c_missing_artifacts AND ZR_VM_BUILD_AOT)
     message("---- run_aot_c_missing_artifacts")
     cli_copy_fixture("hello_world" missing_aot_c_dir)
     file(REMOVE_RECURSE "${missing_aot_c_dir}/bin")
@@ -853,7 +858,7 @@ if (run_aot_c_missing_artifacts)
 endif()
 
 cli_case_matches_tier("core;stress" run_aot_c_missing_descriptor_symbol)
-if (run_aot_c_missing_descriptor_symbol)
+if (run_aot_c_missing_descriptor_symbol AND ZR_VM_BUILD_AOT)
     if (CLI_RUNTIME_CORE_LIBRARY STREQUAL "")
         message(FATAL_ERROR "run_aot_c_missing_descriptor_symbol requires a resolvable zr_vm_core shared library.")
     endif()
@@ -891,7 +896,7 @@ if (run_aot_c_missing_descriptor_symbol)
 endif()
 
 cli_case_matches_tier("core;stress" run_aot_c_source_hash_mismatch)
-if (run_aot_c_source_hash_mismatch)
+if (run_aot_c_source_hash_mismatch AND ZR_VM_BUILD_AOT)
     message("---- run_aot_c_source_hash_mismatch")
     cli_copy_fixture("hello_world" source_hash_mismatch_aot_c_dir)
     file(REMOVE_RECURSE "${source_hash_mismatch_aot_c_dir}/bin")
@@ -923,7 +928,7 @@ if (run_aot_c_source_hash_mismatch)
 endif()
 
 cli_case_matches_tier("smoke;core;stress" run_compile_aot_llvm)
-if (run_compile_aot_llvm)
+if (run_compile_aot_llvm AND ZR_VM_BUILD_AOT)
     message("---- compile_aot_llvm_and_run")
     cli_copy_fixture("hello_world" compile_aot_llvm_dir)
     file(REMOVE_RECURSE "${compile_aot_llvm_dir}/bin")
@@ -963,7 +968,7 @@ if (run_compile_aot_llvm)
 endif()
 
 cli_case_matches_tier("core;stress" run_aot_llvm_missing_artifacts)
-if (run_aot_llvm_missing_artifacts)
+if (run_aot_llvm_missing_artifacts AND ZR_VM_BUILD_AOT)
     message("---- run_aot_llvm_missing_artifacts")
     cli_copy_fixture("hello_world" missing_aot_llvm_dir)
     file(REMOVE_RECURSE "${missing_aot_llvm_dir}/bin")
@@ -984,38 +989,40 @@ if (run_aot_llvm_missing_artifacts)
 endif()
 
 cli_case_matches_tier("core;stress" run_aot_llvm_source_hash_mismatch)
-if (run_aot_llvm_source_hash_mismatch AND CLI_AOT_LLVM_HOST_AVAILABLE)
-    message("---- run_aot_llvm_source_hash_mismatch")
-    cli_copy_fixture("hello_world" source_hash_mismatch_aot_llvm_dir)
-    file(REMOVE_RECURSE "${source_hash_mismatch_aot_llvm_dir}/bin")
-    cli_run("compile_aot_llvm_source_hash_mismatch"
-            compile_aot_llvm_source_hash_mismatch_output
-            compile_aot_llvm_source_hash_mismatch_result
-            "${CLI_EXE}"
-            "--compile"
-            "${source_hash_mismatch_aot_llvm_dir}/hello_world.zrp"
-            "--emit-aot-llvm")
-    cli_assert_success("compile_aot_llvm_source_hash_mismatch"
-                       compile_aot_llvm_source_hash_mismatch_result
-                       compile_aot_llvm_source_hash_mismatch_output)
-    cli_write_file("${source_hash_mismatch_aot_llvm_dir}/src/main.zr" "return \"tampered llvm source\";\n")
-    cli_run("run_aot_llvm_source_hash_mismatch"
-            run_aot_llvm_source_hash_mismatch_output
-            run_aot_llvm_source_hash_mismatch_result
-            "${CLI_EXE}"
-            "--execution-mode"
-            "aot_llvm"
-            "--require-aot-path"
-            "${source_hash_mismatch_aot_llvm_dir}/hello_world.zrp")
-    cli_assert_failure("run_aot_llvm_source_hash_mismatch"
-                       run_aot_llvm_source_hash_mismatch_result
-                       run_aot_llvm_source_hash_mismatch_output)
-    cli_assert_contains("run_aot_llvm_source_hash_mismatch"
-                        run_aot_llvm_source_hash_mismatch_output
-                        "AOT source hash mismatch for module 'main'")
-elseif (run_aot_llvm_source_hash_mismatch)
-    message("---- run_aot_llvm_source_hash_mismatch (skipped: AOT LLVM host adapter unavailable)")
-endif()
+if (run_aot_llvm_source_hash_mismatch AND ZR_VM_BUILD_AOT)
+    if (CLI_AOT_LLVM_HOST_AVAILABLE)
+        message("---- run_aot_llvm_source_hash_mismatch")
+        cli_copy_fixture("hello_world" source_hash_mismatch_aot_llvm_dir)
+        file(REMOVE_RECURSE "${source_hash_mismatch_aot_llvm_dir}/bin")
+        cli_run("compile_aot_llvm_source_hash_mismatch"
+                compile_aot_llvm_source_hash_mismatch_output
+                compile_aot_llvm_source_hash_mismatch_result
+                "${CLI_EXE}"
+                "--compile"
+                "${source_hash_mismatch_aot_llvm_dir}/hello_world.zrp"
+                "--emit-aot-llvm")
+        cli_assert_success("compile_aot_llvm_source_hash_mismatch"
+                           compile_aot_llvm_source_hash_mismatch_result
+                           compile_aot_llvm_source_hash_mismatch_output)
+        cli_write_file("${source_hash_mismatch_aot_llvm_dir}/src/main.zr" "return \"tampered llvm source\";\n")
+        cli_run("run_aot_llvm_source_hash_mismatch"
+                run_aot_llvm_source_hash_mismatch_output
+                run_aot_llvm_source_hash_mismatch_result
+                "${CLI_EXE}"
+                "--execution-mode"
+                "aot_llvm"
+                "--require-aot-path"
+                "${source_hash_mismatch_aot_llvm_dir}/hello_world.zrp")
+        cli_assert_failure("run_aot_llvm_source_hash_mismatch"
+                           run_aot_llvm_source_hash_mismatch_result
+                           run_aot_llvm_source_hash_mismatch_output)
+        cli_assert_contains("run_aot_llvm_source_hash_mismatch"
+                            run_aot_llvm_source_hash_mismatch_output
+                            "AOT source hash mismatch for module 'main'")
+    else ()
+        message("---- run_aot_llvm_source_hash_mismatch (skipped: AOT LLVM host adapter unavailable)")
+    endif ()
+endif ()
 
 cli_case_matches_tier("smoke;core;stress" run_compile_recursive)
 if (run_compile_recursive)
@@ -1277,47 +1284,49 @@ if (run_aot_module_graph_roundtrip)
 endif()
 
 cli_case_matches_tier("smoke;core;stress" run_aot_module_graph_llvm_binary_import)
-if (run_aot_module_graph_llvm_binary_import AND CLI_AOT_LLVM_HOST_AVAILABLE)
-    message("---- aot_module_graph_pipeline_llvm_binary_import")
-    cli_copy_fixture("aot_module_graph_pipeline" aot_graph_llvm_binary_dir)
-    file(REMOVE_RECURSE "${aot_graph_llvm_binary_dir}/bin")
-    cli_prepare_binary_module("aot_module_graph_pipeline_llvm_binary_import"
-                              "${aot_graph_llvm_binary_dir}"
-                              "fixtures/graph_binary_stage_source.zr"
-                              "graph_binary_stage")
+if (run_aot_module_graph_llvm_binary_import AND ZR_VM_BUILD_AOT)
+    if (CLI_AOT_LLVM_HOST_AVAILABLE)
+        message("---- aot_module_graph_pipeline_llvm_binary_import")
+        cli_copy_fixture("aot_module_graph_pipeline" aot_graph_llvm_binary_dir)
+        file(REMOVE_RECURSE "${aot_graph_llvm_binary_dir}/bin")
+        cli_prepare_binary_module("aot_module_graph_pipeline_llvm_binary_import"
+                                  "${aot_graph_llvm_binary_dir}"
+                                  "fixtures/graph_binary_stage_source.zr"
+                                  "graph_binary_stage")
 
-    cli_run("aot_module_graph_pipeline_llvm_binary_compile"
-            aot_graph_llvm_binary_compile_output
-            aot_graph_llvm_binary_compile_result
-            "${CLI_EXE}"
-            "--compile"
-            "${aot_graph_llvm_binary_dir}/aot_module_graph_pipeline.zrp"
-            "--emit-aot-llvm")
-    cli_assert_success("aot_module_graph_pipeline_llvm_binary_compile"
-                       aot_graph_llvm_binary_compile_result
-                       aot_graph_llvm_binary_compile_output)
+        cli_run("aot_module_graph_pipeline_llvm_binary_compile"
+                aot_graph_llvm_binary_compile_output
+                aot_graph_llvm_binary_compile_result
+                "${CLI_EXE}"
+                "--compile"
+                "${aot_graph_llvm_binary_dir}/aot_module_graph_pipeline.zrp"
+                "--emit-aot-llvm")
+        cli_assert_success("aot_module_graph_pipeline_llvm_binary_compile"
+                           aot_graph_llvm_binary_compile_result
+                           aot_graph_llvm_binary_compile_output)
 
-    cli_run("aot_module_graph_pipeline_llvm_binary_run"
-            aot_graph_llvm_binary_run_output
-            aot_graph_llvm_binary_run_result
-            "${CLI_EXE}"
-            "--execution-mode"
-            "aot_llvm"
-            "--require-aot-path"
-            "--emit-executed-via"
-            "${aot_graph_llvm_binary_dir}/aot_module_graph_pipeline.zrp")
-    cli_assert_success("aot_module_graph_pipeline_llvm_binary_run"
-                       aot_graph_llvm_binary_run_result
-                       aot_graph_llvm_binary_run_output)
-    cli_assert_contains("aot_module_graph_pipeline_llvm_binary_run"
-                        aot_graph_llvm_binary_run_output
-                        "AOT_MODULE_GRAPH_PIPELINE_PASS")
-    cli_assert_contains("aot_module_graph_pipeline_llvm_binary_run"
-                        aot_graph_llvm_binary_run_output
-                        "executed_via=aot_llvm")
-elseif (run_aot_module_graph_llvm_binary_import)
-    message("---- aot_module_graph_pipeline_llvm_binary_import (skipped: AOT LLVM host adapter unavailable)")
-endif()
+        cli_run("aot_module_graph_pipeline_llvm_binary_run"
+                aot_graph_llvm_binary_run_output
+                aot_graph_llvm_binary_run_result
+                "${CLI_EXE}"
+                "--execution-mode"
+                "aot_llvm"
+                "--require-aot-path"
+                "--emit-executed-via"
+                "${aot_graph_llvm_binary_dir}/aot_module_graph_pipeline.zrp")
+        cli_assert_success("aot_module_graph_pipeline_llvm_binary_run"
+                           aot_graph_llvm_binary_run_result
+                           aot_graph_llvm_binary_run_output)
+        cli_assert_contains("aot_module_graph_pipeline_llvm_binary_run"
+                            aot_graph_llvm_binary_run_output
+                            "AOT_MODULE_GRAPH_PIPELINE_PASS")
+        cli_assert_contains("aot_module_graph_pipeline_llvm_binary_run"
+                            aot_graph_llvm_binary_run_output
+                            "executed_via=aot_llvm")
+    else ()
+        message("---- aot_module_graph_pipeline_llvm_binary_import (skipped: AOT LLVM host adapter unavailable)")
+    endif ()
+endif ()
 
 cli_case_matches_tier("core;stress" run_incremental)
 if (run_incremental)

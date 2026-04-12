@@ -82,6 +82,32 @@ TZrSize garbage_collector_mark_string_roots(SZrState *state) {
     return work;
 }
 
+TZrSize garbage_collector_mark_ignored_roots(SZrState *state) {
+    SZrGarbageCollector *collector;
+    TZrSize work = 0;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
+        return 0;
+    }
+
+    collector = state->global->garbageCollector;
+    for (TZrSize index = 0; index < collector->ignoredObjectCount; index++) {
+        SZrRawObject *object = collector->ignoredObjects[index];
+
+        if (object == ZR_NULL ||
+            object->type >= ZR_RAW_OBJECT_TYPE_CLOSURE_ENUM_MAX ||
+            object->type == ZR_RAW_OBJECT_TYPE_INVALID ||
+            ZrCore_RawObject_IsReleased(object)) {
+            continue;
+        }
+
+        garbage_collector_mark_object(state, object);
+        work++;
+    }
+
+    return work;
+}
+
 static TZrBool garbage_collector_minor_collection_is_active(SZrState *state) {
     SZrGarbageCollector *collector;
 
@@ -93,6 +119,44 @@ static TZrBool garbage_collector_minor_collection_is_active(SZrState *state) {
     return collector->gcMode == ZR_GARBAGE_COLLECT_MODE_GENERATIONAL &&
            (collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_MARK ||
             collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_EVACUATE);
+}
+
+static TZrBool garbage_collector_try_mark_embedded_child_function(SZrState *state, SZrRawObject *object) {
+    SZrGarbageCollector *collector;
+    SZrFunction *function;
+    TZrBool minorActive;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL || object == ZR_NULL ||
+        object->type != ZR_RAW_OBJECT_TYPE_FUNCTION) {
+        return ZR_FALSE;
+    }
+
+    function = ZR_CAST_FUNCTION(state, object);
+    if (function == ZR_NULL || function->ownerFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    collector = state->global->garbageCollector;
+    minorActive = garbage_collector_minor_collection_is_active(state);
+    if (minorActive) {
+        if (collector->minorCollectionEpoch != 0u &&
+            object->garbageCollectMark.minorScanEpoch == collector->minorCollectionEpoch &&
+            (ZR_GC_IS_REFERENCED(object) || ZR_GC_IS_WAIT_TO_SCAN(object))) {
+            return ZR_TRUE;
+        }
+        object->garbageCollectMark.minorScanEpoch = collector->minorCollectionEpoch;
+    } else {
+        if (object->garbageCollectMark.generation == collector->gcGeneration &&
+            (ZR_GC_IS_REFERENCED(object) || ZR_GC_IS_WAIT_TO_SCAN(object))) {
+            return ZR_TRUE;
+        }
+        object->garbageCollectMark.generation = collector->gcGeneration;
+    }
+
+    object->gcList = ZR_NULL;
+    object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_INITED;
+    ZrGarbageCollectorReallyMarkObject(state, object);
+    return ZR_TRUE;
 }
 
 static TZrBool garbage_collector_try_mark_object_during_minor(SZrState *state, SZrRawObject *object) {
@@ -132,6 +196,9 @@ static TZrBool garbage_collector_try_mark_object_during_minor(SZrState *state, S
 }
 
 void garbage_collector_mark_object(SZrState *state, SZrRawObject *object) {
+    if (garbage_collector_try_mark_embedded_child_function(state, object)) {
+        return;
+    }
     if (garbage_collector_try_mark_object_during_minor(state, object)) {
         return;
     }
@@ -148,6 +215,9 @@ void garbage_collector_mark_value(SZrState *state, SZrTypeValue *value) {
     if (ZrCore_Value_IsGarbageCollectable(value)) {
         SZrRawObject *object = value->value.object;
 
+        if (garbage_collector_try_mark_embedded_child_function(state, object)) {
+            return;
+        }
         if (garbage_collector_try_mark_object_during_minor(state, object)) {
             return;
         }
@@ -857,6 +927,7 @@ ZR_CORE_API void ZrGarbageCollectorRestartCollection(SZrState *state) {
     }
 
     garbage_collector_mark_string_roots(state);
+    garbage_collector_mark_ignored_roots(state);
 
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         if (global->basicTypeObjectPrototype[i] != ZR_NULL) {

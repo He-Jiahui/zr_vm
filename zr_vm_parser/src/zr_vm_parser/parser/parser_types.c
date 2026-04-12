@@ -265,6 +265,7 @@ static SZrAstNode *parse_function_type_parameter(SZrParserState *ps, TZrBool noG
     }
 
     node->data.parameter.name = nameNode != ZR_NULL ? &nameNode->data.identifier : ZR_NULL;
+    node->data.parameter.nameLocation = nameNode != ZR_NULL ? nameNode->location : startLoc;
     node->data.parameter.typeInfo = typeInfo;
     node->data.parameter.defaultValue = defaultValue;
     node->data.parameter.isConst = isConst;
@@ -920,6 +921,7 @@ static SZrAstNode *parse_generic_parameter(SZrParserState *ps, TZrBool allowVari
     }
 
     node->data.parameter.name = &nameNode->data.identifier;
+    node->data.parameter.nameLocation = nameNode->location;
     node->data.parameter.typeInfo = typeInfo;
     node->data.parameter.defaultValue = ZR_NULL;
     node->data.parameter.isConst = ZR_FALSE;
@@ -1332,6 +1334,7 @@ SZrAstNode *parse_parameter(SZrParserState *ps) {
     }
 
     node->data.parameter.name = name;
+    node->data.parameter.nameLocation = nameNode->location;
     node->data.parameter.typeInfo = typeInfo;
     node->data.parameter.defaultValue = defaultValue;
     node->data.parameter.isConst = isConst;

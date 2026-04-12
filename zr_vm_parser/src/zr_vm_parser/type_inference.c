@@ -313,8 +313,36 @@ TZrBool ZrParser_LiteralType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrIn
     }
 }
 
+static SZrString *build_callable_type_name_from_signature(SZrState *state,
+                                                          const SZrInferredType *returnType,
+                                                          const SZrArray *paramTypes,
+                                                          const SZrArray *parameterPassingModes);
+
+static TZrBool infer_identifier_callable_type(SZrCompilerState *cs,
+                                              const SZrFunctionTypeInfo *funcTypeInfo,
+                                              SZrInferredType *result) {
+    SZrString *callableName;
+
+    if (cs == ZR_NULL || funcTypeInfo == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    callableName = build_callable_type_name_from_signature(cs->state,
+                                                           &funcTypeInfo->returnType,
+                                                           &funcTypeInfo->paramTypes,
+                                                           &funcTypeInfo->parameterPassingModes);
+    if (callableName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_InitFull(cs->state, result, ZR_VALUE_TYPE_CLOSURE, ZR_FALSE, callableName);
+    return ZR_TRUE;
+}
+
 // 从标识符推断类型
 TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+    SZrFunctionTypeInfo *funcTypeInfo = ZR_NULL;
+
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL) {
         return ZR_FALSE;
     }
@@ -342,6 +370,17 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             ZrParser_InferredType_Free(cs->state, &normalizedType);
             return ZR_TRUE;
         }
+
+        if (ZrParser_TypeEnvironment_LookupFunction(cs->typeEnv, name, &funcTypeInfo) &&
+            infer_identifier_callable_type(cs, funcTypeInfo, result)) {
+            return ZR_TRUE;
+        }
+    }
+
+    if (cs->compileTimeTypeEnv != ZR_NULL &&
+        ZrParser_TypeEnvironment_LookupFunction(cs->compileTimeTypeEnv, name, &funcTypeInfo) &&
+        infer_identifier_callable_type(cs, funcTypeInfo, result)) {
+        return ZR_TRUE;
     }
 
     if (find_compiler_type_prototype_inference(cs, name) != ZR_NULL) {
@@ -502,10 +541,6 @@ TZrBool ZrParser_FunctionCallType_Infer(SZrCompilerState *cs, SZrAstNode *node, 
 }
 
 // 从Lambda表达式推断类型
-static SZrString *build_callable_type_name_from_signature(SZrState *state,
-                                                          const SZrInferredType *returnType,
-                                                          const SZrArray *paramTypes,
-                                                          const SZrArray *parameterPassingModes);
 static TZrBool infer_lambda_callable_signature(SZrCompilerState *cs,
                                                const SZrLambdaExpression *lambda,
                                                SZrArray *paramTypes,

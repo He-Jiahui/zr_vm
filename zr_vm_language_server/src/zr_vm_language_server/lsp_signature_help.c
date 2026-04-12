@@ -50,6 +50,26 @@ static const TZrChar *signature_exact_type_failure_text(void) {
     return "cannot infer exact type";
 }
 
+static SZrString *signature_extract_direct_identifier_name(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return node->data.identifier.name;
+    }
+
+    if (node->type == ZR_AST_PRIMARY_EXPRESSION &&
+        node->data.primaryExpression.property != ZR_NULL &&
+        node->data.primaryExpression.property->type == ZR_AST_IDENTIFIER_LITERAL &&
+        (node->data.primaryExpression.members == ZR_NULL ||
+         node->data.primaryExpression.members->count == 0)) {
+        return node->data.primaryExpression.property->data.identifier.name;
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool signature_inferred_type_is_precise(const SZrInferredType *typeInfo) {
     return typeInfo != ZR_NULL &&
            !(typeInfo->baseType == ZR_VALUE_TYPE_OBJECT &&
@@ -3388,6 +3408,7 @@ static TZrBool signature_resolve_construct_help(SZrState *state,
 }
 
 static TZrBool signature_resolve_function_help(SZrState *state,
+                                               SZrSemanticAnalyzer *analyzer,
                                                SZrCompilerState *compilerState,
                                                SZrLspCallContext *context,
                                                SZrFilePosition position,
@@ -3399,6 +3420,9 @@ static TZrBool signature_resolve_function_help(SZrState *state,
     SZrAstNodeArray *signatureParams = ZR_NULL;
     TZrChar labelBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
     TZrBool resolved = ZR_FALSE;
+    SZrSymbol *calleeSymbol = ZR_NULL;
+    SZrString *callableSourceName = ZR_NULL;
+    SZrFileRange lookupPosition;
 
     if (state == ZR_NULL || compilerState == ZR_NULL || context == ZR_NULL || context->primaryNode == ZR_NULL ||
         context->callNode == ZR_NULL || result == ZR_NULL) {
@@ -3431,9 +3455,43 @@ static TZrBool signature_resolve_function_help(SZrState *state,
                                               primary->property->data.identifier.name,
                                               call,
                                               context->callNode->location,
-                                              &resolvedFunction,
-                                              &resolvedSignature)) {
+                                               &resolvedFunction,
+                                               &resolvedSignature)) {
         resolved = ZR_TRUE;
+    }
+
+    if (!resolved && analyzer != ZR_NULL && analyzer->symbolTable != ZR_NULL) {
+        lookupPosition = ZrParser_FileRange_Create(position, position, context->primaryNode->location.source);
+        calleeSymbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable,
+                                                                     primary->property->data.identifier.name,
+                                                                     lookupPosition);
+        if (calleeSymbol != ZR_NULL &&
+            calleeSymbol->astNode != ZR_NULL &&
+            calleeSymbol->astNode->type == ZR_AST_VARIABLE_DECLARATION) {
+            callableSourceName = signature_extract_direct_identifier_name(
+                calleeSymbol->astNode->data.variableDeclaration.value);
+            if (callableSourceName != ZR_NULL) {
+                if (compilerState->typeEnv != ZR_NULL &&
+                    resolve_best_function_overload(compilerState,
+                                                   compilerState->typeEnv,
+                                                   callableSourceName,
+                                                   call,
+                                                   context->callNode->location,
+                                                   &resolvedFunction,
+                                                   &resolvedSignature)) {
+                    resolved = ZR_TRUE;
+                } else if (compilerState->compileTimeTypeEnv != ZR_NULL &&
+                           resolve_best_function_overload(compilerState,
+                                                          compilerState->compileTimeTypeEnv,
+                                                          callableSourceName,
+                                                          call,
+                                                          context->callNode->location,
+                                                          &resolvedFunction,
+                                                          &resolvedSignature)) {
+                    resolved = ZR_TRUE;
+                }
+            }
+        }
     }
 
     if (!resolved || resolvedFunction == ZR_NULL ||
@@ -3684,7 +3742,7 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
         return *result != ZR_NULL;
     }
 
-    return signature_resolve_function_help(state, analyzer->compilerState, &callContext, filePosition, result);
+    return signature_resolve_function_help(state, analyzer, analyzer->compilerState, &callContext, filePosition, result);
 }
 
 void ZrLanguageServer_LspSignatureHelp_Free(SZrState *state, SZrLspSignatureHelp *help) {

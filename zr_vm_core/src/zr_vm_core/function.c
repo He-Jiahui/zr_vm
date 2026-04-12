@@ -694,6 +694,19 @@ void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *functio
     }
 }
 
+void ZrCore_Function_ClearChildOwnerLinks(SZrFunction *function) {
+    if (function == ZR_NULL || function->childFunctionList == ZR_NULL || function->childFunctionLength == 0) {
+        return;
+    }
+
+    for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+        SZrFunction *childFunction = &function->childFunctionList[childIndex];
+
+        childFunction->ownerFunction = ZR_NULL;
+        ZrCore_Function_ClearChildOwnerLinks(childFunction);
+    }
+}
+
 TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(const SZrFunction *function) {
     return function_validate_create_closure_targets_in_child_graph_recursive(function);
 }

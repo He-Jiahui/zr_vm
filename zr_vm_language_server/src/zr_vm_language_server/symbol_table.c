@@ -272,7 +272,11 @@ static SZrFileRange get_symbol_selection_range_from_ast(SZrAstNode *astNode, SZr
 
         case ZR_AST_PARAMETER:
             if (astNode->data.parameter.name != ZR_NULL) {
-                return fallback;
+                SZrFileRange parameterRange = astNode->data.parameter.nameLocation;
+                if (parameterRange.start.line != 0 || parameterRange.start.column != 0 ||
+                    parameterRange.end.line != 0 || parameterRange.end.column != 0) {
+                    return parameterRange;
+                }
             }
             break;
 
@@ -940,44 +944,32 @@ TZrBool ZrLanguageServer_SymbolTable_GetVisibleSymbolsAtPosition(SZrState *state
 
 // 查找定义位置
 SZrSymbol *ZrLanguageServer_SymbolTable_FindDefinition(SZrSymbolTable *table, SZrFileRange position) {
+    SZrSymbol *bestSymbol = ZR_NULL;
+
     if (table == ZR_NULL) {
         return ZR_NULL;
     }
-    
-    // 遍历所有作用域查找包含该位置的符号
-    // 实现位置比较：检查位置是否在符号的定义范围内
-    
-    // 从当前作用域栈开始查找（从内到外）
-    for (TZrSize stackIdx = table->scopeStack.length; stackIdx > 0; stackIdx--) {
-        SZrSymbolScope **scopePtr = (SZrSymbolScope **)ZrCore_Array_Get(&table->scopeStack, stackIdx - 1);
-        if (scopePtr != ZR_NULL && *scopePtr != ZR_NULL) {
-            SZrSymbolScope *scope = *scopePtr;
-            for (TZrSize i = 0; i < scope->symbols.length; i++) {
-                SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&scope->symbols, i);
-                if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
-                    SZrSymbol *symbol = *symbolPtr;
-                    if (is_position_in_range(position, symbol->selectionRange)) {
-                        return symbol;
-                    }
-                }
+
+    for (TZrSize scopeIndex = 0; scopeIndex < table->allScopes.length; scopeIndex++) {
+        SZrSymbolScope **scopePtr = (SZrSymbolScope **)ZrCore_Array_Get(&table->allScopes, scopeIndex);
+        if (scopePtr == ZR_NULL || *scopePtr == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrSize symbolIndex = 0; symbolIndex < (*scopePtr)->symbols.length; symbolIndex++) {
+            SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&(*scopePtr)->symbols, symbolIndex);
+            if (symbolPtr == ZR_NULL || *symbolPtr == ZR_NULL) {
+                continue;
+            }
+
+            if (is_position_in_range(position, get_symbol_match_range(*symbolPtr)) &&
+                symbol_is_better_lookup_candidate(*symbolPtr, bestSymbol)) {
+                bestSymbol = *symbolPtr;
             }
         }
     }
-    
-    // 查找全局作用域
-    if (table->globalScope != ZR_NULL) {
-        for (TZrSize i = 0; i < table->globalScope->symbols.length; i++) {
-            SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&table->globalScope->symbols, i);
-            if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
-                SZrSymbol *symbol = *symbolPtr;
-                if (is_position_in_range(position, symbol->selectionRange)) {
-                    return symbol;
-                }
-            }
-        }
-    }
-    
-    return ZR_NULL;
+
+    return bestSymbol;
 }
 
 // 获取范围内的符号

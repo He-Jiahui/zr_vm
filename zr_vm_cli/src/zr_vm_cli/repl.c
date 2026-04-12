@@ -176,6 +176,10 @@ static int zr_cli_repl_submit(const TZrChar *code) {
     closureValue->isGarbageCollectable = ZR_TRUE;
     closureValue->isNative = ZR_FALSE;
     state->stackTop.valuePointer = callBase + 1;
+    if (ignoredClosure) {
+        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+        ignoredClosure = ZR_FALSE;
+    }
     if (!zr_cli_repl_execute(state, callBase, &result)) {
         goto zr_cli_repl_cleanup;
     }
@@ -190,9 +194,6 @@ static int zr_cli_repl_submit(const TZrChar *code) {
     exitCode = 0;
 
 zr_cli_repl_cleanup:
-    if (closure != ZR_NULL) {
-        closure->function = ZR_NULL;
-    }
     if (ignoredClosure) {
         ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     }

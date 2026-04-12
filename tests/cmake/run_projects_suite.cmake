@@ -16,6 +16,11 @@ endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/zr_vm_test_host_env.cmake")
 
+# Passed from tests/CMakeLists.txt add_test; default ON so manual -P runs stay full-suite.
+if (NOT DEFINED ZR_VM_BUILD_AOT)
+    set(ZR_VM_BUILD_AOT ON)
+endif ()
+
 if (DEFINED TIER AND NOT TIER STREQUAL "")
     string(TOLOWER "${TIER}" PROJECT_REQUESTED_TIER)
 elseif (DEFINED ENV{ZR_VM_TEST_TIER} AND NOT "$ENV{ZR_VM_TEST_TIER}" STREQUAL "")
@@ -565,6 +570,25 @@ function(run_project_case case_name)
     if (NOT run_case)
         return()
     endif()
+
+    if (NOT ZR_VM_BUILD_AOT)
+        set(project_case_needs_aot OFF)
+        if (prepare_aot_c OR prepare_aot_llvm)
+            set(project_case_needs_aot ON)
+        elseif (compile_args MATCHES "emit-aot-c" OR compile_args MATCHES "emit-aot-llvm")
+            set(project_case_needs_aot ON)
+        else ()
+            list(FIND run_args "aot_c" project_case_run_aot_c_index)
+            list(FIND run_args "aot_llvm" project_case_run_aot_llvm_index)
+            if (NOT project_case_run_aot_c_index EQUAL -1 OR NOT project_case_run_aot_llvm_index EQUAL -1)
+                set(project_case_needs_aot ON)
+            endif ()
+        endif ()
+        if (project_case_needs_aot)
+            message("---- ${case_name} (skipped: ZR_VM_BUILD_AOT is OFF)")
+            return()
+        endif ()
+    endif ()
 
     message("---- ${case_name}")
 

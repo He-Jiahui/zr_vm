@@ -5,6 +5,9 @@
 #include "semantic_analyzer_internal.h"
 
 SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
+TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
+                                                         const SZrInferredType *iterableType,
+                                                         SZrInferredType *outType);
 
 static void semantic_free_collected_generic_parameters(SZrState *state,
                                                        SZrArray *genericParameters) {
@@ -397,9 +400,12 @@ static TZrBool collect_callable_return_types(SZrState *state,
                                              SZrAstNode *node,
                                              TZrBool *hasReturnType,
                                              SZrInferredType *accumulatedType) {
-    if (state == ZR_NULL || analyzer == ZR_NULL || node == ZR_NULL ||
+    if (state == ZR_NULL || analyzer == ZR_NULL ||
         hasReturnType == ZR_NULL || accumulatedType == ZR_NULL) {
         return ZR_FALSE;
+    }
+    if (node == ZR_NULL) {
+        return ZR_TRUE;
     }
 
     switch (node->type) {
@@ -471,11 +477,12 @@ static TZrBool collect_callable_return_types(SZrState *state,
                                                  node->data.ifExpression.thenExpr,
                                                  hasReturnType,
                                                  accumulatedType) &&
-                   collect_callable_return_types(state,
-                                                 analyzer,
-                                                 node->data.ifExpression.elseExpr,
-                                                 hasReturnType,
-                                                 accumulatedType);
+                   (node->data.ifExpression.elseExpr == ZR_NULL ||
+                    collect_callable_return_types(state,
+                                                  analyzer,
+                                                  node->data.ifExpression.elseExpr,
+                                                  hasReturnType,
+                                                  accumulatedType));
 
         case ZR_AST_WHILE_LOOP:
             return collect_callable_return_types(state,
@@ -1513,6 +1520,142 @@ static void collect_single_parameter_symbol(SZrState *state,
                                           typeInfo);
 }
 
+static SZrFileRange semantic_scope_range_for_node(SZrAstNode *scopeNode, SZrAstNode *body) {
+    if (body != ZR_NULL) {
+        return body->location;
+    }
+    if (scopeNode != ZR_NULL) {
+        return scopeNode->location;
+    }
+    return ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 0, 0),
+                                     ZrParser_FilePosition_Create(0, 0, 0),
+                                     ZR_NULL);
+}
+
+static SZrInferredType *create_type_info_for_foreach_element(SZrState *state,
+                                                             SZrSemanticAnalyzer *analyzer,
+                                                             SZrForeachLoop *foreachLoop,
+                                                             SZrFileRange diagnosticLocation) {
+    SZrInferredType iterableType;
+    SZrInferredType elementType;
+    SZrInferredType *typeInfo = ZR_NULL;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || foreachLoop == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (foreachLoop->typeInfo != ZR_NULL) {
+        typeInfo = create_type_info_from_type_node(state, analyzer, foreachLoop->typeInfo);
+        if (typeInfo == ZR_NULL) {
+            semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+        }
+        return typeInfo;
+    }
+
+    if (analyzer->compilerState == ZR_NULL || foreachLoop->expr == ZR_NULL) {
+        semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+        return ZR_NULL;
+    }
+
+    ZrParser_InferredType_Init(state, &iterableType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(state, &elementType, ZR_VALUE_TYPE_OBJECT);
+    if (!infer_symbol_expression_type(state, analyzer, foreachLoop->expr, &iterableType)) {
+        if (analyzer->compilerState->hasError) {
+            ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(state,
+                                                                             analyzer,
+                                                                             foreachLoop->expr->location);
+        }
+        semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+        ZrParser_InferredType_Free(state, &iterableType);
+        ZrParser_InferredType_Free(state, &elementType);
+        return ZR_NULL;
+    }
+
+    if (!bind_foreach_element_type_from_inferred_iterable(analyzer->compilerState, &iterableType, &elementType)) {
+        semantic_add_cannot_infer_exact_type_diagnostic(state, analyzer, diagnosticLocation);
+        ZrParser_InferredType_Free(state, &iterableType);
+        ZrParser_InferredType_Free(state, &elementType);
+        return ZR_NULL;
+    }
+
+    typeInfo = create_type_info_from_inferred_type(state, &elementType);
+    ZrParser_InferredType_Free(state, &iterableType);
+    ZrParser_InferredType_Free(state, &elementType);
+    return typeInfo;
+}
+
+static void collect_foreach_scope(SZrState *state,
+                                  SZrSemanticAnalyzer *analyzer,
+                                  SZrAstNode *loopNode) {
+    SZrForeachLoop *foreachLoop;
+    SZrTypeEnvironment *savedTypeEnv;
+    SZrString *name;
+    SZrInferredType *typeInfo = ZR_NULL;
+    SZrSymbol *symbol = ZR_NULL;
+    SZrAstNode *patternNode;
+    SZrFileRange symbolLocation;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || loopNode == ZR_NULL || loopNode->type != ZR_AST_FOREACH_LOOP) {
+        return;
+    }
+
+    foreachLoop = &loopNode->data.foreachLoop;
+    if (foreachLoop->expr != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, foreachLoop->expr);
+    }
+
+    savedTypeEnv = push_runtime_type_binding_scope(state, analyzer);
+    ZrLanguageServer_SymbolTable_EnterScope(state,
+                                            analyzer->symbolTable,
+                                            semantic_scope_range_for_node(loopNode, foreachLoop->block),
+                                            ZR_FALSE,
+                                            ZR_FALSE,
+                                            ZR_FALSE);
+
+    patternNode = foreachLoop->pattern != ZR_NULL ? foreachLoop->pattern : loopNode;
+    symbolLocation = patternNode != ZR_NULL ? patternNode->location : loopNode->location;
+    name = ZrLanguageServer_SemanticAnalyzer_ExtractIdentifierName(state, foreachLoop->pattern);
+    typeInfo = create_type_info_for_foreach_element(state, analyzer, foreachLoop, symbolLocation);
+
+    if (name != ZR_NULL && typeInfo != ZR_NULL) {
+        ZrLanguageServer_SymbolTable_AddSymbolEx(state,
+                                                 analyzer->symbolTable,
+                                                 ZR_SYMBOL_VARIABLE,
+                                                 name,
+                                                 symbolLocation,
+                                                 typeInfo,
+                                                 ZR_ACCESS_PRIVATE,
+                                                 patternNode,
+                                                 &symbol);
+        if (symbol != ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
+                                                                      symbol,
+                                                                      ZR_SEMANTIC_SYMBOL_KIND_VARIABLE,
+                                                                      typeInfo,
+                                                                      ZR_SEMANTIC_TYPE_KIND_UNKNOWN);
+            ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
+        }
+        register_variable_type_binding_in_env(state,
+                                              analyzer->compilerState != ZR_NULL
+                                                  ? analyzer->compilerState->typeEnv
+                                                  : ZR_NULL,
+                                              name,
+                                              typeInfo);
+    }
+
+    if (foreachLoop->block != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, foreachLoop->block);
+    }
+
+    if (typeInfo != ZR_NULL) {
+        ZrParser_InferredType_Free(state, typeInfo);
+        ZrCore_Memory_RawFree(state->global, typeInfo, sizeof(SZrInferredType));
+    }
+
+    ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
+    pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+}
+
 static void collect_function_like_scope(SZrState *state,
                                         SZrSemanticAnalyzer *analyzer,
                                         SZrAstNode *scopeNode,
@@ -1669,7 +1812,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             if (usingStmt->body != ZR_NULL) {
                 ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, usingStmt->body);
             }
-            break;
+            return;
         }
         
         case ZR_AST_FUNCTION_DECLARATION: {
@@ -2392,6 +2535,93 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
                                         ZR_NULL);
             return;
 
+        case ZR_AST_EXPRESSION_STATEMENT:
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                    analyzer,
+                                                                    node->data.expressionStatement.expr);
+            return;
+
+        case ZR_AST_RETURN_STATEMENT:
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                    analyzer,
+                                                                    node->data.returnStatement.expr);
+            return;
+
+        case ZR_AST_THROW_STATEMENT:
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                    analyzer,
+                                                                    node->data.throwStatement.expr);
+            return;
+
+        case ZR_AST_IF_EXPRESSION:
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                    analyzer,
+                                                                    node->data.ifExpression.condition);
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                    analyzer,
+                                                                    node->data.ifExpression.thenExpr);
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                    analyzer,
+                                                                    node->data.ifExpression.elseExpr);
+            return;
+
+        case ZR_AST_WHILE_LOOP:
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                    analyzer,
+                                                                    node->data.whileLoop.cond);
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                    analyzer,
+                                                                    node->data.whileLoop.block);
+            return;
+
+        case ZR_AST_FOR_LOOP: {
+            SZrForLoop *forLoop = &node->data.forLoop;
+            SZrTypeEnvironment *savedTypeEnv = push_runtime_type_binding_scope(state, analyzer);
+            ZrLanguageServer_SymbolTable_EnterScope(state,
+                                                    analyzer->symbolTable,
+                                                    semantic_scope_range_for_node(node, forLoop->block),
+                                                    ZR_FALSE,
+                                                    ZR_FALSE,
+                                                    ZR_FALSE);
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, forLoop->init);
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, forLoop->cond);
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, forLoop->step);
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, forLoop->block);
+            ZrLanguageServer_SymbolTable_ExitScope(analyzer->symbolTable);
+            pop_runtime_type_binding_scope(state, analyzer, savedTypeEnv);
+            return;
+        }
+
+        case ZR_AST_FOREACH_LOOP:
+            collect_foreach_scope(state, analyzer, node);
+            return;
+
+        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT: {
+            SZrTryCatchFinallyStatement *tryStatement = &node->data.tryCatchFinallyStatement;
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state, analyzer, tryStatement->block);
+            if (tryStatement->catchClauses != ZR_NULL) {
+                for (TZrSize catchIndex = 0; catchIndex < tryStatement->catchClauses->count; catchIndex++) {
+                    SZrAstNode *catchNode = tryStatement->catchClauses->nodes[catchIndex];
+                    if (catchNode == ZR_NULL || catchNode->type != ZR_AST_CATCH_CLAUSE) {
+                        continue;
+                    }
+
+                    if (catchNode->data.catchClause.pattern != ZR_NULL) {
+                        collect_function_parameters(state,
+                                                    analyzer,
+                                                    catchNode->data.catchClause.pattern);
+                    }
+                    ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                            analyzer,
+                                                                            catchNode->data.catchClause.block);
+                }
+            }
+            ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(state,
+                                                                    analyzer,
+                                                                    tryStatement->finallyBlock);
+            return;
+        }
+
         case ZR_AST_INTERFACE_DECLARATION: {
             SZrInterfaceDeclaration *interfaceDecl = &node->data.interfaceDeclaration;
             SZrSymbol *symbol = ZR_NULL;
@@ -2419,17 +2649,7 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             }
             break;
         }
-        
-        default:
-            // 对于其他节点类型，继续递归处理可能的子节点
-            break;
     }
-    
-    // 递归处理子节点（根据不同节点类型访问不同的子节点数组）
-    // 对于已处理的节点类型（如 SCRIPT, BLOCK），已经在 switch 中处理并返回
-    // 对于其他节点类型，需要根据具体情况递归处理子节点
-    // 例如：函数声明可能有 body（Block），类声明可能有 members 数组等
-    // TODO: 由于这些不是顶层声明节点，暂时跳过深度递归，仅处理直接的符号定义
 }
 
 // 辅助函数：遍历 AST 收集引用

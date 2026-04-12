@@ -4,7 +4,263 @@
 
 #include "gc_internal.h"
 
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "zr_vm_common/zr_runtime_sentinel_conf.h"
+
+static TZrBool garbage_collector_trace_rewrite_slots_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        enabled = getenv("ZR_VM_TRACE_GC_REWRITE_SLOTS") != ZR_NULL ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static TZrBool garbage_collector_trace_callsite_sanitize_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        enabled = getenv("ZR_VM_TRACE_GC_CALLSITE_SANITIZE") != ZR_NULL ? ZR_TRUE : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+TZrBool garbage_collector_callsite_sanitize_tracing_enabled(void) {
+    return garbage_collector_trace_callsite_sanitize_enabled();
+}
+
+static const TZrChar *garbage_collector_trace_function_name(const SZrFunction *function);
+
+static const TZrChar *garbage_collector_callsite_cache_kind_name(TZrUInt32 kind) {
+    switch ((EZrFunctionCallSiteCacheKind)kind) {
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET:
+            return "META_GET";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET:
+            return "META_SET";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET_STATIC:
+            return "META_GET_STATIC";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET_STATIC:
+            return "META_SET_STATIC";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL:
+            return "META_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL:
+            return "DYN_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL:
+            return "META_TAIL_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL:
+            return "DYN_TAIL_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET:
+            return "MEMBER_GET";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET:
+            return "MEMBER_SET";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_NONE:
+        default:
+            return "NONE";
+    }
+}
+
+#define ZR_GC_CALLSITE_TRACE_WRITE_TABLE_CAPACITY ((TZrUInt32)256u)
+
+typedef struct SZrGcCallsitePicWriteTrace {
+    const SZrFunction *function;
+    TZrUInt32 cacheIndex;
+    TZrUInt32 slotIndex;
+    TZrUInt32 sequence;
+    const TZrChar *writer;
+    const TZrChar *action;
+    TZrUInt32 picSlotCount;
+    TZrUInt32 picNextInsertIndex;
+    const void *receiver;
+    const void *owner;
+    const void *target;
+} SZrGcCallsitePicWriteTrace;
+
+static SZrGcCallsitePicWriteTrace g_gc_callsite_pic_write_traces[ZR_GC_CALLSITE_TRACE_WRITE_TABLE_CAPACITY];
+static TZrUInt32 g_gc_callsite_pic_write_trace_count = 0;
+static TZrUInt32 g_gc_callsite_pic_write_trace_sequence = 0;
+
+static SZrGcCallsitePicWriteTrace *garbage_collector_find_callsite_pic_write_trace(const SZrFunction *function,
+                                                                                    TZrUInt32 cacheIndex,
+                                                                                    TZrUInt32 slotIndex) {
+    for (TZrUInt32 index = 0; index < g_gc_callsite_pic_write_trace_count; index++) {
+        SZrGcCallsitePicWriteTrace *trace = &g_gc_callsite_pic_write_traces[index];
+
+        if (trace->function == function && trace->cacheIndex == cacheIndex && trace->slotIndex == slotIndex) {
+            return trace;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void garbage_collector_trace_last_callsite_cache_write(const SZrFunction *function,
+                                                              TZrUInt32 cacheIndex,
+                                                              const TZrChar *phase,
+                                                              const TZrChar *event,
+                                                              TZrUInt32 slotIndex) {
+    const SZrGcCallsitePicWriteTrace *trace;
+
+    if (!garbage_collector_trace_callsite_sanitize_enabled()) {
+        return;
+    }
+
+    trace = garbage_collector_find_callsite_pic_write_trace(function, cacheIndex, slotIndex);
+    if (trace == ZR_NULL) {
+        fprintf(stderr,
+                "[gc-callsite-sanitize] phase=%s event=%s function=%p name=%s cacheIndex=%u slotIndex=%u lastWrite=missing\n",
+                phase != ZR_NULL ? phase : "unknown",
+                event != ZR_NULL ? event : "unknown",
+                (const void *)function,
+                garbage_collector_trace_function_name(function),
+                (unsigned int)cacheIndex,
+                (unsigned int)slotIndex);
+        return;
+    }
+
+    fprintf(stderr,
+            "[gc-callsite-sanitize] phase=%s event=%s function=%p name=%s cacheIndex=%u slotIndex=%u "
+            "lastWriteSequence=%u writer=%s action=%s picSlotCount=%u picNextInsertIndex=%u "
+            "receiver=%p owner=%p target=%p\n",
+            phase != ZR_NULL ? phase : "unknown",
+            event != ZR_NULL ? event : "unknown",
+            (const void *)function,
+            garbage_collector_trace_function_name(function),
+            (unsigned int)cacheIndex,
+            (unsigned int)slotIndex,
+            (unsigned int)trace->sequence,
+            trace->writer != ZR_NULL ? trace->writer : "unknown",
+            trace->action != ZR_NULL ? trace->action : "unknown",
+            (unsigned int)trace->picSlotCount,
+            (unsigned int)trace->picNextInsertIndex,
+            trace->receiver,
+            trace->owner,
+            trace->target);
+}
+
+static const TZrChar *garbage_collector_trace_function_name(const SZrFunction *function) {
+    if (function == ZR_NULL || function->functionName == ZR_NULL) {
+        return "<anonymous>";
+    }
+
+    return ZrCore_String_GetNativeString(function->functionName);
+}
+
+static void garbage_collector_trace_callsite_cache_entry(const SZrFunction *function,
+                                                         TZrUInt32 cacheIndex,
+                                                         const TZrChar *phase,
+                                                         const TZrChar *event,
+                                                         const SZrFunctionCallSiteCacheEntry *cacheEntry) {
+    if (!garbage_collector_trace_callsite_sanitize_enabled() || cacheEntry == ZR_NULL) {
+        return;
+    }
+
+    fprintf(stderr,
+            "[gc-callsite-sanitize] phase=%s event=%s function=%p name=%s cacheIndex=%u kind=%s instructionIndex=%u "
+            "memberEntryIndex=%u argumentCount=%u picSlotCount=%u picNextInsertIndex=%u\n",
+            phase != ZR_NULL ? phase : "unknown",
+            event != ZR_NULL ? event : "unknown",
+            (const void *)function,
+            garbage_collector_trace_function_name(function),
+            (unsigned int)cacheIndex,
+            garbage_collector_callsite_cache_kind_name(cacheEntry->kind),
+            (unsigned int)cacheEntry->instructionIndex,
+            (unsigned int)cacheEntry->memberEntryIndex,
+            (unsigned int)cacheEntry->argumentCount,
+            (unsigned int)cacheEntry->picSlotCount,
+            (unsigned int)cacheEntry->picNextInsertIndex);
+}
+
+static void garbage_collector_trace_callsite_cache_slot(const SZrFunction *function,
+                                                        TZrUInt32 cacheIndex,
+                                                        const TZrChar *phase,
+                                                        const TZrChar *event,
+                                                        const SZrFunctionCallSiteCacheEntry *cacheEntry,
+                                                        TZrUInt32 slotIndex,
+                                                        const SZrFunctionCallSitePicSlot *slot) {
+    if (!garbage_collector_trace_callsite_sanitize_enabled() || cacheEntry == ZR_NULL || slot == ZR_NULL) {
+        return;
+    }
+
+    fprintf(stderr,
+            "[gc-callsite-sanitize] phase=%s event=%s function=%p name=%s cacheIndex=%u kind=%s instructionIndex=%u "
+            "slotIndex=%u receiver=%p owner=%p target=%p receiverVersion=%u ownerVersion=%u descriptorIndex=%u "
+            "isStatic=%u picSlotCount=%u picNextInsertIndex=%u\n",
+            phase != ZR_NULL ? phase : "unknown",
+            event != ZR_NULL ? event : "unknown",
+            (const void *)function,
+            garbage_collector_trace_function_name(function),
+            (unsigned int)cacheIndex,
+            garbage_collector_callsite_cache_kind_name(cacheEntry->kind),
+            (unsigned int)cacheEntry->instructionIndex,
+            (unsigned int)slotIndex,
+            (const void *)slot->cachedReceiverPrototype,
+            (const void *)slot->cachedOwnerPrototype,
+            (const void *)slot->cachedFunction,
+            (unsigned int)slot->cachedReceiverVersion,
+            (unsigned int)slot->cachedOwnerVersion,
+            (unsigned int)slot->cachedDescriptorIndex,
+            (unsigned int)slot->cachedIsStatic,
+            (unsigned int)cacheEntry->picSlotCount,
+            (unsigned int)cacheEntry->picNextInsertIndex);
+}
+
+void garbage_collector_record_callsite_cache_pic_write(const SZrFunction *function,
+                                                       TZrUInt32 cacheIndex,
+                                                       TZrUInt32 slotIndex,
+                                                       const TZrChar *writer,
+                                                       const TZrChar *action,
+                                                       const SZrFunctionCallSiteCacheEntry *cacheEntry,
+                                                       const SZrFunctionCallSitePicSlot *slot) {
+    SZrGcCallsitePicWriteTrace *trace;
+
+    if (!garbage_collector_trace_callsite_sanitize_enabled() || cacheEntry == ZR_NULL || slot == ZR_NULL) {
+        return;
+    }
+
+    trace = garbage_collector_find_callsite_pic_write_trace(function, cacheIndex, slotIndex);
+    if (trace == ZR_NULL) {
+        if (g_gc_callsite_pic_write_trace_count < ZR_GC_CALLSITE_TRACE_WRITE_TABLE_CAPACITY) {
+            trace = &g_gc_callsite_pic_write_traces[g_gc_callsite_pic_write_trace_count++];
+        } else {
+            trace = &g_gc_callsite_pic_write_traces[g_gc_callsite_pic_write_trace_sequence %
+                                                    ZR_GC_CALLSITE_TRACE_WRITE_TABLE_CAPACITY];
+        }
+    }
+
+    trace->function = function;
+    trace->cacheIndex = cacheIndex;
+    trace->slotIndex = slotIndex;
+    trace->sequence = ++g_gc_callsite_pic_write_trace_sequence;
+    trace->writer = writer;
+    trace->action = action;
+    trace->picSlotCount = cacheEntry->picSlotCount;
+    trace->picNextInsertIndex = cacheEntry->picNextInsertIndex;
+    trace->receiver = slot->cachedReceiverPrototype;
+    trace->owner = slot->cachedOwnerPrototype;
+    trace->target = slot->cachedFunction;
+}
+
+static void garbage_collector_trace_rewrite_function_slot(const TZrChar *slotKind,
+                                                          const SZrFunction *ownerFunction,
+                                                          const SZrFunction *targetFunction) {
+    if (!garbage_collector_trace_rewrite_slots_enabled()) {
+        return;
+    }
+
+    fprintf(stderr,
+            "[gc-rewrite-slot] kind=%s owner=%p target=%p\n",
+            slotKind != ZR_NULL ? slotKind : "unknown",
+            (const void *)ownerFunction,
+            (const void *)targetFunction);
+}
 
 static TZrBool garbage_collector_raw_heap_pointer_plausible_for_gc_slot(TZrPtr pointer) {
     if (pointer < (TZrPtr)(TZrSize)ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND) {
@@ -54,6 +310,21 @@ void garbage_collector_sanitize_callsite_cache_pic(const SZrFunction *function,
          * TODO: Root-cause corrupt picSlotCount (observed as garbage with cap still scanning picSlots);
          * clearing avoids mark/rewrite treating uninitialized picSlots as live pointers during full GC.
          */
+        garbage_collector_trace_callsite_cache_entry(function, cacheIndex, phase, "corrupt-slot-count", cacheEntry);
+        for (slotIndex = 0; slotIndex < ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY; slotIndex++) {
+            garbage_collector_trace_callsite_cache_slot(function,
+                                                        cacheIndex,
+                                                        phase,
+                                                        "corrupt-slot-snapshot",
+                                                        cacheEntry,
+                                                        slotIndex,
+                                                        &cacheEntry->picSlots[slotIndex]);
+            garbage_collector_trace_last_callsite_cache_write(function,
+                                                              cacheIndex,
+                                                              phase,
+                                                              "corrupt-slot-last-write",
+                                                              slotIndex);
+        }
         ZrCore_Memory_RawSet(cacheEntry->picSlots, 0, sizeof(cacheEntry->picSlots));
         cacheEntry->picSlotCount = 0;
         cacheEntry->picNextInsertIndex = 0;
@@ -66,6 +337,19 @@ void garbage_collector_sanitize_callsite_cache_pic(const SZrFunction *function,
              * TODO: Root-cause PIC slots holding non-heap patterns while picSlotCount stays within capacity
              * (native_numeric_pipeline full GC).
              */
+            garbage_collector_trace_callsite_cache_entry(function, cacheIndex, phase, "bad-slot", cacheEntry);
+            garbage_collector_trace_callsite_cache_slot(function,
+                                                        cacheIndex,
+                                                        phase,
+                                                        "bad-slot-detail",
+                                                        cacheEntry,
+                                                        slotIndex,
+                                                        &cacheEntry->picSlots[slotIndex]);
+            garbage_collector_trace_last_callsite_cache_write(function,
+                                                              cacheIndex,
+                                                              phase,
+                                                              "bad-slot-last-write",
+                                                              slotIndex);
             ZrCore_Memory_RawSet(cacheEntry->picSlots, 0, sizeof(cacheEntry->picSlots));
             cacheEntry->picSlotCount = 0;
             cacheEntry->picNextInsertIndex = 0;
@@ -458,6 +742,7 @@ static TZrSize garbage_collector_restart_minor_collection(SZrState *state) {
     }
 
     work += garbage_collector_mark_string_roots(state);
+    work += garbage_collector_mark_ignored_roots(state);
 
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         work += garbage_collector_mark_minor_root_object(
@@ -749,6 +1034,7 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
         return 0;
     }
 
+    garbage_collector_trace_rewrite_function_slot("ownerFunction", function, function->ownerFunction);
     work += garbage_collector_rewrite_function_slot(&function->ownerFunction);
     work += garbage_collector_rewrite_string_slot(&function->functionName);
     work += garbage_collector_rewrite_string_slot(&function->sourceCodeList);
@@ -897,6 +1183,9 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
                         (SZrRawObject **)&cacheEntry->picSlots[picIndex].cachedReceiverPrototype);
                 garbage_collector_rewrite_raw_object_slot(
                         (SZrRawObject **)&cacheEntry->picSlots[picIndex].cachedOwnerPrototype);
+                garbage_collector_trace_rewrite_function_slot("callSiteCachedFunction",
+                                                              function,
+                                                              cacheEntry->picSlots[picIndex].cachedFunction);
                 garbage_collector_rewrite_raw_object_slot(
                         (SZrRawObject **)&cacheEntry->picSlots[picIndex].cachedFunction);
             }
@@ -905,6 +1194,9 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
 
     garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&function->runtimeDecoratorMetadata);
     garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&function->runtimeDecoratorDecorators);
+    garbage_collector_trace_rewrite_function_slot("cachedStatelessClosure",
+                                                  function,
+                                                  ZR_CAST(SZrFunction *, function->cachedStatelessClosure));
     garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&function->cachedStatelessClosure);
 
     return work;
@@ -1710,6 +2002,7 @@ TZrSize garbage_collector_atomic(SZrState *state) {
     }
 
     work += garbage_collector_mark_string_roots(state);
+    work += garbage_collector_mark_ignored_roots(state);
 
     for (TZrSize i = 0; i < ZR_VALUE_TYPE_ENUM_MAX; i++) {
         if (global->basicTypeObjectPrototype[i] != ZR_NULL) {

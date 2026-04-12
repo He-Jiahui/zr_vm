@@ -182,6 +182,7 @@ static TZrBool compiler_copy_function_children(SZrCompilerState *cs, SZrFunction
 
     function->childFunctionLength = (TZrUInt32) cs->childFunctions.length;
     ZrCore_Function_RebindConstantFunctionValuesToChildren(function);
+    ZrCore_Function_ClearChildOwnerLinks(function);
     for (TZrSize index = 0; index < cs->childFunctions.length; index++) {
         if (sourceChildren[index] != ZR_NULL) {
             ZrCore_Function_DetachOwnedBuffers(sourceChildren[index]);

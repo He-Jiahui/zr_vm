@@ -31,6 +31,8 @@
 #include "zr_vm_common/zr_runtime_limits_conf.h"
 #include "zr_vm_common/zr_string_conf.h"
 
+#include "gc_internal.h"
+
 typedef enum EZrExecutionNumericFallbackOp {
     ZR_EXEC_NUMERIC_FALLBACK_ADD = 0,
     ZR_EXEC_NUMERIC_FALLBACK_SUB,

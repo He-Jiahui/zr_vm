@@ -5,6 +5,151 @@
 #include "execution_internal.h"
 #include "object_internal.h"
 
+#include <stdio.h>
+
+static TZrBool execution_member_trace_pic_enabled(void) {
+    static TZrBool initialized = ZR_FALSE;
+    static TZrBool enabled = ZR_FALSE;
+
+    if (!initialized) {
+        enabled = (getenv("ZR_VM_TRACE_GC_CALLSITE_SANITIZE") != ZR_NULL ||
+                   getenv("ZR_VM_TRACE_CALLSITE_PIC_WRITES") != ZR_NULL)
+                          ? ZR_TRUE
+                          : ZR_FALSE;
+        initialized = ZR_TRUE;
+    }
+
+    return enabled;
+}
+
+static const TZrChar *execution_member_callsite_cache_kind_name(TZrUInt32 kind) {
+    switch ((EZrFunctionCallSiteCacheKind)kind) {
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET:
+            return "META_GET";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET:
+            return "META_SET";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_GET_STATIC:
+            return "META_GET_STATIC";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_SET_STATIC:
+            return "META_SET_STATIC";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL:
+            return "META_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL:
+            return "DYN_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL:
+            return "META_TAIL_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL:
+            return "DYN_TAIL_CALL";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET:
+            return "MEMBER_GET";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET:
+            return "MEMBER_SET";
+        case ZR_FUNCTION_CALLSITE_CACHE_KIND_NONE:
+        default:
+            return "NONE";
+    }
+}
+
+static const TZrChar *execution_member_trace_function_name(const SZrFunction *function) {
+    if (function == ZR_NULL || function->functionName == ZR_NULL) {
+        return "<anonymous>";
+    }
+
+    return ZrCore_String_GetNativeString(function->functionName);
+}
+
+static void execution_member_trace_clear_cache_entry(SZrFunction *function,
+                                                     TZrUInt16 cacheIndex,
+                                                     const SZrFunctionCallSiteCacheEntry *entry,
+                                                     const TZrChar *reason) {
+    TZrUInt32 slotLimit;
+
+    if (!execution_member_trace_pic_enabled() || entry == ZR_NULL) {
+        return;
+    }
+
+    fprintf(stderr,
+            "[callsite-pic-member] event=clear reason=%s owner=%p ownerName=%s cacheIndex=%u kind=%s "
+            "instructionIndex=%u memberEntryIndex=%u picSlotCount=%u picNextInsertIndex=%u\n",
+            reason != ZR_NULL ? reason : "unknown",
+            (const void *)function,
+            execution_member_trace_function_name(function),
+            (unsigned int)cacheIndex,
+            execution_member_callsite_cache_kind_name(entry->kind),
+            (unsigned int)entry->instructionIndex,
+            (unsigned int)entry->memberEntryIndex,
+            (unsigned int)entry->picSlotCount,
+            (unsigned int)entry->picNextInsertIndex);
+
+    slotLimit = entry->picSlotCount;
+    if (slotLimit > ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY) {
+        slotLimit = ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY;
+    }
+    for (TZrUInt32 index = 0; index < slotLimit; index++) {
+        const SZrFunctionCallSitePicSlot *slot = &entry->picSlots[index];
+
+        fprintf(stderr,
+                "[callsite-pic-member] event=clear-slot reason=%s owner=%p ownerName=%s cacheIndex=%u kind=%s "
+                "instructionIndex=%u slotIndex=%u receiver=%p ownerProto=%p target=%p receiverVersion=%u "
+                "ownerVersion=%u descriptorIndex=%u isStatic=%u\n",
+                reason != ZR_NULL ? reason : "unknown",
+                (const void *)function,
+                execution_member_trace_function_name(function),
+                (unsigned int)cacheIndex,
+                execution_member_callsite_cache_kind_name(entry->kind),
+                (unsigned int)entry->instructionIndex,
+                (unsigned int)index,
+                (const void *)slot->cachedReceiverPrototype,
+                (const void *)slot->cachedOwnerPrototype,
+                (const void *)slot->cachedFunction,
+                (unsigned int)slot->cachedReceiverVersion,
+                (unsigned int)slot->cachedOwnerVersion,
+                (unsigned int)slot->cachedDescriptorIndex,
+                (unsigned int)slot->cachedIsStatic);
+    }
+}
+
+static void execution_member_trace_store_pic_slot(SZrFunction *function,
+                                                  TZrUInt16 cacheIndex,
+                                                  const SZrFunctionCallSiteCacheEntry *entry,
+                                                  TZrUInt32 slotIndex,
+                                                  const TZrChar *action,
+                                                  const SZrFunctionCallSitePicSlot *previousSlot,
+                                                  SZrObjectPrototype *receiverPrototype,
+                                                  SZrObjectPrototype *ownerPrototype,
+                                                  TZrUInt32 descriptorIndex,
+                                                  TZrBool isStatic) {
+    if (!execution_member_trace_pic_enabled() || entry == ZR_NULL) {
+        return;
+    }
+
+    fprintf(stderr,
+            "[callsite-pic-member] event=store action=%s owner=%p ownerName=%s cacheIndex=%u kind=%s "
+            "instructionIndex=%u memberEntryIndex=%u slotIndex=%u picSlotCount=%u picNextInsertIndex=%u "
+            "receiver=%p ownerProto=%p descriptorIndex=%u isStatic=%u prevReceiver=%p prevOwner=%p prevTarget=%p "
+            "prevDescriptorIndex=%u prevIsStatic=%u\n",
+            action != ZR_NULL ? action : "unknown",
+            (const void *)function,
+            execution_member_trace_function_name(function),
+            (unsigned int)cacheIndex,
+            execution_member_callsite_cache_kind_name(entry->kind),
+            (unsigned int)entry->instructionIndex,
+            (unsigned int)entry->memberEntryIndex,
+            (unsigned int)slotIndex,
+            (unsigned int)entry->picSlotCount,
+            (unsigned int)entry->picNextInsertIndex,
+            (const void *)receiverPrototype,
+            (const void *)ownerPrototype,
+            (unsigned int)descriptorIndex,
+            (unsigned int)(isStatic ? ZR_TRUE : ZR_FALSE),
+            previousSlot != ZR_NULL ? (const void *)previousSlot->cachedReceiverPrototype : ZR_NULL,
+            previousSlot != ZR_NULL ? (const void *)previousSlot->cachedOwnerPrototype : ZR_NULL,
+            previousSlot != ZR_NULL ? (const void *)previousSlot->cachedFunction : ZR_NULL,
+            previousSlot != ZR_NULL ? (unsigned int)previousSlot->cachedDescriptorIndex
+                                    : (unsigned int)ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE,
+            previousSlot != ZR_NULL ? (unsigned int)previousSlot->cachedIsStatic : 0u);
+}
+
 static ZR_FORCE_INLINE SZrString *execution_member_refresh_forwarded_string(SZrString *stringValue) {
     SZrRawObject *rawObject;
     SZrRawObject *forwardedObject;
@@ -147,11 +292,22 @@ static void execution_member_clear_cache_entry(SZrFunction *function,
         return;
     }
 
+    execution_member_trace_clear_cache_entry(function, cacheIndex, entry, reason);
     entry->picSlotCount = 0;
     entry->picNextInsertIndex = 0;
     for (index = 0; index < ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY; index++) {
         execution_member_clear_pic_slot(&entry->picSlots[index]);
     }
+}
+
+static void execution_member_barrier_callsite_target(SZrState *state,
+                                                     SZrFunction *function,
+                                                     SZrRawObject *target) {
+    if (state == ZR_NULL || function == ZR_NULL || target == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_RawObject_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function), target);
 }
 
 static TZrBool execution_member_find_owner_descriptor(SZrObjectPrototype *receiverPrototype,
@@ -190,7 +346,8 @@ static TZrBool execution_member_find_owner_descriptor(SZrObjectPrototype *receiv
     return ZR_FALSE;
 }
 
-static void execution_member_store_pic_slot(SZrFunction *function,
+static void execution_member_store_pic_slot(SZrState *state,
+                                            SZrFunction *function,
                                             TZrUInt16 cacheIndex,
                                             SZrFunctionCallSiteCacheEntry *entry,
                                             SZrObjectPrototype *receiverPrototype,
@@ -199,33 +356,72 @@ static void execution_member_store_pic_slot(SZrFunction *function,
                                             TZrBool isStatic) {
     TZrUInt32 slotIndex;
     SZrFunctionCallSitePicSlot *slot;
+    SZrFunctionCallSitePicSlot previousSlot;
+    const TZrChar *traceAction;
 
     if (entry == ZR_NULL || receiverPrototype == ZR_NULL || ownerPrototype == ZR_NULL ||
         descriptorIndex == ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE) {
         return;
     }
 
+    if (garbage_collector_callsite_sanitize_tracing_enabled()) {
+        garbage_collector_sanitize_callsite_cache_pic(function, cacheIndex, "runtime-member-store-before", entry);
+    }
+
     for (slotIndex = 0; slotIndex < entry->picSlotCount; slotIndex++) {
         slot = &entry->picSlots[slotIndex];
         if (slot->cachedReceiverPrototype == receiverPrototype) {
+            previousSlot = *slot;
             slot->cachedOwnerPrototype = ownerPrototype;
             slot->cachedReceiverVersion = receiverPrototype->super.memberVersion;
             slot->cachedOwnerVersion = ownerPrototype->super.memberVersion;
             slot->cachedDescriptorIndex = descriptorIndex;
             slot->cachedIsStatic = isStatic ? ZR_TRUE : ZR_FALSE;
             slot->cachedFunction = ZR_NULL;
+            execution_member_barrier_callsite_target(state,
+                                                     function,
+                                                     ZR_CAST_RAW_OBJECT_AS_SUPER(receiverPrototype));
+            execution_member_barrier_callsite_target(state,
+                                                     function,
+                                                     ZR_CAST_RAW_OBJECT_AS_SUPER(ownerPrototype));
+            execution_member_trace_store_pic_slot(function,
+                                                  cacheIndex,
+                                                  entry,
+                                                  slotIndex,
+                                                  "update",
+                                                  &previousSlot,
+                                                  receiverPrototype,
+                                                  ownerPrototype,
+                                                  descriptorIndex,
+                                                  isStatic);
+            garbage_collector_record_callsite_cache_pic_write(function,
+                                                              cacheIndex,
+                                                              slotIndex,
+                                                              "member-store",
+                                                              "update",
+                                                              entry,
+                                                              slot);
+            if (garbage_collector_callsite_sanitize_tracing_enabled()) {
+                garbage_collector_sanitize_callsite_cache_pic(function,
+                                                              cacheIndex,
+                                                              "runtime-member-store-after",
+                                                              entry);
+            }
             return;
         }
     }
 
     if (entry->picSlotCount < ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY) {
         slotIndex = entry->picSlotCount++;
+        traceAction = "insert";
     } else {
         slotIndex = entry->picNextInsertIndex % ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY;
+        traceAction = "replace";
     }
     entry->picNextInsertIndex = (slotIndex + 1u) % ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY;
 
     slot = &entry->picSlots[slotIndex];
+    previousSlot = *slot;
     execution_member_clear_pic_slot(slot);
     slot->cachedReceiverPrototype = receiverPrototype;
     slot->cachedOwnerPrototype = ownerPrototype;
@@ -233,6 +429,28 @@ static void execution_member_store_pic_slot(SZrFunction *function,
     slot->cachedOwnerVersion = ownerPrototype->super.memberVersion;
     slot->cachedDescriptorIndex = descriptorIndex;
     slot->cachedIsStatic = isStatic ? ZR_TRUE : ZR_FALSE;
+    execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(receiverPrototype));
+    execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(ownerPrototype));
+    execution_member_trace_store_pic_slot(function,
+                                          cacheIndex,
+                                          entry,
+                                          slotIndex,
+                                          traceAction,
+                                          &previousSlot,
+                                          receiverPrototype,
+                                          ownerPrototype,
+                                          descriptorIndex,
+                                          isStatic);
+    garbage_collector_record_callsite_cache_pic_write(function,
+                                                      cacheIndex,
+                                                      slotIndex,
+                                                      "member-store",
+                                                      traceAction,
+                                                      entry,
+                                                      slot);
+    if (garbage_collector_callsite_sanitize_tracing_enabled()) {
+        garbage_collector_sanitize_callsite_cache_pic(function, cacheIndex, "runtime-member-store-after", entry);
+    }
 }
 
 static void execution_member_refresh_cache(SZrState *state,
@@ -255,7 +473,8 @@ static void execution_member_refresh_cache(SZrState *state,
         return;
     }
 
-    execution_member_store_pic_slot(function,
+    execution_member_store_pic_slot(state,
+                                    function,
                                     cacheIndex,
                                     entry,
                                     receiverPrototype,
