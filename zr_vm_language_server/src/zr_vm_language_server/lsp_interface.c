@@ -64,6 +64,21 @@ static TZrBool lsp_try_append_symbol_inlay_hint(SZrState *state,
                                                 SZrSymbol *symbol,
                                                 SZrLspRange range,
                                                 SZrArray *result);
+static void lsp_hover_free_internal(SZrState *state, SZrLspHover *hover);
+static const TZrChar *lsp_rich_hover_role_for_label(const TZrChar *label);
+static TZrBool lsp_rich_hover_append_section(SZrState *state,
+                                             SZrLspRichHover *hover,
+                                             const TZrChar *role,
+                                             const TZrChar *label,
+                                             const TZrChar *value);
+static TZrBool lsp_rich_hover_flush_docs(SZrState *state,
+                                         SZrLspRichHover *hover,
+                                         TZrChar *docsBuffer,
+                                         TZrSize *docsLength);
+static TZrBool lsp_build_rich_hover_from_markdown(SZrState *state,
+                                                  const TZrChar *markdown,
+                                                  SZrLspRange range,
+                                                  SZrLspRichHover **result);
 
 static void lsp_register_builtin_native_libraries(SZrState *state) {
     if (state == ZR_NULL || state->global == ZR_NULL) {
@@ -495,6 +510,256 @@ static SZrString *lsp_append_markdown_section(SZrState *state, SZrString *base, 
     used += appendixLength;
     buffer[used] = '\0';
     return ZrCore_String_Create(state, buffer, used);
+}
+
+static void lsp_hover_free_internal(SZrState *state, SZrLspHover *hover) {
+    if (state == ZR_NULL || hover == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Array_Free(state, &hover->contents);
+    ZrCore_Memory_RawFree(state->global, hover, sizeof(SZrLspHover));
+}
+
+static const TZrChar *lsp_rich_hover_role_for_label(const TZrChar *label) {
+    if (label == ZR_NULL || label[0] == '\0') {
+        return "detail";
+    }
+
+    if (strcmp(label, "Signature") == 0) {
+        return "signature";
+    }
+    if (strcmp(label, "Resolved Type") == 0 || strcmp(label, "Type") == 0) {
+        return "resolvedType";
+    }
+    if (strcmp(label, "Access") == 0) {
+        return "access";
+    }
+    if (strcmp(label, "Category") == 0) {
+        return "category";
+    }
+    if (strcmp(label, "Applicable To") == 0) {
+        return "applicableTo";
+    }
+    if (strcmp(label, "Source") == 0) {
+        return "source";
+    }
+    if (strcmp(label, "Detail") == 0) {
+        return "detail";
+    }
+    if (strcmp(label, "Meta Method") == 0 || strcmp(label, "Decorator") == 0) {
+        return "name";
+    }
+
+    return "detail";
+}
+
+static TZrBool lsp_rich_hover_append_section(SZrState *state,
+                                             SZrLspRichHover *hover,
+                                             const TZrChar *role,
+                                             const TZrChar *label,
+                                             const TZrChar *value) {
+    SZrLspRichHoverSection *section;
+
+    if (state == ZR_NULL || hover == ZR_NULL || role == ZR_NULL || value == ZR_NULL || value[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    section =
+        (SZrLspRichHoverSection *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspRichHoverSection));
+    if (section == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    section->role = lsp_create_const_string(state, role);
+    section->label = label != ZR_NULL ? lsp_create_const_string(state, label) : ZR_NULL;
+    section->value = lsp_create_const_string(state, value);
+    if (section->role == ZR_NULL || section->value == ZR_NULL) {
+        ZrCore_Memory_RawFree(state->global, section, sizeof(SZrLspRichHoverSection));
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Push(state, &hover->sections, &section);
+    return ZR_TRUE;
+}
+
+static TZrBool lsp_rich_hover_flush_docs(SZrState *state,
+                                         SZrLspRichHover *hover,
+                                         TZrChar *docsBuffer,
+                                         TZrSize *docsLength) {
+    TZrBool appended;
+
+    if (docsBuffer == ZR_NULL || docsLength == ZR_NULL || *docsLength == 0) {
+        return ZR_TRUE;
+    }
+
+    docsBuffer[*docsLength] = '\0';
+    appended = lsp_rich_hover_append_section(state, hover, "docs", "Documentation", docsBuffer);
+    docsBuffer[0] = '\0';
+    *docsLength = 0;
+    return appended;
+}
+
+static TZrBool lsp_build_rich_hover_from_markdown(SZrState *state,
+                                                  const TZrChar *markdown,
+                                                  SZrLspRange range,
+                                                  SZrLspRichHover **result) {
+    SZrLspRichHover *richHover;
+    TZrChar markdownBuffer[ZR_LSP_HOVER_BUFFER_LENGTH];
+    TZrChar docsBuffer[ZR_LSP_HOVER_BUFFER_LENGTH];
+    TZrSize docsLength = 0;
+    TZrSize markdownLength;
+    TZrChar *cursor;
+
+    if (result != ZR_NULL) {
+        *result = ZR_NULL;
+    }
+    if (state == ZR_NULL || markdown == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    richHover = (SZrLspRichHover *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspRichHover));
+    if (richHover == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Init(state, &richHover->sections, sizeof(SZrLspRichHoverSection *), 8);
+    richHover->range = range;
+
+    markdownLength = strlen(markdown);
+    if (markdownLength >= sizeof(markdownBuffer)) {
+        markdownLength = sizeof(markdownBuffer) - 1;
+    }
+    memcpy(markdownBuffer, markdown, markdownLength);
+    markdownBuffer[markdownLength] = '\0';
+    docsBuffer[0] = '\0';
+
+    cursor = markdownBuffer;
+    while (cursor != ZR_NULL && *cursor != '\0') {
+        TZrChar *line = cursor;
+        TZrChar *trimmed = line;
+        TZrChar *end = ZR_NULL;
+        TZrChar *headingEnd;
+        TZrChar *colon;
+
+        while (*cursor != '\0' && *cursor != '\n') {
+            cursor++;
+        }
+        if (*cursor == '\n') {
+            *cursor = '\0';
+            cursor++;
+        }
+
+        while (*trimmed != '\0' && isspace((unsigned char)*trimmed)) {
+            trimmed++;
+        }
+
+        end = trimmed + strlen(trimmed);
+        while (end > trimmed && isspace((unsigned char)end[-1])) {
+            end--;
+        }
+        *end = '\0';
+
+        if (*trimmed == '\0') {
+            if (docsLength > 0 && docsLength + 2 < sizeof(docsBuffer)) {
+                docsBuffer[docsLength++] = '\n';
+                docsBuffer[docsLength++] = '\n';
+                docsBuffer[docsLength] = '\0';
+            }
+            continue;
+        }
+
+        headingEnd = ZR_NULL;
+        if (trimmed[0] == '*' && trimmed[1] == '*') {
+            headingEnd = strstr(trimmed + 2, "**");
+        }
+        if (headingEnd != ZR_NULL) {
+            TZrChar labelBuffer[ZR_LSP_TEXT_BUFFER_LENGTH];
+            TZrChar valueBuffer[ZR_LSP_HOVER_BUFFER_LENGTH];
+            TZrSize labelLength = (TZrSize)(headingEnd - (trimmed + 2));
+            TZrChar *valueStart = headingEnd + 2;
+
+            if (!lsp_rich_hover_flush_docs(state, richHover, docsBuffer, &docsLength)) {
+                ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
+                return ZR_FALSE;
+            }
+
+            if (labelLength >= sizeof(labelBuffer)) {
+                labelLength = sizeof(labelBuffer) - 1;
+            }
+            memcpy(labelBuffer, trimmed + 2, labelLength);
+            labelBuffer[labelLength] = '\0';
+
+            while (*valueStart == ':' || isspace((unsigned char)*valueStart)) {
+                valueStart++;
+            }
+
+            if (*valueStart != '\0') {
+                snprintf(valueBuffer, sizeof(valueBuffer), "%s", valueStart);
+                if (!lsp_rich_hover_append_section(state, richHover, "name", labelBuffer, valueBuffer)) {
+                    ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
+                    return ZR_FALSE;
+                }
+            } else if (!lsp_rich_hover_append_section(state, richHover, "kind", "Kind", labelBuffer)) {
+                ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
+                return ZR_FALSE;
+            }
+
+            continue;
+        }
+
+        colon = strchr(trimmed, ':');
+        if (colon != ZR_NULL) {
+            TZrChar labelBuffer[ZR_LSP_TEXT_BUFFER_LENGTH];
+            TZrChar valueBuffer[ZR_LSP_HOVER_BUFFER_LENGTH];
+            TZrSize labelLength = (TZrSize)(colon - trimmed);
+            TZrChar *valueStart = colon + 1;
+            const TZrChar *role;
+
+            if (!lsp_rich_hover_flush_docs(state, richHover, docsBuffer, &docsLength)) {
+                ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
+                return ZR_FALSE;
+            }
+
+            while (labelLength > 0 && isspace((unsigned char)trimmed[labelLength - 1])) {
+                labelLength--;
+            }
+            while (*valueStart != '\0' && isspace((unsigned char)*valueStart)) {
+                valueStart++;
+            }
+
+            if (labelLength >= sizeof(labelBuffer)) {
+                labelLength = sizeof(labelBuffer) - 1;
+            }
+            memcpy(labelBuffer, trimmed, labelLength);
+            labelBuffer[labelLength] = '\0';
+            snprintf(valueBuffer, sizeof(valueBuffer), "%s", valueStart);
+            role = lsp_rich_hover_role_for_label(labelBuffer);
+            if (!lsp_rich_hover_append_section(state, richHover, role, labelBuffer, valueBuffer)) {
+                ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
+                return ZR_FALSE;
+            }
+
+            continue;
+        }
+
+        if (docsLength > 0 && docsLength + 1 < sizeof(docsBuffer) && docsBuffer[docsLength - 1] != '\n') {
+            docsBuffer[docsLength++] = '\n';
+        }
+        if (docsLength + strlen(trimmed) >= sizeof(docsBuffer)) {
+            trimmed[sizeof(docsBuffer) - docsLength - 1] = '\0';
+        }
+        snprintf(docsBuffer + docsLength, sizeof(docsBuffer) - docsLength, "%s", trimmed);
+        docsLength = strlen(docsBuffer);
+    }
+
+    if (!lsp_rich_hover_flush_docs(state, richHover, docsBuffer, &docsLength)) {
+        ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
+        return ZR_FALSE;
+    }
+
+    *result = richHover;
+    return ZR_TRUE;
 }
 
 SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
@@ -1190,6 +1455,47 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrLanguageServer_Lsp_GetRichHover(SZrState *state,
+                                          SZrLspContext *context,
+                                          SZrString *uri,
+                                          SZrLspPosition position,
+                                          SZrLspRichHover **result) {
+    SZrLspHover *hover = ZR_NULL;
+    SZrString **contentPtr;
+    const TZrChar *markdown;
+
+    if (result != ZR_NULL) {
+        *result = ZR_NULL;
+    }
+    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, position, &hover) || hover == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (hover->contents.length == 0) {
+        lsp_hover_free_internal(state, hover);
+        return ZR_FALSE;
+    }
+
+    contentPtr = (SZrString **)ZrCore_Array_Get(&hover->contents, 0);
+    markdown = (contentPtr != ZR_NULL && *contentPtr != ZR_NULL) ? lsp_string_text_native(*contentPtr) : ZR_NULL;
+    if (markdown == ZR_NULL || markdown[0] == '\0') {
+        lsp_hover_free_internal(state, hover);
+        return ZR_FALSE;
+    }
+
+    if (!lsp_build_rich_hover_from_markdown(state, markdown, hover->range, result)) {
+        lsp_hover_free_internal(state, hover);
+        return ZR_FALSE;
+    }
+
+    lsp_hover_free_internal(state, hover);
+    return ZR_TRUE;
+}
+
 // 获取定义位置
 TZrBool ZrLanguageServer_Lsp_GetDefinition(SZrState *state,
                          SZrLspContext *context,
@@ -1758,6 +2064,23 @@ void ZrLanguageServer_Lsp_FreeProjectModules(SZrState *state, SZrArray *result) 
     }
 
     ZrCore_Array_Free(state, result);
+}
+
+void ZrLanguageServer_Lsp_FreeRichHover(SZrState *state, SZrLspRichHover *result) {
+    if (state == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < result->sections.length; index++) {
+        SZrLspRichHoverSection **sectionPtr =
+            (SZrLspRichHoverSection **)ZrCore_Array_Get(&result->sections, index);
+        if (sectionPtr != ZR_NULL && *sectionPtr != ZR_NULL) {
+            ZrCore_Memory_RawFree(state->global, *sectionPtr, sizeof(SZrLspRichHoverSection));
+        }
+    }
+
+    ZrCore_Array_Free(state, &result->sections);
+    ZrCore_Memory_RawFree(state->global, result, sizeof(SZrLspRichHover));
 }
 
 void ZrLanguageServer_Lsp_FreeInlayHints(SZrState *state, SZrArray *result) {

@@ -256,6 +256,64 @@ cJSON *serialize_hover(const SZrLspHover *hover) {
     return json;
 }
 
+cJSON *serialize_rich_hover(const SZrLspRichHover *hover) {
+    cJSON *json;
+    cJSON *sections;
+
+    if (hover == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    sections = cJSON_CreateArray();
+    if (json == NULL || sections == NULL) {
+        cJSON_Delete(json);
+        cJSON_Delete(sections);
+        return NULL;
+    }
+
+    for (TZrSize index = 0; index < hover->sections.length; index++) {
+        SZrLspRichHoverSection **sectionPtr =
+            (SZrLspRichHoverSection **)ZrCore_Array_Get((SZrArray *)&hover->sections, index);
+        cJSON *sectionJson;
+        char *roleText;
+        char *labelText;
+        char *valueText;
+
+        if (sectionPtr == ZR_NULL || *sectionPtr == ZR_NULL) {
+            continue;
+        }
+
+        sectionJson = cJSON_CreateObject();
+        if (sectionJson == NULL) {
+            continue;
+        }
+
+        roleText = zr_string_to_c_string((*sectionPtr)->role);
+        labelText = zr_string_to_c_string((*sectionPtr)->label);
+        valueText = zr_string_to_c_string((*sectionPtr)->value);
+
+        if (roleText != NULL) {
+            cJSON_AddStringToObject(sectionJson, ZR_LSP_FIELD_ROLE, roleText);
+        }
+        if (labelText != NULL) {
+            cJSON_AddStringToObject(sectionJson, ZR_LSP_FIELD_LABEL, labelText);
+        }
+        if (valueText != NULL) {
+            cJSON_AddStringToObject(sectionJson, ZR_LSP_FIELD_VALUE, valueText);
+        }
+
+        free(roleText);
+        free(labelText);
+        free(valueText);
+        cJSON_AddItemToArray(sections, sectionJson);
+    }
+
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_SECTIONS, sections);
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_range(hover->range));
+    return json;
+}
+
 static cJSON *serialize_markdown_content(SZrString *value) {
     cJSON *json;
     char *text;
@@ -621,6 +679,10 @@ void free_hover(SZrState *state, SZrLspHover *hover) {
 
     ZrCore_Array_Free(state, &hover->contents);
     ZrCore_Memory_RawFree(state->global, hover, sizeof(SZrLspHover));
+}
+
+void free_rich_hover(SZrState *state, SZrLspRichHover *hover) {
+    ZrLanguageServer_Lsp_FreeRichHover(state, hover);
 }
 
 void free_signature_help(SZrState *state, SZrLspSignatureHelp *help) {

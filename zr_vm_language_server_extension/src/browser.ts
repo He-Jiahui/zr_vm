@@ -13,6 +13,7 @@ import {
 import { registerWebDebugSupportUnavailable } from './debug/webSupport';
 import { setLanguageClientRequestClient } from './languageClientRequests';
 import { registerWebProjectActionsUnavailable } from './projectActionsWeb';
+import { registerRichHoverSupport, type ZrRichHoverController } from './richHover';
 import { registerZrStructureViews, ZrStructureController } from './structure';
 import { registerVirtualDocumentSupport } from './virtualDocuments';
 import { createDocumentSelector, registerZrpJsonSupport } from './zrpSupport';
@@ -25,6 +26,7 @@ const RESTART_COMMAND = 'zr.restartLanguageServer';
 let client: LanguageClient | undefined;
 let clientLifecycle: TransportAwareLanguageClientLifecycle<LanguageClient> | undefined;
 let structureController: ZrStructureController | undefined;
+let richHoverController: ZrRichHoverController | undefined;
 let workerHandle: { terminate: () => void } | undefined;
 let workerScriptUrl: string | undefined;
 let clientResources: vscode.Disposable[] = [];
@@ -46,6 +48,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(registerVirtualDocumentSupport());
     structureController = registerZrStructureViews(context);
     context.subscriptions.push(structureController);
+    richHoverController = registerRichHoverSupport(context);
+    context.subscriptions.push(richHoverController);
 
     context.subscriptions.push(
         vscode.commands.registerCommand(RESTART_COMMAND, async () => {
@@ -74,6 +78,8 @@ export async function deactivate(): Promise<void> {
     await stopClient();
     structureController?.dispose();
     structureController = undefined;
+    richHoverController?.dispose();
+    richHoverController = undefined;
 }
 
 async function enqueueRestart(context: vscode.ExtensionContext, requestedByUser: boolean): Promise<void> {
@@ -135,6 +141,7 @@ async function startClient(context: vscode.ExtensionContext, requestedByUser: bo
             configurationSection: CONFIG_SECTION,
             fileEvents,
         },
+        middleware: richHoverController?.createMiddleware(),
     };
     const lifecycle = createTransportAwareLanguageClientLifecycle<LanguageClient>();
     clientOptions.errorHandler = lifecycle.errorHandler;

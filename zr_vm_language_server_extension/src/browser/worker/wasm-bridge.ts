@@ -112,6 +112,14 @@ export class ZrWasmBridge {
         );
     }
 
+    async getRichHover(uri: string, line: number, character: number): Promise<WasmResponse<unknown>> {
+        return this.invoke<unknown>(
+            'wasm_ZrLspGetRichHover',
+            ['number', 'string', 'number', 'number', 'number'],
+            [await this.context(), uri, byteLength(uri), line, character],
+        );
+    }
+
     async getDefinition(uri: string, line: number, character: number): Promise<WasmResponse<unknown[]>> {
         return this.invoke<unknown[]>(
             'wasm_ZrLspGetDefinition',

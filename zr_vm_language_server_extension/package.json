@@ -16,6 +16,8 @@
     "onLanguage:zr",
     "onLanguage:zr-project",
     "onCommand:zr.restartLanguageServer",
+    "onCommand:zr.richHover.focus",
+    "onCommand:zr.richHover.refresh",
     "onCommand:zr.structure.refresh",
     "onCommand:zr.selectProject",
     "onCommand:zr.runCurrentProject",
@@ -26,6 +28,7 @@
     "onView:zrFiles",
     "onView:zrImports",
     "onView:zrBuiltinModules",
+    "onView:zrRichHover",
     "onDebugResolve:zr"
   ],
   "main": "./out/extension.js",
@@ -94,6 +97,17 @@
       {
         "command": "zr.structure.refresh",
         "title": "Refresh Structure Views",
+        "category": "Zr",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "zr.richHover.focus",
+        "title": "Open Rich Hover",
+        "category": "Zr"
+      },
+      {
+        "command": "zr.richHover.refresh",
+        "title": "Refresh Rich Hover",
         "category": "Zr",
         "icon": "$(refresh)"
       },
@@ -233,6 +247,10 @@
         {
           "id": "zrBuiltinModules",
           "name": "可用模块库"
+        },
+        {
+          "id": "zrRichHover",
+          "name": "Rich Hover"
         }
       ]
     },
@@ -251,6 +269,11 @@
         {
           "command": "zr.structure.refresh",
           "when": "view == zrBuiltinModules",
+          "group": "navigation"
+        },
+        {
+          "command": "zr.richHover.refresh",
+          "when": "view == zrRichHover",
           "group": "navigation"
         },
         {

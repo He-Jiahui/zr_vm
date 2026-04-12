@@ -185,6 +185,11 @@ connection.onHover(async ({ textDocument, position }) => {
     return responseData<Hover | null>(response, null);
 });
 
+connection.onRequest('zr/richHover', async ({ uri, line, character }: { uri: string; line: number; character: number }) => {
+    const response = await bridge.getRichHover(uri, line, character);
+    return responseData<unknown | null>(response, null);
+});
+
 connection.onDefinition(async ({ textDocument, position }) => {
     const response = await bridge.getDefinition(textDocument.uri, position.line, position.character);
     return responseData<Location[]>(response, []);

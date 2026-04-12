@@ -80,6 +80,10 @@ const char* wasm_ZrLspGetCompletion(void* context, const char* uri, int uriLen,
 const char* wasm_ZrLspGetHover(void* context, const char* uri, int uriLen,
                           int line, int character);
 
+// 获取结构化 rich hover 信息
+const char* wasm_ZrLspGetRichHover(void* context, const char* uri, int uriLen,
+                              int line, int character);
+
 // 获取定义位置
 // uri: UTF-8 字符串指针
 // uriLen: URI 长度

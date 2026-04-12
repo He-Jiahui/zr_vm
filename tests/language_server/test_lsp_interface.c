@@ -111,6 +111,9 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                TZrInt32 extraCharacterOffset,
                                                SZrLspPosition *outPosition);
 static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle);
+static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
+                                                const TZrChar *role,
+                                                const TZrChar *needle);
 static TZrBool inlay_hint_array_contains_label(SZrArray *hints, const TZrChar *label);
 static SZrLspSymbolInformation *find_symbol_information_by_name(SZrArray *symbols, const TZrChar *name);
 static TZrBool build_fixture_native_path(const TZrChar *relativePath, TZrChar *buffer, TZrSize bufferSize);
@@ -877,6 +880,30 @@ static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
         SZrString **contentPtr = (SZrString **)ZrCore_Array_Get(&hover->contents, index);
         if (contentPtr != ZR_NULL && *contentPtr != ZR_NULL &&
             strstr(test_string_ptr(*contentPtr), needle) != ZR_NULL) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
+                                                const TZrChar *role,
+                                                const TZrChar *needle) {
+    if (hover == ZR_NULL || role == ZR_NULL || needle == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < hover->sections.length; index++) {
+        SZrLspRichHoverSection **sectionPtr =
+            (SZrLspRichHoverSection **)ZrCore_Array_Get(&hover->sections, index);
+        if (sectionPtr == ZR_NULL || *sectionPtr == ZR_NULL || (*sectionPtr)->role == ZR_NULL ||
+            (*sectionPtr)->value == ZR_NULL) {
+            continue;
+        }
+
+        if (strcmp(test_string_ptr((*sectionPtr)->role), role) == 0 &&
+            strstr(test_string_ptr((*sectionPtr)->value), needle) != ZR_NULL) {
             return ZR_TRUE;
         }
     }
@@ -3394,6 +3421,58 @@ static void test_lsp_hover_describes_meta_method_category(SZrState *state) {
 
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Hover Describes Meta Method Category");
+}
+
+static void test_lsp_rich_hover_structures_meta_sections(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class Foo {\n"
+        "    pub @constructor(seed: int) {\n"
+        "    }\n"
+        "}\n";
+    SZrLspPosition metaMethodPosition;
+    SZrLspRichHover *richHover = ZR_NULL;
+
+    TEST_START("LSP Rich Hover Structures Meta Sections");
+    TEST_INFO("Rich hover payload",
+              "Structured rich hover sections should preserve semantic roles for meta methods so the extension can color them without reparsing markdown.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Rich Hover Structures Meta Sections", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///rich_hover_sections.zr", 31);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "@constructor", 0, 1, &metaMethodPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Rich Hover Structures Meta Sections",
+                  "Failed to prepare rich-hover fixture positions");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetRichHover(state, context, uri, metaMethodPosition, &richHover) ||
+        richHover == ZR_NULL ||
+        !rich_hover_section_contains_text(richHover, "name", "@constructor") ||
+        !rich_hover_section_contains_text(richHover, "category", "lifecycle") ||
+        !rich_hover_section_contains_text(richHover, "applicableTo", "class/struct meta function") ||
+        !rich_hover_section_contains_text(richHover, "detail", "lifecycle meta method")) {
+        ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Rich Hover Structures Meta Sections",
+                  "Meta method rich hover should expose name/category/applicableTo/detail sections for the extension panel");
+        return;
+    }
+
+    ZrLanguageServer_Lsp_FreeRichHover(state, richHover);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Rich Hover Structures Meta Sections");
 }
 
 static void test_lsp_extern_function_navigation_and_signature_help(SZrState *state) {
@@ -5961,6 +6040,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_hover_describes_meta_method_category(state);
+    TEST_DIVIDER();
+
+    test_lsp_rich_hover_structures_meta_sections(state);
     TEST_DIVIDER();
 
     test_lsp_extern_function_navigation_and_signature_help(state);

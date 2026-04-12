@@ -59,6 +59,7 @@ cJSON *serialize_symbol_information(const SZrLspSymbolInformation *info);
 cJSON *serialize_diagnostic(const SZrLspDiagnostic *diagnostic);
 cJSON *serialize_completion_item(const SZrLspCompletionItem *item);
 cJSON *serialize_hover(const SZrLspHover *hover);
+cJSON *serialize_rich_hover(const SZrLspRichHover *hover);
 cJSON *serialize_signature_help(const SZrLspSignatureHelp *help);
 cJSON *serialize_inlay_hints_array(SZrArray *hints);
 cJSON *serialize_document_highlight(const SZrLspDocumentHighlight *highlight);
@@ -75,6 +76,7 @@ void free_completion_items_array(SZrState *state, SZrArray *items);
 void free_inlay_hints_array(SZrState *state, SZrArray *hints);
 void free_highlights_array(SZrState *state, SZrArray *highlights);
 void free_hover(SZrState *state, SZrLspHover *hover);
+void free_rich_hover(SZrState *state, SZrLspRichHover *hover);
 void free_signature_help(SZrState *state, SZrLspSignatureHelp *help);
 
 int parse_position(const cJSON *json, SZrLspPosition *outPosition);

@@ -397,6 +397,65 @@ static cJSON* serialize_symbol_array(SZrState *state, SZrArray *symbols) {
     return json;
 }
 
+static cJSON* serialize_rich_hover(SZrState *state, SZrLspRichHover *hover) {
+    cJSON *json = cJSON_CreateObject();
+    cJSON *sections = cJSON_CreateArray();
+
+    if (json == ZR_NULL || sections == ZR_NULL || state == ZR_NULL || hover == ZR_NULL) {
+        cJSON_Delete(json);
+        cJSON_Delete(sections);
+        return ZR_NULL;
+    }
+
+    for (TZrSize i = 0; i < hover->sections.length; i++) {
+        SZrLspRichHoverSection **sectionPtr =
+            (SZrLspRichHoverSection **)ZrCore_Array_Get(&hover->sections, i);
+        cJSON *sectionJson;
+        const char *roleText;
+        const char *labelText;
+        const char *valueText;
+
+        if (sectionPtr == ZR_NULL || *sectionPtr == ZR_NULL) {
+            continue;
+        }
+
+        sectionJson = cJSON_CreateObject();
+        if (sectionJson == ZR_NULL) {
+            continue;
+        }
+
+        roleText = string_to_cstr(state, (*sectionPtr)->role);
+        labelText = string_to_cstr(state, (*sectionPtr)->label);
+        valueText = string_to_cstr(state, (*sectionPtr)->value);
+
+        if (roleText != ZR_NULL) {
+            cJSON_AddStringToObject(sectionJson, ZR_LSP_FIELD_ROLE, roleText);
+        }
+        if (labelText != ZR_NULL) {
+            cJSON_AddStringToObject(sectionJson, ZR_LSP_FIELD_LABEL, labelText);
+        }
+        if (valueText != ZR_NULL) {
+            cJSON_AddStringToObject(sectionJson, ZR_LSP_FIELD_VALUE, valueText);
+        }
+
+        if (roleText != ZR_NULL) {
+            free_cstr(state, roleText);
+        }
+        if (labelText != ZR_NULL) {
+            free_cstr(state, labelText);
+        }
+        if (valueText != ZR_NULL) {
+            free_cstr(state, valueText);
+        }
+
+        cJSON_AddItemToArray(sections, sectionJson);
+    }
+
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_SECTIONS, sections);
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_lsp_range(hover->range));
+    return json;
+}
+
 static cJSON* serialize_inlay_hint(SZrState *state, SZrLspInlayHint *hint) {
     cJSON *json = cJSON_CreateObject();
     const char *label = ZR_NULL;
@@ -1059,6 +1118,40 @@ const char* wasm_ZrLspGetNativeDeclarationDocument(void* context, const char* ur
         free_cstr(g_wasm_state, text);
         return jsonStr;
     }
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetRichHover(void* context, const char* uri, int uriLen,
+                              int line, int character) {
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    SZrString *uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    SZrLspPosition position;
+    position.line = line;
+    position.character = character;
+
+    SZrLspRichHover *hover = ZR_NULL;
+    if (ZrLanguageServer_Lsp_GetRichHover(g_wasm_state,
+                                          (SZrLspContext*)context,
+                                          uriStr,
+                                          position,
+                                          &hover) &&
+        hover != ZR_NULL) {
+        cJSON *data = serialize_rich_hover(g_wasm_state, hover);
+        const char *jsonStr = create_success_response(data);
+        ZrLanguageServer_Lsp_FreeRichHover(g_wasm_state, hover);
+        return jsonStr;
+    }
+
+    return create_success_response(cJSON_CreateNull());
 }
 
 #ifdef __EMSCRIPTEN__

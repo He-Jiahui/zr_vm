@@ -420,6 +420,27 @@ static cJSON *handle_hover_request(SZrStdioServer *server, const cJSON *params) 
     return result != NULL ? result : cJSON_CreateNull();
 }
 
+static cJSON *handle_rich_hover_request(SZrStdioServer *server, const cJSON *params) {
+    SZrLspPosition position;
+    const char *uriText;
+    SZrString *uri;
+    SZrLspRichHover *hover = ZR_NULL;
+    cJSON *result;
+
+    if (!get_uri_and_position(server, params, &uriText, &uri, &position)) {
+        return NULL;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetRichHover(server->state, server->context, uri, position, &hover) ||
+        hover == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    result = serialize_rich_hover(hover);
+    free_rich_hover(server->state, hover);
+    return result != NULL ? result : cJSON_CreateNull();
+}
+
 static cJSON *handle_signature_help_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
@@ -1024,6 +1045,8 @@ void handle_request_message(SZrStdioServer *server,
         result = handle_completion_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_HOVER) == 0) {
         result = handle_hover_request(server, params);
+    } else if (strcmp(method, ZR_LSP_METHOD_ZR_RICH_HOVER) == 0) {
+        result = handle_rich_hover_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SIGNATURE_HELP) == 0) {
         result = handle_signature_help_request(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_INLAY_HINT) == 0) {

@@ -61,6 +61,17 @@ typedef struct SZrLspHover {
     SZrLspRange range;                // 范围（可选）
 } SZrLspHover;
 
+typedef struct SZrLspRichHoverSection {
+    SZrString *role;                  // 语义角色（name/signature/access/...）
+    SZrString *label;                 // 字段标签
+    SZrString *value;                 // 字段值
+} SZrLspRichHoverSection;
+
+typedef struct SZrLspRichHover {
+    SZrArray sections;                // SZrLspRichHoverSection*
+    SZrLspRange range;                // 范围（可选）
+} SZrLspRichHover;
+
 typedef struct SZrLspParameterInformation {
     SZrString *label;                 // 参数标签
     SZrString *documentation;         // 文档（可选，markdown格式）
@@ -161,6 +172,12 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                                            SZrLspPosition position,
                                            SZrLspHover **result);
 
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetRichHover(SZrState *state,
+                                                                 SZrLspContext *context,
+                                                                 SZrString *uri,
+                                                                 SZrLspPosition position,
+                                                                 SZrLspRichHover **result);
+
 // 获取签名帮助
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
                                                                      SZrLspContext *context,
@@ -214,6 +231,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetProjectModules(SZrState *
                                                                      SZrArray *result);
 
 ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeProjectModules(SZrState *state, SZrArray *result);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeRichHover(SZrState *state, SZrLspRichHover *result);
 
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
                                                                   SZrLspContext *context,

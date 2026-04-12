@@ -75,6 +75,8 @@
 #define ZR_LSP_FIELD_LABEL "label"
 #define ZR_LSP_FIELD_DETAIL "detail"
 #define ZR_LSP_FIELD_VALUE "value"
+#define ZR_LSP_FIELD_ROLE "role"
+#define ZR_LSP_FIELD_SECTIONS "sections"
 #define ZR_LSP_FIELD_DOCUMENTATION "documentation"
 #define ZR_LSP_FIELD_INSERT_TEXT "insertText"
 #define ZR_LSP_FIELD_INSERT_TEXT_FORMAT "insertTextFormat"
@@ -172,6 +174,7 @@
 #define ZR_LSP_METHOD_TEXT_DOCUMENT_DID_SAVE "textDocument/didSave"
 #define ZR_LSP_METHOD_ZR_NATIVE_DECLARATION_DOCUMENT "zr/nativeDeclarationDocument"
 #define ZR_LSP_METHOD_ZR_PROJECT_MODULES "zr/projectModules"
+#define ZR_LSP_METHOD_ZR_RICH_HOVER "zr/richHover"
 #define ZR_LSP_METHOD_ZR_SELECTED_PROJECT "zr/selectedProject"
 
 #define ZR_LSP_FIELD_INITIALIZATION_OPTIONS "initializationOptions"
