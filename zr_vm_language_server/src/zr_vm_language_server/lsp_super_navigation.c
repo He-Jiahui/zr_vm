@@ -1,4 +1,4 @@
-#include "lsp_interface_internal.h"
+#include "interface/lsp_interface_internal.h"
 
 static TZrBool super_navigation_file_range_contains_position(SZrFileRange range, SZrFileRange position) {
     if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&

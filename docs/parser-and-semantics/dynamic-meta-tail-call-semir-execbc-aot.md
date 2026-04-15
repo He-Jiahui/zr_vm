@@ -2,27 +2,27 @@
 related_code:
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
   - zr_vm_core/include/zr_vm_core/function.h
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
-  - zr_vm_core/src/zr_vm_core/execution_control.c
-  - zr_vm_core/src/zr_vm_core/execution_tail_call.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_control.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_tail_call.c
   - zr_vm_core/src/zr_vm_core/function.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression_types.c
-  - zr_vm_parser/src/zr_vm_parser/compile_statement.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_semir.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot.c
-  - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
 implementation_files:
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
   - zr_vm_core/include/zr_vm_core/function.h
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
-  - zr_vm_core/src/zr_vm_core/execution_control.c
-  - zr_vm_core/src/zr_vm_core/execution_tail_call.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_control.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_tail_call.c
   - zr_vm_core/src/zr_vm_core/function.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression_types.c
-  - zr_vm_parser/src/zr_vm_parser/compile_statement.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_semir.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot.c
-  - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
 plan_sources:
   - user: 2026-04-03 实现 ZR 三层 IR 与 Ownership/AOT 字节码重构方案，并继续推进 dynamic/meta 指令族、quickening/superinstruction 生成器
   - user: 2026-04-03 继续往后做 AOTIR/LLVM/C backend、dynamic/meta 新指令族、quickening/superinstruction 生成器

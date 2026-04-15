@@ -7,7 +7,7 @@ related_code:
   - scripts/benchmark/build_benchmark_release.sh
   - scripts/benchmark/run_wsl_benchmarks_report_csv.sh
   - scripts/benchmark/time_numeric_loops_interp_vs_aot.sh
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
@@ -15,7 +15,7 @@ implementation_files:
   - tests/benchmarks/registry.cmake
   - tests/cmake/run_performance_suite.cmake
   - scripts/benchmark/run_wsl_benchmarks_report_csv.sh
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c

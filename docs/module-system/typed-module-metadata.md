@@ -4,59 +4,59 @@ related_code:
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/io.c
-  - zr_vm_core/src/zr_vm_core/module_internal.h
-  - zr_vm_core/src/zr_vm_core/module_loader.c
-  - zr_vm_core/src/zr_vm_core/module_prototype.c
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/module/module_internal.h
+  - zr_vm_core/src/zr_vm_core/module/module_loader.c
+  - zr_vm_core/src/zr_vm_core/module/module_prototype.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
-  - zr_vm_library/src/zr_vm_library/native_binding_internal.h
-  - zr_vm_library/src/zr_vm_library/native_binding_metadata.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
-  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_callback.c
-  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_internal.h
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_internal.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/compiler.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_class.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_internal.h
-  - zr_vm_parser/src/zr_vm_parser/compiler_state.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_typed_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_state.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_ffi.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_internal.h
-  - zr_vm_parser/src/zr_vm_parser/type_inference_import_metadata.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_native.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression_types.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_ffi.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
-  - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/function.c
   - zr_vm_core/src/zr_vm_core/io.c
-  - zr_vm_core/src/zr_vm_core/module_internal.h
-  - zr_vm_core/src/zr_vm_core/module_loader.c
-  - zr_vm_core/src/zr_vm_core/module_prototype.c
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/module/module_internal.h
+  - zr_vm_core/src/zr_vm_core/module/module_loader.c
+  - zr_vm_core/src/zr_vm_core/module/module_prototype.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
-  - zr_vm_library/src/zr_vm_library/native_binding_internal.h
-  - zr_vm_library/src/zr_vm_library/native_binding_metadata.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_metadata.c
   - zr_vm_lib_ffi/src/zr_vm_lib_ffi/module.c
-  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_callback.c
-  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_internal.h
-  - zr_vm_parser/src/zr_vm_parser/compiler_class.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_typed_metadata.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_callback.c
+  - zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_ffi.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_import_metadata.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_native.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression_types.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_ffi.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
-  - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
 plan_sources:
   - user: 2026-03-31 实现 “M6 强类型推断完整闭环计划”
   - .codex/plans/M6 强类型推断完整闭环计划.md
@@ -99,17 +99,17 @@ M6 的目标不是把局部推断再补几条特判，而是把“编译期知�
   - `SZrIoFunctionTypedTypeRef`、`SZrIoFunctionTypedLocalBinding`、`SZrIoFunctionTypedExportSymbol` 在 [zr_vm_core/include/zr_vm_core/io.h](../../zr_vm_core/include/zr_vm_core/io.h) 定义
   - `io.c` 负责 `.zro` 读写
 - compile-time metadata construction
-  - [zr_vm_parser/src/zr_vm_parser/compiler_typed_metadata.c](../../zr_vm_parser/src/zr_vm_parser/compiler_typed_metadata.c)
+  - [zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c](../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c)
 - import normalization
-  - [zr_vm_parser/src/zr_vm_parser/type_inference_import_metadata.c](../../zr_vm_parser/src/zr_vm_parser/type_inference_import_metadata.c)
-  - [zr_vm_parser/src/zr_vm_parser/type_inference_native.c](../../zr_vm_parser/src/zr_vm_parser/type_inference_native.c)
+  - [zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c](../../zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c)
+  - [zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c](../../zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_native.c)
 - opcode selection and conversions
-  - [zr_vm_parser/src/zr_vm_parser/compile_expression.c](../../zr_vm_parser/src/zr_vm_parser/compile_expression.c)
-  - [zr_vm_parser/src/zr_vm_parser/compile_expression_types.c](../../zr_vm_parser/src/zr_vm_parser/compile_expression_types.c)
-  - [zr_vm_core/src/zr_vm_core/execution_dispatch.c](../../zr_vm_core/src/zr_vm_core/execution_dispatch.c)
+  - [zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c](../../zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c)
+  - [zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c](../../zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_types.c)
+  - [zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c](../../zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c)
 - artifact writers
   - [zr_vm_parser/src/zr_vm_parser/writer.c](../../zr_vm_parser/src/zr_vm_parser/writer.c)
-  - [zr_vm_parser/src/zr_vm_parser/writer_intermediate.c](../../zr_vm_parser/src/zr_vm_parser/writer_intermediate.c)
+  - [zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c](../../zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c)
 
 ## Behavior Model
 
@@ -127,7 +127,7 @@ M6 的目标不是把局部推断再补几条特判，而是把“编译期知�
 
 ## Compile-Time Metadata Build
 
-[compiler_typed_metadata.c](../../zr_vm_parser/src/zr_vm_parser/compiler_typed_metadata.c) 把本来只存在于短生命周期 `semanticContext` / `typeEnv` 里的结果汇总回 `SZrFunction`：
+[compiler_typed_metadata.c](../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c) 把本来只存在于短生命周期 `semanticContext` / `typeEnv` 里的结果汇总回 `SZrFunction`：
 
 - 局部变量优先从 `typeEnv` 查推断类型
 - 顶层函数声明如果已经离开原始表达式路径，仍会回填为 `function` / `closure`
@@ -274,7 +274,7 @@ LSP / compiler 侧正式消费的 typed metadata 载体固定为 `.zro`。
 `.zro` 通过 `SZrIoFunctionTypedTypeRef` / `SZrIoFunctionTypedLocalBinding` / `SZrIoFunctionTypedExportSymbol` 序列化 typed metadata，
 其中 `typedExportedSymbols` 额外持久化 declaration line/column span，供 binary metadata declaration resolver 直接命中导出符号，而不是只能回退到 module entry。
 
-`.zri` 继续由 [writer_intermediate.c](../../zr_vm_parser/src/zr_vm_parser/writer_intermediate.c) 输出，保留：
+`.zri` 继续由 [writer_intermediate.c](../../zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c) 输出，保留：
 
 - `TYPE_METADATA`
 - `LOCAL_BINDINGS`

@@ -1877,6 +1877,40 @@ TZrBool ZrParser_InferredType_SatisfiesNamedConstraint(SZrCompilerState *cs,
     return inferred_type_satisfies_constraint(cs, actualType, constraintTypeName);
 }
 
+static TZrBool inferred_type_resolves_to_same_exact_prototype(SZrCompilerState *cs,
+                                                              const SZrInferredType *leftType,
+                                                              const SZrInferredType *rightType) {
+    SZrTypePrototypeInfo *leftPrototype;
+    SZrTypePrototypeInfo *rightPrototype;
+
+    if (cs == ZR_NULL || leftType == ZR_NULL || rightType == ZR_NULL ||
+        leftType->typeName == ZR_NULL || rightType->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (leftType->baseType != rightType->baseType) {
+        return ZR_FALSE;
+    }
+
+    if (leftType->isNullable && !rightType->isNullable) {
+        return ZR_FALSE;
+    }
+
+    leftPrototype = resolve_constraint_actual_prototype(cs, leftType);
+    rightPrototype = resolve_constraint_actual_prototype(cs, rightType);
+    if (leftPrototype == ZR_NULL || rightPrototype == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (leftPrototype == rightPrototype) {
+        return ZR_TRUE;
+    }
+
+    return leftPrototype->name != ZR_NULL &&
+           rightPrototype->name != ZR_NULL &&
+           ZrCore_String_Equal(leftPrototype->name, rightPrototype->name);
+}
+
 TZrBool inferred_type_can_use_named_constraint_fallback(SZrCompilerState *cs,
                                                         const SZrInferredType *actualType,
                                                         const SZrInferredType *expectedType) {
@@ -1887,6 +1921,10 @@ TZrBool inferred_type_can_use_named_constraint_fallback(SZrCompilerState *cs,
     if (actualType->typeName != ZR_NULL &&
         ZrCore_String_Equal(actualType->typeName, expectedType->typeName)) {
         return ZR_FALSE;
+    }
+
+    if (inferred_type_resolves_to_same_exact_prototype(cs, actualType, expectedType)) {
+        return ZR_TRUE;
     }
 
     return ZrParser_InferredType_SatisfiesNamedConstraint(cs, actualType, expectedType->typeName);

@@ -17,6 +17,8 @@
 #include "zr_vm_parser/writer.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_library/file.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_internal.h"
 #include "path_support.h"
 
 #ifndef ZR_VM_DESCRIPTOR_PLUGIN_FIXTURE_INT_PATH
@@ -81,6 +83,38 @@ extern TZrBool ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(SZrS
 extern TZrBool ZrLanguageServer_Lsp_ProjectContainsUri(SZrState *state,
                                                        SZrLspContext *context,
                                                        SZrString *uri);
+
+static const TZrChar *test_string_ptr(SZrString *value);
+
+static SZrLspImportBinding *find_import_binding_by_text(SZrArray *bindings,
+                                                        const TZrChar *moduleName,
+                                                        const TZrChar *aliasName) {
+    for (TZrSize index = 0; bindings != ZR_NULL && index < bindings->length; index++) {
+        SZrLspImportBinding **bindingPtr =
+            (SZrLspImportBinding **)ZrCore_Array_Get(bindings, index);
+        const TZrChar *bindingModuleName;
+        const TZrChar *bindingAliasName;
+
+        if (bindingPtr == ZR_NULL || *bindingPtr == ZR_NULL) {
+            continue;
+        }
+
+        bindingModuleName = test_string_ptr((*bindingPtr)->moduleName);
+        bindingAliasName = test_string_ptr((*bindingPtr)->aliasName);
+        if (moduleName != ZR_NULL &&
+            strcmp(bindingModuleName != ZR_NULL ? bindingModuleName : "<null>", moduleName) != 0) {
+            continue;
+        }
+        if (aliasName != ZR_NULL &&
+            strcmp(bindingAliasName != ZR_NULL ? bindingAliasName : "<null>", aliasName) != 0) {
+            continue;
+        }
+
+        return *bindingPtr;
+    }
+
+    return ZR_NULL;
+}
 
 static TZrPtr test_allocator(TZrPtr userData,
                              TZrPtr pointer,
@@ -332,6 +366,13 @@ typedef struct SZrGeneratedMultiImportSourceFixture {
     TZrChar helperPath[ZR_TESTS_PATH_MAX];
     TZrChar modulePath[ZR_TESTS_PATH_MAX];
 } SZrGeneratedMultiImportSourceFixture;
+
+typedef struct SZrGeneratedRelativeAliasImportFixture {
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    TZrChar helperPath[ZR_TESTS_PATH_MAX];
+    TZrChar sharedPath[ZR_TESTS_PATH_MAX];
+} SZrGeneratedRelativeAliasImportFixture;
 
 typedef struct SZrGeneratedDescriptorPluginFixture {
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
@@ -591,6 +632,62 @@ static TZrBool prepare_generated_multi_import_source_fixture(const TZrChar *arti
            write_text_file(fixture->mainPath, mainContent, strlen(mainContent)) &&
            write_text_file(fixture->helperPath, helperContent, strlen(helperContent)) &&
            write_text_file(fixture->modulePath, moduleContent, strlen(moduleContent));
+}
+
+static TZrBool prepare_generated_relative_alias_import_fixture(const TZrChar *artifactName,
+                                                              SZrGeneratedRelativeAliasImportFixture *fixture) {
+    static const TZrChar *projectContent =
+        "{\n"
+        "  \"name\": \"relative_alias_imports\",\n"
+        "  \"source\": \"src\",\n"
+        "  \"binary\": \"bin\",\n"
+        "  \"entry\": \"feature/app/main\",\n"
+        "  \"pathAliases\": {\n"
+        "    \"@shared\": \"common/shared\"\n"
+        "  }\n"
+        "}\n";
+    static const TZrChar *mainContent =
+        "var localMath = %import(\".helper.math\");\n"
+        "var sharedHash = %import(\"@shared.crypto.hash\");\n"
+        "\n"
+        "return localMath.answer + sharedHash.seed;\n";
+    static const TZrChar *helperContent =
+        "pub var answer = 40;\n";
+    static const TZrChar *sharedContent =
+        "pub var seed = 2;\n";
+    TZrChar generatedProjectPath[ZR_TESTS_PATH_MAX];
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourceRootPath[ZR_TESTS_PATH_MAX];
+    TZrChar *lastSeparator;
+
+    if (artifactName == ZR_NULL || fixture == ZR_NULL ||
+        !ZrTests_Path_GetGeneratedArtifact("language_server",
+                                           artifactName,
+                                           "relative_alias_imports",
+                                           ".zrp",
+                                           generatedProjectPath,
+                                           sizeof(generatedProjectPath))) {
+        return ZR_FALSE;
+    }
+
+    memset(fixture, 0, sizeof(*fixture));
+    snprintf(fixture->projectPath, sizeof(fixture->projectPath), "%s", generatedProjectPath);
+    snprintf(rootPath, sizeof(rootPath), "%s", generatedProjectPath);
+    lastSeparator = find_last_path_separator(rootPath);
+    if (lastSeparator == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *lastSeparator = '\0';
+
+    ZrLibrary_File_PathJoin(rootPath, "src", sourceRootPath);
+    ZrLibrary_File_PathJoin(sourceRootPath, "feature/app/main.zr", fixture->mainPath);
+    ZrLibrary_File_PathJoin(sourceRootPath, "feature/app/helper/math.zr", fixture->helperPath);
+    ZrLibrary_File_PathJoin(sourceRootPath, "common/shared/crypto/hash.zr", fixture->sharedPath);
+
+    return write_text_file(fixture->projectPath, projectContent, strlen(projectContent)) &&
+           write_text_file(fixture->mainPath, mainContent, strlen(mainContent)) &&
+           write_text_file(fixture->helperPath, helperContent, strlen(helperContent)) &&
+           write_text_file(fixture->sharedPath, sharedContent, strlen(sharedContent));
 }
 
 static TZrBool prepare_generated_type_member_export_fixture(const TZrChar *artifactName,
@@ -1297,7 +1394,9 @@ static void test_lsp_import_diagnostics_surface_cyclic_initialization_error(SZrS
 static void test_lsp_uses_nearest_ancestor_project(SZrState *state);
 static void test_lsp_ambiguous_project_directory_stays_standalone(SZrState *state);
 static void test_lsp_native_imports_and_ownership_display(SZrState *state);
+static void test_lsp_project_ast_collects_import_bindings(SZrState *state);
 static void test_lsp_import_literal_navigation_and_hover(SZrState *state);
+static void test_lsp_relative_and_alias_import_literal_navigation_and_hover(SZrState *state);
 static void test_lsp_import_literal_hover_identifies_native_descriptor_plugin(SZrState *state);
 static void test_lsp_import_literal_definition_targets_native_descriptor_plugin(SZrState *state);
 static void test_lsp_binary_import_literal_definition_targets_metadata(SZrState *state);
@@ -2170,6 +2269,190 @@ static void test_lsp_native_imports_and_ownership_display(SZrState *state) {
     TEST_PASS(timer, "LSP Native Imports And Ownership Display");
 }
 
+static void test_lsp_project_ast_collects_import_bindings(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    TZrChar mainPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize mainLength = 0;
+    TZrChar *mainContent;
+    SZrString *mainUri = ZR_NULL;
+    SZrFileVersion *fileVersion;
+    SZrSemanticAnalyzer *analyzer;
+    SZrArray bindings;
+    SZrGeneratedRelativeAliasImportFixture relativeAliasFixture;
+    SZrGeneratedFfiWrapperFixture ffiFixture;
+    TZrChar *relativeAliasMainContent;
+    TZrSize relativeAliasMainLength = 0;
+    TZrChar *ffiMainContent;
+    TZrSize ffiMainLength = 0;
+    SZrString *relativeAliasMainUri = ZR_NULL;
+    SZrString *ffiMainUri = ZR_NULL;
+
+    TEST_START("LSP Project AST Collects Import Bindings");
+    TEST_INFO("Analyzer / file AST import extraction",
+              "Project-aware analyzer and file ASTs should surface canonical import bindings for plain, relative-dot, alias, and ffi-wrapper imports");
+
+    if (!build_fixture_native_path("tests/fixtures/projects/import_basic/src/main.zr", mainPath, sizeof(mainPath))) {
+        TEST_FAIL(timer, "LSP Project AST Collects Import Bindings", "Failed to build source import fixture path");
+        return;
+    }
+
+    mainContent = read_fixture_text_file(mainPath, &mainLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (mainContent == ZR_NULL || context == ZR_NULL) {
+        free(mainContent);
+        TEST_FAIL(timer, "LSP Project AST Collects Import Bindings", "Failed to prepare source import fixture");
+        return;
+    }
+
+    mainUri = create_file_uri_from_native_path(state, mainPath);
+    if (mainUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project AST Collects Import Bindings", "Failed to open source import fixture");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, mainUri);
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, mainUri);
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL || analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Project AST Collects Import Bindings", "Failed to capture analyzed project ASTs for the source import fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), 4);
+    ZrLanguageServer_LspProject_CollectImportBindings(state, fileVersion->ast, &bindings);
+    if (bindings.length != 1 || find_import_binding_by_text(&bindings, "greet", "greetModule") == ZR_NULL) {
+        free(mainContent);
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project AST Collects Import Bindings",
+                  "fileVersion->ast should expose the canonical plain import binding for %import(\"greet\")");
+        return;
+    }
+    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), 4);
+    ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
+    if (bindings.length != 1 || find_import_binding_by_text(&bindings, "greet", "greetModule") == ZR_NULL) {
+        free(mainContent);
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project AST Collects Import Bindings",
+                  "analyzer->ast should expose the canonical plain import binding for %import(\"greet\")");
+        return;
+    }
+    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+    free(mainContent);
+
+    if (!prepare_generated_relative_alias_import_fixture("project_ast_collects_relative_alias_imports",
+                                                         &relativeAliasFixture)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project AST Collects Import Bindings",
+                  "Failed to prepare generated relative/alias import fixture");
+        return;
+    }
+
+    relativeAliasMainContent = read_fixture_text_file(relativeAliasFixture.mainPath, &relativeAliasMainLength);
+    relativeAliasMainUri = create_file_uri_from_native_path(state, relativeAliasFixture.mainPath);
+    if (relativeAliasMainContent == ZR_NULL ||
+        relativeAliasMainUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state,
+                                            context,
+                                            relativeAliasMainUri,
+                                            relativeAliasMainContent,
+                                            relativeAliasMainLength,
+                                            1)) {
+        free(relativeAliasMainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project AST Collects Import Bindings",
+                  "Failed to open generated relative/alias import fixture");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, relativeAliasMainUri);
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, relativeAliasMainUri);
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL || analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
+        free(relativeAliasMainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project AST Collects Import Bindings",
+                  "Failed to capture analyzed project ASTs for the relative/alias import fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), 4);
+    ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
+    if (bindings.length != 2 ||
+        find_import_binding_by_text(&bindings, "feature/app/helper/math", "localMath") == ZR_NULL ||
+        find_import_binding_by_text(&bindings, "common/shared/crypto/hash", "sharedHash") == ZR_NULL) {
+        free(relativeAliasMainContent);
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project AST Collects Import Bindings",
+                  "analyzer->ast should expose canonical relative-dot and @alias import bindings");
+        return;
+    }
+    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+    free(relativeAliasMainContent);
+
+    if (!prepare_generated_ffi_wrapper_fixture("project_ast_collects_ffi_wrapper_imports", &ffiFixture)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project AST Collects Import Bindings",
+                  "Failed to prepare generated ffi wrapper fixture");
+        return;
+    }
+
+    ffiMainContent = read_fixture_text_file(ffiFixture.mainPath, &ffiMainLength);
+    ffiMainUri = create_file_uri_from_native_path(state, ffiFixture.mainPath);
+    if (ffiMainContent == ZR_NULL ||
+        ffiMainUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, ffiMainUri, ffiMainContent, ffiMainLength, 1)) {
+        free(ffiMainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project AST Collects Import Bindings",
+                  "Failed to open generated ffi wrapper fixture");
+        return;
+    }
+
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, ffiMainUri);
+    if (analyzer == ZR_NULL || analyzer->ast == ZR_NULL) {
+        free(ffiMainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project AST Collects Import Bindings",
+                  "Failed to capture analyzed project AST for the ffi wrapper fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), 4);
+    ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
+    if (bindings.length != 1 || find_import_binding_by_text(&bindings, "native_api", "nativeApi") == ZR_NULL) {
+        free(ffiMainContent);
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Project AST Collects Import Bindings",
+                  "analyzer->ast should expose ffi-wrapper source imports as canonical bindings");
+        return;
+    }
+
+    free(ffiMainContent);
+    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Project AST Collects Import Bindings");
+}
+
 static void test_lsp_import_literal_navigation_and_hover(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -2268,6 +2551,113 @@ static void test_lsp_import_literal_navigation_and_hover(SZrState *state) {
 
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Import Literal Navigation And Hover");
+}
+
+static void test_lsp_relative_and_alias_import_literal_navigation_and_hover(SZrState *state) {
+    SZrTestTimer timer;
+    SZrGeneratedRelativeAliasImportFixture fixture;
+    SZrLspContext *context;
+    TZrChar *mainContent;
+    TZrSize mainLength = 0;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *helperUri = ZR_NULL;
+    SZrString *sharedUri = ZR_NULL;
+    SZrLspPosition relativeImportPosition;
+    SZrLspPosition aliasImportPosition;
+    SZrArray definitions;
+    SZrLspHover *hover = ZR_NULL;
+
+    ZrCore_Array_Construct(&definitions);
+
+    TEST_START("LSP Relative And Alias Import Literal Navigation And Hover");
+    TEST_INFO("Relative and alias import target navigation",
+              "Hover and definition on explicit relative-dot and @alias imports should resolve to canonical project module keys");
+
+    if (!prepare_generated_relative_alias_import_fixture("project_features_relative_alias_imports", &fixture)) {
+        TEST_FAIL(timer,
+                  "LSP Relative And Alias Import Literal Navigation And Hover",
+                  "Failed to prepare generated relative/alias import fixture");
+        return;
+    }
+
+    mainContent = read_fixture_text_file(fixture.mainPath, &mainLength);
+    context = ZrLanguageServer_LspContext_New(state);
+    if (mainContent == ZR_NULL || context == ZR_NULL) {
+        free(mainContent);
+        TEST_FAIL(timer,
+                  "LSP Relative And Alias Import Literal Navigation And Hover",
+                  "Failed to load generated relative/alias import fixture");
+        return;
+    }
+
+    mainUri = create_file_uri_from_native_path(state, fixture.mainPath);
+    helperUri = create_file_uri_from_native_path(state, fixture.helperPath);
+    sharedUri = create_file_uri_from_native_path(state, fixture.sharedPath);
+    if (mainUri == ZR_NULL || helperUri == ZR_NULL || sharedUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, mainLength, 1) ||
+        !lsp_find_position_for_substring(mainContent, "\".helper.math\"", 0, 1, &relativeImportPosition) ||
+        !lsp_find_position_for_substring(mainContent, "\"@shared.crypto.hash\"", 0, 1, &aliasImportPosition)) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Relative And Alias Import Literal Navigation And Hover",
+                  "Failed to open generated relative/alias source or compute import literal positions");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, relativeImportPosition, &definitions) ||
+        !location_array_contains_uri_and_range(&definitions, helperUri, 0, 0, 0, 0)) {
+        free(mainContent);
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Relative And Alias Import Literal Navigation And Hover",
+                  "Definition on %import(\".helper.math\") should resolve to the relative project source module entry");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
+    if (!ZrLanguageServer_Lsp_GetDefinition(state, context, mainUri, aliasImportPosition, &definitions) ||
+        !location_array_contains_uri_and_range(&definitions, sharedUri, 0, 0, 0, 0)) {
+        free(mainContent);
+        ZrCore_Array_Free(state, &definitions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Relative And Alias Import Literal Navigation And Hover",
+                  "Definition on %import(\"@shared.crypto.hash\") should resolve through pathAliases to the shared source module entry");
+        return;
+    }
+    ZrCore_Array_Free(state, &definitions);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, relativeImportPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "module <feature/app/helper/math>") ||
+        !hover_contains_text(hover, "Source: project source")) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Relative And Alias Import Literal Navigation And Hover",
+                  "Hover on %import(\".helper.math\") should report the canonical relative module key");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, mainUri, aliasImportPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "module <common/shared/crypto/hash>") ||
+        !hover_contains_text(hover, "Source: project source")) {
+        free(mainContent);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Relative And Alias Import Literal Navigation And Hover",
+                  "Hover on %import(\"@shared.crypto.hash\") should report the canonical alias-expanded module key");
+        return;
+    }
+
+    free(mainContent);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Relative And Alias Import Literal Navigation And Hover");
 }
 
 static void test_lsp_import_literal_hover_identifies_ffi_source_wrapper(SZrState *state) {
@@ -6534,7 +6924,13 @@ int main(void) {
     test_lsp_native_imports_and_ownership_display(state);
     TEST_DIVIDER();
 
+    test_lsp_project_ast_collects_import_bindings(state);
+    TEST_DIVIDER();
+
     test_lsp_import_literal_navigation_and_hover(state);
+    TEST_DIVIDER();
+
+    test_lsp_relative_and_alias_import_literal_navigation_and_hover(state);
     TEST_DIVIDER();
 
     test_lsp_import_literal_hover_identifies_ffi_source_wrapper(state);

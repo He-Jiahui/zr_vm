@@ -1,0 +1,6 @@
+{
+  "name": "language_debug_gauntlet",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

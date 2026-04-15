@@ -135,6 +135,10 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->topLevelCallableBindingLength = 0;
     function->parameterMetadata = ZR_NULL;
     function->parameterMetadataCount = 0;
+    function->hasCallableReturnType = ZR_FALSE;
+    ZrCore_Memory_RawSet(&function->callableReturnType, 0, sizeof(function->callableReturnType));
+    function->callableReturnType.baseType = ZR_VALUE_TYPE_OBJECT;
+    function->callableReturnType.elementBaseType = ZR_VALUE_TYPE_OBJECT;
     function->compileTimeVariableInfos = ZR_NULL;
     function->compileTimeVariableInfoLength = 0;
     function->compileTimeFunctionInfos = ZR_NULL;
@@ -751,6 +755,10 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->topLevelCallableBindingLength = 0;
     function->parameterMetadata = ZR_NULL;
     function->parameterMetadataCount = 0;
+    function->hasCallableReturnType = ZR_FALSE;
+    ZrCore_Memory_RawSet(&function->callableReturnType, 0, sizeof(function->callableReturnType));
+    function->callableReturnType.baseType = ZR_VALUE_TYPE_OBJECT;
+    function->callableReturnType.elementBaseType = ZR_VALUE_TYPE_OBJECT;
     function->compileTimeFunctionInfos = ZR_NULL;
     function->compileTimeFunctionInfoLength = 0;
     function->compileTimeVariableInfos = ZR_NULL;

@@ -2,6 +2,7 @@ include(${CMAKE_SOURCE_DIR}/zr_vm_common/ThirdPartyMacros.cmake)
 
 function(zr_declare_module module_name use_common_lib)
     set(zr_module_name ${module_name})
+    get_filename_component(zr_module_src_dir_name ${CMAKE_CURRENT_SOURCE_DIR} NAME)
     file(GLOB_RECURSE zr_module_src CONFIGURE_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/**/*.c"
@@ -20,6 +21,7 @@ function(zr_declare_module module_name use_common_lib)
         target_compile_definitions(${zr_module_static} PRIVATE -DZR_LIBRARY_TYPE_STATIC)
 
         target_include_directories(${zr_module_static} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_include_directories(${zr_module_static} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/${zr_module_src_dir_name})
         if (${use_common_lib})
             target_include_directories(${zr_module_static} PRIVATE ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
         endif ()
@@ -35,6 +37,7 @@ function(zr_declare_module module_name use_common_lib)
         target_compile_definitions(${zr_module_shared} PRIVATE -DZR_LIBRARY_TYPE_SHARED)
 
         target_include_directories(${zr_module_shared} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_include_directories(${zr_module_shared} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/${zr_module_src_dir_name})
         if (${use_common_lib})
             target_include_directories(${zr_module_shared} PRIVATE ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
         endif ()
@@ -46,6 +49,7 @@ endfunction()
 
 function(zr_declare_executable module_name use_common_lib)
     set(zr_module_name ${module_name})
+    get_filename_component(zr_module_src_dir_name ${CMAKE_CURRENT_SOURCE_DIR} NAME)
     file(GLOB_RECURSE zr_module_src CONFIGURE_DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/src/*.c"
             "${CMAKE_CURRENT_SOURCE_DIR}/src/**/*.c"
@@ -61,6 +65,7 @@ function(zr_declare_executable module_name use_common_lib)
 
 
     target_include_directories(${zr_module_executable} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_include_directories(${zr_module_executable} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/${zr_module_src_dir_name})
     if (${use_common_lib})
         target_include_directories(${zr_module_executable} PRIVATE ${CMAKE_SOURCE_DIR}/zr_vm_common/include)
     endif ()
@@ -138,4 +143,3 @@ function(zr_install_module module_name)
                 LIBRARY DESTINATION lib)
     endif ()
 endfunction()
-

@@ -1,32 +1,32 @@
 ---
 related_code:
   - zr_vm_parser/include/zr_vm_parser/ast.h
-  - zr_vm_parser/src/zr_vm_parser/parser_expression_primary.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression_support.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_semir.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
-  - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/include/zr_vm_core/ownership.h
   - zr_vm_core/src/zr_vm_core/ownership.c
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
-  - zr_vm_parser/src/zr_vm_parser/parser_expression_primary.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression_support.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_semir.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_expression_primary.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
-  - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/include/zr_vm_core/ownership.h
   - zr_vm_core/src/zr_vm_core/ownership.c
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
 plan_sources:
   - user: 2026-04-08 Rust-First Ownership / GC 分层设计
   - .codex/plans/Rust-First Ownership  GC 分层设计.md

@@ -122,6 +122,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     
     // 初始化脚本 AST 引用
     cs->scriptAst = ZR_NULL;
+    cs->currentModuleKey = ZR_NULL;
     
     // 初始化脚本级别标志
     cs->isScriptLevel = ZR_FALSE;

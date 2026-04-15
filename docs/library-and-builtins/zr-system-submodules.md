@@ -6,36 +6,36 @@ related_code:
   - zr_vm_lib_system/include/zr_vm_lib_system/fs_registry.h
   - zr_vm_lib_system/include/zr_vm_lib_system/exception_registry.h
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/gc.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/gc_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/fs_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/fs_common.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/fs_entry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/fs_stream.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/fs_internal.h
-  - zr_vm_lib_system/src/zr_vm_lib_system/exception_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/gc/gc.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/gc/gc_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_stream.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_internal.h
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception/exception_registry.c
   - zr_vm_library/include/zr_vm_library/file.h
   - zr_vm_library/include/zr_vm_library/native_binding.h
   - zr_vm_library/src/zr_vm_library/file.c
-  - zr_vm_library/src/zr_vm_library/native_binding.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
 implementation_files:
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/gc.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/gc_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/fs_registry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/fs_common.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/fs_entry.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/fs_stream.c
-  - zr_vm_lib_system/src/zr_vm_lib_system/fs_internal.h
-  - zr_vm_lib_system/src/zr_vm_lib_system/exception_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/gc/gc.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/gc/gc_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_registry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_common.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_stream.c
+  - zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_internal.h
+  - zr_vm_lib_system/src/zr_vm_lib_system/exception/exception_registry.c
   - zr_vm_library/include/zr_vm_library/file.h
   - zr_vm_library/src/zr_vm_library/file.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
-  - zr_vm_library/src/zr_vm_library/native_binding.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
 plan_sources:
   - user: 2026-03-29 实现“zr.system 模块细分与子模块化方案”
   - .codex/plans/ZR VM 分区式分代 GC 与作用域逃逸管理设计.md
@@ -442,7 +442,7 @@ acceptFd(stream); // 编译期报错
 1. CLI 初始化时注册 `zr.system` 根模块、各个叶子模块，以及独立的 `zr.system.exception` 模块。
 2. `%import("zr.system")` 通过 `moduleLinks` 物化根模块，并把 6 个叶子模块对象直接作为 export 暴露出去。
 3. `%import("zr.system.fs")` 直接物化 `zr.system.fs`，其中类型描述符注册 `File`、`Folder`、`SystemFileInfo`、`FileStream` 和两个 stream interface。
-4. `File` / `Folder` 构造时调用底层 `zr_vm_library/file.c` 查询宿主路径信息，填充 `fullPath`、`parent` 和 `fileInfo`。
+4. `File` / `Folder` 构造时调用底层 `zr_vm_library/src/zr_vm_library/file.c` 查询宿主路径信息，填充 `fullPath`、`parent` 和 `fileInfo`。
 5. `File.open(...)` 通过平台文件句柄接口打开底层资源，再创建 `FileStream` wrapper 对象，并把 handle id 与隐藏 native 指针写入对象字段。
 6. 普通 zr 调用里，`FileStream` 只是一个 class 实例引用。
 7. 遇到 extern/native 边界时，FFI lowering 根据 prototype 上的 wrapper metadata 读取 handle id，把它按 `i32` ABI 参数传给宿主函数。

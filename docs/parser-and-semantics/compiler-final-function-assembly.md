@@ -2,14 +2,14 @@
 related_code:
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/compiler.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_internal.h
-  - zr_vm_parser/src/zr_vm_parser/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/function.c
 implementation_files:
   - zr_vm_parser/src/zr_vm_parser/compiler.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_internal.h
-  - zr_vm_parser/src/zr_vm_parser/compiler_function_assembly.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/src/zr_vm_core/function.c
 plan_sources:

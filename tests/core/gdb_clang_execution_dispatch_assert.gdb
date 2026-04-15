@@ -8,7 +8,7 @@ set breakpoint pending on
 #   ./build/codex-wsl-current-clang-debug-make/bin/zr_vm_cli \
 #   ./tests/fixtures/projects/hello_world/hello_world.zrp
 
-break /mnt/e/Git/zr_vm/zr_vm_core/src/zr_vm_core/execution_dispatch.c:1766
+break /mnt/e/Git/zr_vm/zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:1766
 commands
   silent
   printf "\n=== execution_dispatch BITWISE_XOR assert ===\n"

@@ -4,6 +4,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/parser.h"
+#include "zr_vm_parser/project_imports.h"
 #include "zr_vm_parser/type_inference.h"
 
 #include "zr_vm_core/array.h"
@@ -603,6 +604,11 @@ TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
                                                    TZrBool includeDefaultValues,
                                                    SZrFunctionMetadataParameter **outParameters,
                                                    TZrUInt32 *outParameterCount);
+TZrBool compiler_build_callable_return_type_metadata(SZrCompilerState *cs,
+                                                     SZrType *declaredReturnType,
+                                                     SZrAstNode *bodyNode,
+                                                     SZrFunctionTypedTypeRef *outType,
+                                                     TZrBool *outHasType);
 
 TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs);
 

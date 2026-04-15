@@ -2,6 +2,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { parseProjectManifestText } from '../projectSupport';
+import { DesiredSourceBreakpoint, PendingSourceBreakpointStore } from './breakpointReplay';
 import { ZrCliLauncher } from './cliLauncher';
 import {
     ZR_DEBUG_MAIN_THREAD_ID,
@@ -39,6 +40,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
     private readonly emitter = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
     private readonly variableHandles = new Map<number, VariablesHandle>();
     private readonly runtimeSourcePaths = new Map<string, string>();
+    private readonly pendingSourceBreakpoints = new PendingSourceBreakpointStore();
     private readonly debugConsole = vscode.debug.activeDebugConsole;
     private readonly sessionOutputPrefix: string;
     private client: ZrDbgClient | undefined;
@@ -234,14 +236,17 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         if (initializeResult.protocol !== ZRDBG_PROTOCOL) {
             throw new Error(`Unexpected zrdbg protocol '${String(initializeResult.protocol ?? '')}'`);
         }
+
+        await this.replayDesiredSourceBreakpointsUsingKnownPaths();
     }
 
     private async handleSetBreakpoints(request: DapRequest): Promise<void> {
-        const client = this.requireClient();
         const args = request.arguments ?? {};
         const source = args.source as { path?: string } | undefined;
         const pathText = typeof source?.path === 'string' ? path.normalize(source.path) : '';
-        const breakpoints = Array.isArray(args.breakpoints) ? args.breakpoints : [];
+        const breakpoints = this.normalizeDesiredSourceBreakpoints(
+            Array.isArray(args.breakpoints) ? args.breakpoints : [],
+        );
         const canonicalKey = canonicalSourcePath(pathText);
         let runtimeSourcePath = this.runtimeSourcePaths.get(canonicalKey) ?? pathText;
         if (
@@ -261,26 +266,13 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
             throw new Error('ZR setBreakpoints requires source.path.');
         }
 
-        const result = await client.request('setBreakpoints', {
-            sourceFile: runtimeSourcePath,
-            breakpoints: breakpoints
-                .map((item) => ({
-                    line: Number(item.line),
-                    condition: typeof item.condition === 'string' ? item.condition : undefined,
-                    hitCondition: typeof item.hitCondition === 'string' ? item.hitCondition : undefined,
-                    logMessage: typeof item.logMessage === 'string' ? item.logMessage : undefined,
-                }))
-                .filter((item) => Number.isInteger(item.line) && item.line > 0),
-        });
-        const resolvedBreakpoints = Array.isArray(result.breakpoints) ? result.breakpoints as ZrDbgBreakpoint[] : [];
+        this.pendingSourceBreakpoints.rememberDesiredBreakpoints(pathText, breakpoints);
+        const resolvedBreakpoints = this.client
+            ? await this.bindDesiredSourceBreakpoints(pathText, runtimeSourcePath, breakpoints)
+            : undefined;
 
         this.sendResponse(request, {
-            breakpoints: resolvedBreakpoints.map((item, index) => ({
-                id: index + 1,
-                verified: item.verified !== false,
-                line: typeof item.line === 'number' ? item.line : breakpoints[index]?.line,
-                source: { path: pathText, name: path.basename(pathText) },
-            })),
+            breakpoints: this.toDapSourceBreakpoints(pathText, breakpoints, resolvedBreakpoints),
         });
     }
 
@@ -304,6 +296,93 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
                 line: typeof item.line === 'number' ? item.line : undefined,
             })),
         });
+    }
+
+    private normalizeDesiredSourceBreakpoints(rawBreakpoints: unknown[]): DesiredSourceBreakpoint[] {
+        return rawBreakpoints
+            .map((item) => {
+                const breakpoint = item as {
+                    line?: unknown;
+                    condition?: unknown;
+                    hitCondition?: unknown;
+                    logMessage?: unknown;
+                };
+
+                return {
+                    line: Number(breakpoint.line),
+                    condition: typeof breakpoint.condition === 'string' ? breakpoint.condition : undefined,
+                    hitCondition:
+                        typeof breakpoint.hitCondition === 'string' ? breakpoint.hitCondition : undefined,
+                    logMessage: typeof breakpoint.logMessage === 'string' ? breakpoint.logMessage : undefined,
+                };
+            })
+            .filter((breakpoint) => Number.isInteger(breakpoint.line) && breakpoint.line > 0);
+    }
+
+    private async bindDesiredSourceBreakpoints(
+        sourcePath: string,
+        runtimeSourcePath: string,
+        breakpoints: DesiredSourceBreakpoint[],
+    ): Promise<ZrDbgBreakpoint[]> {
+        const result = await this.requireClient().request('setBreakpoints', {
+            sourceFile: runtimeSourcePath,
+            breakpoints,
+        });
+        const resolvedBreakpoints = Array.isArray(result.breakpoints)
+            ? result.breakpoints as ZrDbgBreakpoint[]
+            : [];
+
+        this.pendingSourceBreakpoints.markBindingApplied(sourcePath, runtimeSourcePath);
+        return resolvedBreakpoints;
+    }
+
+    private toDapSourceBreakpoints(
+        sourcePath: string,
+        requestedBreakpoints: DesiredSourceBreakpoint[],
+        resolvedBreakpoints?: ZrDbgBreakpoint[],
+    ): Array<Record<string, unknown>> {
+        return requestedBreakpoints.map((breakpoint, index) => {
+            const resolved = resolvedBreakpoints?.[index];
+            return {
+                id: index + 1,
+                verified: resolvedBreakpoints !== undefined ? resolved?.verified !== false : false,
+                line: typeof resolved?.line === 'number' ? resolved.line : breakpoint.line,
+                source: { path: sourcePath, name: path.basename(sourcePath) },
+            };
+        });
+    }
+
+    private async replayPendingSourceBreakpointsForResolvedSource(
+        runtimeSourcePath: string,
+        resolvedSourcePath: string | undefined,
+    ): Promise<void> {
+        if (!this.client) {
+            return;
+        }
+
+        const replays = this.pendingSourceBreakpoints.replayBindingsForResolvedSource(
+            runtimeSourcePath,
+            resolvedSourcePath,
+        );
+        for (const replay of replays) {
+            await this.bindDesiredSourceBreakpoints(
+                replay.sourcePath,
+                replay.runtimeSourcePath,
+                replay.breakpoints,
+            );
+        }
+    }
+
+    private async replayDesiredSourceBreakpointsUsingKnownPaths(): Promise<void> {
+        if (!this.client) {
+            return;
+        }
+
+        for (const desired of this.pendingSourceBreakpoints.getDesiredBreakpoints()) {
+            const runtimeSourcePath =
+                this.runtimeSourcePaths.get(canonicalSourcePath(desired.sourcePath)) ?? desired.sourcePath;
+            await this.replayPendingSourceBreakpointsForResolvedSource(runtimeSourcePath, desired.sourcePath);
+        }
     }
 
     private async handleSetExceptionBreakpoints(request: DapRequest): Promise<void> {
@@ -489,6 +568,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         switch (message.method) {
             case 'initialized':
                 this.sendEvent('initialized');
+                await this.replayDesiredSourceBreakpointsUsingKnownPaths();
                 break;
             case 'breakpointResolved':
                 await this.rememberRuntimeSourcePath(
@@ -723,6 +803,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
         });
         if (resolvedPath) {
             this.runtimeSourcePaths.set(canonicalSourcePath(resolvedPath), sourceFile);
+            await this.replayPendingSourceBreakpointsForResolvedSource(sourceFile, resolvedPath);
         }
 
         return resolvedPath;

@@ -1,15 +1,15 @@
 ---
 related_code:
   - zr_vm_cli/CMakeLists.txt
-  - zr_vm_cli/src/zr_vm_cli/command.h
-  - zr_vm_cli/src/zr_vm_cli/command.c
-  - zr_vm_cli/src/zr_vm_cli/runtime.c
-  - zr_vm_debug/CMakeLists.txt
-  - zr_vm_debug/include/zr_vm_debug/debug.h
-  - zr_vm_debug/src/zr_vm_debug/debug.c
-  - zr_vm_network/CMakeLists.txt
-  - zr_vm_network/include/zr_vm_network/network.h
-  - zr_vm_network/src/zr_vm_network/network.c
+  - zr_vm_cli/src/zr_vm_cli/command/command.h
+  - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_lib_debug/CMakeLists.txt
+  - zr_vm_lib_debug/include/zr_vm_debug/debug.h
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
+  - zr_vm_lib_network/CMakeLists.txt
+  - zr_vm_lib_network/include/zr_vm_network/network.h
+  - zr_vm_lib_network/src/zr_vm_lib_network/network/network.c
   - zr_vm_core/include/zr_vm_core/debug.h
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/state.h
@@ -19,14 +19,14 @@ related_code:
   - zr_vm_parser/src/zr_vm_parser/writer.c
 implementation_files:
   - zr_vm_cli/CMakeLists.txt
-  - zr_vm_cli/src/zr_vm_cli/command.c
-  - zr_vm_cli/src/zr_vm_cli/runtime.c
-  - zr_vm_debug/CMakeLists.txt
-  - zr_vm_debug/include/zr_vm_debug/debug.h
-  - zr_vm_debug/src/zr_vm_debug/debug.c
-  - zr_vm_network/CMakeLists.txt
-  - zr_vm_network/include/zr_vm_network/network.h
-  - zr_vm_network/src/zr_vm_network/network.c
+  - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_lib_debug/CMakeLists.txt
+  - zr_vm_lib_debug/include/zr_vm_debug/debug.h
+  - zr_vm_lib_debug/src/zr_vm_lib_debug/debug.c
+  - zr_vm_lib_network/CMakeLists.txt
+  - zr_vm_lib_network/include/zr_vm_network/network.h
+  - zr_vm_lib_network/src/zr_vm_lib_network/network/network.c
   - zr_vm_core/src/zr_vm_core/debug.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
 plan_sources:
@@ -62,9 +62,9 @@ doc_type: module-detail
 
 ## Module Split
 
-### `zr_vm_debug`
+### `zr_vm_lib_debug`
 
-`zr_vm_debug` 是调试会话层，不把 socket、listener 或 framing 逻辑塞进 `zr_vm_core`。它负责：
+`zr_vm_lib_debug` 是调试会话层，不把 socket、listener 或 framing 逻辑塞进 `zr_vm_core`。它负责：
 
 - `ZrDebugAgent` 生命周期
 - breakpoint 表和 source line 解析
@@ -75,9 +75,9 @@ doc_type: module-detail
 
 会话层本身只依赖 VM 的 trace hook、call stack、line table 和 value stringification。
 
-### `zr_vm_network`
+### `zr_vm_lib_network`
 
-`zr_vm_network` 只提供 v1 需要的最小 transport 原语：
+`zr_vm_lib_network` 只提供 v1 需要的最小 transport 原语：
 
 - `host:port` 解析
 - loopback 限制

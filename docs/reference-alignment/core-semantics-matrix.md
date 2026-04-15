@@ -4,7 +4,7 @@ related_code:
   - tests/parser/test_const_keyword.c
   - tests/function/test_named_arguments.c
   - tests/module/test_module_system.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_class_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c
   - tests/fixtures/reference/core_semantics/calls_named_default_varargs/duplicate_named_fail.zr
   - tests/fixtures/reference/core_semantics/calls_named_default_varargs/unexpected_named_fail.zr
   - tests/fixtures/reference/core_semantics/calls_named_default_varargs/positional_after_named_fail.zr
@@ -23,7 +23,7 @@ related_code:
 implementation_files:
   - tests/parser/test_char_and_type_cast.c
   - tests/parser/test_const_keyword.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_class_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c
   - tests/function/test_named_arguments.c
   - tests/fixtures/reference/core_semantics/casts-and-const/manifest.json
   - tests/fixtures/reference/core_semantics/casts-and-const/const_if_missing_branch_fail.zr
@@ -100,7 +100,7 @@ doc_type: capability-matrix
 | 表达式与优先级 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 目前已有 `tests/fixtures/reference/core_semantics/expressions/manifest.json` 和全栈 `expressions_precedence_chains` inventory，但缺少 phase1 级 runnable fixture 把 precedence/member-chain 直接钉进 reference 入口 |
 | `%module/%import` 与成员链 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | `tests/module/test_module_system.c` 已执行 `imports/native_root_member_chain_pass.zr`，验证 root import、成员链、方法调用与对象字段读取；duplicate import / cyclic import 仍停在 manifest inventory |
 | 调用面：位置参数、命名参数、默认值、变参、重载/错误 arity | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | 需要补测试 | `tests/function/test_named_arguments.c` 已执行 `calls/named_arguments_defaults_pass.zr`，并覆盖 `calls_named_default_varargs/duplicate_named_fail.zr`、`unexpected_named_fail.zr`、`positional_after_named_fail.zr`、`overload_ambiguity_fail.zr`；project/golden 层仍待补 |
-| `<Type> 转换、prototype/new 误用、`const` 赋值规则 | 已符合 ZR 合同 | 需要补测试 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | `tests/parser/test_char_and_type_cast.c` 覆盖 type cast 基本 parse/compile 和 `casts-and-const` manifest；`tests/parser/test_const_keyword.c` 与 `zr_vm_parser/src/zr_vm_parser/compiler_class_support.c` 已把 `const` 扩到 `if/switch/ternary` definite-assignment，并新增 `const_if_missing_branch_fail.zr`、`const_switch_paths_pass.zr`、`const_switch_missing_default_fail.zr`、`const_ternary_paths_pass.zr`、`const_ternary_missing_branch_fail.zr` |
+| `<Type> 转换、prototype/new 误用、`const` 赋值规则 | 已符合 ZR 合同 | 需要补测试 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | `tests/parser/test_char_and_type_cast.c` 覆盖 type cast 基本 parse/compile 和 `casts-and-const` manifest；`tests/parser/test_const_keyword.c` 与 `zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c` 已把 `const` 扩到 `if/switch/ternary` definite-assignment，并新增 `const_if_missing_branch_fail.zr`、`const_switch_paths_pass.zr`、`const_switch_missing_default_fail.zr`、`const_ternary_paths_pass.zr`、`const_ternary_missing_branch_fail.zr` |
 | 诊断与错误恢复 | 已符合 ZR 合同 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | 需要补测试 | phase1 入口已经断言 invalid literal 会保留错误节点或直接拒绝编译，但 parser/compiler/runtime taxonomy 仍缺统一错误码或稳定分类文本基线 |
 
 ## Current Notes By Topic
@@ -136,6 +136,11 @@ doc_type: capability-matrix
 - 返回对象字段读取
 
 这个方向已经形成 runnable 证据，但 duplicate import identity、source/binary 同路径、hidden internal import rejection 还没有在 phase1 入口全部变成 fixture。
+
+当前合同还新增两条公开路径规则：
+
+- project import 支持显式 relative-dot（`.x.y`、`..x.y`、`...x.y`）和 `.zrp.pathAliases` 的 `@alias(.foo.bar)` 展开。
+- canonical 解析失败后仍然拒绝隐式相对 guessing / 名称回退；`./foo`、`../foo`、bare `.` / `..`、`@alias/foo` 和 sourceRoot 逃逸都属于非法形式。
 
 ### 调用面：位置参数、命名参数、默认值、变参、重载/错误 arity
 

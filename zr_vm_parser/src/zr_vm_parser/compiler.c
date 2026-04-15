@@ -806,8 +806,9 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
     cs->isScriptLevel = ZR_FALSE;
 }
 
-// 主编译入口（占位实现）
-SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
+ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrState *state,
+                                                                         SZrAstNode *ast,
+                                                                         SZrString *currentModuleKey) {
     if (state == ZR_NULL || ast == ZR_NULL) {
         return ZR_NULL;
     }
@@ -815,7 +816,7 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
     SZrCompilerState cs;
     ZrParser_CompilerState_Init(&cs, state);
     cs.currentAst = ast;
-    cs.currentAst = ast;
+    cs.currentModuleKey = currentModuleKey;
     zr_parser_compile_trace("compiler compile core init ast=%p", (void *)ast);
 
     if (!compiler_validate_task_effects(&cs, ast)) {
@@ -890,6 +891,11 @@ SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
 
     ZrParser_CompilerState_Free(&cs);
     return func;
+}
+
+// 主编译入口（占位实现）
+SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast) {
+    return ZrParser_Compiler_CompileWithCurrentModuleKey(state, ast, ZR_NULL);
 }
 
 ZR_PARSER_API void ZrParser_Compiler_CompileStructDeclaration(SZrCompilerState *cs, SZrAstNode *node) {
@@ -1044,6 +1050,12 @@ void ZrParser_CompileResult_Free(SZrState *state, SZrCompileResult *result) {
 
 // 编译源代码为函数（封装了从解析到编译的全流程）
 struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrChar *source, TZrSize sourceLength, struct SZrString *sourceName) {
+    TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    SZrFileRange importErrorLocation;
+    SZrString *currentModuleKey = ZR_NULL;
+    SZrAstNode *ast;
+    SZrFunction *func;
+
     if (state == ZR_NULL || source == ZR_NULL || sourceLength == 0) {
         return ZR_NULL;
     }
@@ -1052,7 +1064,7 @@ struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrCha
                             (unsigned long long)sourceLength);
     
     // 解析源代码为AST
-    SZrAstNode *ast = ZrParser_Parse(state, source, sourceLength, sourceName);
+    ast = ZrParser_Parse(state, source, sourceLength, sourceName);
     if (ast == ZR_NULL) {
         zr_parser_compile_trace("parse failed name='%s'",
                                 sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
@@ -1062,7 +1074,23 @@ struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrCha
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
                             (void *)ast);
 
-    if (!ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(state, sourceName, ast)) {
+    if (!ZrParser_ProjectImports_CanonicalizeAst(state,
+                                                 ast,
+                                                 sourceName,
+                                                 &currentModuleKey,
+                                                 importError,
+                                                 sizeof(importError),
+                                                 &importErrorLocation)) {
+        ZrCore_Log_Diagnosticf(state,
+                               ZR_LOG_LEVEL_ERROR,
+                               ZR_OUTPUT_CHANNEL_STDERR,
+                               "%s\n",
+                               importError[0] != '\0' ? importError : "failed to canonicalize project imports");
+        ZrParser_Ast_Free(state, ast);
+        return ZR_NULL;
+    }
+
+    if (!ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(state, currentModuleKey, ast)) {
         zr_parser_compile_trace("prepare current source module failed name='%s'",
                                 sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
         ZrParser_ModuleInitAnalysis_ClearAstIdentity(state->global, ast);
@@ -1073,7 +1101,7 @@ struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrCha
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
     
     // 编译AST为函数
-    SZrFunction *func = ZrParser_Compiler_Compile(state, ast);
+    func = ZrParser_Compiler_CompileWithCurrentModuleKey(state, ast, currentModuleKey);
     zr_parser_compile_trace("compiler compile finished name='%s' func=%p",
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
                             (void *)func);

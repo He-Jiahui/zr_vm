@@ -1,0 +1,46 @@
+var helper = %import("helper");
+var fixedModule = %import("fixed_data");
+
+func spin(limit: int, burstLimit: int = 5): int {
+    var total = 0;
+    var index = 0;
+    while (index < limit) {
+        var burst = 0;
+        while (burst < burstLimit) {
+            total = total + (index + 1) * (burst + 1);
+            burst = burst + 1;
+        }
+        index = index + 1;
+    }
+    return total;
+}
+
+func runGauntlet(): string {
+    var dynamic: int[] = [helper.twist(4), helper.twist(5), fixedModule.edgeValue(), fixedModule.length()];
+    var banner = helper.banner();
+    var fixedOk = fixedModule.length() == %import("sizing").planSize(seed: 4, factor: 2);
+    var dynamicOk = helper.matches(dynamic.length, 4);
+    var dynamicBad = helper.matches(dynamic.length, 7);
+    var dynamicTotal = dynamic[0] * 3 + dynamic[1] * 4 + dynamic[2] * 5 + dynamic[3] * 6;
+    var checksumBase = fixedModule.fixedChecksum() + dynamicTotal + helper.edgeScore(fixedOk, dynamicOk, dynamicBad);
+    var spinScore = spin(200000, 5);
+    var checksum = checksumBase + 12300;
+    if (!fixedOk) {
+        return "GAUNTLET_FAIL fixed";
+    }
+    if (!dynamicOk) {
+        return "GAUNTLET_FAIL dynamic";
+    }
+    if (dynamicBad) {
+        return "GAUNTLET_FAIL invalid";
+    }
+    if (spinScore <= 0) {
+        return "GAUNTLET_FAIL spin";
+    }
+    if (checksum != 13910) {
+        return "GAUNTLET_FAIL checksum";
+    }
+    return banner + " checksum=13910";
+}
+
+return runGauntlet();

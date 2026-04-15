@@ -4,7 +4,7 @@
 
 #include "zr_vm_core/reflection.h"
 
-#include "module_internal.h"
+#include "module/module_internal.h"
 
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
@@ -3927,8 +3927,14 @@ static TZrBool reflection_build_type_of_value(SZrState *state,
                                               const SZrTypeValue *targetValue,
                                               SZrTypeValue *result) {
     SZrObject *reflectionObject = ZR_NULL;
+    TZrBool targetValuePinned = ZR_FALSE;
 
     if (state == ZR_NULL || targetValue == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!reflection_pin_value_object(state, targetValue, &targetValuePinned)) {
+        ZrCore_Value_ResetAsNull(result);
         return ZR_FALSE;
     }
 
@@ -3966,6 +3972,13 @@ static TZrBool reflection_build_type_of_value(SZrState *state,
                                               : "callable";
         char qualifiedName[ZR_RUNTIME_QUALIFIED_NAME_BUFFER_LENGTH];
 
+        if (function != ZR_NULL && function->hasCallableReturnType) {
+            returnTypeName = reflection_type_name_from_typed_type_ref(state,
+                                                                     &function->callableReturnType,
+                                                                     returnTypeBuffer,
+                                                                     sizeof(returnTypeBuffer));
+        }
+
         if (reflection_find_callable_export_context(state, targetValue, &ownerModule, &exportName) &&
             exportName != ZR_NULL) {
             callableName = exportName;
@@ -3987,10 +4000,12 @@ static TZrBool reflection_build_type_of_value(SZrState *state,
                         symbol->name != ZR_NULL &&
                         ZrCore_String_GetNativeString(symbol->name) != ZR_NULL &&
                         strcmp(ZrCore_String_GetNativeString(symbol->name), exportName) == 0) {
-                        returnTypeName = reflection_type_name_from_typed_type_ref(state,
-                                                                                 &symbol->valueType,
-                                                                                 returnTypeBuffer,
-                                                                                 sizeof(returnTypeBuffer));
+                        if (function == ZR_NULL || !function->hasCallableReturnType) {
+                            returnTypeName = reflection_type_name_from_typed_type_ref(state,
+                                                                                     &symbol->valueType,
+                                                                                     returnTypeBuffer,
+                                                                                     sizeof(returnTypeBuffer));
+                        }
                         break;
                     }
                 }
@@ -4037,6 +4052,7 @@ static TZrBool reflection_build_type_of_value(SZrState *state,
         reflection_init_object_value(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(reflectionObject), ZR_VALUE_TYPE_OBJECT);
     }
 
+    reflection_unpin_value_object(state->global, targetValue, targetValuePinned);
     return ZR_TRUE;
 }
 

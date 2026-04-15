@@ -2,7 +2,7 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_library/src/zr_vm_library/task_runtime.c
-  - zr_vm_parser/src/zr_vm_parser/parser_reserved_task.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c
   - tests/task/test_task_runtime.c
 implementation_files:
   - zr_vm_library/src/zr_vm_library/task_runtime.c

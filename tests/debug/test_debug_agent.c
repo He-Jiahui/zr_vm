@@ -3,9 +3,11 @@
 #include <string.h>
 
 #include "cJSON/cJSON.h"
+#include "path_support.h"
 #include "unity.h"
 #include "runtime_support.h"
 #include "zr_vm_core/io.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_lib_debug/debug.h"
 #include "zr_vm_lib_network/network.h"
 #include "zr_vm_parser.h"
@@ -19,7 +21,8 @@
 
 typedef enum EZrDebugExecutionMode {
     ZR_DEBUG_EXECUTION_EXPECT_INT64 = 1,
-    ZR_DEBUG_EXECUTION_CAPTURE_FAILURE = 2
+    ZR_DEBUG_EXECUTION_CAPTURE_FAILURE = 2,
+    ZR_DEBUG_EXECUTION_CAPTURE_VALUE = 3
 } EZrDebugExecutionMode;
 
 typedef struct ZrDebugExecutionThread {
@@ -27,6 +30,7 @@ typedef struct ZrDebugExecutionThread {
     SZrFunction *function;
     ZrDebugAgent *agent;
     TZrInt64 result;
+    SZrTypeValue resultValue;
     TZrBool success;
     TZrBool notifyExceptionOnFailure;
     TZrBool notifyTerminated;
@@ -43,6 +47,14 @@ typedef struct SZrBinaryFixtureReader {
     TZrSize length;
     TZrBool consumed;
 } SZrBinaryFixtureReader;
+
+typedef struct ZrDebugProjectFileReader {
+    TZrByte *bytes;
+    TZrSize length;
+    TZrBool consumed;
+} ZrDebugProjectFileReader;
+
+static const char *gDebugProjectName = ZR_NULL;
 
 TZrBool ZrVmLibNetwork_Register(SZrGlobalState *global);
 TZrBool ZrVmLibSystem_Register(SZrGlobalState *global);
@@ -61,6 +73,104 @@ static SZrFunction *compile_debug_agent_source(SZrState *state, const char *sour
     }
 
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
+static SZrFunction *compile_debug_agent_project_entry(SZrState *state,
+                                                      const char *projectName,
+                                                      const char *relativePath,
+                                                      TZrChar *outSourcePath,
+                                                      TZrSize outSourcePathCapacity) {
+    TZrSize sourceLength = 0;
+    TZrChar *source = ZR_NULL;
+    SZrString *sourceName = ZR_NULL;
+    SZrFunction *function = ZR_NULL;
+
+    if (state == ZR_NULL || projectName == ZR_NULL || relativePath == ZR_NULL || outSourcePath == ZR_NULL ||
+        outSourcePathCapacity == 0) {
+        return ZR_NULL;
+    }
+
+    if (!ZrTests_Path_GetProjectFile(projectName, relativePath, outSourcePath, outSourcePathCapacity)) {
+        return ZR_NULL;
+    }
+
+    source = ZrTests_ReadTextFile(outSourcePath, &sourceLength);
+    if (source == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZrCore_String_Create(state, outSourcePath, strlen(outSourcePath));
+    if (sourceName != ZR_NULL) {
+        function = ZrParser_Source_Compile(state, source, sourceLength, sourceName);
+    }
+
+    free(source);
+    return function;
+}
+
+static TZrBytePtr debug_project_file_reader_read(SZrState *state, TZrPtr customData, TZrSize *size) {
+    ZrDebugProjectFileReader *reader = (ZrDebugProjectFileReader *)customData;
+
+    ZR_UNUSED_PARAMETER(state);
+
+    if (reader == ZR_NULL || size == ZR_NULL || reader->consumed || reader->bytes == ZR_NULL) {
+        if (size != ZR_NULL) {
+            *size = 0;
+        }
+        return ZR_NULL;
+    }
+
+    reader->consumed = ZR_TRUE;
+    *size = reader->length;
+    return reader->bytes;
+}
+
+static void debug_project_file_reader_close(SZrState *state, TZrPtr customData) {
+    ZrDebugProjectFileReader *reader = (ZrDebugProjectFileReader *)customData;
+
+    ZR_UNUSED_PARAMETER(state);
+
+    if (reader != ZR_NULL) {
+        free(reader->bytes);
+        free(reader);
+    }
+}
+
+static TZrBool debug_project_source_loader(SZrState *state, TZrNativeString sourcePath, TZrNativeString md5, SZrIo *io) {
+    TZrChar relativePath[ZR_TESTS_PATH_MAX];
+    TZrChar fullPath[ZR_TESTS_PATH_MAX];
+    TZrBytePtr bytes = ZR_NULL;
+    TZrSize length = 0;
+    ZrDebugProjectFileReader *reader;
+
+    ZR_UNUSED_PARAMETER(md5);
+
+    if (state == ZR_NULL || sourcePath == ZR_NULL || io == ZR_NULL || gDebugProjectName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    snprintf(relativePath, sizeof(relativePath), "src/%s.zr", sourcePath);
+    if (!ZrTests_Path_GetProjectFile(gDebugProjectName, relativePath, fullPath, sizeof(fullPath))) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrTests_ReadFileBytes(fullPath, &bytes, &length) || bytes == ZR_NULL || length == 0) {
+        free(bytes);
+        return ZR_FALSE;
+    }
+
+    reader = (ZrDebugProjectFileReader *)malloc(sizeof(*reader));
+    if (reader == ZR_NULL) {
+        free(bytes);
+        return ZR_FALSE;
+    }
+
+    reader->bytes = bytes;
+    reader->length = length;
+    reader->consumed = ZR_FALSE;
+    ZrCore_Io_Init(state, io, debug_project_file_reader_read, debug_project_file_reader_close, reader);
+    io->isBinary = ZR_FALSE;
+    return ZR_TRUE;
 }
 
 static SZrFunction *compile_debug_agent_fixture(SZrState *state, const char *sourceLabel) {
@@ -209,6 +319,8 @@ static void debug_execution_thread_run(ZrDebugExecutionThread *thread) {
         if (!thread->success && thread->notifyExceptionOnFailure && thread->agent != ZR_NULL) {
             ZrDebug_NotifyException(thread->agent);
         }
+    } else if (thread->mode == ZR_DEBUG_EXECUTION_CAPTURE_VALUE) {
+        thread->success = ZrTests_Runtime_Function_Execute(thread->state, thread->function, &thread->resultValue);
     } else {
         thread->success = ZrTests_Runtime_Function_ExecuteExpectInt64(thread->state, thread->function, &thread->result);
     }
@@ -239,6 +351,7 @@ static TZrBool debug_execution_thread_start(ZrDebugExecutionThread *thread) {
 
     thread->result = 0;
     thread->success = ZR_FALSE;
+    ZrCore_Value_ResetAsNull(&thread->resultValue);
     if (thread->mode == 0) {
         thread->mode = ZR_DEBUG_EXECUTION_EXPECT_INT64;
     }
@@ -357,6 +470,37 @@ static int debug_json_int(cJSON *object, const char *field) {
         return cJSON_IsTrue(item) ? 1 : 0;
     }
     return cJSON_IsNumber(item) ? (int)item->valuedouble : 0;
+}
+
+static void debug_assert_stopped_location(cJSON *message,
+                                          const char *reason,
+                                          const char *sourceFile,
+                                          const char *functionName,
+                                          int minLine,
+                                          int maxLine,
+                                          int *outLine) {
+    cJSON *params = cJSON_GetObjectItemCaseSensitive(message, "params");
+    int line;
+    char locationMessage[128];
+
+    TEST_ASSERT_NOT_NULL(params);
+    TEST_ASSERT_EQUAL_STRING(reason, debug_json_string(params, "reason"));
+    TEST_ASSERT_EQUAL_STRING(sourceFile, debug_json_string(params, "sourceFile"));
+    TEST_ASSERT_EQUAL_STRING(functionName, debug_json_string(params, "functionName"));
+
+    line = debug_json_int(params, "line");
+    snprintf(locationMessage,
+             sizeof(locationMessage),
+             "expected stopped line in [%d, %d], actual=%d",
+             minLine,
+             maxLine,
+             line);
+    TEST_ASSERT_TRUE_MESSAGE(line >= minLine, locationMessage);
+    TEST_ASSERT_TRUE_MESSAGE(line <= maxLine, locationMessage);
+
+    if (outLine != ZR_NULL) {
+        *outLine = line;
+    }
 }
 
 static cJSON *debug_find_named_object(cJSON *array, const char *name) {
@@ -2371,17 +2515,12 @@ static void test_debug_agent_pause_stops_at_next_safepoint_and_preserves_stack(v
     debug_client_send_request(&client, 5, "continue", ZR_NULL);
     message = debug_client_expect_response(&client, 5);
     cJSON_Delete(message);
-
-    ZrDebug_Pause(agent);
     message = debug_client_expect_event(&client, "continued");
     cJSON_Delete(message);
+
+    ZrDebug_Pause(agent);
     message = debug_client_expect_event(&client, "stopped");
-    TEST_ASSERT_EQUAL_STRING("pause", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
-    TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile"));
-    TEST_ASSERT_EQUAL_STRING("spin", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
-    pausedLine = debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line");
-    TEST_ASSERT_TRUE(pausedLine >= 6);
-    TEST_ASSERT_TRUE(pausedLine <= 10);
+    debug_assert_stopped_location(message, "pause", sourcePath, "spin", 4, 10, &pausedLine);
     cJSON_Delete(message);
 
     debug_client_send_request(&client, 6, "stackTrace", ZR_NULL);
@@ -2392,7 +2531,7 @@ static void test_debug_agent_pause_stops_at_next_safepoint_and_preserves_stack(v
     topFrame = cJSON_GetArrayItem(frames, 0);
     TEST_ASSERT_EQUAL_STRING("spin", debug_json_string(topFrame, "functionName"));
     TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(topFrame, "sourceFile"));
-    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") >= 6);
+    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") >= 4);
     TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") <= 10);
     cJSON_Delete(message);
 
@@ -2658,6 +2797,225 @@ static void test_debug_agent_hits_source_breakpoints_on_binary_loaded_functions(
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_debug_agent_language_gauntlet_project_breakpoint_pause_and_result(void) {
+    const char *projectName = "language_debug_gauntlet";
+    const char *moduleName = "tests.debug.language_gauntlet";
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    SZrState *state;
+    SZrFunction *function;
+    ZrDebugAgentConfig config;
+    ZrDebugAgent *agent = ZR_NULL;
+    SZrNetworkStream client;
+    ZrDebugExecutionThread thread;
+    TZrChar error[256];
+    cJSON *message;
+    cJSON *params;
+    cJSON *frames;
+    cJSON *topFrame;
+    cJSON *callerFrame;
+    cJSON *scopes;
+    cJSON *localsScope;
+    cJSON *values;
+    cJSON *totalItem;
+    cJSON *indexItem;
+    cJSON *burstItem;
+    cJSON *bannerItem;
+    cJSON *checksumBaseItem;
+    int pausedLine;
+    int topFrameId;
+    int callerFrameId;
+    int localsScopeId;
+    SZrString *resultString;
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    gDebugProjectName = projectName;
+    state->global->sourceLoader = debug_project_source_loader;
+
+    function = compile_debug_agent_project_entry(state, projectName, "src/main.zr", sourcePath, sizeof(sourcePath));
+    TEST_ASSERT_NOT_NULL(function);
+
+    memset(&config, 0, sizeof(config));
+    config.address = "127.0.0.1:0";
+    config.suspend_on_start = ZR_TRUE;
+    config.auth_token = "secret";
+    config.stop_on_uncaught_exception = ZR_TRUE;
+
+    TEST_ASSERT_TRUE(ZrDebug_AgentStart(state, function, moduleName, &config, &agent, error, sizeof(error)));
+    memset(&client, 0, sizeof(client));
+    debug_client_connect(agent, &client);
+
+    memset(&thread, 0, sizeof(thread));
+    thread.state = state;
+    thread.function = function;
+    thread.mode = ZR_DEBUG_EXECUTION_CAPTURE_VALUE;
+    TEST_ASSERT_TRUE(debug_execution_thread_start(&thread));
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "authToken", "secret");
+    debug_client_send_request(&client, 1, "initialize", params);
+    message = debug_client_expect_response(&client, 1);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "initialized");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "moduleLoaded");
+    TEST_ASSERT_EQUAL_STRING(moduleName, debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "moduleName"));
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    TEST_ASSERT_EQUAL_STRING("entry", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "moduleName", moduleName);
+    cJSON_AddStringToObject(params, "sourceFile", sourcePath);
+    cJSON_AddItemToObject(params, "lines", cJSON_CreateIntArray((const int[]){9}, 1));
+    debug_client_send_request(&client, 2, "setBreakpoints", params);
+    message = debug_client_expect_event(&client, "breakpointResolved");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved") != 0);
+    TEST_ASSERT_EQUAL_INT(9, debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"));
+    cJSON_Delete(message);
+    message = debug_client_expect_response(&client, 2);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 3, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 3);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "stopped");
+    debug_assert_stopped_location(message, "breakpoint", sourcePath, "spin", 9, 9, ZR_NULL);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddStringToObject(params, "moduleName", moduleName);
+    cJSON_AddStringToObject(params, "sourceFile", sourcePath);
+    cJSON_AddItemToObject(params, "lines", cJSON_CreateArray());
+    debug_client_send_request(&client, 4, "setBreakpoints", params);
+    message = debug_client_expect_response(&client, 4);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 5, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 5);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    ZrDebug_Pause(agent);
+    message = debug_client_expect_event(&client, "stopped");
+    debug_assert_stopped_location(message, "pause", sourcePath, "spin", 7, 13, &pausedLine);
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 6, "stackTrace", ZR_NULL);
+    message = debug_client_expect_response(&client, 6);
+    frames = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "frames");
+    TEST_ASSERT_TRUE(cJSON_IsArray(frames));
+    TEST_ASSERT_TRUE(cJSON_GetArraySize(frames) >= 2);
+    topFrame = cJSON_GetArrayItem(frames, 0);
+    callerFrame = cJSON_GetArrayItem(frames, 1);
+    TEST_ASSERT_EQUAL_STRING("spin", debug_json_string(topFrame, "functionName"));
+    TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(topFrame, "sourceFile"));
+    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") >= 7);
+    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") <= 13);
+    TEST_ASSERT_EQUAL_STRING("runGauntlet", debug_json_string(callerFrame, "functionName"));
+    TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(callerFrame, "sourceFile"));
+    topFrameId = debug_json_int(topFrame, "frameId");
+    callerFrameId = debug_json_int(callerFrame, "frameId");
+    TEST_ASSERT_TRUE(topFrameId > 0);
+    TEST_ASSERT_TRUE(callerFrameId > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "frameId", topFrameId);
+    debug_client_send_request(&client, 7, "scopes", params);
+    message = debug_client_expect_response(&client, 7);
+    scopes = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "scopes");
+    TEST_ASSERT_TRUE(cJSON_IsArray(scopes));
+    localsScope = debug_find_named_object(scopes, "Locals");
+    TEST_ASSERT_NOT_NULL(localsScope);
+    localsScopeId = debug_json_int(localsScope, "scopeId");
+    TEST_ASSERT_TRUE(localsScopeId > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", localsScopeId);
+    debug_client_send_request(&client, 8, "variables", params);
+    message = debug_client_expect_response(&client, 8);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    totalItem = debug_find_named_object(values, "total");
+    indexItem = debug_find_named_object(values, "index");
+    burstItem = debug_find_named_object(values, "burst");
+    TEST_ASSERT_NOT_NULL(totalItem);
+    TEST_ASSERT_NOT_NULL(indexItem);
+    TEST_ASSERT_TRUE(debug_json_string(totalItem, "value")[0] != '\0');
+    TEST_ASSERT_TRUE(debug_json_string(indexItem, "value")[0] != '\0');
+    if (burstItem == ZR_NULL) {
+        TEST_ASSERT_TRUE(pausedLine == 7 || pausedLine == 8);
+    } else {
+        TEST_ASSERT_TRUE(debug_json_string(burstItem, "value")[0] != '\0');
+    }
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "frameId", callerFrameId);
+    debug_client_send_request(&client, 9, "scopes", params);
+    message = debug_client_expect_response(&client, 9);
+    scopes = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "scopes");
+    TEST_ASSERT_TRUE(cJSON_IsArray(scopes));
+    localsScope = debug_find_named_object(scopes, "Locals");
+    TEST_ASSERT_NOT_NULL(localsScope);
+    localsScopeId = debug_json_int(localsScope, "scopeId");
+    TEST_ASSERT_TRUE(localsScopeId > 0);
+    cJSON_Delete(message);
+
+    params = cJSON_CreateObject();
+    TEST_ASSERT_NOT_NULL(params);
+    cJSON_AddNumberToObject(params, "scopeId", localsScopeId);
+    debug_client_send_request(&client, 10, "variables", params);
+    message = debug_client_expect_response(&client, 10);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    bannerItem = debug_find_named_object(values, "banner");
+    checksumBaseItem = debug_find_named_object(values, "checksumBase");
+    TEST_ASSERT_NOT_NULL(bannerItem);
+    TEST_ASSERT_NOT_NULL(checksumBaseItem);
+    TEST_ASSERT_EQUAL_STRING("GAUNTLET_OK", debug_json_string(bannerItem, "value"));
+    TEST_ASSERT_EQUAL_STRING("1610", debug_json_string(checksumBaseItem, "value"));
+    cJSON_Delete(message);
+
+    debug_client_send_request(&client, 11, "continue", ZR_NULL);
+    message = debug_client_expect_response(&client, 11);
+    cJSON_Delete(message);
+    message = debug_client_expect_event(&client, "continued");
+    cJSON_Delete(message);
+
+    debug_execution_thread_join(&thread);
+    TEST_ASSERT_TRUE(thread.success);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, thread.resultValue.type);
+    resultString = ZR_CAST_STRING(state, thread.resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(resultString);
+    TEST_ASSERT_EQUAL_STRING("GAUNTLET_OK checksum=13910", ZrCore_String_GetNativeString(resultString));
+    ZrDebug_NotifyTerminated(agent, thread.success);
+
+    message = debug_client_expect_event(&client, "terminated");
+    TEST_ASSERT_TRUE(debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "success") != 0);
+    cJSON_Delete(message);
+
+    ZrNetwork_StreamClose(&client);
+    ZrDebug_AgentStop(agent);
+    ZrCore_Function_Free(state, function);
+    state->global->sourceLoader = ZR_NULL;
+    gDebugProjectName = ZR_NULL;
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -2680,5 +3038,6 @@ int main(void) {
     RUN_TEST(test_debug_agent_pause_stops_at_next_safepoint_and_preserves_stack);
     RUN_TEST(test_debug_agent_reports_uncaught_exception_from_runtime_without_cli_bridge);
     RUN_TEST(test_debug_agent_hits_source_breakpoints_on_binary_loaded_functions);
+    RUN_TEST(test_debug_agent_language_gauntlet_project_breakpoint_pause_and_result);
     return UNITY_END();
 }

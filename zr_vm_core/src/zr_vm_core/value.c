@@ -19,7 +19,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_runtime_limits_conf.h"
-#include "execution_internal.h"
+#include "execution/execution_internal.h"
 
 void ZrCore_Value_Barrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value) {
     if (!value->isGarbageCollectable) {

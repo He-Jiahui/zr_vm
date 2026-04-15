@@ -11,11 +11,14 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     
     SZrStructMetaFunction *metaFunc = ZR_NULL;
     SZrClassMetaFunction *classMetaFunc = ZR_NULL;
+    SZrType *declaredReturnType = ZR_NULL;
     
     if (node->type == ZR_AST_STRUCT_META_FUNCTION) {
         metaFunc = &node->data.structMetaFunction;
+        declaredReturnType = metaFunc->returnType;
     } else if (node->type == ZR_AST_CLASS_META_FUNCTION) {
         classMetaFunc = &node->data.classMetaFunction;
+        declaredReturnType = classMetaFunc->returnType;
     } else {
         ZrParser_Compiler_Error(cs, "Expected meta function node", node->location);
         return;
@@ -168,6 +171,15 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     
     // 退出函数作用域
     exit_scope(cs);
+    if (!cs->hasError) {
+        if (!compiler_build_callable_return_type_metadata(cs,
+                                                          declaredReturnType,
+                                                          body,
+                                                          &cs->currentFunction->callableReturnType,
+                                                          &cs->currentFunction->hasCallableReturnType)) {
+            ZrParser_Compiler_Error(cs, "Failed to build callable return metadata for meta function", node->location);
+        }
+    }
     if (!cs->hasError) {
         TZrUInt32 typedLocalBindingCount = 0;
         if (!compiler_build_typed_local_bindings(cs, &cs->currentFunction->typedLocalBindings, &typedLocalBindingCount)) {

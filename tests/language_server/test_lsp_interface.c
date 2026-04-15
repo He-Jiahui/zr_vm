@@ -18,8 +18,8 @@
 #include "zr_vm_parser/writer.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_library/file.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_query.h"
-#include "../../zr_vm_language_server/src/zr_vm_language_server/lsp_interface_internal.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
 #include "path_support.h"
 
 #include <errno.h>
@@ -111,6 +111,7 @@ static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                TZrInt32 extraCharacterOffset,
                                                SZrLspPosition *outPosition);
 static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle);
+static const TZrChar *hover_first_text(SZrLspHover *hover);
 static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
                                                 const TZrChar *role,
                                                 const TZrChar *needle);
@@ -885,6 +886,21 @@ static TZrBool hover_contains_text(SZrLspHover *hover, const TZrChar *needle) {
     }
 
     return ZR_FALSE;
+}
+
+static const TZrChar *hover_first_text(SZrLspHover *hover) {
+    if (hover == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < hover->contents.length; index++) {
+        SZrString **contentPtr = (SZrString **)ZrCore_Array_Get(&hover->contents, index);
+        if (contentPtr != ZR_NULL && *contentPtr != ZR_NULL) {
+            return test_string_ptr(*contentPtr);
+        }
+    }
+
+    return ZR_NULL;
 }
 
 static TZrBool rich_hover_section_contains_text(SZrLspRichHover *hover,
@@ -5773,6 +5789,89 @@ static void test_lsp_top_level_script_return_semantics_match_compiler(SZrState *
     TEST_PASS(timer, "LSP Top Level Script Return Semantics Match Compiler");
 }
 
+static void test_lsp_hover_prefers_nearest_shadowed_foreach_binding(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *uri = ZR_NULL;
+    const TZrChar *content =
+        "var container = %import(\"zr.container\");\n"
+        "probe(): void {\n"
+        "    var ints = new container.Array<int>();\n"
+        "    var texts = new container.Array<string>();\n"
+        "    for (var item in ints) {\n"
+        "        item;\n"
+        "    }\n"
+        "    for (var item in texts) {\n"
+        "        item;\n"
+        "    }\n"
+        "}\n";
+    SZrLspPosition firstItemPosition;
+    SZrLspPosition secondItemPosition;
+    SZrLspHover *hover = ZR_NULL;
+    const TZrChar *hoverText = ZR_NULL;
+    TZrChar reason[512];
+
+    TEST_START("LSP Hover Prefers Nearest Shadowed Foreach Binding");
+    TEST_INFO("Shadowed foreach locals",
+              "Repeated foreach item names should resolve to the nearest in-scope binding instead of drifting to an earlier loop variable.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Hover Prefers Nearest Shadowed Foreach Binding",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///shadowed_foreach_hover.zr", 34);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "        item;", 0, 8, &firstItemPosition) ||
+        !lsp_find_position_for_substring(content, "        item;", 1, 8, &secondItemPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover Prefers Nearest Shadowed Foreach Binding",
+                  "Failed to prepare the shadowed foreach hover fixture");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, firstItemPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "item") ||
+        !hover_contains_text(hover, "int") ||
+        hover_contains_text(hover, "string")) {
+        hoverText = hover_first_text(hover);
+        snprintf(reason,
+                 sizeof(reason),
+                 "First foreach item hover should resolve to int, actual=%s",
+                 hoverText != ZR_NULL ? hoverText : "<null>");
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Hover Prefers Nearest Shadowed Foreach Binding", reason);
+        return;
+    }
+
+    hover = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, secondItemPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "item") ||
+        !hover_contains_text(hover, "string") ||
+        hover_contains_text(hover, "Resolved Type: int") ||
+        hover_contains_text(hover, "cannot infer exact type") ||
+        hover_contains_text(hover, "object")) {
+        hoverText = hover_first_text(hover);
+        snprintf(reason,
+                 sizeof(reason),
+                 "Second foreach item hover should resolve to string, actual=%s",
+                 hoverText != ZR_NULL ? hoverText : "<null>");
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Hover Prefers Nearest Shadowed Foreach Binding", reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Hover Prefers Nearest Shadowed Foreach Binding");
+}
+
 static void test_lsp_container_matrix_project_infers_bucket_and_foreach_types(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -6118,6 +6217,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_top_level_script_return_semantics_match_compiler(state);
+    TEST_DIVIDER();
+
+    test_lsp_hover_prefers_nearest_shadowed_foreach_binding(state);
     TEST_DIVIDER();
 
     test_lsp_container_matrix_project_infers_bucket_and_foreach_types(state);

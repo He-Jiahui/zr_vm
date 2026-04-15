@@ -479,6 +479,38 @@ var validated: int[validateArraySize(50) ? 50 : 10];
 | `%mutex` | 当前拒绝 | 当前测试明确要求报错 |
 | `%atomic` | 当前拒绝 | 当前测试明确要求报错 |
 
+### 5.6 项目 `%import` 路径规则
+
+项目源码里的 `%import` 现在统一先解析成 canonical module key，再进入编译、运行时、CLI manifest 和 LSP。
+
+- 裸模块名 / 现有绝对模块名保持不变：`%import("foo")`、`%import("zr.system")`
+- 显式相对导入只接受 leading-dot 形式：
+  - `%import(".x.y")` => 当前模块目录下的 `x/y`
+  - `%import("..x.y")` => 上一级目录下的 `x/y`
+  - 每多一个前导点，就再向上一级
+- `.zrp` 可以声明 `pathAliases`，alias 值使用 sourceRoot 下的 slash-separated module key：
+
+```json
+{
+  "pathAliases": {
+    "@app": "feature/app",
+    "@shared": "common/shared"
+  }
+}
+```
+
+- alias 导入写法：
+  - `%import("@app")`
+  - `%import("@app.foo.bar")` => `feature/app/foo/bar`
+- 明确拒绝这些形式：
+  - `./foo`
+  - `../foo`
+  - bare `.` / `..`
+  - `@alias/foo`
+  - unknown alias
+  - 解析后越过 `sourceRoot` 的父目录逃逸
+- 旧规则保持不变：canonical 解析失败后，不再做隐式相对猜测或名称回退。
+
 ## 6. 装饰器
 
 ### 6.1 运行时装饰器 `#decorator#`

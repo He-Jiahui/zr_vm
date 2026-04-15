@@ -5389,6 +5389,43 @@ static void test_type_inference_destructured_native_type_import_registers_closed
     TEST_DIVIDER();
 }
 
+static void test_type_inference_qualified_native_type_annotation_accepts_matching_destructured_generic_instance(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary =
+            "Type Inference - Qualified Native Type Annotation Accepts Matching Destructured Generic Instance";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "var container = %import(\"zr.container\");\n"
+                "var {Pair} = %import(\"zr.container\");\n"
+                "var pair1: container.Pair<int, float> = $container.Pair<int, float>(1, 2.0);\n"
+                "var pair2: Pair<int, float> = $Pair<int, float>(1, 2.0);\n"
+                "return pair1.first + <int> pair2.first;\n";
+        SZrString *sourceName =
+                ZrCore_String_Create(state,
+                                     "qualified_native_type_annotation_pair_import_test.zr",
+                                     53);
+        SZrFunction *entryFunction = ZR_NULL;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(sourceName);
+
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+
+        ZrCore_Function_Free(state, entryFunction);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_native_import_requires_explicit_binding_for_unqualified_generic_type_annotation(void) {
     SZrTestTimer timer = {0};
     const char *testSummary =
@@ -6803,6 +6840,7 @@ int main(void) {
     RUN_TEST(test_type_inference_cyclic_import_local_import_outside_entry_path_passes);
     RUN_TEST(test_type_inference_destructured_native_type_import_allows_unqualified_generic_usage);
     RUN_TEST(test_type_inference_destructured_native_type_import_registers_closed_variable_type);
+    RUN_TEST(test_type_inference_qualified_native_type_annotation_accepts_matching_destructured_generic_instance);
     RUN_TEST(test_type_inference_native_import_requires_explicit_binding_for_unqualified_generic_type_annotation);
     RUN_TEST(test_type_inference_native_import_requires_explicit_binding_for_unqualified_generic_construct_target);
     RUN_TEST(test_type_inference_destructured_native_type_import_rejects_second_pair_declaration);

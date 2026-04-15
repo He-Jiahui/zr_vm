@@ -56,7 +56,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="gc internal legacy macros",
-        path="zr_vm_core/src/zr_vm_core/gc_internal.h",
+        path="zr_vm_core/src/zr_vm_core/gc/gc_internal.h",
         pattern=r"ZR_WORK_TO_MEM|ZR_GC_SWEEP_MAX|ZR_GC_FIN_MAX|ZR_GC_FINALIZE_COST",
         target="zr_gc_internal_conf.h",
         layer="common",
@@ -64,7 +64,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="gc raw duplicate scan limit",
-        path="zr_vm_core/src/zr_vm_core/gc_mark.c",
+        path="zr_vm_core/src/zr_vm_core/gc/gc_mark.c",
         pattern=r"maxCheckCount\s*=\s*10000|maxIterations\s*=\s*10000",
         target="ZR_GC_GRAY_LIST_DUPLICATE_SCAN_LIMIT / ZR_GC_PROPAGATE_ALL_ITERATION_LIMIT",
         layer="common",
@@ -72,7 +72,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="gc raw cycle guard limits",
-        path="zr_vm_core/src/zr_vm_core/gc_cycle.c",
+        path="zr_vm_core/src/zr_vm_core/gc/gc_cycle.c",
         pattern=r"maxIterations\s*=\s*10000|maxSweepIterations\s*=\s*10000",
         target="ZR_GC_RUN_UNTIL_STATE_ITERATION_LIMIT / ZR_GC_GENERATIONAL_FULL_SWEEP_ITERATION_LIMIT",
         layer="common",
@@ -80,7 +80,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="runtime read-all fallback capacity",
-        path="zr_vm_core/src/zr_vm_core/module_loader.c",
+        path="zr_vm_core/src/zr_vm_core/module/module_loader.c",
         pattern=r"\b4096\b",
         target="ZR_VM_READ_ALL_IO_FALLBACK_CAPACITY",
         layer="common",
@@ -176,7 +176,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="cli manifest version local definition",
-        path="zr_vm_cli/src/zr_vm_cli/project.h",
+        path="zr_vm_cli/src/zr_vm_cli/project/project.h",
         pattern=r"#define\s+ZR_CLI_MANIFEST_VERSION\b",
         target="ZR_CLI_MANIFEST_VERSION",
         layer="common",
@@ -184,7 +184,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="library project raw module extensions",
-        path="zr_vm_library/src/zr_vm_library/project.c",
+        path="zr_vm_library/src/zr_vm_library/project/project.c",
         pattern=r"\"\\.zro\"|\"\\.zr\"|length\s*-\s*4\b|length\s*-\s*3\b",
         target="ZR_VM_SOURCE_MODULE_FILE_EXTENSION / ZR_VM_BINARY_MODULE_FILE_EXTENSION",
         layer="common",
@@ -192,7 +192,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="cli project raw module extensions and mkdir mode",
-        path="zr_vm_cli/src/zr_vm_cli/project.c",
+        path="zr_vm_cli/src/zr_vm_cli/project/project.c",
         pattern=r"\"\\.zro\"|\"\\.zr\"|\"\\.zri\"|\b0755\b",
         target="zr_path_conf.h",
         layer="common",
@@ -200,7 +200,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="system fs local path max define",
-        path="zr_vm_lib_system/src/zr_vm_lib_system/fs.c",
+        path="zr_vm_lib_system/src/zr_vm_lib_system/fs/fs_entry.c",
         pattern=r"#define\s+ZR_SYSTEM_FS_PATH_MAX\b|mkdir\(path,\s*0755\)",
         target="ZR_SYSTEM_FS_PATH_MAX / ZR_SYSTEM_FS_DIRECTORY_MODE",
         layer="module",
@@ -216,7 +216,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="ffi callback last-error buffer",
-        path="zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_internal.h",
+        path="zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_internal.h",
         pattern=r"lastErrorMessage\s*\[\s*256\s*\]",
         target="ZR_FFI_ERROR_BUFFER_LENGTH",
         layer="module",
@@ -224,7 +224,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="ffi support diagnostic message buffer",
-        path="zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime_support.c",
+        path="zr_vm_lib_ffi/src/zr_vm_lib_ffi/ffi_runtime/ffi_runtime_support.c",
         pattern=r"message\s*\[\s*512\s*\]",
         target="ZR_FFI_DIAGNOSTIC_BUFFER_LENGTH",
         layer="module",
@@ -248,7 +248,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="math raw M_PI in scalar conversion helpers",
-        path="zr_vm_lib_math/src/zr_vm_lib_math/scalar.c",
+        path="zr_vm_lib_math/src/zr_vm_lib_math/scalar/scalar.c",
         pattern=r"\bM_PI\b",
         target="ZR_MATH_PI",
         layer="module",
@@ -272,7 +272,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="library native registry capacities",
-        path="zr_vm_library/src/zr_vm_library/native_binding.c",
+        path="zr_vm_library/src/zr_vm_library/native_binding/native_binding.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&registry->moduleRecords,\s*sizeof\(ZrLibRegisteredModuleRecord\),\s*8\)|"
         r"ZrCore_Array_Init\(state,\s*&registry->bindingEntries,\s*sizeof\(ZrLibBindingEntry\),\s*64\)|"
         r"ZrCore_Array_Init\(state,\s*&registry->pluginHandles,\s*sizeof\(void \*\),\s*4\)",
@@ -282,7 +282,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="library native inline argument capacity",
-        path="zr_vm_library/src/zr_vm_library/native_binding_dispatch.c",
+        path="zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c",
         pattern=r"inlineArguments\s*\[\s*8\s*\]|argumentCount\s*<=\s*8\b",
         target="ZR_LIBRARY_NATIVE_INLINE_ARGUMENT_CAPACITY",
         layer="module",
@@ -290,7 +290,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="library native registry error buffer",
-        path="zr_vm_library/src/zr_vm_library/native_binding_internal.h",
+        path="zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h",
         pattern=r"lastErrorMessage\s*\[\s*512\s*\]",
         target="ZR_LIBRARY_NATIVE_REGISTRY_ERROR_BUFFER_LENGTH",
         layer="module",
@@ -298,7 +298,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="cli app error buffer",
-        path="zr_vm_cli/src/zr_vm_cli/app.c",
+        path="zr_vm_cli/src/zr_vm_cli/app/app.c",
         pattern=r"error\s*\[\s*512\s*\]",
         target="ZR_CLI_ERROR_BUFFER_LENGTH",
         layer="module",
@@ -306,7 +306,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="cli compiler source-hash, error, and collection capacities",
-        path="zr_vm_cli/src/zr_vm_cli/compiler.c",
+        path="zr_vm_cli/src/zr_vm_cli/compiler/compiler.c",
         pattern=r"sourceHash\s*\[\s*32\s*\]|error\s*\[\s*512\s*\]|"
         r"collection->capacity\s*==\s*0\s*\?\s*8\s*:\s*collection->capacity\s*\*\s*2|"
         r"manifest->capacity\s*==\s*0\s*\?\s*8\s*:\s*manifest->capacity\s*\*\s*2",
@@ -316,7 +316,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="cli manifest source-hash buffer",
-        path="zr_vm_cli/src/zr_vm_cli/project.h",
+        path="zr_vm_cli/src/zr_vm_cli/project/project.h",
         pattern=r"sourceHash\s*\[\s*32\s*\]",
         target="ZR_CLI_SOURCE_HASH_HEX_LENGTH",
         layer="module",
@@ -324,7 +324,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="cli project capacities",
-        path="zr_vm_cli/src/zr_vm_cli/project.c",
+        path="zr_vm_cli/src/zr_vm_cli/project/project.c",
         pattern=r"manifest->capacity\s*==\s*0\s*\?\s*8\s*:\s*manifest->capacity\s*\*\s*2|"
         r"list->capacity\s*==\s*0\s*\?\s*4\s*:\s*list->capacity\s*\*\s*2",
         target="zr_vm_cli/conf.h",
@@ -333,7 +333,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="cli repl buffers",
-        path="zr_vm_cli/src/zr_vm_cli/repl.c",
+        path="zr_vm_cli/src/zr_vm_cli/repl/repl.c",
         pattern=r"line\s*\[\s*1024\s*\]|bufferCapacity\s*==\s*0\s*\?\s*256\s*:\s*bufferCapacity\s*\*\s*2",
         target="zr_vm_cli/conf.h",
         layer="module",
@@ -341,7 +341,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp native generic limits",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_interface_support.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c",
         pattern=r"#define\s+ZR_LSP_NATIVE_GENERIC_ARG_MAX\s+8|#define\s+ZR_LSP_NATIVE_GENERIC_TEXT_MAX\s+128",
         target="zr_vm_language_server/conf.h",
         layer="module",
@@ -349,7 +349,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp interface path and array-init literals",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c",
         pattern=r"buffer\[4096\]|ZrCore_HashSet_Init\(state,\s*&context->uriToAnalyzerMap,\s*4\)|"
         r"ZrCore_Array_Init\(state,\s*&context->projectIndexes,\s*sizeof\(SZrLspProjectIndex \*\),\s*2\)|"
         r"ZrCore_Array_Init\(state,\s*[^,]+,\s*sizeof\([^)]+\),\s*8\)",
@@ -400,7 +400,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic analyzer local array capacities",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&analyzer->diagnostics,\s*sizeof\(SZrDiagnostic \*\),\s*8\)|"
         r"ZrCore_Array_Init\(state,\s*&analyzer->cache->cachedDiagnostics,\s*sizeof\(SZrDiagnostic \*\),\s*8\)|"
         r"ZrCore_Array_Init\(state,\s*&analyzer->cache->cachedSymbols,\s*sizeof\(SZrSymbol \*\),\s*8\)|"
@@ -411,7 +411,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic analyzer support hash multiplier",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_support.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c",
         pattern=r"hash\s*=\s*hash\s*\*\s*31",
         target="ZR_LSP_HASH_MULTIPLIER",
         layer="module",
@@ -454,7 +454,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp project local array capacities",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_project.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&projectIndex->files,\s*sizeof\(SZrLspProjectFileRecord \*\),\s*4\)|"
         r"ZrCore_Array_Init\(state,\s*&bindings,\s*sizeof\(SZrLspImportBinding \*\),\s*4\)|"
         r"ZrCore_Array_Init\(state,\s*result,\s*sizeof\(SZrLspSymbolInformation \*\),\s*8\)",
@@ -464,7 +464,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp project local hex-digit invalid sentinel",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_project.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c",
         pattern=r"return\s+-1;",
         target="ZR_LSP_PROJECT_HEX_DIGIT_INVALID",
         layer="module",
@@ -472,7 +472,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp project import helper array capacity",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_project_imports.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_imports.c",
         pattern=r"ZrCore_Array_Init\(state,\s*result,\s*sizeof\(SZrLspLocation \*\),\s*4\)",
         target="zr_vm_language_server/conf.h",
         layer="module",
@@ -480,7 +480,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp project feature helper array capacities",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_project_features.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&bindings,\s*sizeof\(SZrLspImportBinding \*\),\s*4\)",
         target="zr_vm_language_server/conf.h",
         layer="module",
@@ -488,7 +488,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp project navigation helper array capacities",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_project_navigation.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c",
         pattern=r"ZrCore_Array_Init\(state,\s*result,\s*sizeof\(SZrLspLocation \*\),\s*4\)|"
         r"ZrCore_Array_Init\(state,\s*&references,\s*sizeof\(SZrReference \*\),\s*8\)|"
         r"ZrCore_Array_Init\(state,\s*&bindings,\s*sizeof\(SZrLspImportBinding \*\),\s*4\)",
@@ -498,7 +498,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic token helper array capacity",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_tokens.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&bindings,\s*sizeof\(SZrLspImportBinding \*\),\s*4\)",
         target="zr_vm_language_server/conf.h",
         layer="module",
@@ -625,7 +625,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core execution-dispatch runtime buffers",
-        path="zr_vm_core/src/zr_vm_core/execution_dispatch.c",
+        path="zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c",
         pattern=r"errorBuffer\s*\[\s*1024\s*\]|message\s*\[\s*256\s*\]",
         target="ZR_RUNTIME_ERROR_BUFFER_LENGTH / ZR_RUNTIME_DIAGNOSTIC_BUFFER_LENGTH",
         layer="common",
@@ -641,7 +641,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core execution-control meta-call convention",
-        path="zr_vm_core/src/zr_vm_core/execution_control.c",
+        path="zr_vm_core/src/zr_vm_core/execution/execution_control.c",
         pattern=r"stableArguments\s*\[\s*2\s*\]|argumentCount\s*>\s*2\b|ReserveScratchSlots\(state,\s*1\s*\+\s*argumentCount\)|"
         r"metaBase\s*\+\s*1\b|metaBase\s*\+\s*2\b|stackTop\.valuePointer\s*=\s*metaBase\s*\+\s*1\s*\+\s*argumentCount",
         target="ZR_META_CALL_*",
@@ -650,7 +650,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core execution-control exception-handler stack local capacities",
-        path="zr_vm_core/src/zr_vm_core/execution_control.c",
+        path="zr_vm_core/src/zr_vm_core/execution/execution_control.c",
         pattern=r"exceptionHandlerStackCapacity\s*>\s*0\s*\?\s*state->exceptionHandlerStackCapacity\s*:\s*8\b|newCapacity\s*\*=\s*2\b",
         target="ZR_EXCEPTION_HANDLER_STACK_INITIAL_CAPACITY / ZR_EXCEPTION_HANDLER_STACK_GROWTH_FACTOR",
         layer="module",
@@ -658,7 +658,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core execution-control cleanup close-count none",
-        path="zr_vm_core/src/zr_vm_core/execution_control.c",
+        path="zr_vm_core/src/zr_vm_core/execution/execution_control.c",
         pattern=r"if\s*\(state == ZR_NULL \|\| cleanupCount == 0\)\s*\{\s*return 0;\s*\}|TZrSize\s+closedCount\s*=\s*0\s*;",
         target="ZR_SCOPE_CLEANUP_CLOSED_COUNT_NONE",
         layer="module",
@@ -666,7 +666,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core execution-dispatch meta-call arity literals",
-        path="zr_vm_core/src/zr_vm_core/execution_dispatch.c",
+        path="zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c",
         pattern=r"^\s*(1|2),\s*$",
         target="ZR_META_CALL_UNARY_ARGUMENT_COUNT / ZR_META_CALL_MAX_ARGUMENTS",
         layer="common",
@@ -701,7 +701,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core module prototype inherit capacity",
-        path="zr_vm_core/src/zr_vm_core/module_prototype.c",
+        path="zr_vm_core/src/zr_vm_core/module/module_prototype.c",
         pattern=r"ZrCore_Array_Init\(state,\s*&protoInfoData\.inheritTypeNames,\s*sizeof\(SZrString \*\),\s*4\)",
         target="ZR_RUNTIME_PROTOTYPE_INHERIT_INITIAL_CAPACITY",
         layer="common",
@@ -709,7 +709,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp interface-support recursion and buffers",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_interface_support.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c",
         pattern=r"lineStarts\s*\[\s*32\s*\]|lineEnds\s*\[\s*32\s*\]|commentBuffer\s*\[\s*1024\s*\]|"
         r"markdownBuffer\s*\[\s*2048\s*\]|typeBuffer\s*\[\s*(128|256)\s*\]|buffer\s*\[\s*(512|1024)\s*\]|"
         r"baseName\s*\[\s*128\s*\]|memberName\s*\[\s*128\s*\]|receiverNameText\s*\[\s*128\s*\]|"
@@ -721,7 +721,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp project feature detail and buffer literals",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_project_features.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c",
         pattern=r"detail\s*\[\s*192\s*\]|typeBuffer\s*\[\s*128\s*\]|buffer\s*\[\s*(256|512)\s*\]",
         target="zr_vm_language_server/conf.h",
         layer="module",
@@ -729,7 +729,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic analyzer hover and completion buffers",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c",
         pattern=r"typeBuffer\s*\[\s*128\s*\]|signatureBuffer\s*\[\s*512\s*\]|label\s*\[\s*256\s*\]|"
         r"detail\s*\[\s*(160|192)\s*\]|moduleName\s*\[\s*256\s*\]|buffer\s*\[\s*1024\s*\]|"
         r"resolvedTypeBuffer\s*\[\s*128\s*\]",
@@ -739,7 +739,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic analyzer native-module completion depth",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c",
         pattern=r"depth\s*>\s*4\b",
         target="ZR_LSP_NATIVE_MODULE_COMPLETION_MAX_DEPTH",
         layer="module",
@@ -747,7 +747,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic-analyzer support recursion depth",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_support.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c",
         pattern=r"depth\s*>\s*32\b",
         target="ZR_LSP_AST_RECURSION_MAX_DEPTH",
         layer="module",
@@ -780,7 +780,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic-token local capacities",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_tokens.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c",
         pattern=r"ZrCore_Array_Init\(state,\s*(result|&entries),\s*sizeof\([^)]+\),\s*32\)",
         target="ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY",
         layer="module",
@@ -788,7 +788,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic-token local unknown and compare sentinels",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_tokens.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c",
         pattern=r"return\s+left->line\s*<\s*right->line\s*\?\s*-1\s*:\s*1;|"
         r"return\s+left->character\s*<\s*right->character\s*\?\s*-1\s*:\s*1;|"
         r"return\s+left->length\s*<\s*right->length\s*\?\s*-1\s*:\s*1;|"
@@ -800,7 +800,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic-analyzer typecheck buffers",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c",
         pattern=r"buffer\s*\[\s*(128|256)\s*\]",
         target="ZR_LSP_TYPE_BUFFER_LENGTH / ZR_LSP_TEXT_BUFFER_LENGTH",
         layer="module",
@@ -808,7 +808,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp semantic-analyzer symbols error buffer",
-        path="zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_symbols.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c",
         pattern=r"errorMsg\s*\[\s*256\s*\]",
         target="ZR_LSP_TEXT_BUFFER_LENGTH",
         layer="module",
@@ -844,7 +844,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core invalid-pointer low-bound guard in gc_object",
-        path="zr_vm_core/src/zr_vm_core/gc_object.c",
+        path="zr_vm_core/src/zr_vm_core/gc/gc_object.c",
         pattern=r"0x1000",
         target="ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND",
         layer="common",
@@ -852,7 +852,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core gc-object ignore-registry local capacities",
-        path="zr_vm_core/src/zr_vm_core/gc_object.c",
+        path="zr_vm_core/src/zr_vm_core/gc/gc_object.c",
         pattern=r"ignoredObjectCapacity\s*>\s*0\s*\?\s*collector->ignoredObjectCapacity\s*:\s*8\b|newCapacity\s*\*=\s*2\b",
         target="ZR_GC_IGNORE_REGISTRY_INITIAL_CAPACITY / ZR_GC_IGNORE_REGISTRY_GROWTH_FACTOR",
         layer="module",
@@ -860,7 +860,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core invalid-pointer low-bound guard in gc_sweep",
-        path="zr_vm_core/src/zr_vm_core/gc_sweep.c",
+        path="zr_vm_core/src/zr_vm_core/gc/gc_sweep.c",
         pattern=r"0x1000",
         target="ZR_RUNTIME_INVALID_POINTER_GUARD_LOW_BOUND",
         layer="common",
@@ -892,7 +892,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core gc managed-memory drift divisor",
-        path="zr_vm_core/src/zr_vm_core/gc_cycle.c",
+        path="zr_vm_core/src/zr_vm_core/gc/gc_cycle.c",
         pattern=r"estimatedMemories\s*/\s*10",
         target="ZR_GC_MANAGED_MEMORY_DRIFT_TOLERANCE_DIVISOR",
         layer="common",
@@ -900,7 +900,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core gc full-inc debt credit",
-        path="zr_vm_core/src/zr_vm_core/gc_cycle.c",
+        path="zr_vm_core/src/zr_vm_core/gc/gc_cycle.c",
         pattern=r"AddDebtSpace\(global,\s*-2000\)",
         target="ZR_GC_DEBT_CREDIT_BYTES",
         layer="common",
@@ -908,7 +908,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core gc idle debt credit",
-        path="zr_vm_core/src/zr_vm_core/gc.c",
+        path="zr_vm_core/src/zr_vm_core/gc/gc.c",
         pattern=r"AddDebtSpace\(global,\s*-2000\)",
         target="ZR_GC_DEBT_CREDIT_BYTES",
         layer="common",
@@ -924,7 +924,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core object inline-call argument capacity",
-        path="zr_vm_core/src/zr_vm_core/object.c",
+        path="zr_vm_core/src/zr_vm_core/object/object.c",
         pattern=r"inlineArguments\s*\[\s*8\s*\]|inlineArgumentPinAdded\s*\[\s*8\s*\]|argumentCount\s*<=\s*8\b",
         target="ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY",
         layer="common",
@@ -1031,7 +1031,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp completion-item kind raw protocol codes",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c",
         pattern=r"kindValue\s*=\s*(1|2|3|5|6|7|8|9|10|13|21|22)\s*;",
         target="EZrLspCompletionItemKind",
         layer="module",
@@ -1039,7 +1039,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp completion plain-text format literal",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c",
         pattern=r"ZrCore_String_Create\(\s*state,\s*\"plaintext\"\s*,\s*9\s*\)",
         target="ZR_LSP_INSERT_TEXT_FORMAT_KIND_PLAINTEXT",
         layer="module",
@@ -1047,7 +1047,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="lsp symbol kind raw protocol codes",
-        path="zr_vm_language_server/src/zr_vm_language_server/lsp_interface_support.c",
+        path="zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c",
         pattern=r"return\s+(2|5|6|7|8|10|11|12|13|22|23)\s*;",
         target="EZrLspSymbolKind",
         layer="module",
@@ -1299,7 +1299,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core gc shutdown full-collect guard",
-        path="zr_vm_core/src/zr_vm_core/gc.c",
+        path="zr_vm_core/src/zr_vm_core/gc/gc.c",
         pattern=r"maxIterations\s*=\s*1000\b",
         target="ZR_GC_SHUTDOWN_FULL_COLLECTION_ITERATION_LIMIT",
         layer="common",
@@ -1315,7 +1315,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="core object prototype capacity literals",
-        path="zr_vm_core/src/zr_vm_core/object.c",
+        path="zr_vm_core/src/zr_vm_core/object/object.c",
         pattern=r"managedFieldCapacity\s*>\s*0\s*\?\s*prototype->managedFieldCapacity\s*:\s*4|newCapacity\s*\*=\s*2|"
         r"memberDescriptorCapacity\s*>\s*0\s*\?\s*prototype->memberDescriptorCapacity\s*\*\s*2\s*:\s*4",
         target="ZR_RUNTIME_OBJECT_PROTOTYPE_INITIAL_CAPACITY / ZR_RUNTIME_OBJECT_PROTOTYPE_GROWTH_FACTOR",
@@ -1324,7 +1324,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="cli compiler stable-hash file constants",
-        path="zr_vm_cli/src/zr_vm_cli/compiler.c",
+        path="zr_vm_cli/src/zr_vm_cli/compiler/compiler.c",
         pattern=r"chunk\s*\[\s*4096\s*\]|hash\s*=\s*1469598103934665603ULL|hash\s*\*=\s*1099511628211ULL",
         target="zr_hash_conf.h",
         layer="common",
@@ -1332,7 +1332,7 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
     ),
     AuditRule(
         name="cli project stable-hash constants",
-        path="zr_vm_cli/src/zr_vm_cli/project.c",
+        path="zr_vm_cli/src/zr_vm_cli/project/project.c",
         pattern=r"hash\s*=\s*1469598103934665603ULL|hash\s*\*=\s*1099511628211ULL|\"%016llx\"",
         target="zr_hash_conf.h",
         layer="common",

@@ -3956,6 +3956,8 @@ static TZrBool module_init_load_summary_from_source_loader(SZrCompilerState *cs,
                                                            SZrParserModuleInitSummary *summary,
                                                            SZrString *moduleName) {
     SZrIo io;
+    TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    SZrFileRange importErrorLocation;
     TZrNativeString moduleNameText;
     TZrSize sourceSize = 0;
     TZrBytePtr sourceBuffer = ZR_NULL;
@@ -4021,6 +4023,19 @@ static TZrBool module_init_load_summary_from_source_loader(SZrCompilerState *cs,
     ast = ZrParser_Parse(cs->state, (const TZrChar *)sourceBuffer, sourceSize, moduleName);
     ZrCore_Memory_RawFreeWithType(cs->state->global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
     if (ast == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!ZrParser_ProjectImports_CanonicalizeAst(cs->state,
+                                                 ast,
+                                                 moduleName,
+                                                 ZR_NULL,
+                                                 importError,
+                                                 sizeof(importError),
+                                                 &importErrorLocation)) {
+        module_init_summary_set_error(summary,
+                                      &importErrorLocation,
+                                      importError[0] != '\0' ? importError : "failed to canonicalize imported module imports");
+        ZrParser_Ast_Free(cs->state, ast);
         return ZR_FALSE;
     }
 

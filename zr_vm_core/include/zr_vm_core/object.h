@@ -99,6 +99,7 @@ struct ZR_STRUCT_ALIGN SZrObject {
     struct SZrObject *cachedHiddenItemsObject;
     SZrHashKeyValuePair *cachedLengthPair;
     SZrHashKeyValuePair *cachedCapacityPair;
+    SZrHashKeyValuePair *cachedStringLookupPair;
 
     // SZrRawObject *gcList;
 };

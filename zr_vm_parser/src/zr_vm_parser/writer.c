@@ -995,6 +995,18 @@ static TZrBool write_function_parameter_metadata(FILE *file, SZrState *state, SZ
                                               function->parameterMetadataCount);
 }
 
+static void write_function_callable_return_metadata(FILE *file, SZrState *state, SZrFunction *function) {
+    TZrUInt8 hasCallableReturnType =
+            (function != ZR_NULL && function->hasCallableReturnType) ? ZR_TRUE : ZR_FALSE;
+
+    fwrite(&hasCallableReturnType, sizeof(TZrUInt8), 1, file);
+    if (!hasCallableReturnType) {
+        return;
+    }
+
+    write_function_typed_type_ref(file, state, &function->callableReturnType);
+}
+
 static TZrBool write_function_compile_time_metadata(FILE *file, SZrState *state, SZrFunction *function) {
     TZrUInt64 variableCount = function != ZR_NULL ? function->compileTimeVariableInfoLength : 0;
     TZrUInt64 functionCount = function != ZR_NULL ? function->compileTimeFunctionInfoLength : 0;
@@ -1376,6 +1388,7 @@ static TZrBool write_io_function_internal(SZrState *state,
     if (!write_function_parameter_metadata(file, state, function)) {
         return ZR_FALSE;
     }
+    write_function_callable_return_metadata(file, state, function);
     if (!write_function_compile_time_metadata(file, state, function)) {
         return ZR_FALSE;
     }

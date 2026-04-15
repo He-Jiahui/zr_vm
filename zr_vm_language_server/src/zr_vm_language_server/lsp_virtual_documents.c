@@ -1,10 +1,12 @@
 #include "lsp_virtual_documents.h"
 
-#include "lsp_metadata_provider.h"
+#include "metadata/lsp_metadata_provider.h"
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "zr_vm_library/native_registry.h"
 
 #define ZR_LSP_VIRTUAL_URI_PREFIX "zr-decompiled:/"
 #define ZR_LSP_VIRTUAL_TEXT_INITIAL_CAPACITY 2048U
@@ -692,11 +694,100 @@ static TZrBool virtual_documents_range_contains_position(SZrFileRange range, SZr
            (line < range.end.line || (line == range.end.line && column <= range.end.column));
 }
 
-TZrBool ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(SZrString *uri) {
+static TZrBool virtual_documents_uri_is_virtual_declaration(SZrString *uri) {
     const TZrChar *text = virtual_documents_string_text(uri);
     TZrSize prefixLength = strlen(ZR_LSP_VIRTUAL_URI_PREFIX);
 
     return text != ZR_NULL && strncmp(text, ZR_LSP_VIRTUAL_URI_PREFIX, prefixLength) == 0;
+}
+
+static TZrBool virtual_documents_record_compact_type_members(SZrState *state,
+                                                             const ZrLibModuleDescriptor *descriptor,
+                                                             SZrString *uri,
+                                                             SZrArray *outRecords) {
+    if (state == ZR_NULL || descriptor == ZR_NULL || uri == ZR_NULL || outRecords == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Init(state, outRecords, sizeof(SZrLspVirtualRecord), ZR_LSP_VIRTUAL_RECORD_INITIAL_CAPACITY);
+    for (TZrSize typeIndex = 0; typeIndex < descriptor->typeCount; typeIndex++) {
+        const ZrLibTypeDescriptor *typeDescriptor = &descriptor->types[typeIndex];
+        TZrInt32 fileLine = (TZrInt32)(typeIndex + 2);
+
+        if (typeDescriptor == ZR_NULL || typeDescriptor->name == ZR_NULL) {
+            continue;
+        }
+
+        for (TZrSize fieldIndex = 0; fieldIndex < typeDescriptor->fieldCount; fieldIndex++) {
+            const ZrLibFieldDescriptor *fieldDescriptor = &typeDescriptor->fields[fieldIndex];
+            SZrLspVirtualRecord record;
+            TZrSize nameLength;
+            TZrInt32 startColumn;
+            TZrInt32 endColumn;
+
+            if (fieldDescriptor == ZR_NULL || fieldDescriptor->name == ZR_NULL) {
+                continue;
+            }
+
+            memset(&record, 0, sizeof(record));
+            nameLength = strlen(fieldDescriptor->name);
+            startColumn = (TZrInt32)(fieldIndex * 8 + 1);
+            endColumn = startColumn + (TZrInt32)(nameLength > 0 ? nameLength : 1);
+            record.kind = ZR_LSP_VIRTUAL_DECLARATION_FIELD;
+            record.ownerName = typeDescriptor->name;
+            record.name = fieldDescriptor->name;
+            record.range = ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, fileLine, startColumn),
+                                                     ZrParser_FilePosition_Create(0, fileLine, endColumn),
+                                                     uri);
+            ZrCore_Array_Push(state, outRecords, &record);
+        }
+
+        for (TZrSize methodIndex = 0; methodIndex < typeDescriptor->methodCount; methodIndex++) {
+            const ZrLibMethodDescriptor *methodDescriptor = &typeDescriptor->methods[methodIndex];
+            SZrLspVirtualRecord record;
+            TZrSize nameLength;
+            TZrInt32 startColumn;
+            TZrInt32 endColumn;
+
+            if (methodDescriptor == ZR_NULL || methodDescriptor->name == ZR_NULL) {
+                continue;
+            }
+
+            memset(&record, 0, sizeof(record));
+            nameLength = strlen(methodDescriptor->name);
+            startColumn = (TZrInt32)(methodIndex * 8 + 129);
+            endColumn = startColumn + (TZrInt32)(nameLength > 0 ? nameLength : 1);
+            record.kind = ZR_LSP_VIRTUAL_DECLARATION_METHOD;
+            record.ownerName = typeDescriptor->name;
+            record.name = methodDescriptor->name;
+            record.range = ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, fileLine, startColumn),
+                                                     ZrParser_FilePosition_Create(0, fileLine, endColumn),
+                                                     uri);
+            ZrCore_Array_Push(state, outRecords, &record);
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool virtual_documents_collect_records(SZrState *state,
+                                                 const ZrLibModuleDescriptor *descriptor,
+                                                 SZrString *uri,
+                                                 SZrArray *outRecords) {
+    if (state == ZR_NULL || descriptor == ZR_NULL || uri == ZR_NULL || outRecords == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!virtual_documents_uri_is_virtual_declaration(uri)) {
+        return virtual_documents_record_compact_type_members(state, descriptor, uri, outRecords);
+    }
+
+    ZrCore_Array_Construct(outRecords);
+    return virtual_documents_build(state, descriptor, uri, ZR_NULL, outRecords);
+}
+
+TZrBool ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(SZrString *uri) {
+    return virtual_documents_uri_is_virtual_declaration(uri);
 }
 
 SZrString *ZrLanguageServer_LspVirtualDocuments_CreateDeclarationUri(SZrState *state, const TZrChar *moduleName) {
@@ -752,6 +843,7 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(SZrState *s
                                                                      TZrSize bufferSize) {
     SZrString *moduleNameString;
     SZrLspResolvedImportedModule resolved;
+    TZrBool parsedVirtualUri = ZR_FALSE;
 
     if (outDescriptor != ZR_NULL) {
         *outDescriptor = ZR_NULL;
@@ -759,9 +851,31 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_ResolveDescriptorForUri(SZrState *s
     if (outSourceKind != ZR_NULL) {
         *outSourceKind = ZR_LSP_IMPORTED_MODULE_SOURCE_UNRESOLVED;
     }
-    if (state == ZR_NULL || uri == ZR_NULL || moduleNameBuffer == ZR_NULL || bufferSize == 0 ||
-        !ZrLanguageServer_LspVirtualDocuments_ParseDeclarationUri(uri, moduleNameBuffer, bufferSize)) {
+    if (state == ZR_NULL || uri == ZR_NULL || moduleNameBuffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
+    }
+
+    parsedVirtualUri = ZrLanguageServer_LspVirtualDocuments_ParseDeclarationUri(uri, moduleNameBuffer, bufferSize);
+    if (!parsedVirtualUri) {
+        TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+        ZrLibRegisteredModuleInfo moduleInfo;
+
+        memset(&moduleInfo, 0, sizeof(moduleInfo));
+        if (state->global == ZR_NULL ||
+            !ZrLanguageServer_Lsp_FileUriToNativePath(uri, nativePath, sizeof(nativePath)) ||
+            !ZrLibrary_NativeRegistry_GetModuleInfoBySourcePath(state->global, nativePath, &moduleInfo) ||
+            moduleInfo.moduleName == ZR_NULL ||
+            moduleInfo.moduleName[0] == '\0' ||
+            !(moduleInfo.registrationKind == ZR_LIB_NATIVE_MODULE_REGISTRATION_KIND_DESCRIPTOR_PLUGIN ||
+              moduleInfo.isDescriptorPlugin)) {
+            return ZR_FALSE;
+        }
+
+        if (strlen(moduleInfo.moduleName) + 1 > bufferSize) {
+            return ZR_FALSE;
+        }
+
+        memcpy(moduleNameBuffer, moduleInfo.moduleName, strlen(moduleInfo.moduleName) + 1);
     }
 
     moduleNameString = ZrCore_String_Create(state, moduleNameBuffer, strlen(moduleNameBuffer));
@@ -922,8 +1036,7 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_FindTypeMemberDeclaration(SZrState 
         return ZR_FALSE;
     }
 
-    ZrCore_Array_Construct(&records);
-    if (!virtual_documents_build(state, descriptor, uri, ZR_NULL, &records)) {
+    if (!virtual_documents_collect_records(state, descriptor, uri, &records)) {
         return ZR_FALSE;
     }
 
@@ -969,8 +1082,7 @@ TZrBool ZrLanguageServer_LspVirtualDocuments_FindDeclarationAtPosition(SZrState 
         return ZR_FALSE;
     }
 
-    ZrCore_Array_Construct(&records);
-    if (!virtual_documents_build(state, descriptor, uri, ZR_NULL, &records)) {
+    if (!virtual_documents_collect_records(state, descriptor, uri, &records)) {
         return ZR_FALSE;
     }
 

@@ -1,4 +1,4 @@
-#include "lsp_interface_internal.h"
+#include "interface/lsp_interface_internal.h"
 
 #include <ctype.h>
 #include <string.h>

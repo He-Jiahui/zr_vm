@@ -1,36 +1,34 @@
 ---
 related_code:
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_module_metadata.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_module_metadata.h
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_project.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_project_features.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
+  - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
+  - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.h
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
   - zr_vm_library/include/zr_vm_library/native_registry.h
-  - zr_vm_library/src/zr_vm_library/native_binding.c
-  - zr_vm_library/src/zr_vm_library/native_binding_support.c
-  - zr_vm_library/src/zr_vm_library/native_binding_registry_plugin.c
-  - zr_vm_library/src/zr_vm_library/native_binding_internal.h
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_symbols.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_support.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_import_target_navigation.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_project_navigation.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_token_metadata.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_tokens.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_interface_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/stdio/stdio_requests.c
-  - zr_vm_parser/src/zr_vm_parser/parser_statements.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_typed_metadata.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_bindings.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_import_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
   - tests/language_server/test_lsp_language_feature_matrix.c
   - tests/parser/test_compiler_regressions.c
   - tests/container/test_container_type_inference.c
@@ -41,36 +39,34 @@ related_code:
   - tests/language_server/stdio_smoke.js
   - tests/parser/test_parser_extern.c
 implementation_files:
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_module_metadata.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_project.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_project_features.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
+  - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
   - zr_vm_library/include/zr_vm_library/native_registry.h
-  - zr_vm_library/src/zr_vm_library/native_binding.c
-  - zr_vm_library/src/zr_vm_library/native_binding_support.c
-  - zr_vm_library/src/zr_vm_library/native_binding_registry_plugin.c
-  - zr_vm_library/src/zr_vm_library/native_binding_internal.h
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_symbols.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_support.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_support.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_signature_help.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_super_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_decorator_navigation.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_import_target_navigation.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_project_navigation.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project_navigation.c
   - zr_vm_language_server/src/zr_vm_language_server/lsp_token_metadata.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_semantic_tokens.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_interface_support.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_tokens.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
   - zr_vm_language_server/stdio/stdio_requests.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_typed_metadata.c
-  - zr_vm_parser/src/zr_vm_parser/parser_statements.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_bindings.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_extern_declaration.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_extern_declaration.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_import_metadata.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_import_metadata.c
 plan_sources:
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
   - user: 2026-04-05 继续把 plugin/native/binary metadata 统一链推进到更细粒度 completion/definition/references/watched refresh 覆盖

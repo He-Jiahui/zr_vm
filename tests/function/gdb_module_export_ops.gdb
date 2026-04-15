@@ -2,7 +2,7 @@ set pagination off
 set confirm off
 file ./build/codex-wsl-gcc-debug/bin/zr_vm_cli
 set args ./tests/fixtures/projects/import_capture_native/import_capture_native.zrp
-break /mnt/d/Git/Github/zr_vm_mig/zr_vm/zr_vm_core/src/zr_vm_core/module.c:857
+break /mnt/d/Git/Github/zr_vm_mig/zr_vm/zr_vm_core/src/zr_vm_core/module/module.c:857
 commands
 silent
 printf "\nmodule export collection hit\n"

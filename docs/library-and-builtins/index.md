@@ -2,25 +2,25 @@
 related_code:
   - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_lib_thread/include/zr_vm_lib_thread/module.h
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime.c
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_internal.h
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_internal.h
   - zr_vm_lib_system/include/zr_vm_lib_system/module.h
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
-  - zr_vm_library/src/zr_vm_library/native_binding.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
   - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/task_runtime.h
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime.c
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_internal.h
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_internal.h
   - zr_vm_lib_system/src/zr_vm_lib_system/module.c
   - zr_vm_library/include/zr_vm_library/native_binding.h
-  - zr_vm_library/src/zr_vm_library/native_binding.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding.c
   - zr_vm_library/src/zr_vm_library/task_runtime.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression.c
 plan_sources:
   - user: 2026-04-05 Task / Coroutine / Thread 并发模型重构计划
 tests:

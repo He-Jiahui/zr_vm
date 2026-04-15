@@ -1,20 +1,20 @@
 ---
 related_code:
-  - zr_vm_parser/src/zr_vm_parser/parser_class.c
-  - zr_vm_parser/src/zr_vm_parser/parser_struct.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_class.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_struct.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_support.c
-  - zr_vm_core/src/zr_vm_core/module_prototype.c
-  - zr_vm_core/src/zr_vm_core/object.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_class.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_struct.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
+  - zr_vm_core/src/zr_vm_core/module/module_prototype.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
 implementation_files:
-  - zr_vm_parser/src/zr_vm_parser/parser_class.c
-  - zr_vm_parser/src/zr_vm_parser/parser_struct.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_class.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_struct.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_support.c
-  - zr_vm_core/src/zr_vm_core/module_prototype.c
-  - zr_vm_core/src/zr_vm_core/object.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_class.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_struct.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_struct.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_support.c
+  - zr_vm_core/src/zr_vm_core/module/module_prototype.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
 plan_sources:
   - user: 2026-04-08 Rust-First Ownership / GC 分层设计
   - .codex/plans/Rust-First Ownership  GC 分层设计.md

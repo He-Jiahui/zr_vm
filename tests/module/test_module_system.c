@@ -1957,7 +1957,6 @@ static void test_source_module_exports_complex_function_graph_without_null_call_
         SZrTypeValue result;
 
         TEST_ASSERT_NOT_NULL(state);
-
         g_module_fixture_sources = kFixtures;
         g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
         state->global->sourceLoader = module_fixture_source_loader;
@@ -2355,6 +2354,8 @@ static void test_cyclic_source_modules_dynamic_entry_read_raises_cycle_init_erro
         entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
         TEST_ASSERT_NOT_NULL(entryFunction);
         TEST_ASSERT_FALSE(ZrTests_Runtime_Function_ExecuteCaptureFailure(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_PTR(state->stackBase.valuePointer + 1, state->stackTop.valuePointer);
+        TEST_ASSERT_EQUAL_PTR(&state->baseCallInfo, state->callInfoList);
         TEST_ASSERT_TRUE(state->hasCurrentException);
         message = get_current_exception_message_cstring(state);
         TEST_ASSERT_NOT_NULL(message);
@@ -2425,8 +2426,8 @@ static void test_binary_roundtrip_preserves_module_init_callable_metadata(void) 
         state->global->sourceLoader = module_fixture_source_loader;
 
         sourceName = ZrCore_String_Create(state,
-                                          "binary_module_init_callable_metadata_roundtrip_test.zr",
-                                          strlen("binary_module_init_callable_metadata_roundtrip_test.zr"));
+                                          "reference.binary_meta_init.zr",
+                                          strlen("reference.binary_meta_init.zr"));
         TEST_ASSERT_NOT_NULL(sourceName);
 
         sourceFunction = ZrParser_Source_Compile(state, moduleSource, strlen(moduleSource), sourceName);
@@ -5418,6 +5419,174 @@ static void test_function_type_literal_runtime_materializes_callable_reflection(
     TEST_DIVIDER();
 }
 
+static void test_percent_type_local_callable_reflection_preserves_callable_shape_in_source_and_binary(void) {
+    SZrTestTimer timer;
+    const char *testSummary =
+            "Percent Type Local Callable Reflection Preserves Callable Shape In Source And Binary";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        const TZrChar *source =
+                "localFunction(value: int, delta: int): int {\n"
+                "    return value + delta;\n"
+                "}\n"
+                "var localLambda = (seed: int, bump: int) => {\n"
+                "    return seed + bump;\n"
+                "};\n"
+                "return {\n"
+                "    named: %type(localFunction),\n"
+                "    lambda: %type(localLambda)\n"
+                "};\n";
+        const TZrChar *binaryPath = "local_callable_type_reflection_roundtrip.zro";
+        SZrState *state = create_test_state();
+        SZrString *sourceName;
+        SZrFunction *entryFunction = ZR_NULL;
+        SZrTypeValue result;
+        SZrObject *resultObject;
+        const SZrTypeValue *namedValue;
+        const SZrTypeValue *lambdaValue;
+        SZrObject *namedReflection;
+        SZrObject *lambdaReflection;
+        const SZrTypeValue *namedReturnTypeName;
+        const SZrTypeValue *lambdaReturnTypeName;
+        const SZrTypeValue *namedParametersValue;
+        const SZrTypeValue *lambdaParametersValue;
+        SZrObject *namedParameters;
+        SZrObject *lambdaParameters;
+        SZrObject *namedFirstParameter;
+        SZrObject *lambdaFirstParameter;
+        const SZrTypeValue *namedFirstParameterName;
+        const SZrTypeValue *lambdaFirstParameterName;
+        const SZrTypeValue *namedKindValue;
+        const SZrTypeValue *lambdaKindValue;
+        TZrByte *binaryBytes = ZR_NULL;
+        TZrSize binaryLength = 0;
+        SZrModuleFixtureReader reader = {0};
+        SZrIo io;
+        SZrIoSource *sourceObject = ZR_NULL;
+        SZrFunction *runtimeFunction = ZR_NULL;
+        SZrTypeValue runtimeResult;
+        SZrObject *runtimeResultObject;
+        const SZrTypeValue *runtimeLambdaValue;
+        SZrObject *runtimeLambdaReflection;
+        const SZrTypeValue *runtimeLambdaReturnTypeName;
+        const SZrTypeValue *runtimeLambdaParametersValue;
+        SZrObject *runtimeLambdaParameters;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        sourceName = ZrCore_String_Create(state, "local_callable_type_reflection_test.zr", 38);
+        TEST_ASSERT_NOT_NULL(sourceName);
+
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
+
+        resultObject = ZR_CAST_OBJECT(state, result.value.object);
+        TEST_ASSERT_NOT_NULL(resultObject);
+
+        namedValue = get_object_field_value(state, resultObject, "named");
+        lambdaValue = get_object_field_value(state, resultObject, "lambda");
+        TEST_ASSERT_NOT_NULL(namedValue);
+        TEST_ASSERT_NOT_NULL(lambdaValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, namedValue->type);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, lambdaValue->type);
+
+        namedReflection = ZR_CAST_OBJECT(state, namedValue->value.object);
+        lambdaReflection = ZR_CAST_OBJECT(state, lambdaValue->value.object);
+        TEST_ASSERT_NOT_NULL(namedReflection);
+        TEST_ASSERT_NOT_NULL(lambdaReflection);
+
+        namedKindValue = get_object_field_value(state, namedReflection, "kind");
+        lambdaKindValue = get_object_field_value(state, lambdaReflection, "kind");
+        namedReturnTypeName = get_object_field_value(state, namedReflection, "returnTypeName");
+        lambdaReturnTypeName = get_object_field_value(state, lambdaReflection, "returnTypeName");
+        namedParametersValue = get_object_field_value(state, namedReflection, "parameters");
+        lambdaParametersValue = get_object_field_value(state, lambdaReflection, "parameters");
+        TEST_ASSERT_NOT_NULL(namedKindValue);
+        TEST_ASSERT_NOT_NULL(lambdaKindValue);
+        TEST_ASSERT_NOT_NULL(namedReturnTypeName);
+        TEST_ASSERT_NOT_NULL(lambdaReturnTypeName);
+        TEST_ASSERT_NOT_NULL(namedParametersValue);
+        TEST_ASSERT_NOT_NULL(lambdaParametersValue);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, namedKindValue->value.object), "function"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, lambdaKindValue->value.object), "function"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, namedReturnTypeName->value.object), "int"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, lambdaReturnTypeName->value.object), "int"));
+
+        namedParameters = ZR_CAST_OBJECT(state, namedParametersValue->value.object);
+        lambdaParameters = ZR_CAST_OBJECT(state, lambdaParametersValue->value.object);
+        TEST_ASSERT_NOT_NULL(namedParameters);
+        TEST_ASSERT_NOT_NULL(lambdaParameters);
+        TEST_ASSERT_EQUAL_UINT32(2u, (TZrUInt32)get_array_length(namedParameters));
+        TEST_ASSERT_EQUAL_UINT32(2u, (TZrUInt32)get_array_length(lambdaParameters));
+
+        namedFirstParameter = get_array_entry_object(state, namedParameters, 0);
+        lambdaFirstParameter = get_array_entry_object(state, lambdaParameters, 0);
+        TEST_ASSERT_NOT_NULL(namedFirstParameter);
+        TEST_ASSERT_NOT_NULL(lambdaFirstParameter);
+
+        namedFirstParameterName = get_object_field_value(state, namedFirstParameter, "name");
+        lambdaFirstParameterName = get_object_field_value(state, lambdaFirstParameter, "name");
+        TEST_ASSERT_NOT_NULL(namedFirstParameterName);
+        TEST_ASSERT_NOT_NULL(lambdaFirstParameterName);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, namedFirstParameterName->value.object), "value"));
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, lambdaFirstParameterName->value.object), "seed"));
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, entryFunction, binaryPath));
+        binaryBytes = read_test_file_bytes(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        ZrCore_Memory_RawSet(&io, 0, sizeof(io));
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+        ZrCore_Io_Init(state, &io, module_fixture_reader_read, ZR_NULL, &reader);
+        io.isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(&io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, runtimeFunction, &runtimeResult));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, runtimeResult.type);
+
+        runtimeResultObject = ZR_CAST_OBJECT(state, runtimeResult.value.object);
+        TEST_ASSERT_NOT_NULL(runtimeResultObject);
+
+        runtimeLambdaValue = get_object_field_value(state, runtimeResultObject, "lambda");
+        TEST_ASSERT_NOT_NULL(runtimeLambdaValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, runtimeLambdaValue->type);
+
+        runtimeLambdaReflection = ZR_CAST_OBJECT(state, runtimeLambdaValue->value.object);
+        TEST_ASSERT_NOT_NULL(runtimeLambdaReflection);
+        runtimeLambdaReturnTypeName = get_object_field_value(state, runtimeLambdaReflection, "returnTypeName");
+        runtimeLambdaParametersValue = get_object_field_value(state, runtimeLambdaReflection, "parameters");
+        TEST_ASSERT_NOT_NULL(runtimeLambdaReturnTypeName);
+        TEST_ASSERT_NOT_NULL(runtimeLambdaParametersValue);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, runtimeLambdaReturnTypeName->value.object), "int"));
+
+        runtimeLambdaParameters = ZR_CAST_OBJECT(state, runtimeLambdaParametersValue->value.object);
+        TEST_ASSERT_NOT_NULL(runtimeLambdaParameters);
+        TEST_ASSERT_EQUAL_UINT32(2u, (TZrUInt32)get_array_length(runtimeLambdaParameters));
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        free(binaryBytes);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, entryFunction);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_percent_type_function_type_literal_reflection_exposes_callable_shape(void) {
     SZrTestTimer timer;
     const char *testSummary = "Percent Type Function Type Literal Reflection Exposes Callable Shape";
@@ -8197,8 +8366,8 @@ static void test_reference_binary_module_metadata_roundtrip_fixture(void) {
     TEST_ASSERT_NOT_NULL(importSource);
 
     moduleSourceName = ZrCore_String_Create(state,
-                                            "reference_binary_metadata_roundtrip_module.zr",
-                                            strlen("reference_binary_metadata_roundtrip_module.zr"));
+                                            "reference.binary_meta.zr",
+                                            strlen("reference.binary_meta.zr"));
     TEST_ASSERT_NOT_NULL(moduleSourceName);
     moduleFunction = ZrParser_Source_Compile(state, moduleSource, moduleSourceSize, moduleSourceName);
     TEST_ASSERT_NOT_NULL(moduleFunction);
@@ -8489,6 +8658,9 @@ int main(void) {
 
     // 35. 函数字面值类型在运行时物化为 callable reflection，并且 %type 保持同一形状
     RUN_TEST(test_function_type_literal_runtime_materializes_callable_reflection);
+
+    // 36. %type(local function/lambda) 在 source/binary 两条路径都保留 callable shape
+    RUN_TEST(test_percent_type_local_callable_reflection_preserves_callable_shape_in_source_and_binary);
 
     // 36. %type(%func(...)) 暴露 callable reflection shape
     RUN_TEST(test_percent_type_function_type_literal_reflection_exposes_callable_shape);

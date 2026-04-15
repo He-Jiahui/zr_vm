@@ -182,9 +182,49 @@ static void zr_debug_normalize_path_for_compare(const TZrChar *path, TZrChar *bu
     buffer[writeIndex] = '\0';
 }
 
+static TZrBool zr_debug_normalized_path_is_module_like(const TZrChar *path) {
+    if (path == ZR_NULL || path[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    return strchr(path, '/') == ZR_NULL ? ZR_TRUE : ZR_FALSE;
+}
+
+static void zr_debug_normalized_path_copy_stem(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
+    const TZrChar *nameStart;
+    TZrSize length;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    buffer[0] = '\0';
+    if (path == ZR_NULL || path[0] == '\0') {
+        return;
+    }
+
+    nameStart = strrchr(path, '/');
+    nameStart = nameStart != ZR_NULL ? nameStart + 1 : path;
+    length = strlen(nameStart);
+    if (length >= 3 && strcmp(nameStart + length - 3, ".zr") == 0) {
+        length -= 3;
+    } else if (length >= 4 &&
+               (strcmp(nameStart + length - 4, ".zri") == 0 || strcmp(nameStart + length - 4, ".zro") == 0)) {
+        length -= 4;
+    }
+    if (length >= bufferSize) {
+        length = bufferSize - 1u;
+    }
+
+    memcpy(buffer, nameStart, length);
+    buffer[length] = '\0';
+}
+
 static TZrBool zr_debug_source_paths_equal(const TZrChar *left, const TZrChar *right) {
     TZrChar normalizedLeft[ZR_DEBUG_TEXT_CAPACITY];
     TZrChar normalizedRight[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar leftStem[ZR_DEBUG_NAME_CAPACITY];
+    TZrChar rightStem[ZR_DEBUG_NAME_CAPACITY];
 
     if (left == ZR_NULL || right == ZR_NULL) {
         return ZR_FALSE;
@@ -192,7 +232,18 @@ static TZrBool zr_debug_source_paths_equal(const TZrChar *left, const TZrChar *r
 
     zr_debug_normalize_path_for_compare(left, normalizedLeft, sizeof(normalizedLeft));
     zr_debug_normalize_path_for_compare(right, normalizedRight, sizeof(normalizedRight));
-    return strcmp(normalizedLeft, normalizedRight) == 0;
+    if (strcmp(normalizedLeft, normalizedRight) == 0) {
+        return ZR_TRUE;
+    }
+
+    if (!zr_debug_normalized_path_is_module_like(normalizedLeft) &&
+        !zr_debug_normalized_path_is_module_like(normalizedRight)) {
+        return ZR_FALSE;
+    }
+
+    zr_debug_normalized_path_copy_stem(normalizedLeft, leftStem, sizeof(leftStem));
+    zr_debug_normalized_path_copy_stem(normalizedRight, rightStem, sizeof(rightStem));
+    return (TZrBool)(leftStem[0] != '\0' && strcmp(leftStem, rightStem) == 0);
 }
 
 static TZrBool zr_debug_breakpoint_matches_module(const ZrDebugAgent *agent, const ZrDebugBreakpoint *breakpoint) {
@@ -393,6 +444,51 @@ static void zr_debug_refine_line_breakpoint_with_constant_roots(ZrDebugBreakpoin
         zr_debug_resolve_breakpoint_recursive(&candidate, candidateFunction);
         if (zr_debug_line_breakpoint_candidate_is_better(breakpoint, &candidate, entryFunction)) {
             *breakpoint = candidate;
+        }
+    }
+}
+
+static TZrBool zr_debug_breakpoint_try_resolve_with_function_root(ZrDebugBreakpoint *breakpoint,
+                                                                  SZrFunction *rootFunction) {
+    ZrDebugBreakpoint candidate;
+
+    if (breakpoint == ZR_NULL || rootFunction == ZR_NULL || breakpoint->resolved) {
+        return ZR_FALSE;
+    }
+
+    candidate = *breakpoint;
+    candidate.resolved = ZR_FALSE;
+    candidate.resolved_function = ZR_NULL;
+    candidate.resolved_instruction_index = 0;
+    zr_debug_resolve_breakpoint_recursive(&candidate, rootFunction);
+    zr_debug_refine_line_breakpoint_with_constant_roots(&candidate, rootFunction);
+    if (!candidate.resolved) {
+        return ZR_FALSE;
+    }
+
+    breakpoint->resolved_function = candidate.resolved_function;
+    breakpoint->resolved_instruction_index = candidate.resolved_instruction_index;
+    breakpoint->resolved = ZR_TRUE;
+    breakpoint->line = candidate.line;
+    return ZR_TRUE;
+}
+
+static void zr_debug_agent_try_resolve_pending_breakpoints_for_function(ZrDebugAgent *agent, SZrFunction *function) {
+    TZrSize index;
+
+    if (agent == ZR_NULL || function == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < agent->breakpointCount; index++) {
+        ZrDebugBreakpoint *breakpoint = &agent->breakpoints[index];
+
+        if (breakpoint->resolved || !zr_debug_breakpoint_matches_module(agent, breakpoint)) {
+            continue;
+        }
+
+        if (zr_debug_breakpoint_try_resolve_with_function_root(breakpoint, function)) {
+            zr_debug_agent_emit_breakpoint_resolved(agent, breakpoint);
         }
     }
 }
@@ -688,6 +784,7 @@ static TZrDebugSignal zr_debug_agent_trace_observer(SZrState *state,
     }
 
     zr_debug_agent_poll_messages(agent, 0, ZR_NULL);
+    zr_debug_agent_try_resolve_pending_breakpoints_for_function(agent, function);
 
     if (zr_debug_bool_load(&agent->exceptionStopPending)) {
         reason = ZR_DEBUG_STOP_REASON_EXCEPTION;

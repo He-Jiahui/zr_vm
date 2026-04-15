@@ -2,27 +2,27 @@
 related_code:
   - zr_vm_lib_thread/include/zr_vm_lib_thread/module.h
   - zr_vm_lib_thread/src/zr_vm_lib_thread/module.c
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime.c
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_internal.h
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_transport.c
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_workers.c
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_wrappers.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c
-  - zr_vm_parser/src/zr_vm_parser/parser_types.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_internal.h
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_transport.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_wrappers.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_generic_calls.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_generic_calls.c
 implementation_files:
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime.c
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_internal.h
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_transport.c
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_workers.c
-  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_wrappers.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c
-  - zr_vm_parser/src/zr_vm_parser/parser_types.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_internal.h
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_transport.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_workers.c
+  - zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_wrappers.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
   - zr_vm_parser/src/zr_vm_parser/type_inference.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_core.c
-  - zr_vm_parser/src/zr_vm_parser/type_inference_generic_calls.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_core.c
+  - zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_generic_calls.c
 plan_sources:
   - user: 2026-04-08 zr.thread 线程安全与跨线程所有权收口计划
 tests:

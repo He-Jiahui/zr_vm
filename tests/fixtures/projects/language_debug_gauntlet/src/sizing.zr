@@ -1,0 +1,3 @@
+pub planSize(seed: int, factor: int = 2, bonus: int = 3): int {
+    return seed * factor + bonus;
+}

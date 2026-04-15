@@ -51,6 +51,7 @@ typedef struct ZrCliE2eProcess {
 
 static int cli_fail(const char *testName, const char *format, ...);
 static void cli_normalize_separators(char *path);
+static int cli_paths_equal(const char *left, const char *right);
 static unsigned long long cli_now_ms(void);
 static void cli_sleep_ms(unsigned int milliseconds);
 static int cli_process_append_output(ZrCliE2eProcess *process, const char *text, size_t length);
@@ -1378,6 +1379,787 @@ cleanup:
     return status;
 }
 
+static int test_debug_wait_hits_decorator_import_breakpoint(void) {
+    const char *testName = "debug_wait_hits_decorator_import_breakpoint";
+    ZrCliE2eProcess process;
+    SZrNetworkStream client;
+    char cliPath[CLI_E2E_PATH_CAPACITY];
+    char cliWorkingDirectory[CLI_E2E_PATH_CAPACITY];
+    char projectPath[CLI_E2E_PATH_CAPACITY];
+    char sourcePath[CLI_E2E_PATH_CAPACITY];
+    char runtimeModuleSource[CLI_E2E_PATH_CAPACITY];
+    char runtimeEntrySource[CLI_E2E_PATH_CAPACITY];
+    int runtimeEntryLine = 0;
+    char endpoint[ZR_NETWORK_ENDPOINT_TEXT_CAPACITY];
+    char error[CLI_E2E_ERROR_CAPACITY];
+    const char *command[8];
+    cJSON *message = NULL;
+    cJSON *params = NULL;
+    cJSON *breakpoints = NULL;
+    cJSON *breakpoint = NULL;
+    cJSON *result = NULL;
+    cJSON *resultBreakpoints = NULL;
+    cJSON *firstBreakpoint = NULL;
+    int status = 1;
+    int breakpointInitiallyResolved = 0;
+
+    memset(&process, 0, sizeof(process));
+    memset(&client, 0, sizeof(client));
+    runtimeModuleSource[0] = '\0';
+    runtimeEntrySource[0] = '\0';
+    runtimeEntryLine = 0;
+#if !defined(_WIN32)
+    process.stdoutFd = -1;
+#endif
+
+    if (!cli_build_cli_executable_path(cliPath, sizeof(cliPath), cliWorkingDirectory, sizeof(cliWorkingDirectory))) {
+        return cli_fail(testName, "failed to resolve zr_vm_cli beside test executable");
+    }
+    if (!ZrTests_Path_GetProjectFile("decorator_compile_time_import",
+                                     "decorator_compile_time_import.zrp",
+                                     projectPath,
+                                     sizeof(projectPath))) {
+        return cli_fail(testName, "failed to resolve decorator_compile_time_import project fixture");
+    }
+    if (!ZrTests_Path_GetProjectFile("decorator_compile_time_import",
+                                     "src/decorated_user.zr",
+                                     sourcePath,
+                                     sizeof(sourcePath))) {
+        return cli_fail(testName, "failed to resolve decorator_compile_time_import decorated_user.zr fixture");
+    }
+
+    command[0] = cliPath;
+    command[1] = projectPath;
+    command[2] = "--debug";
+    command[3] = "--debug-address";
+    command[4] = "127.0.0.1:0";
+    command[5] = "--debug-wait";
+    command[6] = "--debug-print-endpoint";
+    command[7] = NULL;
+
+    if (!cli_process_start(&process, cliWorkingDirectory, command, error, sizeof(error))) {
+        return cli_fail(testName, "%s", error);
+    }
+
+    if (!cli_process_wait_for_substring(&process, "debug_endpoint=", CLI_E2E_ENDPOINT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for debug endpoint\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+    if (!cli_extract_prefixed_line_value(cli_process_output(&process), "debug_endpoint=", endpoint, sizeof(endpoint))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to extract debug endpoint\nOutput:\n%s", cli_process_output(&process));
+        goto cleanup;
+    }
+    if (!cli_debug_connect(endpoint, &client, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+
+    if (!cli_debug_send_request(&client, 1, "initialize", cJSON_CreateObject(), error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_expect_response(&client, 1, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "initialized", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "moduleLoaded", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    snprintf(runtimeModuleSource,
+             sizeof(runtimeModuleSource),
+             "%s",
+             cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile"));
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "stopped", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"), "entry") != 0) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "expected entry stop before breakpoint setup");
+        goto cleanup;
+    }
+    snprintf(runtimeEntrySource,
+             sizeof(runtimeEntrySource),
+             "%s",
+             cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile"));
+    runtimeEntryLine = cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line");
+    cJSON_Delete(message);
+    message = NULL;
+
+    params = cJSON_CreateObject();
+    breakpoints = cJSON_CreateArray();
+    breakpoint = cJSON_CreateObject();
+    if (params == NULL || breakpoints == NULL || breakpoint == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to allocate setBreakpoints request");
+        goto cleanup;
+    }
+    cJSON_AddStringToObject(params, "sourceFile", sourcePath);
+    cJSON_AddNumberToObject(breakpoint, "line", 12);
+    cJSON_AddItemToArray(breakpoints, breakpoint);
+    breakpoint = NULL;
+    cJSON_AddItemToObject(params, "breakpoints", breakpoints);
+    breakpoints = NULL;
+
+    if (!cli_debug_send_request(&client, 2, "setBreakpoints", params, error, sizeof(error))) {
+        params = NULL;
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    params = NULL;
+
+    if (!cli_debug_expect_event(&client, "breakpointResolved", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    breakpointInitiallyResolved = cli_debug_json_bool(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved");
+    if (cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 12) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "expected resolved breakpoint line 12");
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_response(&client, 2, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    result = cJSON_GetObjectItemCaseSensitive(message, "result");
+    resultBreakpoints = cJSON_GetObjectItemCaseSensitive(result, "breakpoints");
+    firstBreakpoint = cJSON_IsArray(resultBreakpoints) ? cJSON_GetArrayItem(resultBreakpoints, 0) : NULL;
+    if (firstBreakpoint == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "setBreakpoints response did not return a decorated breakpoint result");
+        goto cleanup;
+    }
+    if (cli_debug_json_int(firstBreakpoint, "line") != 12) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "setBreakpoints response did not preserve line 12");
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_send_request(&client, 3, "continue", cJSON_CreateObject(), error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_expect_response(&client, 3, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "continued", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!breakpointInitiallyResolved) {
+        if (!cli_debug_expect_event(&client, "breakpointResolved", &message, error, sizeof(error))) {
+            (void)cli_process_update_exit_status(&process);
+            (void)cli_process_read_available(&process);
+            cli_process_terminate(&process);
+            status = cli_fail(testName, "%s\nOutput so far:\n%s", error, cli_process_output(&process));
+            goto cleanup;
+        }
+        if (!cli_debug_json_bool(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved")) {
+            cli_process_terminate(&process);
+            status = cli_fail(testName,
+                              "expected decorator imported breakpoint to resolve after module load\n"
+                              "Requested source: %s\n"
+                              "moduleLoaded source: %s\n"
+                              "entry stop source: %s\n"
+                              "entry stop line: %d\n"
+                              "Output so far:\n%s",
+                              sourcePath,
+                              runtimeModuleSource,
+                              runtimeEntrySource,
+                              runtimeEntryLine,
+                              cli_process_output(&process));
+            goto cleanup;
+        }
+        if (cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 12) {
+            cli_process_terminate(&process);
+            status = cli_fail(testName, "expected deferred decorated breakpoint to resolve line 12");
+            goto cleanup;
+        }
+        cJSON_Delete(message);
+        message = NULL;
+    }
+
+    if (!cli_debug_expect_event(&client, "stopped", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s\nentry stop line: %d", error, runtimeEntryLine);
+        goto cleanup;
+    }
+    if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"), "breakpoint") != 0) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "expected continue to stop on the configured decorator breakpoint");
+        goto cleanup;
+    }
+    if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"),
+               "decoratedBonus") != 0) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "expected decorated breakpoint to stop in decoratedBonus");
+        goto cleanup;
+    }
+    if (cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 12) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "expected decorated breakpoint stop on line 12");
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_send_request(&client, 4, "continue", cJSON_CreateObject(), error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_expect_response(&client, 4, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "continued", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "terminated", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_json_bool(cJSON_GetObjectItemCaseSensitive(message, "params"), "success")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "terminated event did not report success");
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_process_wait_for_exit(&process, CLI_E2E_EXIT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "timed out waiting for cli exit after decorated breakpoint continue");
+        goto cleanup;
+    }
+    if (process.exitCode != 0) {
+        status = cli_fail(testName, "cli exited with code %d\nOutput:\n%s", process.exitCode, cli_process_output(&process));
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    if (breakpoint != NULL) {
+        cJSON_Delete(breakpoint);
+    }
+    if (breakpoints != NULL) {
+        cJSON_Delete(breakpoints);
+    }
+    if (params != NULL) {
+        cJSON_Delete(params);
+    }
+    if (message != NULL) {
+        cJSON_Delete(message);
+    }
+    if (client.isOpen) {
+        ZrNetwork_StreamClose(&client);
+    }
+    if (!process.hasExited) {
+        cli_process_terminate(&process);
+    }
+    cli_process_close(&process);
+    return status;
+}
+
+static int test_debug_wait_steps_into_decorator_import_call_chain(void) {
+    const char *testName = "debug_wait_steps_into_decorator_import_call_chain";
+    ZrCliE2eProcess process;
+    SZrNetworkStream client;
+    char cliPath[CLI_E2E_PATH_CAPACITY];
+    char cliWorkingDirectory[CLI_E2E_PATH_CAPACITY];
+    char projectPath[CLI_E2E_PATH_CAPACITY];
+    char mainSourcePath[CLI_E2E_PATH_CAPACITY];
+    char decoratedSourcePath[CLI_E2E_PATH_CAPACITY];
+    char runtimeModuleSource[CLI_E2E_PATH_CAPACITY];
+    char runtimeEntrySource[CLI_E2E_PATH_CAPACITY];
+    char endpoint[ZR_NETWORK_ENDPOINT_TEXT_CAPACITY];
+    char error[CLI_E2E_ERROR_CAPACITY];
+    const char *command[8];
+    cJSON *message = NULL;
+    cJSON *params = NULL;
+    cJSON *breakpoints = NULL;
+    cJSON *breakpoint = NULL;
+    cJSON *result = NULL;
+    cJSON *resultBreakpoints = NULL;
+    cJSON *firstBreakpoint = NULL;
+    int status = 1;
+    int runtimeEntryLine = 0;
+    const char *stepSource = NULL;
+
+    memset(&process, 0, sizeof(process));
+    memset(&client, 0, sizeof(client));
+    runtimeModuleSource[0] = '\0';
+    runtimeEntrySource[0] = '\0';
+#if !defined(_WIN32)
+    process.stdoutFd = -1;
+#endif
+
+    if (!cli_build_cli_executable_path(cliPath, sizeof(cliPath), cliWorkingDirectory, sizeof(cliWorkingDirectory))) {
+        return cli_fail(testName, "failed to resolve zr_vm_cli beside test executable");
+    }
+    if (!ZrTests_Path_GetProjectFile("decorator_compile_time_import",
+                                     "decorator_compile_time_import.zrp",
+                                     projectPath,
+                                     sizeof(projectPath))) {
+        return cli_fail(testName, "failed to resolve decorator_compile_time_import project fixture");
+    }
+    if (!ZrTests_Path_GetProjectFile("decorator_compile_time_import", "src/main.zr", mainSourcePath, sizeof(mainSourcePath))) {
+        return cli_fail(testName, "failed to resolve decorator_compile_time_import main.zr fixture");
+    }
+    if (!ZrTests_Path_GetProjectFile("decorator_compile_time_import",
+                                     "src/decorated_user.zr",
+                                     decoratedSourcePath,
+                                     sizeof(decoratedSourcePath))) {
+        return cli_fail(testName, "failed to resolve decorator_compile_time_import decorated_user.zr fixture");
+    }
+
+    command[0] = cliPath;
+    command[1] = projectPath;
+    command[2] = "--debug";
+    command[3] = "--debug-address";
+    command[4] = "127.0.0.1:0";
+    command[5] = "--debug-wait";
+    command[6] = "--debug-print-endpoint";
+    command[7] = NULL;
+
+    if (!cli_process_start(&process, cliWorkingDirectory, command, error, sizeof(error))) {
+        return cli_fail(testName, "%s", error);
+    }
+
+    if (!cli_process_wait_for_substring(&process, "debug_endpoint=", CLI_E2E_ENDPOINT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for debug endpoint\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+    if (!cli_extract_prefixed_line_value(cli_process_output(&process), "debug_endpoint=", endpoint, sizeof(endpoint))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to extract debug endpoint\nOutput:\n%s", cli_process_output(&process));
+        goto cleanup;
+    }
+    if (!cli_debug_connect(endpoint, &client, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+
+    if (!cli_debug_send_request(&client, 1, "initialize", cJSON_CreateObject(), error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_expect_response(&client, 1, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "initialized", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "moduleLoaded", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    snprintf(runtimeModuleSource,
+             sizeof(runtimeModuleSource),
+             "%s",
+             cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile"));
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "stopped", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"), "entry") != 0) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "expected entry stop before breakpoint setup");
+        goto cleanup;
+    }
+    snprintf(runtimeEntrySource,
+             sizeof(runtimeEntrySource),
+             "%s",
+             cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile"));
+    runtimeEntryLine = cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line");
+    cJSON_Delete(message);
+    message = NULL;
+
+    params = cJSON_CreateObject();
+    breakpoints = cJSON_CreateArray();
+    breakpoint = cJSON_CreateObject();
+    if (params == NULL || breakpoints == NULL || breakpoint == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to allocate setBreakpoints request");
+        goto cleanup;
+    }
+    cJSON_AddStringToObject(params, "sourceFile", mainSourcePath);
+    cJSON_AddNumberToObject(breakpoint, "line", 3);
+    cJSON_AddItemToArray(breakpoints, breakpoint);
+    breakpoint = NULL;
+    cJSON_AddItemToObject(params, "breakpoints", breakpoints);
+    breakpoints = NULL;
+
+    if (!cli_debug_send_request(&client, 2, "setBreakpoints", params, error, sizeof(error))) {
+        params = NULL;
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    params = NULL;
+
+    if (!cli_debug_expect_event(&client, "breakpointResolved", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_json_bool(cJSON_GetObjectItemCaseSensitive(message, "params"), "resolved")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "expected main breakpoint to resolve before stepIn flow\n"
+                          "Requested source: %s\n"
+                          "moduleLoaded source: %s\n"
+                          "entry stop source: %s\n"
+                          "entry stop line: %d\n"
+                          "Output so far:\n%s",
+                          mainSourcePath,
+                          runtimeModuleSource,
+                          runtimeEntrySource,
+                          runtimeEntryLine,
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_response(&client, 2, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    result = cJSON_GetObjectItemCaseSensitive(message, "result");
+    resultBreakpoints = cJSON_GetObjectItemCaseSensitive(result, "breakpoints");
+    firstBreakpoint = cJSON_IsArray(resultBreakpoints) ? cJSON_GetArrayItem(resultBreakpoints, 0) : NULL;
+    if (firstBreakpoint == NULL || !cli_debug_json_bool(firstBreakpoint, "verified")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "setBreakpoints response did not report a verified entry breakpoint");
+        goto cleanup;
+    }
+    if (cli_debug_json_int(firstBreakpoint, "line") != 3) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "setBreakpoints response did not preserve line 3");
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_send_request(&client, 3, "continue", cJSON_CreateObject(), error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_expect_response(&client, 3, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "continued", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "stopped", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"), "breakpoint") != 0 ||
+        cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 3) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "expected continue to stop on main line 3 before stepIn");
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_send_request(&client, 4, "stepIn", cJSON_CreateObject(), error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_expect_response(&client, 4, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "continued", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "stopped", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    stepSource = cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile");
+    if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"), "step") != 0 ||
+        cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 17 ||
+        strstr(stepSource, "decorated_user") == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "expected first stepIn to enter verifyDecorators lambda at decorated_user:17\n"
+                          "Observed source: %s\n"
+                          "Observed line: %d\n"
+                          "Observed function: %s\n"
+                          "Output so far:\n%s",
+                          stepSource,
+                          cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"),
+                          cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"),
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_send_request(&client, 5, "stepOut", cJSON_CreateObject(), error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_expect_response(&client, 5, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "continued", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "stopped", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    stepSource = cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile");
+    if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"), "step") != 0 ||
+        cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 3 ||
+        !cli_paths_equal(stepSource, mainSourcePath)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "expected stepOut to return to main.zr:3\n"
+                          "Expected source: %s\n"
+                          "Observed source: %s\n"
+                          "Observed line: %d\n"
+                          "Output so far:\n%s",
+                          mainSourcePath,
+                          stepSource,
+                          cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"),
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_send_request(&client, 6, "stepIn", cJSON_CreateObject(), error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_expect_response(&client, 6, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "continued", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "stopped", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    stepSource = cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile");
+    if (strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"), "step") != 0 ||
+        cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line") != 12 ||
+        strcmp(cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"), "decoratedBonus") != 0 ||
+        strstr(stepSource, "decorated_user") == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "expected second stepIn to enter decoratedBonus at decorated_user:12\n"
+                          "Observed source: %s\n"
+                          "Observed line: %d\n"
+                          "Observed function: %s\n"
+                          "Output so far:\n%s",
+                          stepSource,
+                          cli_debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line"),
+                          cli_debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"),
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_send_request(&client, 7, "continue", cJSON_CreateObject(), error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_expect_response(&client, 7, &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "continued", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_debug_expect_event(&client, "terminated", &message, error, sizeof(error))) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "%s", error);
+        goto cleanup;
+    }
+    if (!cli_debug_json_bool(cJSON_GetObjectItemCaseSensitive(message, "params"), "success")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "terminated event did not report success");
+        goto cleanup;
+    }
+    cJSON_Delete(message);
+    message = NULL;
+
+    if (!cli_process_wait_for_exit(&process, CLI_E2E_EXIT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "timed out waiting for cli exit after stepping decorator call chain");
+        goto cleanup;
+    }
+    if (process.exitCode != 0) {
+        status = cli_fail(testName, "cli exited with code %d\nOutput:\n%s", process.exitCode, cli_process_output(&process));
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    if (breakpoint != NULL) {
+        cJSON_Delete(breakpoint);
+    }
+    if (breakpoints != NULL) {
+        cJSON_Delete(breakpoints);
+    }
+    if (params != NULL) {
+        cJSON_Delete(params);
+    }
+    if (message != NULL) {
+        cJSON_Delete(message);
+    }
+    if (client.isOpen) {
+        ZrNetwork_StreamClose(&client);
+    }
+    if (!process.hasExited) {
+        cli_process_terminate(&process);
+    }
+    cli_process_close(&process);
+    return status;
+}
+
 int main(void) {
     if (test_debug_print_endpoint_without_wait() != 0) {
         return 1;
@@ -1386,6 +2168,12 @@ int main(void) {
         return 1;
     }
     if (test_debug_wait_hits_import_basic_launch_breakpoint() != 0) {
+        return 1;
+    }
+    if (test_debug_wait_hits_decorator_import_breakpoint() != 0) {
+        return 1;
+    }
+    if (test_debug_wait_steps_into_decorator_import_call_chain() != 0) {
         return 1;
     }
     return 0;
@@ -1413,6 +2201,31 @@ static void cli_normalize_separators(char *path) {
         }
         path++;
     }
+}
+
+static int cli_paths_equal(const char *left, const char *right) {
+    char leftBuffer[CLI_E2E_PATH_CAPACITY];
+    char rightBuffer[CLI_E2E_PATH_CAPACITY];
+
+    if (left == NULL || right == NULL) {
+        return 0;
+    }
+
+    if (snprintf(leftBuffer, sizeof(leftBuffer), "%s", left) < 0 ||
+        snprintf(rightBuffer, sizeof(rightBuffer), "%s", right) < 0) {
+        return 0;
+    }
+
+    leftBuffer[sizeof(leftBuffer) - 1] = '\0';
+    rightBuffer[sizeof(rightBuffer) - 1] = '\0';
+    cli_normalize_separators(leftBuffer);
+    cli_normalize_separators(rightBuffer);
+
+#if defined(_WIN32)
+    return _stricmp(leftBuffer, rightBuffer) == 0;
+#else
+    return strcmp(leftBuffer, rightBuffer) == 0;
+#endif
 }
 
 static unsigned long long cli_now_ms(void) {

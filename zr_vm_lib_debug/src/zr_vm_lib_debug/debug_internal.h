@@ -190,6 +190,7 @@ void zr_debug_agent_fill_stop_event(ZrDebugAgent *agent,
                                     SZrFunction *function,
                                     TZrUInt32 instructionIndex,
                                     TZrUInt32 sourceLine);
+void zr_debug_agent_emit_breakpoint_resolved(ZrDebugAgent *agent, const ZrDebugBreakpoint *breakpoint);
 void zr_debug_agent_poll_messages(ZrDebugAgent *agent, TZrUInt32 timeoutMs, TZrBool *outDisconnected);
 void zr_debug_agent_pause_loop(ZrDebugAgent *agent);
 void zr_debug_agent_emit_output(ZrDebugAgent *agent, const TZrChar *category, const TZrChar *outputText);

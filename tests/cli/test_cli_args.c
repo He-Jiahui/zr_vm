@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "zr_vm_cli/command.h"
+#include "command/command.h"
 
 #define CLI_ASSERT_TRUE(condition, message)                                                                            \
     do {                                                                                                               \

@@ -12,6 +12,7 @@
 #include "zr_vm_core/global.h"
 #include "zr_vm_parser/type_system.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define ZR_LSP_SYMBOL_POSITION_COMPARE_LESS (-1)
@@ -153,6 +154,8 @@ static SZrFileRange get_symbol_match_range(SZrSymbol *symbol) {
     return symbol->location;
 }
 
+static TZrBool scope_contains_position(SZrSymbolScope *scope, SZrFileRange position);
+
 static TZrBool symbol_matches_lookup_position(SZrSymbol *symbol, SZrFileRange position) {
     SZrFileRange symbolRange;
 
@@ -163,6 +166,10 @@ static TZrBool symbol_matches_lookup_position(SZrSymbol *symbol, SZrFileRange po
     symbolRange = get_symbol_match_range(symbol);
     if (!source_uri_equals(position.source, symbolRange.source) &&
         position.source != ZR_NULL && symbolRange.source != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (symbol->scope != ZR_NULL && !scope_contains_position(symbol->scope, position)) {
         return ZR_FALSE;
     }
 
@@ -237,6 +244,248 @@ static TZrBool scope_is_deeper_candidate(SZrSymbolScope *candidate,
     }
 
     return candidate != best;
+}
+
+static const TZrChar *symbol_table_identifier_node_text(SZrAstNode *node) {
+    if (node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL || node->data.identifier.name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_GetNativeString(node->data.identifier.name);
+}
+
+static const TZrChar *symbol_table_member_property_text(SZrAstNode *node) {
+    if (node == ZR_NULL || node->type != ZR_AST_MEMBER_EXPRESSION || node->data.memberExpression.computed) {
+        return ZR_NULL;
+    }
+
+    return symbol_table_identifier_node_text(node->data.memberExpression.property);
+}
+
+static TZrBool symbol_table_text_equals(const TZrChar *value, const TZrChar *expected) {
+    return value != ZR_NULL && expected != ZR_NULL && strcmp(value, expected) == 0;
+}
+
+static SZrAstNodeArray *symbol_table_get_decorator_array_for_node(SZrAstNode *node) {
+    if (node == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (node->type) {
+        case ZR_AST_STRUCT_DECLARATION:
+            return node->data.structDeclaration.decorators;
+        case ZR_AST_STRUCT_FIELD:
+            return node->data.structField.decorators;
+        case ZR_AST_ENUM_DECLARATION:
+            return node->data.enumDeclaration.decorators;
+        case ZR_AST_ENUM_MEMBER:
+            return node->data.enumMember.decorators;
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            return node->data.externFunctionDeclaration.decorators;
+        case ZR_AST_EXTERN_DELEGATE_DECLARATION:
+            return node->data.externDelegateDeclaration.decorators;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool symbol_table_extract_ffi_decorator(SZrAstNode *decoratorNode,
+                                                  const TZrChar **outLeafName,
+                                                  TZrBool *outHasCall,
+                                                  SZrFunctionCall **outCall) {
+    SZrAstNode *expr;
+    SZrPrimaryExpression *primary;
+    SZrAstNode *ffiMember;
+    SZrAstNode *leafMember;
+
+    if (outLeafName != ZR_NULL) {
+        *outLeafName = ZR_NULL;
+    }
+    if (outHasCall != ZR_NULL) {
+        *outHasCall = ZR_FALSE;
+    }
+    if (outCall != ZR_NULL) {
+        *outCall = ZR_NULL;
+    }
+
+    if (decoratorNode == ZR_NULL || decoratorNode->type != ZR_AST_DECORATOR_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    expr = decoratorNode->data.decoratorExpression.expr;
+    if (expr == ZR_NULL || expr->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    primary = &expr->data.primaryExpression;
+    if (!symbol_table_text_equals(symbol_table_identifier_node_text(primary->property), "zr") ||
+        primary->members == ZR_NULL || primary->members->count < 2 || primary->members->count > 3) {
+        return ZR_FALSE;
+    }
+
+    ffiMember = primary->members->nodes[0];
+    leafMember = primary->members->nodes[1];
+    if (!symbol_table_text_equals(symbol_table_member_property_text(ffiMember), "ffi")) {
+        return ZR_FALSE;
+    }
+
+    if (outLeafName != ZR_NULL) {
+        *outLeafName = symbol_table_member_property_text(leafMember);
+        if (*outLeafName == ZR_NULL) {
+            return ZR_FALSE;
+        }
+    }
+
+    if (primary->members->count == 3) {
+        SZrAstNode *callNode = primary->members->nodes[2];
+        if (callNode == ZR_NULL || callNode->type != ZR_AST_FUNCTION_CALL) {
+            return ZR_FALSE;
+        }
+        if (outHasCall != ZR_NULL) {
+            *outHasCall = ZR_TRUE;
+        }
+        if (outCall != ZR_NULL) {
+            *outCall = &callNode->data.functionCall;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool symbol_table_call_read_single_integer_arg(SZrFunctionCall *call, TZrInt64 *outValue) {
+    SZrAstNode *arg;
+
+    if (outValue != ZR_NULL) {
+        *outValue = 0;
+    }
+    if (call == ZR_NULL || call->args == ZR_NULL || call->args->count != 1) {
+        return ZR_FALSE;
+    }
+
+    arg = call->args->nodes[0];
+    if (arg == ZR_NULL || arg->type != ZR_AST_INTEGER_LITERAL) {
+        return ZR_FALSE;
+    }
+
+    if (outValue != ZR_NULL) {
+        *outValue = arg->data.integerLiteral.value;
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool symbol_table_call_read_single_string_arg(SZrFunctionCall *call, const TZrChar **outValue) {
+    SZrAstNode *arg;
+
+    if (outValue != ZR_NULL) {
+        *outValue = ZR_NULL;
+    }
+    if (call == ZR_NULL || call->args == ZR_NULL || call->args->count != 1) {
+        return ZR_FALSE;
+    }
+
+    arg = call->args->nodes[0];
+    if (arg == ZR_NULL || arg->type != ZR_AST_STRING_LITERAL || arg->data.stringLiteral.value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (outValue != ZR_NULL) {
+        *outValue = ZrCore_String_GetNativeString(arg->data.stringLiteral.value);
+    }
+    return ZR_TRUE;
+}
+
+static SZrString *build_symbol_ffi_hover_metadata_string(SZrState *state, SZrAstNode *astNode) {
+    SZrAstNodeArray *decorators;
+    TZrChar metadataBuffer[ZR_LSP_COMMENT_BUFFER_LENGTH];
+    TZrSize used = 0;
+
+    if (state == ZR_NULL || astNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (astNode->type) {
+        case ZR_AST_STRUCT_DECLARATION:
+        case ZR_AST_STRUCT_FIELD:
+        case ZR_AST_ENUM_DECLARATION:
+        case ZR_AST_ENUM_MEMBER:
+            break;
+        default:
+            return ZR_NULL;
+    }
+
+    decorators = symbol_table_get_decorator_array_for_node(astNode);
+    if (decorators == ZR_NULL || decorators->nodes == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    metadataBuffer[0] = '\0';
+    for (TZrSize index = 0; index < decorators->count; index++) {
+        SZrAstNode *decoratorNode = decorators->nodes[index];
+        const TZrChar *leafName = ZR_NULL;
+        TZrBool hasCall = ZR_FALSE;
+        SZrFunctionCall *call = ZR_NULL;
+        TZrInt64 integerValue = 0;
+        const TZrChar *stringValue = ZR_NULL;
+        TZrChar metadataLine[96];
+
+        if (!symbol_table_extract_ffi_decorator(decoratorNode, &leafName, &hasCall, &call) ||
+            leafName == ZR_NULL || !hasCall) {
+            continue;
+        }
+
+        metadataLine[0] = '\0';
+        switch (astNode->type) {
+            case ZR_AST_STRUCT_DECLARATION:
+                if (symbol_table_text_equals(leafName, "pack") &&
+                    symbol_table_call_read_single_integer_arg(call, &integerValue)) {
+                    snprintf(metadataLine, sizeof(metadataLine), "\nPack: %lld", (long long)integerValue);
+                } else if (symbol_table_text_equals(leafName, "align") &&
+                           symbol_table_call_read_single_integer_arg(call, &integerValue)) {
+                    snprintf(metadataLine, sizeof(metadataLine), "\nAlign: %lld", (long long)integerValue);
+                }
+                break;
+
+            case ZR_AST_STRUCT_FIELD:
+                if (symbol_table_text_equals(leafName, "offset") &&
+                    symbol_table_call_read_single_integer_arg(call, &integerValue)) {
+                    snprintf(metadataLine, sizeof(metadataLine), "\nOffset: %lld", (long long)integerValue);
+                }
+                break;
+
+            case ZR_AST_ENUM_DECLARATION:
+                if (symbol_table_text_equals(leafName, "underlying") &&
+                    symbol_table_call_read_single_string_arg(call, &stringValue) &&
+                    stringValue != ZR_NULL) {
+                    snprintf(metadataLine, sizeof(metadataLine), "\nUnderlying: %s", stringValue);
+                }
+                break;
+
+            case ZR_AST_ENUM_MEMBER:
+                if (symbol_table_text_equals(leafName, "value") &&
+                    symbol_table_call_read_single_integer_arg(call, &integerValue)) {
+                    snprintf(metadataLine, sizeof(metadataLine), "\nValue: %lld", (long long)integerValue);
+                }
+                break;
+
+            default:
+                break;
+        }
+
+        if (metadataLine[0] != '\0') {
+            TZrSize metadataLength = strlen(metadataLine);
+            TZrSize available = sizeof(metadataBuffer) - 1 - used;
+            TZrSize writeLength = metadataLength < available ? metadataLength : available;
+
+            if (writeLength == 0) {
+                break;
+            }
+            memcpy(metadataBuffer + used, metadataLine, writeLength);
+            used += writeLength;
+            metadataBuffer[used] = '\0';
+        }
+    }
+
+    return used > 0 ? ZrCore_String_Create(state, metadataBuffer, used) : ZR_NULL;
 }
 
 static SZrFileRange get_symbol_selection_range_from_ast(SZrAstNode *astNode, SZrFileRange fallback) {
@@ -446,6 +695,23 @@ void ZrLanguageServer_SymbolTable_Free(SZrState *state, SZrSymbolTable *table) {
 }
 
 // 创建符号
+static SZrInferredType *copy_symbol_type_info(SZrState *state, const SZrInferredType *typeInfo) {
+    SZrInferredType *copy;
+
+    if (state == ZR_NULL || typeInfo == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    copy = (SZrInferredType *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrInferredType));
+    if (copy == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrParser_InferredType_Init(state, copy, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Copy(state, copy, typeInfo);
+    return copy;
+}
+
 SZrSymbol *ZrLanguageServer_Symbol_New(SZrState *state, EZrSymbolType type, 
                         SZrString *name, SZrFileRange location,
                         SZrInferredType *typeInfo,
@@ -464,7 +730,12 @@ SZrSymbol *ZrLanguageServer_Symbol_New(SZrState *state, EZrSymbolType type,
     symbol->name = name;
     symbol->location = location;
     symbol->selectionRange = get_symbol_selection_range_from_ast(astNode, location);
-    symbol->typeInfo = typeInfo; // 注意：不复制，只是引用
+    symbol->typeInfo = copy_symbol_type_info(state, typeInfo);
+    if (typeInfo != ZR_NULL && symbol->typeInfo == ZR_NULL) {
+        ZrCore_Memory_RawFree(state->global, symbol, sizeof(SZrSymbol));
+        return ZR_NULL;
+    }
+    symbol->ffiHoverMetadata = build_symbol_ffi_hover_metadata_string(state, astNode);
     symbol->isExported = ZR_FALSE;
     symbol->accessModifier = accessModifier;
     symbol->isConst = ZR_FALSE; // 默认不是 const
@@ -502,7 +773,11 @@ void ZrLanguageServer_Symbol_Free(SZrState *state, SZrSymbol *symbol) {
     }
     
     ZrCore_Array_Free(state, &symbol->references);
-    // 注意：不释放 typeInfo，因为它可能被其他地方引用
+    if (symbol->typeInfo != ZR_NULL) {
+        ZrParser_InferredType_Free(state, symbol->typeInfo);
+        ZrCore_Memory_RawFree(state->global, symbol->typeInfo, sizeof(SZrInferredType));
+        symbol->typeInfo = ZR_NULL;
+    }
     ZrCore_Memory_RawFree(state->global, symbol, sizeof(SZrSymbol));
 }
 

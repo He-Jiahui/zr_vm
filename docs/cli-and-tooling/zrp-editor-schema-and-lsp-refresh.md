@@ -6,10 +6,9 @@ related_code:
   - zr_vm_language_server_extension/src/zrpSupport.ts
   - zr_vm_language_server_extension/schemas/zrp.schema.json
   - zr_vm_language_server/stdio/stdio_requests.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_interface.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_project.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_module_metadata.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_project_features.c
+  - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
+  - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
 implementation_files:
   - zr_vm_language_server_extension/package.json
   - zr_vm_language_server_extension/src/extension.ts
@@ -17,9 +16,8 @@ implementation_files:
   - zr_vm_language_server_extension/src/zrpSupport.ts
   - zr_vm_language_server_extension/schemas/zrp.schema.json
   - zr_vm_language_server/stdio/stdio_requests.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_project.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_module_metadata.c
-  - zr_vm_language_server/src/zr_vm_language_server/lsp_project_features.c
+  - zr_vm_language_server/src/zr_vm_language_server/project/lsp_project.c
+  - zr_vm_language_server/src/zr_vm_language_server/module/lsp_module_metadata.c
 plan_sources:
   - user: 2026-04-04 实现“ZR LSP 语义内核与元信息推断增强计划”
 tests:
@@ -78,13 +76,15 @@ doc_type: module-detail
 - `entry`
 - `dependency`
 - `local`
+- `pathAliases`
 
 其中：
 
-- `binary`、`source`、`entry` 被标记为必填，因为 `zr_vm_library/project.c` 会把这三项当成有效项目配置的最低要求。
+- `binary`、`source`、`entry` 被标记为必填，因为 `zr_vm_library/src/zr_vm_library/project/project.c` 会把这三项当成有效项目配置的最低要求。
 - `email` 使用 `email` 格式校验。
 - `url` 使用 `uri` 格式校验。
 - 路径型字段至少给出 `minLength` 和用途说明，保证补全和 hover 时能显示“这是相对项目根目录还是相对 source root 的哪类路径”。
+- `pathAliases` 的 key 必须以 `@` 开头；value 是相对 `sourceRoot` 的 canonical module prefix，使用 slash-separated module key，而不是绝对文件系统路径。
 
 当前 schema 选择了 `additionalProperties: true`：
 
@@ -179,4 +179,4 @@ extension 侧的 `createFileSystemWatcher('**/*.{zr,zrp,zro,dll,so,dylib}')` 现
 
 - 当前 `.zrp` 仍然是“先以 `zr-project` 打开，再切到 `json`”的两段式路径；这比静态文件关联多一步，但能保证扩展在 `.zrp` 首次打开时就被激活。
 - `.zri` 不再进入 LSP 语义链；如果后续 debug/link 能力需要消费 `.zri`，应走独立 debug artifact 管线，而不是回到 language server metadata loader。
-- schema 目前只覆盖 `zr_vm_library/project.c` 已知字段；如果 project loader 后续扩展出数组或嵌套对象结构，需要同步升级 schema。
+- schema 目前只覆盖 `zr_vm_library/src/zr_vm_library/project/project.c` 已知字段；如果 project loader 后续扩展出数组或嵌套对象结构，需要同步升级 schema。

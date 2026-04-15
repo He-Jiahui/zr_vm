@@ -382,6 +382,8 @@ struct SZrIoFunction {
     SZrIoFunctionTopLevelCallableBinding *topLevelCallableBindings;
     TZrSize parameterMetadataLength;
     SZrIoFunctionMetadataParameter *parameterMetadata;
+    TZrUInt8 hasCallableReturnType;
+    SZrIoFunctionTypedTypeRef callableReturnType;
     TZrSize compileTimeVariableInfosLength;
     SZrIoFunctionCompileTimeVariableInfo *compileTimeVariableInfos;
     TZrSize compileTimeFunctionInfosLength;

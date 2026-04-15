@@ -36,7 +36,7 @@ doc_type: milestone-detail
 - 当前 benchmark 集合为 14 个 case。
 - `instruction_report` 现在为 14 个 `ZR interp` case 全量产出真实 `*.profile.json`。
 - `hotspot_report` 现在为 4 个代表 workload 产出真实 callgrind 工件，不再是统一 `unavailable`。
-- WSL clang `performance_report` 已不再复现 `zr_vm_core/src/zr_vm_core/execution_dispatch.c:1752` 的 `ZR interp` 断言失败。
+- WSL clang `performance_report` 已不再复现 `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:1752` 的 `ZR interp` 断言失败。
 
 ## Scope And Environment
 
@@ -107,7 +107,7 @@ WSL clang 的 `execution_dispatch.c` 断言不是当前 VM 源码逻辑回归，
 
 - 这轮验证使用的是 benchmark 所需 target 的定向 Release 构建。
 - 当前仓库仍存在与 benchmark 主线无关的全树构建阻塞：
-  - `zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_typecheck.c`
+  - `zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_typecheck.c`
   - 问题形态：
     - `semantic_type_from_ast` conflicting types
 - 该阻塞不影响 `zr_vm_cli_executable`、`zr_vm_perf_runner`、`zr_vm_native_benchmark_runner`、`zr_vm_benchmark_registry_test` 的 Release benchmark 验收链路。

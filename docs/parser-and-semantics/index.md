@@ -4,19 +4,19 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/include/zr_vm_parser/compiler.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
-  - zr_vm_parser/src/zr_vm_parser/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_function_assembly.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
 implementation_files:
   - zr_vm_parser/include/zr_vm_parser/ast.h
   - zr_vm_parser/include/zr_vm_parser/semantic.h
   - zr_vm_parser/src/zr_vm_parser/parser.c
-  - zr_vm_parser/src/zr_vm_parser/compile_statement.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c
   - zr_vm_parser/src/zr_vm_parser/compiler.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_function_assembly.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer.c
-  - zr_vm_language_server/src/zr_vm_language_server/semantic_analyzer_symbols.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_function_assembly.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer.c
+  - zr_vm_language_server/src/zr_vm_language_server/semantic/semantic_analyzer_symbols.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
 plan_sources:
   - user: 2026-03-28 实现“ZR 全目标回归强化与 Field-Scoped using 语义计划”

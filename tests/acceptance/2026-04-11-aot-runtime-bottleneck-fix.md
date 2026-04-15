@@ -20,7 +20,7 @@
   - typed GEPs against the wrong layout corrupted inline slot copy and field access in generated LLVM code
 
 ## Implemented Changes
-- Cached generated slot counts in public AOT frame state and precomputed per-module generated slot count tables in `zr_vm_library/src/zr_vm_library/aot_runtime.c`.
+- Cached generated slot counts in public AOT frame state and precomputed per-module generated slot count tables in `zr_vm_library/src/zr_vm_library/src/zr_vm_library/aot_runtime.c`.
 - Changed AOT frame slot helpers and bounds checks to read the cached count instead of calling `ZrCore_Function_GetGeneratedFrameSlotCount` during execution.
 - Split `ZrLibrary_AotRuntime_BeginInstruction` so the non-observing path returns after frame refresh and instruction index update, without publishing PC or line events.
 - Extended typed arithmetic/equality support used by `numeric_loops` so AOT C and AOT LLVM both preserve the stronger opcode families in the generated path.

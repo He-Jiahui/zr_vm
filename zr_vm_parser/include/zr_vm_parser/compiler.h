@@ -106,6 +106,7 @@ typedef struct SZrCompilerState {
     
     // 脚本 AST 引用（用于类型查找）
     SZrAstNode *scriptAst;                // 当前编译的脚本 AST 节点（用于查找类型定义）
+    SZrString *currentModuleKey;          // 当前脚本的 canonical 模块键
     
     // 类型 Prototype 信息（用于运行时创建）
     SZrArray typePrototypes;              // 待创建的 prototype 信息数组（SZrTypePrototypeInfo）
@@ -382,6 +383,9 @@ ZR_PARSER_API void ZrParser_CompilerState_Free(SZrCompilerState *cs);
 
 // 编译 AST 为函数
 ZR_PARSER_API SZrFunction *ZrParser_Compiler_Compile(SZrState *state, SZrAstNode *ast);
+ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrState *state,
+                                                                         SZrAstNode *ast,
+                                                                         SZrString *currentModuleKey);
 
 // 公开的低层编译入口，用于语义/HIR 相关测试和分阶段编译接线
 ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode *node);

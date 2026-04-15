@@ -637,6 +637,27 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_module_system_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_project_import_resolver_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_project_import_resolver.c
+    )
+    target_include_directories(zr_vm_project_import_resolver_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_project_import_resolver_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_project_import_canonicalization_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_project_import_canonicalization.c
+    )
+    target_include_directories(zr_vm_project_import_canonicalization_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_project_import_canonicalization_test)
+
+    zr_vm_add_unity_test_target(
             zr_vm_named_arguments_test
             ${CMAKE_SOURCE_DIR}/tests/function/test_named_arguments.c
     )
@@ -833,6 +854,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             zr_vm_language_server_lsp_language_feature_matrix_test)
         target_include_directories(${language_server_target} PRIVATE
                 ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
+                ${CMAKE_SOURCE_DIR}/zr_vm_language_server/src/zr_vm_language_server
                 ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_core/include
                 ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
@@ -941,11 +963,12 @@ if (TARGET zr_vm_cli_executable AND
     add_executable(
             zr_vm_cli_args_test
             ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_args.c
-            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/command.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/command/command.c
     )
     target_include_directories(zr_vm_cli_args_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/include
             ${CMAKE_SOURCE_DIR}/zr_vm_cli/src
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
     )
     zr_vm_link_core(zr_vm_cli_args_test)

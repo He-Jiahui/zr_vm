@@ -175,16 +175,31 @@ static const TZrChar *ct_expected_type_decorator_target_name(EZrObjectPrototypeT
 }
 
 static const TZrChar *ct_module_name_text(SZrCompilerState *cs) {
+    SZrAstNode *moduleNode;
+    SZrAstNode *nameNode;
+
+    if (cs != ZR_NULL && cs->currentModuleKey != ZR_NULL) {
+        return ZrCore_String_GetNativeString(cs->currentModuleKey);
+    }
+
     if (cs == ZR_NULL ||
         cs->scriptAst == ZR_NULL ||
         cs->scriptAst->type != ZR_AST_SCRIPT ||
-        cs->scriptAst->data.script.moduleName == ZR_NULL ||
-        cs->scriptAst->data.script.moduleName->type != ZR_AST_STRING_LITERAL ||
-        cs->scriptAst->data.script.moduleName->data.stringLiteral.value == ZR_NULL) {
+        cs->scriptAst->data.script.moduleName == ZR_NULL) {
         return ZR_NULL;
     }
 
-    return ZrCore_String_GetNativeString(cs->scriptAst->data.script.moduleName->data.stringLiteral.value);
+    moduleNode = cs->scriptAst->data.script.moduleName;
+    if (moduleNode->type != ZR_AST_MODULE_DECLARATION || moduleNode->data.moduleDeclaration.name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    nameNode = moduleNode->data.moduleDeclaration.name;
+    if (nameNode->type != ZR_AST_STRING_LITERAL || nameNode->data.stringLiteral.value == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_GetNativeString(nameNode->data.stringLiteral.value);
 }
 
 static TZrBool ct_validate_named_decorator_target_param(SZrCompilerState *cs,
@@ -981,13 +996,7 @@ static TZrBool ct_build_type_decorator_snapshot(SZrCompilerState *cs,
     }
 
     nameText = info->name != ZR_NULL ? ZrCore_String_GetNativeString(info->name) : "type";
-    if (cs->scriptAst != ZR_NULL &&
-        cs->scriptAst->type == ZR_AST_SCRIPT &&
-        cs->scriptAst->data.script.moduleName != ZR_NULL &&
-        cs->scriptAst->data.script.moduleName->type == ZR_AST_STRING_LITERAL &&
-        cs->scriptAst->data.script.moduleName->data.stringLiteral.value != ZR_NULL) {
-        moduleNameText = ZrCore_String_GetNativeString(cs->scriptAst->data.script.moduleName->data.stringLiteral.value);
-    }
+    moduleNameText = ct_module_name_text(cs);
 
     if (moduleNameText != ZR_NULL && moduleNameText[0] != '\0') {
         snprintf(qualifiedName, sizeof(qualifiedName), "%s.%s", moduleNameText, nameText != ZR_NULL ? nameText : "type");

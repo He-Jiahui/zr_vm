@@ -297,6 +297,15 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     // 退出函数作用域
     exit_scope(cs);
     if (!cs->hasError) {
+        if (!compiler_build_callable_return_type_metadata(cs,
+                                                          ZR_NULL,
+                                                          testDecl->body,
+                                                          &cs->currentFunction->callableReturnType,
+                                                          &cs->currentFunction->hasCallableReturnType)) {
+            ZrParser_Compiler_Error(cs, "Failed to build callable return metadata for test declaration", node->location);
+        }
+    }
+    if (!cs->hasError) {
         TZrUInt32 typedLocalBindingCount = 0;
         if (!compiler_build_typed_local_bindings(cs, &cs->currentFunction->typedLocalBindings, &typedLocalBindingCount)) {
             ZrParser_Compiler_Error(cs, "Failed to build typed local metadata for test declaration", node->location);

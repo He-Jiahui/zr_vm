@@ -248,7 +248,7 @@ static void zr_debug_agent_emit_initialized(ZrDebugAgent *agent) {
     zr_debug_agent_emit_module_loaded(agent);
 }
 
-static void zr_debug_agent_emit_breakpoint_resolved(ZrDebugAgent *agent, const ZrDebugBreakpoint *breakpoint) {
+void zr_debug_agent_emit_breakpoint_resolved(ZrDebugAgent *agent, const ZrDebugBreakpoint *breakpoint) {
     cJSON *params;
 
     if (agent == ZR_NULL || breakpoint == ZR_NULL || !agent->clientInitialized) {

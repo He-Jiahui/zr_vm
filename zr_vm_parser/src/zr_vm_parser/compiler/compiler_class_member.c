@@ -259,6 +259,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     TZrBool isConstructor = ZR_FALSE;
     SZrString *manualParamName = ZR_NULL;
     SZrType *manualParamType = ZR_NULL;
+    SZrType *declaredReturnType = ZR_NULL;
     SZrStructMethod *structMethod = ZR_NULL;
     SZrStructMetaFunction *structMetaFunc = ZR_NULL;
 
@@ -266,16 +267,19 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         SZrClassMethod *method = &node->data.classMethod;
         params = method->params;
         body = method->body;
+        declaredReturnType = method->returnType;
         functionName = method->name != ZR_NULL ? method->name->name : ZR_NULL;
     } else if (node->type == ZR_AST_STRUCT_METHOD) {
         structMethod = &node->data.structMethod;
         params = structMethod->params;
         body = structMethod->body;
+        declaredReturnType = structMethod->returnType;
         functionName = structMethod->name != ZR_NULL ? structMethod->name->name : ZR_NULL;
     } else if (node->type == ZR_AST_CLASS_META_FUNCTION) {
         SZrClassMetaFunction *metaFunc = &node->data.classMetaFunction;
         params = metaFunc->params;
         body = metaFunc->body;
+        declaredReturnType = metaFunc->returnType;
         functionName = metaFunc->meta != ZR_NULL ? metaFunc->meta->name : ZR_NULL;
         if (metaFunc->meta != ZR_NULL) {
             TZrNativeString metaName = ZrCore_String_GetNativeStringShort(metaFunc->meta->name);
@@ -287,6 +291,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         structMetaFunc = &node->data.structMetaFunction;
         params = structMetaFunc->params;
         body = structMetaFunc->body;
+        declaredReturnType = structMetaFunc->returnType;
         functionName = structMetaFunc->meta != ZR_NULL ? structMetaFunc->meta->name : ZR_NULL;
         if (structMetaFunc->meta != ZR_NULL) {
             TZrNativeString metaName = ZrCore_String_GetNativeStringShort(structMetaFunc->meta->name);
@@ -304,12 +309,14 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         if (property->modifier->type == ZR_AST_PROPERTY_GET) {
             SZrPropertyGet *getter = &property->modifier->data.propertyGet;
             body = getter->body;
+            declaredReturnType = getter->targetType;
             if (getter->name != ZR_NULL) {
                 functionName = compiler_create_hidden_property_accessor_name(cs, getter->name->name, ZR_FALSE);
             }
         } else if (property->modifier->type == ZR_AST_PROPERTY_SET) {
             SZrPropertySet *setter = &property->modifier->data.propertySet;
             body = setter->body;
+            declaredReturnType = ZR_NULL;
             if (setter->name != ZR_NULL) {
                 functionName = compiler_create_hidden_property_accessor_name(cs, setter->name->name, ZR_TRUE);
             }
@@ -594,6 +601,15 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     }
 
     exit_scope(cs);
+    if (!cs->hasError) {
+        if (!compiler_build_callable_return_type_metadata(cs,
+                                                          declaredReturnType,
+                                                          body,
+                                                          &cs->currentFunction->callableReturnType,
+                                                          &cs->currentFunction->hasCallableReturnType)) {
+            ZrParser_Compiler_Error(cs, "Failed to build callable return metadata for class member", node->location);
+        }
+    }
     if (!cs->hasError) {
         TZrUInt32 typedLocalBindingCount = 0;
         if (!compiler_build_typed_local_bindings(cs, &cs->currentFunction->typedLocalBindings, &typedLocalBindingCount)) {

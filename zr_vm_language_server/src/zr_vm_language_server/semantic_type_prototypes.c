@@ -1,4 +1,4 @@
-#include "semantic_analyzer_internal.h"
+#include "semantic/semantic_analyzer_internal.h"
 
 #include <stdarg.h>
 #include <stdlib.h>

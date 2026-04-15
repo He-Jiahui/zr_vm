@@ -3,6 +3,7 @@ export interface ParsedProjectManifest {
     source: string;
     binary: string;
     entry: string;
+    pathAliases?: Record<string, string>;
     dependency?: string;
     local?: string;
     projectPath: string;
@@ -83,6 +84,7 @@ export function parseProjectManifestText(
         source,
         binary,
         entry,
+        pathAliases: readPathAliases(parsed),
         dependency: readOptionalString(parsed, 'dependency'),
         local: readOptionalString(parsed, 'local'),
         projectPath: normalizeFilePath(projectPath),
@@ -122,4 +124,25 @@ function readRequiredString(record: ManifestRecord, key: string): string | undef
 function readOptionalString(record: ManifestRecord, key: string): string | undefined {
     const value = record[key];
     return typeof value === 'string' ? value.trim() : undefined;
+}
+
+function readPathAliases(record: ManifestRecord): Record<string, string> | undefined {
+    const value = record.pathAliases;
+    const result: Record<string, string> = {};
+
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return undefined;
+    }
+
+    for (const [alias, rawPrefix] of Object.entries(value)) {
+        const trimmedAlias = alias.trim();
+        const trimmedPrefix = typeof rawPrefix === 'string' ? normalizeFilePath(rawPrefix.trim()) : '';
+        if (!trimmedAlias || !trimmedPrefix) {
+            continue;
+        }
+
+        result[trimmedAlias] = trimmedPrefix;
+    }
+
+    return Object.keys(result).length > 0 ? result : undefined;
 }

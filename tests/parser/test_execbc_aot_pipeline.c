@@ -191,6 +191,7 @@ static SZrFunction *compile_set_pair_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_set_to_map_roundtrip_fixture(SZrState *state);
 static SZrFunction *compile_meta_access_fixture(SZrState *state);
 static SZrFunction *compile_member_slot_quickening_fixture(SZrState *state);
+static SZrFunction *compile_dynamic_object_member_fallback_fixture(SZrState *state);
 static SZrFunction *compile_super_member_dispatch_fixture(SZrState *state);
 static SZrFunction *compile_zero_arg_tail_quickening_fixture(SZrState *state);
 static SZrFunction *compile_exception_control_fixture(SZrState *state);
@@ -6484,6 +6485,25 @@ static SZrFunction *compile_member_slot_quickening_fixture(SZrState *state) {
     return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
 }
 
+static SZrFunction *compile_dynamic_object_member_fallback_fixture(SZrState *state) {
+    const char *source =
+            "var payload = {a: 1, b: 1.0};\n"
+            "payload.a = payload.a + 4;\n"
+            "return payload.a;\n";
+    SZrString *sourceName;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    sourceName = ZR_STRING_LITERAL(state, "dynamic_object_member_fallback_fixture.zr");
+    if (sourceName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+}
+
 static SZrFunction *compile_nested_member_slot_quickening_fixture(SZrState *state) {
     const char *source =
             "class Counter {\n"
@@ -7570,6 +7590,84 @@ static void test_typed_member_access_allocates_member_callsite_cache_entries(voi
         ZrCore_Function_Free(state, runtimeFunction);
         ZrCore_Io_Free(state->global, io);
         free(binaryBytes);
+        ZrTests_Runtime_State_Destroy(state);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+static void test_dynamic_object_member_access_stays_on_generic_member_opcodes(void) {
+    SZrExecBcAotTestTimer timer;
+    const char *testSummary = "Dynamic Object Member Access Stays On Generic Member Opcodes";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("dynamic object member fallback",
+                 "Testing that plain object literals keep GET_MEMBER/SET_MEMBER access and do not get incorrectly quickened into typed member-slot opcodes.");
+
+    {
+        SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+        const char *binaryPath = "dynamic_object_member_fallback_test.zro";
+        SZrFunction *function;
+        TZrSize binaryLength = 0;
+        TZrByte *binaryBytes;
+        SZrBinaryFixtureReader reader;
+        SZrIo *io;
+        SZrIoSource *sourceObject;
+        SZrFunction *runtimeFunction;
+        TZrInt64 result = 0;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        function = compile_dynamic_object_member_fallback_fixture(state);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        TEST_ASSERT_TRUE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SET_MEMBER)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(function, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)));
+        TEST_ASSERT_EQUAL_UINT32(0, function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET));
+        TEST_ASSERT_EQUAL_UINT32(0, function_count_callsite_cache_kind(function, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET));
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, function, binaryPath));
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+        TEST_ASSERT_EQUAL_INT64(5, result);
+
+        binaryBytes = read_binary_file_owned(binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+
+        io = ZrCore_Io_New(state->global);
+        TEST_ASSERT_NOT_NULL(io);
+        ZrCore_Io_Init(state, io, binary_fixture_reader_read, binary_fixture_reader_close, &reader);
+        io->isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
+        TEST_ASSERT_TRUE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SET_MEMBER)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)));
+        TEST_ASSERT_FALSE(function_contains_opcode(runtimeFunction, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)));
+        TEST_ASSERT_EQUAL_UINT32(0, function_count_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET));
+        TEST_ASSERT_EQUAL_UINT32(0, function_count_callsite_cache_kind(runtimeFunction, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET));
+
+        result = 0;
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, runtimeFunction, &result));
+        TEST_ASSERT_EQUAL_INT64(5, result);
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        ZrCore_Io_Free(state->global, io);
+        free(binaryBytes);
+        remove(binaryPath);
+        ZrCore_Function_Free(state, function);
         ZrTests_Runtime_State_Destroy(state);
     }
 
@@ -9072,6 +9170,7 @@ int main(void) {
     RUN_TEST(test_execbc_quickens_array_int_fill_loops_to_bulk_dispatch_opcode);
     RUN_TEST(test_meta_access_semir_and_true_aot_c_preserve_dedicated_meta_get_set_opcodes);
     RUN_TEST(test_typed_member_access_allocates_member_callsite_cache_entries);
+    RUN_TEST(test_dynamic_object_member_access_stays_on_generic_member_opcodes);
     RUN_TEST(test_nested_typed_member_chain_emits_member_slot_opcodes);
     RUN_TEST(test_typed_object_destructuring_emits_member_slot_opcodes);
     RUN_TEST(test_static_meta_access_quickens_to_static_callsite_cache_variants);

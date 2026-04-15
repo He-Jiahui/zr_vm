@@ -1,4 +1,4 @@
-#include "network_internal.h"
+#include "network/network_internal.h"
 
 #include <stdlib.h>
 #include <string.h>

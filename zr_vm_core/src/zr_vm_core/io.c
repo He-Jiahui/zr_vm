@@ -1093,6 +1093,10 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         }
         function->parameterMetadataLength = 0;
         function->parameterMetadata = ZR_NULL;
+        function->hasCallableReturnType = ZR_FALSE;
+        ZrCore_Memory_RawSet(&function->callableReturnType, 0, sizeof(function->callableReturnType));
+        function->callableReturnType.baseType = ZR_VALUE_TYPE_OBJECT;
+        function->callableReturnType.elementBaseType = ZR_VALUE_TYPE_OBJECT;
         function->compileTimeVariableInfosLength = 0;
         function->compileTimeVariableInfos = ZR_NULL;
         function->compileTimeFunctionInfosLength = 0;
@@ -1130,6 +1134,12 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         function->callSiteCaches = ZR_NULL;
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_PARAMETER_METADATA) {
             io_read_function_metadata_parameters(io, &function->parameterMetadata, &function->parameterMetadataLength);
+        }
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_CALLABLE_RETURN_TYPE) {
+            ZR_IO_READ_NATIVE_TYPE(io, function->hasCallableReturnType, TZrUInt8);
+            if (function->hasCallableReturnType) {
+                io_read_function_typed_type_ref(io, &function->callableReturnType);
+            }
         }
         if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_COMPILE_TIME_METADATA) {
             ZR_IO_READ_NATIVE_TYPE(io, function->compileTimeVariableInfosLength, TZrSize);

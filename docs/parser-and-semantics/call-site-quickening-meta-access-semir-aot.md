@@ -3,30 +3,30 @@ related_code:
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/object.h
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
-  - zr_vm_core/src/zr_vm_core/execution_meta_access.c
-  - zr_vm_core/src/zr_vm_core/execution_tail_call.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_tail_call.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
-  - zr_vm_core/src/zr_vm_core/object.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_quickening.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_semir.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression_support.c
-  - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
 implementation_files:
   - zr_vm_common/include/zr_vm_common/zr_instruction_conf.h
   - zr_vm_core/include/zr_vm_core/function.h
   - zr_vm_core/include/zr_vm_core/object.h
-  - zr_vm_core/src/zr_vm_core/execution_dispatch.c
-  - zr_vm_core/src/zr_vm_core/execution_meta_access.c
-  - zr_vm_core/src/zr_vm_core/execution_tail_call.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_meta_access.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_tail_call.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
-  - zr_vm_core/src/zr_vm_core/object.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_quickening.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_semir.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot.c
-  - zr_vm_parser/src/zr_vm_parser/compile_expression_support.c
-  - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
+  - zr_vm_core/src/zr_vm_core/object/object.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_semir.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_support.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
   - tests/instructions/test_instructions.c
   - tests/parser/test_execbc_aot_pipeline.c
 plan_sources:

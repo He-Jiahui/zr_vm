@@ -797,6 +797,10 @@ static TZrBool io_runtime_populate_function(SZrState *state,
                                              source->parameterMetadataLength)) {
         return ZR_FALSE;
     }
+    function->hasCallableReturnType = source->hasCallableReturnType ? ZR_TRUE : ZR_FALSE;
+    if (function->hasCallableReturnType) {
+        io_runtime_copy_typed_type_ref(&function->callableReturnType, &source->callableReturnType);
+    }
 
     if (source->compileTimeVariableInfosLength > 0) {
         TZrSize infoBytes = sizeof(SZrFunctionCompileTimeVariableInfo) * source->compileTimeVariableInfosLength;

@@ -4,7 +4,7 @@ related_code:
   - tests/parser/test_const_keyword.c
   - tests/function/test_named_arguments.c
   - tests/module/test_module_system.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_class_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c
   - docs/reference-alignment/core-semantics-matrix.md
   - tests/fixtures/reference/core_semantics/literals/manifest.json
   - tests/fixtures/reference/core_semantics/expressions/manifest.json
@@ -26,7 +26,7 @@ implementation_files:
   - tests/parser/test_const_keyword.c
   - tests/function/test_named_arguments.c
   - tests/module/test_module_system.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_class_support.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c
   - tests/fixtures/reference/core_semantics/literals/manifest.json
   - tests/fixtures/reference/core_semantics/expressions/manifest.json
   - tests/fixtures/reference/core_semantics/imports/manifest.json
@@ -213,7 +213,7 @@ doc_type: testing-guide
 - constructor const ternary 单分支初始化失败
   - `const_ternary_missing_branch_fail.zr`
 
-对应实现已经下沉到 `zr_vm_parser/src/zr_vm_parser/compiler_class_support.c`，规则固定为：
+对应实现已经下沉到 `zr_vm_parser/src/zr_vm_parser/compiler/compiler_class_support.c`，规则固定为：
 
 - 构造器 const 字段必须在所有 continuing path 上 exactly once 完成初始化
 - `if`、`switch`、`ternary` 都按分支交集收敛 definite-assignment 状态

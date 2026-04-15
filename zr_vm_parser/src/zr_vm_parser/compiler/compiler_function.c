@@ -361,6 +361,15 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         }
     }
 
+    if (!cs->hasError &&
+        !compiler_build_callable_return_type_metadata(cs,
+                                                      funcDecl->returnType,
+                                                      funcDecl->body,
+                                                      &cs->currentFunction->callableReturnType,
+                                                      &cs->currentFunction->hasCallableReturnType)) {
+        ZrParser_Compiler_Error(cs, "Failed to build callable return metadata for function declaration", node->location);
+    }
+
     // 退出函数作用域
     exit_scope(cs);
     if (!cs->hasError) {

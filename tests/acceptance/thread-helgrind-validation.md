@@ -96,8 +96,8 @@ OK
 - 修复内容：
   - 将 Linux/Windows 共用的 scheduler external wait 从 condvar timed wait 改成短时 polling sleep + queue recheck。
   - 改动文件：
-    - `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime_internal.h`
-    - `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime.c`
+    - `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime_internal.h`
+    - `zr_vm_lib_thread/src/zr_vm_lib_thread/runtime/runtime.c`
 - 验证结果：
   - WSL gcc focused thread suite：通过
   - WSL clang focused thread suite：通过

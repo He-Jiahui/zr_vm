@@ -3,20 +3,20 @@ related_code:
   - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_library/include/zr_vm_library/native_binding.h
   - zr_vm_library/src/zr_vm_library/task_runtime.c
-  - zr_vm_library/src/zr_vm_library/native_binding_registry_plugin.c
-  - zr_vm_parser/src/zr_vm_parser/parser_reserved_task.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c
-  - zr_vm_parser/src/zr_vm_parser/parser_types.c
-  - zr_vm_cli/src/zr_vm_cli/project.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
   - tests/task/test_task_runtime.c
 implementation_files:
   - zr_vm_core/include/zr_vm_core/task_runtime.h
   - zr_vm_library/src/zr_vm_library/task_runtime.c
-  - zr_vm_library/src/zr_vm_library/native_binding_registry_plugin.c
-  - zr_vm_parser/src/zr_vm_parser/parser_reserved_task.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_task_effects.c
-  - zr_vm_parser/src/zr_vm_parser/parser_types.c
-  - zr_vm_cli/src/zr_vm_cli/project.c
+  - zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
 plan_sources:
   - user: 2026-04-05 Task / Coroutine / Thread 并发模型重构计划
 tests:

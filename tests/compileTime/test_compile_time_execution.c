@@ -1097,6 +1097,127 @@ static void test_compile_time_import_runtime_callable_named_default_projection(v
     TEST_DIVIDER();
 }
 
+static void test_compile_time_fixed_array_bound_import_named_default_projection(void) {
+    static const SZrCompileTimeImportFixture fixtures[] = {
+            {
+                    "helper",
+                    "%module \"helper\";\n"
+                    "pub var sizing = {\n"
+                    "    plan: (seed: int, factor: int = 2, bonus: int = 2) => {\n"
+                    "        return seed * factor + bonus;\n"
+                    "    }\n"
+                    "};\n",
+                    ZR_NULL,
+                    0,
+                    ZR_FALSE,
+            },
+    };
+
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Compile-Time Execution - Fixed Array Bound Import Named Default Projection";
+    const SZrCompileTimeImportFixture *previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "%module \"test\";\n"
+                "var staged: int[%import(\"helper\").sizing.plan(seed: 4, factor: 2)] = [1,2,3,4,5,6,7,8,9,10];\n"
+                "%test(\"test\") {\n"
+                "    return staged.length * 100 + staged[0] + staged[9];\n"
+                "}\n";
+        SZrString *sourceName;
+        SZrAstNode *ast;
+        SZrCompileResult compileResult;
+
+        TEST_ASSERT_NOT_NULL(state);
+        ZrParser_ToGlobalState_Register(state);
+        gCompileTimeImportFixtures = fixtures;
+        gCompileTimeImportFixtureCount = sizeof(fixtures) / sizeof(fixtures[0]);
+        state->global->sourceLoader = compile_time_import_source_loader;
+
+        sourceName = ZrCore_String_Create(
+                state,
+                "test_compile_time_fixed_array_bound_import_named_default_projection.zr",
+                strlen("test_compile_time_fixed_array_bound_import_named_default_projection.zr"));
+        ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_TRUE(ZrParser_Compiler_CompileWithTests(state, ast, &compileResult));
+        TEST_ASSERT_TRUE(compileResult.testFunctionCount > 0);
+
+        reset_loaded_module_registry(state);
+        state->global->sourceLoader = ZR_NULL;
+        TEST_ASSERT_TRUE(execute_test_function(state, compileResult.testFunctions[0], 1011, testSummary));
+
+        ZrParser_CompileResult_Free(state, &compileResult);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_state(state);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_compile_time_fixed_array_bound_import_mismatch_fails(void) {
+    static const SZrCompileTimeImportFixture fixtures[] = {
+            {
+                    "helper",
+                    "%module \"helper\";\n"
+                    "pub chooseSize(seed: int, extra: int = 2): int {\n"
+                    "    return seed + extra;\n"
+                    "}\n",
+                    ZR_NULL,
+                    0,
+                    ZR_FALSE,
+            },
+    };
+
+    SZrTestTimer timer;
+    const TZrChar *testSummary = "Compile-Time Execution - Fixed Array Bound Import Mismatch Fails";
+    const SZrCompileTimeImportFixture *previousFixtures = gCompileTimeImportFixtures;
+    TZrSize previousFixtureCount = gCompileTimeImportFixtureCount;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+
+        TEST_ASSERT_NOT_NULL(state);
+        ZrParser_ToGlobalState_Register(state);
+        gCompileTimeImportFixtures = fixtures;
+        gCompileTimeImportFixtureCount = sizeof(fixtures) / sizeof(fixtures[0]);
+        state->global->sourceLoader = compile_time_import_source_loader;
+
+        assert_compile_time_compile_failure(
+                state,
+                "%module \"test\";\n"
+                "var staged: int[%import(\"helper\").chooseSize(seed: 2, extra: 2)] = [1,2,3];\n"
+                "%test(\"test\") {\n"
+                "    return staged.length;\n"
+                "}\n",
+                "test_compile_time_fixed_array_bound_import_mismatch.zr");
+
+        state->global->sourceLoader = ZR_NULL;
+        destroy_test_state(state);
+    }
+
+    gCompileTimeImportFixtures = previousFixtures;
+    gCompileTimeImportFixtureCount = previousFixtureCount;
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_compile_time_binary_import_function_alias_projection(void) {
     static const TZrChar* providerSource =
             "%module \"provider\";\n"
@@ -2239,6 +2360,8 @@ int main(void) {
     RUN_TEST(test_compile_time_member_call_projection);
     RUN_TEST(test_compile_time_import_member_call_projection);
     RUN_TEST(test_compile_time_import_runtime_callable_named_default_projection);
+    RUN_TEST(test_compile_time_fixed_array_bound_import_named_default_projection);
+    RUN_TEST(test_compile_time_fixed_array_bound_import_mismatch_fails);
     RUN_TEST(test_compile_time_projection_rejects_function_ref_leak);
     RUN_TEST(test_compile_time_import_deep_member_call_projection);
     RUN_TEST(test_compile_time_binary_import_function_alias_projection);

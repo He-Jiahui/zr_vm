@@ -3,7 +3,7 @@
 ## Status
 
 - Accepted for the WSL clang `performance_report` recovery slice.
-- The original `zr_vm_core/src/zr_vm_core/execution_dispatch.c:1752` assertion is no longer reproducible on the rebuilt Release chain.
+- The original `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:1752` assertion is no longer reproducible on the rebuilt Release chain.
 
 ## Root Cause
 

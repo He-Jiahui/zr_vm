@@ -10,7 +10,7 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_language_server/semantic_analyzer.h"
-#include "lsp_interface_internal.h"
+#include "interface/lsp_interface_internal.h"
 #include "zr_vm_parser/parser.h"
 
 #include <string.h>

@@ -317,7 +317,16 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
             }
         }
     }
-    
+
+    if (!cs->hasError &&
+        !compiler_build_callable_return_type_metadata(cs,
+                                                      ZR_NULL,
+                                                      lambda->block,
+                                                      &cs->currentFunction->callableReturnType,
+                                                      &cs->currentFunction->hasCallableReturnType)) {
+        ZrParser_Compiler_Error(cs, "Failed to build callable return metadata for lambda expression", node->location);
+    }
+
     // 退出函数作用域
     exit_scope(cs);
     if (!cs->hasError) {
@@ -466,6 +475,13 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 设置函数名（lambda 表达式是匿名函数，所以为 ZR_NULL）
     newFunc->functionName = ZR_NULL;
+    if (!compiler_build_function_parameter_metadata(cs,
+                                                    lambda->params,
+                                                    ZR_TRUE,
+                                                    &newFunc->parameterMetadata,
+                                                    &newFunc->parameterMetadataCount)) {
+        ZrParser_Compiler_Error(cs, "Failed to build parameter metadata for lambda expression", node->location);
+    }
     lambdaAssemblyFailed = cs->hasError;
     if (lambdaAssemblyFailed && newFunc != ZR_NULL) {
         ZrCore_Function_Free(cs->state, newFunc);

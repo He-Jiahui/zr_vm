@@ -1164,6 +1164,8 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
         SZrString *moduleName) {
     SZrGlobalState *global;
     SZrIo io;
+    TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    SZrFileRange importErrorLocation;
     TZrBytePtr sourceBuffer = ZR_NULL;
     TZrSize sourceSize = 0;
     SZrAstNode *scriptAst = ZR_NULL;
@@ -1267,6 +1269,19 @@ static SZrImportedCompileTimeModule *compile_statement_load_imported_compile_tim
                                   sourceSize + 1,
                                   ZR_MEMORY_NATIVE_TYPE_GLOBAL);
     if (scriptAst == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (!ZrParser_ProjectImports_CanonicalizeAst(cs->state,
+                                                 scriptAst,
+                                                 moduleName,
+                                                 ZR_NULL,
+                                                 importError,
+                                                 sizeof(importError),
+                                                 &importErrorLocation)) {
+        ZrParser_Compiler_Error(cs,
+                                importError[0] != '\0' ? importError : "failed to canonicalize imported module imports",
+                                importErrorLocation);
+        ZrParser_Ast_Free(cs->state, scriptAst);
         return ZR_NULL;
     }
 

@@ -4,10 +4,10 @@ Date: 2026-04-10
 
 ## Scope
 
-- dispatch fast-table/static fallback tightening in `zr_vm_core/src/zr_vm_core/execution_dispatch.c`
-- native binding temp-root/direct-root follow-up in `zr_vm_library/src/zr_vm_library/native_binding_dispatch.c`
-- dispatch stack/constant move fast-copy tightening in `zr_vm_core/src/zr_vm_core/execution_dispatch.c`
-- super-array 4-way append/fill batch commit tightening in `zr_vm_core/src/zr_vm_core/object_super_array.c`
+- dispatch fast-table/static fallback tightening in `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+- native binding temp-root/direct-root follow-up in `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c`
+- dispatch stack/constant move fast-copy tightening in `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+- super-array 4-way append/fill batch commit tightening in `zr_vm_core/src/zr_vm_core/object/object_super_array.c`
 
 ## WSL GCC Validation
 
@@ -153,9 +153,9 @@ Results:
 
 Scope:
 
-- split hot stack-to-ret versus stack-to-stack copy handling in `zr_vm_core/src/zr_vm_core/execution_dispatch.c`
-- keep the fast copy predicate as a single ownership-kind OR check in `zr_vm_core/src/zr_vm_core/execution_dispatch.c`
-- tighten cached hidden-items lookup and plain int/null writes in `zr_vm_core/src/zr_vm_core/object_super_array_internal.h`
+- split hot stack-to-ret versus stack-to-stack copy handling in `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+- keep the fast copy predicate as a single ownership-kind OR check in `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+- tighten cached hidden-items lookup and plain int/null writes in `zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h`
 - explicitly reject a fetch-stage destination prefetch experiment after `callgrind` proved it regressed total `Ir`
 
 WSL gcc validation commands:
@@ -435,7 +435,7 @@ Updated next cut after this round:
 
 Scope:
 
-- recover a narrow `SUPER_ARRAY_GET_INT_PLAIN_DEST` emission path in `zr_vm_parser/src/zr_vm_parser/compiler_quickening.c`
+- recover a narrow `SUPER_ARRAY_GET_INT_PLAIN_DEST` emission path in `zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c`
 - keep the proof local to a single basic block and temp-only stack slots, instead of reviving the earlier rejected wider opcode-emission experiment
 - reject and revert a late `GET_CONSTANT -> SET_STACK` peephole after measurement showed no static `main.zri` change
 - extend the matrix benchmark regression in `tests/parser/test_compiler_regressions.c` so the hot read path must emit at least one `SUPER_ARRAY_GET_INT_PLAIN_DEST`
@@ -511,13 +511,13 @@ Remaining validation gap:
 
 Scope:
 
-- forward block-local `SUPER_ARRAY_SET_INT` result read-backs in `zr_vm_parser/src/zr_vm_parser/compiler_quickening.c`
+- forward block-local `SUPER_ARRAY_SET_INT` result read-backs in `zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c`
 - rewrite same-block `SUPER_ARRAY_GET_INT` / `SUPER_ARRAY_GET_INT_PLAIN_DEST` reads back to `GET_STACK valueSlot` when the intervening instructions are narrow pure stack-safe ops that do not touch receiver/index/value slots
 - measure and reject another dispatch-body arithmetic fast-label experiment after `callgrind` showed it regressed total `Ir`
 
 Rejected sub-iteration:
 
-- a dispatch experiment temporarily replaced arithmetic fast-label destination preparation with a stack-only variant in `zr_vm_core/src/zr_vm_core/execution_dispatch.c`
+- a dispatch experiment temporarily replaced arithmetic fast-label destination preparation with a stack-only variant in `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
 - measured file: `/home/hejiahui/codex-builds/callgrind.matrix_add_2d.gcc.stack-dest-fastlabels.out`
 - measured total `Ir`: `39,879,217`
 - because it regressed against the accepted gcc baseline of `38,785,168 Ir`, the experiment was reverted
@@ -577,7 +577,7 @@ Windows MSVC validation:
 
 Scope:
 
-- add a new quickening peephole in `zr_vm_parser/src/zr_vm_parser/compiler_quickening.c`
+- add a new quickening peephole in `zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c`
 - fold a pure int-result producer plus immediate `SET_STACK` copy into a direct final-slot write
 - keep the whitelist narrow: `GET_CONSTANT` plain primitives, integer arithmetic, and `LOGICAL_LESS_EQUAL_SIGNED`
 - add a matrix regression that checks the hot loop after `SUPER_ARRAY_FILL_INT4_CONST` no longer keeps these producer-plus-copy pairs
@@ -665,7 +665,7 @@ Updated next cut after this round:
 
 Scope:
 
-- keep chasing compiler-side hot-loop instruction deletion inside `zr_vm_parser/src/zr_vm_parser/compiler_quickening.c`
+- keep chasing compiler-side hot-loop instruction deletion inside `zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c`
 - specifically fold the matrix loop-bound pattern `GET_CONSTANT 1 -> SUB_INT` into `SUB_INT_CONST` even when the current basic block ends at `JUMP_IF`
 - avoid regressing the already-accepted `ADD_INT_CONST` self-update and direct-result-store folds
 
@@ -755,7 +755,7 @@ Windows MSVC validation:
 
 Scope:
 
-- remove temporary `fprintf(stderr, ...)` tracing from `zr_vm_parser/src/zr_vm_parser/compiler_quickening.c`
+- remove temporary `fprintf(stderr, ...)` tracing from `zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c`
 - stop `tests/parser/test_compiler_regressions.c` from compiling `matrix_add_2d` against stale checked-in `tests/benchmarks/cases/matrix_add_2d/zr/bin/*`
 - extract a dedicated fresh-sandbox helper into:
   - `tests/parser/matrix_add_2d_compile_fixture.c`
@@ -851,7 +851,7 @@ LD_LIBRARY_PATH=/home/hejiahui/codex-builds/zr_vm-clang-relwithdebinfo/lib /home
 - results:
   - `zr_vm_compiler_regressions_test`: `25` tests, only the same existing failure `test_initializer_bound_local_is_visible_on_next_source_line`
   - all `matrix_add_2d` compile regressions pass under clang as well
-  - build emitted unrelated existing warnings in `zr_vm_lib_system/gc_registry.c` and `module.c`, but no new error or regression in the touched matrix harness path
+  - build emitted unrelated existing warnings in `zr_vm_lib_system/src/zr_vm_lib_system/gc/gc_registry.c` and `module.c`, but no new error or regression in the touched matrix harness path
 
 Windows MSVC validation:
 
@@ -889,7 +889,7 @@ Updated next cut after this correction:
 
 Scope:
 
-- continue shrinking the interpreter-side `matrix_add_2d` hot loop inside `zr_vm_core/src/zr_vm_core/execution_dispatch.c`
+- continue shrinking the interpreter-side `matrix_add_2d` hot loop inside `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
 - add fast-dispatch coverage for:
   - `SUB_INT_CONST`
   - `SUPER_ARRAY_FILL_INT4_CONST`
@@ -908,9 +908,9 @@ Immediate baseline for this slice:
 - prior isolated-source total `Ir`:
   - `30,414,952`
 - prior isolated-source hotspot excerpt:
-  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/execution_dispatch.c:ZrCore_Execute`: `28,343,268`
-  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/object_super_array_internal.h:ZrCore_Execute`: `1,609,728`
-  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/object_super_array.c:ZrCore_Object_SuperArrayFillInt4ConstAssumeFast`: `1,437,173`
+  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:ZrCore_Execute`: `28,343,268`
+  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:ZrCore_Execute`: `1,609,728`
+  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/object/object_super_array.c:ZrCore_Object_SuperArrayFillInt4ConstAssumeFast`: `1,437,173`
 
 WSL gcc validation:
 
@@ -932,11 +932,11 @@ LD_LIBRARY_PATH=/home/hejiahui/codex-builds/zr_vm-gcc-source-validate/lib /home/
   - fresh sandbox benchmark checksum: `76802768`
   - fresh sandbox benchmark wall time: `0.01s`
   - callgrind total `Ir`: `29,084,255`
-  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/execution_dispatch.c:ZrCore_Execute`: `27,012,953`
-  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/object_super_array_internal.h:ZrCore_Execute`: `1,609,728`
-  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/object_super_array.c:ZrCore_Object_SuperArrayFillInt4ConstAssumeFast`: `1,437,195`
-  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_library/src/zr_vm_library/native_binding_dispatch.c:native_binding_begin_rooted_object`: `312,218`
-  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_library/src/zr_vm_library/native_binding_dispatch.c:native_binding_begin_rooted_value`: `268,625`
+  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:ZrCore_Execute`: `27,012,953`
+  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h:ZrCore_Execute`: `1,609,728`
+  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_core/src/zr_vm_core/object/object_super_array.c:ZrCore_Object_SuperArrayFillInt4ConstAssumeFast`: `1,437,195`
+  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:native_binding_begin_rooted_object`: `312,218`
+  - `/mnt/e/Git/zr_vm_source_validate/zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c:native_binding_begin_rooted_value`: `268,625`
 
 Delta against the immediate isolated-source baseline above:
 
@@ -1005,10 +1005,10 @@ Acceptance decision for this slice:
 Scope:
 
 - continue the current-repo `matrix_add_2d` runtime work on:
-  - `zr_vm_core/src/zr_vm_core/object_super_array.c`
-  - `zr_vm_core/src/zr_vm_core/object_super_array_internal.h`
+  - `zr_vm_core/src/zr_vm_core/object/object_super_array.c`
+  - `zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h`
   - `zr_vm_core/include/zr_vm_core/hash_set.h`
-  - `zr_vm_core/src/zr_vm_core/execution_dispatch.c`
+  - `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
 - tighten dense super-array fill/grow by co-reserving pair-pool capacity with dense bucket growth
 - cut remaining arithmetic plain-destination store overhead by treating normalized plain stack destinations as an internal invariant and no longer re-writing `isGarbageCollectable` / `isNative` on every hot int store
 - validate and reject one additional compiler-side branch:
@@ -1023,7 +1023,7 @@ Kept code changes:
 
 Rejected branch:
 
-- temporarily stopped emitting `SUPER_ARRAY_GET_INT_PLAIN_DEST` in `zr_vm_parser/src/zr_vm_parser/compiler_quickening.c`
+- temporarily stopped emitting `SUPER_ARRAY_GET_INT_PLAIN_DEST` in `zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c`
 - fresh gcc callgrind regressed from the kept cut's `30,722,722 Ir` to `30,894,429 Ir`
 - the branch was reverted; the accepted state keeps `SUPER_ARRAY_GET_INT_PLAIN_DEST`
 - a clean rebuild was required after that experiment to restore the expected fresh `main.zri` shape
@@ -1161,8 +1161,8 @@ Scope:
 
 - continue the current-repo `matrix_add_2d` runtime work on:
   - `zr_vm_core/include/zr_vm_core/hash_set.h`
-  - `zr_vm_core/src/zr_vm_core/object_super_array.c`
-  - `zr_vm_core/src/zr_vm_core/execution_dispatch.c`
+  - `zr_vm_core/src/zr_vm_core/object/object_super_array.c`
+  - `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
 - cut the remaining super-array fill/grow overhead by preferring one exact reserved pair span, especially the newly grown tail block, instead of always walking cursor/span fragments
 - cut more plain-destination arithmetic overhead by letting `ADD_INT_PLAIN_DEST` / `ADD_INT_CONST_PLAIN_DEST` / `SUB_INT_PLAIN_DEST` / `SUB_INT_CONST_PLAIN_DEST` / `MUL_SIGNED_PLAIN_DEST` / `MUL_SIGNED_CONST_PLAIN_DEST` / `DIV_SIGNED_CONST_PLAIN_DEST` / `MOD_SIGNED_CONST_PLAIN_DEST` write the stack slot directly on the hot success path without first routing through the shared `destination` fetch/prep path
 
@@ -1321,11 +1321,11 @@ Scope:
 
 Kept implementation:
 
-- `zr_vm_core/src/zr_vm_core/object_super_array_internal.h`
+- `zr_vm_core/src/zr_vm_core/object/object_super_array_internal.h`
   - split out `zr_super_array_try_resolve_items_cached_only_assume_fast()`
   - added `zr_super_array_store_plain_get_from_items_object_assume_fast()`
   - rewired `SUPER_ARRAY_GET_INT_PLAIN_DEST` to hit the cached-items direct read path before falling back to the existing slow-resolve helper
-- `zr_vm_core/src/zr_vm_core/object_super_array.c`
+- `zr_vm_core/src/zr_vm_core/object/object_super_array.c`
   - added `object_super_array_try_prepare_append_plans4_cached_from_stack_assume_fast()`
   - `object_super_array_prepare_append_plans4_from_stack_assume_fast()` now first does one cached-only 4-way resolve/length/capacity pass and only falls back to the old 4x single-plan path on cache miss
   - `object_add_int_int_pairs4_assuming_absent_dense_ready_assume_fast()` no longer initializes batch cursors before the exact reserved-span path is proven to miss

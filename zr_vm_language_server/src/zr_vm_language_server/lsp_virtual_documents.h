@@ -1,7 +1,7 @@
 #ifndef ZR_VM_LANGUAGE_SERVER_LSP_VIRTUAL_DOCUMENTS_H
 #define ZR_VM_LANGUAGE_SERVER_LSP_VIRTUAL_DOCUMENTS_H
 
-#include "lsp_module_metadata.h"
+#include "module/lsp_module_metadata.h"
 
 typedef enum EZrLspVirtualDeclarationKind {
     ZR_LSP_VIRTUAL_DECLARATION_MODULE = 0,

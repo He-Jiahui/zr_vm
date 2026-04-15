@@ -41,6 +41,7 @@ typedef struct SZrSymbol {
     SZrFileRange location;           // 定义位置
     SZrFileRange selectionRange;     // 名称位置
     SZrInferredType *typeInfo;       // 类型信息（可选，可能为ZR_NULL）
+    SZrString *ffiHoverMetadata;     // 稳定缓存的 FFI/decorator hover 文本
     SZrArray references;              // 引用位置数组（SZrFileRange）
     TZrBool isExported;                 // 是否导出
     EZrAccessModifier accessModifier; // 访问修饰符

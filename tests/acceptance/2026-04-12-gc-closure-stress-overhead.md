@@ -48,7 +48,7 @@
   - compact/selective-major policy is still a staged v0/v1 implementation, not the full region-fragmentation policy matrix described in the plan
   - the current public API / stats surface is substantially ahead of the concurrency backend
 - PIC corruption root cause is still unresolved:
-  - `zr_vm_core/src/zr_vm_core/gc_cycle.c` now sanitizes invalid callsite PIC state before mark/rewrite
+  - `zr_vm_core/src/zr_vm_core/gc/gc_cycle.c` now sanitizes invalid callsite PIC state before mark/rewrite
   - this prevents full-GC scanning from treating garbage `picSlotCount` / `picSlots` contents as live heap pointers
   - the write source that corrupts PIC state is still a TODO and needs a dedicated debug / memory-checker session
 - Separate unrelated red baseline remains outside this slice:

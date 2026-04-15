@@ -1,26 +1,26 @@
 ---
 related_code:
-  - zr_vm_parser/src/zr_vm_parser/backend_aot.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_internal.h
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_exec_ir.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_exec_ir.h
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_c_emitter.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_c_emitter.h
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_emitter.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_emitter.h
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_emitter.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_emitter.h
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_library/include/zr_vm_library/aot_runtime.h
   - tests/parser/test_execbc_aot_pipeline.c
   - tests/cmake/run_projects_suite.cmake
 implementation_files:
-  - zr_vm_parser/src/zr_vm_parser/backend_aot.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_internal.h
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_exec_ir.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_exec_ir.h
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_c_emitter.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_c_emitter.h
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_emitter.c
-  - zr_vm_parser/src/zr_vm_parser/backend_aot_llvm_emitter.h
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_internal.h
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_emitter.c
+  - zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_emitter.h
   - zr_vm_library/src/zr_vm_library/aot_runtime.c
   - zr_vm_library/include/zr_vm_library/aot_runtime.h
 plan_sources:

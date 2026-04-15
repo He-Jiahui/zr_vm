@@ -2,36 +2,36 @@
 related_code:
   - zr_vm_cli/CMakeLists.txt
   - zr_vm_cli/src/zr_vm_cli.c
-  - zr_vm_cli/src/zr_vm_cli/app.c
-  - zr_vm_cli/src/zr_vm_cli/command.h
-  - zr_vm_cli/src/zr_vm_cli/command.c
-  - zr_vm_cli/src/zr_vm_cli/project.h
-  - zr_vm_cli/src/zr_vm_cli/project.c
-  - zr_vm_cli/src/zr_vm_cli/compiler.h
-  - zr_vm_cli/src/zr_vm_cli/compiler.c
-  - zr_vm_cli/src/zr_vm_cli/runtime.h
-  - zr_vm_cli/src/zr_vm_cli/runtime.c
-  - zr_vm_cli/src/zr_vm_cli/repl.h
-  - zr_vm_cli/src/zr_vm_cli/repl.c
+  - zr_vm_cli/src/zr_vm_cli/app/app.c
+  - zr_vm_cli/src/zr_vm_cli/command/command.h
+  - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/project/project.h
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.h
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.h
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl.h
+  - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/include/zr_vm_core/module.h
   - zr_vm_core/src/zr_vm_core/io_runtime.c
-  - zr_vm_core/src/zr_vm_core/module_loader.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_bindings.c
+  - zr_vm_core/src/zr_vm_core/module/module_loader.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
-  - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
 implementation_files:
-  - zr_vm_cli/src/zr_vm_cli/app.c
-  - zr_vm_cli/src/zr_vm_cli/command.c
-  - zr_vm_cli/src/zr_vm_cli/project.c
-  - zr_vm_cli/src/zr_vm_cli/compiler.c
-  - zr_vm_cli/src/zr_vm_cli/runtime.c
-  - zr_vm_cli/src/zr_vm_cli/repl.c
+  - zr_vm_cli/src/zr_vm_cli/app/app.c
+  - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - zr_vm_core/src/zr_vm_core/io_runtime.c
-  - zr_vm_core/src/zr_vm_core/module_loader.c
-  - zr_vm_parser/src/zr_vm_parser/compiler_bindings.c
+  - zr_vm_core/src/zr_vm_core/module/module_loader.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
   - zr_vm_parser/src/zr_vm_parser/writer.c
-  - zr_vm_parser/src/zr_vm_parser/writer_intermediate.c
+  - zr_vm_parser/src/zr_vm_parser/writer/writer_intermediate.c
 plan_sources:
   - user: 2026-03-31 实现 ZR VM CLI 命令系统与 compile/run/REPL 计划
   - user: 2026-04-06 扩展 zr_vm_cli 入口参数、透传参数与 process.arguments 契约

@@ -1,5 +1,5 @@
-#include "lsp_interface_internal.h"
-#include "semantic_analyzer_internal.h"
+#include "interface/lsp_interface_internal.h"
+#include "semantic/semantic_analyzer_internal.h"
 
 #include "type_inference_internal.h"
 

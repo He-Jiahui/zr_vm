@@ -89,7 +89,7 @@ Expected: no production code changes yet; benchmark outputs may be regenerated u
 - Read: `build/benchmark-gcc-release/tests_generated/performance/hotspot_report.md`
 - Read: `build/benchmark-gcc-release/tests_generated/performance_profile_callgrind/hotspot_report.md`
 - Read candidate implementations:
-  - `zr_vm_core/src/zr_vm_core/execution_dispatch.c`
+  - `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
   - `zr_vm_core/src/zr_vm_core/function.c`
   - `zr_vm_core/src/zr_vm_core/io_runtime.c`
   - `zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c`
@@ -162,7 +162,7 @@ Expected: a focused reproduction command that will be reused after the fix.
 
 **Files:**
 - Modify one or more shared hotspot files chosen from:
-  - `zr_vm_core/src/zr_vm_core/execution_dispatch.c`
+  - `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
   - `zr_vm_core/src/zr_vm_core/function.c`
   - `zr_vm_core/src/zr_vm_core/io_runtime.c`
   - `zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c`
@@ -175,7 +175,7 @@ Expected: a focused reproduction command that will be reused after the fix.
 Run:
 
 ```bash
-git grep -n "ZrCore_" -- zr_vm_core/src/zr_vm_core/execution_dispatch.c zr_vm_core/src/zr_vm_core/function.c zr_vm_core/src/zr_vm_core/io_runtime.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
+git grep -n "ZrCore_" -- zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c zr_vm_core/src/zr_vm_core/function.c zr_vm_core/src/zr_vm_core/io_runtime.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_quickening.c
 ```
 
 Expected: enough context to isolate the smallest shared change instead of broad refactoring.

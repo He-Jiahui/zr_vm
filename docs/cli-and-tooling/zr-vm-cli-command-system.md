@@ -2,33 +2,33 @@
 related_code:
   - zr_vm_cli/CMakeLists.txt
   - zr_vm_cli/src/zr_vm_cli.c
-  - zr_vm_cli/src/zr_vm_cli/app.c
-  - zr_vm_cli/src/zr_vm_cli/command.h
-  - zr_vm_cli/src/zr_vm_cli/command.c
-  - zr_vm_cli/src/zr_vm_cli/project.h
-  - zr_vm_cli/src/zr_vm_cli/project.c
-  - zr_vm_cli/src/zr_vm_cli/compiler.h
-  - zr_vm_cli/src/zr_vm_cli/compiler.c
-  - zr_vm_cli/src/zr_vm_cli/runtime.h
-  - zr_vm_cli/src/zr_vm_cli/runtime.c
-  - zr_vm_cli/src/zr_vm_cli/repl.h
-  - zr_vm_cli/src/zr_vm_cli/repl.c
+  - zr_vm_cli/src/zr_vm_cli/app/app.c
+  - zr_vm_cli/src/zr_vm_cli/command/command.h
+  - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/project/project.h
+  - zr_vm_cli/src/zr_vm_cli/project/project.c
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.h
+  - zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.h
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl.h
+  - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/include/zr_vm_core/module.h
   - zr_vm_core/src/zr_vm_core/io_runtime.c
-  - zr_vm_core/src/zr_vm_core/module_loader.c
+  - zr_vm_core/src/zr_vm_core/module/module_loader.c
   - tests/cli/test_cli_args.c
   - tests/cmake/run_cli_suite.cmake
   - tests/fixtures/projects/cli_args/cli_args.zrp
   - tests/fixtures/projects/cli_args/src/main.zr
   - tests/fixtures/projects/cli_args/src/tools/seed.zr
 implementation_files:
-  - zr_vm_cli/src/zr_vm_cli/app.c
-  - zr_vm_cli/src/zr_vm_cli/command.c
-  - zr_vm_cli/src/zr_vm_cli/command.h
-  - zr_vm_cli/src/zr_vm_cli/runtime.c
-  - zr_vm_cli/src/zr_vm_cli/runtime.h
-  - zr_vm_cli/src/zr_vm_cli/repl.c
+  - zr_vm_cli/src/zr_vm_cli/app/app.c
+  - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/command/command.h
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.h
+  - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - tests/cli/test_cli_args.c
   - tests/cmake/run_cli_suite.cmake
   - tests/fixtures/projects/cli_args/cli_args.zrp
@@ -73,7 +73,7 @@ doc_type: module-detail
 
 ## Public CLI Contract
 
-`zr_vm_cli/src/zr_vm_cli/command.h` 定义了两个核心类型：
+`zr_vm_cli/src/zr_vm_cli/command/command.h` 定义了两个核心类型：
 
 - `EZrCliMode`
   - `HELP`
@@ -104,7 +104,7 @@ doc_type: module-detail
   - `debugWait`
   - `debugPrintEndpoint`
 
-`zr_vm_cli/src/zr_vm_cli/command.c` 只负责两件事：
+`zr_vm_cli/src/zr_vm_cli/command/command.c` 只负责两件事：
 
 - 把 argv 解析成 `SZrCliCommand`
 - 在非法组合时给出稳定错误文案
@@ -120,7 +120,7 @@ doc_type: module-detail
 - `-h | --help | -?`
 - `-V | --version`
 
-`zr_vm_cli/src/zr_vm_cli/app.c` 是唯一分发点。它根据 `SZrCliCommand.mode` 调用 help、REPL、source-first run、compile、compile+run handler，不再让 `main` 自己决定流程。
+`zr_vm_cli/src/zr_vm_cli/app/app.c` 是唯一分发点。它根据 `SZrCliCommand.mode` 调用 help、REPL、source-first run、compile、compile+run handler，不再让 `main` 自己决定流程。
 
 ## Parse Rules And Boundaries
 
@@ -145,7 +145,7 @@ doc_type: module-detail
 
 ## REPL Rules
 
-`zr_vm_cli/src/zr_vm_cli/repl.c` 实现的是一个刻意保持最小化的 v1：
+`zr_vm_cli/src/zr_vm_cli/repl/repl.c` 实现的是一个刻意保持最小化的 v1：
 
 - 无参数进入
 - `:help`
@@ -171,7 +171,7 @@ REPL v1 还支持两条扩展约束：
 
 ## Runtime Argument Injection Contract
 
-`zr_vm_cli/src/zr_vm_cli/runtime.c` 现在会把真实用户参数写入 `zr.system.process.arguments`。这个接口从“模块里声明了一个 `arguments` 常量”升级成了真正可用的运行时契约。
+`zr_vm_cli/src/zr_vm_cli/runtime/runtime.c` 现在会把真实用户参数写入 `zr.system.process.arguments`。这个接口从“模块里声明了一个 `arguments` 常量”升级成了真正可用的运行时契约。
 
 注入规则固定为：
 
@@ -195,7 +195,7 @@ REPL v1 还支持两条扩展约束：
 
 ## Project Run, Inline Run, And Module Run
 
-`zr_vm_cli/src/zr_vm_cli/runtime.c` 当前负责三类运行型 handler：
+`zr_vm_cli/src/zr_vm_cli/runtime/runtime.c` 当前负责三类运行型 handler：
 
 - `RUN_PROJECT`
   - 继续尊重 `.zrp.entry`
@@ -212,7 +212,7 @@ REPL v1 还支持两条扩展约束：
 
 ## Compile Pipeline
 
-`zr_vm_cli/src/zr_vm_cli/compiler.c` 仍然负责项目级 compile、增量 manifest 和 compile+run 前置阶段。本轮参数扩展没有改 `.zrp` schema，也没有改 entry 语义，compile 侧仍然从 `.zrp.entry` 出发构图和输出。
+`zr_vm_cli/src/zr_vm_cli/compiler/compiler.c` 仍然负责项目级 compile、增量 manifest 和 compile+run 前置阶段。本轮参数扩展没有改 `.zrp` schema，也没有改 entry 语义，compile 侧仍然从 `.zrp.entry` 出发构图和输出。
 
 CLI 自己管理的增量缓存清单仍然固定落在 `binary/.zr_cli_manifest`，记录可达模块、源码哈希、imports 和输出文件，用于：
 

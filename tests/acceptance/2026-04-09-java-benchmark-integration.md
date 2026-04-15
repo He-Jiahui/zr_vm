@@ -39,7 +39,7 @@
   - `mixed_service_loop`: `BENCH_MIXED_SERVICE_LOOP_PASS / 408940136`
 - WSL clang:
   - `benchmark_registry`: passed
-  - `performance_report`: still hard-fails because current clang `ZR interp` correctness aborts in `zr_vm_core/src/zr_vm_core/execution_dispatch.c:1752`
+  - `performance_report`: still hard-fails because current clang `ZR interp` correctness aborts in `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c:1752`
   - Java-specific outcome inside the clang report:
     - all 14 wired Java cases are `PASS`
     - this shows the Java harness path itself is working on clang too

@@ -13,6 +13,10 @@ test('parseProjectManifestText reads the required zrp fields', () => {
             source: 'src',
             binary: 'bin',
             entry: 'app/main',
+            pathAliases: {
+                '@app': 'feature/app',
+                '@shared': 'common/shared',
+            },
         }),
         'D:/repo/demo-project.zrp',
     );
@@ -21,6 +25,10 @@ test('parseProjectManifestText reads the required zrp fields', () => {
     assert.equal(manifest?.source, 'src');
     assert.equal(manifest?.binary, 'bin');
     assert.equal(manifest?.entry, 'app/main');
+    assert.deepEqual(manifest?.pathAliases, {
+        '@app': 'feature/app',
+        '@shared': 'common/shared',
+    });
 });
 
 test('pickBestProjectForFile prefers the deepest matching source root', () => {

@@ -1,0 +1,11 @@
+pub bump(value: int = 1): int {
+    return value + 2;
+}
+
+pub bannerPrefix(): string {
+    return "GAUNTLET";
+}
+
+pub baseScore(): int {
+    return 17;
+}

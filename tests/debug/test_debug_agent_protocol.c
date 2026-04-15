@@ -187,6 +187,54 @@ static int debug_json_int(cJSON *object, const char *field) {
     return cJSON_IsNumber(item) ? (int)item->valuedouble : 0;
 }
 
+static void debug_assert_stopped_location(cJSON *message,
+                                          const char *reason,
+                                          const char *sourceFile,
+                                          const char *functionName,
+                                          int minLine,
+                                          int maxLine,
+                                          int *outLine) {
+    cJSON *params = cJSON_GetObjectItemCaseSensitive(message, "params");
+    int line;
+    char locationMessage[128];
+
+    TEST_ASSERT_NOT_NULL(params);
+    TEST_ASSERT_EQUAL_STRING(reason, debug_json_string(params, "reason"));
+    TEST_ASSERT_EQUAL_STRING(sourceFile, debug_json_string(params, "sourceFile"));
+    TEST_ASSERT_EQUAL_STRING(functionName, debug_json_string(params, "functionName"));
+
+    line = debug_json_int(params, "line");
+    snprintf(locationMessage,
+             sizeof(locationMessage),
+             "expected stopped line in [%d, %d], actual=%d",
+             minLine,
+             maxLine,
+             line);
+    TEST_ASSERT_TRUE_MESSAGE(line >= minLine, locationMessage);
+    TEST_ASSERT_TRUE_MESSAGE(line <= maxLine, locationMessage);
+
+    if (outLine != ZR_NULL) {
+        *outLine = line;
+    }
+}
+
+static cJSON *debug_find_named_object(cJSON *array, const char *name) {
+    int index;
+
+    if (!cJSON_IsArray(array) || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < cJSON_GetArraySize(array); index++) {
+        cJSON *item = cJSON_GetArrayItem(array, index);
+        if (item != ZR_NULL && strcmp(debug_json_string(item, "name"), name) == 0) {
+            return item;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static void debug_client_initialize(SZrNetworkStream *client, const char *moduleName) {
     cJSON *message;
     cJSON *params = cJSON_CreateObject();
@@ -407,7 +455,7 @@ static void test_debug_agent_pause_request_over_tcp_stops_at_next_safepoint(void
     TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile"));
     TEST_ASSERT_EQUAL_STRING("spin", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
     pausedLine = debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line");
-    TEST_ASSERT_TRUE(pausedLine >= 6);
+    TEST_ASSERT_TRUE(pausedLine >= 4);
     TEST_ASSERT_TRUE(pausedLine <= 10);
     cJSON_Delete(message);
 
@@ -546,7 +594,17 @@ static void test_debug_agent_running_socket_close_allows_reconnect_and_pause(voi
     ZrDebugExecutionThread thread;
     TZrChar error[256];
     cJSON *message;
+    cJSON *frames;
+    cJSON *topFrame;
+    cJSON *scopes;
+    cJSON *localsScope;
+    cJSON *values;
+    cJSON *totalItem;
+    cJSON *indexItem;
+    cJSON *burstItem;
     int pausedLine;
+    int frameId;
+    int localsScopeId;
 
     TEST_ASSERT_NOT_NULL(state);
     function = compile_debug_agent_source(state, sourcePath, source);
@@ -592,16 +650,63 @@ static void test_debug_agent_running_socket_close_allows_reconnect_and_pause(voi
     cJSON_Delete(message);
 
     message = debug_client_expect_event(&secondClient, "stopped");
-    TEST_ASSERT_EQUAL_STRING("pause", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "reason"));
-    TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "sourceFile"));
-    TEST_ASSERT_EQUAL_STRING("spin", debug_json_string(cJSON_GetObjectItemCaseSensitive(message, "params"), "functionName"));
-    pausedLine = debug_json_int(cJSON_GetObjectItemCaseSensitive(message, "params"), "line");
-    TEST_ASSERT_TRUE(pausedLine >= 6);
-    TEST_ASSERT_TRUE(pausedLine <= 10);
+    debug_assert_stopped_location(message, "pause", sourcePath, "spin", 4, 10, &pausedLine);
     cJSON_Delete(message);
 
-    debug_client_send_request(&secondClient, 3, "continue", ZR_NULL);
+    debug_client_send_request(&secondClient, 3, "stackTrace", ZR_NULL);
     message = debug_client_expect_response(&secondClient, 3);
+    frames = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "frames");
+    TEST_ASSERT_TRUE(cJSON_IsArray(frames));
+    TEST_ASSERT_TRUE(cJSON_GetArraySize(frames) >= 1);
+    topFrame = cJSON_GetArrayItem(frames, 0);
+    TEST_ASSERT_EQUAL_STRING("spin", debug_json_string(topFrame, "functionName"));
+    TEST_ASSERT_EQUAL_STRING(sourcePath, debug_json_string(topFrame, "sourceFile"));
+    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") >= 4);
+    TEST_ASSERT_TRUE(debug_json_int(topFrame, "line") <= 10);
+    frameId = debug_json_int(topFrame, "frameId");
+    TEST_ASSERT_TRUE(frameId > 0);
+    cJSON_Delete(message);
+
+    {
+        cJSON *params = cJSON_CreateObject();
+        TEST_ASSERT_NOT_NULL(params);
+        cJSON_AddNumberToObject(params, "frameId", frameId);
+        debug_client_send_request(&secondClient, 4, "scopes", params);
+    }
+    message = debug_client_expect_response(&secondClient, 4);
+    scopes = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "scopes");
+    TEST_ASSERT_TRUE(cJSON_IsArray(scopes));
+    localsScope = debug_find_named_object(scopes, "Locals");
+    TEST_ASSERT_NOT_NULL(localsScope);
+    localsScopeId = debug_json_int(localsScope, "scopeId");
+    TEST_ASSERT_TRUE(localsScopeId > 0);
+    cJSON_Delete(message);
+
+    {
+        cJSON *params = cJSON_CreateObject();
+        TEST_ASSERT_NOT_NULL(params);
+        cJSON_AddNumberToObject(params, "scopeId", localsScopeId);
+        debug_client_send_request(&secondClient, 5, "variables", params);
+    }
+    message = debug_client_expect_response(&secondClient, 5);
+    values = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(message, "result"), "variables");
+    TEST_ASSERT_TRUE(cJSON_IsArray(values));
+    totalItem = debug_find_named_object(values, "total");
+    indexItem = debug_find_named_object(values, "index");
+    burstItem = debug_find_named_object(values, "burst");
+    TEST_ASSERT_NOT_NULL(totalItem);
+    TEST_ASSERT_NOT_NULL(indexItem);
+    TEST_ASSERT_TRUE(debug_json_string(totalItem, "value")[0] != '\0');
+    TEST_ASSERT_TRUE(debug_json_string(indexItem, "value")[0] != '\0');
+    if (burstItem == ZR_NULL) {
+        TEST_ASSERT_TRUE(pausedLine == 4 || pausedLine == 5);
+    } else {
+        TEST_ASSERT_TRUE(debug_json_string(burstItem, "value")[0] != '\0');
+    }
+    cJSON_Delete(message);
+
+    debug_client_send_request(&secondClient, 6, "continue", ZR_NULL);
+    message = debug_client_expect_response(&secondClient, 6);
     cJSON_Delete(message);
     message = debug_client_expect_event(&secondClient, "continued");
     cJSON_Delete(message);

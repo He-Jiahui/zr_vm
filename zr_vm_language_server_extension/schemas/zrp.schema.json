@@ -63,6 +63,20 @@
         "app/main"
       ]
     },
+    "pathAliases": {
+      "type": "object",
+      "description": "Optional import alias map. Keys start with @ and values are canonical module prefixes relative to the source root.",
+      "additionalProperties": {
+        "type": "string",
+        "minLength": 1
+      },
+      "examples": [
+        {
+          "@app": "feature/app",
+          "@shared": "common/shared"
+        }
+      ]
+    },
     "dependency": {
       "type": "string",
       "minLength": 1,

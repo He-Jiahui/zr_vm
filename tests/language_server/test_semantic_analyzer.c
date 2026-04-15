@@ -1034,6 +1034,86 @@ static void test_semantic_analyzer_reports_return_type_not_provable(SZrState *st
     TEST_PASS(timer, "Semantic Analyzer Reports Return Type Not Provable");
 }
 
+static void test_semantic_analyzer_accepts_all_path_return_chains(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Accepts All Path Return Chains");
+
+    TEST_INFO("All-path return analysis",
+              "Sequential if-return chains that cover every path must not trigger return_type_not_provable when all return values share the same exact type.");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "labelFor(value: int) {\n"
+            "    if (value % 2 == 0) {\n"
+            "        return \"even\";\n"
+            "    }\n"
+            "    if (value > 2) {\n"
+            "        return \"odd_hi\";\n"
+            "    }\n"
+            "    return \"odd_lo\";\n"
+            "}\n";
+        SZrString *sourceName =
+            ZrCore_String_Create(state, "all_path_return_chain_test.zr", 29);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagnostic;
+        SZrString *functionName;
+        SZrSymbol *functionSymbol;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Accepts All Path Return Chains",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Accepts All Path Return Chains",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Accepts All Path Return Chains",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "return_type_not_provable", 1);
+        if (diagnostic != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Accepts All Path Return Chains",
+                      "Sequential return guards should be accepted as an all-path string return");
+            return;
+        }
+
+        functionName = ZrCore_String_Create(state, "labelFor", 8);
+        functionSymbol = ZrLanguageServer_SymbolTable_Lookup(analyzer->symbolTable, functionName, ZR_NULL);
+        if (functionSymbol == ZR_NULL ||
+            functionSymbol->typeInfo == ZR_NULL ||
+            !ZR_VALUE_IS_TYPE_STRING(functionSymbol->typeInfo->baseType)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Accepts All Path Return Chains",
+                      "All-path string returns should infer an exact string return type");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Accepts All Path Return Chains");
+}
+
 static void test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_and_completion_detail(
     SZrState *state) {
     SZrTestTimer timer;
@@ -3835,6 +3915,9 @@ int main(void) {
     test_semantic_analyzer_reports_return_type_not_provable(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_accepts_all_path_return_chains(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_exact_type_failure_surfaces_explicit_hover_and_completion_detail(state);
     TEST_DIVIDER();
 
@@ -3933,4 +4016,3 @@ int main(void) {
     
     return 0;
 }
-

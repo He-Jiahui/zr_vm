@@ -274,11 +274,15 @@ static TZrBool zr_tests_runtime_handle_unhandled_exception(SZrState *state, SZrT
 
 static TZrBool zr_tests_runtime_capture_failure(SZrState *state, EZrThreadStatus status) {
     EZrThreadStatus effectiveStatus;
+    SZrTypeValue preservedException;
+    EZrThreadStatus preservedExceptionStatus = ZR_THREAD_STATUS_FINE;
+    TZrBool preservedHasException = ZR_FALSE;
 
     if (state == ZR_NULL) {
         return ZR_FALSE;
     }
 
+    ZrCore_Value_ResetAsNull(&preservedException);
     effectiveStatus = status;
     if (effectiveStatus == ZR_THREAD_STATUS_FINE && state->threadStatus != ZR_THREAD_STATUS_FINE) {
         effectiveStatus = state->threadStatus;
@@ -289,6 +293,18 @@ static TZrBool zr_tests_runtime_capture_failure(SZrState *state, EZrThreadStatus
 
     if (!state->hasCurrentException) {
         (void)ZrCore_Exception_NormalizeStatus(state, effectiveStatus);
+    }
+    preservedHasException = state->hasCurrentException;
+    if (preservedHasException) {
+        preservedException = state->currentException;
+        preservedExceptionStatus = state->currentExceptionStatus;
+    }
+
+    ZrCore_State_ResetThread(state, ZR_THREAD_STATUS_FINE);
+    if (preservedHasException) {
+        state->currentException = preservedException;
+        state->currentExceptionStatus = preservedExceptionStatus;
+        state->hasCurrentException = ZR_TRUE;
     }
     state->threadStatus = effectiveStatus;
     return ZR_FALSE;

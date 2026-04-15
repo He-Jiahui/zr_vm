@@ -1897,6 +1897,54 @@ void test_lsp_language_feature_matrix_copy_runtime_keeps_top_level_closure_captu
     ZR_TEST_DIVIDER();
 }
 
+void test_language_debug_gauntlet_project_run_returns_expected_banner_and_checksum(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Language Debug Gauntlet Project Run Returns Expected Banner And Checksum";
+    char projectPath[512];
+    SZrGlobalState *global = ZR_NULL;
+    SZrState *state = ZR_NULL;
+    ZrProjectRunRequest request;
+    EZrThreadStatus outerStatus;
+    SZrTypeValue result;
+    SZrString *resultString;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Project runtime gauntlet",
+                 "Testing that the multi-module gauntlet project keeps compile-time fixed-array sizing, import chaining, branch validation, and deterministic output stable under the normal project run path.");
+
+    snprintf(projectPath,
+             sizeof(projectPath),
+             "%s/fixtures/projects/language_debug_gauntlet/language_debug_gauntlet.zrp",
+             ZR_VM_TESTS_SOURCE_DIR);
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrParser_ToGlobalState_Register(state);
+
+    request.result = &result;
+    ZrCore_Value_ResetAsNull(request.result);
+    request.status = ZR_THREAD_STATUS_INVALID;
+    outerStatus = ZrCore_Exception_TryRun(state, run_project_body, &request);
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, outerStatus);
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, request.status);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, request.result->type);
+
+    resultString = ZR_CAST_STRING(state, request.result->value.object);
+    TEST_ASSERT_NOT_NULL(resultString);
+    TEST_ASSERT_EQUAL_STRING("GAUNTLET_OK checksum=13910", ZrCore_String_GetNativeString(resultString));
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    ZR_TEST_DIVIDER();
+}
+
 void test_benchmark_numeric_loops_project_run_returns_expected_checksum(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Benchmark Numeric Loops Project Run Returns Expected Checksum";

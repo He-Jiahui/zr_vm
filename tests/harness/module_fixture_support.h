@@ -171,6 +171,74 @@ static inline TZrByte *ZrTests_Fixture_ReadFileBytes(const TZrChar *path, TZrSiz
     return buffer;
 }
 
+static inline TZrSize ZrTests_Fixture_SkipWhitespace(const TZrChar *text, TZrSize index) {
+    while (text != ZR_NULL && text[index] != '\0' &&
+           (text[index] == ' ' || text[index] == '\t' || text[index] == '\r' || text[index] == '\n')) {
+        index++;
+    }
+
+    return index;
+}
+
+static inline SZrString *ZrTests_Fixture_CreateSourceNameForModule(SZrState *state,
+                                                                   const TZrChar *moduleSource,
+                                                                   const TZrChar *fallbackPath) {
+    const TZrChar *moduleKeyword = "%module";
+    const TZrChar *moduleMarker;
+
+    if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    moduleMarker = moduleSource != ZR_NULL ? strstr(moduleSource, moduleKeyword) : ZR_NULL;
+    if (moduleMarker != ZR_NULL) {
+        TZrSize index = (TZrSize)(moduleMarker - moduleSource) + strlen(moduleKeyword);
+        TZrChar quote;
+
+        index = ZrTests_Fixture_SkipWhitespace(moduleSource, index);
+        if (moduleSource[index] == '(') {
+            index++;
+            index = ZrTests_Fixture_SkipWhitespace(moduleSource, index);
+        }
+
+        quote = moduleSource[index];
+        if (quote == '"' || quote == '\'') {
+            TZrSize moduleStart = ++index;
+
+            while (moduleSource[index] != '\0' && moduleSource[index] != quote) {
+                index++;
+            }
+
+            if (moduleSource[index] == quote && index > moduleStart) {
+                TZrSize moduleLength = index - moduleStart;
+                TZrSize suffixLength = strlen(".zr");
+                TZrChar *buffer = (TZrChar *)malloc(moduleLength + suffixLength + 1);
+
+                if (buffer == ZR_NULL) {
+                    return ZR_NULL;
+                }
+
+                memcpy(buffer, moduleSource + moduleStart, moduleLength);
+                memcpy(buffer + moduleLength, ".zr", suffixLength + 1);
+
+                {
+                    SZrString *sourceName = ZrCore_String_Create(state, buffer, moduleLength + suffixLength);
+                    free(buffer);
+                    if (sourceName != ZR_NULL) {
+                        return sourceName;
+                    }
+                }
+            }
+        }
+    }
+
+    if (fallbackPath == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(state, (TZrNativeString)fallbackPath, strlen(fallbackPath));
+}
+
 static inline TZrByte *ZrTests_Fixture_BuildBinaryFile(SZrState *state,
                                                        const TZrChar *moduleSource,
                                                        const TZrChar *binaryPath,
@@ -185,7 +253,7 @@ static inline TZrByte *ZrTests_Fixture_BuildBinaryFile(SZrState *state,
         return ZR_NULL;
     }
 
-    sourceName = ZrCore_String_Create(state, (TZrNativeString)binaryPath, strlen(binaryPath));
+    sourceName = ZrTests_Fixture_CreateSourceNameForModule(state, moduleSource, binaryPath);
     if (sourceName == ZR_NULL) {
         return ZR_NULL;
     }

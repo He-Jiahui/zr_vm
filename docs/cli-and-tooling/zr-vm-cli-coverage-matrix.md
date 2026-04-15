@@ -1,11 +1,11 @@
 ---
 related_code:
-  - zr_vm_cli/src/zr_vm_cli/app.c
-  - zr_vm_cli/src/zr_vm_cli/command.h
-  - zr_vm_cli/src/zr_vm_cli/command.c
-  - zr_vm_cli/src/zr_vm_cli/runtime.h
-  - zr_vm_cli/src/zr_vm_cli/runtime.c
-  - zr_vm_cli/src/zr_vm_cli/repl.c
+  - zr_vm_cli/src/zr_vm_cli/app/app.c
+  - zr_vm_cli/src/zr_vm_cli/command/command.h
+  - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.h
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - tests/cli/test_cli_args.c
   - tests/cli/test_cli_repl_e2e.c
   - tests/cli/test_cli_debug_e2e.c
@@ -14,10 +14,10 @@ related_code:
   - tests/fixtures/projects/cli_args/src/main.zr
   - tests/fixtures/projects/cli_args/src/tools/seed.zr
 implementation_files:
-  - zr_vm_cli/src/zr_vm_cli/app.c
-  - zr_vm_cli/src/zr_vm_cli/command.c
-  - zr_vm_cli/src/zr_vm_cli/runtime.c
-  - zr_vm_cli/src/zr_vm_cli/repl.c
+  - zr_vm_cli/src/zr_vm_cli/app/app.c
+  - zr_vm_cli/src/zr_vm_cli/command/command.c
+  - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl.c
   - tests/cli/test_cli_args.c
   - tests/cli/test_cli_repl_e2e.c
   - tests/cli/test_cli_debug_e2e.c
@@ -114,8 +114,8 @@ doc_type: testing-guide
 | 缺少 flag 值 | Parse | `Missing <project.zrp> after --compile`、`Missing <project.zrp> after --project`、`Missing <module> after -m`、`Missing inline code after -e`、`Missing address after --debug-address`、`Missing execution mode after --execution-mode` | 需要参数的 flag 缺值 | `test_missing_required_values_fail` |
 | 未知执行模式 | Parse | `Unknown execution mode:` | 只接受 `interp` / `binary` / `aot_c` / `aot_llvm` | `test_missing_required_values_fail` |
 | 未知选项 | Parse | `Unknown option:` | parser 不做宽松回退 | `test_unknown_and_duplicate_modes_fail` |
-| debug + `aot_c` / `aot_llvm` 项目运行 | Runtime | `zr debugger v1 only supports interp and binary execution modes` | debug agent 运行期只支持 `interp` / `binary` | 代码路径：`zr_vm_cli/src/zr_vm_cli/runtime.c` |
-| CLI 构建未带 debug agent 却使用 `--debug` | Runtime | `debug agent support is not built into this CLI` | 运行期能力缺失 | 代码路径：`zr_vm_cli/src/zr_vm_cli/runtime.c` |
+| debug + `aot_c` / `aot_llvm` 项目运行 | Runtime | `zr debugger v1 only supports interp and binary execution modes` | debug agent 运行期只支持 `interp` / `binary` | 代码路径：`zr_vm_cli/src/zr_vm_cli/runtime/runtime.c` |
+| CLI 构建未带 debug agent 却使用 `--debug` | Runtime | `debug agent support is not built into this CLI` | 运行期能力缺失 | 代码路径：`zr_vm_cli/src/zr_vm_cli/runtime/runtime.c` |
 
 ## `zr.system.process.arguments` Contract Matrix
 

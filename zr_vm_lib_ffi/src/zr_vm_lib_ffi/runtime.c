@@ -1,4 +1,4 @@
-#include "ffi_runtime_internal.h"
+#include "ffi_runtime/ffi_runtime_internal.h"
 
 TZrBool ZrFfi_LoadLibrary(ZrLibCallContext *context, SZrTypeValue *result) {
     SZrString *pathString = ZR_NULL;

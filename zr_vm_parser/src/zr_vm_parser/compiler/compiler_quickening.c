@@ -1252,6 +1252,31 @@ static const SZrFunctionTypedLocalBinding *compiler_quickening_resolve_named_bin
     return binding != ZR_NULL && binding->type.typeName != ZR_NULL ? binding : ZR_NULL;
 }
 
+static TZrBool compiler_quickening_binding_supports_static_member_slots(
+        const SZrFunctionTypedLocalBinding *binding) {
+    const TZrChar *typeNameText;
+
+    if (binding == ZR_NULL || binding->type.typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (binding->type.baseType != ZR_VALUE_TYPE_OBJECT) {
+        return ZR_FALSE;
+    }
+
+    typeNameText = compiler_quickening_type_name_text(binding->type.typeName);
+    if (typeNameText == ZR_NULL || typeNameText[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    if (strcmp(typeNameText, "object") == 0 || strcmp(typeNameText, "Object") == 0 ||
+        strcmp(typeNameText, "dynamic") == 0 || strcmp(typeNameText, "Dynamic") == 0) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool compiler_quickening_slot_is_int(const SZrFunction *function,
                                                const ZrCompilerQuickeningSlotAlias *aliases,
                                                TZrUInt32 aliasCount,
@@ -5348,7 +5373,7 @@ static TZrBool compiler_quicken_member_slot_accesses(SZrState *state, SZrFunctio
             TZrUInt32 memberEntryIndex = instruction->instruction.operand.operand1[1];
             TZrUInt16 cacheIndex;
 
-            if (binding != ZR_NULL &&
+            if (compiler_quickening_binding_supports_static_member_slots(binding) &&
                 compiler_quickening_member_entry_symbol_text(function, (TZrUInt16)memberEntryIndex) != ZR_NULL) {
                 if (!compiler_quickening_append_callsite_cache(
                             state,

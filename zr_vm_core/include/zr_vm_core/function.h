@@ -425,6 +425,8 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 topLevelCallableBindingLength;
     SZrFunctionMetadataParameter *parameterMetadata;
     TZrUInt32 parameterMetadataCount;
+    TZrBool hasCallableReturnType;
+    SZrFunctionTypedTypeRef callableReturnType;
     SZrFunctionCompileTimeVariableInfo *compileTimeVariableInfos;
     TZrUInt32 compileTimeVariableInfoLength;
     SZrFunctionCompileTimeFunctionInfo *compileTimeFunctionInfos;

@@ -18,7 +18,7 @@
 - Current worktree note:
   - while rerunning the broader debug matrix, `zr_vm_execbc_aot_pipeline_test` reports one failure on both WSL gcc and WSL clang:
     - `test_aot_runtime_index_helpers_refresh_frame_for_native_binding_paths`
-  - This follow-up does not modify `zr_vm_library/aot_runtime.c`, `zr_vm_core/object.c`, or other production paths touched by that test; only perf fixtures/scripts changed here.
+  - This follow-up does not modify `zr_vm_library/src/zr_vm_library/aot_runtime.c`, `zr_vm_core/src/zr_vm_core/object/object.c`, or other production paths touched by that test; only perf fixtures/scripts changed here.
 
 ## Test Inventory
 - WSL release perf closure:
