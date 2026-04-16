@@ -8,7 +8,7 @@
 #
 # Default build-dir: build/benchmark-gcc-release
 # Default implementations:
-#   c,zr_interp,zr_binary,zr_aot_c,zr_aot_llvm
+#   c,zr_interp,zr_binary
 #
 # Outputs:
 #   <build-dir>/tests_generated/performance/gc_overhead_report.md
@@ -28,7 +28,7 @@ GENERATED_DIR="${BUILD_DIR}/tests_generated"
 
 export ZR_VM_TEST_TIER="${ZR_VM_TEST_TIER:-stress}"
 export ZR_VM_PERF_ONLY_CASES="${ZR_VM_PERF_ONLY_CASES:-gc_fragment_baseline,gc_fragment_stress}"
-export ZR_VM_PERF_ONLY_IMPLEMENTATIONS="${ZR_VM_PERF_ONLY_IMPLEMENTATIONS:-c,zr_interp,zr_binary,zr_aot_c,zr_aot_llvm}"
+export ZR_VM_PERF_ONLY_IMPLEMENTATIONS="${ZR_VM_PERF_ONLY_IMPLEMENTATIONS:-c,zr_interp,zr_binary}"
 
 echo "ZR_VM_TEST_TIER=${ZR_VM_TEST_TIER}"
 echo "ZR_VM_PERF_ONLY_CASES=${ZR_VM_PERF_ONLY_CASES}"

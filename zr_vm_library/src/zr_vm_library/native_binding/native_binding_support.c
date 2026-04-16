@@ -243,17 +243,58 @@ ZrLibrary_NativeRegistryState *native_registry_get(SZrGlobalState *global) {
     return (ZrLibrary_NativeRegistryState *)global->nativeModuleLoaderUserData;
 }
 
+static ZrLibBindingEntry *native_registry_binding_entry_at(ZrLibrary_NativeRegistryState *registry, TZrSize index) {
+    if (registry == ZR_NULL || !registry->bindingEntries.isValid ||
+        index == ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_INVALID_INDEX ||
+        index >= registry->bindingEntries.length) {
+        return ZR_NULL;
+    }
+
+    return (ZrLibBindingEntry *)ZrCore_Array_Get(&registry->bindingEntries, index);
+}
+
+static void native_registry_promote_binding_lookup_index(ZrLibrary_NativeRegistryState *registry, TZrSize index) {
+    TZrSize currentHotIndex;
+
+    if (registry == ZR_NULL) {
+        return;
+    }
+
+    currentHotIndex = registry->bindingLookupHotIndices[0];
+    if (currentHotIndex == index) {
+        return;
+    }
+
+    registry->bindingLookupHotIndices[0] = index;
+    registry->bindingLookupHotIndices[1] = currentHotIndex;
+}
+
 ZrLibBindingEntry *native_registry_find_binding(ZrLibrary_NativeRegistryState *registry,
                                                        SZrClosureNative *closure) {
+    TZrSize cacheSlot;
     TZrSize index;
 
     if (registry == ZR_NULL || closure == ZR_NULL || !registry->bindingEntries.isValid) {
         return ZR_NULL;
     }
 
+    for (cacheSlot = 0; cacheSlot < ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_CAPACITY; cacheSlot++) {
+        TZrSize cachedIndex = registry->bindingLookupHotIndices[cacheSlot];
+        ZrLibBindingEntry *entry = native_registry_binding_entry_at(registry, cachedIndex);
+        if (entry == ZR_NULL) {
+            registry->bindingLookupHotIndices[cacheSlot] = ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_INVALID_INDEX;
+            continue;
+        }
+        if (entry->closure == closure) {
+            native_registry_promote_binding_lookup_index(registry, cachedIndex);
+            return entry;
+        }
+    }
+
     for (index = 0; index < registry->bindingEntries.length; index++) {
         ZrLibBindingEntry *entry = (ZrLibBindingEntry *)ZrCore_Array_Get(&registry->bindingEntries, index);
         if (entry != ZR_NULL && entry->closure == closure) {
+            native_registry_promote_binding_lookup_index(registry, index);
             return entry;
         }
     }

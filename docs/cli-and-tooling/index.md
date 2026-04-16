@@ -64,11 +64,16 @@ doc_type: category-index
   - `launch-under-debug` 作为 v1 主路线的模块分层
   - `zr_vm_debug` / `zr_vm_network` / CLI runtime 的职责边界
   - `zrdbg/1` 请求与事件最小集
-  - source / binary 断点解析、step 语义和 AOT 边界
+  - source / binary 断点解析与 step 语义
 - `zrp-editor-schema-and-lsp-refresh.md`
   - `.zrp` 作为 JSON 文档的 VS Code 识别路径
   - schema 字段覆盖、必填项与基础校验
   - `.zrp` 文档更新与 language server project refresh 的连接方式
+- `zr-vm-rust-binding.md`
+  - `zr_vm_rust_binding` 稳定 C ABI、Rust sys/safe crate 与 opaque handle 设计
+  - project scaffold/open/compile/run 与 `callModuleExport` 的 host lifecycle
+  - owned/live value mirror、array/object 访问、Cargo/CMake 校验集成
+  - 主仓不再暴露 AOT；历史 AOT 资产已分离到 `zr_vm_aot/`
 
 ## 阅读顺序
 
@@ -76,4 +81,5 @@ doc_type: category-index
 2. 需要快速确认某个入口模式、flag 组合、报错文案或 `process.arguments` 行为时，再看 `zr-vm-cli-coverage-matrix.md`。
 3. 需要修改调试 launch、断点解析、`zrdbg/1` 协议或 loopback transport 时，再看 `zr-debugger-v1-launch-workflow.md`。
 4. 需要修改 `.zrp` 编辑体验或 project config 刷新路径时，再看 `zrp-editor-schema-and-lsp-refresh.md`。
-5. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。
+5. 需要修改 Rust 绑定 ABI、Rust workspace、host runtime lifecycle 或 cargo/CMake 集成时，再看 `zr-vm-rust-binding.md`。
+6. 需要修改实现时，再沿 frontmatter 里的 `related_code` 和 `tests` 进入具体文件。

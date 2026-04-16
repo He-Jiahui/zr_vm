@@ -661,7 +661,10 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
 
             if (!memberExpr->computed) {
                 SZrString *memberSymbol = resolve_member_expression_symbol(cs, memberExpr);
-                TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, memberSymbol);
+                TZrUInt32 memberId = compiler_get_or_add_member_entry_for_type_member(cs,
+                                                                                      memberSymbol,
+                                                                                      typeMember,
+                                                                                      0);
                 TZrBool canEmitMemberSlot = declaredFieldMatch;
 
                 if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
@@ -1073,7 +1076,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
 
                                 if (typeMember != ZR_NULL || declaredCurrentTypeField) {
                                     TZrUInt32 receiverSlotForWrite = objSlot;
-                                    TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, memberSymbol);
+                                    TZrUInt32 memberId = compiler_get_or_add_member_entry_for_type_member(cs,
+                                                                                                          memberSymbol,
+                                                                                                          typeMember,
+                                                                                                          0);
 
                                     if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
                                         ZrParser_Compiler_Error(cs, "Failed to register assignment member symbol", node->location);

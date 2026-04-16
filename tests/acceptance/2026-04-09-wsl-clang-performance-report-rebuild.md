@@ -61,8 +61,7 @@ wsl bash -lc "cd /mnt/e/Git/zr_vm && ZR_VM_JAVA_EXE=/mnt/d/Tools/development/jdk
 
 ## Current Non-Blocking Debts
 
-- `ZR aot_llvm` still reports the expected opaque-pointer prepare failure and stays `SKIP`.
-- `string_build / ZR aot_c` still reports a correctness `Segmentation fault`.
+- Archived backend debts remain out of scope for this mainline rebuild note.
 - Full-tree release builds remain blocked by the unrelated `semantic_type_from_ast` type conflict in `zr_vm_language_server`.
 
 ## Acceptance Decision

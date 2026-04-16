@@ -129,7 +129,7 @@ function regenerateWatchedBinaryMetadataFixture(serverPath, rootPath, cliPathOpt
         typeof cliPathOptional === 'string' && cliPathOptional.length > 0
             ? cliPathOptional
             : path.join(path.dirname(serverPath), `zr_vm_cli${path.extname(serverPath)}`);
-    const projectPath = path.join(rootPath, 'aot_module_graph_pipeline.zrp');
+    const projectPath = path.join(rootPath, 'binary_module_graph_pipeline.zrp');
     const tempBinarySourcePath = path.join(rootPath, 'src', 'graph_binary_stage.zr');
     const compileResult = spawnSync(cliPath, [
         '--compile',
@@ -164,12 +164,12 @@ function createWatchedBinaryMetadataFixture(serverPath, cliPathOptional) {
         '..',
         'fixtures',
         'projects',
-        'aot_module_graph_pipeline');
+        'binary_module_graph_pipeline');
     const binarySourceFixturePath = path.join(sourceFixtureRoot,
         'fixtures',
         'graph_binary_stage_source.zr');
     const rootPath = fs.mkdtempSync(path.join(os.tmpdir(), 'zr-stdio-binary-watch-'));
-    const projectPath = path.join(rootPath, 'aot_module_graph_pipeline.zrp');
+    const projectPath = path.join(rootPath, 'binary_module_graph_pipeline.zrp');
     const mainPath = path.join(rootPath, 'src', 'main.zr');
     const binaryPath = path.join(rootPath, 'bin', 'graph_binary_stage.zro');
     const binaryIntermediatePath = path.join(rootPath, 'bin', 'graph_binary_stage.zri');

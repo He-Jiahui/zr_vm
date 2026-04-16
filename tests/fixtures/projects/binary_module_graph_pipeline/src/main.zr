@@ -1,0 +1,12 @@
+var system = %import("zr.system");
+var stageA = %import("graph_stage_a");
+var stageB = %import("graph_stage_b");
+var binaryStage = %import("graph_binary_stage");
+
+var left = <int> stageA.seed();
+var right = <int> binaryStage.binarySeed();
+var merged = stageB.merge(left, right);
+
+system.console.printLine("BINARY_MODULE_GRAPH_PIPELINE_PASS");
+system.console.printLine(merged);
+return merged;

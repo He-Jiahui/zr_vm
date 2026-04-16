@@ -37,7 +37,6 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrSize pathAliasCount;
     TZrBool supportMultithread;
     TZrBool autoCoroutine;
-    TZrPtr aotRuntime;
 };
 
 typedef struct SZrLibrary_Project SZrLibrary_Project;

@@ -27,7 +27,7 @@ def _bytes_to_mib(value: Any) -> str:
 def _one_shot_compile_excluded_from_wall_ms(mode: Any) -> str:
     """Suite runs `zr_vm_cli --compile` in prepare; perf_runner times run-only for these modes."""
     m = (mode if isinstance(mode, str) else "").strip().lower()
-    if m in ("binary", "aot_c", "aot_llvm"):
+    if m == "binary":
         return "true"
     return "false"
 

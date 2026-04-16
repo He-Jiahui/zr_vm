@@ -1,0 +1,3 @@
+pub var binarySeed = () => {
+    return 40;
+};

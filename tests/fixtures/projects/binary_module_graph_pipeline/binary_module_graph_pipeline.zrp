@@ -1,0 +1,6 @@
+{
+  "name": "binary_module_graph_pipeline",
+  "source": "src",
+  "binary": "bin",
+  "entry": "main"
+}

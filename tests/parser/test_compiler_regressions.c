@@ -11,6 +11,7 @@
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/module.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/task_runtime.h"
 #include "zr_vm_core/value.h"
@@ -33,6 +34,15 @@ typedef struct ZrProjectRunRequest {
     SZrTypeValue *result;
     EZrThreadStatus status;
 } ZrProjectRunRequest;
+
+typedef struct ZrMemberCallsiteStats {
+    TZrUInt32 cacheEntryCount;
+    TZrUInt32 totalPicSlots;
+    TZrUInt32 totalHitCount;
+    TZrUInt32 totalMissCount;
+    const SZrObjectPrototype *receiverPrototypes[16];
+    TZrUInt32 uniqueReceiverPrototypeCount;
+} ZrMemberCallsiteStats;
 
 static char *read_text_file_owned(const TZrChar *path) {
     FILE *file;
@@ -94,6 +104,127 @@ static const TZrChar *function_name_or_anonymous(const SZrFunction *function) {
     return ZrCore_String_GetNativeString(function->functionName);
 }
 
+static void member_callsite_stats_note_receiver(ZrMemberCallsiteStats *stats,
+                                                const SZrObjectPrototype *receiverPrototype) {
+    TZrUInt32 index;
+
+    if (stats == ZR_NULL || receiverPrototype == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < stats->uniqueReceiverPrototypeCount; index++) {
+        if (stats->receiverPrototypes[index] == receiverPrototype) {
+            return;
+        }
+    }
+
+    if (stats->uniqueReceiverPrototypeCount < (TZrUInt32)(sizeof(stats->receiverPrototypes) /
+                                                          sizeof(stats->receiverPrototypes[0]))) {
+        stats->receiverPrototypes[stats->uniqueReceiverPrototypeCount++] = receiverPrototype;
+    }
+}
+
+static void collect_member_callsite_stats_recursive(const SZrFunction *function,
+                                                    EZrFunctionCallSiteCacheKind kind,
+                                                    const char *memberName,
+                                                    TZrUInt32 depth,
+                                                    ZrMemberCallsiteStats *stats) {
+    TZrUInt32 cacheIndex;
+    TZrUInt32 childIndex;
+
+    TEST_ASSERT_NOT_NULL(stats);
+    TEST_ASSERT_TRUE_MESSAGE(depth < 64, "Callsite cache recursion depth exceeded 64");
+
+    if (function == ZR_NULL || memberName == ZR_NULL) {
+        return;
+    }
+
+    if (function->callSiteCaches != ZR_NULL) {
+        for (cacheIndex = 0; cacheIndex < function->callSiteCacheLength; cacheIndex++) {
+            const SZrFunctionCallSiteCacheEntry *entry = &function->callSiteCaches[cacheIndex];
+            const char *actualMemberName = ZR_NULL;
+
+            if ((EZrFunctionCallSiteCacheKind)entry->kind != kind ||
+                function->memberEntries == ZR_NULL ||
+                entry->memberEntryIndex >= function->memberEntryLength ||
+                function->memberEntries[entry->memberEntryIndex].symbol == ZR_NULL) {
+                continue;
+            }
+
+            actualMemberName = ZrCore_String_GetNativeString(function->memberEntries[entry->memberEntryIndex].symbol);
+            if (actualMemberName == ZR_NULL || strcmp(actualMemberName, memberName) != 0) {
+                continue;
+            }
+
+            stats->cacheEntryCount++;
+            stats->totalPicSlots += entry->picSlotCount;
+            stats->totalHitCount += entry->runtimeHitCount;
+            stats->totalMissCount += entry->runtimeMissCount;
+            for (TZrUInt32 slotIndex = 0; slotIndex < entry->picSlotCount; slotIndex++) {
+                member_callsite_stats_note_receiver(stats, entry->picSlots[slotIndex].cachedReceiverPrototype);
+            }
+        }
+    }
+
+    if (function->childFunctionList == ZR_NULL) {
+        return;
+    }
+
+    for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+        collect_member_callsite_stats_recursive(&function->childFunctionList[childIndex],
+                                                kind,
+                                                memberName,
+                                                depth + 1,
+                                                stats);
+    }
+}
+
+static void format_member_callsite_stats(const char *label,
+                                         const ZrMemberCallsiteStats *stats,
+                                         char *buffer,
+                                         size_t bufferSize) {
+    int written;
+
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE(bufferSize > 0u);
+
+    if (stats == ZR_NULL) {
+        buffer[0] = '\0';
+        return;
+    }
+
+    written = snprintf(buffer,
+                       bufferSize,
+                       "%s stats: caches=%u picSlots=%u hits=%u misses=%u uniqueReceivers=%u",
+                       label != ZR_NULL ? label : "<member>",
+                       (unsigned int)stats->cacheEntryCount,
+                       (unsigned int)stats->totalPicSlots,
+                       (unsigned int)stats->totalHitCount,
+                       (unsigned int)stats->totalMissCount,
+                       (unsigned int)stats->uniqueReceiverPrototypeCount);
+    if (written < 0 || (size_t)written >= bufferSize) {
+        buffer[bufferSize - 1] = '\0';
+    }
+}
+
+static void prepare_project_entry_runtime_module(SZrState *state,
+                                                 SZrFunction *function,
+                                                 SZrString *sourceName) {
+    SZrObjectModule *projectModule;
+    TZrUInt64 pathHash;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    projectModule = ZrCore_Module_Create(state);
+    TEST_ASSERT_NOT_NULL(projectModule);
+
+    pathHash = ZrCore_Module_CalculatePathHash(state, sourceName);
+    ZrCore_Module_SetInfo(state, projectModule, ZR_NULL, pathHash, sourceName);
+    ZrCore_Module_CreatePrototypesFromConstants(state, projectModule, function);
+}
+
 #define ZR_TEST_OPCODE_NAME_CASE(INSTRUCTION)                                                                         \
     case ZR_INSTRUCTION_ENUM(INSTRUCTION):                                                                            \
         return #INSTRUCTION;
@@ -146,6 +277,80 @@ static TZrBool find_first_opcode_recursive(const SZrFunction *function,
     }
 
     return ZR_FALSE;
+}
+
+static TZrBool find_nth_opcode_recursive(const SZrFunction *function,
+                                         EZrInstructionCode opcode,
+                                         TZrUInt32 targetOrdinal,
+                                         TZrUInt32 depth,
+                                         const SZrFunction **outFunction,
+                                         TZrUInt32 *outInstructionIndex,
+                                         TZrUInt32 *ioSeenCount) {
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(ioSeenCount);
+    TEST_ASSERT_TRUE_MESSAGE(depth < 64, "Opcode recursion depth exceeded 64");
+
+    if (outFunction != ZR_NULL) {
+        *outFunction = ZR_NULL;
+    }
+    if (outInstructionIndex != ZR_NULL) {
+        *outInstructionIndex = 0;
+    }
+
+    for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+        if ((EZrInstructionCode)function->instructionsList[index].instruction.operationCode != opcode) {
+            continue;
+        }
+
+        (*ioSeenCount)++;
+        if (*ioSeenCount != targetOrdinal) {
+            continue;
+        }
+
+        if (outFunction != ZR_NULL) {
+            *outFunction = function;
+        }
+        if (outInstructionIndex != ZR_NULL) {
+            *outInstructionIndex = index;
+        }
+        return ZR_TRUE;
+    }
+
+    if (function->childFunctionList != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+            if (find_nth_opcode_recursive(&function->childFunctionList[index],
+                                          opcode,
+                                          targetOrdinal,
+                                          depth + 1,
+                                          outFunction,
+                                          outInstructionIndex,
+                                          ioSeenCount)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static const SZrFunctionMemberEntry *find_member_entry_by_symbol(const SZrFunction *function,
+                                                                 const char *expectedSymbol) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->memberEntries == ZR_NULL || expectedSymbol == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < function->memberEntryLength; index++) {
+        const SZrFunctionMemberEntry *entry = &function->memberEntries[index];
+        const char *actualSymbol = entry->symbol != ZR_NULL ? ZrCore_String_GetNativeString(entry->symbol) : ZR_NULL;
+
+        if (actualSymbol != ZR_NULL && strcmp(actualSymbol, expectedSymbol) == 0) {
+            return entry;
+        }
+    }
+
+    return ZR_NULL;
 }
 
 static void append_instruction_window_line(char *buffer,
@@ -400,6 +605,64 @@ static void build_opcode_window_message(const SZrFunction *rootFunction,
     }
 }
 
+static void build_nth_opcode_window_message(const SZrFunction *rootFunction,
+                                            EZrInstructionCode opcode,
+                                            TZrUInt32 occurrence,
+                                            char *buffer,
+                                            size_t bufferSize) {
+    const SZrFunction *ownerFunction = ZR_NULL;
+    TZrUInt32 instructionIndex = 0;
+    TZrUInt32 seenCount = 0;
+    TZrUInt32 firstIndex;
+    TZrUInt32 endIndex;
+    size_t length = 0;
+    int written;
+
+    TEST_ASSERT_NOT_NULL(rootFunction);
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE_MESSAGE(bufferSize > 0, "Nth opcode window buffer size must be positive");
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0u, occurrence, "Opcode occurrence must be positive");
+
+    buffer[0] = '\0';
+    if (!find_nth_opcode_recursive(rootFunction,
+                                   opcode,
+                                   occurrence,
+                                   0,
+                                   &ownerFunction,
+                                   &instructionIndex,
+                                   &seenCount) ||
+        ownerFunction == ZR_NULL) {
+        snprintf(buffer,
+                 bufferSize,
+                 "No %s instruction found at occurrence %u",
+                 instruction_opcode_name(opcode),
+                 (unsigned int)occurrence);
+        return;
+    }
+
+    firstIndex = instructionIndex > 10 ? instructionIndex - 10 : 0;
+    endIndex = instructionIndex + 10;
+    if (endIndex >= ownerFunction->instructionsLength) {
+        endIndex = ownerFunction->instructionsLength - 1;
+    }
+
+    written = snprintf(buffer,
+                       bufferSize,
+                       "%uth %s remains in function '%s' at instruction %u",
+                       (unsigned int)occurrence,
+                       instruction_opcode_name(opcode),
+                       function_name_or_anonymous(ownerFunction),
+                       (unsigned int)instructionIndex);
+    if (written <= 0 || (size_t)written >= bufferSize) {
+        return;
+    }
+    length = (size_t)written;
+
+    for (TZrUInt32 index = firstIndex; index <= endIndex; index++) {
+        append_instruction_window_line(buffer, bufferSize, &length, ownerFunction, index);
+    }
+}
+
 static TZrBool opcode_is_super_array_get_int_family(EZrInstructionCode opcode) {
     return opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT) ||
            opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST);
@@ -479,6 +742,313 @@ static TZrUInt32 count_opcode_recursive(const SZrFunction *function, EZrInstruct
     return count;
 }
 
+static void append_opcode_hits_recursive(const SZrFunction *function,
+                                         EZrInstructionCode opcode,
+                                         TZrUInt32 depth,
+                                         char *buffer,
+                                         size_t bufferSize,
+                                         size_t *length,
+                                         TZrUInt32 *ioHitCount) {
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_NOT_NULL(length);
+    TEST_ASSERT_NOT_NULL(ioHitCount);
+    TEST_ASSERT_TRUE_MESSAGE(depth < 64, "Opcode hit recursion depth exceeded 64");
+
+    if (function->instructionsList != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+            const TZrInstruction *instruction = &function->instructionsList[index];
+            EZrInstructionCode instructionOpcode =
+                    (EZrInstructionCode)instruction->instruction.operationCode;
+            TZrUInt32 lineInSource = 0;
+            int written;
+
+            if (instructionOpcode != opcode) {
+                continue;
+            }
+
+            if (function->lineInSourceList != ZR_NULL) {
+                lineInSource = function->lineInSourceList[index];
+            }
+
+            (*ioHitCount)++;
+            if (*ioHitCount > 8 || *length >= bufferSize) {
+                continue;
+            }
+
+            written = snprintf(buffer + *length,
+                               bufferSize - *length,
+                               " [%u]%s#%u(line=%u,dst=%u",
+                               (unsigned int)*ioHitCount,
+                               function_name_or_anonymous(function),
+                               (unsigned int)index,
+                               (unsigned int)lineInSource,
+                               (unsigned int)instruction->instruction.operandExtra);
+            if (written <= 0) {
+                continue;
+            }
+
+            if ((size_t)written >= bufferSize - *length) {
+                *length = bufferSize;
+                return;
+            }
+
+            *length += (size_t)written;
+
+            switch (instructionOpcode) {
+                case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+                case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
+                case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+                case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
+                case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
+                case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
+                case ZR_INSTRUCTION_ENUM(DYN_CALL):
+                case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL):
+                case ZR_INSTRUCTION_ENUM(META_CALL):
+                case ZR_INSTRUCTION_ENUM(META_TAIL_CALL):
+                    written = snprintf(buffer + *length,
+                                       bufferSize - *length,
+                                       ",callee=%u,args=%u",
+                                       (unsigned int)instruction->instruction.operand.operand1[0],
+                                       (unsigned int)instruction->instruction.operand.operand1[1]);
+                    break;
+                case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS):
+                    written = snprintf(buffer + *length,
+                                       bufferSize - *length,
+                                       ",callee=%u,args=0",
+                                       (unsigned int)instruction->instruction.operand.operand1[0]);
+                    break;
+                default:
+                    written = snprintf(buffer + *length, bufferSize - *length, ")");
+                    break;
+            }
+            if (written <= 0) {
+                continue;
+            }
+
+            if ((size_t)written >= bufferSize - *length) {
+                *length = bufferSize;
+                return;
+            }
+
+            *length += (size_t)written;
+
+            if (instructionOpcode == ZR_INSTRUCTION_ENUM(FUNCTION_CALL) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(DYN_CALL) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(META_CALL) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(META_TAIL_CALL) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS) ||
+                instructionOpcode == ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS)) {
+                written = snprintf(buffer + *length, bufferSize - *length, ")");
+                if (written <= 0) {
+                    continue;
+                }
+
+                if ((size_t)written >= bufferSize - *length) {
+                    *length = bufferSize;
+                    return;
+                }
+
+                *length += (size_t)written;
+            }
+        }
+    }
+
+    if (function->childFunctionList != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+            append_opcode_hits_recursive(&function->childFunctionList[index],
+                                         opcode,
+                                         depth + 1,
+                                         buffer,
+                                         bufferSize,
+                                         length,
+                                         ioHitCount);
+        }
+    }
+}
+
+static void build_opcode_hits_message(const SZrFunction *rootFunction,
+                                      EZrInstructionCode opcode,
+                                      char *buffer,
+                                      size_t bufferSize) {
+    size_t length = 0;
+    TZrUInt32 hitCount = 0;
+
+    TEST_ASSERT_NOT_NULL(rootFunction);
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE_MESSAGE(bufferSize > 0, "Opcode hit buffer size must be positive");
+
+    buffer[0] = '\0';
+    append_opcode_hits_recursive(rootFunction, opcode, 0, buffer, bufferSize, &length, &hitCount);
+
+    if (hitCount == 0) {
+        snprintf(buffer, bufferSize, "No %s hits", instruction_opcode_name(opcode));
+        return;
+    }
+
+    if (hitCount > 8 && length < bufferSize) {
+        snprintf(buffer + length,
+                 bufferSize - length,
+                 " ... total=%u",
+                 (unsigned int)hitCount);
+    }
+}
+
+static TZrUInt32 count_opcode_on_source_line_recursive(const SZrFunction *function,
+                                                       EZrInstructionCode opcode,
+                                                       TZrUInt32 lineNumber,
+                                                       TZrUInt32 depth) {
+    TZrUInt32 count = 0;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE_MESSAGE(depth < 64, "Source-line opcode recursion depth exceeded 64");
+
+    if (function->instructionsList != ZR_NULL && function->lineInSourceList != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+            if ((EZrInstructionCode)function->instructionsList[index].instruction.operationCode == opcode &&
+                function->lineInSourceList[index] == lineNumber) {
+                count++;
+            }
+        }
+    }
+
+    if (function->childFunctionList != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+            count += count_opcode_on_source_line_recursive(&function->childFunctionList[index],
+                                                           opcode,
+                                                           lineNumber,
+                                                           depth + 1);
+        }
+    }
+
+    return count;
+}
+
+static TZrBool find_first_opcode_on_source_line_recursive(const SZrFunction *function,
+                                                          EZrInstructionCode opcode,
+                                                          TZrUInt32 lineNumber,
+                                                          TZrUInt32 depth,
+                                                          const SZrFunction **outFunction,
+                                                          TZrUInt32 *outInstructionIndex) {
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_TRUE_MESSAGE(depth < 64, "Source-line opcode recursion depth exceeded 64");
+
+    if (outFunction != ZR_NULL) {
+        *outFunction = ZR_NULL;
+    }
+    if (outInstructionIndex != ZR_NULL) {
+        *outInstructionIndex = 0;
+    }
+
+    if (function->instructionsList != ZR_NULL && function->lineInSourceList != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+            if ((EZrInstructionCode)function->instructionsList[index].instruction.operationCode == opcode &&
+                function->lineInSourceList[index] == lineNumber) {
+                if (outFunction != ZR_NULL) {
+                    *outFunction = function;
+                }
+                if (outInstructionIndex != ZR_NULL) {
+                    *outInstructionIndex = index;
+                }
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    if (function->childFunctionList != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+            if (find_first_opcode_on_source_line_recursive(&function->childFunctionList[index],
+                                                           opcode,
+                                                           lineNumber,
+                                                           depth + 1,
+                                                           outFunction,
+                                                           outInstructionIndex)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void build_opcode_window_message_for_source_line(const SZrFunction *rootFunction,
+                                                        EZrInstructionCode opcode,
+                                                        TZrUInt32 lineNumber,
+                                                        char *buffer,
+                                                        size_t bufferSize) {
+    const SZrFunction *ownerFunction = ZR_NULL;
+    TZrUInt32 instructionIndex = 0;
+    TZrUInt32 firstIndex;
+    TZrUInt32 endIndex;
+    size_t length = 0;
+    int written;
+
+    TEST_ASSERT_NOT_NULL(rootFunction);
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE_MESSAGE(bufferSize > 0, "Opcode window buffer size must be positive");
+
+    buffer[0] = '\0';
+    if (!find_first_opcode_on_source_line_recursive(rootFunction,
+                                                    opcode,
+                                                    lineNumber,
+                                                    0,
+                                                    &ownerFunction,
+                                                    &instructionIndex) ||
+        ownerFunction == ZR_NULL) {
+        snprintf(buffer,
+                 bufferSize,
+                 "No %s instruction found on source line %u",
+                 instruction_opcode_name(opcode),
+                 (unsigned int)lineNumber);
+        return;
+    }
+
+    firstIndex = instructionIndex > 10 ? instructionIndex - 10 : 0;
+    endIndex = instructionIndex + 10;
+    if (endIndex >= ownerFunction->instructionsLength) {
+        endIndex = ownerFunction->instructionsLength - 1;
+    }
+
+    written = snprintf(buffer,
+                       bufferSize,
+                       "First %s on source line %u remains in function '%s' at instruction %u",
+                       instruction_opcode_name(opcode),
+                       (unsigned int)lineNumber,
+                       function_name_or_anonymous(ownerFunction),
+                       (unsigned int)instructionIndex);
+    if (written <= 0 || (size_t)written >= bufferSize) {
+        return;
+    }
+    length = (size_t)written;
+
+    for (TZrUInt32 index = firstIndex; index <= endIndex; index++) {
+        append_instruction_window_line(buffer, bufferSize, &length, ownerFunction, index);
+    }
+}
+
 static const SZrFunctionLocalVariable *find_local_variable_by_name(const SZrFunction *function, const char *name) {
     TEST_ASSERT_NOT_NULL(function);
     TEST_ASSERT_NOT_NULL(name);
@@ -493,6 +1063,27 @@ static const SZrFunctionLocalVariable *find_local_variable_by_name(const SZrFunc
 
         if (localName != ZR_NULL && strcmp(localName, name) == 0) {
             return local;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const SZrFunctionExportedVariable *find_exported_variable_by_name(const SZrFunction *function, const char *name) {
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(name);
+
+    if (function->exportedVariables == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0; index < function->exportedVariableLength; index++) {
+        const SZrFunctionExportedVariable *exported = &function->exportedVariables[index];
+        const char *exportedName =
+                exported->name != ZR_NULL ? ZrCore_String_GetNativeString(exported->name) : ZR_NULL;
+
+        if (exportedName != ZR_NULL && strcmp(exportedName, name) == 0) {
+            return exported;
         }
     }
 
@@ -1897,6 +2488,56 @@ void test_lsp_language_feature_matrix_copy_runtime_keeps_top_level_closure_captu
     ZR_TEST_DIVIDER();
 }
 
+void test_decorator_import_project_run_returns_expected_total(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Decorator Import Project Run Returns Expected Total";
+    char projectPath[512];
+    SZrGlobalState *global = ZR_NULL;
+    SZrState *state = ZR_NULL;
+    ZrProjectRunRequest request;
+    EZrThreadStatus outerStatus;
+    SZrTypeValue result;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Decorator import project runtime",
+                 "Testing that the decorator_import project executes through ZrLibrary_Project_Run and preserves decorator metadata plus imported module call results without crashing.");
+
+    snprintf(projectPath,
+             sizeof(projectPath),
+             "%s/fixtures/projects/decorator_import/decorator_import.zrp",
+             ZR_VM_TESTS_SOURCE_DIR);
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibMath_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibContainer_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibFfi_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibNetwork_Register(global));
+    TEST_ASSERT_TRUE(ZrCore_TaskRuntime_RegisterBuiltins(global));
+
+    request.result = &result;
+    ZrCore_Value_ResetAsNull(request.result);
+    request.status = ZR_THREAD_STATUS_INVALID;
+    outerStatus = ZrCore_Exception_TryRun(state, run_project_body, &request);
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, outerStatus);
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, request.status);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, request.result->type);
+    TEST_ASSERT_EQUAL_INT64(31, request.result->value.nativeObject.nativeInt64);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    ZR_TEST_DIVIDER();
+}
+
 void test_language_debug_gauntlet_project_run_returns_expected_banner_and_checksum(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Language Debug Gauntlet Project Run Returns Expected Banner And Checksum";
@@ -1984,6 +2625,79 @@ void test_benchmark_numeric_loops_project_run_returns_expected_checksum(void) {
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, request.result->type);
     TEST_ASSERT_EQUAL_INT64(793446923, request.result->value.nativeObject.nativeInt64);
 
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    ZR_TEST_DIVIDER();
+}
+
+void test_dispatch_loops_benchmark_project_runtime_keeps_step_member_pic_coverage(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Dispatch Loops Benchmark Runtime Keeps Step Member PIC Coverage";
+    char projectPath[512];
+    char sourcePath[512];
+    char *source = ZR_NULL;
+    SZrGlobalState *global = ZR_NULL;
+    SZrState *state = ZR_NULL;
+    SZrString *sourceName = ZR_NULL;
+    SZrFunction *function = ZR_NULL;
+    ZrMemberCallsiteStats stepStats;
+    char stepStatsMessage[256];
+    SZrTypeValue result;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("dispatch benchmark member PIC coverage",
+                 "Testing that the real dispatch_loops benchmark run keeps `step` member callsites warm across all four worker receiver variants instead of thrashing a smaller PIC and falling back repeatedly.");
+
+    snprintf(projectPath,
+             sizeof(projectPath),
+             "%s/benchmarks/cases/dispatch_loops/zr/benchmark_dispatch_loops.zrp",
+             ZR_VM_TESTS_SOURCE_DIR);
+    snprintf(sourcePath,
+             sizeof(sourcePath),
+             "%s/benchmarks/cases/dispatch_loops/zr/src/main.zr",
+             ZR_VM_TESTS_SOURCE_DIR);
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(global));
+    TEST_ASSERT_NOT_NULL(state->global->compileSource);
+
+    source = read_text_file_owned(sourcePath);
+    TEST_ASSERT_NOT_NULL(source);
+
+    sourceName = ZrCore_String_CreateFromNative(state, sourcePath);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = state->global->compileSource(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+    prepare_project_entry_runtime_module(state, function, sourceName);
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(320214929, result.value.nativeObject.nativeInt64);
+
+    memset(&stepStats, 0, sizeof(stepStats));
+    collect_member_callsite_stats_recursive(function,
+                                            ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET,
+                                            "step",
+                                            0,
+                                            &stepStats);
+    format_member_callsite_stats("step", &stepStats, stepStatsMessage, sizeof(stepStatsMessage));
+
+    TEST_ASSERT_TRUE_MESSAGE(stepStats.cacheEntryCount > 0u, stepStatsMessage);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(4u, stepStats.uniqueReceiverPrototypeCount, stepStatsMessage);
+    TEST_ASSERT_TRUE_MESSAGE(stepStats.totalMissCount <= 8u, stepStatsMessage);
+    TEST_ASSERT_TRUE_MESSAGE(stepStats.totalHitCount > stepStats.totalMissCount, stepStatsMessage);
+
+    free(source);
+    ZrCore_Function_Free(state, function);
     timer.endTime = clock();
     ZR_TEST_PASS(timer, testSummary);
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
@@ -2654,6 +3368,417 @@ void test_known_native_calls_quicken_to_dedicated_call_family(void) {
     timer.endTime = clock();
     ZR_TEST_PASS(timer, testSummary);
     ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Typed Member Calls Quicken To Known VM Call Family";
+    const char *source =
+            "class Counter {\n"
+            "    pub var value: int;\n"
+            "    pub step(delta: int): int {\n"
+            "        this.value = this.value + delta;\n"
+            "        return this.value;\n"
+            "    }\n"
+            "    pub read(): int {\n"
+            "        return this.value;\n"
+            "    }\n"
+            "}\n"
+            "var counter = new Counter();\n"
+            "counter.value = 3;\n"
+            "var first = counter.step(4);\n"
+            "var second = counter.read();\n"
+            "return first + second;\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    const SZrFunctionMemberEntry *stepEntry;
+    const SZrFunctionMemberEntry *readEntry;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("typed member known-call quickening",
+                 "Testing that typed instance method calls lower into GET_MEMBER_SLOT plus the KNOWN_VM_CALL family instead of staying on generic FUNCTION_CALL.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+
+    sourceName = ZrCore_String_CreateFromNative(state, "typed_member_known_call_quickening_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 0),
+            "Typed method calls should keep member-slot access on the typed receiver fast path");
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            1u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), 0),
+            "Typed method calls, including receiver-bound zero-arg methods, should quicken to KNOWN_VM_CALL");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 0) +
+                    count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS), 0),
+            "Typed method calls should not fall back to the generic FUNCTION_CALL family");
+    stepEntry = find_member_entry_by_symbol(function, "step");
+    readEntry = find_member_entry_by_symbol(function, "read");
+    TEST_ASSERT_NOT_NULL_MESSAGE(stepEntry, "Typed member quickening fixture must retain a member entry for step");
+    TEST_ASSERT_NOT_NULL_MESSAGE(readEntry, "Typed member quickening fixture must retain a member entry for read");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+            ZR_FUNCTION_MEMBER_ENTRY_KIND_BOUND_DESCRIPTOR,
+            stepEntry->entryKind,
+            "Typed member slot entries should bind the runtime descriptor at compile time for step");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(
+            ZR_FUNCTION_MEMBER_ENTRY_KIND_BOUND_DESCRIPTOR,
+            readEntry->entryKind,
+            "Typed member slot entries should bind the runtime descriptor at compile time for read");
+    TEST_ASSERT_TRUE_MESSAGE(stepEntry->prototypeIndex < function->prototypeCount,
+                             "step member entry should point at a serialized runtime prototype");
+    TEST_ASSERT_TRUE_MESSAGE(readEntry->prototypeIndex < function->prototypeCount,
+                             "read member entry should point at a serialized runtime prototype");
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(14, result);
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_direct_child_function_calls_quicken_to_known_vm_call_family(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Direct Child Function Calls Quicken To Known VM Call Family";
+    const char *source =
+            "labelFor(slot: int): string {\n"
+            "    var normalized = slot % 4;\n"
+            "    if (normalized == 0) {\n"
+            "        return \"aa\";\n"
+            "    }\n"
+            "    if (normalized == 1) {\n"
+            "        return \"bb\";\n"
+            "    }\n"
+            "    if (normalized == 2) {\n"
+            "        return \"cc\";\n"
+            "    }\n"
+            "    return \"dd\";\n"
+            "}\n"
+            "var key = labelFor(2 + 4);\n"
+            "if (key == \"cc\") {\n"
+            "    return 1;\n"
+            "}\n"
+            "return 0;\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("direct known-vm call lowering",
+                 "Testing that direct child-function calls like labelFor(...) lower into the KNOWN_VM_CALL family instead of remaining on generic FUNCTION_CALL.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+
+    sourceName = ZrCore_String_CreateFromNative(state, "direct_child_function_known_call_quickening_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), 0) +
+                    count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS), 0),
+            "Direct child-function call sites should quicken to the KNOWN_VM_CALL family");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 0) +
+                    count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS), 0),
+            "Direct child-function call sites should not remain on the generic FUNCTION_CALL family");
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_loop_child_function_calls_quicken_to_known_vm_call_family(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Loop Child Function Calls Quicken To Known VM Call Family";
+    const char *source =
+            "labelFor(slot: int): string {\n"
+            "    var normalized = slot % 4;\n"
+            "    if (normalized == 0) {\n"
+            "        return \"aa\";\n"
+            "    }\n"
+            "    if (normalized == 1) {\n"
+            "        return \"bb\";\n"
+            "    }\n"
+            "    if (normalized == 2) {\n"
+            "        return \"cc\";\n"
+            "    }\n"
+            "    return \"dd\";\n"
+            "}\n"
+            "var total = 0;\n"
+            "var i = 0;\n"
+            "while (i <= 3) {\n"
+            "    var label = labelFor(i);\n"
+            "    if (label == \"cc\") {\n"
+            "        total = total + 1;\n"
+            "    }\n"
+            "    i = i + 1;\n"
+            "}\n"
+            "return total;\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    TZrInt64 result = 0;
+    char genericCallWindow[1024];
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("loop known-vm call lowering",
+                 "Testing that direct child-function calls inside loop bodies keep VM callable provenance and quicken to KNOWN_VM_CALL instead of remaining on generic FUNCTION_CALL.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+
+    sourceName = ZrCore_String_CreateFromNative(state, "loop_child_function_known_call_quickening_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    build_opcode_window_message(function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL), genericCallWindow, sizeof(genericCallWindow));
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), 0),
+            "Loop child-function call sites should quicken to KNOWN_VM_CALL");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 0) +
+                    count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS), 0),
+            genericCallWindow);
+
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(1, result);
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Map Object Access Benchmark Project Compile Quickens LabelFor Loop Call";
+    char projectPath[512];
+    char sourcePath[512];
+    char *source = ZR_NULL;
+    SZrGlobalState *global = ZR_NULL;
+    SZrState *state = ZR_NULL;
+    SZrString *sourceName = ZR_NULL;
+    SZrFunction *function = ZR_NULL;
+    char genericCallWindow[1024];
+    char knownCallWindow[1024];
+    char firstGenericCallWindow[1024];
+    char firstKnownCallWindow[1024];
+    char secondGenericCallWindow[1024];
+    char functionCallHits[1024];
+    char superFunctionCallHits[1024];
+    char knownVmCallHits[1024];
+    char superKnownVmCallHits[1024];
+    char labelForSlotSummary[1024];
+    char secondGenericCalleeSummary[1024];
+    char failureMessage[4096];
+    const SZrFunctionLocalVariable *labelForLocal = ZR_NULL;
+    const SZrFunctionExportedVariable *labelForExport = ZR_NULL;
+    const SZrFunction *secondGenericOwner = ZR_NULL;
+    TZrUInt32 secondGenericInstructionIndex = 0;
+    TZrUInt32 secondGenericSeenCount = 0;
+    TZrBool secondFunctionCallStillGeneric = ZR_FALSE;
+    TZrUInt32 knownCallCount;
+    TZrUInt32 genericCallCount;
+    TZrUInt32 dynCallCount;
+    TZrUInt32 totalKnownCallCount;
+    TZrUInt32 totalGenericCallCount;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("benchmark loop known-vm call lowering",
+                 "Testing that the real map_object_access project compile path quickens main.zr:33 labelFor(outer + inner) to KNOWN_VM_CALL instead of leaving it on generic FUNCTION_CALL.");
+
+    snprintf(projectPath,
+             sizeof(projectPath),
+             "%s/benchmarks/cases/map_object_access/zr/benchmark_map_object_access.zrp",
+             ZR_VM_TESTS_SOURCE_DIR);
+    snprintf(sourcePath,
+             sizeof(sourcePath),
+             "%s/benchmarks/cases/map_object_access/zr/src/main.zr",
+             ZR_VM_TESTS_SOURCE_DIR);
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(global));
+    TEST_ASSERT_TRUE(ZrVmLibContainer_Register(global));
+    TEST_ASSERT_NOT_NULL(state->global->compileSource);
+
+    source = read_text_file_owned(sourcePath);
+    TEST_ASSERT_NOT_NULL(source);
+
+    sourceName = ZrCore_String_CreateFromNative(state, sourcePath);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = state->global->compileSource(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    build_opcode_window_message_for_source_line(function,
+                                                ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                                33u,
+                                                genericCallWindow,
+                                                sizeof(genericCallWindow));
+    build_opcode_window_message_for_source_line(function,
+                                                ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                                                33u,
+                                                knownCallWindow,
+                                                sizeof(knownCallWindow));
+    build_opcode_window_message(function,
+                                ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                firstGenericCallWindow,
+                                sizeof(firstGenericCallWindow));
+    build_opcode_window_message(function,
+                                ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                                firstKnownCallWindow,
+                                sizeof(firstKnownCallWindow));
+    build_nth_opcode_window_message(function,
+                                    ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                    2u,
+                                    secondGenericCallWindow,
+                                    sizeof(secondGenericCallWindow));
+    build_opcode_hits_message(function,
+                              ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                              functionCallHits,
+                              sizeof(functionCallHits));
+    build_opcode_hits_message(function,
+                              ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS),
+                              superFunctionCallHits,
+                              sizeof(superFunctionCallHits));
+    build_opcode_hits_message(function,
+                              ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                              knownVmCallHits,
+                              sizeof(knownVmCallHits));
+    build_opcode_hits_message(function,
+                              ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS),
+                              superKnownVmCallHits,
+                              sizeof(superKnownVmCallHits));
+    secondGenericCalleeSummary[0] = '\0';
+    if (find_nth_opcode_recursive(function,
+                                  ZR_INSTRUCTION_ENUM(FUNCTION_CALL),
+                                  2u,
+                                  0,
+                                  &secondGenericOwner,
+                                  &secondGenericInstructionIndex,
+                                  &secondGenericSeenCount) &&
+        secondGenericOwner != ZR_NULL) {
+        secondFunctionCallStillGeneric = ZR_TRUE;
+        size_t secondGenericCalleeSummaryLength = 0;
+        const TZrInstruction *secondGenericInstruction =
+                &secondGenericOwner->instructionsList[secondGenericInstructionIndex];
+        append_slot_metadata(secondGenericCalleeSummary,
+                             sizeof(secondGenericCalleeSummary),
+                             &secondGenericCalleeSummaryLength,
+                             secondGenericOwner,
+                             secondGenericInstructionIndex,
+                             (TZrUInt32)secondGenericInstruction->instruction.operand.operand1[0]);
+    } else {
+        snprintf(secondGenericCalleeSummary,
+                 sizeof(secondGenericCalleeSummary),
+                 "2nd FUNCTION_CALL callee summary unavailable");
+    }
+    labelForSlotSummary[0] = '\0';
+    labelForLocal = find_local_variable_by_name(function, "labelFor");
+    labelForExport = find_exported_variable_by_name(function, "labelFor");
+    if (labelForLocal != ZR_NULL && function->instructionsLength > 0) {
+        size_t labelSummaryLength = 0;
+        append_slot_metadata(labelForSlotSummary,
+                             sizeof(labelForSlotSummary),
+                             &labelSummaryLength,
+                             function,
+                             function->instructionsLength - 1u,
+                             labelForLocal->stackSlot);
+    } else {
+        snprintf(labelForSlotSummary, sizeof(labelForSlotSummary), "labelFor local binding not found");
+    }
+
+    knownCallCount = count_opcode_on_source_line_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), 33u, 0);
+    genericCallCount = count_opcode_on_source_line_recursive(function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 33u, 0) +
+                       count_opcode_on_source_line_recursive(function,
+                                                             ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS),
+                                                             33u,
+                                                             0);
+    dynCallCount = count_opcode_on_source_line_recursive(function, ZR_INSTRUCTION_ENUM(DYN_CALL), 33u, 0) +
+                   count_opcode_on_source_line_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS), 33u, 0);
+    totalKnownCallCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), 0) +
+                          count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS), 0);
+    totalGenericCallCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 0) +
+                            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS), 0);
+
+    snprintf(failureMessage,
+             sizeof(failureMessage),
+             "line33 counts: KNOWN_VM_CALL=%u FUNCTION_CALL=%u DYN_CALL=%u | total-known=%u total-generic=%u | line33-known-window: %s | line33-generic-window: %s | first-generic-window: %s | second-generic-window: %s | first-known-window: %s | function-call-hits: %s | super-function-call-hits: %s | known-vm-call-hits: %s | super-known-vm-call-hits: %s | second-generic-callee: %s",
+             (unsigned int)knownCallCount,
+             (unsigned int)genericCallCount,
+             (unsigned int)dynCallCount,
+             (unsigned int)totalKnownCallCount,
+             (unsigned int)totalGenericCallCount,
+             knownCallWindow,
+             genericCallWindow,
+             firstGenericCallWindow,
+             secondGenericCallWindow,
+             firstKnownCallWindow,
+             functionCallHits,
+             superFunctionCallHits,
+             knownVmCallHits,
+             superKnownVmCallHits,
+             secondGenericCalleeSummary);
+    if (labelForLocal != ZR_NULL) {
+        size_t usedLength = strlen(failureMessage);
+        snprintf(failureMessage + usedLength,
+                 sizeof(failureMessage) - usedLength,
+                 " | labelFor-slot=%u export-child=%u export-kind=%u writers=%s",
+                 (unsigned int)labelForLocal->stackSlot,
+                 labelForExport != ZR_NULL ? (unsigned int)labelForExport->callableChildIndex : UINT32_MAX,
+                 labelForExport != ZR_NULL ? (unsigned int)labelForExport->exportKind : UINT32_MAX,
+                 labelForSlotSummary);
+    }
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, genericCallCount, failureMessage);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, dynCallCount, failureMessage);
+    TEST_ASSERT_FALSE_MESSAGE(secondFunctionCallStillGeneric, failureMessage);
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0u, totalKnownCallCount, failureMessage);
+
+    ZrCore_Function_Free(state, function);
+    free(source);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
     ZR_TEST_DIVIDER();
 }
 

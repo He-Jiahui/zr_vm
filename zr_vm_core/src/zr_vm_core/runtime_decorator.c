@@ -24,6 +24,86 @@ static const TZrChar *kRuntimeDecoratorMemberDecoratorsFieldName = "__zr_runtime
 
 static SZrObject *runtime_decorator_new_plain_object(SZrState *state);
 
+static ZR_FORCE_INLINE SZrRawObject *runtime_decorator_refresh_forwarded_raw_object(SZrRawObject *rawObject) {
+    SZrRawObject *forwardedObject;
+
+    if (rawObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    forwardedObject = (SZrRawObject *)rawObject->garbageCollectMark.forwardingAddress;
+    return forwardedObject != ZR_NULL ? forwardedObject : rawObject;
+}
+
+static ZR_FORCE_INLINE void runtime_decorator_refresh_forwarded_value_copy(SZrTypeValue *value) {
+    SZrRawObject *forwardedObject;
+
+    if (value == ZR_NULL || !value->isGarbageCollectable || value->value.object == ZR_NULL) {
+        return;
+    }
+
+    forwardedObject = runtime_decorator_refresh_forwarded_raw_object(value->value.object);
+    if (forwardedObject == ZR_NULL || forwardedObject == value->value.object) {
+        return;
+    }
+
+    value->value.object = forwardedObject;
+    value->type = (EZrValueType)forwardedObject->type;
+    value->isNative = forwardedObject->isNative;
+}
+
+static ZR_FORCE_INLINE SZrFunction *runtime_decorator_refresh_forwarded_function(SZrFunction *function) {
+    return function != ZR_NULL ? (SZrFunction *)runtime_decorator_refresh_forwarded_raw_object(
+                                         ZR_CAST_RAW_OBJECT_AS_SUPER(function))
+                               : ZR_NULL;
+}
+
+typedef struct SZrRuntimeDecoratorIgnoredObjectRoot {
+    SZrGlobalState *global;
+    SZrRawObject *object;
+    TZrBool owned;
+} SZrRuntimeDecoratorIgnoredObjectRoot;
+
+static TZrBool runtime_decorator_ignore_value_object(SZrState *state,
+                                                     const SZrTypeValue *value,
+                                                     SZrRuntimeDecoratorIgnoredObjectRoot *root) {
+    TZrBool alreadyIgnored;
+
+    if (root != ZR_NULL) {
+        memset(root, 0, sizeof(*root));
+    }
+
+    if (state == ZR_NULL || root == ZR_NULL || value == ZR_NULL || !value->isGarbageCollectable ||
+        value->value.object == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    alreadyIgnored = ZrCore_GarbageCollector_IsObjectIgnored(state->global, value->value.object);
+    if (!alreadyIgnored && !ZrCore_GarbageCollector_IgnoreObject(state, value->value.object)) {
+        return ZR_FALSE;
+    }
+
+    root->global = state->global;
+    root->object = value->value.object;
+    root->owned = alreadyIgnored ? ZR_FALSE : ZR_TRUE;
+    return ZR_TRUE;
+}
+
+static void runtime_decorator_release_ignored_object_root(SZrRuntimeDecoratorIgnoredObjectRoot *root) {
+    SZrRawObject *object;
+
+    if (root == ZR_NULL) {
+        return;
+    }
+
+    if (root->owned && root->global != ZR_NULL && root->object != ZR_NULL) {
+        object = runtime_decorator_refresh_forwarded_raw_object(root->object);
+        ZrCore_GarbageCollector_UnignoreObject(root->global, object);
+    }
+
+    memset(root, 0, sizeof(*root));
+}
+
 static const TZrChar *runtime_decorator_target_kind_name(EZrRuntimeDecoratorTargetKind targetKind) {
     switch (targetKind) {
         case ZR_RUNTIME_DECORATOR_TARGET_KIND_FIELD:
@@ -444,6 +524,8 @@ static TZrBool runtime_decorator_call_function(SZrState *state,
     SZrFunctionStackAnchor baseAnchor;
     SZrFunctionStackAnchor originalCallInfoTopAnchor;
     SZrFunctionStackAnchor activeCallInfoTopAnchor;
+    SZrTypeValue stableCallable;
+    SZrTypeValue stableArgument;
     SZrTypeValue copiedResult;
     TZrBool hasCallInfoTopAnchor = ZR_FALSE;
     TZrBool hasActiveCallInfoTopAnchor = ZR_FALSE;
@@ -451,6 +533,9 @@ static TZrBool runtime_decorator_call_function(SZrState *state,
     if (state == ZR_NULL || callableValue == ZR_NULL || argumentValue == ZR_NULL) {
         return ZR_FALSE;
     }
+
+    stableCallable = *callableValue;
+    stableArgument = *argumentValue;
 
     savedStackTop = state->stackTop.valuePointer;
     savedCallInfo = state->callInfoList;
@@ -475,13 +560,16 @@ static TZrBool runtime_decorator_call_function(SZrState *state,
         base = savedCallInfo->functionTop.valuePointer;
     }
 
+    runtime_decorator_refresh_forwarded_value_copy(&stableCallable);
+    runtime_decorator_refresh_forwarded_value_copy(&stableArgument);
+
     state->stackTop.valuePointer = base + 2;
     if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
         ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &activeCallInfoTopAnchor);
         hasActiveCallInfoTopAnchor = ZR_TRUE;
     }
-    ZrCore_Stack_CopyValue(state, base, callableValue);
+    ZrCore_Stack_CopyValue(state, base, &stableCallable);
     base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
     if (savedCallInfo != ZR_NULL && hasCallInfoTopAnchor) {
         savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
@@ -489,7 +577,7 @@ static TZrBool runtime_decorator_call_function(SZrState *state,
                                                                                             ? &activeCallInfoTopAnchor
                                                                                             : &originalCallInfoTopAnchor);
     }
-    ZrCore_Stack_CopyValue(state, base + 1, argumentValue);
+    ZrCore_Stack_CopyValue(state, base + 1, &stableArgument);
     base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
     if (savedCallInfo != ZR_NULL && hasCallInfoTopAnchor) {
         savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
@@ -532,6 +620,9 @@ static TZrBool runtime_decorator_call_meta_function(SZrState *state,
     SZrFunctionStackAnchor baseAnchor;
     SZrFunctionStackAnchor originalCallInfoTopAnchor;
     SZrFunctionStackAnchor activeCallInfoTopAnchor;
+    SZrFunction *stableFunction;
+    SZrTypeValue stableSelf;
+    SZrTypeValue stableArgument;
     SZrTypeValue copiedResult;
     TZrBool hasCallInfoTopAnchor = ZR_FALSE;
     TZrBool hasActiveCallInfoTopAnchor = ZR_FALSE;
@@ -539,6 +630,10 @@ static TZrBool runtime_decorator_call_meta_function(SZrState *state,
     if (state == ZR_NULL || function == ZR_NULL || selfValue == ZR_NULL || argumentValue == ZR_NULL) {
         return ZR_FALSE;
     }
+
+    stableFunction = function;
+    stableSelf = *selfValue;
+    stableArgument = *argumentValue;
 
     savedStackTop = state->stackTop.valuePointer;
     savedCallInfo = state->callInfoList;
@@ -563,14 +658,21 @@ static TZrBool runtime_decorator_call_meta_function(SZrState *state,
         base = savedCallInfo->functionTop.valuePointer;
     }
 
+    stableFunction = runtime_decorator_refresh_forwarded_function(stableFunction);
+    runtime_decorator_refresh_forwarded_value_copy(&stableSelf);
+    runtime_decorator_refresh_forwarded_value_copy(&stableArgument);
+    if (stableFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
     state->stackTop.valuePointer = base + 3;
     if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
         savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
         ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &activeCallInfoTopAnchor);
         hasActiveCallInfoTopAnchor = ZR_TRUE;
     }
-    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
-    ZrCore_Stack_CopyValue(state, base + 1, selfValue);
+    ZrCore_Stack_SetRawObjectValue(state, base, ZR_CAST_RAW_OBJECT_AS_SUPER(stableFunction));
+    ZrCore_Stack_CopyValue(state, base + 1, &stableSelf);
     base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
     if (savedCallInfo != ZR_NULL && hasCallInfoTopAnchor) {
         savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
@@ -578,7 +680,7 @@ static TZrBool runtime_decorator_call_meta_function(SZrState *state,
                                                                                             ? &activeCallInfoTopAnchor
                                                                                             : &originalCallInfoTopAnchor);
     }
-    ZrCore_Stack_CopyValue(state, base + 2, argumentValue);
+    ZrCore_Stack_CopyValue(state, base + 2, &stableArgument);
     base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
     if (savedCallInfo != ZR_NULL && hasCallInfoTopAnchor) {
         savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state,
@@ -962,6 +1064,7 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argBase;
     SZrFunctionStackAnchor functionBaseAnchor;
+    SZrRuntimeDecoratorIgnoredObjectRoot reflectionRoot;
     SZrTypeValue *result;
     SZrTypeValue *targetValue;
     SZrTypeValue *decoratorValue;
@@ -970,6 +1073,9 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
     SZrObject *metadataObject;
     SZrObject *decoratorsArray;
     SZrFunction *targetFunction;
+    TZrInt64 returnValue = 1;
+
+    memset(&reflectionRoot, 0, sizeof(reflectionRoot));
 
     if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
         return 0;
@@ -995,7 +1101,7 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
 
     if (targetValue == ZR_NULL || decoratorValue == ZR_NULL) {
         state->stackTop.valuePointer = functionBase + 1;
-        return 1;
+        goto cleanup;
     }
 
     if (!ZrCore_Reflection_TypeOfValue(state, targetValue, &reflectionValue) ||
@@ -1007,10 +1113,16 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
                                                    &result,
                                                    &targetValue,
                                                    &decoratorValue)) {
-            return 0;
+            returnValue = 0;
+            goto cleanup;
         }
         state->stackTop.valuePointer = functionBase + 1;
-        return 1;
+        goto cleanup;
+    }
+
+    if (!runtime_decorator_ignore_value_object(state, &reflectionValue, &reflectionRoot)) {
+        returnValue = 0;
+        goto cleanup;
     }
 
     reflectionObject = ZR_CAST_OBJECT(state, reflectionValue.value.object);
@@ -1022,7 +1134,8 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
                                                &result,
                                                &targetValue,
                                                &decoratorValue)) {
-        return 0;
+        returnValue = 0;
+        goto cleanup;
     }
 
     if (decoratorValue->type == ZR_VALUE_TYPE_FUNCTION ||
@@ -1042,7 +1155,7 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
     }
 
     if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
-        return 1;
+        goto cleanup;
     }
 
     if (!runtime_decorator_restore_apply_frame(state,
@@ -1052,8 +1165,11 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
                                                &result,
                                                &targetValue,
                                                &decoratorValue)) {
-        return 0;
+        returnValue = 0;
+        goto cleanup;
     }
+    runtime_decorator_refresh_forwarded_value_copy(&reflectionValue);
+    reflectionObject = ZR_CAST_OBJECT(state, reflectionValue.value.object);
     metadataObject = runtime_decorator_get_object_field_as_object(state, reflectionObject, "metadata", ZR_VALUE_TYPE_OBJECT);
     decoratorsArray = runtime_decorator_get_object_field_as_object(state, reflectionObject, "decorators", ZR_VALUE_TYPE_ARRAY);
 
@@ -1076,30 +1192,38 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyNativeEntry(SZrState *state) {
                                                &functionBaseAnchor,
                                                &functionBase,
                                                &argBase,
-                                               &result,
-                                               &targetValue,
-                                               &decoratorValue)) {
-        return 0;
+                                                   &result,
+                                                   &targetValue,
+                                                   &decoratorValue)) {
+        returnValue = 0;
+        goto cleanup;
     }
     state->stackTop.valuePointer = functionBase + 1;
-    return 1;
+cleanup:
+    runtime_decorator_release_ignored_object_root(&reflectionRoot);
+    return returnValue;
 }
 
 ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyMemberNativeEntry(SZrState *state) {
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argBase;
     SZrFunctionStackAnchor functionBaseAnchor;
+    SZrRuntimeDecoratorIgnoredObjectRoot reflectionRoot;
     SZrTypeValue *result;
     SZrTypeValue *prototypeValue;
     SZrTypeValue *memberNameValue;
     SZrTypeValue *kindValue;
     SZrTypeValue *decoratorValue;
+    SZrTypeValue reflectionValue;
     SZrObjectPrototype *prototype;
     SZrString *memberName;
     EZrRuntimeDecoratorTargetKind targetKind;
     SZrObject *reflectionObject;
     SZrObject *metadataObject;
     SZrObject *decoratorsArray;
+    TZrInt64 returnValue = 1;
+
+    memset(&reflectionRoot, 0, sizeof(reflectionRoot));
 
     if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
         return 0;
@@ -1144,10 +1268,11 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyMemberNativeEntry(SZrState *st
                                                           &memberNameValue,
                                                           &kindValue,
                                                           &decoratorValue)) {
-            return 0;
+            returnValue = 0;
+            goto cleanup;
         }
         state->stackTop.valuePointer = functionBase + 1;
-        return 1;
+        goto cleanup;
     }
 
     prototype = (SZrObjectPrototype *)ZR_CAST_OBJECT(state, prototypeValue->value.object);
@@ -1164,10 +1289,18 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyMemberNativeEntry(SZrState *st
                                                           &memberNameValue,
                                                           &kindValue,
                                                           &decoratorValue)) {
-            return 0;
+            returnValue = 0;
+            goto cleanup;
         }
         state->stackTop.valuePointer = functionBase + 1;
-        return 1;
+        goto cleanup;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &reflectionValue, ZR_CAST_RAW_OBJECT_AS_SUPER(reflectionObject));
+    reflectionValue.type = ZR_VALUE_TYPE_OBJECT;
+    if (!runtime_decorator_ignore_value_object(state, &reflectionValue, &reflectionRoot)) {
+        returnValue = 0;
+        goto cleanup;
     }
 
     runtime_decorator_append_record(state, reflectionObject, decoratorValue);
@@ -1180,35 +1313,32 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyMemberNativeEntry(SZrState *st
                                                       &memberNameValue,
                                                       &kindValue,
                                                       &decoratorValue)) {
-        return 0;
+        returnValue = 0;
+        goto cleanup;
     }
 
-    {
-        SZrTypeValue reflectionValue;
-        ZrCore_Value_InitAsRawObject(state, &reflectionValue, ZR_CAST_RAW_OBJECT_AS_SUPER(reflectionObject));
-        reflectionValue.type = ZR_VALUE_TYPE_OBJECT;
-
-        if (decoratorValue->type == ZR_VALUE_TYPE_FUNCTION ||
-            decoratorValue->type == ZR_VALUE_TYPE_CLOSURE ||
-            decoratorValue->type == ZR_VALUE_TYPE_NATIVE_POINTER) {
-            if (!runtime_decorator_call_function(state, decoratorValue, &reflectionValue, ZR_NULL) &&
-                state->threadStatus == ZR_THREAD_STATUS_FINE) {
-                ZrCore_Debug_RunError(state, "runtime decorator function call failed");
-            }
-        } else if (decoratorValue->type == ZR_VALUE_TYPE_OBJECT) {
-            if (!runtime_decorator_invoke_object_decorator(state, decoratorValue, &reflectionValue) &&
-                state->threadStatus == ZR_THREAD_STATUS_FINE) {
-                ZrCore_Debug_RunError(state, "runtime decorator object must define @decorate");
-            }
-        } else {
-            ZrCore_Debug_RunError(state, "runtime decorator target must be a callable or decorator object");
+    if (decoratorValue->type == ZR_VALUE_TYPE_FUNCTION ||
+        decoratorValue->type == ZR_VALUE_TYPE_CLOSURE ||
+        decoratorValue->type == ZR_VALUE_TYPE_NATIVE_POINTER) {
+        if (!runtime_decorator_call_function(state, decoratorValue, &reflectionValue, ZR_NULL) &&
+            state->threadStatus == ZR_THREAD_STATUS_FINE) {
+            ZrCore_Debug_RunError(state, "runtime decorator function call failed");
         }
+    } else if (decoratorValue->type == ZR_VALUE_TYPE_OBJECT) {
+        if (!runtime_decorator_invoke_object_decorator(state, decoratorValue, &reflectionValue) &&
+            state->threadStatus == ZR_THREAD_STATUS_FINE) {
+            ZrCore_Debug_RunError(state, "runtime decorator object must define @decorate");
+        }
+    } else {
+        ZrCore_Debug_RunError(state, "runtime decorator target must be a callable or decorator object");
     }
 
     if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
-        return 1;
+        goto cleanup;
     }
 
+    runtime_decorator_refresh_forwarded_value_copy(&reflectionValue);
+    reflectionObject = ZR_CAST_OBJECT(state, reflectionValue.value.object);
     metadataObject = runtime_decorator_get_object_field_as_object(state, reflectionObject, "metadata", ZR_VALUE_TYPE_OBJECT);
     decoratorsArray = runtime_decorator_get_object_field_as_object(state, reflectionObject, "decorators", ZR_VALUE_TYPE_ARRAY);
     runtime_decorator_commit_member_overlay(state, prototype, memberName, targetKind, metadataObject, decoratorsArray);
@@ -1222,8 +1352,11 @@ ZR_CORE_API TZrInt64 ZrCore_RuntimeDecorator_ApplyMemberNativeEntry(SZrState *st
                                                       &memberNameValue,
                                                       &kindValue,
                                                       &decoratorValue)) {
-        return 0;
+        returnValue = 0;
+        goto cleanup;
     }
     state->stackTop.valuePointer = functionBase + 1;
-    return 1;
+cleanup:
+    runtime_decorator_release_ignored_object_root(&reflectionRoot);
+    return returnValue;
 }

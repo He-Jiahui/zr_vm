@@ -49,9 +49,6 @@ static void zr_cli_command_init(SZrCliCommand *command) {
     command->interactiveAfterRun = ZR_FALSE;
     command->emitIntermediate = ZR_FALSE;
     command->incremental = ZR_FALSE;
-    command->emitAotC = ZR_FALSE;
-    command->emitAotLlvm = ZR_FALSE;
-    command->requireAotPath = ZR_FALSE;
     command->emitExecutedVia = ZR_FALSE;
     command->debugEnabled = ZR_FALSE;
     command->debugWait = ZR_FALSE;
@@ -71,20 +68,8 @@ static TZrBool zr_cli_command_parse_execution_mode(const TZrChar *text, EZrCliEx
         *outMode = ZR_CLI_EXECUTION_MODE_BINARY;
         return ZR_TRUE;
     }
-    if (strcmp(text, "aot_c") == 0) {
-        *outMode = ZR_CLI_EXECUTION_MODE_AOT_C;
-        return ZR_TRUE;
-    }
-    if (strcmp(text, "aot_llvm") == 0) {
-        *outMode = ZR_CLI_EXECUTION_MODE_AOT_LLVM;
-        return ZR_TRUE;
-    }
 
     return ZR_FALSE;
-}
-
-static TZrBool zr_cli_command_execution_mode_is_aot(EZrCliExecutionMode mode) {
-    return (TZrBool)(mode == ZR_CLI_EXECUTION_MODE_AOT_C || mode == ZR_CLI_EXECUTION_MODE_AOT_LLVM);
 }
 
 static TZrBool zr_cli_command_set_primary_mode(EZrCliPrimaryMode *currentMode,
@@ -148,8 +133,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "\n"
             "Modifiers:\n"
             "  -i, --interactive                Run the selected mode, then enter a fresh REPL.\n"
-            "  --execution-mode <mode>          Select interp, binary, aot_c, or aot_llvm for active run paths.\n"
-            "  --require-aot-path               Fail if an aot_* run cannot prove the requested AOT path.\n"
+            "  --execution-mode <mode>          Select interp or binary for active run paths.\n"
             "  --emit-executed-via              Print executed_via=<mode> after a successful run.\n"
             "  --debug                          Start the project under the ZR debugger agent.\n"
             "  --debug-address <addr>           Bind the debugger agent to the given host:port.\n"
@@ -157,8 +141,6 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
             "  --debug-print-endpoint           Print the resolved debugger endpoint after startup.\n"
             "  --intermediate                   Also emit .zri files next to .zro outputs.\n"
             "  --incremental                    Use manifest-based incremental compilation.\n"
-            "  --emit-aot-c                     Also emit project-local AOT C sources/artifacts.\n"
-            "  --emit-aot-llvm                  Also emit project-local AOT LLVM IR artifacts.\n"
             "  --run                            Run the compiled project after a successful compile.\n"
             "\n"
             "Passthrough:\n"
@@ -214,8 +196,7 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "\n"
              "Modifiers:\n"
              "  -i, --interactive                Run the selected mode, then enter a fresh REPL.\n"
-             "  --execution-mode <mode>          Select interp, binary, aot_c, or aot_llvm for active run paths.\n"
-             "  --require-aot-path               Fail if an aot_* run cannot prove the requested AOT path.\n"
+             "  --execution-mode <mode>          Select interp or binary for active run paths.\n"
              "  --emit-executed-via              Print executed_via=<mode> after a successful run.\n"
              "  --debug                          Start the project under the ZR debugger agent.\n"
              "  --debug-address <addr>           Bind the debugger agent to the given host:port.\n"
@@ -223,8 +204,6 @@ static TZrChar *zr_cli_command_format_help_text(const TZrChar *programName) {
              "  --debug-print-endpoint           Print the resolved debugger endpoint after startup.\n"
              "  --intermediate                   Also emit .zri files next to .zro outputs.\n"
              "  --incremental                    Use manifest-based incremental compilation.\n"
-             "  --emit-aot-c                     Also emit project-local AOT C sources/artifacts.\n"
-             "  --emit-aot-llvm                  Also emit project-local AOT LLVM IR artifacts.\n"
              "  --run                            Run the compiled project after a successful compile.\n"
              "\n"
              "Passthrough:\n"
@@ -416,23 +395,8 @@ TZrBool ZrCli_Command_Parse(int argc,
             continue;
         }
 
-        if (strcmp(argument, "--emit-aot-c") == 0) {
-            outCommand->emitAotC = ZR_TRUE;
-            continue;
-        }
-
-        if (strcmp(argument, "--emit-aot-llvm") == 0) {
-            outCommand->emitAotLlvm = ZR_TRUE;
-            continue;
-        }
-
         if (strcmp(argument, "--run") == 0) {
             outCommand->runAfterCompile = ZR_TRUE;
-            continue;
-        }
-
-        if (strcmp(argument, "--require-aot-path") == 0) {
-            outCommand->requireAotPath = ZR_TRUE;
             continue;
         }
 
@@ -509,17 +473,16 @@ TZrBool ZrCli_Command_Parse(int argc,
         return ZR_FALSE;
     }
 
-    if (!compileSeen && (outCommand->emitIntermediate || outCommand->incremental || outCommand->runAfterCompile ||
-                         outCommand->emitAotC || outCommand->emitAotLlvm)) {
+    if (!compileSeen && (outCommand->emitIntermediate || outCommand->incremental || outCommand->runAfterCompile)) {
         zr_cli_write_error(errorBuffer,
                            errorBufferSize,
-                           "--run, --intermediate, --incremental, --emit-aot-c, and --emit-aot-llvm require --compile <project.zrp>");
+                           "--run, --intermediate, and --incremental require --compile <project.zrp>");
         return ZR_FALSE;
     }
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_HELP) {
         if (interactiveRequested || outCommand->emitIntermediate || outCommand->incremental || outCommand->runAfterCompile ||
-            outCommand->emitAotC || outCommand->emitAotLlvm || outCommand->requireAotPath || outCommand->emitExecutedVia ||
+            outCommand->emitExecutedVia ||
             outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
             outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
             outCommand->moduleName != ZR_NULL || outCommand->programArgCount > 0) {
@@ -533,7 +496,7 @@ TZrBool ZrCli_Command_Parse(int argc,
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_VERSION) {
         if (interactiveRequested || outCommand->emitIntermediate || outCommand->incremental || outCommand->runAfterCompile ||
-            outCommand->emitAotC || outCommand->emitAotLlvm || outCommand->requireAotPath || outCommand->emitExecutedVia ||
+            outCommand->emitExecutedVia ||
             outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
             outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
             outCommand->moduleName != ZR_NULL || outCommand->programArgCount > 0) {
@@ -562,7 +525,7 @@ TZrBool ZrCli_Command_Parse(int argc,
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_INLINE &&
         (outCommand->emitIntermediate || outCommand->incremental || outCommand->runAfterCompile ||
-         outCommand->emitAotC || outCommand->emitAotLlvm || outCommand->requireAotPath || outCommand->emitExecutedVia ||
+         outCommand->emitExecutedVia ||
          outCommand->debugEnabled || outCommand->debugWait || outCommand->debugPrintEndpoint ||
          outCommand->debugAddress != ZR_NULL || outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP ||
          outCommand->moduleName != ZR_NULL || compileSeen || explicitProjectSeen)) {
@@ -573,32 +536,20 @@ TZrBool ZrCli_Command_Parse(int argc,
     }
 
     if (compileSeen && !outCommand->runAfterCompile &&
-        (outCommand->requireAotPath || outCommand->emitExecutedVia || outCommand->debugEnabled ||
+        (outCommand->emitExecutedVia || outCommand->debugEnabled ||
          outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP || outCommand->programArgCount > 0)) {
         zr_cli_write_error(errorBuffer,
                            errorBufferSize,
-                           "--execution-mode, --require-aot-path, --emit-executed-via, --debug, and user program arguments require an active run path");
+                           "--execution-mode, --emit-executed-via, --debug, and user program arguments require an active run path");
         return ZR_FALSE;
     }
 
     if (primaryMode == ZR_CLI_PRIMARY_MODE_NONE &&
-        (outCommand->requireAotPath || outCommand->emitExecutedVia || outCommand->debugEnabled ||
+        (outCommand->emitExecutedVia || outCommand->debugEnabled ||
          outCommand->executionMode != ZR_CLI_EXECUTION_MODE_INTERP || outCommand->programArgCount > 0)) {
         zr_cli_write_error(errorBuffer,
                            errorBufferSize,
-                           "--execution-mode, --require-aot-path, --emit-executed-via, --debug, and user program arguments require a project run path");
-        return ZR_FALSE;
-    }
-
-    if (outCommand->requireAotPath && !zr_cli_command_execution_mode_is_aot(outCommand->executionMode)) {
-        zr_cli_write_error(errorBuffer, errorBufferSize, "--require-aot-path requires --execution-mode aot_c or aot_llvm");
-        return ZR_FALSE;
-    }
-
-    if (explicitProjectSeen && zr_cli_command_execution_mode_is_aot(outCommand->executionMode)) {
-        zr_cli_write_error(errorBuffer,
-                           errorBufferSize,
-                           "--project ... -m only supports --execution-mode interp or binary in v1; aot_* is not supported");
+                           "--execution-mode, --emit-executed-via, --debug, and user program arguments require a project run path");
         return ZR_FALSE;
     }
 

@@ -749,6 +749,11 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                     for (TZrUInt32 picIndex = 0; picIndex < picLimit; picIndex++) {
                         SZrFunctionCallSitePicSlot *slot = &cacheEntry->picSlots[picIndex];
 
+                        if (slot->cachedReceiverObject != ZR_NULL) {
+                            garbage_collector_mark_object(state,
+                                                          ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject));
+                            work++;
+                        }
                         if (slot->cachedReceiverPrototype != ZR_NULL) {
                             garbage_collector_mark_object(state,
                                                           ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverPrototype));
@@ -759,6 +764,7 @@ static TZrSize garbage_collector_scan_object(SZrState *state, SZrRawObject *obje
                                                           ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedOwnerPrototype));
                             work++;
                         }
+                        garbage_collector_mark_string_if_present(state, slot->cachedMemberName);
                         garbage_collector_mark_function_if_present(state, slot->cachedFunction, &work);
                     }
                 }

@@ -1339,14 +1339,6 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
         meaning="CLI manifest hashing and hex formatting must reuse shared stable-hash constants.",
     ),
     AuditRule(
-        name="library aot runtime stable-hash constants",
-        path="zr_vm_library/src/zr_vm_library/aot_runtime.c",
-        pattern=r"chunk\s*\[\s*4096\s*\]|hash\s*=\s*1469598103934665603ULL|hash\s*\*=\s*1099511628211ULL|\"%016llx\"|sourceHash\s*\[\s*32\s*\]|zroHash\s*\[\s*32\s*\]",
-        target="zr_hash_conf.h",
-        layer="common",
-        meaning="AOT runtime artifact hashing must reuse shared stable-hash constants and hash-buffer sizing.",
-    ),
-    AuditRule(
         name="lsp stdio header-line buffer",
         path="zr_vm_language_server/stdio/stdio_transport.c",
         pattern=r"headerLine\s*\[\s*1024\s*\]",
@@ -1683,22 +1675,6 @@ MIGRATED_RULES: tuple[AuditRule, ...] = (
         target="ZR_SEMIR_TYPE_TABLE_DEFAULT_INDEX / ZR_SEMIR_OWNERSHIP_STATE_INDEX_FIRST",
         layer="module",
         meaning="SemIR helper-local default type and ownership table indexes should use named local constants instead of raw 0 fallbacks.",
-    ),
-    AuditRule(
-        name="backend aot local empty count and root index",
-        path="zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c",
-        pattern=r"TZrUInt32\s+count\s*=\s*0\s*;|if\s*\(function == ZR_NULL\)\s*\{\s*return 0;\s*\}|entry->flatIndex == 0|functionTable\.count > 0",
-        target="ZR_AOT_COUNT_NONE / ZR_AOT_FUNCTION_TREE_ROOT_INDEX",
-        layer="module",
-        meaning="AOT helper-local empty counts and flattened root-function index should use named local constants instead of raw 0 checks.",
-    ),
-    AuditRule(
-        name="backend aot empty embedded blob byte",
-        path="zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot.c",
-        pattern=r"fprintf\(file,\s*\"    0x00\\n\"\);",
-        target="ZR_AOT_EMBEDDED_BLOB_EMPTY_BYTE",
-        layer="module",
-        meaning="AOT C writer should name the empty embedded-blob placeholder byte instead of writing a raw 0x00 literal.",
     ),
     AuditRule(
         name="parser semantic shared id boundaries in semantic.c",

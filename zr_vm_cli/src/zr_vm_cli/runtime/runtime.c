@@ -12,10 +12,10 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/log.h"
 #include "zr_vm_core/module.h"
+#include "zr_vm_core/reflection.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
-#include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/native_binding.h"
@@ -63,8 +63,6 @@ static void zr_cli_runtime_trace(const TZrChar *format, ...) {
 
 static void zr_cli_runtime_execute_body(SZrState *state, TZrPtr arguments) {
     ZrCliExecuteRequest *request = (ZrCliExecuteRequest *) arguments;
-    SZrClosure *closure;
-    TZrBool ignoredClosure = ZR_FALSE;
     TZrStackValuePointer base;
     SZrFunctionStackAnchor anchor;
     SZrTypeValue *closureValue;
@@ -73,30 +71,39 @@ static void zr_cli_runtime_execute_body(SZrState *state, TZrPtr arguments) {
         return;
     }
 
-    closure = ZrCore_Closure_New(state, 0);
-    if (closure == ZR_NULL) {
-        return;
-    }
-
-    ignoredClosure = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    closure->function = request->function;
-    ZrCore_Closure_InitValue(state, closure);
-
+    zr_cli_runtime_trace("execute body start function=%p stackTop=%p stackSize=%llu",
+                         (void *)request->function,
+                         (void *)state->stackTop.valuePointer,
+                         (unsigned long long)request->function->stackSize);
     base = state->stackTop.valuePointer;
     base = ZrCore_Function_CheckStackAndAnchor(state, request->function->stackSize + 1, base, base, &anchor);
+    zr_cli_runtime_trace("execute body anchored base=%p stackTop=%p",
+                         (void *)base,
+                         (void *)state->stackTop.valuePointer);
 
+    ZrCore_Closure_PushToStack(state, request->function, ZR_NULL, base, state->stackTop.valuePointer);
     closureValue = ZrCore_Stack_GetValue(state->stackTop.valuePointer);
-    ZrCore_Value_InitAsRawObject(state, closureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    if (closureValue == ZR_NULL || closureValue->value.object == ZR_NULL) {
+        zr_cli_runtime_trace("execute body closure push failed slot=%p",
+                             (void *)state->stackTop.valuePointer);
+        return;
+    }
+    zr_cli_runtime_trace("execute body closure slot=%p object=%p rawType=%d",
+                         (void *)state->stackTop.valuePointer,
+                         (void *)closureValue->value.object,
+                         (int)closureValue->value.object->type);
     closureValue->type = ZR_VALUE_TYPE_CLOSURE;
     closureValue->isGarbageCollectable = ZR_TRUE;
     closureValue->isNative = ZR_FALSE;
     state->stackTop.valuePointer++;
 
-    if (ignoredClosure) {
-        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    }
-
+    zr_cli_runtime_trace("execute body call start slot=%p stackTop=%p",
+                         (void *)(state->stackTop.valuePointer - 1),
+                         (void *)state->stackTop.valuePointer);
     request->resultBase = ZrCore_Function_CallAndRestoreAnchor(state, &anchor, 1);
+    zr_cli_runtime_trace("execute body call done resultBase=%p threadStatus=%d",
+                         (void *)request->resultBase,
+                         (int)state->threadStatus);
     request->callCompleted = (TZrBool) (state->threadStatus == ZR_THREAD_STATUS_FINE);
 }
 
@@ -123,15 +130,8 @@ static TZrBool zr_cli_runtime_capture_failure(SZrState *state, EZrThreadStatus s
 }
 
 static TZrBool zr_cli_runtime_handle_failure(SZrState *state, EZrThreadStatus status) {
-    const TZrChar *aotError;
-
     if (state == ZR_NULL) {
         return ZR_FALSE;
-    }
-
-    aotError = state->global != ZR_NULL ? ZrLibrary_AotRuntime_GetLastError(state->global) : ZR_NULL;
-    if (aotError != ZR_NULL && aotError[0] != '\0') {
-        ZrCore_Log_Error(state, "%s\n", aotError);
     }
 
     if (state->hasCurrentException) {
@@ -149,10 +149,6 @@ static const TZrChar *zr_cli_runtime_mode_name(EZrCliExecutionMode executionMode
     switch (executionMode) {
         case ZR_CLI_EXECUTION_MODE_BINARY:
             return "binary";
-        case ZR_CLI_EXECUTION_MODE_AOT_C:
-            return "aot_c";
-        case ZR_CLI_EXECUTION_MODE_AOT_LLVM:
-            return "aot_llvm";
         case ZR_CLI_EXECUTION_MODE_INTERP:
         default:
             return "interp";
@@ -308,7 +304,13 @@ static TZrBool zr_cli_runtime_execute_function(SZrState *state, SZrFunction *fun
     ZrCore_Value_ResetAsNull(result);
     request.function = function;
     state->threadStatus = ZR_THREAD_STATUS_FINE;
+    zr_cli_runtime_trace("execute function enter function=%p", (void *)function);
     status = ZrCore_Exception_TryRun(state, zr_cli_runtime_execute_body, &request);
+    zr_cli_runtime_trace("execute function tryrun status=%d requestResult=%p callCompleted=%d threadStatus=%d",
+                         (int)status,
+                         (void *)request.resultBase,
+                         (int)request.callCompleted,
+                         (int)state->threadStatus);
     if (status != ZR_THREAD_STATUS_FINE) {
         return zr_cli_runtime_capture_failure(state, status);
     }
@@ -357,6 +359,7 @@ static void zr_cli_runtime_prepare_entry_module(SZrState *state,
     modulePath = ZrCore_String_CreateFromNative(state, (TZrNativeString)loadedEntryPath);
     pathHash = ZrCore_Module_CalculatePathHash(state, modulePath);
     ZrCore_Module_SetInfo(state, projectModule, ZR_NULL, pathHash, modulePath);
+    ZrCore_Reflection_AttachModuleRuntimeMetadata(state, projectModule, entryFunction);
     ZrCore_Module_CreatePrototypesFromConstants(state, projectModule, entryFunction);
 }
 
@@ -372,8 +375,15 @@ static TZrBool zr_cli_runtime_prepare_and_execute_entry(SZrState *state,
     }
 
     ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
+    zr_cli_runtime_trace("prepare entry module start function=%p path='%s'",
+                         (void *)entryFunction,
+                         loadedEntryPath);
     zr_cli_runtime_prepare_entry_module(state, entryFunction, loadedEntryPath);
+    zr_cli_runtime_trace("prepare entry module done function=%p", (void *)entryFunction);
     success = zr_cli_runtime_execute_function(state, entryFunction, result);
+    zr_cli_runtime_trace("prepare and execute done success=%d threadStatus=%d",
+                         (int)success,
+                         (int)(state != ZR_NULL ? state->threadStatus : ZR_THREAD_STATUS_INVALID));
     if (ignoredFunction) {
         ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
     }
@@ -514,82 +524,106 @@ static TZrBool zr_cli_runtime_binary_first_loader(SZrState *state, TZrNativeStri
     return ZR_FALSE;
 }
 
-static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
-    SZrGlobalState *global;
-    SZrCliProjectContext project;
-    SZrState *state;
+static void zr_cli_runtime_reset_capture(SZrCliRunCapture *capture) {
+    if (capture == ZR_NULL) {
+        return;
+    }
+
+    capture->global = ZR_NULL;
+    ZrCore_Value_ResetAsNull(&capture->result);
+    capture->executedVia[0] = '\0';
+}
+
+static void zr_cli_runtime_reset_prepared_project(SZrCliPreparedProjectRuntime *prepared) {
+    if (prepared == ZR_NULL) {
+        return;
+    }
+
+    memset(prepared, 0, sizeof(*prepared));
+}
+
+void ZrCli_Runtime_PreparedProject_Free(SZrCliPreparedProjectRuntime *prepared) {
+    if (prepared == ZR_NULL) {
+        return;
+    }
+
+    if (prepared->global != ZR_NULL) {
+        ZrLibrary_CommonState_CommonGlobalState_Free(prepared->global);
+    }
+
+    zr_cli_runtime_reset_prepared_project(prepared);
+}
+
+void ZrCli_Runtime_RunCapture_Free(SZrCliRunCapture *capture) {
+    if (capture == ZR_NULL) {
+        return;
+    }
+
+    if (capture->global != ZR_NULL) {
+        ZrLibrary_CommonState_CommonGlobalState_Free(capture->global);
+    }
+
+    zr_cli_runtime_reset_capture(capture);
+}
+
+TZrBool ZrCli_Runtime_PrepareProjectExecutionWithBootstrap(const SZrCliCommand *command,
+                                                           SZrCliPreparedProjectRuntime *outPrepared,
+                                                           FZrCliProjectGlobalBootstrap bootstrap,
+                                                           TZrPtr userData) {
     TZrChar normalizedEntryModule[ZR_LIBRARY_MAX_PATH_LENGTH];
     const TZrChar *effectiveEntryModule = ZR_NULL;
     const TZrChar *entryIdentifier = ZR_NULL;
-    SZrFunction *entryFunction = ZR_NULL;
-    SZrTypeValue result;
-    TZrChar loadedEntryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrBool success = ZR_FALSE;
-    const TZrChar *executedVia = ZR_NULL;
+    SZrState *state;
 
-    if (command == ZR_NULL || command->projectPath == ZR_NULL) {
+    if (outPrepared == ZR_NULL || command == ZR_NULL || command->projectPath == ZR_NULL) {
         ZrCore_Log_Error(ZR_NULL, "run mode requires a project path\n");
-        return 1;
+        return ZR_FALSE;
     }
-
-#if ZR_VM_BUILD_AOT == 0
-    if (command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_C ||
-        command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_LLVM) {
-        ZrCore_Log_Error(ZR_NULL,
-                         "AOT execution modes require a zr_vm build with -DZR_VM_BUILD_AOT=ON\n");
-        return 1;
-    }
-#endif
+    zr_cli_runtime_reset_prepared_project(outPrepared);
 
     zr_cli_runtime_trace("create project global '%s'", command->projectPath);
-    global = ZrCli_Project_CreateProjectGlobal(command->projectPath);
-    zr_cli_runtime_trace("global=%p", (void *)global);
-    if (global == ZR_NULL) {
+    outPrepared->global = ZrCli_Project_CreateProjectGlobal(command->projectPath);
+    zr_cli_runtime_trace("global=%p", (void *)outPrepared->global);
+    if (outPrepared->global == ZR_NULL) {
         ZrCore_Log_Error(ZR_NULL, "failed to load project: %s\n", command->projectPath);
-        return 1;
+        return ZR_FALSE;
     }
 
     zr_cli_runtime_trace("register standard modules");
-    if (!ZrCli_Project_RegisterStandardModules(global)) {
-        ZrCore_Log_Error(global->mainThreadState, "failed to register standard modules\n");
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return 1;
+    if (!ZrCli_Project_RegisterStandardModulesWithBootstrap(outPrepared->global, bootstrap, userData)) {
+        ZrCore_Log_Error(outPrepared->global->mainThreadState, "failed to register standard modules\n");
+        ZrCli_Runtime_PreparedProject_Free(outPrepared);
+        return ZR_FALSE;
     }
 
-    state = global->mainThreadState;
+    state = outPrepared->global->mainThreadState;
     zr_cli_runtime_trace("state=%p", (void *)state);
-    if (!ZrCli_ProjectContext_FromGlobal(&project, global, command->projectPath)) {
+    if (!ZrCli_ProjectContext_FromGlobal(&outPrepared->project, outPrepared->global, command->projectPath)) {
         ZrCore_Log_Error(state, "failed to resolve project context: %s\n", command->projectPath);
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return 1;
+        ZrCli_Runtime_PreparedProject_Free(outPrepared);
+        return ZR_FALSE;
     }
-    zr_cli_runtime_trace("project context entry='%s'", project.entryModule);
+    zr_cli_runtime_trace("project context entry='%s'", outPrepared->project.entryModule);
 
     if (!zr_cli_runtime_resolve_effective_entry_module(command,
-                                                       &project,
+                                                       &outPrepared->project,
                                                        normalizedEntryModule,
                                                        sizeof(normalizedEntryModule),
                                                        &effectiveEntryModule,
                                                        &entryIdentifier)) {
         ZrCore_Log_Error(state, "failed to resolve project entry target\n");
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return 1;
+        ZrCli_Runtime_PreparedProject_Free(outPrepared);
+        return ZR_FALSE;
     }
     zr_cli_runtime_trace("effective entry='%s' executionMode=%d debug=%d",
                          effectiveEntryModule != ZR_NULL ? effectiveEntryModule : "<null>",
                          (int)command->executionMode,
                          (int)command->debugEnabled);
 
-    if (!ZrLibrary_AotRuntime_ConfigureGlobal(global,
-                                              (EZrLibraryProjectExecutionMode)command->executionMode,
-                                              command->requireAotPath)) {
-        ZrCore_Log_Error(state, "failed to configure AOT runtime\n");
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return 1;
-    }
-
     if (command->executionMode == ZR_CLI_EXECUTION_MODE_INTERP) {
-        global->sourceLoader = zr_cli_runtime_source_first_loader;
+        outPrepared->global->sourceLoader = zr_cli_runtime_source_first_loader;
+    } else if (command->executionMode == ZR_CLI_EXECUTION_MODE_BINARY) {
+        outPrepared->global->sourceLoader = zr_cli_runtime_binary_first_loader;
     }
 
     if (!ZrCli_Runtime_InjectProcessArguments(state,
@@ -597,26 +631,58 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
                                               command->programArgs,
                                               command->programArgCount)) {
         ZrCore_Log_Error(state, "failed to initialize zr.system.process.arguments\n");
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return 1;
+        ZrCli_Runtime_PreparedProject_Free(outPrepared);
+        return ZR_FALSE;
     }
     zr_cli_runtime_trace("process arguments injected");
+    snprintf(outPrepared->effectiveEntryModule,
+             sizeof(outPrepared->effectiveEntryModule),
+             "%s",
+             effectiveEntryModule != ZR_NULL ? effectiveEntryModule : "");
+    snprintf(outPrepared->entryIdentifier,
+             sizeof(outPrepared->entryIdentifier),
+             "%s",
+             entryIdentifier != ZR_NULL ? entryIdentifier : command->projectPath);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCli_Runtime_PrepareProjectExecution(const SZrCliCommand *command,
+                                              SZrCliPreparedProjectRuntime *outPrepared) {
+    return ZrCli_Runtime_PrepareProjectExecutionWithBootstrap(command, outPrepared, ZR_NULL, ZR_NULL);
+}
+
+TZrBool ZrCli_Runtime_RunPreparedProjectCapture(SZrCliPreparedProjectRuntime *prepared,
+                                                const SZrCliCommand *command,
+                                                SZrCliRunCapture *outCapture) {
+    SZrGlobalState *global;
+    const SZrCliProjectContext *project;
+    const TZrChar *effectiveEntryModule;
+    SZrState *state;
+    SZrFunction *entryFunction = ZR_NULL;
+    SZrTypeValue result;
+    TZrChar loadedEntryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrBool success = ZR_FALSE;
+    const TZrChar *executedVia = ZR_NULL;
+
+    if (prepared == ZR_NULL || prepared->global == ZR_NULL || command == ZR_NULL || outCapture == ZR_NULL) {
+        ZrCore_Log_Error(ZR_NULL, "prepared project runtime is incomplete\n");
+        return ZR_FALSE;
+    }
+
+    zr_cli_runtime_reset_capture(outCapture);
+    ZrCore_Value_ResetAsNull(&result);
+    global = prepared->global;
+    project = &prepared->project;
+    effectiveEntryModule = prepared->effectiveEntryModule;
+    state = global->mainThreadState;
 
 #if !defined(ZR_VM_CLI_HAS_DEBUG_AGENT)
     if (command->debugEnabled) {
         ZrCore_Log_Error(state, "debug agent support is not built into this CLI\n");
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return 1;
+        ZrCli_Runtime_PreparedProject_Free(prepared);
+        return ZR_FALSE;
     }
 #else
-    if (command->debugEnabled &&
-        (command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_C ||
-         command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_LLVM)) {
-        ZrCore_Log_Error(state, "zr debugger v1 only supports interp and binary execution modes\n");
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return 1;
-    }
-
     if (command->debugEnabled) {
         ZrDebugAgentConfig debugConfig;
         ZrDebugAgent *debugAgent = ZR_NULL;
@@ -628,15 +694,15 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
         }
 
         if (!zr_cli_runtime_load_entry_function(state,
-                                                &project,
+                                                project,
                                                 effectiveEntryModule,
                                                 command->executionMode == ZR_CLI_EXECUTION_MODE_BINARY,
                                                 &entryFunction,
                                                 loadedEntryPath,
                                                 sizeof(loadedEntryPath))) {
             ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
-            ZrLibrary_CommonState_CommonGlobalState_Free(global);
-            return 1;
+            ZrCli_Runtime_PreparedProject_Free(prepared);
+            return ZR_FALSE;
         }
         zr_cli_runtime_trace("debug entry loaded '%s'", loadedEntryPath);
 
@@ -661,8 +727,8 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
             if (ignoredFunction) {
                 ZrCore_GarbageCollector_UnignoreObject(global, ZR_CAST_RAW_OBJECT_AS_SUPER(entryFunction));
             }
-            ZrLibrary_CommonState_CommonGlobalState_Free(global);
-            return 1;
+            ZrCli_Runtime_PreparedProject_Free(prepared);
+            return ZR_FALSE;
         }
 
         zr_cli_runtime_emit_debug_endpoint(state, command, debugAgent);
@@ -679,27 +745,24 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
 
         if (!success) {
             zr_cli_runtime_handle_failure(state, state->threadStatus);
-            ZrLibrary_CommonState_CommonGlobalState_Free(global);
-            return 1;
+            ZrCli_Runtime_PreparedProject_Free(prepared);
+            return ZR_FALSE;
         }
-
-        goto zr_cli_runtime_finish;
-    }
+    } else
 #endif
-
     switch (command->executionMode) {
         case ZR_CLI_EXECUTION_MODE_INTERP: {
             if (command->mode == ZR_CLI_MODE_RUN_PROJECT_MODULE) {
                 if (!zr_cli_runtime_load_entry_function(state,
-                                                        &project,
+                                                        project,
                                                         effectiveEntryModule,
                                                         ZR_FALSE,
                                                         &entryFunction,
                                                         loadedEntryPath,
                                                         sizeof(loadedEntryPath))) {
                     ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
-                    ZrLibrary_CommonState_CommonGlobalState_Free(global);
-                    return 1;
+                    ZrCli_Runtime_PreparedProject_Free(prepared);
+                    return ZR_FALSE;
                 }
 
                 zr_cli_runtime_trace("interp module entry loaded '%s'", loadedEntryPath);
@@ -713,12 +776,11 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
         } break;
 
         case ZR_CLI_EXECUTION_MODE_BINARY:
-            global->sourceLoader = zr_cli_runtime_binary_first_loader;
-            if (!zr_cli_runtime_load_entry_function(state, &project, effectiveEntryModule, ZR_TRUE, &entryFunction, loadedEntryPath,
+            if (!zr_cli_runtime_load_entry_function(state, project, effectiveEntryModule, ZR_TRUE, &entryFunction, loadedEntryPath,
                                                     sizeof(loadedEntryPath))) {
                 ZrCore_Log_Error(state, "failed to load project entry: %s\n", effectiveEntryModule);
-                ZrLibrary_CommonState_CommonGlobalState_Free(global);
-                return 1;
+                ZrCli_Runtime_PreparedProject_Free(prepared);
+                return ZR_FALSE;
             }
 
             zr_cli_runtime_trace("binary entry loaded '%s'", loadedEntryPath);
@@ -726,53 +788,41 @@ static int zr_cli_runtime_run_project(const SZrCliCommand *command) {
             executedVia = "binary";
             break;
 
-#if ZR_VM_BUILD_AOT
-        case ZR_CLI_EXECUTION_MODE_AOT_C:
-            success = ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_C, &result);
-            executedVia = ZrLibrary_AotRuntime_ExecutedViaName(ZrLibrary_AotRuntime_GetExecutedVia(global));
-            break;
-
-        case ZR_CLI_EXECUTION_MODE_AOT_LLVM:
-            success = ZrLibrary_AotRuntime_ExecuteEntry(state, ZR_AOT_BACKEND_KIND_LLVM, &result);
-            executedVia = ZrLibrary_AotRuntime_ExecutedViaName(ZrLibrary_AotRuntime_GetExecutedVia(global));
-            break;
-#endif
-
         default:
             ZrCore_Log_Error(state, "unknown execution mode: %d\n", (int)command->executionMode);
-            ZrLibrary_CommonState_CommonGlobalState_Free(global);
-            return 1;
+            ZrCli_Runtime_PreparedProject_Free(prepared);
+            return ZR_FALSE;
     }
 
     if (!success) {
         zr_cli_runtime_handle_failure(state, state->threadStatus);
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return 1;
+        ZrCli_Runtime_PreparedProject_Free(prepared);
+        return ZR_FALSE;
     }
 
-zr_cli_runtime_finish:
+    outCapture->global = prepared->global;
+    outCapture->result = result;
+    snprintf(outCapture->executedVia,
+             sizeof(outCapture->executedVia),
+             "%s",
+             executedVia != ZR_NULL ? executedVia : zr_cli_runtime_mode_name(command->executionMode));
+    prepared->global = ZR_NULL;
+    return ZR_TRUE;
+}
 
-    if ((command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_C ||
-         command->executionMode == ZR_CLI_EXECUTION_MODE_AOT_LLVM) &&
-        strcmp(executedVia != ZR_NULL ? executedVia : "none", zr_cli_runtime_mode_name(command->executionMode)) != 0) {
-        ZrCore_Log_Error(state,
-                         "requested %s but runtime reported %s\n",
-                         zr_cli_runtime_mode_name(command->executionMode),
-                         executedVia != ZR_NULL ? executedVia : "none");
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return 1;
+static TZrBool zr_cli_runtime_run_project_capture_internal(const SZrCliCommand *command, SZrCliRunCapture *outCapture) {
+    SZrCliPreparedProjectRuntime prepared;
+
+    if (outCapture == ZR_NULL || command == ZR_NULL || command->projectPath == ZR_NULL) {
+        ZrCore_Log_Error(ZR_NULL, "run mode requires a project path\n");
+        return ZR_FALSE;
     }
 
-    if (!zr_cli_runtime_print_result(state, &result)) {
-        ZrLibrary_CommonState_CommonGlobalState_Free(global);
-        return 1;
+    if (!ZrCli_Runtime_PrepareProjectExecution(command, &prepared)) {
+        return ZR_FALSE;
     }
-    zr_cli_runtime_emit_executed_via(state,
-                                     command,
-                                     executedVia != ZR_NULL ? executedVia : zr_cli_runtime_mode_name(command->executionMode));
 
-    ZrLibrary_CommonState_CommonGlobalState_Free(global);
-    return 0;
+    return ZrCli_Runtime_RunPreparedProjectCapture(&prepared, command, outCapture);
 }
 
 int ZrCli_Runtime_RunInline(const SZrCliCommand *command) {
@@ -842,5 +892,28 @@ int ZrCli_Runtime_RunInline(const SZrCliCommand *command) {
 }
 
 int ZrCli_Runtime_RunProject(const SZrCliCommand *command) {
-    return zr_cli_runtime_run_project(command);
+    SZrCliRunCapture capture;
+    SZrState *state;
+
+    if (!ZrCli_Runtime_RunProjectCapture(command, &capture)) {
+        return 1;
+    }
+
+    state = capture.global != ZR_NULL ? capture.global->mainThreadState : ZR_NULL;
+    if (!zr_cli_runtime_print_result(state, &capture.result)) {
+        ZrCli_Runtime_RunCapture_Free(&capture);
+        return 1;
+    }
+
+    zr_cli_runtime_emit_executed_via(state,
+                                     command,
+                                     capture.executedVia[0] != '\0'
+                                             ? capture.executedVia
+                                             : zr_cli_runtime_mode_name(command->executionMode));
+    ZrCli_Runtime_RunCapture_Free(&capture);
+    return 0;
+}
+
+TZrBool ZrCli_Runtime_RunProjectCapture(const SZrCliCommand *command, SZrCliRunCapture *outCapture) {
+    return zr_cli_runtime_run_project_capture_internal(command, outCapture);
 }

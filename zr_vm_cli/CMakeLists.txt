@@ -47,6 +47,13 @@ zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_system")
 zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_container")
 zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_parser")
 
+if (TARGET zr_vm_lib_thread_shared OR TARGET zr_vm_lib_thread_static)
+    zr_link_library_for_executable(${zr_curr_module_name} "zr_vm_lib_thread")
+    target_compile_definitions(${zr_curr_module_exec} PRIVATE
+            ZR_VM_HAS_THREAD_MODULE=1
+    )
+endif ()
+
 set(zr_vm_cli_has_debug_agent OFF)
 if (TARGET zr_vm_lib_network_shared AND TARGET zr_vm_debug_shared)
     set(zr_vm_cli_has_debug_agent ON)

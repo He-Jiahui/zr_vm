@@ -149,11 +149,66 @@ static void test_object_invoke_member_restores_existing_function_top_without_gro
     ZrContainerTests_DestroyState(state);
 }
 
+static void test_object_field_cstring_helpers_restore_existing_function_top_without_growth(void) {
+    SZrState *state = ZrContainerTests_CreateState();
+    TZrStackValuePointer savedStackTop;
+    TZrStackValuePointer originalFunctionTop;
+    TZrMemoryOffset savedStackTopOffset;
+    TZrMemoryOffset originalFunctionTopOffset;
+    SZrObject *targetObject;
+    SZrObject *fieldObject;
+    SZrTypeValue *targetObjectValue;
+    SZrTypeValue *fieldValue;
+    const SZrTypeValue *capturedValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->callInfoList);
+
+    savedStackTop = state->stackTop.valuePointer;
+    TEST_ASSERT_NOT_NULL(savedStackTop);
+    TEST_ASSERT_TRUE((state->stackTail.valuePointer - savedStackTop) >= 6);
+
+    targetObject = ZrLib_Object_New(state);
+    fieldObject = ZrLib_Object_New(state);
+    TEST_ASSERT_NOT_NULL(targetObject);
+    TEST_ASSERT_NOT_NULL(fieldObject);
+
+    targetObjectValue = ZrCore_Stack_GetValue(savedStackTop);
+    fieldValue = ZrCore_Stack_GetValue(savedStackTop + 1);
+    TEST_ASSERT_NOT_NULL(targetObjectValue);
+    TEST_ASSERT_NOT_NULL(fieldValue);
+
+    ZrLib_Value_SetObject(state, targetObjectValue, targetObject, ZR_VALUE_TYPE_OBJECT);
+    ZrLib_Value_SetObject(state, fieldValue, fieldObject, ZR_VALUE_TYPE_OBJECT);
+    state->stackTop.valuePointer = savedStackTop + 2;
+
+    savedStackTopOffset = ZrCore_Stack_SavePointerAsOffset(state, state->stackTop.valuePointer);
+    originalFunctionTop = savedStackTop + 4;
+    originalFunctionTopOffset = ZrCore_Stack_SavePointerAsOffset(state, originalFunctionTop);
+    state->callInfoList->functionTop.valuePointer = originalFunctionTop;
+
+    ZrLib_Object_SetFieldCString(state, targetObject, "captured", fieldValue);
+    TEST_ASSERT_EQUAL_PTR(ZrCore_Stack_LoadOffsetToPointer(state, savedStackTopOffset), state->stackTop.valuePointer);
+    TEST_ASSERT_EQUAL_PTR(ZrCore_Stack_LoadOffsetToPointer(state, originalFunctionTopOffset),
+                          state->callInfoList->functionTop.valuePointer);
+
+    capturedValue = ZrLib_Object_GetFieldCString(state, targetObject, "captured");
+    TEST_ASSERT_NOT_NULL(capturedValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, capturedValue->type);
+    TEST_ASSERT_EQUAL_PTR(fieldObject, ZR_CAST_OBJECT(state, capturedValue->value.object));
+    TEST_ASSERT_EQUAL_PTR(ZrCore_Stack_LoadOffsetToPointer(state, savedStackTopOffset), state->stackTop.valuePointer);
+    TEST_ASSERT_EQUAL_PTR(ZrCore_Stack_LoadOffsetToPointer(state, originalFunctionTopOffset),
+                          state->callInfoList->functionTop.valuePointer);
+
+    ZrContainerTests_DestroyState(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_temp_value_root_restores_existing_function_top_without_growth);
     RUN_TEST(test_object_invoke_member_restores_existing_function_top_without_growth);
+    RUN_TEST(test_object_field_cstring_helpers_restore_existing_function_top_without_growth);
 
     return UNITY_END();
 }

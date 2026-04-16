@@ -52,6 +52,10 @@ TZrBool ZrVmLibFfi_Register(SZrGlobalState *global);
 
 static const TZrChar *kProbeCounterStateField = "__probe_counter_state";
 
+enum {
+    ZR_PROBE_INLINE_LABEL_ROOT_STRESS_COUNT = 96
+};
+
 static SZrFunction *debug_resolve_function_from_value(SZrState *state, const SZrTypeValue *value) {
     if (state == ZR_NULL || value == ZR_NULL || value->value.object == ZR_NULL) {
         return ZR_NULL;
@@ -159,6 +163,20 @@ static void probe_set_null_field(SZrState *state, SZrObject *object, const TZrCh
     }
 
     ZrLib_Value_SetNull(&fieldValue);
+    ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
+}
+
+static void probe_set_string_field_object(SZrState *state,
+                                          SZrObject *object,
+                                          const TZrChar *fieldName,
+                                          SZrString *stringObject) {
+    SZrTypeValue fieldValue;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || stringObject == ZR_NULL) {
+        return;
+    }
+
+    ZrLib_Value_SetStringObject(state, &fieldValue, stringObject);
     ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
 }
 
@@ -285,6 +303,79 @@ static TZrBool probe_native_counter_iterator_move_next(ZrLibCallContext *context
     }
 }
 
+static TZrBool probe_native_device_inspect_label(ZrLibCallContext *context, SZrTypeValue *result) {
+    ZrLibTempValueRoot summaryRoot = {0};
+    ZrLibTempValueRoot stressRoots[ZR_PROBE_INLINE_LABEL_ROOT_STRESS_COUNT] = {0};
+    SZrObject *device = ZR_NULL;
+    SZrObject *summaryObject = ZR_NULL;
+    SZrString *labelBefore = ZR_NULL;
+    SZrString *labelAfter = ZR_NULL;
+    TZrSize rootCount = 0;
+    TZrBool layoutPreserved;
+    TZrBool gcStable;
+    TZrSize index;
+    TZrBool success = ZR_FALSE;
+    TZrChar tempLabel[48];
+
+    if (context == ZR_NULL || result == ZR_NULL || !probe_get_self_object(context, &device)) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrLib_CallContext_ReadString(context, 0, &labelBefore) || labelBefore == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    layoutPreserved = context->argumentBase == context->functionBase + 2;
+
+    if (!ZrLib_CallContext_BeginTempValueRoot(context, &summaryRoot)) {
+        return ZR_FALSE;
+    }
+
+    summaryObject = ZrLib_Type_NewInstance(context->state, "NativeInspectResult");
+    if (summaryObject == ZR_NULL || !ZrLib_TempValueRoot_SetObject(&summaryRoot, summaryObject, ZR_VALUE_TYPE_OBJECT)) {
+        ZrLib_TempValueRoot_End(&summaryRoot);
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < ZR_ARRAY_COUNT(stressRoots); index++) {
+        if (!ZrLib_CallContext_BeginTempValueRoot(context, &stressRoots[index])) {
+            goto cleanup;
+        }
+
+        snprintf(tempLabel, sizeof(tempLabel), "inline_root_%u", (unsigned)index);
+        ZrLib_Value_SetString(context->state, ZrLib_TempValueRoot_Value(&stressRoots[index]), tempLabel);
+        if (context->state->threadStatus != ZR_THREAD_STATUS_FINE) {
+            goto cleanup;
+        }
+
+        rootCount++;
+    }
+
+    ZrCore_GarbageCollector_GcFull(context->state, ZR_FALSE);
+    if (context->state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        goto cleanup;
+    }
+
+    if (!ZrLib_CallContext_ReadString(context, 0, &labelAfter) || labelAfter == ZR_NULL) {
+        goto cleanup;
+    }
+
+    gcStable = ZrCore_String_Equal(labelBefore, labelAfter);
+    probe_set_string_field_object(context->state, summaryObject, "echoed", labelAfter);
+    probe_set_int_field(context->state, summaryObject, "layoutPreserved", layoutPreserved ? 1 : 0);
+    probe_set_int_field(context->state, summaryObject, "gcStable", gcStable ? 1 : 0);
+    ZrCore_Value_Copy(context->state, result, ZrLib_TempValueRoot_Value(&summaryRoot));
+    success = context->state->threadStatus == ZR_THREAD_STATUS_FINE;
+
+cleanup:
+    while (rootCount > 0) {
+        rootCount--;
+        ZrLib_TempValueRoot_End(&stressRoots[rootCount]);
+    }
+    ZrLib_TempValueRoot_End(&summaryRoot);
+    return success;
+}
+
 static const ZrLibMethodDescriptor kProbeReadableMethods[] = {
         {
                 .name = "read",
@@ -319,6 +410,10 @@ static const ZrLibParameterDescriptor kProbeConfigureParameters[] = {
         {"mode", "NativeMode", "The mode to apply."},
 };
 
+static const ZrLibParameterDescriptor kProbeInspectLabelParameters[] = {
+        {"label", "string", "The label to inspect."},
+};
+
 static const ZrLibMethodDescriptor kProbeDeviceMethods[] = {
         {
                 .name = "configure",
@@ -330,6 +425,18 @@ static const ZrLibMethodDescriptor kProbeDeviceMethods[] = {
                 .isStatic = ZR_FALSE,
                 .parameters = kProbeConfigureParameters,
                 .parameterCount = ZR_ARRAY_COUNT(kProbeConfigureParameters),
+                .contractRole = 0,
+        },
+        {
+                .name = "inspectLabel",
+                .minArgumentCount = 1,
+                .maxArgumentCount = 1,
+                .callback = probe_native_device_inspect_label,
+                .returnTypeName = "NativeInspectResult",
+                .documentation = "Return dispatcher-layout and GC-stability evidence for a string argument.",
+                .isStatic = ZR_FALSE,
+                .parameters = kProbeInspectLabelParameters,
+                .parameterCount = ZR_ARRAY_COUNT(kProbeInspectLabelParameters),
                 .contractRole = 0,
         },
 };
@@ -407,6 +514,12 @@ static const ZrLibFieldDescriptor kProbeBoxFields[] = {
 
 static const ZrLibFieldDescriptor kProbeCounterIteratorFields[] = {
         {"current", "int", "The current counter value.", ZR_MEMBER_CONTRACT_ROLE_ITERATOR_CURRENT_FIELD},
+};
+
+static const ZrLibFieldDescriptor kProbeInspectResultFields[] = {
+        {"echoed", "string", "The echoed label after GC stress.", 0},
+        {"layoutPreserved", "int", "Whether the raw call layout stayed in place.", 0},
+        {"gcStable", "int", "Whether the label remained readable after GC stress.", 0},
 };
 
 static const ZrLibMethodDescriptor kProbeBoxMethods[] = {
@@ -583,6 +696,19 @@ static const ZrLibTypeDescriptor kProbeNativeTypes[] = {
                 .constructorSignature = "NativeBox(value: T)",
                 .genericParameters = kProbeBoxGenericParameters,
                 .genericParameterCount = ZR_ARRAY_COUNT(kProbeBoxGenericParameters),
+                .protocolMask = 0,
+        },
+        {
+                .name = "NativeInspectResult",
+                .prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_CLASS,
+                .fields = kProbeInspectResultFields,
+                .fieldCount = ZR_ARRAY_COUNT(kProbeInspectResultFields),
+                .documentation = "Native dispatcher inspection result payload.",
+                .allowValueConstruction = ZR_TRUE,
+                .allowBoxedConstruction = ZR_TRUE,
+                .constructorSignature = "NativeInspectResult()",
+                .genericParameters = ZR_NULL,
+                .genericParameterCount = 0,
                 .protocolMask = 0,
         },
         {
@@ -3332,7 +3458,7 @@ static void test_native_module_info_exposes_enum_and_interface_descriptors(void)
 
         typesArray = ZR_CAST_OBJECT(state, typesValue->value.object);
         TEST_ASSERT_NOT_NULL(typesArray);
-        TEST_ASSERT_EQUAL_UINT64(8, get_array_length(typesArray));
+        TEST_ASSERT_EQUAL_UINT64(ZR_ARRAY_COUNT(kProbeNativeTypes), get_array_length(typesArray));
 
         readableEntry = find_named_entry_in_array(state, typesArray, "name", "NativeReadable");
         streamReadableEntry = find_named_entry_in_array(state, typesArray, "name", "NativeStreamReadable");
@@ -3992,6 +4118,67 @@ static void test_native_binding_helpers_root_fresh_values_across_gc_retry(void) 
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, capturedEntry->type);
         TEST_ASSERT_EQUAL_PTR(arraySourceObject, ZR_CAST_OBJECT(state, capturedEntry->value.object));
 
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_native_binding_inline_label_inspector_keeps_raw_layout_without_losing_gc_safety(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Binding Inline Label Inspector Keeps Raw Layout Without Losing Gc Safety";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *source =
+                "var probe = %import(\"probe.native_shapes\");\n"
+                "var device = new probe.NativeDevice();\n"
+                "return device.inspectLabel(\"alpha_label\");\n";
+        SZrString *sourceName;
+        SZrFunction *entryFunction;
+        SZrTypeValue result;
+        SZrObject *resultObject;
+        const SZrTypeValue *echoedValue;
+        const SZrTypeValue *layoutPreservedValue;
+        const SZrTypeValue *gcStableValue;
+        SZrObjectModule *module;
+        SZrObjectPrototype *inspectPrototype;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_TRUE(register_probe_native_module(state));
+
+        sourceName = ZrCore_String_Create(state, "probe_native_inline_label_inspector_test.zr", 43);
+        entryFunction = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, result.type);
+
+        resultObject = ZR_CAST_OBJECT(state, result.value.object);
+        TEST_ASSERT_NOT_NULL(resultObject);
+
+        module = import_native_module(state, "probe.native_shapes");
+        TEST_ASSERT_NOT_NULL(module);
+        inspectPrototype = get_module_exported_prototype(state, module, "NativeInspectResult");
+        TEST_ASSERT_NOT_NULL(inspectPrototype);
+        TEST_ASSERT_EQUAL_PTR(inspectPrototype, resultObject->prototype);
+
+        echoedValue = get_object_field_value(state, resultObject, "echoed");
+        layoutPreservedValue = get_object_field_value(state, resultObject, "layoutPreserved");
+        gcStableValue = get_object_field_value(state, resultObject, "gcStable");
+        TEST_ASSERT_NOT_NULL(echoedValue);
+        TEST_ASSERT_NOT_NULL(layoutPreservedValue);
+        TEST_ASSERT_NOT_NULL(gcStableValue);
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, echoedValue->type);
+        TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, echoedValue->value.object), "alpha_label"));
+        TEST_ASSERT_EQUAL_INT64(1, layoutPreservedValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(1, gcStableValue->value.nativeObject.nativeInt64);
+
+        ZrCore_Function_Free(state, entryFunction);
         destroy_test_state(state);
     }
 
@@ -8608,7 +8795,10 @@ int main(void) {
     // 27. native binding helper 在 GC retry 中仍保活 fresh object/value
     RUN_TEST(test_native_binding_helpers_root_fresh_values_across_gc_retry);
 
-    // 28. native enum 构造在 runtime 返回正确实例
+    // 28. native binding inline label inspector 保持原始调用布局并通过 GC 压力
+    RUN_TEST(test_native_binding_inline_label_inspector_keeps_raw_layout_without_losing_gc_safety);
+
+    // 29. native enum 构造在 runtime 返回正确实例
     RUN_TEST(test_native_enum_construction_returns_runtime_enum_instance);
 
     // 29. zr.container 导出泛型接口/类型以及约束元数据

@@ -35,6 +35,7 @@ static void state_stack_init(SZrState *state, SZrState *mainThreadState) {
     for (TZrStackValuePointer pointer = state->stackBase.valuePointer; pointer < state->stackTail.valuePointer;
          pointer++) {
         ZrCore_Value_ResetAsNull(&pointer->value);
+        pointer->toBeClosedValueOffset = 0u;
     }
     // init call info
     SZrCallInfo *callInfo = &state->baseCallInfo;

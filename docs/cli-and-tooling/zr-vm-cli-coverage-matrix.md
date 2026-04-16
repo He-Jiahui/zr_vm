@@ -67,23 +67,21 @@ doc_type: testing-guide
 
 表里的 `Y` 表示允许，`N` 表示 parser 直接拒绝，`Cond` 表示允许但有额外前提。
 
-| 入口模式 | `--execution-mode` | `--require-aot-path` | `--emit-executed-via` | `--debug*` | compile family | `-i` | `-- <args...>` | 说明 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| REPL | N | N | N | N | N | `standalone alias only` | N | `zr_vm_cli -i` 只是 REPL 别名，不是“执行后再进 REPL” |
-| 位置参数项目运行 | Y: `interp` / `binary` / `aot_c` / `aot_llvm` | Cond: 仅当执行模式是 `aot_*` | Y | Y | N | Y | Y | `--debug-address` / `--debug-wait` / `--debug-print-endpoint` 仍然要先有 `--debug` |
-| compile-only | N | N | N | N | Y: `--intermediate` / `--incremental` / `--emit-aot-c` / `--emit-aot-llvm` / `--run` | N | N | 只有加上 `--run` 才会出现 active run path |
-| compile+run | Y: 当前实现会把 `interp` 折叠成 `binary`，`aot_c` / `aot_llvm` 维持显式选择 | Cond: 仅当执行模式是 `aot_*` | Y | Y | Y | Y | Y | `--compile --run` 未显式指定执行模式时默认走 `binary` |
-| inline `-e/-c` | N | N | N | N | N | Y | Y | 只走 bare global + 标准模块注册，不接 compile/AOT/debug/module 流程 |
-| `--project ... -m ...` | Y: 仅 `interp` / `binary` | N | Y | Y | N | Y | Y | `process.arguments[0]` 保留原始 dotted module 名，内部再归一成 slash path |
-| help / version | N | N | N | N | N | N | N | 必须独占 |
+| 入口模式 | `--execution-mode` | `--emit-executed-via` | `--debug*` | compile family | `-i` | `-- <args...>` | 说明 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| REPL | N | N | N | N | `standalone alias only` | N | `zr_vm_cli -i` 只是 REPL 别名，不是“执行后再进 REPL” |
+| 位置参数项目运行 | Y: `interp` / `binary` | Y | Y | N | Y | Y | `--debug-address` / `--debug-wait` / `--debug-print-endpoint` 仍然要先有 `--debug` |
+| compile-only | N | N | N | Y: `--intermediate` / `--incremental` / `--run` | N | N | 只有加上 `--run` 才会出现 active run path |
+| compile+run | Y: 当前实现会把 `interp` 折叠成 `binary` | Y | Y | Y | Y | Y | `--compile --run` 未显式指定执行模式时默认走 `binary` |
+| inline `-e/-c` | N | N | N | N | Y | Y | 只走 bare global + 标准模块注册，不接 compile/debug/module 流程 |
+| `--project ... -m ...` | Y: 仅 `interp` / `binary` | Y | Y | N | Y | Y | `process.arguments[0]` 保留原始 dotted module 名，内部再归一成 slash path |
+| help / version | N | N | N | N | N | N | 必须独占 |
 
 `compile family` 固定指这组 flag：
 
 - `--run`
 - `--intermediate`
 - `--incremental`
-- `--emit-aot-c`
-- `--emit-aot-llvm`
 
 `--debug*` 固定指这组 flag：
 
@@ -104,17 +102,15 @@ doc_type: testing-guide
 | `--project` 没有 `-m` | Parse | `--project requires -m <module>` | 显式项目绑定必须指定入口模块 | `test_module_mode_requires_project_and_rejects_unsupported_combinations` |
 | `-m` 没有 `--project` | Parse | `-m requires --project <project.zrp>` | 模块名不能脱离项目上下文存在 | `test_module_mode_requires_project_and_rejects_unsupported_combinations` |
 | inline + compile/debug/module/execution-mode 选项 | Parse | `Inline -e/-c mode does not support compile, debug, module, or execution-mode options` | `-e/-c` 只支持 bare global 执行 | `test_eval_rejects_compile_debug_and_module_options` |
-| compile-only + run-path 选项或透传参数 | Parse | `require an active run path` | compile-only 没有 active run path | `test_passthrough_arguments_require_active_run_path`、`test_aot_runtime_options_require_aot_execution_mode`、`test_debug_flags_require_debug_and_active_run_path`；`run_compile_passthrough_error` |
+| compile-only + run-path 选项或透传参数 | Parse | `require an active run path` | compile-only 没有 active run path | `test_passthrough_arguments_require_active_run_path`、`test_debug_flags_require_debug_and_active_run_path`；`run_compile_passthrough_error` |
 | REPL + run-path 选项或透传参数 | Parse | `require a project run path` | REPL 不是项目运行路径 | `test_passthrough_arguments_require_active_run_path`、`test_debug_flags_require_debug_and_active_run_path` |
-| `--require-aot-path` 但执行模式不是 `aot_c` / `aot_llvm` | Parse | `--require-aot-path requires --execution-mode aot_c or aot_llvm` | 该 flag 只校验 AOT 路径 | `test_aot_runtime_options_require_aot_execution_mode` |
-| `--project ... -m ... --execution-mode aot_c` 或 `aot_llvm` | Parse | `--project ... -m only supports --execution-mode interp or binary in v1; aot_* is not supported` | 模块入口运行 v1 不接 AOT | `test_module_mode_requires_project_and_rejects_unsupported_combinations`；`run_project_module_aot_error` |
+| `--project ... -m ... --execution-mode aot_c` | Parse | `Unknown execution mode:` | 主仓已移除 AOT 执行模式 | `run_project_module_unknown_execution_mode` |
 | `-i` + help / version / compile-only | Parse | `--interactive cannot be combined with help, version, or compile-only paths` | `-i` 只允许 REPL alias 或 run 成功后的 fresh REPL | `test_interactive_modifier_parse_and_validate` |
 | `--debug-address` / `--debug-wait` / `--debug-print-endpoint` 缺少 `--debug` | Parse | `--debug-address, --debug-wait, and --debug-print-endpoint require --debug` | debug 子选项必须挂在 `--debug` 下 | `test_debug_flags_require_debug_and_active_run_path` |
-| compile family 缺少 `--compile` | Parse | `--run, --intermediate, --incremental, --emit-aot-c, and --emit-aot-llvm require --compile <project.zrp>` | compile 修饰符不能独立存在 | `test_compile_only_modifiers_require_compile` |
+| compile family 缺少 `--compile` | Parse | `--run, --intermediate, and --incremental require --compile <project.zrp>` | compile 修饰符不能独立存在 | `test_compile_only_modifiers_require_compile` |
 | 缺少 flag 值 | Parse | `Missing <project.zrp> after --compile`、`Missing <project.zrp> after --project`、`Missing <module> after -m`、`Missing inline code after -e`、`Missing address after --debug-address`、`Missing execution mode after --execution-mode` | 需要参数的 flag 缺值 | `test_missing_required_values_fail` |
-| 未知执行模式 | Parse | `Unknown execution mode:` | 只接受 `interp` / `binary` / `aot_c` / `aot_llvm` | `test_missing_required_values_fail` |
+| 未知执行模式 | Parse | `Unknown execution mode:` | 只接受 `interp` / `binary` | `test_missing_required_values_fail` |
 | 未知选项 | Parse | `Unknown option:` | parser 不做宽松回退 | `test_unknown_and_duplicate_modes_fail` |
-| debug + `aot_c` / `aot_llvm` 项目运行 | Runtime | `zr debugger v1 only supports interp and binary execution modes` | debug agent 运行期只支持 `interp` / `binary` | 代码路径：`zr_vm_cli/src/zr_vm_cli/runtime/runtime.c` |
 | CLI 构建未带 debug agent 却使用 `--debug` | Runtime | `debug agent support is not built into this CLI` | 运行期能力缺失 | 代码路径：`zr_vm_cli/src/zr_vm_cli/runtime/runtime.c` |
 
 ## `zr.system.process.arguments` Contract Matrix

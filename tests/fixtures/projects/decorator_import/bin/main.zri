@@ -1,0 +1,65 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 4
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 4
+
+CONSTANTS (3):
+  [0] native closure
+  [1] string: "decorated_user"
+  [2] null
+
+LOCAL_VARIABLES (1):
+  [0] decorated: offset_activate=3, offset_dead=10
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (1):
+    [0] decorated: decorated_user
+  EXPORTED_SYMBOLS (0):
+  STATIC_IMPORTS (1):
+    import decorated_user
+  MODULE_ENTRY_EFFECTS (2):
+    IMPORT_CALL decorated_user.verifyDecorators [kind=value readiness=entry]
+    IMPORT_CALL decorated_user.decoratedBonus [kind=function readiness=declaration]
+  EXPORTED_CALLABLE_SUMMARIES (0):
+  TOP_LEVEL_CALLABLE_BINDINGS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (2):
+  [0] kind=MEMBER_GET inst=4 member=0 deopt=0 args=0 hits=0 misses=0
+  [1] kind=MEMBER_GET inst=6 member=1 deopt=0 args=0 hits=0 misses=0
+
+EH_TABLE (0):
+
+INSTRUCTIONS (10):
+  [0] GET_CONSTANT (extra=1, operand=0)
+  [1] GET_CONSTANT (extra=2, operand=1)
+  [2] KNOWN_NATIVE_CALL (extra=1, operand1=1, operand2=1)
+  [3] SET_STACK (extra=0, operand=1)
+  [4] GET_MEMBER_SLOT (extra=1, operand1=0, operand2=0)
+  [5] SUPER_FUNCTION_CALL_NO_ARGS (extra=1, operand1=1, operand2=0)
+  [6] GET_MEMBER_SLOT (extra=2, operand1=0, operand2=1)
+  [7] SUPER_FUNCTION_CALL_NO_ARGS (extra=2, operand1=2, operand2=0)
+  [8] ADD (extra=3, operand1=1, operand2=2)
+  [9] FUNCTION_RETURN (extra=1, operand1=3, operand2=0)
+

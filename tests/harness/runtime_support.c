@@ -312,12 +312,10 @@ static TZrBool zr_tests_runtime_capture_failure(SZrState *state, EZrThreadStatus
 
 static void zr_tests_runtime_execute_body(SZrState *state, TZrPtr arguments) {
     ZrTestsRuntimeExecuteRequest *request = (ZrTestsRuntimeExecuteRequest *)arguments;
-    SZrClosure *closure;
     TZrStackValuePointer base;
     SZrFunctionStackAnchor baseAnchor;
     SZrTypeValue *closureValue;
     TZrBool ignoredFunction = ZR_FALSE;
-    TZrBool ignoredClosure = ZR_FALSE;
 
     if (state == ZR_NULL || request == ZR_NULL || request->function == ZR_NULL) {
         return;
@@ -325,32 +323,23 @@ static void zr_tests_runtime_execute_body(SZrState *state, TZrPtr arguments) {
 
     ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(state,
                                                            ZR_CAST_RAW_OBJECT_AS_SUPER(request->function));
-    closure = ZrCore_Closure_New(state, 0);
-    if (closure == ZR_NULL) {
+    base = state->stackTop.valuePointer;
+    base = ZrCore_Function_CheckStackAndAnchor(state, request->function->stackSize + 1, base, base, &baseAnchor);
+
+    ZrCore_Closure_PushToStack(state, request->function, ZR_NULL, base, state->stackTop.valuePointer);
+    closureValue = ZrCore_Stack_GetValue(state->stackTop.valuePointer);
+    if (closureValue == ZR_NULL || closureValue->value.object == ZR_NULL) {
         if (ignoredFunction) {
             ZrCore_GarbageCollector_UnignoreObject(state->global,
                                                    ZR_CAST_RAW_OBJECT_AS_SUPER(request->function));
         }
         return;
     }
-
-    ignoredClosure = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    closure->function = request->function;
-    ZrCore_Closure_InitValue(state, closure);
-
-    base = state->stackTop.valuePointer;
-    base = ZrCore_Function_CheckStackAndAnchor(state, request->function->stackSize + 1, base, base, &baseAnchor);
-
-    closureValue = ZrCore_Stack_GetValue(state->stackTop.valuePointer);
-    ZrCore_Value_InitAsRawObject(state, closureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
     closureValue->type = ZR_VALUE_TYPE_CLOSURE;
     closureValue->isGarbageCollectable = ZR_TRUE;
     closureValue->isNative = ZR_FALSE;
     state->stackTop.valuePointer++;
 
-    if (ignoredClosure) {
-        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    }
     if (ignoredFunction) {
         ZrCore_GarbageCollector_UnignoreObject(state->global,
                                                ZR_CAST_RAW_OBJECT_AS_SUPER(request->function));

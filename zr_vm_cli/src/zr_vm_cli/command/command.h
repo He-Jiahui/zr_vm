@@ -17,9 +17,7 @@ typedef enum EZrCliMode {
 
 typedef enum EZrCliExecutionMode {
     ZR_CLI_EXECUTION_MODE_INTERP = 0,
-    ZR_CLI_EXECUTION_MODE_BINARY = 1,
-    ZR_CLI_EXECUTION_MODE_AOT_C = 2,
-    ZR_CLI_EXECUTION_MODE_AOT_LLVM = 3
+    ZR_CLI_EXECUTION_MODE_BINARY = 1
 } EZrCliExecutionMode;
 
 typedef struct SZrCliCommand {
@@ -36,9 +34,6 @@ typedef struct SZrCliCommand {
     TZrBool interactiveAfterRun;
     TZrBool emitIntermediate;
     TZrBool incremental;
-    TZrBool emitAotC;
-    TZrBool emitAotLlvm;
-    TZrBool requireAotPath;
     TZrBool emitExecutedVia;
     TZrBool debugEnabled;
     TZrBool debugWait;

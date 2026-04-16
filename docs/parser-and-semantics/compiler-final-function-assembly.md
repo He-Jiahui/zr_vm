@@ -17,7 +17,7 @@ plan_sources:
   - user: 2026-04-04 拆分边界“final function assembly + invariant validation”独立出去
 tests:
   - tests/parser/test_compiler_regressions.c
-  - tests/parser/test_execbc_aot_pipeline.c
+  - tests/parser/test_escape_metadata_pipeline.c
 doc_type: module-detail
 ---
 
@@ -113,8 +113,8 @@ doc_type: module-detail
 本次拆分后实际重跑的验证：
 
 ```powershell
-wsl.exe bash -lc "cd /mnt/d/Git/Github/zr_vm_mig/zr_vm && cmake --build build/codex-wsl-gcc-debug --target zr_vm_compiler_regressions_test zr_vm_execbc_aot_pipeline_test -j8 && export LD_LIBRARY_PATH=$PWD/build/codex-wsl-gcc-debug/lib && ./build/codex-wsl-gcc-debug/bin/zr_vm_compiler_regressions_test && ./build/codex-wsl-gcc-debug/bin/zr_vm_execbc_aot_pipeline_test"
-wsl.exe bash -lc "cd /mnt/d/Git/Github/zr_vm_mig/zr_vm && cmake --build build/codex-wsl-clang-debug --target zr_vm_compiler_regressions_test zr_vm_execbc_aot_pipeline_test -j8 && export LD_LIBRARY_PATH=$PWD/build/codex-wsl-clang-debug/lib && ./build/codex-wsl-clang-debug/bin/zr_vm_compiler_regressions_test && ./build/codex-wsl-clang-debug/bin/zr_vm_execbc_aot_pipeline_test"
+wsl.exe bash -lc "cd /mnt/d/Git/Github/zr_vm_mig/zr_vm && cmake --build build/codex-wsl-gcc-debug --target zr_vm_compiler_regressions_test zr_vm_semir_pipeline_test -j8 && export LD_LIBRARY_PATH=$PWD/build/codex-wsl-gcc-debug/lib && ./build/codex-wsl-gcc-debug/bin/zr_vm_compiler_regressions_test && ./build/codex-wsl-gcc-debug/bin/zr_vm_semir_pipeline_test"
+wsl.exe bash -lc "cd /mnt/d/Git/Github/zr_vm_mig/zr_vm && cmake --build build/codex-wsl-clang-debug --target zr_vm_compiler_regressions_test zr_vm_semir_pipeline_test -j8 && export LD_LIBRARY_PATH=$PWD/build/codex-wsl-clang-debug/lib && ./build/codex-wsl-clang-debug/bin/zr_vm_compiler_regressions_test && ./build/codex-wsl-clang-debug/bin/zr_vm_semir_pipeline_test"
 . "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Import-VsDevCmdEnvironment.ps1"
 cmake -S . -B build\codex-msvc-ninja-cli-debug -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DBUILD_TESTS=OFF -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF
 cmake --build build\codex-msvc-ninja-cli-debug --target zr_vm_cli_executable --parallel 8
@@ -124,7 +124,6 @@ cmake --build build\codex-msvc-ninja-cli-debug --target zr_vm_cli_executable --p
 验收点：
 
 - nested lambda child graph regression 通过
-- AOT child thunk pipeline 不回退
-- strict standalone AOT C lowering（无 embedded blob）在 entry/child 含 unsupported 指令时会直接失败；CLI / project `--emit-aot-c` 因为携带 embedded blob，仍会保留 shim fallback
+- SemIR/最终装配主链路在 interp/binary 入口下不回退
 - gcc / clang 结果一致
 - Windows MSVC `cl + Ninja` smoke 仍能输出 `hello world`

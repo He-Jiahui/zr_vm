@@ -48,7 +48,7 @@ benchmark 定义不再散落在 `tests/fixtures/projects/benchmark_*`。
 其中：
 
 - `registry.cmake`
-  负责 case 名称、tier、支持的实现、pass banner、per-tier checksum、是否要求真实 AOT 路径
+  负责 case 名称、tier、支持的实现、pass banner 与 per-tier checksum
 - `cases/<case>/zr/`
   负责 ZR 项目版本
 - `cases/<case>/{c,python,node,rust,dotnet}/`
@@ -60,9 +60,6 @@ benchmark 定义不再散落在 `tests/fixtures/projects/benchmark_*`。
 
 - `ZR interp`
 - `ZR binary`
-- `ZR aot_c`
-- `ZR aot_llvm`
-  - LLVM host adapter 不可用时记为 `SKIP`
 - `C`
 - `Python`
 - `Node.js`
@@ -125,13 +122,6 @@ scale 固定为：
 - `ZR binary`
   - 先 `zr_vm_cli --compile <project.zrp>`
   - 再 `--execution-mode binary`
-- `ZR aot_c`
-  - 先 `zr_vm_cli --compile <project.zrp> --emit-aot-c`
-  - 再 `--execution-mode aot_c --require-aot-path`
-- `ZR aot_llvm`
-  - 先 `zr_vm_cli --compile <project.zrp> --emit-aot-llvm`
-  - 再 `--execution-mode aot_llvm --require-aot-path`
-  - 缺少 LLVM host adapter 时记为 `SKIP`
 - `C`
   - 由 `tests/CMakeLists.txt` 提前注册 `zr_vm_native_benchmark_runner`
 - `Rust`
@@ -202,7 +192,6 @@ JSON 结构：
 - 没有 `node`
 - 没有 `cargo`
 - 没有 `dotnet`
-- 没有 `clang` / `clang-cl`，因此 `aot_llvm` 不可用
 
 被 `SKIP` 的实现必须继续出现在 Markdown/JSON 报告里，不能直接消失。
 

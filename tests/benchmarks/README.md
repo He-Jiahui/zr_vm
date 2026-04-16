@@ -114,16 +114,15 @@ ctest -R '^performance_report$' --test-dir build/benchmark-gcc-release --output-
 
 ## Isolate implementations (diagnosis)
 
-To run only selected benchmark implementation ids (comma-separated), set **`ZR_VM_PERF_ONLY_IMPLEMENTATIONS`** before `ctest`. Matching ids are the registry keys, for example: `c`, `zr_interp`, `zr_binary`, `zr_aot_c`, `zr_aot_llvm`, `python`, `node`, … Cases that do not register any selected implementation are skipped entirely.
+To run only selected benchmark implementation ids (comma-separated), set **`ZR_VM_PERF_ONLY_IMPLEMENTATIONS`** before `ctest`. Matching ids are the registry keys, for example: `c`, `zr_interp`, `zr_binary`, `python`, `node`, … Cases that do not register any selected implementation are skipped entirely.
 
 - **`relative_to_c`** and comparison columns may be empty or `null` if you omit the native **`c`** baseline; add `c` to the list when you need ratios.
-- Convenience script (WSL): `bash scripts/benchmark/run_perf_aot_only.sh [build-dir]` defaults to `zr_aot_c,zr_aot_llvm` and `ZR_VM_TEST_TIER=core`.
 
 Example:
 
 ```bash
 export ZR_VM_TEST_TIER=core
-export ZR_VM_PERF_ONLY_IMPLEMENTATIONS=zr_aot_c,zr_aot_llvm
+export ZR_VM_PERF_ONLY_IMPLEMENTATIONS=c,zr_interp,zr_binary
 ctest -R '^performance_report$' --test-dir build/benchmark-gcc-release --output-on-failure
 ```
 
@@ -136,7 +135,7 @@ Example:
 ```bash
 export ZR_VM_TEST_TIER=core
 export ZR_VM_PERF_ONLY_CASES=gc_fragment_baseline,gc_fragment_stress
-export ZR_VM_PERF_ONLY_IMPLEMENTATIONS=c,zr_interp,zr_binary,zr_aot_c,zr_aot_llvm
+export ZR_VM_PERF_ONLY_IMPLEMENTATIONS=c,zr_interp,zr_binary
 ctest -R '^performance_report$' --test-dir build/benchmark-gcc-release --output-on-failure
 ```
 
@@ -153,7 +152,7 @@ The helper defaults to:
 
 - `ZR_VM_TEST_TIER=stress`
 - `ZR_VM_PERF_ONLY_CASES=gc_fragment_baseline,gc_fragment_stress`
-- `ZR_VM_PERF_ONLY_IMPLEMENTATIONS=c,zr_interp,zr_binary,zr_aot_c,zr_aot_llvm`
+- `ZR_VM_PERF_ONLY_IMPLEMENTATIONS=c,zr_interp,zr_binary`
 
 ## Report Shape
 
@@ -174,18 +173,19 @@ The helper defaults to:
 
 Benchmark Release build (before CSV): `scripts/benchmark/build_benchmark_release.sh gcc|clang` writes to `build/benchmark-gcc-release` or `build/benchmark-clang-release`. On Windows, `pwsh ./scripts/benchmark/build_benchmark_release.ps1 -Toolchain gcc|clang|msvc` uses WSL for gcc/clang and `build/benchmark-msvc-release` for MSVC.
 
-CSV export (WSL): `scripts/benchmark/run_wsl_benchmarks_report_csv.sh` runs `ctest -R performance_report` and writes `benchmark_speed_timings.csv` / `zr_interp_vs_languages.csv` under `<build>/tests_generated/performance/`. The column `one_shot_compile_excluded_from_wall_ms` is `true` for ZR `binary` / `aot_c` / `aot_llvm`: wall ms come from the perf-runner phase only; the suite runs `zr_vm_cli --compile` in a separate prepare step (see `tests/cmake/run_performance_suite.cmake`). MSVC: `ctest --test-dir build/benchmark-msvc-release -C Release -R '^performance_report$'`, then `python3 scripts/benchmark/benchmark_reports_to_csv.py --report-dir build/benchmark-msvc-release/tests_generated/performance`.
+CSV export (WSL): `scripts/benchmark/run_wsl_benchmarks_report_csv.sh` runs `ctest -R performance_report` and writes `benchmark_speed_timings.csv` / `zr_interp_vs_languages.csv` under `<build>/tests_generated/performance/`. The column `one_shot_compile_excluded_from_wall_ms` is `true` for ZR `binary`: wall ms come from the perf-runner phase only; the suite runs `zr_vm_cli --compile` in a separate prepare step (see `tests/cmake/run_performance_suite.cmake`). MSVC: `ctest --test-dir build/benchmark-msvc-release -C Release -R '^performance_report$'`, then `python3 scripts/benchmark/benchmark_reports_to_csv.py --report-dir build/benchmark-msvc-release/tests_generated/performance`.
 
 **Consolidated JSON + HTML viewer:** `python3 scripts/benchmark/aggregate_benchmark_summary.py --tests-generated <build>/tests_generated` writes `<build>/tests_generated/benchmark_suite_summary.json` and a copy `<build>/tests_generated/benchmark_html_viewer.json` for the file picker in `benchmark_compare_viewer.html`. With `--bundle-html <path>`, writes a self-contained page (embedded base64). `run_wsl_benchmarks_report_csv.sh` runs aggregate with `--bundle-html <build>/tests_generated/benchmark_compare_embedded.html` so you can double-click the embedded HTML or open `benchmark_compare_viewer.html` and choose `benchmark_html_viewer.json`.
 
 **`run_wsl_benchmarks_report_csv.sh` (default):** runs `ctest` **twice**: (1) `ZR_VM_TEST_TIER=profile` with `ZR_VM_PERF_CALLGRIND_COUNTING=1`, then renames `tests_generated/performance/` to `tests_generated/performance_profile_callgrind/`; (2) timing pass with `ZR_VM_TEST_TIER` restored (default `core`) and Callgrind counting off, writing fresh `tests_generated/performance/`. CSV and `benchmark_suite_summary.json` use pass (2). Pass (1) is summarized as `benchmark_suite_summary_callgrind.json`. Set `BENCHMARK_DUAL_CTEST=0` for a single `ctest` using your current environment.
 
-**ZR AOT C / AOT LLVM (what the numbers mean):** The prepare step runs `zr_vm_cli --compile` with `--emit-aot-c` or `--emit-aot-llvm`, which lowers the module and **builds a host shared library** under the project `aot_c/lib/` or `aot_llvm/lib/` tree. On Linux/macOS, **AOT C** host link prefers **`clang`** if it is on `PATH`, otherwise **`cc`**. Set **`ZR_VM_AOT_C_HOST_COMPILER`** to force the compiler (e.g. `clang-18`). **AOT LLVM** host compile already uses the **clang** toolchain (`zr_cli_resolve_aot_llvm_toolchain`). **Prepare is executed once by the suite via CMake (`execute_process`) and is not included in reported `mean_wall_ms` / `perf_runner` samples.** The timed command is only `zr_vm_cli ... --execution-mode aot_c|aot_llvm` (the perf runner does **not** re-invoke the host compiler in those iterations). Reported wall ms still include full **CLI process** startup, `dlopen` of the `.so`/`.dylib`/`.dll`, AOT runtime setup, and execution via **native thunks**—so they can look large versus a tiny C baseline even though host compile is excluded. CSV `one_shot_compile_excluded_from_wall_ms` is `true` for `binary` / `aot_c` / `aot_llvm` to document that split; see `benchmark_report.json` fields `reported_wall_ms_includes_prepare_compile` and `reported_wall_ms_scope`.
+**ZR binary (what the numbers mean):** The prepare step runs `zr_vm_cli --compile`, which emits `.zro` artifacts under the generated project tree. **Prepare is executed once by the suite via CMake (`execute_process`) and is not included in reported `mean_wall_ms` / `perf_runner` samples.** The timed command is only `zr_vm_cli ... --execution-mode binary`. Reported wall ms still include full **CLI process** startup, `.zro` loading, runtime setup, and program execution. CSV `one_shot_compile_excluded_from_wall_ms` is `true` for `binary` to document that split; see `benchmark_report.json` fields `reported_wall_ms_includes_prepare_compile` and `reported_wall_ms_scope`.
 
 Unavailable toolchains are reported as `SKIP`, not silently dropped.
 
-`ZR binary` and `ZR aot_*` remain in the report, but they are follow-up debt for
-the current core-gated milestone and do not block core runtime performance work.
+`ZR binary` remains in the report, but it does not block core runtime performance
+work outside the benchmark slice itself. Historical AOT tooling now lives only
+under `zr_vm_aot/`.
 
 ## Java Toolchain Notes
 

@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "zr_vm_rust_binding_sys",
+    "zr_vm_rust_binding",
+]
+resolver = "2"

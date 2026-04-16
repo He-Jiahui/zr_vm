@@ -1,10 +1,10 @@
 # ZR-VM 测试拓扑与执行顺序
 
-本文档描述当前仓库中实际暴露给 CTest 的测试入口，以及 `smoke/core/stress` 三档过滤如何叠加到现有 suite 上。AOT 不是另一套平行测试世界，而是现有 reference/project/golden/CLI 资产上的第二维合同。
+本文档描述当前主仓实际暴露给 `CTest` 的测试入口，以及 `smoke/core/stress` 三档过滤如何叠加到现有 suite 上。主仓现在只覆盖 interp、binary、`.zri` 和项目/CLI 工作流；AOT 已从主链路分离到独立归档目录，不再属于默认测试合同。
 
 ## 活跃 Suite
 
-文档级“主链路”聚合入口仍以如下 **9 个** 为核心（默认 `ctest` 会跑它们，以及其它在 `tests/CMakeLists.txt` 中注册的独立用例，例如 `benchmark_registry`、`system_fs` 等）：
+主仓默认聚合入口保持为以下 suite：
 
 1. `core_runtime`
 2. `language_pipeline`
@@ -14,85 +14,49 @@
 6. `projects`
 7. `cli_args`
 8. `cli_integration`
-9. `golden_regression`
 
-**可选（长耗时）：** `performance_report` 仅在配置时设置 **`ZR_VM_REGISTER_PERFORMANCE_CTEST=ON`** 时注册；标签为 `benchmark`、`long_running`。不注册时可用构建目标 **`run_performance_suite`** 运行同一套 `run_performance_suite.cmake`（见 `docs/testing-and-validation/ctest-performance-reporting.md`）。
+可选长耗时入口：
 
-不再把旧的单个二进制入口描述为“活跃 suite”。诸如 `zr_vm_gc_test`、`zr_vm_parser_test`、`zr_vm_scripts_test` 这类目标只作为 suite 内部实现细节存在，由 `tests/cmake/run_executable_suite.cmake`、`tests/cmake/run_projects_suite.cmake`、`tests/cmake/run_cli_suite.cmake` 统一编排。
+- `performance_report`
+  - 仅在配置时设置 `ZR_VM_REGISTER_PERFORMANCE_CTEST=ON` 时注册。
+  - 默认性能矩阵只跟踪 `c`、`zr_interp`、`zr_binary` 和外部语言实现。
 
 ## 分层职责
 
-### `core_runtime`
-- 覆盖范围：GC、instruction、meta、runtime probe。
-- 角色：承接 L3 `Runtime Path Probes`，锁住最底层执行语义。
-
-### `language_pipeline`
-- 覆盖范围：parser、SemIR/ExecBC/AOT pipeline、reference full-stack matrix、小型 parity/contract fixture。
-- 角色：承接 L0/L1/L2 的小夹具矩阵。
-
-### `containers`
-- 覆盖范围：`zr.container` 的 metadata、type inference、runtime 行为。
-- 角色：作为项目/语言夹具的共享支撑层。
-
-### `language_server`
-- 覆盖范围：symbol/reference/semantic/incremental/LSP project features。
-- 角色：保持语言服务回归集中暴露为一个 suite。
-
-### `language_server_stdio_smoke`
-- 覆盖范围：stdio 端到端烟雾验证。
-- 角色：确认独立可执行入口仍可被 Node 驱动。
-
-### `projects`
-- 覆盖范围：项目级 CLI 回归、source/binary import、多模块工程、大型 fixture。
-- 角色：承接 L4 `Project Fixtures`，包括：
-  - `aot_module_graph_pipeline`
-  - `aot_dynamic_meta_ownership_lab`
-  - `aot_eh_tail_gc_stress`
-
-### `cli_args`
-- 覆盖范围：CLI 参数与帮助输出。
-- 角色：锁定命令面合同。
-
-### `cli_integration`
-- 覆盖范围：`--compile`、`--intermediate`、`--run`、`--incremental`、REPL。
-- 角色：验证 compile/run/source-binary roundtrip 工作流。
-
-### `golden_regression`
-- 覆盖范围：`tests/golden/` 下的 AST / `.zri` / `.zro` / AOT-C / AOT-LLVM 快照。
-- 角色：锁定稳定 artifact contract，而不是仅比较“能不能生成”。
-
-### `performance_report`（可选）
-- 覆盖范围：`tests/benchmarks/` 下跨语言 benchmark 集合的运行态耗时与峰值内存。
-- 角色：生成 `tests_generated/performance/benchmark_report.md` 与 `.json`，输出 `case x implementation` 长表报告，并显式记录 `SKIP`/`FAIL`。
-- 注册条件：`cmake -DZR_VM_REGISTER_PERFORMANCE_CTEST=ON`。未注册时用 `cmake --build <dir> --target run_performance_suite`。
+- `core_runtime`
+  - GC、instruction、meta、runtime probe 的底层执行语义。
+- `language_pipeline`
+  - parser、SemIR/ExecBC、reference full-stack matrix、小型 parity fixture。
+- `containers`
+  - `zr.container` 的 metadata、type inference、runtime 行为。
+- `language_server`
+  - symbol/reference/semantic/incremental/LSP project features。
+- `language_server_stdio_smoke`
+  - stdio 端到端烟雾验证。
+- `projects`
+  - 项目级 CLI 回归、source/binary import、多模块工程和大型 fixture。
+- `cli_args`
+  - CLI 参数、帮助输出和非法组合错误。
+- `cli_integration`
+  - `--compile`、`--intermediate`、`--run`、`--incremental`、REPL。
 
 ## Tier 过滤
 
-`smoke/core/stress` 不是新的顶层 suite，而是叠加在现有 suite 上的过滤维度：
+`smoke/core/stress` 是叠加在现有 suite 上的过滤维度：
 
 - `smoke`
   - 每次必跑，分钟级预算。
-  - 每个覆盖带至少保留一个最小夹具。
 - `core`
-  - PR 必跑。
-  - 展开 happy/negative/boundary/combination/regression。
+  - PR 必跑，展开 happy/negative/boundary/regression。
 - `stress`
-  - 夜间或手动运行。
-  - 放长循环、深 CFG、重复 deopt/requickening、深模块图、大 fixture 全规模版本。
+  - 夜间或手动运行，覆盖长循环、深模块图和大型 fixture。
 
-当前 tier 过滤入口：
+入口：
 
 - 环境变量：`ZR_VM_TEST_TIER=smoke|core|stress`
 - runner 参数：`zr_vm_test_runner --tier <smoke|core|stress> --ctest ...`
 
-项目/AOT 路径证明还使用：
-
-- `ZR_VM_REQUIRE_AOT_PATH=1`
-  - 对声明了 `require_aot_path` 的项目 case 启用严格检查。
-
 ## 推荐执行顺序
-
-推荐顺序仍然遵循“底层支撑 -> 语言主链路 -> 项目/CLI -> 快照回归”：
 
 1. `core_runtime`
 2. `language_pipeline`
@@ -102,14 +66,11 @@
 6. `projects`
 7. `cli_args`
 8. `cli_integration`
-9. `golden_regression`
-10. （可选）`performance_report` 或 `run_performance_suite`
-
-其中 `golden_regression` 保持靠后执行，用于在功能与项目工作流已确认有效后，再锁定 `.zri/.zro/AOT C/AOT LLVM` 漂移。跨语言性能报告仅在显式开启或单独跑目标时执行，避免拖慢默认回归。
+9. 可选 `performance_report`
 
 ## 资产布局
 
-当前有效测试资产统一放在以下目录：
+主仓有效测试资产位于：
 
 - `tests/fixtures/parser/`
 - `tests/fixtures/projects/`
@@ -119,63 +80,25 @@
 - `tests/golden/ast/`
 - `tests/golden/intermediate/`
 - `tests/golden/binary/`
-- `tests/golden/aot_c/`
-- `tests/golden/aot_llvm/`
 
-调试辅助脚本不属于 suite 入口，统一放在：
+调试辅助脚本位于：
 
 - `tests/debug/projects/`
 
-构建时生成的临时产物统一输出到构建目录下的 `tests_generated/`，例如：
-
-- `build/codex-wsl-gcc-debug/tests_generated/language_pipeline/`
-- `build/codex-wsl-gcc-debug/tests_generated/projects_suite/fixtures/`
-- `build/codex-wsl-gcc-debug/tests_generated/scripts/`
-- `build/codex-wsl-gcc-debug/tests_generated/scripts/aot_c/`
-- `build/codex-wsl-gcc-debug/tests_generated/scripts/aot_llvm/`
-- `build/codex-wsl-gcc-debug/tests_generated/performance/benchmark_report.md`
-- `build/codex-wsl-gcc-debug/tests_generated/performance/benchmark_report.json`
+构建生成物统一输出到构建目录下的 `tests_generated/`。
 
 ## 运行方式
 
-列出当前活跃 suite：
-
 ```bash
 ctest -N --test-dir build/codex-wsl-gcc-debug
-```
-
-运行全部：
-
-```bash
 ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure
-```
-
-运行指定 suite：
-
-```bash
-ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure -R '^language_pipeline$'
-ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure -R '^projects$'
-```
-
-运行指定 tier：
-
-```bash
-ZR_VM_TEST_TIER=smoke ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure -R 'language_pipeline|projects|golden_regression'
-ZR_VM_TEST_TIER=core ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure
-ZR_VM_PERF_WARMUP=2 ZR_VM_PERF_ITERATIONS=6 ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure -R '^performance_report$'
-```
-
-使用薄封装 runner：
-
-```bash
+ZR_VM_TEST_TIER=smoke ctest --test-dir build/codex-wsl-gcc-debug --output-on-failure -R "language_pipeline|projects|cli_integration"
 ./build/codex-wsl-gcc-debug/bin/zr_vm_test_runner --ctest --output-on-failure
-./build/codex-wsl-gcc-debug/bin/zr_vm_test_runner --tier smoke --ctest --output-on-failure -R "language_pipeline|projects|golden_regression"
 ```
 
 ## 维护规则
 
-1. 新增功能回归覆盖优先并入现有功能 suite；`performance_report` / `run_performance_suite` 作为专门的 benchmark/reporting 入口保留（CTest 默认不注册），不再把性能采集塞回功能回归脚本。
-2. AOT 测试继续复用 `tests/fixtures/reference/core_semantics/`，不新开平行 reference 根目录。
-3. `smoke/core/stress` 作为标签/runner filter/CI job 维度叠加，不改一级 suite 组织。
-4. 正式矩阵中的 AOT case 必须同时具备前端 `source` oracle 和至少一个后端 `artifact/parity/probe` oracle。
-5. golden 快照只提交到 `tests/golden/`，不要回写旧的散落输出目录。
+1. 新增回归优先并入现有 suite，不再把已分离的 AOT 路径带回主仓脚本。
+2. `smoke/core/stress` 只作为过滤维度，不改一级 suite 组织。
+3. golden 快照只提交到 `tests/golden/` 的 AST / `.zri` / `.zro` 主链路目录。
+4. AOT 相关源码、测试和历史资产只允许留在 `zr_vm_aot/`，不再参与主仓 `CTest`。

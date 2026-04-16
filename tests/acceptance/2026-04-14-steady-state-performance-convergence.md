@@ -5,7 +5,7 @@
 This round followed the user-selected hot-path-only scope:
 
 - optimize steady-state runtime paths for `zr_interp` and `zr_binary`
-- exclude `zr_aot_c` and `zr_aot_llvm`
+- exclude archived implementations that no longer participate in mainline performance acceptance
 - reuse the existing benchmark suite and filters
 - treat WSL/Linux as the primary evidence environment
 - validate touched shared runtime code with the WSL matrix, then run a Windows MSVC CLI smoke

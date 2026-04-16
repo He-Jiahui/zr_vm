@@ -131,62 +131,38 @@ doc_type: testing-guide
 - `layer_targets` 至少覆盖 3 层；高风险域默认覆盖 `stress`。
 - `assertions` 不能只写“能编译/能执行”，必须包含至少一个更低层证据，例如 AST 形态、diagnostic 范围、opcode、artifact 文本、metadata roundtrip、cleanup 次数。
 - `stress_class` 即使不是压力 case 也必须出现；非压力 case 固定为 `none`。
-- `tiers` 当前固定只允许 `smoke`、`core`、`stress`，并且每条 AOT case 至少落入 `core`。
-- `execution_modes` 当前统一声明 `interp`、`aot_c`、`aot_llvm`；是否真正需要可执行 parity 由 `backend_requirements` 决定。
-- `backend_requirements.require_aot_path` 用来表达“必须证明真的走了 AOT 路径”；`executed_via` 则是运行态可观测标记，当前允许值固定为 `interp|aot_c|aot_llvm`。
-- `oracles` 固定拆成 `source`、`artifact`、`parity`、`probe` 四类；任何正式 AOT case 都不能只保留前端断言或只保留后端断言。
+- `tiers` 当前固定只允许 `smoke`、`core`、`stress`。
+- `execution_modes` 如果出现，只描述主仓仍支持的 `interp` / `binary` 路径。
+- `artifact_targets` 只记录主仓仍维护的 `.zri` / `.zro` 或其它仍受支持的文本工件。
+- `oracles` 继续按 `source`、`artifact`、`parity`、`probe` 四类组织，但 parity 只约束主仓现行 interp/binary 语义。
 
-## AOT 分层矩阵
+## 分层验证入口
 
-新的 AOT 回归不是平行于 reference matrix 的第二棵目录树，而是 reference matrix 上叠加的第二维。当前固定五层：
-
-- `L0 Source Semantics`
-  - 用户可见行为：stdout、返回值、异常类型、cleanup trace
-- `L1 Artifact Contract`
-  - `.zri`、`.zro`、AOT-C、AOT-LLVM 文本产物中的 opcode、runtime contract、`DEOPT_MAP`、`EH_TABLE`、`GC_MAP`、`CALLSITE_CACHE_TABLE`
-- `L2 Executable AOT Parity`
-  - `interp`、`aot_c`、`aot_llvm` 结果一致性；若 backend 还只有文本产物，必须显式记录 skip reason，不能静默退回解释器
-- `L3 Runtime Path Probes`
-  - cache hit、PIC 宽度、deopt / requickening 次数、`max_callInfo_depth`、drop 顺序、`executed_via`
-- `L4 Project Fixtures`
-  - 多文件项目、source/binary import、CLI compile/run/incremental、大常量池、深 CFG、native/container/FFI 组合
-
-## AOT Oracle 合同
-
-`oracles` 字段统一表达同一条 case 在前后两侧都要担保什么：
+主矩阵当前固定按四层组织：
 
 - `source`
-  - 记录 stdout、返回值、异常或 cleanup 顺序这类用户可见行为
+  - 用户可见行为：stdout、返回值、异常类型、cleanup trace
 - `artifact`
-  - 记录 must-contain、must-not-contain、ordered-fragments、regex
-- `parity`
-  - 记录 `interp vs aot_c vs aot_llvm` 的对齐要求与显式 skip reason
-- `probe`
-  - 记录 cache/PIC/deopt/frame reuse/drop order/`executed_via` 之类的内部合同
+  - `.zri`、`.zro` 与相关 metadata / opcode / contract 文本
+- `runtime`
+  - interp/binary 结果一致性，以及 cache、PIC、deopt、drop 顺序等仍属于主运行时的内部合同
+- `project`
+  - 多文件项目、source/binary import、CLI compile/run/incremental、大常量池、深 CFG、native/container/FFI 组合
 
 ## 分档与运行
 
 当前分档固定为：
 
 - `smoke`
-  - 每次必跑；每个覆盖带至少 1 个小夹具；当前优先覆盖 `.zri/.zro + AOT-C` artifact contract、AOT path proof contract、meta cache、dynamic PIC、tail reuse、weak upgrade、`%using` exact-once drop
+  - 每次必跑；每个覆盖带至少 1 个小夹具；当前优先覆盖 `.zri/.zro` artifact contract、module/binary roundtrip、meta cache、dynamic PIC、tail reuse、weak upgrade、`%using` exact-once drop
 - `core`
-  - PR 必跑；展开全部 8 个覆盖带；`aot_c` 至少要覆盖 artifact contract，能执行的路径再做 parity
+  - PR 必跑；展开全部 8 个覆盖带；主仓只对 interp/binary 做 parity
 - `stress`
   - 夜间或手动；跑 megamorphic PIC、重复 deopt / requickening、深尾递归、nested finally、弱引用失效、ownership-heavy 微基准、深模块图、大常量池、超深 CFG
 
 当前仓库不新增长期第 6 个顶层 suite。`smoke/core/stress` 作为标签与 runner filter 叠加在现有 `core_runtime`、`language_pipeline`、`projects`、`golden_regression`、CLI suite 之上。
 
-## 超大集成 Fixture
-
-这轮 AOT 测试矩阵固定保留 3 个超大集成 fixture 兜底：
-
-- `aot_module_graph_pipeline`
-  - 多文件工程、source/binary 混合 import、incremental compile、CLI compile/run、module cache identity、artifact roundtrip
-- `aot_dynamic_meta_ownership_lab`
-  - property / `META_GET` / `META_SET`、dynamic/meta call-site cache、slot cache / PIC、prototype 变更导致 deopt、ownership/weak/%using/drop、container/native receiver 组合
-- `aot_eh_tail_gc_stress`
-  - nested try/finally、direct/meta/dyn tail call、frame reuse 与 handler/%using 下的合法拒绝复用、weak expiry、长循环、GC checkpoint、反复 deopt / requickening
+此前 AOT 专属大型夹具和专属 pipeline 测试已整体移入 `zr_vm_aot/`，不再参与主矩阵。
 
 ## 可复用 helper 合同
 
@@ -213,7 +189,7 @@ doc_type: testing-guide
 
 - `tests/parser/test_parser.c`, `tests/parser/test_char_and_type_cast.c`, `tests/parser/test_compiler_features.c`, `tests/parser/test_type_inference.c`
   - 承担 `parser` / `semantic/compiler`
-- `tests/parser/test_semir_pipeline.c`, `tests/parser/test_execbc_aot_pipeline.c`, `tests/parser/test_meta_call_pipeline.c`, `tests/parser/test_tail_call_pipeline.c`
+- `tests/parser/test_semir_pipeline.c`, `tests/parser/test_escape_metadata_pipeline.c`
   - 承担 `artifact`
 - `tests/parser/test_instruction_execution.c`, `tests/instructions/test_instructions.c`, `tests/exceptions/test_exceptions.c`
   - 承担 `runtime`

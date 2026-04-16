@@ -700,83 +700,6 @@ void test_reference_full_stack_manifest_inventory(void) {
     ZR_TEST_DIVIDER();
 }
 
-void test_reference_full_stack_aot_matrix_fields_are_present(void) {
-    static const char *kManifestPaths[] = {
-        "core_semantics/lexing_literals_diagnostics/manifest.json",
-        "core_semantics/expressions_precedence_chains/manifest.json",
-        "core_semantics/calls_named_default_varargs/manifest.json",
-        "core_semantics/types_casts_const/manifest.json",
-        "core_semantics/object_member_index_construct_target/manifest.json",
-        "core_semantics/protocols_iteration_comparable/manifest.json",
-        "core_semantics/modules_imports_artifacts/manifest.json",
-        "core_semantics/oop_inheritance_descriptors/manifest.json",
-        "core_semantics/ownership_using_resource_lifecycle/manifest.json",
-        "core_semantics/exceptions_gc_native_stress/manifest.json",
-    };
-    static const char *kCaseAotFields[] = {
-        "\"tiers\"",
-        "\"execution_modes\"",
-        "\"artifact_targets\"",
-        "\"probe_targets\"",
-        "\"backend_requirements\"",
-        "\"oracles\"",
-        "\"source\"",
-        "\"artifact\"",
-        "\"parity\"",
-        "\"probe\"",
-    };
-    static const char *kTierMarkers[] = {
-        "\"smoke\"",
-        "\"core\"",
-        "\"stress\"",
-    };
-    static const char *kExecutionModeMarkers[] = {
-        "\"interp\"",
-        "\"aot_c\"",
-        "\"aot_llvm\"",
-    };
-    static const char *kBackendOracleMarkers[] = {
-        "\"must_contain\"",
-        "\"must_not_contain\"",
-        "\"require_aot_path\"",
-    };
-    SZrTestTimer timer;
-    const char *testSummary = "Reference Full Stack AOT Matrix Fields Are Present";
-
-    ZR_TEST_START(testSummary);
-    timer.startTime = clock();
-
-    for (size_t manifestIndex = 0; manifestIndex < sizeof(kManifestPaths) / sizeof(kManifestPaths[0]); manifestIndex++) {
-        size_t manifestSize = 0;
-        char *manifestText = read_reference_file(kManifestPaths[manifestIndex], &manifestSize);
-
-        ZR_UNUSED_PARAMETER(manifestSize);
-        TEST_ASSERT_NOT_NULL(manifestText);
-        ZrTests_Reference_AssertFieldCoverage(manifestText,
-                                              kCaseAotFields,
-                                              sizeof(kCaseAotFields) / sizeof(kCaseAotFields[0]),
-                                              12);
-        ZrTests_Reference_AssertFieldCoverage(manifestText,
-                                              kExecutionModeMarkers,
-                                              sizeof(kExecutionModeMarkers) / sizeof(kExecutionModeMarkers[0]),
-                                              12);
-        ZrTests_Reference_AssertFieldCoverage(manifestText,
-                                              kBackendOracleMarkers,
-                                              sizeof(kBackendOracleMarkers) / sizeof(kBackendOracleMarkers[0]),
-                                              12);
-        TEST_ASSERT_TRUE(count_substring_occurrences(manifestText, "\"smoke\"") >= 1);
-        ZrTests_Reference_AssertFieldCoverage(manifestText,
-                                              kTierMarkers,
-                                              sizeof(kTierMarkers) / sizeof(kTierMarkers[0]),
-                                              1);
-        free(manifestText);
-    }
-
-    timer.endTime = clock();
-    ZR_TEST_PASS(timer, testSummary);
-    ZR_TEST_DIVIDER();
-}
-
 void test_reference_full_stack_priority_cases_are_present(void) {
     static const char* kPriorityCaseIds[] = {
         "lexing-unclosed-string",
@@ -872,19 +795,16 @@ void test_reference_full_stack_master_matrix_document_exists(void) {
         "12 条核心 case",
         "120",
         "tests/fixtures/reference/core_semantics/",
-        "L0 Source Semantics",
-        "L1 Artifact Contract",
-        "L2 Executable AOT Parity",
-        "L3 Runtime Path Probes",
-        "L4 Project Fixtures",
+        "source",
+        "artifact",
+        "runtime",
+        "project",
         "smoke",
         "core",
         "stress",
-        "executed_via",
-        "require_aot_path",
-        "aot_module_graph_pipeline",
-        "aot_dynamic_meta_ownership_lab",
-        "aot_eh_tail_gc_stress",
+        "interp",
+        "binary",
+        "zr_vm_aot/",
     };
     SZrTestTimer timer;
     const char* testSummary = "Reference Full Stack Master Matrix Document Exists";
@@ -909,74 +829,6 @@ void test_reference_full_stack_master_matrix_document_exists(void) {
     ZR_TEST_DIVIDER();
 }
 
-void test_testing_validation_index_mentions_aot_matrix_tiers(void) {
-    static const char *kRequiredPhrases[] = {
-        "Testing And Validation",
-        "smoke/core/stress",
-        "L0",
-        "L1",
-        "L2",
-        "L3",
-        "L4",
-        "AOT",
-        "full-stack-test-matrix.md",
-    };
-    SZrTestTimer timer;
-    const char *testSummary = "Testing Validation Index Mentions AOT Matrix Tiers";
-    size_t docSize = 0;
-    char *docText = ZR_NULL;
-
-    ZR_TEST_START(testSummary);
-    timer.startTime = clock();
-
-    docText = read_repo_doc_file("testing-and-validation/index.md", &docSize);
-    ZR_UNUSED_PARAMETER(docSize);
-    TEST_ASSERT_NOT_NULL(docText);
-    TEST_ASSERT_TRUE(ZrTests_Reference_TextContainsAll(docText,
-                                                       kRequiredPhrases,
-                                                       sizeof(kRequiredPhrases) / sizeof(kRequiredPhrases[0])));
-
-    free(docText);
-
-    timer.endTime = clock();
-    ZR_TEST_PASS(timer, testSummary);
-    ZR_TEST_DIVIDER();
-}
-
-void test_projects_suite_registers_aot_large_fixtures(void) {
-    static const char *kRequiredPhrases[] = {
-        "register_project_case(\"aot_module_graph_pipeline\"",
-        "register_project_case(\"aot_dynamic_meta_ownership_lab\"",
-        "register_project_case(\"aot_eh_tail_gc_stress\"",
-        "graph_binary_stage_source.zr",
-        "graph_binary_stage.zro",
-        "set_project_case_metadata(\"aot_module_graph_pipeline\"",
-        "set_project_case_metadata(\"aot_dynamic_meta_ownership_lab\"",
-        "set_project_case_metadata(\"aot_eh_tail_gc_stress\"",
-        "smoke;core;stress",
-    };
-    SZrTestTimer timer;
-    const char *testSummary = "Projects Suite Registers AOT Large Fixtures";
-    size_t fileSize = 0;
-    char *fileText = ZR_NULL;
-
-    ZR_TEST_START(testSummary);
-    timer.startTime = clock();
-
-    fileText = read_tests_repo_file("cmake/run_projects_suite.cmake", &fileSize);
-    ZR_UNUSED_PARAMETER(fileSize);
-    TEST_ASSERT_NOT_NULL(fileText);
-    TEST_ASSERT_TRUE(ZrTests_Reference_TextContainsAll(fileText,
-                                                       kRequiredPhrases,
-                                                       sizeof(kRequiredPhrases) / sizeof(kRequiredPhrases[0])));
-
-    free(fileText);
-
-    timer.endTime = clock();
-    ZR_TEST_PASS(timer, testSummary);
-    ZR_TEST_DIVIDER();
-}
-
 void test_execution_order_doc_mentions_current_suites_and_tiers(void) {
     static const char *kRequiredPhrases[] = {
         "core_runtime",
@@ -987,7 +839,6 @@ void test_execution_order_doc_mentions_current_suites_and_tiers(void) {
         "projects",
         "cli_args",
         "cli_integration",
-        "golden_regression",
         "ZR_VM_TEST_TIER",
         "--tier <smoke|core|stress>",
         "smoke/core/stress",
@@ -1410,4 +1261,3 @@ void test_reference_construct_target_misuse_fixture_matrix(void) {
     ZR_TEST_PASS(timer, testSummary);
     ZR_TEST_DIVIDER();
 }
-

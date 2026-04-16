@@ -93,8 +93,15 @@ static TZrBool stack_realloc_internal(SZrState *state, TZrUInt64 newSize, TZrBoo
     state->stackBase.valuePointer = newStackPointer;
     stack_mark_stack_as_absolute(state);
     state->stackTail.valuePointer = newStackPointer + newSize;
-    for (TZrSize i = previousStackSize + ZR_THREAD_STACK_SIZE_EXTRA; i < newSize + ZR_THREAD_STACK_SIZE_EXTRA; i++) {
-        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(newStackPointer + i));
+    /*
+     * The initial stack allocation reserves an extra tail cushion beyond the
+     * logical stack size. When the logical size grows, those previously hidden
+     * slots become part of the usable stack and must be initialized as well.
+     */
+    for (TZrSize i = previousStackSize; i < newSize + ZR_THREAD_STACK_SIZE_EXTRA; i++) {
+        SZrTypeValueOnStack *slot = newStackPointer + i;
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slot));
+        slot->toBeClosedValueOffset = 0u;
     }
     return ZR_TRUE;
 }

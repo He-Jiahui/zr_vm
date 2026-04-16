@@ -56,8 +56,8 @@ doc_type: category-index
   - 120 条首轮核心 case 的配额与类型分布
   - 现有 executable 与验证层映射
   - 首轮 30 条高风险优先 case 清单
-  - `L0 Source Semantics` 到 `L4 Project Fixtures` 的 AOT 分层矩阵
-  - `smoke/core/stress` 三档与 `executed_via` / `require_aot_path` 合同
+  - `source / artifact / runtime / project` 分层验证入口
+  - `smoke/core/stress` 三档与 interp/binary 主链路合同
 - `project-magic-constants-inventory.md`
   - 项目级魔法数与常量收敛的唯一 inventory
   - 第一批进入 `zr_vm_common` 与模块 `conf.h` 的最终映射
@@ -66,7 +66,7 @@ doc_type: category-index
 ## 阅读顺序
 
 1. 先读 `core-semantics-matrix.md`，确认计划文件里第一阶段 6 个主题目前到底处于什么状态。
-2. 再读 `full-stack-test-matrix.md`，理解 10 域主矩阵、AOT 分层矩阵、配额、helper 合同和 rollout 顺序。
+2. 再读 `full-stack-test-matrix.md`，理解 10 域主矩阵、分层验证入口、配额、helper 合同和 rollout 顺序。
 3. 进入 `tests/fixtures/reference/core_semantics/<domain>/manifest.json` 看某一域的上游证据与 `ZR` 决策。
 4. 如果在做跨模块配置收敛，再读 `project-magic-constants-inventory.md`，先看哪些值已经进入 `zr_vm_common`，哪些仍明确留在模块 `conf.h` 或 backlog。
 5. 最后沿 frontmatter 的 `tests` 和 `related_code` 回到具体 C 测试、artifact 校验和项目 fixture。

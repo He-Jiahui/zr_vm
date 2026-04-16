@@ -58,7 +58,7 @@ doc_type: module-detail
 - CLI 暴露 `--debug`、`--debug-address`、`--debug-wait`、`--debug-print-endpoint`。
 - 调试协议固定为 `zrdbg/1`，消息形状是 JSON-RPC 风格。
 - 支持断点、pause、`stepIn`、`stepOver`、`stepOut`、stack/scopes/variables、uncaught exception stop、terminated event。
-- `aot_c` / `aot_llvm` 明确不在 v1 调试承诺内，CLI 直接报错而不是假装支持。
+- 主仓只承诺 `interp` / `binary`；历史 AOT 调试需求已随 `zr_vm_aot/` 分离出主链路。
 
 ## Module Split
 
@@ -206,15 +206,9 @@ variables 目前是只读快照，不支持变量写回或带副作用求值。s
 
 这符合 v1 的安全边界，避免把脚本侧的 pause/breakpoint 控制重新暴露回脚本运行时本身。
 
-## AOT Boundary
+## Detached Backends
 
-`aot_runtime` 现有 observation/hook 基础不被破坏，但 v1 不承诺：
-
-- native breakpoint
-- native single-step
-- DWARF/PDB/CodeView 集成
-
-CLI 对 `--debug --execution-mode aot_c|aot_llvm` 直接返回错误，防止用户误以为 v1 已经具备 native debugger 语义。
+主仓调试合同只覆盖 `interp` 和 `binary`。如果后续要为 `zr_vm_aot/` 归档里的独立后端恢复调试能力，必须走新的独立设计，而不是在当前 v1 合同里隐式复活旧入口。
 
 ## Validation Coverage
 

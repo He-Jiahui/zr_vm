@@ -120,7 +120,6 @@ static SZrLibrary_Project *zr_vm_task_worker_clone_project(SZrState *state, cons
     }
     project->supportMultithread = launch->supportMultithread;
     project->autoCoroutine = launch->autoCoroutine;
-    project->aotRuntime = ZR_NULL;
     return project;
 }
 

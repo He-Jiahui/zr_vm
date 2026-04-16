@@ -1,0 +1,9 @@
+#ifndef ZR_VM_RUST_BINDING_CONF_H
+#define ZR_VM_RUST_BINDING_CONF_H
+
+#include "zr_vm_common.h"
+
+#define ZR_RUST_BINDING_API ZR_API
+#define ZR_RUST_BINDING_ERROR_MESSAGE_CAPACITY 512U
+
+#endif

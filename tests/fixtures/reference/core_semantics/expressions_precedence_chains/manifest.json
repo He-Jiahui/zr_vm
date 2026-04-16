@@ -30,8 +30,7 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri"
@@ -41,24 +40,6 @@
         "eval_order",
         "runtime_contract"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -86,10 +67,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -98,6 +78,18 @@
             "runtime_contract"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -128,8 +120,7 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri"
@@ -139,24 +130,6 @@
         "eval_order",
         "runtime_contract"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -184,10 +157,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -196,6 +168,18 @@
             "runtime_contract"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -226,37 +210,16 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri",
-        "zro",
-        "aot_c",
-        "aot_llvm"
+        "zro"
       ],
       "probe_targets": [
         "semir_contract",
         "eval_order"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": true,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": true,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -285,10 +248,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -296,6 +258,18 @@
             "eval_order"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -326,37 +300,16 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri",
-        "zro",
-        "aot_c",
-        "aot_llvm"
+        "zro"
       ],
       "probe_targets": [
         "semir_contract",
         "eval_order"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": true,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": true,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -385,10 +338,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -396,6 +348,18 @@
             "eval_order"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -427,8 +391,7 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri"
@@ -439,24 +402,6 @@
         "runtime_contract",
         "probe_summary"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -482,10 +427,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -495,6 +439,18 @@
             "probe_summary"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -525,8 +481,7 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri"
@@ -536,24 +491,6 @@
         "eval_order",
         "runtime_contract"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -579,10 +516,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -591,6 +527,18 @@
             "runtime_contract"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -621,8 +569,7 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri"
@@ -632,24 +579,6 @@
         "eval_order",
         "runtime_contract"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -675,10 +604,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -687,6 +615,18 @@
             "runtime_contract"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -717,8 +657,7 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri"
@@ -728,24 +667,6 @@
         "eval_order",
         "runtime_contract"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -771,10 +692,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -783,6 +703,18 @@
             "runtime_contract"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -813,8 +745,7 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri"
@@ -824,24 +755,6 @@
         "eval_order",
         "runtime_contract"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -867,10 +780,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -879,6 +791,18 @@
             "runtime_contract"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -909,38 +833,17 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri",
-        "zro",
-        "aot_c",
-        "aot_llvm"
+        "zro"
       ],
       "probe_targets": [
         "semir_contract",
         "eval_order",
         "runtime_contract"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": true,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": true,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -971,10 +874,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -983,6 +885,18 @@
             "runtime_contract"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -1013,8 +927,7 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri",
@@ -1025,24 +938,6 @@
         "eval_order",
         "project_fixture"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -1068,10 +963,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -1080,6 +974,18 @@
             "project_fixture"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     },
@@ -1110,8 +1016,7 @@
       ],
       "execution_modes": [
         "interp",
-        "aot_c",
-        "aot_llvm"
+        "binary"
       ],
       "artifact_targets": [
         "zri"
@@ -1121,24 +1026,6 @@
         "eval_order",
         "runtime_contract"
       ],
-      "backend_requirements": {
-        "require_aot_path": false,
-        "executed_via_allowed": [
-          "interp",
-          "aot_c",
-          "aot_llvm"
-        ],
-        "aot_c": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c"
-        },
-        "aot_llvm": {
-          "artifact": false,
-          "executable": false,
-          "skip_reason": "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm"
-        }
-      },
       "oracles": {
         "source": {
           "stdout": [],
@@ -1164,10 +1051,9 @@
             "interp"
           ],
           "optional_modes": [
-            "aot_c",
-            "aot_llvm"
+            "binary"
           ],
-          "skip_reason": "native AOT parity is now covered by project/runtime suites; this reference case keeps AOT modes optional until per-case manifest-driven parity is wired"
+          "skip_reason": "binary parity is covered by project/runtime suites; this reference case keeps per-case executable parity optional until manifest-driven parity is wired"
         },
         "probe": {
           "must_contain": [
@@ -1176,6 +1062,18 @@
             "runtime_contract"
           ],
           "must_not_contain": []
+        }
+      },
+      "backend_requirements": {
+        "require_binary_prepare": false,
+        "executed_via_allowed": [
+          "interp",
+          "binary"
+        ],
+        "binary": {
+          "artifact": false,
+          "executable": false,
+          "skip_reason": "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary"
         }
       }
     }

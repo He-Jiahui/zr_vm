@@ -273,6 +273,11 @@ TZrUInt32 compiler_get_or_add_member_entry(SZrCompilerState *cs, SZrString *memb
 TZrUInt32 compiler_get_or_add_member_entry_with_flags(SZrCompilerState *cs,
                                                       SZrString *memberName,
                                                       TZrUInt8 flags) ;
+TZrUInt32 compiler_get_or_add_member_entry_bound_with_flags(SZrCompilerState *cs,
+                                                            SZrString *memberName,
+                                                            TZrUInt32 prototypeIndex,
+                                                            TZrUInt32 descriptorIndex,
+                                                            TZrUInt8 flags) ;
 
 void ZrParser_Compiler_TrimStackToCount(SZrCompilerState *cs, TZrSize targetCount) ;
 

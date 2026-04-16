@@ -7,20 +7,8 @@
 
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/ast.h"
-#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
-
-typedef struct SZrAotWriterOptions {
-    const TZrChar *moduleName;
-    const TZrChar *sourceHash;
-    const TZrChar *zroHash;
-    TZrUInt32 inputKind;
-    const TZrChar *inputHash;
-    const TZrByte *embeddedModuleBlob;
-    TZrSize embeddedModuleBlobLength;
-    TZrBool requireExecutableLowering;
-} SZrAotWriterOptions;
 
 typedef struct SZrBinaryWriterOptions {
     const TZrChar *moduleName;
@@ -45,18 +33,6 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
 // 写入语法树文件 (.zrs)
 // 将解析后的 AST 写入可读的明文格式文件
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteSyntaxTreeFile(SZrState *state, SZrAstNode *ast, const TZrChar *filename);
-
-// 从 SemIR 降低为 AOT 后端文本工件。
-ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
-                                                               SZrFunction *function,
-                                                               const TZrChar *filename,
-                                                               const SZrAotWriterOptions *options);
-ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFile(SZrState *state, SZrFunction *function, const TZrChar *filename);
-ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *state,
-                                                                  SZrFunction *function,
-                                                                  const TZrChar *filename,
-                                                                  const SZrAotWriterOptions *options);
-ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFile(SZrState *state, SZrFunction *function, const TZrChar *filename);
 
 #endif //ZR_VM_PARSER_WRITER_H
 

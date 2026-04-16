@@ -33,11 +33,6 @@ set(ZR_VM_TESTS_REFERENCE_HARNESS_SOURCES
 set(ZR_VM_SUITE_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_executable_suite.cmake)
 set(ZR_VM_PROJECTS_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_projects_suite.cmake)
 set(ZR_VM_PERFORMANCE_RUNNER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_performance_suite.cmake)
-if (ZR_VM_BUILD_AOT)
-    set(ZR_VM_CTEST_PASS_BUILD_AOT "ON")
-else ()
-    set(ZR_VM_CTEST_PASS_BUILD_AOT "OFF")
-endif ()
 find_program(ZR_VM_NODE_EXECUTABLE node)
 
 function(zr_vm_apply_common_test_settings target_name)
@@ -253,6 +248,18 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             zr_vm_hash_set_dense_paths_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_hash_set_dense_paths.c
     )
+    zr_vm_add_unity_test_target(
+            zr_vm_execution_member_access_fast_paths_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_execution_member_access_fast_paths.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_execution_dispatch_callable_metadata_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_execution_dispatch_callable_metadata.c
+    )
+    zr_vm_add_unity_test_target(
+            zr_vm_object_call_known_native_fast_path_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_object_call_known_native_fast_path.c
+    )
     target_include_directories(zr_vm_native_closure_value_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -298,6 +305,30 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_hash_set_dense_paths_test)
+    target_include_directories(zr_vm_execution_member_access_fast_paths_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core
+    )
+    zr_vm_link_core(zr_vm_execution_member_access_fast_paths_test)
+    target_include_directories(zr_vm_execution_dispatch_callable_metadata_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_execution_dispatch_callable_metadata_test)
+    target_include_directories(zr_vm_object_call_known_native_fast_path_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/src/zr_vm_library
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core
+    )
+    zr_vm_link_core(zr_vm_object_call_known_native_fast_path_test)
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_object_call_known_native_fast_path_test PRIVATE zr_vm_library_shared)
+    else ()
+        target_link_libraries(zr_vm_object_call_known_native_fast_path_test PRIVATE zr_vm_library_static)
+    endif ()
 endif ()
 
 if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
@@ -346,48 +377,6 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_parser_core(zr_vm_semir_pipeline_test)
-
-    if (ZR_VM_BUILD_AOT)
-        zr_vm_add_unity_test_target(
-                zr_vm_execbc_aot_pipeline_test
-                ${CMAKE_SOURCE_DIR}/tests/parser/test_execbc_aot_pipeline.c
-        )
-        target_include_directories(zr_vm_execbc_aot_pipeline_test PRIVATE
-                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_library/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
-        )
-        zr_vm_link_parser_core_plus_library(zr_vm_execbc_aot_pipeline_test)
-
-        zr_vm_add_unity_test_target(
-                zr_vm_execbc_aot_manual_opcode_sync_test
-                ${CMAKE_SOURCE_DIR}/tests/parser/test_execbc_aot_manual_opcode_sync.c
-        )
-        target_include_directories(zr_vm_execbc_aot_manual_opcode_sync_test PRIVATE
-                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_library/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
-        )
-        zr_vm_link_parser_core_plus_library(zr_vm_execbc_aot_manual_opcode_sync_test)
-
-        zr_vm_add_unity_test_target(
-                zr_vm_dynamic_iteration_pipeline_test
-                ${CMAKE_SOURCE_DIR}/tests/parser/test_dynamic_iteration_pipeline.c
-        )
-        target_include_directories(zr_vm_dynamic_iteration_pipeline_test PRIVATE
-                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-        )
-        zr_vm_link_parser_core(zr_vm_dynamic_iteration_pipeline_test)
-    endif ()
 
     zr_vm_add_unity_test_target(
             zr_vm_debug_metadata_test
@@ -461,43 +450,6 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         endif ()
         zr_link_third_party_for_target(zr_vm_debug_agent_protocol_test "zr_c_json")
         target_link_libraries(zr_vm_debug_agent_protocol_test PRIVATE Threads::Threads)
-    endif ()
-
-    if (ZR_VM_BUILD_AOT)
-        zr_vm_add_unity_test_target(
-                zr_vm_meta_call_pipeline_test
-                ${CMAKE_SOURCE_DIR}/tests/parser/test_meta_call_pipeline.c
-        )
-        target_include_directories(zr_vm_meta_call_pipeline_test PRIVATE
-                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-        )
-        zr_vm_link_parser_core(zr_vm_meta_call_pipeline_test)
-
-        zr_vm_add_unity_test_target(
-                zr_vm_tail_call_pipeline_test
-                ${CMAKE_SOURCE_DIR}/tests/parser/test_tail_call_pipeline.c
-        )
-        target_include_directories(zr_vm_tail_call_pipeline_test PRIVATE
-                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-        )
-        zr_vm_link_parser_core(zr_vm_tail_call_pipeline_test)
-
-        zr_vm_add_unity_test_target(
-                zr_vm_known_call_pipeline_test
-                ${CMAKE_SOURCE_DIR}/tests/parser/test_known_call_pipeline.c
-        )
-        target_include_directories(zr_vm_known_call_pipeline_test PRIVATE
-                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_library/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
-        )
-        zr_vm_link_parser_core_plus_library(zr_vm_known_call_pipeline_test)
     endif ()
 
     zr_vm_add_unity_test_target(
@@ -647,6 +599,31 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     zr_vm_link_parser_core_plus_library(zr_vm_project_import_resolver_test)
 
     zr_vm_add_unity_test_target(
+            zr_vm_rust_binding_api_test
+            ${CMAKE_SOURCE_DIR}/tests/rust_binding/test_rust_binding_api.c
+    )
+    target_include_directories(zr_vm_rust_binding_api_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_rust_binding/include
+    )
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_rust_binding_api_test PRIVATE
+                zr_vm_parser_shared
+                zr_vm_core_shared
+                zr_vm_library_shared
+                zr_vm_rust_binding_shared
+        )
+    else ()
+        target_link_libraries(zr_vm_rust_binding_api_test PRIVATE
+                zr_vm_parser_static
+                zr_vm_core_static
+                zr_vm_library_static
+                zr_vm_rust_binding_static
+        )
+    endif ()
+
+    zr_vm_add_unity_test_target(
             zr_vm_project_import_canonicalization_test
             ${CMAKE_SOURCE_DIR}/tests/parser/test_project_import_canonicalization.c
     )
@@ -701,21 +678,6 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
     )
     zr_vm_link_parser_core(zr_vm_scripts_test)
     zr_link_third_party_for_target(zr_vm_scripts_test "zr_c_json")
-
-    if (ZR_VM_BUILD_AOT)
-        zr_vm_add_unity_test_target(
-                zr_vm_artifact_golden_test
-                ${CMAKE_SOURCE_DIR}/tests/scripts/test_artifact_golden.c
-                ${CMAKE_SOURCE_DIR}/tests/scripts/test_utils.c
-        )
-        target_include_directories(zr_vm_artifact_golden_test PRIVATE
-                ${CMAKE_SOURCE_DIR}/tests/scripts
-                ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
-                ${CMAKE_SOURCE_DIR}/zr_vm_core/include
-        )
-        zr_vm_link_parser_core(zr_vm_artifact_golden_test)
-        zr_link_third_party_for_target(zr_vm_artifact_golden_test "zr_c_json")
-    endif ()
 
     zr_vm_add_unity_test_target(
             zr_vm_container_runtime_test
@@ -1116,12 +1078,12 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
 endif ()
 
 set(core_runtime_executables "")
-if (TARGET zr_vm_gc_test AND TARGET zr_vm_instructions_test AND TARGET zr_vm_meta_test AND TARGET zr_vm_native_closure_value_test AND TARGET zr_vm_runtime_crash_recovery_test AND TARGET zr_vm_value_copy_fast_paths_test AND TARGET zr_vm_precall_frame_slot_reset_test AND TARGET zr_vm_tail_reuse_callinfo_reset_test AND TARGET zr_vm_vm_closure_precall_test)
+if (TARGET zr_vm_gc_test AND TARGET zr_vm_instructions_test AND TARGET zr_vm_meta_test AND TARGET zr_vm_native_closure_value_test AND TARGET zr_vm_runtime_crash_recovery_test AND TARGET zr_vm_value_copy_fast_paths_test AND TARGET zr_vm_execution_member_access_fast_paths_test AND TARGET zr_vm_precall_frame_slot_reset_test AND TARGET zr_vm_tail_reuse_callinfo_reset_test AND TARGET zr_vm_vm_closure_precall_test)
     set(core_runtime_executables
-            "$<TARGET_FILE:zr_vm_gc_test>;$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_native_closure_value_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>;$<TARGET_FILE:zr_vm_value_copy_fast_paths_test>;$<TARGET_FILE:zr_vm_precall_frame_slot_reset_test>;$<TARGET_FILE:zr_vm_tail_reuse_callinfo_reset_test>;$<TARGET_FILE:zr_vm_vm_closure_precall_test>"
+            "$<TARGET_FILE:zr_vm_gc_test>;$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_native_closure_value_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>;$<TARGET_FILE:zr_vm_value_copy_fast_paths_test>;$<TARGET_FILE:zr_vm_execution_member_access_fast_paths_test>;$<TARGET_FILE:zr_vm_precall_frame_slot_reset_test>;$<TARGET_FILE:zr_vm_tail_reuse_callinfo_reset_test>;$<TARGET_FILE:zr_vm_vm_closure_precall_test>"
     )
     set(core_runtime_smoke_executables
-            "$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>;$<TARGET_FILE:zr_vm_value_copy_fast_paths_test>;$<TARGET_FILE:zr_vm_precall_frame_slot_reset_test>;$<TARGET_FILE:zr_vm_tail_reuse_callinfo_reset_test>;$<TARGET_FILE:zr_vm_vm_closure_precall_test>"
+            "$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>;$<TARGET_FILE:zr_vm_value_copy_fast_paths_test>;$<TARGET_FILE:zr_vm_execution_member_access_fast_paths_test>;$<TARGET_FILE:zr_vm_precall_frame_slot_reset_test>;$<TARGET_FILE:zr_vm_tail_reuse_callinfo_reset_test>;$<TARGET_FILE:zr_vm_vm_closure_precall_test>"
     )
     set(core_runtime_core_executables "${core_runtime_executables}")
     set(core_runtime_stress_executables "${core_runtime_executables}")
@@ -1145,12 +1107,6 @@ if (TARGET zr_vm_parser_test AND
         TARGET zr_vm_type_inference_test AND
         TARGET zr_vm_compiler_integration_test AND
         TARGET zr_vm_semir_pipeline_test AND
-        (NOT ZR_VM_BUILD_AOT OR
-                (TARGET zr_vm_execbc_aot_pipeline_test AND
-                        TARGET zr_vm_dynamic_iteration_pipeline_test AND
-                        TARGET zr_vm_meta_call_pipeline_test AND
-                        TARGET zr_vm_tail_call_pipeline_test AND
-                        TARGET zr_vm_known_call_pipeline_test)) AND
         TARGET zr_vm_literal_surface_test AND
         TARGET zr_vm_reference_manifest_contracts_test AND
         TARGET zr_vm_lexer_parser_compiler_execution_test AND
@@ -1160,21 +1116,12 @@ if (TARGET zr_vm_parser_test AND
         TARGET zr_vm_compile_time_test AND
         TARGET zr_vm_decorator_pipeline_test AND
         TARGET zr_vm_scripts_test)
-    if (ZR_VM_BUILD_AOT)
-        set(language_pipeline_executables
-                "$<TARGET_FILE:zr_vm_parser_test>;$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_type_inference_test>;$<TARGET_FILE:zr_vm_compiler_integration_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_execbc_aot_pipeline_test>;$<TARGET_FILE:zr_vm_dynamic_iteration_pipeline_test>;$<TARGET_FILE:zr_vm_meta_call_pipeline_test>;$<TARGET_FILE:zr_vm_tail_call_pipeline_test>;$<TARGET_FILE:zr_vm_known_call_pipeline_test>;$<TARGET_FILE:zr_vm_literal_surface_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_lexer_parser_compiler_execution_test>;$<TARGET_FILE:zr_vm_exceptions_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_named_arguments_test>;$<TARGET_FILE:zr_vm_compile_time_test>;$<TARGET_FILE:zr_vm_decorator_pipeline_test>;$<TARGET_FILE:zr_vm_scripts_test>"
-        )
-        set(language_pipeline_smoke_executables
-                "$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_compiler_integration_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_execbc_aot_pipeline_test>;$<TARGET_FILE:zr_vm_dynamic_iteration_pipeline_test>;$<TARGET_FILE:zr_vm_meta_call_pipeline_test>;$<TARGET_FILE:zr_vm_tail_call_pipeline_test>;$<TARGET_FILE:zr_vm_known_call_pipeline_test>;$<TARGET_FILE:zr_vm_literal_surface_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_decorator_pipeline_test>"
-        )
-    else ()
-        set(language_pipeline_executables
-                "$<TARGET_FILE:zr_vm_parser_test>;$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_type_inference_test>;$<TARGET_FILE:zr_vm_compiler_integration_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_literal_surface_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_lexer_parser_compiler_execution_test>;$<TARGET_FILE:zr_vm_exceptions_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_named_arguments_test>;$<TARGET_FILE:zr_vm_compile_time_test>;$<TARGET_FILE:zr_vm_decorator_pipeline_test>;$<TARGET_FILE:zr_vm_scripts_test>"
-        )
-        set(language_pipeline_smoke_executables
-                "$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_compiler_integration_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_literal_surface_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_decorator_pipeline_test>"
-        )
-    endif ()
+    set(language_pipeline_executables
+            "$<TARGET_FILE:zr_vm_parser_test>;$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_type_inference_test>;$<TARGET_FILE:zr_vm_compiler_integration_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_literal_surface_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_lexer_parser_compiler_execution_test>;$<TARGET_FILE:zr_vm_exceptions_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_named_arguments_test>;$<TARGET_FILE:zr_vm_compile_time_test>;$<TARGET_FILE:zr_vm_decorator_pipeline_test>;$<TARGET_FILE:zr_vm_scripts_test>"
+    )
+    set(language_pipeline_smoke_executables
+            "$<TARGET_FILE:zr_vm_instruction_execution_test>;$<TARGET_FILE:zr_vm_compiler_integration_test>;$<TARGET_FILE:zr_vm_semir_pipeline_test>;$<TARGET_FILE:zr_vm_literal_surface_test>;$<TARGET_FILE:zr_vm_reference_manifest_contracts_test>;$<TARGET_FILE:zr_vm_module_system_test>;$<TARGET_FILE:zr_vm_decorator_pipeline_test>"
+    )
     set(language_pipeline_core_executables "${language_pipeline_executables}")
     set(language_pipeline_stress_executables "${language_pipeline_executables}")
     add_test(
@@ -1265,7 +1212,6 @@ if (TARGET zr_vm_cli_executable)
             "-DPROJECT_FIXTURES_DIR=${ZR_VM_TESTS_SOURCE_DIR_NORMALIZED}/fixtures/projects"
             "-DGENERATED_DIR=${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}"
             "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
-            "-DZR_VM_BUILD_AOT=${ZR_VM_CTEST_PASS_BUILD_AOT}"
             -P ${ZR_VM_PROJECTS_RUNNER_SCRIPT}
     )
 endif ()
@@ -1409,23 +1355,7 @@ if (TARGET zr_vm_cli_executable)
             "-DPROJECT_FIXTURES_DIR=${ZR_VM_TESTS_SOURCE_DIR_NORMALIZED}/fixtures/projects"
             "-DGENERATED_DIR=${ZR_VM_TESTS_BINARY_DIR_NORMALIZED}"
             "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
-            "-DZR_VM_BUILD_AOT=${ZR_VM_CTEST_PASS_BUILD_AOT}"
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_cli_suite.cmake
-    )
-endif ()
-
-if (TARGET zr_vm_artifact_golden_test)
-    add_test(
-            NAME golden_regression
-            COMMAND ${CMAKE_COMMAND}
-            "-DSUITE_NAME=golden_regression"
-            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_artifact_golden_test>"
-            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_artifact_golden_test>"
-            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_artifact_golden_test>"
-            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_artifact_golden_test>"
-            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
-            "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
-            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
     )
 endif ()
 
@@ -1499,7 +1429,6 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
             debug_agent
             debug_agent_protocol
             cli_integration
-            golden_regression
             benchmark_registry
             performance_report
             )

@@ -6,14 +6,35 @@
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/reflection.h"
 
-#include <stdio.h>
-
 #define ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS ((TZrUInt8)1)
 
 typedef struct SZrModuleLoaderExecuteRequest {
     const SZrFunctionStackAnchor *anchor;
     TZrStackValuePointer resultBase;
 } SZrModuleLoaderExecuteRequest;
+
+static ZR_FORCE_INLINE SZrRawObject *module_loader_refresh_forwarded_raw_object(SZrRawObject *rawObject) {
+    SZrRawObject *forwardedObject;
+
+    if (rawObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    forwardedObject = (SZrRawObject *)rawObject->garbageCollectMark.forwardingAddress;
+    return forwardedObject != ZR_NULL ? forwardedObject : rawObject;
+}
+
+static ZR_FORCE_INLINE SZrFunction *module_loader_refresh_forwarded_function(SZrFunction *function) {
+    return function != ZR_NULL ? (SZrFunction *)module_loader_refresh_forwarded_raw_object(
+                                         ZR_CAST_RAW_OBJECT_AS_SUPER(function))
+                               : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrClosure *module_loader_refresh_forwarded_closure(SZrClosure *closure) {
+    return closure != ZR_NULL ? (SZrClosure *)module_loader_refresh_forwarded_raw_object(
+                                        ZR_CAST_RAW_OBJECT_AS_SUPER(closure))
+                              : ZR_NULL;
+}
 
 static ZR_FORCE_INLINE TZrStackValuePointer module_loader_resolve_scratch_base(TZrStackValuePointer savedStackTop,
                                                                                SZrCallInfo *savedCallInfo) {
@@ -750,7 +771,6 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         ZrCore_Function_Free(state, func);
         return ZR_NULL;
     }
-    closure->function = func;
 
     savedStackTop = state->stackTop.valuePointer;
     savedCallInfo = state->callInfoList;
@@ -769,6 +789,15 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &savedCallInfoBaseAnchor);
         savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &savedCallInfoTopAnchor);
     }
+
+    func = module_loader_refresh_forwarded_function(func);
+    closure = module_loader_refresh_forwarded_closure(closure);
+    if (func == ZR_NULL || closure == ZR_NULL) {
+        state->stackTop.valuePointer = savedStackTop;
+        return ZR_NULL;
+    }
+    closure->function = func;
+
     ZrCore_Function_StackAnchorInit(state, callBase, &callBaseAnchor);
     ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(callBase));
     ZrCore_Stack_SetRawObjectValue(state, callBase, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
@@ -804,7 +833,6 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         state->stackTop.valuePointer = savedStackTop;
         return ZR_NULL;
     }
-
     module_loader_backfill_entry_exports(state, module, func, callBase);
     if (state->stackTop.valuePointer < callBase + 1 + func->stackSize) {
         state->stackTop.valuePointer = callBase + 1 + func->stackSize;

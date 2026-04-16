@@ -474,23 +474,23 @@ static TZrBool prepare_generated_binary_metadata_fixture(SZrState *state,
     memset(fixture, 0, sizeof(*fixture));
     if (!ZrTests_Path_GetGeneratedArtifact("language_server",
                                            artifactName,
-                                           "aot_module_graph_pipeline",
+                                           "binary_module_graph_pipeline",
                                            ".zrp",
                                            generatedProjectPath,
                                            sizeof(generatedProjectPath)) ||
-        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/aot_module_graph_pipeline.zrp",
+        !build_fixture_native_path("tests/fixtures/projects/binary_module_graph_pipeline/binary_module_graph_pipeline.zrp",
                                    fixtureProjectPath,
                                    sizeof(fixtureProjectPath)) ||
-        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/src/main.zr",
+        !build_fixture_native_path("tests/fixtures/projects/binary_module_graph_pipeline/src/main.zr",
                                    fixtureMainPath,
                                    sizeof(fixtureMainPath)) ||
-        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/src/graph_stage_a.zr",
+        !build_fixture_native_path("tests/fixtures/projects/binary_module_graph_pipeline/src/graph_stage_a.zr",
                                    fixtureStageAPath,
                                    sizeof(fixtureStageAPath)) ||
-        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/src/graph_stage_b.zr",
+        !build_fixture_native_path("tests/fixtures/projects/binary_module_graph_pipeline/src/graph_stage_b.zr",
                                    fixtureStageBPath,
                                    sizeof(fixtureStageBPath)) ||
-        !build_fixture_native_path("tests/fixtures/projects/aot_module_graph_pipeline/fixtures/graph_binary_stage_source.zr",
+        !build_fixture_native_path("tests/fixtures/projects/binary_module_graph_pipeline/fixtures/graph_binary_stage_source.zr",
                                    fixtureBinarySourcePath,
                                    sizeof(fixtureBinarySourcePath))) {
         return ZR_FALSE;
@@ -4146,7 +4146,7 @@ static void test_lsp_external_metadata_declarations_highlight_and_module_entry_n
     memset(&pluginFixture, 0, sizeof(pluginFixture));
     if (!ZrTests_Path_GetGeneratedArtifact("language_server",
                                            "project_features_binary_import_literal_definition",
-                                           "aot_module_graph_pipeline",
+                                           "binary_module_graph_pipeline",
                                            ".zrp",
                                            binaryProjectPath,
                                            sizeof(binaryProjectPath)) ||

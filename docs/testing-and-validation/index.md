@@ -66,14 +66,14 @@ doc_type: category-index
   - `tests/fixtures/reference/core_semantics/` 下的新 manifest 合同
   - 120 条首轮 case 的配额、helper 与 executable 映射
   - 首轮 30 条高风险优先 case 清单
-  - `L0` / `L1` / `L2` / `L3` / `L4` 五层 AOT 矩阵
-  - `smoke/core/stress` 三档过滤与 `executed_via` / `require_aot_path` 合同
+  - `source / artifact / runtime / project` 分层验证入口
+  - `smoke/core/stress` 三档过滤与 interp/binary 主链路合同
 
 ## 阅读顺序
 
 1. 先看 `core-semantics-reference-alignment.md`，了解 reference manifests、fixture 组织方式和本阶段覆盖边界。
 2. 需要看性能报告链路时打开 `ctest-performance-reporting.md`，确认 benchmark suite、报告产物和环境变量覆盖。
-3. 再看 `../reference-alignment/full-stack-test-matrix.md`，确认当前已经升级到 10 个固定语义域、120 条首轮 inventory，以及新的 AOT 分层矩阵。
+3. 再看 `../reference-alignment/full-stack-test-matrix.md`，确认当前已经升级到 10 个固定语义域、120 条首轮 inventory，以及现有分层验证入口。
 4. 再沿 frontmatter 的 `tests` 字段定位具体 C 测试、manifest 和 fixture 文件。
-5. 需要跑快速回归时优先走 `smoke/core/stress` 过滤，而不是再平行新开一套 AOT 测试目录。
+5. 需要跑快速回归时优先走 `smoke/core/stress` 过滤；AOT 归档资产已移到 `zr_vm_aot/`，不再属于主仓测试入口。
 6. 后续新增语义主题时，优先复用主矩阵和 manifest 合同，而不是继续把上游参考散落在临时笔记里。

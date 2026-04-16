@@ -2599,8 +2599,9 @@ static void test_get_member_slot_and_set_member_slot_instructions_fill_and_hit_c
     TEST_DIVIDER();
 }
 
-static void test_get_member_slot_instruction_skips_remembered_set_for_permanent_owner(void) {
-    TEST_START("GET_MEMBER_SLOT Permanent Owner");
+static void test_get_member_slot_instruction_records_remembered_set_for_young_receiver_metadata_even_with_permanent_owner(
+        void) {
+    TEST_START("GET_MEMBER_SLOT Remembered Young Receiver Metadata");
     SZrTestTimer timer;
     timer.startTime = clock();
 
@@ -2616,7 +2617,7 @@ static void test_get_member_slot_instruction_skips_remembered_set_for_permanent_
         SZrMemberDescriptor descriptor;
         SZrObject *instance;
         SZrTypeValue constants[1];
-        TZrInstruction instructions[2];
+        TZrInstruction instructions[3];
         SZrFunction *function;
         SZrRawObject *functionObject;
         TZrBool success;
@@ -2648,8 +2649,9 @@ static void test_get_member_slot_instruction_skips_remembered_set_for_permanent_
 
         instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
         instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 2, 0, 1);
 
-        function = create_test_function(state, instructions, 2, constants, 1, 2);
+        function = create_test_function(state, instructions, 3, constants, 1, 3);
         TEST_ASSERT_NOT_NULL(function);
 
         function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
@@ -2664,14 +2666,17 @@ static void test_get_member_slot_instruction_skips_remembered_set_for_permanent_
 
         function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
                 state->global,
-                sizeof(SZrFunctionCallSiteCacheEntry),
+                sizeof(SZrFunctionCallSiteCacheEntry) * 2,
                 ZR_MEMORY_NATIVE_TYPE_FUNCTION);
         TEST_ASSERT_NOT_NULL(function->callSiteCaches);
-        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry) * 2);
         function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
         function->callSiteCaches[0].instructionIndex = 1;
         function->callSiteCaches[0].memberEntryIndex = 0;
-        function->callSiteCacheLength = 1;
+        function->callSiteCaches[1].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+        function->callSiteCaches[1].instructionIndex = 2;
+        function->callSiteCaches[1].memberEntryIndex = 0;
+        function->callSiteCacheLength = 2;
 
         functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
         ZrCore_RawObject_MarkAsReferenced(functionObject);
@@ -2690,6 +2695,147 @@ static void test_get_member_slot_instruction_skips_remembered_set_for_permanent_
         TEST_ASSERT_EQUAL_UINT32(1, function->callSiteCaches[0].picSlotCount);
         TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
         TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[0].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_EQUAL_PTR(instance, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[0].cachedMemberName);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[1].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[1].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[1].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_EQUAL_PTR(instance, function->callSiteCaches[1].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[1].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[1].picSlots[0].cachedMemberName);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[1].picSlotCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT Remembered Young Receiver Metadata");
+    TEST_DIVIDER();
+}
+
+static void test_get_member_slot_instruction_skips_remembered_set_when_cache_only_keeps_permanent_targets(void) {
+    TEST_START("GET_MEMBER_SLOT Permanent Cache Targets");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *typeName = ZrCore_String_CreateFromNative(state, "PermanentMethodBox");
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "__get_shared");
+        SZrObjectPrototype *prototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrMemberDescriptor descriptor;
+        SZrTypeValue constants[1];
+        TZrInstruction instructions[3];
+        SZrFunction *function;
+        SZrFunction *callable;
+        SZrRawObject *functionObject;
+        SZrTypeValue functionValue;
+        TZrBool success;
+
+        TEST_ASSERT_NOT_NULL(typeName);
+        TEST_ASSERT_NOT_NULL(memberName);
+        TEST_ASSERT_NOT_NULL(prototype);
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        memset(&descriptor, 0, sizeof(descriptor));
+        descriptor.name = memberName;
+        descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
+        descriptor.isStatic = ZR_TRUE;
+        TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor));
+
+        callable = create_native_callable(state, test_hidden_meta_static_getter_native);
+        TEST_ASSERT_NOT_NULL(callable);
+        ZrCore_Value_InitAsRawObject(state, &functionValue, ZR_CAST_RAW_OBJECT_AS_SUPER(callable));
+        {
+            SZrTypeValue key;
+            ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+            key.type = ZR_VALUE_TYPE_STRING;
+            ZrCore_Object_SetValue(state, &prototype->super, &key, &functionValue);
+        }
+
+        ZrCore_Value_InitAsRawObject(state, &constants[0], ZR_CAST_RAW_OBJECT_AS_SUPER(prototype));
+        constants[0].type = ZR_VALUE_TYPE_OBJECT;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 2, 0, 1);
+
+        function = create_test_function(state, instructions, 3, constants, 1, 3);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry) * 2,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry) * 2);
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCaches[1].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+        function->callSiteCaches[1].instructionIndex = 2;
+        function->callSiteCaches[1].memberEntryIndex = 0;
+        function->callSiteCacheLength = 2;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_LARGE_PERSISTENT,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(prototype)->garbageCollectMark.storageKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_PERMANENT,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(prototype)->garbageCollectMark.regionKind);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[0].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(callable, function->callSiteCaches[0].picSlots[0].cachedFunction);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[0].cachedMemberName);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[1].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[1].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[1].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_NULL(function->callSiteCaches[1].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(callable, function->callSiteCaches[1].picSlots[0].cachedFunction);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[1].picSlots[0].cachedMemberName);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[1].picSlotCount);
         TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
 
@@ -2698,7 +2844,7 @@ static void test_get_member_slot_instruction_skips_remembered_set_for_permanent_
 
     destroy_test_state(state);
     timer.endTime = clock();
-    TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT Permanent Owner");
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT Permanent Cache Targets");
     TEST_DIVIDER();
 }
 
@@ -4597,7 +4743,8 @@ int main(void) {
     RUN_TEST(test_meta_get_and_meta_set_instructions_dispatch_hidden_accessors);
     RUN_TEST(test_super_meta_get_and_meta_set_cached_instructions_fill_and_hit_callsite_cache);
     RUN_TEST(test_get_member_slot_and_set_member_slot_instructions_fill_and_hit_callsite_cache);
-    RUN_TEST(test_get_member_slot_instruction_skips_remembered_set_for_permanent_owner);
+    RUN_TEST(test_get_member_slot_instruction_records_remembered_set_for_young_receiver_metadata_even_with_permanent_owner);
+    RUN_TEST(test_get_member_slot_instruction_skips_remembered_set_when_cache_only_keeps_permanent_targets);
     RUN_TEST(test_object_invoke_member_omits_receiver_for_static_hidden_accessor);
     RUN_TEST(test_super_meta_get_cached_instruction_populates_two_slot_pic);
     RUN_TEST(test_super_meta_call_cached_instruction_fills_and_hits_callsite_pic);

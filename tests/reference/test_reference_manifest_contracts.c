@@ -4,7 +4,7 @@
 
 #include "reference_support.h"
 
-static void test_reference_full_stack_backend_skip_reasons_use_native_parity_wording(void) {
+static void test_reference_full_stack_backend_skip_reasons_use_binary_parity_wording(void) {
     static const char *kManifestPaths[] = {
         "core_semantics/lexing_literals_diagnostics/manifest.json",
         "core_semantics/expressions_precedence_chains/manifest.json",
@@ -22,10 +22,8 @@ static void test_reference_full_stack_backend_skip_reasons_use_native_parity_wor
         "artifact-only",
         "no native parity",
     };
-    static const char *kAotCSkipReason =
-        "project/runtime suites already prove native AOT C execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_c";
-    static const char *kAotLlvmSkipReason =
-        "project/runtime suites already prove native AOT LLVM execution when the LLVM host toolchain is present; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=aot_llvm";
+    static const char *kBinarySkipReason =
+        "project/runtime suites already prove binary execution; this reference case keeps per-case executable parity disabled until the manifest runner can require executed_via=binary";
 
     for (size_t manifestIndex = 0; manifestIndex < sizeof(kManifestPaths) / sizeof(kManifestPaths[0]); manifestIndex++) {
         TZrSize manifestSize = 0;
@@ -38,8 +36,7 @@ static void test_reference_full_stack_backend_skip_reasons_use_native_parity_wor
                 0,
                 ZrTests_Reference_CountOccurrences(manifestText, kDeprecatedPhrases[phraseIndex]));
         }
-        TEST_ASSERT_TRUE(ZrTests_Reference_CountOccurrences(manifestText, kAotCSkipReason) >= 1);
-        TEST_ASSERT_TRUE(ZrTests_Reference_CountOccurrences(manifestText, kAotLlvmSkipReason) >= 1);
+        TEST_ASSERT_TRUE(ZrTests_Reference_CountOccurrences(manifestText, kBinarySkipReason) >= 1);
         free(manifestText);
     }
 }
@@ -47,7 +44,7 @@ static void test_reference_full_stack_backend_skip_reasons_use_native_parity_wor
 int main(void) {
     UNITY_BEGIN();
 
-    RUN_TEST(test_reference_full_stack_backend_skip_reasons_use_native_parity_wording);
+    RUN_TEST(test_reference_full_stack_backend_skip_reasons_use_binary_parity_wording);
 
     return UNITY_END();
 }

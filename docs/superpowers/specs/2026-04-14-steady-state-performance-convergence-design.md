@@ -50,8 +50,7 @@ In scope:
 
 Out of scope for this round:
 
-- `zr_aot_c`
-- `zr_aot_llvm`
+- archived implementations that no longer participate in mainline performance optimization
 - CLI startup time
 - one-shot compile time
 - host compiler / dynamic-loader overhead
@@ -100,7 +99,7 @@ Implementation filter for this round:
 
 - always include `c`, `zr_interp`, and `zr_binary`
 - include the existing example-language implementations for each case when the registry already provides them
-- explicitly exclude `zr_aot_c` and `zr_aot_llvm`
+- explicitly exclude archived implementations that no longer participate in mainline performance optimization
 
 ## B. Diagnosis And Optimization Flow
 

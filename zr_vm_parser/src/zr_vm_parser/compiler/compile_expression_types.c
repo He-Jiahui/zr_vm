@@ -1943,7 +1943,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 return;
                             }
                         } else {
-                            TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, memberSymbol);
+                            TZrUInt32 memberId = compiler_get_or_add_member_entry_for_type_member(cs,
+                                                                                                  memberSymbol,
+                                                                                                  typeMember,
+                                                                                                  0);
                             TZrBool canEmitMemberSlot = declaredFieldMatch;
                             if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
                                 ZrParser_Compiler_Error(cs,
@@ -2208,6 +2211,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         !useResolvedFunctionMetaCallOpcode &&
                         resolvedFunctionType == ZR_NULL &&
                         !hasResolvedFunctionSignature;
+                TZrBool useKnownVmMemberCallOpcode =
+                        activeCallMemberInfo != ZR_NULL &&
+                        !useMetaCallOpcode &&
+                        activeCallMemberInfo->compiledFunction != ZR_NULL;
                 TZrBool emitMetaCallOpcode = useMetaCallOpcode || useResolvedFunctionMetaCallOpcode;
                 EZrInstructionCode callOpcode =
                         cs->isInTailCallContext
@@ -2215,12 +2222,16 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                            ? ZR_INSTRUCTION_ENUM(META_TAIL_CALL)
                                            : (useDynamicCallOpcode
                                                       ? ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)
-                                                      : ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)))
+                                                      : (useKnownVmMemberCallOpcode
+                                                                 ? ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)
+                                                                 : ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL))))
                                 : (emitMetaCallOpcode
                                            ? ZR_INSTRUCTION_ENUM(META_CALL)
                                            : (useDynamicCallOpcode
                                                       ? ZR_INSTRUCTION_ENUM(DYN_CALL)
-                                                      : ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
+                                                      : (useKnownVmMemberCallOpcode
+                                                                 ? ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)
+                                                                 : ZR_INSTRUCTION_ENUM(FUNCTION_CALL))));
                 emit_instruction(cs,
                                  create_instruction_2(callOpcode,
                                                       (TZrUInt16)currentSlot,

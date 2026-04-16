@@ -1,0 +1,131 @@
+# ZR VM Rust Binding v1
+
+## Scope
+- 新增并完成 `zr_vm_rust_binding` v1 的稳定 C ABI、模块内 Rust workspace、project scaffold/open/compile/run、manifest/artifact 查询和值 mirror。
+- 完成 Rust safe 层 native extension API：
+  - `ModuleBuilder`
+  - `FunctionBuilder`
+  - `TypeBuilder`
+  - `MetaMethodBuilder`
+  - `Runtime::register_native_module`
+  - `NativeCallContext`
+- 影响层：
+  - CLI shared host service
+  - rust binding C bridge
+  - rust sys crate
+  - rust safe crate
+  - C / Rust test harness
+  - CMake cargo integration
+
+## Baseline
+- 本轮开始前，`zr_vm_rust_binding` 的基础 C ABI、manifest snapshot 和 project roundtrip 已经存在。
+- 本轮开始前，Rust safe 层缺失 native module/type/function 注册 API，`native_registration` 场景无法编译。
+- 本轮开始前，C 侧 native roundtrip 只稳定覆盖“模块常量 + 模块函数”，native type 路径在 crash 排查阶段被临时移出测试。
+- 已知本轮之前已经修复过一个真实 crash：
+  - callback argument `Value_Free` 错误释放 live VM global
+  - 根因是 execution owner 没有区分是否拥有 global
+  - 本轮在该修复之上继续扩展，没有回退该 ownership 修复
+- WSL 验证环境初始状态存在额外阻塞：
+  - `/usr/bin/cargo 1.75.0` 无法消费当前依赖栈
+  - 先后表现为 lockfile v4 不兼容和 `edition2024` crate 不兼容
+
+## Test Inventory
+- C focused subsystem cases
+  - `test_rust_binding_scaffold_compile_and_run_round_trip`
+  - `test_rust_binding_owned_value_array_and_object_accessors`
+  - `test_rust_binding_scalar_value_kind_and_ownership_metadata`
+  - `test_rust_binding_call_module_export_with_owned_arguments`
+  - `test_rust_binding_native_module_registration_roundtrip`
+  - `test_rust_binding_native_builder_rejects_invalid_function_descriptor`
+- Rust focused subsystem cases
+  - `tests::scaffold_compile_and_run_roundtrip`
+  - `tests::owned_array_and_object_accessors_roundtrip`
+  - `tests::scalar_value_kind_and_ownership_metadata_roundtrip`
+  - `tests::call_module_export_roundtrip`
+  - `native_module_registration_roundtrip`
+  - `invalid_native_function_descriptor_returns_error`
+- Integration / project cases
+  - scaffold -> compile -> binary run
+  - manifest load and artifact resolution
+  - native module import from ZR project
+  - module function + type static method callback dispatch
+  - CLI compile/run regression through shared host service
+- Boundary / failure cases
+  - invalid native function descriptor (`minArgumentCount > maxArgumentCount`)
+  - callback context `typeName` missing on module function
+  - callback context `self` missing on static method
+  - live value / registration / module teardown ordering
+  - owned value `ValueKind` / `OwnershipKind` mirror for null, bool, int, float, string, array, object
+- Tool-assisted runs
+  - Windows MSVC CMake build + C test exe
+  - Windows cargo test directly with binding lib env
+  - Windows CMake custom target `zr_vm_rust_binding_rust_test`
+  - Windows `cli_integration`
+  - WSL gcc CMake build + cargo test custom target
+  - WSL C test exe
+  - WSL `cli_integration`
+
+## Tooling Evidence
+- Tool versions
+  - Windows MSBuild: `17.14.40`
+  - Windows cargo: validated through local workspace `cargo test --workspace`
+  - WSL initial cargo: `1.75.0`
+  - WSL upgraded cargo/rustc via rustup stable: `cargo 1.94.1`, `rustc 1.94.1`
+  - WSL gcc: `11.4.0`
+  - WSL cmake: `3.22.1`
+- Environment remediation
+  - Installed rustup stable in WSL:
+    - `wsl bash -lc 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable'`
+  - Reconfigured WSL build to use rustup cargo:
+    - `wsl bash -lc 'source $HOME/.cargo/env && cd /mnt/e/Git/zr_vm && cmake -S . -B build/codex-rust-binding-wsl-gcc-debug -DZR_VM_RUST_BINDING_CARGO_EXECUTABLE=$HOME/.cargo/bin/cargo'`
+- Exact commands and key outputs
+  - Windows C API build:
+    - `cmake --build E:\Git\zr_vm\build\codex-rust-binding-red-msvc --config Debug --target zr_vm_rust_binding_api_test`
+  - Windows C API run:
+    - `E:\Git\zr_vm\build\codex-rust-binding-red-msvc\bin\Debug\zr_vm_rust_binding_api_test.exe`
+    - key output: `6 Tests 0 Failures 0 Ignored`
+  - Windows Rust workspace:
+    - `$env:ZR_VM_RUST_BINDING_LIB_DIR='E:\Git\zr_vm\build\codex-rust-binding-red-msvc\lib\Debug'; $env:PATH='E:\Git\zr_vm\build\codex-rust-binding-red-msvc\bin\Debug;' + $env:PATH; cargo test --workspace`
+    - key output: Rust crate tests `4 passed`, integration tests `2 passed`
+  - Windows CMake cargo target:
+    - `cmake --build E:\Git\zr_vm\build\codex-rust-binding-red-msvc --config Debug --target zr_vm_rust_binding_rust_test`
+    - key output: CMake-triggered cargo test passed
+  - Windows CLI regression:
+    - `ctest --test-dir E:\Git\zr_vm\build\codex-rust-binding-red-msvc -C Debug -R cli_integration --output-on-failure`
+    - key output: `1/1 Test #18: cli_integration ... Passed`
+  - WSL Rust workspace via CMake target:
+    - `wsl bash -lc 'source $HOME/.cargo/env && cd /mnt/e/Git/zr_vm && cmake --build build/codex-rust-binding-wsl-gcc-debug --target zr_vm_rust_binding_rust_test -j4'`
+    - key output: Rust crate tests `4 passed`, integration tests `2 passed`
+  - WSL C API build:
+    - `wsl bash -lc 'cd /mnt/e/Git/zr_vm && cmake --build build/codex-rust-binding-wsl-gcc-debug --target zr_vm_rust_binding_api_test -j4'`
+  - WSL C API run:
+    - `wsl bash -lc 'cd /mnt/e/Git/zr_vm && LD_LIBRARY_PATH=/mnt/e/Git/zr_vm/build/codex-rust-binding-wsl-gcc-debug/lib:$LD_LIBRARY_PATH build/codex-rust-binding-wsl-gcc-debug/bin/zr_vm_rust_binding_api_test'`
+    - key output: `6 Tests 0 Failures 0 Ignored`
+  - WSL CLI regression:
+    - `wsl bash -lc 'cd /mnt/e/Git/zr_vm && ctest --test-dir build/codex-rust-binding-wsl-gcc-debug -R cli_integration --output-on-failure'`
+    - key output: `1/1 Test #18: cli_integration ... Passed`
+
+## Results
+- Passed checks
+  - Value mirror coverage now explicitly proves `ValueKind` / `OwnershipKind` metadata for owned null, bool, int, float, string, array, and object values on both C and Rust safe APIs.
+  - Rust safe API now supports native module registration with constants, functions, type static methods, callback context inspection, and RAII unregister/free behavior.
+  - C API native roundtrip now re-covers type static method dispatch in addition to module function dispatch.
+  - Invalid native descriptor rejection is covered on both C and Rust sides.
+  - Windows MSVC path passes C API tests, direct cargo tests, CMake-triggered cargo tests, and `cli_integration`.
+  - WSL gcc path passes CMake-triggered cargo tests, C API tests, and `cli_integration` after upgrading the user Rust toolchain.
+- Failures encountered and fixes
+  - Rust native registration test initially failed to compile because safe API types were absent.
+    - fix: added `native.rs` safe layer and `sys/native.rs` FFI declarations.
+  - Rust lifecycle assertion initially failed because the test dropped registration before dropping the live run result.
+    - fix: adjusted test ordering so the live result releases its module reference first.
+  - WSL cargo validation initially failed because `cargo 1.75.0` could not parse the module workspace dependency stack.
+    - fix: installed rustup stable (`cargo 1.94.1`) and reconfigured the WSL build to use it.
+
+## Acceptance Decision
+- Accepted.
+- Reason
+  - The new ABI/native registration slice is implemented end-to-end, exercised from both C and Rust, and validated on both Windows MSVC and WSL gcc.
+  - The remaining output in the validation logs is compiler warning noise from broader repository code, not a failing signal introduced by this milestone.
+- Remaining risks
+  - WSL validation now depends on the user-space rustup toolchain rather than the distro cargo package.
+  - The repository still emits unrelated compile warnings outside the binding scope; they were not addressed in this milestone.

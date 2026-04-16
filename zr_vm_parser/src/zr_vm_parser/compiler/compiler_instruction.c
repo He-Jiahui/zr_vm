@@ -346,6 +346,63 @@ TZrUInt32 compiler_get_or_add_member_entry_with_flags(SZrCompilerState *cs,
     return (TZrUInt32)(newCount - 1);
 }
 
+TZrUInt32 compiler_get_or_add_member_entry_bound_with_flags(SZrCompilerState *cs,
+                                                            SZrString *memberName,
+                                                            TZrUInt32 prototypeIndex,
+                                                            TZrUInt32 descriptorIndex,
+                                                            TZrUInt8 flags) {
+    SZrFunction *function;
+    SZrFunctionMemberEntry *newEntries;
+    TZrSize newCount;
+    TZrSize copyBytes;
+
+    if (cs == ZR_NULL || cs->currentFunction == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_PARSER_MEMBER_ID_NONE;
+    }
+
+    function = cs->currentFunction;
+    for (TZrUInt32 index = 0; index < function->memberEntryLength; index++) {
+        SZrFunctionMemberEntry *entry = &function->memberEntries[index];
+        if (entry->entryKind == ZR_FUNCTION_MEMBER_ENTRY_KIND_BOUND_DESCRIPTOR &&
+            entry->symbol != ZR_NULL &&
+            entry->reserved0 == flags &&
+            entry->prototypeIndex == prototypeIndex &&
+            entry->descriptorIndex == descriptorIndex &&
+            ZrCore_String_Equal(entry->symbol, memberName)) {
+            return index;
+        }
+    }
+
+    newCount = (TZrSize)function->memberEntryLength + 1;
+    newEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+            cs->state->global,
+            sizeof(SZrFunctionMemberEntry) * newCount,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (newEntries == ZR_NULL) {
+        return ZR_PARSER_MEMBER_ID_NONE;
+    }
+
+    copyBytes = sizeof(SZrFunctionMemberEntry) * function->memberEntryLength;
+    if (function->memberEntries != ZR_NULL && copyBytes > 0) {
+        memcpy(newEntries, function->memberEntries, copyBytes);
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      function->memberEntries,
+                                      sizeof(SZrFunctionMemberEntry) * function->memberEntryLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    }
+
+    memset(&newEntries[newCount - 1], 0, sizeof(SZrFunctionMemberEntry));
+    newEntries[newCount - 1].symbol = memberName;
+    newEntries[newCount - 1].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_BOUND_DESCRIPTOR;
+    newEntries[newCount - 1].reserved0 = flags;
+    newEntries[newCount - 1].prototypeIndex = prototypeIndex;
+    newEntries[newCount - 1].descriptorIndex = descriptorIndex;
+
+    function->memberEntries = newEntries;
+    function->memberEntryLength = (TZrUInt32)newCount;
+    return (TZrUInt32)(newCount - 1);
+}
+
 TZrUInt32 compiler_get_or_add_member_entry(SZrCompilerState *cs, SZrString *memberName) {
     return compiler_get_or_add_member_entry_with_flags(cs, memberName, 0);
 }

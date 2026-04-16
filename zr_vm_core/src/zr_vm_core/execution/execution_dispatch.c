@@ -8,6 +8,14 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+
+static ZR_FORCE_INLINE SZrRawObject *execution_refresh_forwarded_raw_object(SZrRawObject *rawObject);
+static ZR_FORCE_INLINE SZrFunction *execution_refresh_forwarded_function(SZrFunction *function);
+static ZR_FORCE_INLINE SZrClosure *execution_refresh_forwarded_closure(SZrClosure *closure);
+static ZR_FORCE_INLINE SZrFunction *execution_try_resolve_vm_metadata_function_fast(SZrState *state,
+                                                                                     SZrTypeValue *value,
+                                                                                     SZrRawObject **outCallableObject);
+
 static ZR_FORCE_INLINE TZrBool execution_can_copy_stack_value_by_bits(const SZrTypeValue *destination,
                                                                       const SZrTypeValue *source) {
     ZR_ASSERT(destination != ZR_NULL);
@@ -125,13 +133,35 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_fast(SZrState *state,
 static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_fast(SZrState *state,
                                                                      TZrStackValuePointer stackPointer,
                                                                      SZrTypeValue *callableValue,
+                                                                     TZrSize argumentsCount,
                                                                      TZrSize resultCount,
                                                                      TZrStackValuePointer returnDestination,
                                                                      SZrProfileRuntime *profileRuntime,
                                                                      TZrBool recordHelpers) {
+    SZrFunction *resolvedFunction = ZR_NULL;
+
     if (ZR_UNLIKELY(recordHelpers)) {
         profileRuntime->helperCounts[ZR_PROFILE_HELPER_PRECALL]++;
     }
+
+    if (callableValue != ZR_NULL && !callableValue->isNative) {
+        resolvedFunction = execution_try_resolve_vm_metadata_function_fast(state, callableValue, ZR_NULL);
+        if (callableValue->type == ZR_VALUE_TYPE_FUNCTION &&
+            (resolvedFunction == ZR_NULL || resolvedFunction->closureValueLength != 0)) {
+            resolvedFunction = ZR_NULL;
+        }
+    }
+
+    if (ZR_LIKELY(resolvedFunction != ZR_NULL)) {
+        return ZrCore_Function_PreCallResolvedVmFunction(
+                state,
+                stackPointer,
+                resolvedFunction,
+                argumentsCount,
+                resultCount,
+                returnDestination);
+    }
+
     return ZrCore_Function_PreCallKnownVmValue(state, stackPointer, callableValue, resultCount, returnDestination);
 }
 
@@ -169,21 +199,102 @@ static ZR_FORCE_INLINE TZrBool execution_string_values_equal_fast(SZrState *stat
 
 #define ZrCore_Value_ResetAsNull ZrCore_Value_ResetAsNullNoProfile
 
+static ZR_FORCE_INLINE SZrRawObject *execution_refresh_forwarded_raw_object(SZrRawObject *rawObject) {
+    SZrRawObject *forwardedObject;
+
+    if (rawObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    forwardedObject = (SZrRawObject *)rawObject->garbageCollectMark.forwardingAddress;
+    return forwardedObject != ZR_NULL ? forwardedObject : rawObject;
+}
+
+static ZR_FORCE_INLINE SZrFunction *execution_refresh_forwarded_function(SZrFunction *function) {
+    return function != ZR_NULL
+                   ? (SZrFunction *)execution_refresh_forwarded_raw_object(ZR_CAST_RAW_OBJECT_AS_SUPER(function))
+                   : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrClosure *execution_refresh_forwarded_closure(SZrClosure *closure) {
+    return closure != ZR_NULL
+                   ? (SZrClosure *)execution_refresh_forwarded_raw_object(ZR_CAST_RAW_OBJECT_AS_SUPER(closure))
+                   : ZR_NULL;
+}
+
 static SZrString *execution_refresh_forwarded_string(SZrString *stringValue) {
     SZrRawObject *rawObject;
-    SZrRawObject *forwardedObject;
 
     if (stringValue == ZR_NULL) {
         return ZR_NULL;
     }
 
-    rawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue);
-    forwardedObject = (SZrRawObject *)rawObject->garbageCollectMark.forwardingAddress;
-    if (forwardedObject == ZR_NULL) {
+    rawObject = execution_refresh_forwarded_raw_object(ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue));
+    if (rawObject == ZR_CAST_RAW_OBJECT_AS_SUPER(stringValue)) {
         return stringValue;
     }
 
-    return ZR_CAST_STRING(ZR_NULL, forwardedObject);
+    return ZR_CAST_STRING(ZR_NULL, rawObject);
+}
+
+static ZR_FORCE_INLINE SZrFunction *execution_try_resolve_vm_metadata_function_fast(SZrState *state,
+                                                                                     SZrTypeValue *value,
+                                                                                     SZrRawObject **outCallableObject) {
+    SZrRawObject *rawObject;
+
+    if (outCallableObject != ZR_NULL) {
+        *outCallableObject = ZR_NULL;
+    }
+
+    if (state == ZR_NULL || value == ZR_NULL || value->isNative || value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    rawObject = execution_refresh_forwarded_raw_object(value->value.object);
+    if (rawObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (value->type) {
+        case ZR_VALUE_TYPE_FUNCTION: {
+            SZrFunction *function = execution_refresh_forwarded_function(ZR_CAST_FUNCTION(state, rawObject));
+
+            if (function == ZR_NULL) {
+                return ZR_NULL;
+            }
+
+            rawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+            value->value.object = rawObject;
+            if (outCallableObject != ZR_NULL) {
+                *outCallableObject = rawObject;
+            }
+            return function;
+        }
+
+        case ZR_VALUE_TYPE_CLOSURE: {
+            SZrClosure *closure = execution_refresh_forwarded_closure(ZR_CAST_VM_CLOSURE(state, rawObject));
+            SZrFunction *function;
+
+            if (closure == ZR_NULL) {
+                return ZR_NULL;
+            }
+
+            function = execution_refresh_forwarded_function(closure->function);
+            if (function == ZR_NULL) {
+                return ZR_NULL;
+            }
+
+            rawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(closure);
+            value->value.object = rawObject;
+            if (outCallableObject != ZR_NULL) {
+                *outCallableObject = rawObject;
+            }
+            return function;
+        }
+
+        default:
+            return ZR_NULL;
+    }
 }
 
 static SZrString *execution_resolve_function_member_symbol(SZrFunction *function, TZrUInt32 memberEntryIndex) {
@@ -324,7 +435,7 @@ static TZrBool execution_try_reuse_preinstalled_top_level_closure(SZrState *stat
             continue;
         }
 
-        existingFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, existingValue);
+        existingFunction = execution_try_resolve_vm_metadata_function_fast(state, existingValue, ZR_NULL);
         if (existingFunction != function) {
             continue;
         }
@@ -349,7 +460,7 @@ static TZrBool execution_try_reuse_preinstalled_top_level_closure(SZrState *stat
             continue;
         }
 
-        existingFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, existingValue);
+        existingFunction = execution_try_resolve_vm_metadata_function_fast(state, existingValue, ZR_NULL);
         if (existingFunction != function) {
             continue;
         }
@@ -362,14 +473,17 @@ static TZrBool execution_try_reuse_preinstalled_top_level_closure(SZrState *stat
 }
 
 void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
-    SZrClosure *closure;
-    SZrTypeValue *constants;
-    TZrStackValuePointer base;
+    SZrClosure *closure = ZR_NULL;
+    TZrStackValuePointer frameFunctionBase = ZR_NULL;
+    SZrRawObject *frameCallableObject = ZR_NULL;
+    SZrFunction *frameFunction = ZR_NULL;
+    SZrTypeValue *constants = ZR_NULL;
+    TZrStackValuePointer base = ZR_NULL;
     SZrTypeValue ret;
     ZrCore_Value_ResetAsNull(&ret);
-    const TZrInstruction *programCounter;
-    const TZrInstruction *instructionsEnd;
-    const TZrInstruction *instructionsEndFast1;
+    const TZrInstruction *programCounter = ZR_NULL;
+    const TZrInstruction *instructionsEnd = ZR_NULL;
+    const TZrInstruction *instructionsEndFast1 = ZR_NULL;
     TZrDebugSignal trap;
     SZrProfileRuntime *profileRuntime;
     TZrBool recordInstructions;
@@ -1512,22 +1626,36 @@ LZrStart:
     recordHelpers = (profileRuntime != ZR_NULL && profileRuntime->recordHelpers) ? ZR_TRUE : ZR_FALSE;
     UPDATE_FAST_DISPATCH_MODE();
 LZrReturning: {
-    SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
-    closure = ZR_CAST_VM_CLOSURE(state, functionBaseValue->value.object);
-    constants = closure->function->constantValueList;
-    instructionsEnd = closure->function->instructionsList + closure->function->instructionsLength;
-    instructionsEndFast1 = instructionsEnd - 1;
-    programCounter = callInfo->context.context.programCounter - 1;
-    base = callInfo->functionBase.valuePointer + 1;
-    UPDATE_FAST_DISPATCH_MODE();
+        SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+        SZrFunction *function = execution_try_resolve_vm_metadata_function_fast(state,
+                                                                                functionBaseValue,
+                                                                                &frameCallableObject);
+
+        frameFunctionBase = callInfo->functionBase.valuePointer;
+        if (function == ZR_NULL || frameCallableObject == ZR_NULL) {
+            ZrCore_Debug_RunError(state, "invalid VM frame callable metadata");
+        }
+        frameFunction = function;
+        closure = (functionBaseValue != ZR_NULL &&
+                   functionBaseValue->type == ZR_VALUE_TYPE_CLOSURE &&
+                   !functionBaseValue->isNative)
+                          ? ZR_CAST_VM_CLOSURE(state, functionBaseValue->value.object)
+                          : ZR_NULL;
+        constants = function->constantValueList;
+        instructionsEnd = function->instructionsList + function->instructionsLength;
+        instructionsEndFast1 = instructionsEnd - 1;
+        programCounter = callInfo->context.context.programCounter - 1;
+        base = callInfo->functionBase.valuePointer + 1;
+        UPDATE_FAST_DISPATCH_MODE();
 }
     if (ZR_UNLIKELY(trap != ZR_DEBUG_SIGNAL_NONE)) {
         // todo
     }
     for (;;) {
+        TZrStackValuePointer currentFunctionBase = ZR_NULL;
         SZrTypeValue *currentFunctionBaseValue = ZR_NULL;
-        SZrRawObject *currentClosureObject = ZR_NULL;
-        SZrFunction *currentFunction = ZR_NULL;
+        SZrRawObject *currentCallableObject = ZR_NULL;
+        SZrFunction *currentFunction = frameFunction;
 
         TZrInstruction instruction;
         SZrTypeValue *destination = &ret;
@@ -1535,23 +1663,31 @@ LZrReturning: {
          * fetch instruction
          */
         if (callInfo != ZR_NULL && callInfo->functionBase.valuePointer != ZR_NULL) {
-            currentFunctionBaseValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+            currentFunctionBase = callInfo->functionBase.valuePointer;
+            currentFunctionBaseValue = ZrCore_Stack_GetValue(currentFunctionBase);
             if (currentFunctionBaseValue != ZR_NULL) {
-                currentClosureObject = currentFunctionBaseValue->value.object;
-                currentFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, currentFunctionBaseValue);
+                currentCallableObject = currentFunctionBaseValue->value.object;
             }
-            if (currentClosureObject != ZR_CAST_RAW_OBJECT_AS_SUPER(closure) ||
-                currentFunction != (closure != ZR_NULL ? closure->function : ZR_NULL)) {
-                if (currentFunction == ZR_NULL || currentClosureObject == ZR_NULL) {
+            if (currentFunctionBase != frameFunctionBase || currentCallableObject != frameCallableObject) {
+                currentFunction = execution_try_resolve_vm_metadata_function_fast(state,
+                                                                                 currentFunctionBaseValue,
+                                                                                 &currentCallableObject);
+                if (currentFunction == ZR_NULL || currentCallableObject == ZR_NULL) {
                     ZrCore_Debug_RunError(state, "invalid VM frame callable metadata");
                     break;
                 }
-                closure = ZR_CAST_VM_CLOSURE(state, currentClosureObject);
+                frameFunctionBase = currentFunctionBase;
+                frameCallableObject = currentCallableObject;
+                frameFunction = currentFunction;
+                closure = (currentFunctionBaseValue->type == ZR_VALUE_TYPE_CLOSURE &&
+                           !currentFunctionBaseValue->isNative)
+                                  ? ZR_CAST_VM_CLOSURE(state, currentCallableObject)
+                                  : ZR_NULL;
                 constants = currentFunction->constantValueList;
                 instructionsEnd = currentFunction->instructionsList + currentFunction->instructionsLength;
                 instructionsEndFast1 = instructionsEnd - 1;
                 programCounter = callInfo->context.context.programCounter - 1;
-                base = callInfo->functionBase.valuePointer + 1;
+                base = currentFunctionBase + 1;
             }
         }
         FETCH_PREPARE_OR_BREAK(1);
@@ -3371,6 +3507,7 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 SZrCallInfo *nextCallInfo = execution_pre_call_known_vm_fast(state,
                                                                              BASE(functionSlot),
                                                                              opA,
+                                                                             0,
                                                                              expectedReturnCount,
                                                                              BASE(E(instruction)),
                                                                              profileRuntime,
@@ -3453,6 +3590,7 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 nextCallInfo = execution_pre_call_known_vm_fast(state,
                                                                 functionPointer,
                                                                 opA,
+                                                                0,
                                                                 expectedReturnCount,
                                                                 BASE(E(instruction)),
                                                                 profileRuntime,
@@ -3544,6 +3682,7 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 nextCallInfo = execution_pre_call_known_vm_fast(state,
                                                                 BASE(functionSlot),
                                                                 opA,
+                                                                parametersCount,
                                                                 expectedReturnCount,
                                                                 BASE(E(instruction)),
                                                                 profileRuntime,
@@ -4007,6 +4146,7 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 nextCallInfo = execution_pre_call_known_vm_fast(state,
                                                                 functionPointer,
                                                                 opA,
+                                                                parametersCount,
                                                                 expectedReturnCount,
                                                                 BASE(E(instruction)),
                                                                 profileRuntime,
@@ -4166,12 +4306,12 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                         SZrTypeValue *parentFunctionBaseValue = ZrCore_Stack_GetValue(parentCallInfo->functionBase.valuePointer);
                         if (parentFunctionBaseValue != ZR_NULL) {
                             // 类型检查：确保父函数是函数类型或闭包类型
-                            if (parentFunctionBaseValue->type == ZR_VALUE_TYPE_FUNCTION || 
+                            if (parentFunctionBaseValue->type == ZR_VALUE_TYPE_FUNCTION ||
                                 parentFunctionBaseValue->type == ZR_VALUE_TYPE_CLOSURE) {
-                                SZrClosure *parentClosure = ZR_CAST_VM_CLOSURE(state, parentFunctionBaseValue->value.object);
-                                if (parentClosure != ZR_NULL && parentClosure->function != ZR_NULL) {
-                                    parentFunction = parentClosure->function;
-                                }
+                                parentFunction =
+                                        execution_try_resolve_vm_metadata_function_fast(state,
+                                                                                         parentFunctionBaseValue,
+                                                                                         ZR_NULL);
                             } else {
                                 ZrCore_Debug_RunError(state, "GET_SUB_FUNCTION: parent must be a function or closure");
                             }

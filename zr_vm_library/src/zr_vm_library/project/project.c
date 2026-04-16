@@ -11,10 +11,10 @@
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/module.h"
+#include "zr_vm_core/reflection.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
-#include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_library/conf.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
@@ -294,8 +294,6 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
         project->autoCoroutine =
                 cJSON_IsBool(autoCoroutine) ? (cJSON_IsTrue(autoCoroutine) ? ZR_TRUE : ZR_FALSE) : ZR_TRUE;
     }
-    project->aotRuntime = ZR_NULL;
-
     cJSON_Delete(projectJson);
 
     if (project->source == ZR_NULL || project->binary == ZR_NULL || project->entry == ZR_NULL) {
@@ -312,7 +310,6 @@ void ZrLibrary_Project_Free(SZrState *state, SZrLibrary_Project *project) {
         return;
     }
     SZrGlobalState *global = state->global;
-    ZrLibrary_AotRuntime_FreeProjectState(state, project);
     library_project_free_path_aliases(global, project);
     ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
 }
@@ -394,8 +391,6 @@ static EZrThreadStatus library_project_normalize_failure(SZrState *state, EZrThr
 
 static void library_project_execute_body(SZrState *state, TZrPtr arguments) {
     ZrLibraryProjectExecuteRequest *request = (ZrLibraryProjectExecuteRequest *)arguments;
-    SZrClosure *closure;
-    TZrBool ignoredClosure = ZR_FALSE;
     TZrStackValuePointer base;
     SZrFunctionStackAnchor anchor;
     SZrTypeValue *closureValue;
@@ -404,30 +399,39 @@ static void library_project_execute_body(SZrState *state, TZrPtr arguments) {
         return;
     }
 
-    closure = ZrCore_Closure_New(state, 0);
-    if (closure == ZR_NULL) {
-        return;
-    }
-
-    ignoredClosure = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    closure->function = request->function;
-    ZrCore_Closure_InitValue(state, closure);
-
+    zr_library_project_trace("execute body start function=%p stackTop=%p stackSize=%llu",
+                             (void *)request->function,
+                             (void *)state->stackTop.valuePointer,
+                             (unsigned long long)request->function->stackSize);
     base = state->stackTop.valuePointer;
     base = ZrCore_Function_CheckStackAndAnchor(state, request->function->stackSize + 1, base, base, &anchor);
+    zr_library_project_trace("execute body anchored base=%p stackTop=%p",
+                             (void *)base,
+                             (void *)state->stackTop.valuePointer);
 
+    ZrCore_Closure_PushToStack(state, request->function, ZR_NULL, base, state->stackTop.valuePointer);
     closureValue = ZrCore_Stack_GetValue(state->stackTop.valuePointer);
-    ZrCore_Value_InitAsRawObject(state, closureValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    if (closureValue == ZR_NULL || closureValue->value.object == ZR_NULL) {
+        zr_library_project_trace("execute body closure push failed slot=%p",
+                                 (void *)state->stackTop.valuePointer);
+        return;
+    }
+    zr_library_project_trace("execute body closure slot=%p object=%p rawType=%d",
+                             (void *)state->stackTop.valuePointer,
+                             (void *)closureValue->value.object,
+                             (int)closureValue->value.object->type);
     closureValue->type = ZR_VALUE_TYPE_CLOSURE;
     closureValue->isGarbageCollectable = ZR_TRUE;
     closureValue->isNative = ZR_FALSE;
     state->stackTop.valuePointer++;
 
-    if (ignoredClosure) {
-        ZrCore_GarbageCollector_UnignoreObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    }
-
+    zr_library_project_trace("execute body call start slot=%p stackTop=%p",
+                             (void *)(state->stackTop.valuePointer - 1),
+                             (void *)state->stackTop.valuePointer);
     request->resultBase = ZrCore_Function_CallAndRestoreAnchor(state, &anchor, 1);
+    zr_library_project_trace("execute body call done resultBase=%p threadStatus=%d",
+                             (void *)request->resultBase,
+                             (int)state->threadStatus);
     request->callCompleted = (TZrBool)(state->threadStatus == ZR_THREAD_STATUS_FINE);
 }
 
@@ -443,7 +447,13 @@ static EZrThreadStatus library_project_execute_function(SZrState *state, SZrFunc
     ZrCore_Value_ResetAsNull(result);
     request.function = function;
     state->threadStatus = ZR_THREAD_STATUS_FINE;
+    zr_library_project_trace("execute function enter function=%p", (void *)function);
     status = ZrCore_Exception_TryRun(state, library_project_execute_body, &request);
+    zr_library_project_trace("execute function tryrun status=%d requestResult=%p callCompleted=%d threadStatus=%d",
+                             (int)status,
+                             (void *)request.resultBase,
+                             (int)request.callCompleted,
+                             (int)state->threadStatus);
     if (status != ZR_THREAD_STATUS_FINE) {
         return library_project_normalize_failure(state, status);
     }
@@ -512,6 +522,7 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
     if (projectModule != ZR_NULL) {
         TZrUInt64 pathHash = ZrCore_Module_CalculatePathHash(state, sourceName);
         ZrCore_Module_SetInfo(state, projectModule, ZR_NULL, pathHash, sourceName);
+        ZrCore_Reflection_AttachModuleRuntimeMetadata(state, projectModule, function);
         ZrCore_Module_CreatePrototypesFromConstants(state, projectModule, function);
         zr_library_project_trace("project module prepared pathHash=%llu", (unsigned long long)pathHash);
     }

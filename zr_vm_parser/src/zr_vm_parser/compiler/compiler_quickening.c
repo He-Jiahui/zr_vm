@@ -199,6 +199,7 @@ static TZrBool compiler_quickening_temp_slot_is_dead_until_block_end_with_termin
         const TZrBool *blockStarts,
         TZrUInt32 instructionIndex,
         TZrUInt32 slot);
+static TZrBool compiler_quickening_is_control_only_opcode(EZrInstructionCode opcode);
 static TZrBool compiler_quickening_block_ends_without_fallthrough(const TZrInstruction *instruction);
 static TZrBool compiler_quickening_fold_direct_result_stores(SZrFunction *function);
 static TZrBool compiler_quickening_try_fold_super_array_fill_int4_const_loop_compact(SZrFunction *function,
@@ -226,6 +227,17 @@ static TZrBool compiler_quicken_member_slot_accesses(SZrState *state, SZrFunctio
 static TZrBool compiler_quickening_try_fold_direct_result_store(SZrFunction *function,
                                                                 const TZrBool *blockStarts,
                                                                 TZrUInt32 instructionIndex);
+static TZrBool compiler_quickening_slot_is_exported_callable_binding(const SZrFunction *function, TZrUInt32 slot);
+static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_latest_prior_callable_provenance(
+        const SZrFunction *function,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 slot,
+        TZrUInt32 depth);
+static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_unique_prior_callable_provenance(
+        const SZrFunction *function,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 slot,
+        TZrUInt32 depth);
 static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_callable_provenance_before_instruction(
         const SZrFunction *function,
         const TZrBool *blockStarts,
@@ -1027,6 +1039,126 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_function_
     }
 }
 
+static TZrBool compiler_quickening_slot_is_exported_callable_binding(const SZrFunction *function, TZrUInt32 slot) {
+    if (function == ZR_NULL || function->exportedVariables == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0; index < function->exportedVariableLength; index++) {
+        const SZrFunctionExportedVariable *exported = &function->exportedVariables[index];
+        if (exported->stackSlot == slot &&
+            exported->callableChildIndex != ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE &&
+            exported->exportKind == ZR_MODULE_EXPORT_KIND_FUNCTION) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_latest_prior_callable_provenance(
+        const SZrFunction *function,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 slot,
+        TZrUInt32 depth) {
+    const TZrInstruction *writer = ZR_NULL;
+    TZrUInt32 writerIndex = UINT32_MAX;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || depth > function->instructionsLength) {
+        return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    writer = compiler_quickening_find_latest_writer_in_range(function, 0, instructionIndex, slot, &writerIndex);
+    if (writer == ZR_NULL) {
+        return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    switch ((EZrInstructionCode)writer->instruction.operationCode) {
+        case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
+        case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
+            return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM;
+        case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
+            return compiler_quickening_function_constant_callable_kind(
+                    function,
+                    (TZrUInt32)writer->instruction.operand.operand2[0]);
+        case ZR_INSTRUCTION_ENUM(GET_STACK):
+        case ZR_INSTRUCTION_ENUM(SET_STACK): {
+            TZrUInt32 sourceSlot = (TZrUInt32)writer->instruction.operand.operand2[0];
+            if (sourceSlot == slot) {
+                return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+            }
+            return compiler_quickening_resolve_latest_prior_callable_provenance(function,
+                                                                                writerIndex,
+                                                                                sourceSlot,
+                                                                                depth + 1u);
+        }
+        default:
+            return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+}
+
+static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_unique_prior_callable_provenance(
+        const SZrFunction *function,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 slot,
+        TZrUInt32 depth) {
+    const TZrInstruction *writer = ZR_NULL;
+    TZrUInt32 writerIndex = UINT32_MAX;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || depth > function->instructionsLength) {
+        return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    if (instructionIndex > function->instructionsLength) {
+        instructionIndex = function->instructionsLength;
+    }
+
+    for (TZrUInt32 scanIndex = instructionIndex; scanIndex > 0; scanIndex--) {
+        const TZrInstruction *candidate = &function->instructionsList[scanIndex - 1u];
+        EZrInstructionCode candidateOpcode = (EZrInstructionCode)candidate->instruction.operationCode;
+
+        if (candidate->instruction.operandExtra != slot ||
+            candidateOpcode == ZR_INSTRUCTION_ENUM(NOP) ||
+            compiler_quickening_is_control_only_opcode(candidateOpcode)) {
+            continue;
+        }
+
+        if (writer != ZR_NULL) {
+            return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+        }
+
+        writer = candidate;
+        writerIndex = scanIndex - 1u;
+    }
+
+    if (writer == ZR_NULL) {
+        return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    switch ((EZrInstructionCode)writer->instruction.operationCode) {
+        case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
+        case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
+            return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM;
+        case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
+            return compiler_quickening_function_constant_callable_kind(
+                    function,
+                    (TZrUInt32)writer->instruction.operand.operand2[0]);
+        case ZR_INSTRUCTION_ENUM(GET_STACK):
+        case ZR_INSTRUCTION_ENUM(SET_STACK): {
+            TZrUInt32 sourceSlot = (TZrUInt32)writer->instruction.operand.operand2[0];
+            if (sourceSlot == slot) {
+                return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+            }
+            return compiler_quickening_resolve_latest_prior_callable_provenance(function,
+                                                                                writerIndex,
+                                                                                sourceSlot,
+                                                                                depth + 1u);
+        }
+        default:
+            return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+}
+
 static TZrBool compiler_quickening_function_constant_read_int64(const SZrFunction *function,
                                                                 TZrUInt32 constantIndex,
                                                                 TZrInt64 *outValue) {
@@ -1151,7 +1283,9 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_c
         const TZrInstruction *writer = &function->instructionsList[scanIndex - 1];
         EZrInstructionCode writerOpcode = (EZrInstructionCode)writer->instruction.operationCode;
 
-        if (writer->instruction.operandExtra != slot) {
+        if (writer->instruction.operandExtra != slot ||
+            writerOpcode == ZR_INSTRUCTION_ENUM(NOP) ||
+            compiler_quickening_is_control_only_opcode(writerOpcode)) {
             continue;
         }
 
@@ -1179,6 +1313,15 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_c
             default:
                 return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
         }
+    }
+
+    if (compiler_quickening_slot_is_exported_callable_binding(function, slot) ||
+        (compiler_quickening_find_active_local_variable(function, slot, instructionIndex) == ZR_NULL &&
+         compiler_quickening_find_active_typed_local_binding(function, slot, instructionIndex) == ZR_NULL)) {
+        return compiler_quickening_resolve_unique_prior_callable_provenance(function,
+                                                                            instructionIndex,
+                                                                            slot,
+                                                                            depth + 1u);
     }
 
     return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
@@ -5651,6 +5794,14 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
     ZR_QUICKENING_RUN_PASS("fold_direct_result_stores_2",
                            compiler_quickening_fold_direct_result_stores(function));
     ZR_QUICKENING_RUN_PASS("compact_nops_11", compiler_quickening_compact_nops(state, function));
+    /*
+     * Later store-folding and GET_STACK forwarding can expose fresh direct
+     * callee provenance that was not visible during the first known_calls pass.
+     * Re-run known call lowering on the stabilized stream so loop-local callable
+     * copies such as exported child functions do not stay generic.
+     */
+    ZR_QUICKENING_RUN_PASS("known_calls_late", compiler_quicken_known_calls(function));
+    ZR_QUICKENING_RUN_PASS("zero_arg_calls_late", compiler_quicken_zero_arg_calls(function));
 
     if (recurseChildren && !function->childFunctionGraphIsBorrowed) {
         for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {

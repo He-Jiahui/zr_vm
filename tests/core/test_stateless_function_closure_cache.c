@@ -72,10 +72,90 @@ static void test_precall_reuses_zero_capture_function_closure_across_distinct_ca
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_known_vm_precall_keeps_zero_capture_function_value_materialized_as_function(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrStackValuePointer stackBase;
+    SZrTypeValue *callableValue;
+    SZrCallInfo *callInfo;
+    SZrTypeValue *preparedCallable;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(0u, function->closureValueLength);
+    TEST_ASSERT_NULL(function->cachedStatelessClosure);
+
+    stackBase = state->stackTop.valuePointer;
+    stackBase = ZrCore_Function_CheckStackAndGc(state, 2, stackBase);
+    callableValue = ZrCore_Stack_GetValue(stackBase);
+    TEST_ASSERT_NOT_NULL(callableValue);
+
+    ZrCore_Value_InitAsRawObject(state, callableValue, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_FUNCTION, callableValue->type);
+    TEST_ASSERT_FALSE(callableValue->isNative);
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = stackBase + 1;
+    callInfo = ZrCore_Function_PreCallKnownVmValue(state, stackBase, callableValue, 1, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(callInfo);
+
+    preparedCallable = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+    TEST_ASSERT_NOT_NULL(preparedCallable);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_FUNCTION, preparedCallable->type);
+    TEST_ASSERT_FALSE(preparedCallable->isNative);
+    TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(function), preparedCallable->value.object);
+    TEST_ASSERT_NULL(function->cachedStatelessClosure);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_resolved_vm_precall_keeps_zero_capture_function_value_materialized_as_function(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrStackValuePointer stackBase;
+    SZrTypeValue *callableValue;
+    SZrCallInfo *callInfo;
+    SZrTypeValue *preparedCallable;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(0u, function->closureValueLength);
+    TEST_ASSERT_NULL(function->cachedStatelessClosure);
+
+    stackBase = state->stackTop.valuePointer;
+    stackBase = ZrCore_Function_CheckStackAndGc(state, 2, stackBase);
+    callableValue = ZrCore_Stack_GetValue(stackBase);
+    TEST_ASSERT_NOT_NULL(callableValue);
+
+    ZrCore_Value_InitAsRawObject(state, callableValue, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_FUNCTION, callableValue->type);
+    TEST_ASSERT_FALSE(callableValue->isNative);
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = stackBase + 1;
+    callInfo = ZrCore_Function_PreCallResolvedVmFunction(state, stackBase, function, 0, 1, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(callInfo);
+
+    preparedCallable = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+    TEST_ASSERT_NOT_NULL(preparedCallable);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_FUNCTION, preparedCallable->type);
+    TEST_ASSERT_FALSE(preparedCallable->isNative);
+    TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(function), preparedCallable->value.object);
+    TEST_ASSERT_NULL(function->cachedStatelessClosure);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_precall_reuses_zero_capture_function_closure_across_distinct_call_sites);
+    RUN_TEST(test_known_vm_precall_keeps_zero_capture_function_value_materialized_as_function);
+    RUN_TEST(test_resolved_vm_precall_keeps_zero_capture_function_value_materialized_as_function);
 
     return UNITY_END();
 }

@@ -94,10 +94,7 @@ doc_type: module-detail
   - `interactiveAfterRun`
   - `emitIntermediate`
   - `incremental`
-  - `emitAotC`
-  - `emitAotLlvm`
   - `executionMode`
-  - `requireAotPath`
   - `emitExecutedVia`
   - `debugEnabled`
   - `debugAddress`
@@ -135,10 +132,10 @@ doc_type: module-detail
 - `--project ... -m ...` 在 v1 只支持：
   - `--execution-mode interp`
   - `--execution-mode binary`
-- `--project ... -m ...` 遇到 `aot_c` / `aot_llvm` 直接报稳定错误，不做隐式回退。
-- `-e/-c` 只支持 bare global 运行，不支持 compile、AOT、debug 或 module 模式 flag。
-- `--run`、`--intermediate`、`--incremental`、`--emit-aot-c`、`--emit-aot-llvm` 仍然从属于 `--compile`。
-- `--execution-mode`、`--require-aot-path`、`--emit-executed-via`、`--debug` 和用户透传参数都要求存在 active run path。
+- `--project ... -m ...` 遇到历史 AOT 执行模式名字会直接报未知模式错误，不做隐式回退。
+- `-e/-c` 只支持 bare global 运行，不支持 compile、debug 或 module 模式 flag。
+- `--run`、`--intermediate`、`--incremental` 仍然从属于 `--compile`。
+- `--execution-mode`、`--emit-executed-via`、`--debug` 和用户透传参数都要求存在 active run path。
 - `--` 是唯一的用户参数分隔符。之后的内容不再参与 CLI 解析。
 
 `--compile <project.zrp> --run` 仍然保持现有 compile+run 路径，但当前实现会把 `interp` 基线提升为 `binary`。这意味着未传 `--execution-mode` 时默认走 `binary`，而 parser 当前也不会保留“显式传了 `interp`”这一层区别。纯 compile 不会自动运行。
@@ -203,7 +200,7 @@ REPL v1 还支持两条扩展约束：
 - `RUN_INLINE`
   - `-e/-c` 走 bare global
   - 会注册标准模块并注入 `process.arguments`
-  - 不接 compile/AOT/debug 流程
+  - 不接 compile/debug 流程
 - `RUN_PROJECT_MODULE`
   - `--project <project.zrp> -m <module>`
   - 只在 CLI 内临时覆盖有效入口模块
@@ -267,7 +264,7 @@ CLI 自己管理的增量缓存清单仍然固定落在 `binary/.zr_cli_manifest
 - 透传参数在命令对象里的捕获结果
 - `--compile --run` 默认切到 `binary`
 - inline 与 module 模式的 passthrough + `interactiveAfterRun` 组合
-- 旧 `.zrp` / `--compile` / debug / AOT 组合不回归
+- 旧 `.zrp` / `--compile` / debug 组合不回归
 
 `tests/cmake/run_cli_suite.cmake` 覆盖了：
 
@@ -279,7 +276,7 @@ CLI 自己管理的增量缓存清单仍然固定落在 `binary/.zr_cli_manifest
 - `--compile --run`
 - `--compile --run` 默认 `executed_via=binary`
 - `--project <project.zrp> -m <module>` 的 binary 和 interp 路径
-- `--project <project.zrp> -m <module>` 的 aot 拒绝错误
+- `--project <project.zrp> -m <module>` 的旧执行模式名拒绝错误
 - `-e/-c`
 - `-i` 的 post-run fresh REPL
 - `--compile --run -i` 的 compile-run 后置交互
@@ -300,4 +297,4 @@ CLI 自己管理的增量缓存清单仍然固定落在 `binary/.zr_cli_manifest
 - manifest 仍然是 CLI 私有纯文本格式，不对外承诺兼容别的工具。
 - REPL 仍是无状态瞬时执行，不应把它误当成交互式工程会话。
 - `zr.system.process.arguments` 现在是用户可依赖接口，后续改动必须先考虑兼容性和现有夹具。
-- `--project ... -m ...` 的 AOT 支持仍然是显式缺口；需要做时应补独立测试，而不是偷偷回退到 interp/binary。
+- 如果未来要从 `zr_vm_aot/` 重新引入独立执行后端，必须走新的公开设计和测试入口，不能偷偷回退到 interp/binary。

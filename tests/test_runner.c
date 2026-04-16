@@ -31,15 +31,13 @@ static void print_usage(const char* executable) {
     printf("  cli_args\n");
     printf("  cli_integration\n");
     printf("  projects\n");
-    printf("  golden_regression\n");
     printf("  performance_report\n\n");
     printf("Usage:\n");
     printf("  %s --help\n", executable);
     printf("  %s --tier <smoke|core|stress> --ctest [ctest arguments...]\n", executable);
     printf("  %s --ctest [ctest arguments...]\n\n", executable);
     printf("Environment:\n");
-    printf("  ZR_VM_TEST_TIER=smoke|core|stress   Filter suite runners to a tier subset\n");
-    printf("  ZR_VM_REQUIRE_AOT_PATH=1            Fail AOT-tagged project cases that do not prove an AOT path\n\n");
+    printf("  ZR_VM_TEST_TIER=smoke|core|stress   Filter suite runners to a tier subset\n\n");
     printf("  ZR_VM_PERF_WARMUP=<n>               Override warmup iteration count for performance_report\n");
     printf("  ZR_VM_PERF_ITERATIONS=<n>           Override measured iteration count for performance_report\n\n");
     printf("Examples:\n");

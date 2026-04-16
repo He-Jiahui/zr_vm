@@ -85,6 +85,10 @@ TZrBool resolve_declared_field_member_access(SZrCompilerState *cs,
                                              SZrString **outFieldTypeName,
                                              TZrBool *outIsStatic,
                                              EZrOwnershipQualifier *outOwnershipQualifier);
+TZrUInt32 compiler_get_or_add_member_entry_for_type_member(SZrCompilerState *cs,
+                                                           SZrString *memberName,
+                                                           const SZrTypeMemberInfo *memberInfo,
+                                                           TZrUInt8 flags);
 TZrBool emit_null_reset_to_identifier_binding_local(SZrCompilerState *cs,
                                                     SZrString *name,
                                                     SZrFileRange location);

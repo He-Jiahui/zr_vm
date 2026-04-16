@@ -1,0 +1,13 @@
+[package]
+name = "zr_vm_rust_binding"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zr_vm_rust_binding_sys = { path = "../zr_vm_rust_binding_sys" }
+
+[dev-dependencies]
+tempfile = "3"

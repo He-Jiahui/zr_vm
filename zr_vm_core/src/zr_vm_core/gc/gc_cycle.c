@@ -79,7 +79,9 @@ typedef struct SZrGcCallsitePicWriteTrace {
     TZrUInt32 picSlotCount;
     TZrUInt32 picNextInsertIndex;
     const void *receiver;
+    const void *receiverObject;
     const void *owner;
+    const void *memberName;
     const void *target;
 } SZrGcCallsitePicWriteTrace;
 
@@ -128,7 +130,7 @@ static void garbage_collector_trace_last_callsite_cache_write(const SZrFunction 
     fprintf(stderr,
             "[gc-callsite-sanitize] phase=%s event=%s function=%p name=%s cacheIndex=%u slotIndex=%u "
             "lastWriteSequence=%u writer=%s action=%s picSlotCount=%u picNextInsertIndex=%u "
-            "receiver=%p owner=%p target=%p\n",
+            "receiver=%p receiverObject=%p owner=%p memberName=%p target=%p\n",
             phase != ZR_NULL ? phase : "unknown",
             event != ZR_NULL ? event : "unknown",
             (const void *)function,
@@ -141,7 +143,9 @@ static void garbage_collector_trace_last_callsite_cache_write(const SZrFunction 
             (unsigned int)trace->picSlotCount,
             (unsigned int)trace->picNextInsertIndex,
             trace->receiver,
+            trace->receiverObject,
             trace->owner,
+            trace->memberName,
             trace->target);
 }
 
@@ -191,7 +195,7 @@ static void garbage_collector_trace_callsite_cache_slot(const SZrFunction *funct
 
     fprintf(stderr,
             "[gc-callsite-sanitize] phase=%s event=%s function=%p name=%s cacheIndex=%u kind=%s instructionIndex=%u "
-            "slotIndex=%u receiver=%p owner=%p target=%p receiverVersion=%u ownerVersion=%u descriptorIndex=%u "
+            "slotIndex=%u receiver=%p receiverObject=%p owner=%p memberName=%p target=%p receiverVersion=%u ownerVersion=%u receiverElementCount=%u descriptorIndex=%u "
             "isStatic=%u picSlotCount=%u picNextInsertIndex=%u\n",
             phase != ZR_NULL ? phase : "unknown",
             event != ZR_NULL ? event : "unknown",
@@ -202,10 +206,13 @@ static void garbage_collector_trace_callsite_cache_slot(const SZrFunction *funct
             (unsigned int)cacheEntry->instructionIndex,
             (unsigned int)slotIndex,
             (const void *)slot->cachedReceiverPrototype,
+            (const void *)slot->cachedReceiverObject,
             (const void *)slot->cachedOwnerPrototype,
+            (const void *)slot->cachedMemberName,
             (const void *)slot->cachedFunction,
             (unsigned int)slot->cachedReceiverVersion,
             (unsigned int)slot->cachedOwnerVersion,
+            (unsigned int)slot->cachedReceiverElementCount,
             (unsigned int)slot->cachedDescriptorIndex,
             (unsigned int)slot->cachedIsStatic,
             (unsigned int)cacheEntry->picSlotCount,
@@ -244,7 +251,9 @@ void garbage_collector_record_callsite_cache_pic_write(const SZrFunction *functi
     trace->picSlotCount = cacheEntry->picSlotCount;
     trace->picNextInsertIndex = cacheEntry->picNextInsertIndex;
     trace->receiver = slot->cachedReceiverPrototype;
+    trace->receiverObject = slot->cachedReceiverObject;
     trace->owner = slot->cachedOwnerPrototype;
+    trace->memberName = slot->cachedMemberName;
     trace->target = slot->cachedFunction;
 }
 
@@ -278,11 +287,14 @@ static TZrBool garbage_collector_raw_heap_pointer_plausible_for_gc_slot(TZrPtr p
 }
 
 static TZrBool garbage_collector_callsite_pic_slot_triple_plausible(const SZrFunctionCallSitePicSlot *picSlot) {
-    const TZrPtr pointers[3] = {(TZrPtr)picSlot->cachedReceiverPrototype, (TZrPtr)picSlot->cachedOwnerPrototype,
-                                  (TZrPtr)picSlot->cachedFunction};
+    const TZrPtr pointers[5] = {(TZrPtr)picSlot->cachedReceiverPrototype,
+                                (TZrPtr)picSlot->cachedReceiverObject,
+                                (TZrPtr)picSlot->cachedOwnerPrototype,
+                                (TZrPtr)picSlot->cachedMemberName,
+                                (TZrPtr)picSlot->cachedFunction};
     TZrSize index;
 
-    for (index = 0; index < 3u; index++) {
+    for (index = 0; index < 5u; index++) {
         TZrPtr candidate = pointers[index];
 
         if (candidate == (TZrPtr)0) {
@@ -1180,9 +1192,12 @@ static TZrSize garbage_collector_rewrite_function_graph(SZrState *state, SZrFunc
             }
             for (TZrUInt32 picIndex = 0; picIndex < picLimit; picIndex++) {
                 garbage_collector_rewrite_raw_object_slot(
+                        (SZrRawObject **)&cacheEntry->picSlots[picIndex].cachedReceiverObject);
+                garbage_collector_rewrite_raw_object_slot(
                         (SZrRawObject **)&cacheEntry->picSlots[picIndex].cachedReceiverPrototype);
                 garbage_collector_rewrite_raw_object_slot(
                         (SZrRawObject **)&cacheEntry->picSlots[picIndex].cachedOwnerPrototype);
+                work += garbage_collector_rewrite_string_slot(&cacheEntry->picSlots[picIndex].cachedMemberName);
                 garbage_collector_trace_rewrite_function_slot("callSiteCachedFunction",
                                                               function,
                                                               cacheEntry->picSlots[picIndex].cachedFunction);

@@ -21,6 +21,9 @@
 #include "zr_vm_lib_math/module.h"
 #include "zr_vm_lib_network/module.h"
 #include "zr_vm_lib_system/module.h"
+#if defined(ZR_VM_HAS_THREAD_MODULE)
+#include "zr_vm_lib_thread/module.h"
+#endif
 #include "zr_vm_core/task_runtime.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_library/file.h"
@@ -212,39 +215,6 @@ static TZrBool zr_cli_resolve_output_path(const TZrChar *rootPath,
     return ZR_TRUE;
 }
 
-static void zr_cli_sanitize_module_name(const TZrChar *moduleName, TZrChar *buffer, TZrSize bufferSize) {
-    TZrSize cursor = 0;
-
-    if (buffer == ZR_NULL || bufferSize == 0) {
-        return;
-    }
-
-    buffer[0] = '\0';
-    if (moduleName == ZR_NULL) {
-        return;
-    }
-
-    for (TZrSize index = 0; moduleName[index] != '\0' && cursor + 1 < bufferSize; index++) {
-        TZrChar current = moduleName[index];
-        buffer[cursor++] = (TZrChar)(((current >= 'a' && current <= 'z') ||
-                                      (current >= 'A' && current <= 'Z') ||
-                                      (current >= '0' && current <= '9'))
-                                             ? current
-                                             : '_');
-    }
-    buffer[cursor] = '\0';
-}
-
-static const TZrChar *zr_cli_dynamic_library_extension(void) {
-#if defined(_WIN32)
-    return ".dll";
-#elif defined(__APPLE__)
-    return ".dylib";
-#else
-    return ".so";
-#endif
-}
-
 SZrGlobalState *ZrCli_Project_CreateBareGlobal(void) {
     SZrCallbackGlobal callbacks = {0};
     return ZrCore_GlobalState_New(zr_cli_allocator, ZR_NULL, 0x5A525F434C495F42ULL, &callbacks);
@@ -254,7 +224,9 @@ SZrGlobalState *ZrCli_Project_CreateProjectGlobal(const TZrChar *projectPath) {
     return ZrLibrary_CommonState_CommonGlobalState_New((TZrNativeString)projectPath);
 }
 
-TZrBool ZrCli_Project_RegisterStandardModules(SZrGlobalState *global) {
+TZrBool ZrCli_Project_RegisterStandardModulesWithBootstrap(SZrGlobalState *global,
+                                                           FZrCliProjectGlobalBootstrap bootstrap,
+                                                           TZrPtr userData) {
     if (global == ZR_NULL || global->mainThreadState == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -265,7 +237,15 @@ TZrBool ZrCli_Project_RegisterStandardModules(SZrGlobalState *global) {
            ZrVmLibNetwork_Register(global) &&
            ZrVmLibContainer_Register(global) &&
            ZrVmLibFfi_Register(global) &&
-           ZrCore_TaskRuntime_RegisterBuiltins(global);
+#if defined(ZR_VM_HAS_THREAD_MODULE)
+           ZrVmThread_Register(global) &&
+#endif
+           ZrCore_TaskRuntime_RegisterBuiltins(global) &&
+           (bootstrap == ZR_NULL || bootstrap(global, userData));
+}
+
+TZrBool ZrCli_Project_RegisterStandardModules(SZrGlobalState *global) {
+    return ZrCli_Project_RegisterStandardModulesWithBootstrap(global, ZR_NULL, ZR_NULL);
 }
 
 TZrBool ZrCli_ProjectContext_FromGlobal(SZrCliProjectContext *context,
@@ -357,112 +337,6 @@ TZrBool ZrCli_Project_ResolveIntermediatePath(const SZrCliProjectContext *contex
                                       ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION,
                                       buffer,
                                       bufferSize);
-}
-
-TZrBool ZrCli_Project_ResolveAotCSourcePath(const SZrCliProjectContext *context,
-                                            const TZrChar *moduleName,
-                                            TZrChar *buffer,
-                                            TZrSize bufferSize) {
-    TZrChar rootPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-
-    if (context == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
-        return ZR_FALSE;
-    }
-
-    if (snprintf(rootPath, sizeof(rootPath), "%s%c%s%c%s",
-                 context->binaryRoot,
-                 ZR_SEPARATOR,
-                 "aot_c",
-                 ZR_SEPARATOR,
-                 "src") >= (int)sizeof(rootPath)) {
-        return ZR_FALSE;
-    }
-
-    return zr_cli_resolve_output_path(rootPath, moduleName, ".c", buffer, bufferSize);
-}
-
-TZrBool ZrCli_Project_ResolveAotCLibraryPath(const SZrCliProjectContext *context,
-                                             const TZrChar *moduleName,
-                                             TZrChar *buffer,
-                                             TZrSize bufferSize) {
-    TZrChar rootPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar sanitizedName[ZR_LIBRARY_MAX_PATH_LENGTH];
-
-    if (context == ZR_NULL || moduleName == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
-        return ZR_FALSE;
-    }
-
-    if (snprintf(rootPath, sizeof(rootPath), "%s%c%s%c%s",
-                 context->binaryRoot,
-                 ZR_SEPARATOR,
-                 "aot_c",
-                 ZR_SEPARATOR,
-                 "lib") >= (int)sizeof(rootPath)) {
-        return ZR_FALSE;
-    }
-
-    zr_cli_sanitize_module_name(moduleName, sanitizedName, sizeof(sanitizedName));
-    return snprintf(buffer,
-                    bufferSize,
-                    "%s%c%s%s%s",
-                    rootPath,
-                    ZR_SEPARATOR,
-                    "zrvm_aot_",
-                    sanitizedName,
-                    zr_cli_dynamic_library_extension()) < (int)bufferSize;
-}
-
-TZrBool ZrCli_Project_ResolveAotLlvmIrPath(const SZrCliProjectContext *context,
-                                           const TZrChar *moduleName,
-                                           TZrChar *buffer,
-                                           TZrSize bufferSize) {
-    TZrChar rootPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-
-    if (context == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
-        return ZR_FALSE;
-    }
-
-    if (snprintf(rootPath, sizeof(rootPath), "%s%c%s%c%s",
-                 context->binaryRoot,
-                 ZR_SEPARATOR,
-                 "aot_llvm",
-                 ZR_SEPARATOR,
-                 "ir") >= (int)sizeof(rootPath)) {
-        return ZR_FALSE;
-    }
-
-    return zr_cli_resolve_output_path(rootPath, moduleName, ".ll", buffer, bufferSize);
-}
-
-TZrBool ZrCli_Project_ResolveAotLlvmLibraryPath(const SZrCliProjectContext *context,
-                                                const TZrChar *moduleName,
-                                                TZrChar *buffer,
-                                                TZrSize bufferSize) {
-    TZrChar rootPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    TZrChar sanitizedName[ZR_LIBRARY_MAX_PATH_LENGTH];
-
-    if (context == ZR_NULL || moduleName == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
-        return ZR_FALSE;
-    }
-
-    if (snprintf(rootPath, sizeof(rootPath), "%s%c%s%c%s",
-                 context->binaryRoot,
-                 ZR_SEPARATOR,
-                 "aot_llvm",
-                 ZR_SEPARATOR,
-                 "lib") >= (int)sizeof(rootPath)) {
-        return ZR_FALSE;
-    }
-
-    zr_cli_sanitize_module_name(moduleName, sanitizedName, sizeof(sanitizedName));
-    return snprintf(buffer,
-                    bufferSize,
-                    "%s%c%s%s%s",
-                    rootPath,
-                    ZR_SEPARATOR,
-                    "zrvm_aot_",
-                    sanitizedName,
-                    zr_cli_dynamic_library_extension()) < (int)bufferSize;
 }
 
 TZrBool ZrCli_Project_OpenFileIo(SZrState *state, const TZrChar *path, TZrBool isBinary, SZrIo *io) {
@@ -792,24 +666,10 @@ TZrBool ZrCli_Project_LoadManifest(const SZrCliProjectContext *context, SZrCliIn
             snprintf(current->sourceHash, sizeof(current->sourceHash), "%s", value);
         } else if (zr_cli_manifest_match_key(line, "zro_hash", &value)) {
             snprintf(current->zroHash, sizeof(current->zroHash), "%s", value);
-        } else if (zr_cli_manifest_match_key(line, "aot_c_input_hash", &value)) {
-            snprintf(current->aotCInputHash, sizeof(current->aotCInputHash), "%s", value);
         } else if (zr_cli_manifest_match_key(line, "zro", &value)) {
             snprintf(current->zroPath, sizeof(current->zroPath), "%s", value);
         } else if (zr_cli_manifest_match_key(line, "zri", &value)) {
             snprintf(current->zriPath, sizeof(current->zriPath), "%s", value);
-        } else if (zr_cli_manifest_match_key(line, "aot_c_src", &value)) {
-            snprintf(current->aotCSourcePath, sizeof(current->aotCSourcePath), "%s", value);
-        } else if (zr_cli_manifest_match_key(line, "aot_c_lib", &value)) {
-            snprintf(current->aotCLibraryPath, sizeof(current->aotCLibraryPath), "%s", value);
-        } else if (zr_cli_manifest_match_key(line, "aot_c_input_kind", &value)) {
-            current->aotCInputKind = (TZrUInt32)strtoul(value, ZR_NULL, 10);
-        } else if (zr_cli_manifest_match_key(line, "aot_c_abi_version", &value)) {
-            current->aotCAbiVersion = (TZrUInt32)strtoul(value, ZR_NULL, 10);
-        } else if (zr_cli_manifest_match_key(line, "aot_llvm_ir", &value)) {
-            snprintf(current->aotLlvmIrPath, sizeof(current->aotLlvmIrPath), "%s", value);
-        } else if (zr_cli_manifest_match_key(line, "aot_llvm_lib", &value)) {
-            snprintf(current->aotLlvmLibraryPath, sizeof(current->aotLlvmLibraryPath), "%s", value);
         } else if (zr_cli_manifest_match_key(line, "import", &value)) {
             if (!ZrCli_Project_StringList_AppendUnique(&current->imports, value)) {
                 free(content);
@@ -852,15 +712,8 @@ TZrBool ZrCli_Project_SaveManifest(const SZrCliProjectContext *context, const SZ
         fprintf(file, "module %s\n", entry->moduleName);
         fprintf(file, "hash %s\n", entry->sourceHash);
         fprintf(file, "zro_hash %s\n", entry->zroHash);
-        fprintf(file, "aot_c_input_hash %s\n", entry->aotCInputHash);
         fprintf(file, "zro %s\n", entry->zroPath);
         fprintf(file, "zri %s\n", entry->zriPath);
-        fprintf(file, "aot_c_src %s\n", entry->aotCSourcePath);
-        fprintf(file, "aot_c_lib %s\n", entry->aotCLibraryPath);
-        fprintf(file, "aot_c_input_kind %u\n", (unsigned)entry->aotCInputKind);
-        fprintf(file, "aot_c_abi_version %u\n", (unsigned)entry->aotCAbiVersion);
-        fprintf(file, "aot_llvm_ir %s\n", entry->aotLlvmIrPath);
-        fprintf(file, "aot_llvm_lib %s\n", entry->aotLlvmLibraryPath);
         fprintf(file, "imports %llu\n", (unsigned long long) entry->imports.count);
         for (TZrSize importIndex = 0; importIndex < entry->imports.count; importIndex++) {
             fprintf(file, "import %s\n", entry->imports.items[importIndex]);

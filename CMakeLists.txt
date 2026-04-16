@@ -45,14 +45,6 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 option(USE_SYSTEM_PACKAGES "Use system package manager for dependencies" ON)
 option(BUILD_EXPERIMENTAL_NETWORK_LIB "Build zr_vm_lib_network module" ON)
 
-# AOT：C/LLVM 代码生成后端、依赖 WriteAot* 的测试；默认关闭以缩短配置/编译时间
-option(ZR_VM_BUILD_AOT "Build AOT backends (C/LLVM emitters) and AOT-dependent parser tests" OFF)
-if (ZR_VM_BUILD_AOT)
-    add_compile_definitions(ZR_VM_BUILD_AOT=1)
-else ()
-    add_compile_definitions(ZR_VM_BUILD_AOT=0)
-endif ()
-
 add_compile_definitions(
         $<$<CONFIG:Debug>:ZR_DEBUG>
         $<$<OR:$<CONFIG:Release>,$<CONFIG:RelWithDebInfo>,$<CONFIG:MinSizeRel>>:ZR_RELEASE>
@@ -75,7 +67,6 @@ if (UNIX AND NOT WIN32)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
 endif ()
 
-message(STATUS "ZR_VM_BUILD_AOT: ${ZR_VM_BUILD_AOT}")
 message(STATUS "C Compiler ID: ${CMAKE_C_COMPILER_ID}")
 message(STATUS "Compiler Version: ${CMAKE_C_COMPILER_VERSION}")
 if (CMAKE_CXX_COMPILER_LOADED)
@@ -118,6 +109,8 @@ else ()
 endif ()
 
 add_subdirectory("zr_vm_language_server")
+
+add_subdirectory("zr_vm_rust_binding")
 
 add_subdirectory("zr_vm_cli")
 

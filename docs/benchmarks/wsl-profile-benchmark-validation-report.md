@@ -157,8 +157,6 @@ WSL clang 的 `execution_dispatch.c` 断言不是当前 VM 源码逻辑回归，
 - `C`: 14 / 14
 - `ZR interp`: 14 / 14
 - `ZR binary`: 8 / 14
-- `ZR aot_c`: 8 / 14 with `string_build` still `SKIP`
-- `ZR aot_llvm`: 0 / 14 effective, still unified `SKIP`
 - `Python`: 14 / 14
 - `Node.js`: 14 / 14
 - `QuickJS`: 8 / 14
@@ -267,10 +265,6 @@ WSL clang 的 `execution_dispatch.c` 断言不是当前 VM 源码逻辑回归，
 
 ## Known Debts
 
-- `ZR aot_llvm`
-  - 仍因 LLVM opaque pointer 模型不兼容而统一 `SKIP`
-- `string_build / ZR aot_c`
-  - correctness run 仍然 `Segmentation fault`
 - 全树 Release 构建
   - 仍被 `zr_vm_language_server` 的 `semantic_type_from_ast` 类型冲突阻塞
 

@@ -343,15 +343,27 @@ typedef enum EZrFunctionCallSiteCacheKind {
     ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET = 10
 } EZrFunctionCallSiteCacheKind;
 
+typedef enum EZrFunctionCallSitePicAccessKind {
+    ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_NONE = 0,
+    ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD = 1
+} EZrFunctionCallSitePicAccessKind;
+
+#define ZR_FUNCTION_CALLSITE_PIC_SLOT_FLAG_NON_HIDDEN_STRING_PAIR_FAST_SET ((TZrUInt16)0x0080u)
+
 typedef struct SZrFunctionCallSitePicSlot {
     struct SZrObjectPrototype *cachedReceiverPrototype;
     struct SZrObjectPrototype *cachedOwnerPrototype;
+    struct SZrObject *cachedReceiverObject;
+    struct SZrHashKeyValuePair **cachedReceiverBuckets;
+    struct SZrHashKeyValuePair *cachedReceiverPair;
     struct SZrFunction *cachedFunction;
+    struct SZrString *cachedMemberName;
     TZrUInt32 cachedReceiverVersion;
     TZrUInt32 cachedOwnerVersion;
+    TZrUInt32 cachedReceiverElementCount;
     TZrUInt32 cachedDescriptorIndex;
     TZrUInt8 cachedIsStatic;
-    TZrUInt8 reserved0;
+    TZrUInt8 cachedAccessKind;
     TZrUInt16 reserved1;
 } SZrFunctionCallSitePicSlot;
 
@@ -374,6 +386,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt16 parameterCount;
     TZrBool hasVariableArguments;
     TZrUInt32 stackSize;
+    TZrUInt32 vmEntryClearStackSizePlusOne;
     // function name (函数名由函数自身持有，匿名函数为 ZR_NULL)
     struct SZrString *functionName;
     // length
@@ -533,16 +546,27 @@ ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallAndRestore(struct SZrState 
                                                           TZrSize resultCount);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldAndRestore(struct SZrState *state,
-                                                                      TZrStackValuePointer stackPointer,
-                                                                      TZrSize resultCount);
+                                                                       TZrStackValuePointer stackPointer,
+                                                                       TZrSize resultCount);
+
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldKnownValueAndRestore(struct SZrState *state,
+                                                                                 TZrStackValuePointer stackPointer,
+                                                                                 const struct SZrTypeValue *callableValue,
+                                                                                 TZrSize resultCount);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallAndRestoreAnchor(struct SZrState *state,
                                                                 const SZrFunctionStackAnchor *anchor,
                                                                 TZrSize resultCount);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldAndRestoreAnchor(struct SZrState *state,
-                                                                              const SZrFunctionStackAnchor *anchor,
-                                                                              TZrSize resultCount);
+                                                                               const SZrFunctionStackAnchor *anchor,
+                                                                               TZrSize resultCount);
+
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_CallWithoutYieldKnownValueAndRestoreAnchor(
+        struct SZrState *state,
+        const SZrFunctionStackAnchor *anchor,
+        const struct SZrTypeValue *callableValue,
+        TZrSize resultCount);
 
 ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, TZrStackValuePointer stackPointer,
                                                   TZrSize resultCount, TZrStackValuePointer returnDestination);
@@ -558,6 +582,13 @@ ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownVmValue(struct SZrSt
                                                              struct SZrTypeValue *callableValue,
                                                              TZrSize resultCount,
                                                              TZrStackValuePointer returnDestination);
+
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallResolvedVmFunction(struct SZrState *state,
+                                                                     TZrStackValuePointer stackPointer,
+                                                                     struct SZrFunction *function,
+                                                                     TZrSize argumentsCount,
+                                                                     TZrSize resultCount,
+                                                                     TZrStackValuePointer returnDestination);
 
 ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownNativeValue(struct SZrState *state,
                                                                  TZrStackValuePointer stackPointer,

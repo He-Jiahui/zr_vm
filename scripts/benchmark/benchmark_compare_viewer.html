@@ -143,13 +143,13 @@
 
   <section id="sec-interpreted">
     <h2>解释器 / 脚本虚拟机类 — 同类互比</h2>
-    <p class="section-note">仅包含：Python、Node.js、Lua、QuickJS、<code>ZR interp</code>。着色与条形比例均只在<strong>本组</strong>实现之间比较（不与 C / AOT 等混排）。</p>
+    <p class="section-note">仅包含：Python、Node.js、Lua、QuickJS、<code>ZR interp</code>。着色与条形比例均只在<strong>本组</strong>实现之间比较（不与 C / binary 等混排）。</p>
     <div id="interpreted-matrix-container"></div>
   </section>
 
   <section id="sec-native">
-    <h2>原生 / JIT / AOT 机器码类 — 同类互比</h2>
-    <p class="section-note">仅包含：C、Rust、Java、.NET、<code>ZR binary</code>、<code>ZR aot_c</code>、<code>ZR aot_llvm</code>。Java / .NET 为虚拟机内 JIT 编译到机器码的执行路径。</p>
+    <h2>原生 / JIT / 预编译机器码类 — 同类互比</h2>
+    <p class="section-note">仅包含：C、Rust、Java、.NET、<code>ZR binary</code>。Java / .NET 为虚拟机内 JIT 编译到机器码的执行路径。</p>
     <div id="native-matrix-container"></div>
   </section>
 
@@ -241,9 +241,7 @@
       n === "Rust" ||
       n === "Java" ||
       n === ".NET" ||
-      n === "ZR binary" ||
-      n === "ZR aot_c" ||
-      n === "ZR aot_llvm"
+      n === "ZR binary"
     ) {
       return "native";
     }

@@ -74,6 +74,7 @@ dkms.conf
 /build_wasm_test
 /dumps
 /tmp/
+*/target/
 
 # Local scratch project dirs at repo root (debug harnesses)
 /tmp_*/

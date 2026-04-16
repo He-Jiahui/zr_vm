@@ -3,6 +3,7 @@
 TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     ZrLibrary_NativeRegistryState *registry;
     SZrState *state;
+    TZrSize cacheIndex;
 
     if (global == ZR_NULL || global->mainThreadState == ZR_NULL) {
         return ZR_FALSE;
@@ -38,6 +39,9 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
                       &registry->pluginHandles,
                       sizeof(ZrLibPluginHandleRecord),
                       ZR_LIBRARY_NATIVE_PLUGIN_HANDLES_INITIAL_CAPACITY);
+    for (cacheIndex = 0; cacheIndex < ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_CAPACITY; cacheIndex++) {
+        registry->bindingLookupHotIndices[cacheIndex] = ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_INVALID_INDEX;
+    }
     native_registry_clear_error(registry);
 
     ZrCore_GlobalState_SetNativeModuleLoader(global, native_registry_loader, registry);

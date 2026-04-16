@@ -5,8 +5,6 @@ set(ZR_VM_BENCHMARK_IMPLEMENTATION_ORDER
         "c"
         "zr_interp"
         "zr_binary"
-        "zr_aot_c"
-        "zr_aot_llvm"
         "python"
         "node"
         "qjs"
@@ -28,7 +26,7 @@ set(ZR_VM_BENCHMARK_DEFAULT_CORE_IMPLEMENTATIONS
         "python")
 
 function(zr_vm_register_benchmark_case name)
-    set(options REQUIRE_REAL_AOT)
+    set(options "")
     set(oneValueArgs
             DESCRIPTION
             PASS_BANNER
@@ -83,11 +81,6 @@ function(zr_vm_register_benchmark_case name)
     set("ZR_VM_BENCHMARK_CHECKSUM_${name}_core" "${ARG_CHECKSUM_CORE}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_CHECKSUM_${name}_profile" "${ARG_CHECKSUM_PROFILE}" PARENT_SCOPE)
     set("ZR_VM_BENCHMARK_CHECKSUM_${name}_stress" "${ARG_CHECKSUM_STRESS}" PARENT_SCOPE)
-    if (ARG_REQUIRE_REAL_AOT)
-        set("ZR_VM_BENCHMARK_REQUIRE_REAL_AOT_${name}" TRUE PARENT_SCOPE)
-    else ()
-        set("ZR_VM_BENCHMARK_REQUIRE_REAL_AOT_${name}" FALSE PARENT_SCOPE)
-    endif ()
 endfunction()
 
 zr_vm_register_benchmark_case(
@@ -98,7 +91,6 @@ zr_vm_register_benchmark_case(
         PROFILE_SCALE 2
         TIERS "smoke;core;stress;profile"
         IMPLEMENTATIONS "${ZR_VM_BENCHMARK_DEFAULT_IMPLEMENTATIONS}"
-        REQUIRE_REAL_AOT
         CHECKSUM_SMOKE "48943705"
         CHECKSUM_CORE "793446923"
         CHECKSUM_PROFILE "200014259"
@@ -112,7 +104,6 @@ zr_vm_register_benchmark_case(
         PROFILE_SCALE 2
         TIERS "core;stress;profile"
         IMPLEMENTATIONS "${ZR_VM_BENCHMARK_DEFAULT_IMPLEMENTATIONS}"
-        REQUIRE_REAL_AOT
         CHECKSUM_SMOKE "522873290"
         CHECKSUM_CORE "320214929"
         CHECKSUM_PROFILE "64790779"
@@ -126,7 +117,6 @@ zr_vm_register_benchmark_case(
         PROFILE_SCALE 2
         TIERS "core;stress;profile"
         IMPLEMENTATIONS "${ZR_VM_BENCHMARK_DEFAULT_IMPLEMENTATIONS}"
-        REQUIRE_REAL_AOT
         CHECKSUM_SMOKE "23535464"
         CHECKSUM_CORE "672287189"
         CHECKSUM_PROFILE "953809920"
@@ -140,7 +130,6 @@ zr_vm_register_benchmark_case(
         PROFILE_SCALE 2
         TIERS "smoke;core;stress;profile"
         IMPLEMENTATIONS "${ZR_VM_BENCHMARK_DEFAULT_IMPLEMENTATIONS}"
-        REQUIRE_REAL_AOT
         CHECKSUM_SMOKE "253437194"
         CHECKSUM_CORE "706926966"
         CHECKSUM_PROFILE "637904378"
@@ -154,7 +143,6 @@ zr_vm_register_benchmark_case(
         PROFILE_SCALE 2
         TIERS "smoke;core;stress;profile"
         IMPLEMENTATIONS "${ZR_VM_BENCHMARK_DEFAULT_IMPLEMENTATIONS}"
-        REQUIRE_REAL_AOT
         CHECKSUM_SMOKE "77881285"
         CHECKSUM_CORE "32196849"
         CHECKSUM_PROFILE "278812750"
@@ -168,7 +156,6 @@ zr_vm_register_benchmark_case(
         PROFILE_SCALE 1
         TIERS "core;stress;profile"
         IMPLEMENTATIONS "${ZR_VM_BENCHMARK_DEFAULT_IMPLEMENTATIONS}"
-        REQUIRE_REAL_AOT
         CHECKSUM_SMOKE "139381755"
         CHECKSUM_CORE "76802768"
         CHECKSUM_PROFILE "139381755"
@@ -182,8 +169,7 @@ zr_vm_register_benchmark_case(
         PROFILE_SCALE 2
         TIERS "core;stress;profile"
         IMPLEMENTATIONS "${ZR_VM_BENCHMARK_DEFAULT_IMPLEMENTATIONS}"
-        CORE_IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "python" "zr_aot_c" "zr_aot_llvm"
-        REQUIRE_REAL_AOT
+        CORE_IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "python"
         CHECKSUM_SMOKE "681635505"
         CHECKSUM_CORE "353247225"
         CHECKSUM_PROFILE "62693157"
@@ -197,7 +183,6 @@ zr_vm_register_benchmark_case(
         PROFILE_SCALE 2
         TIERS "core;stress;profile"
         IMPLEMENTATIONS "${ZR_VM_BENCHMARK_DEFAULT_IMPLEMENTATIONS}"
-        REQUIRE_REAL_AOT
         CHECKSUM_SMOKE "751187833"
         CHECKSUM_CORE "173458768"
         CHECKSUM_PROFILE "317868026"
@@ -294,9 +279,8 @@ zr_vm_register_benchmark_case(
         WORKLOAD_TAG "gc,string,container,baseline"
         PROFILE_SCALE 1
         TIERS "core;stress;profile"
-        IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "zr_aot_c" "zr_aot_llvm"
-        CORE_IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "zr_aot_c" "zr_aot_llvm"
-        REQUIRE_REAL_AOT
+        IMPLEMENTATIONS "c" "zr_interp" "zr_binary"
+        CORE_IMPLEMENTATIONS "c" "zr_interp" "zr_binary"
         CHECKSUM_SMOKE "829044624"
         CHECKSUM_CORE "857265678"
         CHECKSUM_PROFILE "829044624"
@@ -309,9 +293,8 @@ zr_vm_register_benchmark_case(
         WORKLOAD_TAG "gc,string,container"
         PROFILE_SCALE 1
         TIERS "core;stress;profile"
-        IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "zr_aot_c" "zr_aot_llvm"
-        CORE_IMPLEMENTATIONS "c" "zr_interp" "zr_binary" "zr_aot_c" "zr_aot_llvm"
-        REQUIRE_REAL_AOT
+        IMPLEMENTATIONS "c" "zr_interp" "zr_binary"
+        CORE_IMPLEMENTATIONS "c" "zr_interp" "zr_binary"
         CHECKSUM_SMOKE "829044624"
         CHECKSUM_CORE "857265678"
         CHECKSUM_PROFILE "829044624"

@@ -42,12 +42,6 @@ add_executable(zr_vm_scripts_test
 )
 zr_vm_configure_scripts_target(zr_vm_scripts_test)
 
-add_executable(zr_vm_artifact_golden_test
-    test_artifact_golden.c
-    ${SCRIPTS_COMMON_SOURCES}
-)
-zr_vm_configure_scripts_target(zr_vm_artifact_golden_test)
-
 # 复制测试用例文件到构建目录
 file(GLOB TEST_CASE_FILES "${CMAKE_CURRENT_SOURCE_DIR}/test_cases/*.zr")
 foreach(TEST_FILE ${TEST_CASE_FILES})
@@ -82,4 +76,3 @@ file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/tests/scripts/output/runtime)
 # 添加测试目标
 enable_testing()
 add_test(NAME scripts_tests COMMAND zr_vm_scripts_test)
-add_test(NAME scripts_artifact_golden COMMAND zr_vm_artifact_golden_test)

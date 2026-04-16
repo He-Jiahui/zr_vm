@@ -5,6 +5,7 @@
 #include "object/object_call_internal.h"
 
 #include "zr_vm_core/call_info.h"
+#include "zr_vm_core/execution.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
@@ -73,6 +74,12 @@ static void object_unpin_value_object(SZrGlobalState *global, const SZrTypeValue
     }
 }
 
+typedef struct SZrObjectFastOperandState {
+    SZrFunctionStackAnchor anchor;
+    TZrBool hasAnchor;
+    TZrBool pinAdded;
+} SZrObjectFastOperandState;
+
 static TZrBool object_value_is_struct_instance(SZrState *state, const SZrTypeValue *value) {
     SZrObject *object;
 
@@ -137,6 +144,220 @@ static TZrBool object_make_callable_value(SZrState *state, SZrFunction *function
 
     ZrCore_Value_InitAsRawObject(state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
     return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool object_value_resides_on_vm_stack(const SZrState *state,
+                                                                const SZrTypeValue *value) {
+    TZrStackValuePointer stackValue;
+
+    if (state == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stackValue = ZR_CAST(TZrStackValuePointer, value);
+    return (TZrBool)(stackValue >= state->stackBase.valuePointer && stackValue < state->stackTail.valuePointer);
+}
+
+static ZR_FORCE_INLINE void object_fast_operand_state_init(SZrObjectFastOperandState *operandState) {
+    if (operandState == ZR_NULL) {
+        return;
+    }
+
+    operandState->hasAnchor = ZR_FALSE;
+    operandState->pinAdded = ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE TZrBool object_prepare_fast_operand(SZrState *state,
+                                                           const SZrTypeValue *value,
+                                                           SZrObjectFastOperandState *operandState) {
+    if (operandState != ZR_NULL) {
+        object_fast_operand_state_init(operandState);
+    }
+    if (value == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (operandState == ZR_NULL) {
+        return !ZrCore_Value_IsGarbageCollectable(value);
+    }
+
+    if (object_value_resides_on_vm_stack(state, value)) {
+        ZrCore_Function_StackAnchorInit(state, ZR_CAST(TZrStackValuePointer, value), &operandState->anchor);
+        operandState->hasAnchor = ZR_TRUE;
+        return ZR_TRUE;
+    }
+
+    return object_pin_value_object(state, value, &operandState->pinAdded);
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *object_restore_fast_operand(SZrState *state,
+                                                                       const SZrTypeValue *fallback,
+                                                                       const SZrObjectFastOperandState *operandState) {
+    if (operandState == ZR_NULL || !operandState->hasAnchor) {
+        return fallback;
+    }
+
+    return ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &operandState->anchor));
+}
+
+static ZR_FORCE_INLINE void object_cleanup_fast_operand(SZrGlobalState *global,
+                                                        const SZrTypeValue *value,
+                                                        SZrObjectFastOperandState *operandState) {
+    if (operandState == ZR_NULL) {
+        return;
+    }
+
+    object_unpin_value_object(global, value, operandState->pinAdded);
+    operandState->pinAdded = ZR_FALSE;
+}
+
+static TZrBool object_call_known_native_fast(SZrState *state,
+                                             const SZrTypeValue *callable,
+                                             const SZrTypeValue *receiver,
+                                             const SZrTypeValue *const *arguments,
+                                             TZrSize argumentCount,
+                                             SZrTypeValue *result) {
+    SZrFunctionStackAnchor resultAnchor;
+    SZrObjectFastOperandState receiverOperand;
+    SZrObjectFastOperandState argumentOperands[ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY];
+    TZrBool hasResultAnchor = ZR_FALSE;
+    TZrStackValuePointer savedStackTop;
+    SZrCallInfo *savedCallInfo;
+    TZrSize scratchSlots;
+    TZrStackValuePointer base;
+    SZrFunctionStackAnchor callBaseAnchor;
+    SZrFunctionStackAnchor savedStackTopAnchor;
+    SZrFunctionStackAnchor baseAnchor;
+    SZrFunctionStackAnchor originalCallInfoTopAnchor;
+    TZrBool hasOriginalCallInfoTopAnchor = ZR_FALSE;
+    TZrSize index;
+
+    if (state == ZR_NULL || callable == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (argumentCount > 0 && arguments == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object_fast_operand_state_init(&receiverOperand);
+    if (!object_prepare_fast_operand(state, receiver, &receiverOperand)) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < argumentCount; index++) {
+        object_fast_operand_state_init(&argumentOperands[index]);
+        if (!object_prepare_fast_operand(state, arguments[index], &argumentOperands[index])) {
+            while (index > 0) {
+                index--;
+                object_cleanup_fast_operand(state->global, arguments[index], &argumentOperands[index]);
+            }
+            object_cleanup_fast_operand(state->global, receiver, &receiverOperand);
+            return ZR_FALSE;
+        }
+    }
+
+    if (object_value_resides_on_vm_stack(state, result)) {
+        ZrCore_Function_StackAnchorInit(state, ZR_CAST(TZrStackValuePointer, result), &resultAnchor);
+        hasResultAnchor = ZR_TRUE;
+    }
+
+    savedStackTop = state->stackTop.valuePointer;
+    savedCallInfo = state->callInfoList;
+    scratchSlots = 1 + argumentCount + (receiver != ZR_NULL ? 1 : 0);
+    base = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
+
+    ZrCore_Function_StackAnchorInit(state, savedStackTop, &savedStackTopAnchor);
+    ZrCore_Function_StackAnchorInit(state, base, &baseAnchor);
+    if (savedCallInfo != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &originalCallInfoTopAnchor);
+        hasOriginalCallInfoTopAnchor = ZR_TRUE;
+    }
+
+    ZrCore_Function_ReserveScratchSlots(state, scratchSlots, base);
+    savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+    base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+    if (savedCallInfo != ZR_NULL) {
+        base = object_resolve_call_scratch_base(savedStackTop, savedCallInfo);
+    }
+
+    state->stackTop.valuePointer = base + scratchSlots;
+    if (savedCallInfo != ZR_NULL && savedCallInfo->functionTop.valuePointer < state->stackTop.valuePointer) {
+        savedCallInfo->functionTop.valuePointer = state->stackTop.valuePointer;
+    }
+
+    if (receiver != ZR_NULL) {
+        ZrCore_Stack_CopyValue(state,
+                               base + 1,
+                               object_restore_fast_operand(state, receiver, &receiverOperand));
+        base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+    }
+
+    for (index = 0; index < argumentCount; index++) {
+        ZrCore_Stack_CopyValue(state,
+                               base + 1 + (receiver != ZR_NULL ? 1 : 0) + index,
+                               object_restore_fast_operand(state, arguments[index], &argumentOperands[index]));
+        base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+    }
+
+    for (index = argumentCount; index > 0; index--) {
+        object_cleanup_fast_operand(state->global, arguments[index - 1], &argumentOperands[index - 1]);
+    }
+    object_cleanup_fast_operand(state->global, receiver, &receiverOperand);
+
+    ZrCore_Stack_CopyValue(state, base, callable);
+    base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+
+    if (hasResultAnchor) {
+        result = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &resultAnchor));
+    }
+    ZrCore_Value_ResetAsNull(result);
+
+    ZrCore_Function_StackAnchorInit(state, base, &callBaseAnchor);
+    (void)ZrCore_Function_PreCallKnownNativeValue(state, base, ZrCore_Stack_GetValue(base), 1, ZR_NULL);
+    base = ZrCore_Function_StackAnchorRestore(state, &callBaseAnchor);
+    savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
+    if (savedCallInfo != ZR_NULL && hasOriginalCallInfoTopAnchor) {
+        savedCallInfo->functionTop.valuePointer = ZrCore_Function_StackAnchorRestore(state, &originalCallInfoTopAnchor);
+    }
+    if (hasResultAnchor) {
+        result = ZrCore_Stack_GetValue(ZrCore_Function_StackAnchorRestore(state, &resultAnchor));
+    }
+
+    if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
+        ZrCore_Value_Copy(state, result, ZrCore_Stack_GetValue(base));
+    }
+
+    state->stackTop.valuePointer = savedStackTop;
+    state->callInfoList = savedCallInfo;
+    return state->threadStatus == ZR_THREAD_STATUS_FINE;
+}
+
+static ZR_FORCE_INLINE TZrBool object_can_use_known_native_fast(SZrState *state,
+                                                                const SZrTypeValue *callable,
+                                                                const SZrTypeValue *receiver,
+                                                                const SZrTypeValue *const *arguments,
+                                                                TZrSize argumentCount,
+                                                                SZrTypeValue *result) {
+    SZrRawObject *rawCallable;
+
+    if (state == ZR_NULL ||
+        callable == ZR_NULL ||
+        result == ZR_NULL ||
+        argumentCount > ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY ||
+        receiver == ZR_NULL ||
+        object_value_is_struct_instance(state, receiver) ||
+        !callable->isNative ||
+        (callable->type != ZR_VALUE_TYPE_FUNCTION && callable->type != ZR_VALUE_TYPE_CLOSURE) ||
+        callable->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (argumentCount > 0 && arguments == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    rawCallable = ZrCore_Value_GetRawObject(callable);
+    return rawCallable != ZR_NULL && ZrCore_RawObject_IsPermanent(state, rawCallable);
 }
 
 TZrBool ZrCore_Object_CallValue(SZrState *state,
@@ -391,7 +612,7 @@ TZrBool ZrCore_Object_CallValue(SZrState *state,
                               receiverPinAdded);
     object_unpin_value_object(state->global, &stableCallable, callablePinAdded);
 
-    base = ZrCore_Function_CallWithoutYieldAndRestore(state, base, 1);
+    base = ZrCore_Function_CallWithoutYieldKnownValueAndRestore(state, base, &stableCallable, 1);
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     if (savedCallInfo != ZR_NULL && hasCallInfoAnchors) {
         savedCallInfo->functionBase.valuePointer = ZrCore_Function_StackAnchorRestore(state, &callInfoBaseAnchor);
@@ -486,10 +707,65 @@ TZrBool ZrCore_Object_CallFunctionWithReceiver(SZrState *state,
                                                TZrSize argumentCount,
                                                SZrTypeValue *result) {
     SZrTypeValue callableValue;
+    const SZrTypeValue *argumentPointers[ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY];
+    const SZrTypeValue *const *fastArguments = ZR_NULL;
+    TZrSize index;
 
     if (!object_make_callable_value(state, function, &callableValue)) {
         return ZR_FALSE;
     }
 
+    if (argumentCount > 0) {
+        if (arguments == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        if (argumentCount <= ZR_RUNTIME_OBJECT_CALL_INLINE_ARGUMENT_CAPACITY) {
+            for (index = 0; index < argumentCount; index++) {
+                argumentPointers[index] = &arguments[index];
+            }
+            fastArguments = argumentPointers;
+        }
+    }
+
+    /*
+     * Prototype/index contracts already hand us a resolved callable. When that
+     * callable is a permanent native closure, prefer the narrower known-native
+     * bridge, which can consume either stack-rooted operands or pinned stable
+     * copies without routing through the generic object-call path.
+     */
+    if (object_can_use_known_native_fast(state, &callableValue, receiver, fastArguments, argumentCount, result)) {
+        return object_call_known_native_fast(state, &callableValue, receiver, fastArguments, argumentCount, result);
+    }
+
     return ZrCore_Object_CallValue(state, &callableValue, receiver, arguments, argumentCount, result);
+}
+
+TZrBool ZrCore_Object_CallFunctionWithReceiverTwoArguments(SZrState *state,
+                                                           SZrFunction *function,
+                                                           SZrTypeValue *receiver,
+                                                           const SZrTypeValue *argument0,
+                                                           const SZrTypeValue *argument1,
+                                                           SZrTypeValue *result) {
+    SZrTypeValue callableValue;
+    const SZrTypeValue *fastArguments[2];
+    SZrTypeValue fallbackArguments[2];
+
+    if (argument0 == ZR_NULL || argument1 == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!object_make_callable_value(state, function, &callableValue)) {
+        return ZR_FALSE;
+    }
+
+    fastArguments[0] = argument0;
+    fastArguments[1] = argument1;
+    if (object_can_use_known_native_fast(state, &callableValue, receiver, fastArguments, 2, result)) {
+        return object_call_known_native_fast(state, &callableValue, receiver, fastArguments, 2, result);
+    }
+
+    fallbackArguments[0] = *argument0;
+    fallbackArguments[1] = *argument1;
+    return ZrCore_Object_CallValue(state, &callableValue, receiver, fallbackArguments, 2, result);
 }

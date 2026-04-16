@@ -72,6 +72,11 @@ typedef struct ZrLibBindingEntry {
     } descriptor;
 } ZrLibBindingEntry;
 
+typedef struct ZrLibStableValueCopy {
+    SZrTypeValue value;
+    TZrBool needsRelease;
+} ZrLibStableValueCopy;
+
 typedef struct ZrLibRegisteredModuleRecord {
     const ZrLibModuleDescriptor *descriptor;
     TZrChar *moduleName;
@@ -87,10 +92,14 @@ typedef struct ZrLibPluginHandleRecord {
     TZrChar *loadedPath;
 } ZrLibPluginHandleRecord;
 
+#define ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_CAPACITY 2u
+#define ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_INVALID_INDEX ZR_MAX_SIZE
+
 typedef struct ZrLibrary_NativeRegistryState {
     SZrArray moduleRecords;
     SZrArray bindingEntries;
     SZrArray pluginHandles;
+    TZrSize bindingLookupHotIndices[ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_CAPACITY];
     EZrLibNativeRegistryErrorCode lastErrorCode;
     TZrChar lastErrorMessage[ZR_LIBRARY_NATIVE_REGISTRY_ERROR_BUFFER_LENGTH];
 } ZrLibrary_NativeRegistryState;
@@ -127,9 +136,9 @@ SZrObjectModule *native_binding_import_module(SZrState *state, const TZrChar *mo
 void native_binding_register_prototype_in_global_scope(SZrState *state,
                                                               SZrString *typeName,
                                                               const SZrTypeValue *prototypeValue);
-ZrLibrary_NativeRegistryState *native_registry_get(SZrGlobalState *global);
-ZrLibBindingEntry *native_registry_find_binding(ZrLibrary_NativeRegistryState *registry,
-                                                       SZrClosureNative *closure);
+ZR_LIBRARY_API ZrLibrary_NativeRegistryState *native_registry_get(SZrGlobalState *global);
+ZR_LIBRARY_API ZrLibBindingEntry *native_registry_find_binding(ZrLibrary_NativeRegistryState *registry,
+                                                               SZrClosureNative *closure);
 const ZrLibRegisteredModuleRecord *native_registry_find_record(ZrLibrary_NativeRegistryState *registry,
                                                                       const TZrChar *moduleName);
 const ZrLibRegisteredModuleRecord *native_registry_find_record_by_descriptor(
@@ -168,16 +177,20 @@ const ZrLibModuleDescriptor *native_registry_find_descriptor_or_plugin(SZrState 
 SZrObjectModule *native_registry_resolve_loaded_module(SZrState *state,
                                                               ZrLibrary_NativeRegistryState *registry,
                                                               const TZrChar *moduleName);
-TZrBool native_binding_make_callable_value(SZrState *state,
-                                                  ZrLibrary_NativeRegistryState *registry,
-                                                  EZrLibResolvedBindingKind bindingKind,
-                                                  const ZrLibModuleDescriptor *moduleDescriptor,
-                                                  const ZrLibTypeDescriptor *typeDescriptor,
-                                                  SZrObjectPrototype *ownerPrototype,
-                                                  const void *descriptor,
-                                                  SZrTypeValue *value);
+ZR_LIBRARY_API TZrBool native_binding_make_callable_value(SZrState *state,
+                                                          ZrLibrary_NativeRegistryState *registry,
+                                                          EZrLibResolvedBindingKind bindingKind,
+                                                          const ZrLibModuleDescriptor *moduleDescriptor,
+                                                          const ZrLibTypeDescriptor *typeDescriptor,
+                                                          SZrObjectPrototype *ownerPrototype,
+                                                          const void *descriptor,
+                                                          SZrTypeValue *value);
+ZR_LIBRARY_API TZrBool native_binding_prepare_stable_value(SZrState *state,
+                                                           ZrLibStableValueCopy *copy,
+                                                           const SZrTypeValue *source);
+ZR_LIBRARY_API void native_binding_release_stable_value(SZrState *state, ZrLibStableValueCopy *copy);
 TZrStackValuePointer native_binding_resolve_call_scratch_base(TZrStackValuePointer stackTop,
-                                                                     const SZrCallInfo *callInfo);
+                                                                      const SZrCallInfo *callInfo);
 SZrObject *native_binding_new_instance_with_prototype(SZrState *state, SZrObjectPrototype *prototype);
 SZrObjectModule *native_registry_materialize_module(SZrState *state,
                                                            ZrLibrary_NativeRegistryState *registry,

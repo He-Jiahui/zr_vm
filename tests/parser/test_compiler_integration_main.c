@@ -66,8 +66,10 @@ extern void test_imported_source_module_type_stubs_do_not_serialize_into_entry_p
 extern void test_project_local_struct_pair_shadows_native_pair_at_runtime(void);
 extern void test_lsp_language_feature_matrix_runtime_returns_expected_total(void);
 extern void test_lsp_language_feature_matrix_copy_runtime_keeps_top_level_closure_captures_stable(void);
+extern void test_decorator_import_project_run_returns_expected_total(void);
 extern void test_language_debug_gauntlet_project_run_returns_expected_banner_and_checksum(void);
 extern void test_benchmark_numeric_loops_project_run_returns_expected_checksum(void);
+extern void test_dispatch_loops_benchmark_project_runtime_keeps_step_member_pic_coverage(void);
 extern void test_gc_fragment_stress_benchmark_project_run_returns_expected_checksum(void);
 extern void test_matrix_add_2d_compile_avoids_adjacent_temp_reloads_before_super_array_int_ops(void);
 extern void test_matrix_add_2d_compile_folds_right_hand_int_constants_into_const_opcodes(void);
@@ -82,6 +84,10 @@ extern void test_matrix_add_2d_compile_emits_plain_destination_int_arithmetic_op
 extern void test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_opcodes(void);
 extern void test_typed_quickening_promotes_const_and_plain_destination_variants(void);
 extern void test_known_native_calls_quicken_to_dedicated_call_family(void);
+extern void test_typed_member_calls_quicken_to_known_vm_call_family(void);
+extern void test_direct_child_function_calls_quicken_to_known_vm_call_family(void);
+extern void test_loop_child_function_calls_quicken_to_known_vm_call_family(void);
+extern void test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call(void);
 extern void test_repeated_constructor_string_arguments_survive_quickening_across_calls(void);
 extern void test_initializer_bound_local_is_visible_on_next_source_line(void);
 extern void test_logical_short_circuit_runtime_preserves_side_effect_boundaries(void);
@@ -184,8 +190,10 @@ int main(void) {
     RUN_TEST(test_project_local_struct_pair_shadows_native_pair_at_runtime);
     RUN_TEST(test_lsp_language_feature_matrix_runtime_returns_expected_total);
     RUN_TEST(test_lsp_language_feature_matrix_copy_runtime_keeps_top_level_closure_captures_stable);
+    RUN_TEST(test_decorator_import_project_run_returns_expected_total);
     RUN_TEST(test_language_debug_gauntlet_project_run_returns_expected_banner_and_checksum);
     RUN_TEST(test_benchmark_numeric_loops_project_run_returns_expected_checksum);
+    RUN_TEST(test_dispatch_loops_benchmark_project_runtime_keeps_step_member_pic_coverage);
     RUN_TEST(test_gc_fragment_stress_benchmark_project_run_returns_expected_checksum);
     RUN_TEST(test_matrix_add_2d_compile_avoids_adjacent_temp_reloads_before_super_array_int_ops);
     RUN_TEST(test_matrix_add_2d_compile_folds_right_hand_int_constants_into_const_opcodes);
@@ -200,6 +208,10 @@ int main(void) {
     RUN_TEST(test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_opcodes);
     RUN_TEST(test_typed_quickening_promotes_const_and_plain_destination_variants);
     RUN_TEST(test_known_native_calls_quicken_to_dedicated_call_family);
+    RUN_TEST(test_typed_member_calls_quicken_to_known_vm_call_family);
+    RUN_TEST(test_direct_child_function_calls_quicken_to_known_vm_call_family);
+    RUN_TEST(test_loop_child_function_calls_quicken_to_known_vm_call_family);
+    RUN_TEST(test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call);
     RUN_TEST(test_repeated_constructor_string_arguments_survive_quickening_across_calls);
     RUN_TEST(test_initializer_bound_local_is_visible_on_next_source_line);
     RUN_TEST(test_logical_short_circuit_runtime_preserves_side_effect_boundaries);

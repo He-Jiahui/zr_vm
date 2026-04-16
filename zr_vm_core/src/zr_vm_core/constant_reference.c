@@ -74,20 +74,17 @@ static struct SZrFunction *find_entry_function_from_call_stack(struct SZrState *
     while (callInfo != ZR_NULL) {
         if (callInfo->functionBase.valuePointer >= state->stackBase.valuePointer &&
             callInfo->functionBase.valuePointer < state->stackTop.valuePointer) {
-            SZrTypeValue *closureValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
-            if (closureValue != ZR_NULL && closureValue->type == ZR_VALUE_TYPE_CLOSURE) {
-                SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, closureValue->value.object);
-                if (closure != ZR_NULL && closure->function != ZR_NULL) {
-                    struct SZrFunction *func = closure->function;
-                    // 检查是否是entry function（有prototypeData）
-                    if (func->prototypeData != ZR_NULL && func->prototypeCount > 0) {
-                        entryFunction = func;
-                        break;  // 找到第一个包含prototype的，通常就是entry function
-                    }
-                    // 如果没有找到，继续向上查找
-                    if (entryFunction == ZR_NULL) {
-                        entryFunction = func;  // 记录当前函数，作为备选
-                    }
+            SZrTypeValue *callableValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+            struct SZrFunction *func = ZrCore_Closure_GetMetadataFunctionFromValue(state, callableValue);
+            if (func != ZR_NULL) {
+                // 检查是否是entry function（有prototypeData）
+                if (func->prototypeData != ZR_NULL && func->prototypeCount > 0) {
+                    entryFunction = func;
+                    break;  // 找到第一个包含prototype的，通常就是entry function
+                }
+                // 如果没有找到，继续向上查找
+                if (entryFunction == ZR_NULL) {
+                    entryFunction = func;  // 记录当前函数，作为备选
                 }
             }
         }
@@ -190,24 +187,22 @@ static SZrFunction *get_parent_function_from_call_stack(struct SZrState *state, 
         // 我们需要从closure中获取function
         if (currentCallInfo->functionBase.valuePointer >= state->stackBase.valuePointer &&
             currentCallInfo->functionBase.valuePointer < state->stackTop.valuePointer) {
-            SZrTypeValue *closureValue = ZrCore_Stack_GetValue(currentCallInfo->functionBase.valuePointer);
-            if (closureValue != ZR_NULL && closureValue->type == ZR_VALUE_TYPE_CLOSURE) {
-                SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, closureValue->value.object);
-                if (closure != ZR_NULL && closure->function == currentFunction) {
-                    // 找到了当前函数的callInfo，获取parent
-                    if (currentCallInfo->previous != ZR_NULL && 
-                        currentCallInfo->previous->functionBase.valuePointer >= state->stackBase.valuePointer &&
-                        currentCallInfo->previous->functionBase.valuePointer < state->stackTop.valuePointer) {
-                        SZrTypeValue *parentClosureValue = ZrCore_Stack_GetValue(currentCallInfo->previous->functionBase.valuePointer);
-                        if (parentClosureValue != ZR_NULL && parentClosureValue->type == ZR_VALUE_TYPE_CLOSURE) {
-                            SZrClosure *parentClosure = ZR_CAST_VM_CLOSURE(state, parentClosureValue->value.object);
-                            if (parentClosure != ZR_NULL) {
-                                return parentClosure->function;
-                            }
-                        }
+            SZrTypeValue *callableValue = ZrCore_Stack_GetValue(currentCallInfo->functionBase.valuePointer);
+            struct SZrFunction *resolvedCurrentFunction =
+                    ZrCore_Closure_GetMetadataFunctionFromValue(state, callableValue);
+            if (resolvedCurrentFunction == currentFunction) {
+                // 找到了当前函数的callInfo，获取parent
+                if (currentCallInfo->previous != ZR_NULL &&
+                    currentCallInfo->previous->functionBase.valuePointer >= state->stackBase.valuePointer &&
+                    currentCallInfo->previous->functionBase.valuePointer < state->stackTop.valuePointer) {
+                    SZrTypeValue *parentCallableValue = ZrCore_Stack_GetValue(currentCallInfo->previous->functionBase.valuePointer);
+                    struct SZrFunction *parentFunction =
+                            ZrCore_Closure_GetMetadataFunctionFromValue(state, parentCallableValue);
+                    if (parentFunction != ZR_NULL) {
+                        return parentFunction;
                     }
-                    break;
                 }
+                break;
             }
         }
         currentCallInfo = currentCallInfo->previous;

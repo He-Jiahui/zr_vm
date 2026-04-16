@@ -22,6 +22,56 @@ static TZrUInt32 closure_merge_scope_depth(TZrUInt32 currentScopeDepth, TZrUInt3
     return currentScopeDepth < incomingScopeDepth ? currentScopeDepth : incomingScopeDepth;
 }
 
+static ZR_FORCE_INLINE SZrRawObject *closure_refresh_forwarded_raw_object(SZrRawObject *rawObject) {
+    SZrRawObject *forwardedObject;
+
+    if (rawObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    forwardedObject = (SZrRawObject *)rawObject->garbageCollectMark.forwardingAddress;
+    return forwardedObject != ZR_NULL ? forwardedObject : rawObject;
+}
+
+static ZR_FORCE_INLINE SZrFunction *closure_refresh_forwarded_function(SZrFunction *function) {
+    return function != ZR_NULL ? (SZrFunction *)closure_refresh_forwarded_raw_object(
+                                         ZR_CAST_RAW_OBJECT_AS_SUPER(function))
+                               : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrClosure *closure_refresh_forwarded_closure(SZrClosure *closure) {
+    return closure != ZR_NULL ? (SZrClosure *)closure_refresh_forwarded_raw_object(
+                                        ZR_CAST_RAW_OBJECT_AS_SUPER(closure))
+                              : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrClosureValue *closure_refresh_forwarded_closure_value(SZrClosureValue *closureValue) {
+    return closureValue != ZR_NULL ? (SZrClosureValue *)closure_refresh_forwarded_raw_object(
+                                             ZR_CAST_RAW_OBJECT_AS_SUPER(closureValue))
+                                   : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrClosureValue **closure_refresh_parent_closure_values_from_base(SZrState *state,
+                                                                                          TZrStackValuePointer base) {
+    SZrTypeValue *ownerValue;
+    SZrClosure *ownerClosure;
+
+    if (state == ZR_NULL || base == ZR_NULL || base <= state->stackBase.valuePointer) {
+        return ZR_NULL;
+    }
+
+    ownerValue = ZrCore_Stack_GetValue(base - 1);
+    if (ownerValue == ZR_NULL ||
+        ownerValue->type != ZR_VALUE_TYPE_CLOSURE ||
+        ownerValue->isNative ||
+        ownerValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ownerClosure = closure_refresh_forwarded_closure(ZR_CAST_VM_CLOSURE(state, ownerValue->value.object));
+    return ownerClosure != ZR_NULL ? ownerClosure->closureValuesExtend : ZR_NULL;
+}
+
 static void closure_value_apply_anchored_escape_to_closed_value(SZrState *state, SZrClosureValue *closureValue) {
     TZrUInt32 propagatedEscapeFlags;
 
@@ -383,19 +433,44 @@ TZrSize ZrCore_Closure_CloseRegisteredValues(struct SZrState *state,
 }
 
 void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *function, SZrClosureValue **closureValueList,
-                          TZrStackValuePointer base, TZrStackValuePointer closurePointer) {
+                           TZrStackValuePointer base, TZrStackValuePointer closurePointer) {
+    function = closure_refresh_forwarded_function(function);
+    if (function == ZR_NULL) {
+        return;
+    }
+
     TZrSize closureSize = function->closureValueLength;
-    SZrFunctionClosureVariable *closureVariables = function->closureValueList;
     SZrClosure *closure = ZrCore_Closure_New(state, closureSize);
+    closure = closure_refresh_forwarded_closure(closure);
+    function = closure_refresh_forwarded_function(function);
+    if (function == ZR_NULL || closure == ZR_NULL) {
+        return;
+    }
+
+    SZrFunctionClosureVariable *closureVariables = function->closureValueList;
     closure->function = function;
     ZrCore_Stack_SetRawObjectValue(state, closurePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    if (closureValueList != ZR_NULL) {
+        closureValueList = closure_refresh_parent_closure_values_from_base(state, base);
+    }
     for (TZrSize i = 0; i < closureSize; i++) {
         SZrFunctionClosureVariable *closureValue = &closureVariables[i];
+        SZrClosureValue *capturedValue;
+
         if (closureValue->inStack) {
-            closure->closureValuesExtend[i] = ZrCore_Closure_FindOrCreateValue(state, base + closureValue->index);
+            capturedValue = ZrCore_Closure_FindOrCreateValue(state, base + closureValue->index);
+            closure = closure_refresh_forwarded_closure(closure);
+            if (closureValueList != ZR_NULL) {
+                closureValueList = closure_refresh_parent_closure_values_from_base(state, base);
+            }
         } else {
-            closure->closureValuesExtend[i] = closureValueList[closureValue->index];
+            capturedValue = closureValueList != ZR_NULL ? closureValueList[closureValue->index] : ZR_NULL;
+            capturedValue = closure_refresh_forwarded_closure_value(capturedValue);
         }
+        if (closure == ZR_NULL) {
+            return;
+        }
+        closure->closureValuesExtend[i] = capturedValue;
         if (closure->closureValuesExtend[i] != ZR_NULL) {
             ZrCore_ClosureValue_SetCaptureMetadata(closure->closureValuesExtend[i],
                                                   closureValue->scopeDepth,
@@ -407,26 +482,40 @@ void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *func
 }
 
 SZrFunction *ZrCore_Closure_GetMetadataFunctionFromValue(struct SZrState *state, const SZrTypeValue *value) {
-    if (state == ZR_NULL || value == ZR_NULL || value->value.object == ZR_NULL) {
+    SZrRawObject *rawObject;
+
+    if (state == ZR_NULL || value == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (value->type) {
+        case ZR_VALUE_TYPE_FUNCTION:
+        case ZR_VALUE_TYPE_CLOSURE:
+            if (value->value.object == ZR_NULL) {
+                return ZR_NULL;
+            }
+            break;
+        default:
+            return ZR_NULL;
+    }
+
+    rawObject = closure_refresh_forwarded_raw_object(value->value.object);
+    if (rawObject == ZR_NULL) {
         return ZR_NULL;
     }
 
     if (value->type == ZR_VALUE_TYPE_FUNCTION) {
-        return value->isNative ? ZR_NULL : ZR_CAST_FUNCTION(state, value->value.object);
-    }
-
-    if (value->type != ZR_VALUE_TYPE_CLOSURE) {
-        return ZR_NULL;
+        return value->isNative ? ZR_NULL : closure_refresh_forwarded_function(ZR_CAST_FUNCTION(state, rawObject));
     }
 
     if (value->isNative) {
-        SZrClosureNative *nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, value->value.object);
-        return nativeClosure != ZR_NULL ? nativeClosure->aotShimFunction : ZR_NULL;
+        SZrClosureNative *nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, rawObject);
+        return nativeClosure != ZR_NULL ? closure_refresh_forwarded_function(nativeClosure->aotShimFunction) : ZR_NULL;
     }
 
     {
-        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, value->value.object);
-        return closure != ZR_NULL ? closure->function : ZR_NULL;
+        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, rawObject);
+        return closure != ZR_NULL ? closure_refresh_forwarded_function(closure->function) : ZR_NULL;
     }
 }
 

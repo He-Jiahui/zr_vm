@@ -233,6 +233,128 @@ TZrBool resolve_declared_field_member_access(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
+static TZrBool compiler_type_member_emits_runtime_descriptor(const SZrTypeMemberInfo *memberInfo) {
+    if (memberInfo == ZR_NULL || memberInfo->isMetaMethod) {
+        return ZR_FALSE;
+    }
+
+    switch (memberInfo->memberType) {
+        case ZR_AST_STRUCT_FIELD:
+        case ZR_AST_CLASS_FIELD:
+        case ZR_AST_STRUCT_METHOD:
+        case ZR_AST_CLASS_METHOD:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool compiler_type_prototype_serializes_to_runtime(const SZrTypePrototypeInfo *prototypeInfo) {
+    return prototypeInfo != ZR_NULL &&
+           prototypeInfo->name != ZR_NULL &&
+           !prototypeInfo->isImportedNative;
+}
+
+static TZrBool compiler_resolve_type_member_runtime_descriptor_binding(SZrCompilerState *cs,
+                                                                       const SZrTypeMemberInfo *memberInfo,
+                                                                       TZrUInt32 *outPrototypeIndex,
+                                                                       TZrUInt32 *outDescriptorIndex) {
+    SZrString *ownerTypeName;
+    SZrTypePrototypeInfo *prototypeInfo;
+    TZrUInt32 serializedPrototypeIndex = 0u;
+
+    if (outPrototypeIndex != ZR_NULL) {
+        *outPrototypeIndex = 0u;
+    }
+    if (outDescriptorIndex != ZR_NULL) {
+        *outDescriptorIndex = 0u;
+    }
+
+    if (cs == ZR_NULL || memberInfo == ZR_NULL || !compiler_type_member_emits_runtime_descriptor(memberInfo)) {
+        return ZR_FALSE;
+    }
+
+    ownerTypeName = memberInfo->ownerTypeName != ZR_NULL
+                            ? memberInfo->ownerTypeName
+                            : memberInfo->baseDefinitionOwnerTypeName;
+    if (ownerTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    prototypeInfo = find_compiler_type_prototype(cs, ownerTypeName);
+    if (prototypeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 prototypeIndex = 0u; prototypeIndex < (TZrUInt32)cs->typePrototypes.length; prototypeIndex++) {
+        SZrTypePrototypeInfo *candidatePrototype =
+                (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, prototypeIndex);
+
+        if (!compiler_type_prototype_serializes_to_runtime(candidatePrototype)) {
+            continue;
+        }
+
+        if (candidatePrototype != prototypeInfo) {
+            serializedPrototypeIndex++;
+            continue;
+        }
+
+        {
+            TZrUInt32 descriptorIndex = 0u;
+
+            if (!compiler_type_prototype_serializes_to_runtime(prototypeInfo)) {
+                return ZR_FALSE;
+            }
+
+            for (TZrUInt32 memberIndex = 0u; memberIndex < (TZrUInt32)prototypeInfo->members.length; memberIndex++) {
+                SZrTypeMemberInfo *candidateMember =
+                        (SZrTypeMemberInfo *)ZrCore_Array_Get(&prototypeInfo->members, memberIndex);
+
+                if (!compiler_type_member_emits_runtime_descriptor(candidateMember)) {
+                    continue;
+                }
+                if (candidateMember == memberInfo) {
+                    if (outPrototypeIndex != ZR_NULL) {
+                        *outPrototypeIndex = serializedPrototypeIndex;
+                    }
+                    if (outDescriptorIndex != ZR_NULL) {
+                        *outDescriptorIndex = descriptorIndex;
+                    }
+                    return ZR_TRUE;
+                }
+
+                descriptorIndex++;
+            }
+        }
+
+        return ZR_FALSE;
+    }
+
+    return ZR_FALSE;
+}
+
+TZrUInt32 compiler_get_or_add_member_entry_for_type_member(SZrCompilerState *cs,
+                                                           SZrString *memberName,
+                                                           const SZrTypeMemberInfo *memberInfo,
+                                                           TZrUInt8 flags) {
+    TZrUInt32 prototypeIndex = 0u;
+    TZrUInt32 descriptorIndex = 0u;
+
+    if (memberInfo != ZR_NULL &&
+        compiler_resolve_type_member_runtime_descriptor_binding(cs,
+                                                                memberInfo,
+                                                                &prototypeIndex,
+                                                                &descriptorIndex)) {
+        return compiler_get_or_add_member_entry_bound_with_flags(cs,
+                                                                 memberName,
+                                                                 prototypeIndex,
+                                                                 descriptorIndex,
+                                                                 flags);
+    }
+
+    return compiler_get_or_add_member_entry_with_flags(cs, memberName, flags);
+}
+
 static EZrOwnershipBuiltinKind resolve_construct_expression_builtin_kind(
         const SZrConstructExpression *constructExpr) {
     if (constructExpr == ZR_NULL) {
