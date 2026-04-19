@@ -42,6 +42,8 @@ The same acceptance line spans earlier compiler/runtime work plus the later obje
 - `zr_vm_core/src/zr_vm_core/function.c`
 - `zr_vm_core/src/zr_vm_core/object/object_call.c`
 - `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c`
+- `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.c`
+- `zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h`
 - `tests/CMakeLists.txt`
 - `tests/core/test_object_call_known_native_fast_path.c`
 - `tests/module/test_module_system.c`
@@ -1953,27 +1955,2257 @@ Rejected slice-41 snapshots kept on disk:
 - `build/benchmark-gcc-release/tests_generated/performance_profile_member_pair_get_shell_after_20260416`
 - `build/benchmark-gcc-release/tests_generated/performance_focus_core_member_pair_get_shell_after_20260416`
 
-## Current Hotspots / Next Slice (After Slice 39)
+## Slice 42: Multi-Slot Exact-Receiver Object Member-Name Lane Rejected
 
-Fresh hotspot view after the accepted exact-pair plain-value get cut:
+### Root Cause
+
+After slice 39, the next visible asymmetry in `execution_member_get_cached(...)` was outside the exact-pair lane:
+
+- single-slot exact-receiver object hits already tried direct `object/member-name` own-field lookup before the
+  version/descriptor path
+- multi-slot exact-receiver object hits with `cachedReceiverPair == null` still had to reach the generic
+  prototype/version loop before they could use member-name fallback
+
+The hypothesis was that copying the single-slot exact-object shortcut into the multi-slot receiver-fast loop would
+remove another fixed dispatch-side cost from repeated `this.state` reads.
+
+### Runtime Change
+
+The rejected probe temporarily added a multi-slot exact-receiver object/member-name lane ahead of the generic
+version/descriptor path so exact object hits could bypass the slower fallback scaffolding even when the cached pair was
+missing.
+
+That lane was reverted after same-session benchmarking.
+
+### Evidence
+
+Against a same-session local baseline on the current repository state:
+
+- profile tier:
+  - `dispatch_loops`: `484,474,648 -> 484,292,524 Ir` (`-0.04%`)
+  - `execution_member_get_cached`: `51,510,145 -> 51,356,313 Ir` (`-0.30%`)
+  - `map_object_access`: `116,083,635 -> 115,610,796 Ir` (`-0.41%`)
+- profile wall:
+  - `dispatch_loops`: `188.190 -> 202.490 ms`
+  - `map_object_access`: `151.510 -> 152.940 ms`
+- core wall:
+  - `dispatch_loops`: `273.770 -> 429.442 ms`
+  - `dispatch_loops repeat`: `309.580 -> 319.150 ms`
+  - `map_object_access`: `161.500 -> 184.741 ms`
+  - `map_object_access repeat`: `152.820 -> 176.689 ms`
+
+Interpretation:
+
+- the callgrind gain was real but too small
+- same-session wall samples were consistently worse on both tracked cases
+- this exact-object multi-slot bypass is not worth keeping
+
+### Benchmark Artifacts
+
+Same-session control and rejected snapshots kept on disk:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_member_multislot_object_name_local_baseline_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_focus_core_member_multislot_object_name_local_baseline_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_focus_core_member_multislot_object_name_local_baseline_repeat_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_profile_member_multislot_object_name_after_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_focus_core_member_multislot_object_name_after_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_focus_core_member_multislot_object_name_after_repeat_20260417`
+
+## Slice 43: Generic Instance-Field Receiver-Object Resolve-Once
+
+### Root Cause
+
+After rejecting the multi-slot exact-object bypass, the remaining object/member-name line still had one smaller fixed
+cost inside `execution_member_try_cached_get(...)`:
+
+- the generic instance-field/member-name branch re-resolved `receiverObject` from `receiver` on each matching slot
+- but that loop had already stabilized `receiver` and only needed the resolved object for direct own-field lookup
+
+This left a lower-risk micro-cut: keep the generic control flow intact, but resolve the receiver object once and feed
+that stable object through the member-name get helper.
+
+### Runtime Change
+
+`zr_vm_core/src/zr_vm_core/execution/execution_member_access.c` now:
+
+- resolves `receiverObject` once after `receiverPrototype` in `execution_member_try_cached_get(...)`
+- routes the generic instance-field/member-name lane directly through
+  `execution_member_try_cached_instance_field_object_get(...)`
+- removes the dead rejected helper `execution_member_record_get_and_copy_value(...)`
+
+This keeps the same version/descriptor semantics as the accepted baseline; it only removes repeated receiver-object
+resolution inside the generic multi-slot get loop.
+
+### Evidence
+
+Against the same-session local baseline on the current repository state:
+
+- profile tier:
+  - `dispatch_loops`: `484,474,648 -> 483,971,925 Ir` (`-0.10%`)
+  - `execution_member_get_cached`: `51,510,145 -> 51,048,885 Ir` (`-0.90%`)
+  - `map_object_access`: `116,083,635 -> 115,775,373 Ir` (`-0.27%`)
+- profile wall:
+  - `dispatch_loops`: `188.190 -> 177.580 ms`
+  - `map_object_access`: `151.510 -> 139.160 ms`
+- core wall:
+  - `dispatch_loops`: `273.770 -> 297.020 ms`
+  - `dispatch_loops repeat`: `309.580 -> 281.490 ms`
+  - `map_object_access`: `161.500 -> 154.920 ms`
+  - `map_object_access repeat`: `152.820 -> 194.390 ms`
+
+Against the accepted slice-39 state:
+
+- profile tier:
+  - `dispatch_loops`: `484,470,264 -> 483,971,925 Ir` (`-0.10%`)
+  - `execution_member_get_cached`: `51,510,145 -> 51,048,885 Ir` (`-0.90%`)
+  - `map_object_access`: `115,627,499 -> 115,775,373 Ir` (`+0.13%`, flat)
+
+Interpretation:
+
+- the deterministic dispatch-side callgrind gain is real and lands exactly on the intended hotspot
+- `map_object_access` stays effectively flat versus the accepted slice-39 line and slightly better versus the
+  same-session local baseline
+- current core wall samples are noisy enough that they should not be treated as primary evidence here
+- this resolve-once cut is worth keeping
+
+### Validation
+
+Accepted slice-43 state:
+
+- WSL gcc Debug:
+  - `zr_vm_execution_member_access_fast_paths_test`: `45 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `2 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `11 Tests 0 Failures`
+  - `zr_vm_value_copy_fast_paths_test`: `3 Tests 0 Failures`
+  - `zr_vm_container_temp_value_root_test`: `3 Tests 0 Failures`
+  - `zr_vm_precall_frame_slot_reset_test`: `7 Tests 0 Failures`
+- WSL clang Debug:
+  - `zr_vm_execution_member_access_fast_paths_test`: `45 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `2 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `11 Tests 0 Failures`
+  - `zr_vm_value_copy_fast_paths_test`: `3 Tests 0 Failures`
+  - `zr_vm_container_temp_value_root_test`: `3 Tests 0 Failures`
+  - `zr_vm_precall_frame_slot_reset_test`: `7 Tests 0 Failures`
+- Windows MSVC Debug CLI smoke:
+  - rebuilt `build\codex-msvc-cli-debug` target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+
+### Benchmark Artifacts
+
+Same-session control and accepted slice-43 snapshots kept on disk:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_member_multislot_object_name_local_baseline_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_focus_core_member_multislot_object_name_local_baseline_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_focus_core_member_multislot_object_name_local_baseline_repeat_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_profile_member_object_resolve_once_after_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_focus_core_member_object_resolve_once_after_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_focus_core_member_object_resolve_once_after_repeat_20260417`
+
+## Slice 44: `try_builtin_add` Exact-Pair Fast Paths
+
+### Root Cause
+
+After slice 43, `dispatch_loops` still showed one large non-member body:
+
+- `try_builtin_add = 16,909,200 Ir`
+- `value_to_int64 = 8,303,040 Ir`
+
+That hotspot was dominated by exact signed-int arithmetic on the benchmark path, but the helper still routed every
+call through the wider `number-or-bool` classification plus `value_to_*` conversion helpers.
+
+`map_object_access` also still had string-add traffic, but the exact `string + string` path was mixed into the same
+generic helper that reserved scratch stack slots even when both operands were already stable strings.
+
+### Regression Coverage
+
+`tests/core/test_execution_add_stack_relocation.c` now covers both add lanes explicitly:
+
+- `test_execution_add_restores_stack_destination_after_generic_string_concat_growth`
+  keeps the old relocation contract alive on the remaining generic safe-concat path via `string + int`
+- `test_try_builtin_add_exact_string_pair_avoids_scratch_stack_growth`
+  proves exact `string + string` builtin add no longer grows scratch stack space just to concatenate two existing
+  strings
+
+The new test failed first on WSL gcc Debug with:
+
+- expected `allocatorContext.moveCount == 0`
+- observed `1`
+
+That red state confirmed the old exact string pair path was still paying the generic scratch-stack concat cost.
+
+### Runtime Change
+
+`zr_vm_core/src/zr_vm_core/execution/execution_numeric.c` now:
+
+- fast-paths exact signed-int pairs directly to `INT64` results without `value_to_int64(...)`
+- fast-paths exact unsigned and exact float pairs directly to `UINT64` / `DOUBLE` results
+- routes exact `string + string` pairs through a dedicated direct concat helper instead of the generic scratch-stack
+  safe-concat path
+
+`zr_vm_core/src/zr_vm_core/string.c` and `zr_vm_core/include/zr_vm_core/string.h` now expose:
+
+- `ZrCore_String_ConcatPair(...)`
+
+That helper builds exact two-string results without materializing a temporary VM stack concat window, which is the
+behavior locked by the new moving-allocator regression test.
+
+### Evidence
+
+Against the accepted slice-43 profile snapshot:
+
+- `dispatch_loops`: `483,971,925 -> 473,985,777 Ir` (`-2.06%`)
+- `value_to_int64`: `8,303,040 -> 2,769,120 Ir` (`-66.65%`)
+- `try_builtin_add` self Ir: `16,909,200 -> 16,909,200` (flat; the gain landed in eliminated callee work, not helper self cost)
+- `map_object_access`: `115,775,373 -> 116,460,641 Ir` (`+0.59%`)
+- `map_object_access repeat`: `116,619,774 Ir` (`+0.73%` vs slice 43)
+
+Fresh current-wall sample on core tier (`3` iterations, `dispatch_loops,map_object_access` only):
+
+- `dispatch_loops`: mean `252.029 ms`
+- `map_object_access`: mean `157.840 ms`
+
+Interpretation:
+
+- this slice is a real dispatch-side win: the exact numeric pair cut collapses the large `value_to_int64(...)` tail
+  and moves the tracked `dispatch_loops` total down materially
+- `map_object_access` does not show a matching win from this slice, which matches the hotspot evidence:
+  `try_builtin_add` is tiny on that case, while the still-visible `concat_values_to_destination` cost remains on the
+  generic safe-concat line rather than the new exact string pair helper
+- keep this slice for `dispatch_loops`; do not treat it as the `map_object_access` string-add fix
+
+### Validation
+
+Accepted slice-44 state:
+
+- WSL gcc Debug:
+  - `zr_vm_execution_add_stack_relocation_test`: `6 Tests 0 Failures`
+  - `zr_vm_instructions_test`: passed
+  - `zr_vm_execution_member_access_fast_paths_test`: passed
+  - `zr_vm_execution_dispatch_callable_metadata_test`: passed
+  - `zr_vm_object_call_known_native_fast_path_test`: passed
+  - `zr_vm_value_copy_fast_paths_test`: passed
+  - `zr_vm_container_temp_value_root_test`: passed
+  - `zr_vm_precall_frame_slot_reset_test`: passed
+- WSL clang Debug:
+  - `zr_vm_execution_add_stack_relocation_test`: passed
+  - `zr_vm_instructions_test`: passed
+  - `zr_vm_execution_member_access_fast_paths_test`: passed
+  - `zr_vm_execution_dispatch_callable_metadata_test`: passed
+  - `zr_vm_object_call_known_native_fast_path_test`: passed
+  - `zr_vm_value_copy_fast_paths_test`: passed
+  - `zr_vm_container_temp_value_root_test`: passed
+  - `zr_vm_precall_frame_slot_reset_test`: passed
+- Windows MSVC Debug CLI smoke:
+  - rebuilt `build\codex-msvc-cli-debug` target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+
+### Benchmark Artifacts
+
+Accepted slice-44 snapshots kept on disk:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_try_builtin_add_after_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_profile_try_builtin_add_after_repeat_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_core_try_builtin_add_after_20260417`
+
+## Current Hotspots / Next Slice (After Slice 44)
+
+Fresh hotspot view after the accepted `try_builtin_add` exact-pair cut:
 
 - `dispatch_loops`
-  - `execution_member_get_cached = 51,510,145 Ir`
+  - `execution_member_get_cached = 51,048,885 Ir`
   - `execution_member_set_cached = 20,429,116 Ir`
-  - `try_builtin_add = 16,909,200 Ir`
+  - `try_builtin_add` self body is no longer the main follow-up on this case; the removed callee tail was the real win
   - `ZrCore_Function_PreCallResolvedVmFunction = 11,845,924 Ir`
 - `map_object_access`
   - `native_binding_dispatcher = 5,959,795 Ir`
   - `object_call_known_native_fast.part.0 = 4,418,428 Ir`
   - `ZrCore_Function_PreCallKnownNativeValue = 3,603,402 Ir`
+  - `concat_values_to_destination = 1,069,317 Ir` still sits on the generic safe-concat path and was not materially
+    moved by the exact string pair helper
 
 Recommended next slice:
 
-- stay on `execution_member_get_cached` while it is still the dominant dispatch hotspot and is still yielding
-  deterministic profile wins
-- deprioritize callable receiver-hit micro-cuts; three successive probes showed that line is not where the tracked
-  dispatch cost lives
-- split the remaining get-side work between:
-  - exact-pair/helper recording overhead that still executes on every `this.state` read
-  - object/member-name fallback work that still survives after the new plain-value copy trim
-- keep `map_object_access` secondary until the member-get line stops producing repeatable convergence
+- keep `execution_member_get_cached` secondary unless another clearly bounded object/member-name or descriptor-side
+  cut still shows deterministic profile wins
+- move the next builtin-add/string work only onto the remaining generic safe-concat lane if we can first prove which
+  mixed-type adds are still feeding `concat_values_to_destination`
+- otherwise the hotter W2 follow-up is still on the known-native call/object-access side of `map_object_access`
+
+## Slice 45: Resolved Native PreCall For Known-Native Object Calls
+
+### Root Cause
+
+After slice 44, `map_object_access` was still dominated by the native index-contract object-call bridge:
+
+- `native_binding_dispatcher = 5,959,795 Ir`
+- `object_call_known_native_fast.part.0 = 4,418,428 Ir`
+- `ZrCore_Function_PreCallKnownNativeValue = 3,603,402 Ir`
+
+That bridge already knew it was holding a permanent native closure on the hot path, but it still routed the call through
+`ZrCore_Function_PreCallKnownNativeValue(...)`, which re-read the callable slot and re-decoded the native function pointer
+before entering the native frame.
+
+### Regression Coverage
+
+`tests/core/test_object_call_known_native_fast_path.c` now adds:
+
+- `test_precall_resolved_native_function_restores_stack_rooted_arguments_after_growth_without_callable_value`
+
+That test prepares a stack-rooted receiver plus argument near the stack tail, leaves the base slot as a plain null
+value, then calls a resolved-native precall entry directly. It proves the runtime can still:
+
+- grow and relocate the stack safely
+- preserve stack-rooted receiver / argument inputs
+- execute the native function without first reconstructing a native callable value in the base slot
+
+The test failed first on WSL gcc with:
+
+- `undefined reference to 'ZrCore_Function_PreCallResolvedNativeFunction'`
+
+That red state confirmed the runtime still lacked a direct resolved-native precall entry.
+
+### Runtime Change
+
+`zr_vm_core/include/zr_vm_core/function.h` and `zr_vm_core/src/zr_vm_core/function.c` now expose:
+
+- `ZrCore_Function_PreCallResolvedNativeFunction(...)`
+
+`ZrCore_Function_PreCallKnownNativeValue(...)` now resolves the native function once, then forwards into that shared
+helper instead of duplicating the final native-precall step inline.
+
+`zr_vm_core/src/zr_vm_core/object/object_call.c` now resolves `nativeClosure->nativeFunction` once at the top of
+`object_call_known_native_fast(...)` and enters the native frame via
+`ZrCore_Function_PreCallResolvedNativeFunction(...)` instead of routing back through
+`ZrCore_Function_PreCallKnownNativeValue(...)`.
+
+This slice does not yet change the scratch stack layout, callable-slot copy, or native binding dispatcher contract.
+It only removes the redundant callable-to-native-function re-resolution on the hottest known-native map path.
+
+### Evidence
+
+Against the accepted slice-44 profile snapshot:
+
+- `map_object_access`: `116,460,641 -> 115,799,490 Ir` (`-0.57%`)
+- `object_call_known_native_fast.part.0`: `4,418,428 -> 4,393,836 Ir` (`-0.56%`)
+- `ZrCore_Function_PreCallKnownNativeValue`: `3,603,402 Ir` on slice 44, removed from the hotspot view here
+- replacement `ZrCore_Function_PreCallResolvedNativeFunction`: `3,554,198 Ir` (`-1.37%` versus the old helper body)
+- `stack_get_value` helper count: `231,618 -> 219,322` (`-5.31%`)
+- `native_binding_dispatcher`: `5,959,795 -> 5,959,795 Ir` (flat)
+- `dispatch_loops`: `473,985,777 -> 474,030,679 Ir` (`+0.01%`, flat / unchanged)
+
+Fresh focused core reruns (`dispatch_loops,map_object_access`, `3` measured iterations):
+
+- first rerun:
+  - `dispatch_loops`: `284.782 ms`
+  - `map_object_access`: `157.670 ms`
+- repeat:
+  - `dispatch_loops`: `273.800 ms`
+  - `map_object_access`: `145.917 ms`
+- second repeat:
+  - `dispatch_loops`: `273.910 ms`
+  - `map_object_access`: `170.503 ms`
+
+Interpretation:
+
+- the deterministic map-side callgrind gain is real, but intentionally narrow: this slice only removes duplicated
+  native-function resolution inside the known-native bridge
+- `map_object_access` wall-clock samples remain noisy, but the first repeat re-converged materially below the
+  accepted slice-44 wall sample (`157.840 -> 145.917 ms`)
+- `dispatch_loops` behaves exactly as the instruction profile predicts: effectively flat in callgrind, with the current
+  wall-clock slowdown not supported by any matching profile movement on the untouched dispatch-side hotspots
+- the remaining map-side cost is still the same cluster:
+  `native_binding_dispatcher`, `object_call_known_native_fast`, `ZrCore_Stack_CopyValue`, and
+  `ZrCore_Function_ReserveScratchSlots`
+
+### Validation
+
+Accepted slice-45 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - rebuilt `zr_vm_object_call_known_native_fast_path_test`
+  - rebuilt `zr_vm_execution_dispatch_callable_metadata_test`
+  - rebuilt `zr_vm_cli_executable`
+  - `zr_vm_object_call_known_native_fast_path_test`: `12 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `2 Tests 0 Failures`
+  - CLI smoke `tests/fixtures/projects/hello_world/hello_world.zrp`: `hello world`
+- WSL clang (`build-wsl-clang`):
+  - rebuilt `zr_vm_object_call_known_native_fast_path_test`
+  - rebuilt `zr_vm_execution_dispatch_callable_metadata_test`
+  - rebuilt `zr_vm_cli_executable`
+  - `zr_vm_object_call_known_native_fast_path_test`: `12 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `2 Tests 0 Failures`
+  - CLI smoke `tests/fixtures/projects/hello_world/hello_world.zrp`: `hello world`
+- Windows MSVC CLI smoke (`build\codex-msvc-cli-debug`):
+  - imported `VsDevCmd`
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+
+### Benchmark Artifacts
+
+Slice-45 snapshots kept on disk:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_resolved_native_precall_after_full_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_core_resolved_native_precall_after_full_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_core_resolved_native_precall_after_full_repeat_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_core_resolved_native_precall_after_full_repeat2_20260417`
+
+## Current Hotspots / Next Slice (After Slice 45)
+
+Fresh hotspot view after the resolved-native precall cut:
+
+- `dispatch_loops`
+  - `execution_member_get_cached = 51,048,885 Ir`
+  - `execution_member_set_cached = 20,429,116 Ir`
+  - `ZrCore_Function_PreCallResolvedVmFunction = 11,845,924 Ir`
+  - this slice did not materially move the dispatch-side line
+- `map_object_access`
+  - `native_binding_dispatcher = 5,959,795 Ir`
+  - `object_call_known_native_fast.part.0 = 4,393,836 Ir`
+  - `ZrCore_Function_PreCallResolvedNativeFunction = 3,554,198 Ir`
+  - `ZrCore_Stack_CopyValue = 913,998 Ir`
+  - `ZrCore_Function_ReserveScratchSlots = 852,602 Ir`
+
+Recommended next slice:
+
+- stay on the known-native/object-call line for `map_object_access`
+- target scratch-slot reservation / argument copy pressure or a narrower native-binding dispatcher lane before returning
+  to mixed-type safe-concat work
+- treat `dispatch_loops` as unchanged by this slice; only move back there if a new bounded member-get/member-set cut
+  has deterministic profile evidence
+
+## Slice 46: Known-Native Scratch Reservation Trim
+
+### Root Cause
+
+After slice 45, the remaining `map_object_access` object-call hotspot still showed:
+
+- `object_call_known_native_fast.part.0 = 4,393,836 Ir`
+- `ZrCore_Stack_CopyValue = 913,998 Ir`
+- `ZrCore_Function_ReserveScratchSlots = 852,602 Ir`
+
+The known-native object-call lane was already holding a permanent native closure plus stabilized operands, but it still
+used the heavier scratch-slot reservation path and repeatedly bounced through profiled stack-slot plumbing while
+preparing the scratch window.
+
+### Regression Coverage
+
+`tests/core/test_object_call_known_native_fast_path.c` gained:
+
+- `test_object_call_known_native_fast_path_overwrites_prefilled_future_scratch_slots`
+
+The test pre-fills the future scratch window with stale values, forces stack growth under the poisoning allocator, and
+locks two contracts:
+
+- known-native fast calls may overwrite future scratch slots directly instead of routing through the generic
+  reservation helper
+- stale ownership metadata in that future window must still be sanitized before the call executes
+
+### Runtime Change
+
+`zr_vm_core/src/zr_vm_core/object/object_call.c` now:
+
+- uses `ZrCore_Function_CheckStackAndGc(...)` instead of `ReserveScratchSlots(...)` on the known-native fast lane
+- writes receiver/arguments/callable into the scratch window before raising `stackTop` / outer `functionTop`
+- clears only scratch destinations that still carry ownership metadata instead of blanking the whole window
+- keeps the scratch-slot plumbing on `ZrCore_Stack_GetValueNoProfile(...)` so the new destination checks do not add
+  helper-recording/TLS overhead back onto the hot path
+
+### Evidence
+
+Against the accepted slice-45 profile snapshot:
+
+- `map_object_access`: `115,799,490 -> 114,706,895 Ir` (`-0.94%`)
+- `ZrCore_Function_ReserveScratchSlots`: `852,602 -> 172,210 Ir` (`-79.80%`)
+- `stack_get_value` helper count: `219,322 -> 207,026` (`-5.60%`)
+- `dispatch_loops`: `474,030,679 -> 473,989,260 Ir` (`-0.01%`, flat)
+
+Focused core rerun vs slice 45:
+
+- `map_object_access`: `157.670 -> 125.216 ms`
+- `dispatch_loops`: `284.782 -> 299.539 ms`
+
+Interpretation:
+
+- the first draft of this slice removed `ReserveScratchSlots(...)` cost but reintroduced too much profiled
+  `stack_get_value` plumbing; that version was rejected
+- the kept version restores the deterministic profile win by leaving the overwrite fix in place while moving the
+  new scratch-slot reads onto no-profile plumbing
+- `map_object_access` now shows a real deterministic win on the intended object-call line
+- current wall samples remain noisy on `dispatch_loops`, but the untouched dispatch-side callgrind shape stays flat
+
+### Validation
+
+Accepted slice-46 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - rebuilt `zr_vm_object_call_known_native_fast_path_test`
+  - rebuilt `zr_vm_execution_dispatch_callable_metadata_test`
+  - rebuilt `zr_vm_cli_executable`
+  - `zr_vm_object_call_known_native_fast_path_test`: `13 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `2 Tests 0 Failures`
+  - CLI smoke `tests/fixtures/projects/hello_world/hello_world.zrp`: `hello world`
+- WSL clang (`build-wsl-clang`):
+  - rebuilt `zr_vm_object_call_known_native_fast_path_test`
+  - rebuilt `zr_vm_execution_dispatch_callable_metadata_test`
+  - rebuilt `zr_vm_cli_executable`
+  - `zr_vm_object_call_known_native_fast_path_test`: `13 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `2 Tests 0 Failures`
+  - CLI smoke `tests/fixtures/projects/hello_world/hello_world.zrp`: `hello world`
+- Windows MSVC CLI smoke (`build\\codex-msvc-cli-debug`):
+  - imported `VsDevCmd`
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+
+### Benchmark Artifacts
+
+Slice-46 snapshots kept on disk:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_object_call_scratch_trim_noprofile_after_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_core_object_call_scratch_trim_noprofile_after_20260417`
+
+## Current Hotspots / Next Slice (After Slice 46)
+
+Fresh hotspot view after the kept scratch-reservation trim:
+
+- `dispatch_loops`
+  - `execution_member_get_cached = 51,048,885 Ir`
+  - `execution_member_set_cached = 20,429,116 Ir`
+  - `ZrCore_Function_PreCallResolvedVmFunction = 11,845,924 Ir`
+- `map_object_access`
+  - `native_binding_dispatcher = 5,959,795 Ir`
+  - `object_call_known_native_fast.part.0 = 4,565,984 Ir`
+  - `ZrCore_Function_PreCallResolvedNativeFunction = 3,554,198 Ir`
+  - `ZrCore_Stack_CopyValue = 913,998 Ir`
+  - `ZrCore_Function_ReserveScratchSlots = 172,210 Ir` is no longer the main follow-up
+
+Recommended next slice:
+
+- stay on the known-native/object-call line for `map_object_access`
+- move next into a narrower `native_binding_dispatcher` fixed-shape lane before returning to mixed-type safe-concat
+- treat the remaining `object_call_known_native_fast` work as secondary unless a smaller copy/layout cut shows
+  deterministic gains on top of the dispatcher lane
+
+## Slice 47: Native Binding Dispatcher Stack-Read No-Profile Trim
+
+### Root Cause
+
+After slice 46, the map-side hotspot had shifted cleanly into the native binding dispatcher:
+
+- `native_binding_dispatcher = 5,959,795 Ir`
+- `object_call_known_native_fast.part.0 = 4,565,984 Ir`
+- `stack_get_value` helper count still at `207,026`
+
+The current map/index-contract workload was already entering the inline pinned lane, but the dispatcher file still paid
+helper-recording/TLS overhead on repeated internal `ZrCore_Stack_GetValue(...)` reads even though those reads are pure
+runtime plumbing.
+
+### Regression Coverage
+
+No new semantic coverage was needed for this trim; the slice keeps the same native binding contracts and reuses the
+existing focused regression surface:
+
+- `tests/module/test_module_system.c`
+  - `test_native_binding_inline_label_inspector_keeps_raw_layout_without_losing_gc_safety`
+  - `test_container_map_runtime_supports_computed_key_access`
+- `tests/core/test_object_call_known_native_fast_path.c`
+  - stack-rooted and non-stack known-native get/set-by-index coverage
+  - shared known-native library-call bridge coverage
+
+### Runtime Change
+
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c` now keeps internal stack-slot reads on
+`ZrCore_Stack_GetValueNoProfile(...)`, matching the earlier object-call trim:
+
+- the dispatcher still exposes the same callback layout and stable-copy/pinning behavior
+- only helper-recording/TLS work on repeated internal stack reads was removed
+
+### Evidence
+
+Against the accepted slice-46 profile snapshot:
+
+- `map_object_access`: `114,706,895 -> 112,031,005 Ir` (`-2.33%`)
+- `native_binding_dispatcher`: `5,959,795 -> 5,738,433 Ir` (`-3.71%`)
+- `stack_get_value` helper count: `207,026 -> 53,303` (`-74.25%`)
+- `dispatch_loops`: `473,989,260 -> 473,437,856 Ir` (`-0.12%`)
+
+Focused core rerun vs slice 46:
+
+- `map_object_access`: `125.216 -> 114.447 ms`
+- `dispatch_loops`: `299.539 -> 429.293 ms`
+
+Interpretation:
+
+- this cut lands directly on the intended native-binding dispatcher cost center
+- the large helper-count drop confirms most remaining `stack_get_value` traffic on `map_object_access` was dispatcher
+  bookkeeping, not useful execution work
+- `map_object_access` shows a clear deterministic win and a matching wall-clock improvement on this run
+- `dispatch_loops` callgrind stays essentially flat-to-better; current wall-clock noise is not supported by any
+  matching dispatch-side hotspot regression
+
+### Validation
+
+Accepted slice-47 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - rebuilt `zr_vm_module_system_test`
+  - rebuilt `zr_vm_object_call_known_native_fast_path_test`
+  - rebuilt `zr_vm_execution_dispatch_callable_metadata_test`
+  - rebuilt `zr_vm_cli_executable`
+  - `zr_vm_module_system_test`: `86 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `13 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `2 Tests 0 Failures`
+  - CLI smoke `tests/fixtures/projects/hello_world/hello_world.zrp`: `hello world`
+- WSL clang (`build-wsl-clang`):
+  - rebuilt `zr_vm_module_system_test`
+  - rebuilt `zr_vm_object_call_known_native_fast_path_test`
+  - rebuilt `zr_vm_execution_dispatch_callable_metadata_test`
+  - rebuilt `zr_vm_cli_executable`
+  - `zr_vm_module_system_test`: `86 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `13 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `2 Tests 0 Failures`
+  - CLI smoke `tests/fixtures/projects/hello_world/hello_world.zrp`: `hello world`
+- Windows MSVC CLI smoke (`build\\codex-msvc-cli-debug`):
+  - imported `VsDevCmd`
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+
+### Benchmark Artifacts
+
+Slice-47 snapshots kept on disk:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_native_binding_stack_get_noprofile_after_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_core_native_binding_stack_get_noprofile_after_20260417`
+
+## Current Hotspots / Next Slice (After Slice 47)
+
+Fresh hotspot view after the dispatcher stack-read trim:
+
+- `dispatch_loops`
+  - `execution_member_get_cached = 51,048,885 Ir`
+  - `execution_member_set_cached = 20,429,116 Ir`
+  - `ZrCore_Function_PreCallResolvedVmFunction = 11,845,924 Ir`
+- `map_object_access`
+  - `native_binding_dispatcher = 5,738,433 Ir`
+  - `object_call_known_native_fast.part.0 = 4,565,984 Ir`
+  - `ZrCore_Function_PreCallResolvedNativeFunction = 3,554,198 Ir`
+  - `ZrCore_Stack_CopyValue = 913,998 Ir`
+
+Recommended next slice:
+
+- stay on `map_object_access`
+- split the inline pinned dispatcher lane into narrower fixed-shape `self + 1 arg` / `self + 2 args` paths before
+  revisiting mixed-type safe-concat
+- leave `object_call_known_native_fast` as the follow-up only if the narrower dispatcher lane stops paying off
+
+## Slice 48: Fixed-Shape Native Binding Lane With Hot-Helper Re-Inlining
+
+### Root Cause
+
+The first fixed-shape dispatcher-lane extraction proved the shape split was directionally right, but the extracted build
+was not acceptable as-is.
+
+The rejected intermediate profile showed:
+
+- `map_object_access`: `112,031,005 -> 114,133,382 Ir` (`+1.88%`)
+- new standalone hot helpers:
+  - `native_binding_pin_value_object = 1,776,266 Ir`
+  - `native_binding_prepare_stable_value_raw = 975,524 Ir`
+  - `native_binding_unpin_value_object = 631,970 Ir`
+  - `native_binding_can_use_fast_lane = 590,250 Ir`
+
+Interpretation:
+
+- the fixed-shape `self + 1 arg` / `self + 2 args` split itself was not the problem
+- the regression came from pulling formerly same-TU tiny helpers into external functions, which added call overhead
+  back onto the `map_object_access` hot path
+
+### Regression Coverage
+
+No new semantic regression surface was required for the accepted version.
+
+This slice keeps the same callable layout, GC pinning contracts, and receiver writeback semantics, so it reuses the
+focused surface already covering the native binding line:
+
+- `tests/module/test_module_system.c`
+  - `test_native_binding_inline_label_inspector_keeps_raw_layout_without_losing_gc_safety`
+  - `test_container_map_runtime_supports_computed_key_access`
+- `tests/core/test_object_call_known_native_fast_path.c`
+  - known-native stack-root and non-stack input coverage
+  - stable-value copy/release coverage
+  - registry cache promotion coverage
+
+### Runtime Change
+
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.c` and
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h` now keep the fixed-shape lane split
+while restoring hot helper inlining:
+
+- the extracted lane module stays in place so the main dispatcher file no longer has to carry the fixed-shape bodies
+- pin/unpin, stable-copy, fast-lane eligibility, and receiver writeback helpers moved to header inlined form
+- `native_binding_prepare_stable_value(...)` / `native_binding_release_stable_value(...)` remain as wrappers for tests
+  and existing call sites, but the hot dispatcher/lane path now calls the inline forms directly
+- `native_binding_dispatch.c` keeps using the narrower fixed-shape lane selection without paying the extra helper-call
+  tax introduced by the first extraction draft
+
+### Evidence
+
+Against the accepted slice-47 profile snapshot:
+
+- `map_object_access`: `112,031,005 -> 110,966,247 Ir` (`-0.95%`)
+- `dispatch_loops`: `473,437,856 -> 473,528,120 Ir` (`+0.02%`, flat)
+
+Fresh slice-48 hotspot picture on `map_object_access`:
+
+- `native_binding_dispatch_inline_pinned_lane = 2,885,516 Ir`
+- `native_binding_dispatcher = 2,496,270 Ir`
+- `object_call_known_native_fast.part.0 = 4,565,984 Ir`
+- `ZrCore_Function_PreCallResolvedNativeFunction = 3,554,198 Ir`
+
+Interpretation:
+
+- the fixed-shape lane is now kept because the total case regressed in the first extraction draft but wins once the hot
+  helper calls are re-inlined
+- the dispatcher cost center has been split into a thinner front-half plus the dedicated inline pinned lane, which is
+  the intended W2 direction for later specialization
+- `dispatch_loops` remains effectively flat, so this cut is still isolated to the intended `map_object_access`
+  known-native/object-call line
+
+Focused core rerun on the accepted slice-48 state:
+
+- `dispatch_loops`: `224.640 ms`
+- `map_object_access`: `112.375 ms`
+
+### Validation
+
+Accepted slice-48 state:
+
+- WSL gcc (`build/codex-wsl-gcc-debug`):
+  - rebuilt `zr_vm_module_system_test`
+  - rebuilt `zr_vm_object_call_known_native_fast_path_test`
+  - rebuilt `zr_vm_execution_dispatch_callable_metadata_test`
+  - rebuilt `zr_vm_cli_executable`
+  - `zr_vm_module_system_test`: `86 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `13 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `2 Tests 0 Failures`
+  - CLI smoke `tests/fixtures/projects/hello_world/hello_world.zrp`: `hello world`
+- WSL clang (`build/codex-wsl-clang-debug`):
+  - rebuilt `zr_vm_module_system_test`
+  - rebuilt `zr_vm_object_call_known_native_fast_path_test`
+  - rebuilt `zr_vm_execution_dispatch_callable_metadata_test`
+  - rebuilt `zr_vm_cli_executable`
+  - `zr_vm_module_system_test`: `86 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `13 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `2 Tests 0 Failures`
+  - CLI smoke `tests/fixtures/projects/hello_world/hello_world.zrp`: `hello world`
+- Windows MSVC CLI smoke (`build\\codex-msvc-cli-debug`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+
+### Benchmark Artifacts
+
+Slice-48 snapshots kept on disk:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_native_binding_lane_inline_recovery_after_20260417`
+- `build/benchmark-gcc-release/tests_generated/performance_core_native_binding_lane_inline_recovery_after_20260417`
+
+## Current Hotspots / Next Slice (After Slice 48)
+
+Fresh hotspot view after the accepted fixed-shape lane + inline-recovery cut:
+
+- `dispatch_loops`
+  - `execution_member_get_cached = 51,048,885 Ir`
+  - `execution_member_set_cached = 20,429,116 Ir`
+  - `ZrCore_Function_PreCallResolvedVmFunction = 11,845,924 Ir`
+- `map_object_access`
+  - `object_call_known_native_fast.part.0 = 4,565,984 Ir`
+  - `garbage_collector_ignore_registry_contains = 4,276,688 Ir`
+  - `ZrCore_Function_PreCallResolvedNativeFunction = 3,554,198 Ir`
+  - `native_binding_dispatch_inline_pinned_lane = 2,885,516 Ir`
+  - `native_binding_dispatcher = 2,496,270 Ir`
+
+Recommended next slice:
+
+- stay on `map_object_access`
+- return to the hotter known-native/object-call line before mixed-type safe-concat
+- target the remaining `object_call_known_native_fast.part.0` / `PreCallResolvedNativeFunction` overlap, now that the
+  fixed-shape native binding lane is no longer the first blocker
+
+## Slice 49: Direct Stack-Root Native Binding Lane
+
+### Context
+
+Several later exploratory slices on the `map_object_access` line were intentionally left out of acceptance because they
+only moved local hotspots without producing a repeatable whole-case win.
+
+Before slice 49, the fresh focused baseline for the active line was:
+
+- `dispatch_loops`: `470,311,382 Ir`
+- `map_object_access`: `74,448,004 Ir`
+
+The remaining dominant accepted blocker on `map_object_access` was no longer the generic object-call bridge. It was the
+native binding dispatcher still paying the inline pinned lane for callbacks that only needed direct, stack-backed
+`self/argument` access plus relocation safety during temp-root / GC activity.
+
+### Root Cause
+
+Fresh call-tree evidence on the active baseline showed:
+
+- `native_binding_dispatch_inline_pinned_lane` inclusive: `28,827,614 Ir`
+- children:
+  - `zr_container_map_set_item`
+  - `zr_container_map_get_item`
+
+The pinned lane was still stabilizing and pinning `self/arguments` even when the callback only needed:
+
+- direct stack-backed layout
+- argument re-read safety after temp roots / full GC
+- no detached stable copies
+
+That meant `map_object_access` still paid avoidable stable-copy / pin / unpin overhead inside the hottest map meta
+method callbacks.
+
+### Regression Coverage
+
+`tests/module/test_module_system.c` tightened
+`test_native_binding_inline_label_inspector_keeps_raw_layout_without_losing_gc_safety`.
+
+The probe-native `inspectLabel()` callback now also asserts:
+
+- `directStackContext == 1`
+
+which locks the stronger contract for the accepted lane:
+
+- native callbacks may opt into a direct stack-root context
+- `self` and arguments stay stack-backed instead of being pre-copied into stable dispatcher buffers
+- callbacks may still re-read arguments after temp-root churn and forced full GC
+
+### Runtime Change
+
+`zr_vm_library/include/zr_vm_library/native_binding.h` now adds an explicit
+`ZR_LIB_NATIVE_DISPATCH_FLAG_STACK_ROOT_CONTEXT` opt-in on native descriptors plus anchored stack-layout metadata on
+`ZrLibCallContext`.
+
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.h`,
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_lanes.c`, and
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c` now:
+
+- select a new `native_binding_dispatch_stack_root_lane(...)` before the copy/pin lanes when the descriptor opts in
+- anchor the original `functionBase` so callbacks can refresh `self/argument` pointers after stack relocation
+- refresh stack-backed `self/argument` access in `ZrLib_CallContext_Self(...)` and `ZrLib_CallContext_Argument(...)`
+  instead of forcing stable copies up front
+- keep receiver writeback semantics unchanged
+
+The first consumers are:
+
+- `tests/module/test_module_system.c`
+  - probe-native `inspectLabel()`
+- `zr_vm_lib_container/src/zr_vm_lib_container/module.c`
+  - `Map` meta `getItem`
+  - `Map` meta `setItem`
+
+### Evidence
+
+Against the fresh pre-slice-49 focused baseline:
+
+- `map_object_access`: `74,448,004 -> 72,621,921 Ir` (`-2.45%`)
+- `dispatch_loops`: `470,311,382 -> 470,319,904 Ir` (`+0.00%`, flat)
+
+Fresh slice-49 hotspot picture on `map_object_access`:
+
+- `native_binding_dispatch_stack_root_lane = 27,311,235 Ir` inclusive
+- `zr_container_map_set_item = 15,124,120 Ir` inclusive under that lane
+- `zr_container_map_get_item = 10,969,811 Ir` inclusive under that lane
+- `garbage_collector_ignore_registry_contains = 2,537,901 Ir`
+
+Focused wall on the same run:
+
+- `dispatch_loops = 141.086 ms`
+- `map_object_access = 101.303 ms`
+
+Interpretation:
+
+- the accepted win is not a benchmark-local special case; it comes from a shared native-binding/runtime lane
+- the native binding line no longer spends its hottest map path on stable-copy / pin scaffolding first
+- `dispatch_loops` stayed flat, so the cut remains isolated to the intended `map_object_access` line
+- the next hotter uncovered costs moved inward to `zr_container_map_find_index.part.0` and `ZrLib_Array_Get`
+
+### Validation
+
+Accepted slice-49 state:
+
+- WSL gcc (`build/codex-wsl-gcc-debug`):
+  - rebuilt `zr_vm_module_system_test`
+  - `zr_vm_module_system_test`: `86 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `17 Tests 0 Failures`
+  - `zr_vm_instructions_test`: `88 Tests 0 Failures`
+- WSL clang (`build/codex-wsl-clang-debug`):
+  - rebuilt `zr_vm_module_system_test`
+  - rebuilt `zr_vm_object_call_known_native_fast_path_test`
+  - rebuilt `zr_vm_instructions_test`
+  - `zr_vm_module_system_test`: `86 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `17 Tests 0 Failures`
+  - `zr_vm_instructions_test`: `88 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build\\codex-msvc-cli-debug`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+
+### Benchmark Artifacts
+
+Slice-49 snapshot kept on disk:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_native_binding_stack_root_lane_after_20260417`
+
+## Current Hotspots / Next Slice (After Slice 49)
+
+Fresh hotspot view after the accepted direct stack-root lane:
+
+- `dispatch_loops`
+  - `execution_member_get_cached = 51,048,885 Ir`
+  - `execution_member_set_cached = 20,429,116 Ir`
+  - `ZrCore_Function_PreCallResolvedVmFunction = 11,845,924 Ir`
+- `map_object_access`
+  - `zr_container_map_find_index.part.0 = 10,003,967 Ir`
+  - `ZrLib_Array_Get = 6,237,900 Ir`
+  - `zr_container_get_own_field_value_fast = 3,289,939 Ir`
+  - `garbage_collector_ignore_registry_contains = 2,537,901 Ir`
+
+Recommended next slice:
+
+- stay on `map_object_access`
+- cut `zr_container_map_find_index.part.0` first, because it now dominates both `Map` get and set traffic
+- treat `ZrLib_Array_Get` as the likely companion cut, ideally by removing repeated generic array object lookups from
+  the same map-entry scan path
+
+## Slice 50: Dense Array Pair-Read Fast Path For Map Entry Scans
+
+### Context
+
+After the accepted stack-root native binding lane, the active focused baseline on the current line was:
+
+- `dispatch_loops`: `470,319,904 Ir`
+- `map_object_access`: `72,621,921 Ir`
+
+The remaining dominant `map_object_access` blocker had moved inside the container runtime itself:
+
+- `zr_container_map_find_index.part.0 = 10,003,967 Ir`
+- `ZrLib_Array_Get = 6,237,900 Ir`
+- `zr_container_get_own_field_value_fast = 3,289,939 Ir`
+
+That meant the hottest map meta callbacks were no longer limited by native binding setup first. They were now paying
+repeated generic array element lookups while scanning the dense backing array of `Pair<K,V>` entries.
+
+### Root Cause
+
+`Map` stores entries in an internal array-like object whose backing storage is maintained on the dense sequential int-key
+path. But `zr_container_map_find_index(...)`, `zr_container_map_get_item(...)`, and `zr_container_map_set_item(...)`
+were still reading those entries through:
+
+- `ZrLib_Array_Get(...)`
+- followed by repeated object/value unpacking
+- followed by generic string-field lookup on the `Pair`
+
+On the accepted slice-49 baseline, that left `ZrLib_Array_Get` as the second hottest map-specific helper even though the
+data was already sitting in directly index-addressable dense buckets.
+
+### Runtime Change
+
+`zr_vm_lib_container/src/zr_vm_lib_container/module.c` now adds a local dense-array read helper pair:
+
+- `zr_container_array_get_value_fast(...)`
+- `zr_container_array_get_object_fast(...)`
+
+These helpers:
+
+- detect the steady-state dense sequential int-key layout directly on the backing array object
+- read the entry pair from `nodeMap.buckets[index]` when the bucket is directly index-addressable
+- fall back to `ZrLib_Array_Get(...)` only when the storage is not on the dense fast path
+
+`Map` runtime paths now use that fast read in:
+
+- `zr_container_map_find_index(...)`
+- `zr_container_map_get_item(...)`
+- `zr_container_map_set_item(...)`
+
+The same slice also pushed more of the container-owned field traffic onto the existing local fast field helpers so the
+entry-scan path stays on container-owned exact fields instead of re-entering the more generic object/member path.
+
+### Evidence
+
+Against the fresh pre-slice-50 focused baseline:
+
+- `map_object_access`: `72,621,921 -> 67,033,624 Ir` (`-7.70%`)
+- `dispatch_loops`: `470,319,904 -> 470,325,039 Ir` (`+0.00%`, flat)
+
+Focused wall on the same run:
+
+- `dispatch_loops`: `141.086 -> 144.550 ms`
+- `map_object_access`: `101.303 -> 95.464 ms`
+
+Fresh slice-50 hotspot picture on `map_object_access`:
+
+- `zr_container_map_find_index.part.0 = 5,958,205 Ir`
+- `zr_container_get_own_field_value_fast = 3,289,599 Ir`
+- `garbage_collector_ignore_registry_contains = 2,537,901 Ir`
+- `ZrLib_Array_Get` dropped out of the new top-function surface
+
+Interpretation:
+
+- the intended `Map` entry-scan line moved materially, not just locally
+- the dense-array fast read successfully removed a first-order generic helper from the hot loop
+- `dispatch_loops` stayed flat, so the win remains isolated to the intended `map_object_access` path
+- the next worthwhile cut now sits one layer deeper in exact own-field lookup and residual key hash/equality work
+
+### Validation
+
+Accepted slice-50 state:
+
+- WSL gcc (`build/codex-wsl-gcc-debug`):
+  - `zr_vm_module_system_test`: `86 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `35 Tests 0 Failures`
+- WSL clang (`build/codex-wsl-clang-debug`):
+  - `zr_vm_module_system_test`: `86 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `35 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build\\codex-msvc-cli-debug`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+
+### Benchmark Artifacts
+
+Slice-50 snapshot kept on disk:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_container_dense_array_pair_fast_after_20260417`
+
+## Current Hotspots / Next Slice (After Slice 50)
+
+Fresh hotspot view after the accepted dense-array pair-read cut:
+
+- `dispatch_loops`
+  - `execution_member_get_cached = 51,048,885 Ir`
+  - `execution_member_set_cached = 20,429,116 Ir`
+  - `ZrCore_Function_PreCallResolvedVmFunction = 11,845,924 Ir`
+- `map_object_access`
+  - `zr_container_map_find_index.part.0 = 5,958,205 Ir`
+  - `zr_container_get_own_field_value_fast = 3,289,599 Ir`
+  - `garbage_collector_ignore_registry_contains = 2,537,901 Ir`
+  - `zr_container_value_hash.part.0 = 1,721,120 Ir`
+  - `zr_container_values_equal = 959,573 Ir`
+
+Recommended next slice:
+
+- stay on `map_object_access`
+- keep cutting `zr_container_map_find_index.part.0`, because it still dominates both `getItem` and `setItem`
+- prioritize exact own-string pair lookup plus a direct string-key compare path before moving away from the current map
+  entry scan line
+
+## Slice 51: Lazy Construct-Target Prototype Resolution On Cached Stack-Root Native Calls
+
+### Context
+
+On the current W2 line, the focused accepted baseline before this slice was:
+
+- `dispatch_loops`: `467,794,364 Ir`
+- `map_object_access`: `44,547,276 Ir`
+
+The active `map_object_access` hotspot stack had moved to the known-native/container side:
+
+- `native_binding_dispatch_cached_stack_root_one_argument = 1,475,280 Ir`
+- `object_call_known_native_fast_one_argument.part.0 = 1,360,536 Ir`
+- `object_complete_known_native_fast_call = 1,192,712 Ir`
+- `ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFast = 909,904 Ir`
+
+### Rejected Side Cut
+
+This slice first tried extending the prepared single-result native fast helper so object-call could pass a stack
+`returnDestination` directly.
+
+That behavior is still covered by:
+
+- `tests/core/test_object_call_known_native_fast_path.c`
+  - `test_call_prepared_resolved_native_function_single_result_fast_supports_stack_return_destination`
+
+but it was **not** kept on the object-call hot path because the fresh profile evidence regressed:
+
+- `map_object_access`: `44,547,276 -> 44,678,125 Ir` (`+0.29%`)
+
+Interpretation:
+
+- the helper extension is functionally valid
+- but on the current known-native path it only moved a cheap copy instead of deleting a real one
+- the extra targeting/anchor cost did not pay back on `map_object_access`
+
+So the accepted runtime path deliberately keeps object-call on the previous copy-back behavior.
+
+### Root Cause
+
+The accepted cut came from the native binding side instead.
+
+`native_binding_prepare_cached_stack_root_dispatch(...)` and the generic native dispatcher were eagerly calling
+`ZrCore_Object_IsInstanceOfPrototype(...)` every time just to precompute `constructTargetPrototype`, even though the
+value is only needed by a narrow set of constructor helpers.
+
+For hot `Map` meta `getItem` / `setItem` traffic, that prototype derivation was dead work paid on every cached stack-root
+dispatch.
+
+### Runtime Change
+
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch_cached.c` and
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c` now stop eagerly materializing
+`constructTargetPrototype` during cached/generic native dispatch setup.
+
+`ZrLib_CallContext_GetConstructTargetPrototype(...)` now resolves the actual construct target lazily by:
+
+- refreshing the stack-backed call layout only when needed
+- checking the current `selfValue` against `ownerPrototype` on demand
+- returning the derived instance prototype only for callers that actually query it
+
+This keeps ordinary method/meta-method dispatch off that prototype walk entirely.
+
+### Evidence
+
+Against the fresh pre-slice-51 focused baseline:
+
+- `map_object_access`: `44,547,276 -> 44,187,075 Ir` (`-0.81%`)
+- `dispatch_loops`: `467,794,364 -> 467,802,558 Ir` (`+0.00%`, noise)
+
+Fresh slice-51 hotspot picture on `map_object_access`:
+
+- `native_binding_dispatch_cached_stack_root_one_argument = 1,294,968 Ir`
+- `object_call_known_native_fast_one_argument.part.0 = 1,360,536 Ir`
+- `object_complete_known_native_fast_call = 1,205,008 Ir`
+- `ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFast = 1,008,272 Ir`
+- `ZrLib_TempValueRoot_Begin = 542,836 Ir`
+- `ZrLib_TempValueRoot_End = 238,108 Ir`
+
+Interpretation:
+
+- the accepted gain is real and lands exactly on the cached stack-root native binding line
+- the object-call line remains hot, but the attempted direct `returnDestination` cut is not worth keeping there
+- the next `map_object_access` target should stay on native/container fixed costs, especially:
+  - `native_binding_dispatch_cached_stack_root_one_argument`
+  - `ZrLib_TempValueRoot_Begin`
+  - `ZrLib_TempValueRoot_End`
+
+### Validation
+
+Accepted slice-51 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `25 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `37 Tests 0 Failures`
+  - `zr_vm_module_system_test`: `87 Tests 0 Failures`
+  - `zr_vm_execution_member_access_fast_paths_test`: `46 Tests 0 Failures`
+- WSL clang (`build-wsl-clang`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `25 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `37 Tests 0 Failures`
+  - `zr_vm_module_system_test`: `87 Tests 0 Failures`
+  - `zr_vm_execution_member_access_fast_paths_test`: `46 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build\\codex-msvc-cli-debug`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+- Fresh focused benchmarks (`build/benchmark-gcc-release`):
+  - profile tier rerun passed on `dispatch_loops,map_object_access`
+  - core tier rerun passed on `dispatch_loops,map_object_access`
+
+## Slice 55: `Array_PushValue` Temp-Root Slot Churn Removal
+
+### Context
+
+After slice 54, the hottest remaining `map_object_access` container-side costs were no longer the generic index-contract
+wrappers. The visible map insert line still contained:
+
+- `zr_container_map_set_item = 669,379 Ir`
+- `ZrLib_TempValueRoot_Begin = 542,836 Ir`
+- `ZrLib_TempValueRoot_End = 238,108 Ir`
+- `ZrCore_GarbageCollector_IgnoreObject = 229,872 Ir`
+- `ZrCore_GarbageCollector_UnignoreObject = 177,034 Ir`
+
+Reading through `zr_container_map_set_item(...)` showed that fresh pair insertion still routed array append through the
+shared `ZrLib_Array_PushValue(...)` helper, and that helper was still materializing GC values through
+`ZrLib_TempValueRoot_Begin/SetValue/End` scratch-slot plumbing.
+
+### Root Cause
+
+On the hot fresh-insert path, `ZrLib_Array_PushValue(...)` already knows the exact destination slot and only needs the
+source value to stay live across capacity growth / element write. The old helper still paid the heavier generic temp-root
+sequence:
+
+- reserve a scratch stack slot through `ZrLib_TempValueRoot_Begin(...)`
+- copy the source value into that slot
+- write from the temp root back into the destination object slot
+- tear the temp root down again
+
+For `map_object_access`, that was redundant insurance. The array object and GC value can be pinned directly during the
+write, so the scratch-slot churn was pure steady-state overhead on the shared insert helper.
+
+### Regression Coverage
+
+This slice keeps the existing container runtime GC-object preservation contract and adds a tighter scratch-slot contract
+in:
+
+- `tests/container/test_container_runtime.c`
+  - `test_container_native_binding_temp_roots_preserve_gc_object_values_without_extra_pin_scope`
+  - `test_container_array_push_value_preserves_future_scratch_slots_for_gc_values`
+
+The new test locks the important observable behavior directly: `ZrLib_Array_PushValue(...)` must preserve future
+scratch slots instead of consuming them as hidden temp-root storage when pushing a GC object value.
+
+### Runtime Change
+
+`zr_vm_library/src/zr_vm_library/native_binding/native_binding_dispatch.c` now narrows
+`ZrLib_Array_PushValue(...)` for the hot GC-value lane:
+
+- pin the array object and GC value directly
+- write the incoming value into the final array slot with `ZrCore_Object_SetValue(...)`
+- unpin on exit
+
+The helper no longer routes this lane through `ZrLib_TempValueRoot_Begin/SetValue/End`, so the shared append path keeps
+its existing semantics without spending scratch-stack setup/teardown on every inserted map entry.
+
+### Evidence
+
+Against the accepted slice-54 map-only profile baseline:
+
+- `map_object_access`: `28,867,249 -> 28,694,492 Ir` (`-0.60%`)
+- `ZrLib_TempValueRoot_Begin`: `542,836 -> 486,552 Ir` (`-10.37%`)
+- `ZrLib_TempValueRoot_End`: `238,108 -> 213,400 Ir` (`-10.38%`)
+- `ZrCore_GarbageCollector_IgnoreObject`: `229,872 -> 219,832 Ir` (`-4.37%`)
+- `ZrCore_GarbageCollector_UnignoreObject`: `177,034 -> 170,006 Ir` (`-3.97%`)
+- `ZrLib_Array_PushValue`: `18,278 -> 29,174 Ir` (`+59.61%`)
+
+`zr_container_map_set_item` itself stayed flat at `669,379 Ir`, so the gain here is not a large top-level map symbol
+drop. The acceptance case is that the shared append helper now does more of its own work directly while the old
+temp-root shell materially shrinks, and the total benchmark `Ir` still falls instead of shifting upward into pin/unpin
+cost.
+
+Fresh map-only core wall on the same code stayed in the same band and improved slightly versus the slice-54 archive:
+
+- median wall: `105.461 ms -> 104.689 ms` (`-0.73%`)
+- mean wall: `119.706 ms -> 107.204 ms`
+
+Interpretation:
+
+- this slice is acceptance-worthy because it deletes real shared-helper stack-slot churn from the hot fresh-insert lane
+- the gain is modest and mostly internal to `Array_PushValue(...)`, but it is directionally clean in profile evidence
+- `IgnoreObject/UnignoreObject` did not balloon; they also declined, so the temp-root cost was not merely moved
+- the next profitable work should now return to the still-hot `map_object_access` object/container line:
+  - `zr_container_map_get_item`
+  - `ZrCore_Object_GetByIndexUnchecked`
+  - any remaining known-native/object-call cost that resurfaces after the container cuts
+
+### Validation
+
+Accepted slice-55 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - `zr_vm_container_runtime_test`: `41 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `47 Tests 0 Failures`
+- WSL clang (`build-wsl-clang`):
+  - `zr_vm_container_runtime_test`: `41 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `47 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build-msvc-cli-smoke`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+- Fresh focused benchmarks (`build/benchmark-gcc-release`):
+  - existing map-only core rerun archived on the slice code
+  - fresh map-only profile rerun passed with callgrind counting enabled
+  - archived evidence directories:
+    - `build/benchmark-gcc-release/tests_generated/performance_core_array_push_pin_only_after_20260417_map_only`
+    - `build/benchmark-gcc-release/tests_generated/performance_profile_array_push_pin_only_after_20260417_map_only`
+
+## Slice 57: Cached Index-Contract Direct Fast-Callback Lane
+
+### Context
+
+After slice 56, `map_object_access` had already switched the `Map` meta-method body over to readonly-inline fast
+callbacks, but the runtime still paid two shared shells on every hot get/set:
+
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineOneArgumentStack = 573,720 Ir`
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineTwoArgumentsNoResultStack = 307,500 Ir`
+
+The surrounding object helpers were still visible too:
+
+- `ZrCore_Object_GetByIndexUnchecked = 573,748 Ir`
+- `ZrCore_Object_SetByIndexUnchecked = 299,328 Ir`
+
+That meant the callback body was already narrow, but `object.c` still asked a generic readonly-inline wrapper to
+re-validate the same stack/debug/flag facts every time.
+
+### Root Cause
+
+The first follow-up cut on this line only reordered the runtime so cached direct-dispatch readonly-inline hits could
+succeed even when the callable/native-function cache slots were cleared. That behavior was correct and is now locked by
+tests, but the profile win by itself was too small to accept.
+
+The real remaining cost was the wrapper layer itself. On the accepted hot shape, `object.c` already owns all the facts
+needed to run the readonly-inline meta-method fast callback directly:
+
+- cached direct-dispatch metadata
+- exact arity / flag shape
+- stack-resident receiver and arguments
+- debug-hook off
+
+The profitable cut was therefore to keep the no-reresolve contract, but also bypass
+`TryCallIndexContractDirectBindingReadonlyInline*` entirely on the readonly-inline fast-callback lane.
+
+### Regression Coverage
+
+This slice extends the same known-native/index-contract regression suite in:
+
+- `tests/core/test_object_call_known_native_fast_path.c`
+  - `test_get_by_index_known_native_readonly_inline_fast_path_prefers_meta_method_fast_callback`
+  - `test_set_by_index_known_native_readonly_inline_fast_path_prefers_meta_method_fast_callback`
+  - `test_get_by_index_known_native_readonly_inline_fast_path_reuses_cached_direct_dispatch_without_callable_reresolve`
+  - `test_set_by_index_known_native_readonly_inline_fast_path_reuses_cached_direct_dispatch_without_callable_reresolve`
+
+The new tests lock the important steady-state contract directly: once readonly-inline direct-dispatch metadata is
+cached, hot hits must stay correct even if the callable/native-function cache slots are cleared, and the runtime must
+not need to repopulate them just to reach the fast callback.
+
+### Runtime Change
+
+`zr_vm_core/src/zr_vm_core/object/object.c` now imports `zr_vm_library/native_binding.h` and narrows the cached
+readonly-inline map lane further:
+
+- add a local stack-residency probe for `SZrTypeValue *`
+- add dedicated readonly-inline fast-callback helpers for cached `getByIndex` / `setByIndex`
+- invoke the meta-method fast callbacks directly from `object.c` on both:
+  - pre-resolve cached direct-dispatch hits
+  - post-resolve known-native direct-dispatch hits
+
+The runtime still falls back to the older generic direct-binding / known-native path when the cached shape is absent or
+the operands are not stack-resident. This slice only deletes repeated wrapper work from the accepted readonly-inline
+steady-state lane.
+
+### Evidence
+
+Against the accepted slice-56 focused profile baseline:
+
+- `map_object_access`: `28,163,286 -> 27,533,243 Ir` (`-2.24%`)
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineOneArgumentStack`: dropped out of the visible top set
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineTwoArgumentsNoResultStack`: dropped out of the visible
+  top set
+
+Against the older slice-54/55 direct-binding map-only archive:
+
+- `map_object_access`: `28,867,249 -> 27,533,243 Ir` (`-4.62%`)
+
+Fresh slice-57 hotspot picture on `map_object_access`:
+
+- `zr_container_map_get_item_readonly_inline_fast = 996,093 Ir`
+- `ZrCore_Object_GetByIndexUnchecked = 795,055 Ir`
+- `zr_container_map_set_item_readonly_inline_no_result_fast = 544,218 Ir`
+- `ZrCore_Object_SetByIndexUnchecked = 405,943 Ir`
+
+Interpretation:
+
+- this slice is acceptance-worthy because the readonly-inline wrapper shell is no longer a top hotspot
+- `GetByIndexUnchecked/SetByIndexUnchecked` themselves become fatter because they now own the direct fast-callback gate,
+  but the removed wrapper cost is larger than the added local branching
+- the profile result is materially better than both the slice-56 state and the older direct-binding archive
+
+Fresh map-only core wall on the same code:
+
+- versus slice 56:
+  - mean wall: `124.978 ms -> 112.465 ms` (`-10.01%`)
+  - median wall: `114.908 ms -> 112.812 ms` (`-1.82%`)
+- versus the older direct-binding archive:
+  - mean wall: `119.706 ms -> 112.465 ms` (`-6.05%`)
+  - median wall: `105.461 ms -> 112.812 ms` (`+6.97%`, still noisy)
+
+Interpretation:
+
+- mean wall recovered strongly after the intermediate tiny-gain reorder cut
+- median wall improves again relative to slice 56, but the wall signal is still noisier than callgrind
+- acceptance therefore rests primarily on the deterministic profile drop plus the visible removal of the generic
+  readonly-inline wrapper symbols
+
+### Validation
+
+Accepted slice-57 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `51 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `41 Tests 0 Failures`
+- WSL clang (`build-wsl-clang`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `51 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `41 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build-msvc-cli-smoke`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+- Fresh focused benchmarks (`build/benchmark-gcc-release`):
+  - profile tier rerun passed on `map_object_access`
+  - core tier rerun passed on `map_object_access`
+  - archived evidence directories:
+    - `build/benchmark-gcc-release/tests_generated/performance_profile_index_direct_fast_callback_after_20260418_map_only`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_index_direct_fast_callback_after_20260418_map_only`
+
+## Slice 58: `ADD_STRING` Direct Exact-String Dispatch
+
+### Context
+
+After slice 57, `map_object_access` had already moved off the generic `FUNCTION_CALL` on the `labelFor()` loop line,
+but the profile still carried a visible concat shell:
+
+- `map_object_access = 27,533,243 Ir`
+- `concat_values_to_destination = 213,044 Ir`
+- `ZrCore_String_ConcatPair = 397,784 Ir`
+
+The compiler side had already done its job. Fresh profile data still showed:
+
+- `ADD_STRING = 4,097`
+
+so the remaining work was in the runtime dispatch body, not in quickening.
+
+### Root Cause
+
+`tests/core/gdb_map_object_access_concat_types.gdb` proved the remaining hits inside
+`concat_values_to_destination(...)` were arriving as:
+
+- exact string `opA`
+- exact string `opB`
+- `safeMode = 0`
+
+That meant the `ADD_STRING` instruction in `execution_dispatch.c` was still routing exact-string pairs through the
+generic concat shell even though the benchmark line had already quickened to the specialized opcode.
+
+### Regression Coverage
+
+`tests/parser/test_compiler_regressions.c` extends:
+
+- `test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call`
+
+The regression now also asserts that the compiled `labelFor()` benchmark function actually contains `ADD_STRING`,
+locking the intended compile-time lowering so future regressions cannot silently slide that line back onto generic
+`ADD` / `FUNCTION_CALL`.
+
+### Runtime Change
+
+The runtime now deletes the redundant generic shell around exact-string `ADD_STRING` dispatch:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_internal.h`
+  - adds shared inline helper `execution_try_concat_exact_strings(...)`
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+  - changes `ZR_INSTRUCTION_LABEL(ADD_STRING)` to call the exact-string helper directly
+- `zr_vm_core/src/zr_vm_core/execution/execution_numeric.c`
+  - removes the duplicate local exact-string helper body
+
+The mixed-type / safe concat path remains on `concat_values_to_destination(...)`; this slice only narrows the already
+proven exact-string opcode lane.
+
+### Evidence
+
+Against the accepted slice-57 `map_object_access` profile archive:
+
+- `map_object_access`: `27,533,243 -> 27,393,536 Ir` (`-0.51%`)
+- `concat_values_to_destination`: `213,044 Ir ->` dropped out of the visible annotate top set
+- `ZrCore_String_ConcatPair`: stayed at `397,784 Ir`
+
+Interpretation:
+
+- the real concat work is still present
+- the extra runtime dispatch shell around it is gone
+
+Fresh map-only core wall versus the accepted slice-57 map-only rerun:
+
+- mean wall: `112.465 ms -> 96.860 ms` (`-13.87%`)
+- median wall: `112.812 ms -> 96.605 ms` (`-14.37%`)
+
+Fresh `string_build` helper-only comparison against the 2026-04-17 profile snapshot on the same instruction mix
+(`ADD_STRING = 1,801` in both runs):
+
+- `value_copy`: `18,315 -> 16,189` (`-11.61%`)
+- `stack_get_value`: `8,592 -> 4,745` (`-44.78%`)
+
+Interpretation:
+
+- this slice is acceptance-worthy because exact-string `ADD_STRING` no longer re-enters the generic concat shell on the
+  hot `map_object_access` lane
+- `map_object_access` shows both deterministic annotate cleanup and a strong single-case wall recovery
+- `string_build` shows the same-lane helper reductions, but its wall remained in the same broad band rather than
+  producing a clean standalone win, so the acceptance claim for this slice stays anchored on the deterministic
+  `map_object_access` evidence
+
+### Validation
+
+Accepted slice-58 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - `zr_vm_instructions_test`: `90 Tests 0 Failures`
+  - `zr_vm_compiler_integration_test`: `89 Tests 0 Failures`
+- WSL clang (`build-wsl-clang`):
+  - `zr_vm_instructions_test`: `90 Tests 0 Failures`
+  - `zr_vm_compiler_integration_test`: `89 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build-msvc-cli-smoke`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+- Fresh focused benchmarks (`build/benchmark-gcc-release`):
+  - profile tier rerun passed on `map_object_access,string_build`
+  - core tier rerun passed on `map_object_access,string_build`
+  - single-case core reruns passed on `map_object_access` and `string_build`
+  - archived evidence directories:
+    - `build/benchmark-gcc-release/tests_generated/performance_profile_add_string_dispatch_refresh_20260418_map_string_v2`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_add_string_dispatch_refresh_20260418_map_string_v2`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_add_string_dispatch_refresh_20260418_map_only_v2`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_add_string_dispatch_refresh_20260418_string_only_v2`
+
+## Slice 59: Cached Readonly-Inline Callback Metadata
+
+### Context
+
+After slice 58, `map_object_access` had already dropped the exact-string concat shell, but the hottest remaining steady
+state on the `Map` line was still the object-side index wrapper rather than the container callback body:
+
+- `map_object_access = 27,393,536 Ir`
+- `zr_container_map_get_item_readonly_inline_fast = 996,093 Ir`
+- `ZrCore_Object_GetByIndexUnchecked = 795,055 Ir`
+- `zr_container_map_set_item_readonly_inline_no_result_fast = 544,218 Ir`
+- `ZrCore_Object_SetByIndexUnchecked = 405,943 Ir`
+
+The container bodies were already on the intended narrow lane. The remaining shell lived around them.
+
+### Root Cause
+
+`object_try_call_cached_known_native_get_by_index_readonly_inline(...)` and
+`object_try_call_cached_known_native_set_by_index_readonly_inline(...)` still re-opened the meta-method descriptor on
+every hit just to rediscover the readonly-inline fast callback pointer:
+
+- load cached direct dispatch
+- re-check shape flags / arity
+- read `metaMethodDescriptor`
+- read `readonlyInline*FastCallback`
+
+That meant the cached direct-dispatch metadata was still incomplete for the hottest readonly-inline steady-state hit.
+The profitable cut was to cache the readonly-inline fast callback pointers directly inside
+`SZrObjectKnownNativeDirectDispatch` when the binding cache is refreshed, then let the object-side hit path call those
+cached pointers directly.
+
+### Regression Coverage
+
+`tests/core/test_object_call_known_native_fast_path.c` now strengthens three existing contracts:
+
+- `test_native_binding_cached_binding_primes_direct_dispatch_cache_and_clears_on_rebind`
+- `test_get_by_index_known_native_readonly_inline_fast_path_reuses_cached_direct_dispatch_without_callable_reresolve`
+- `test_set_by_index_known_native_readonly_inline_fast_path_reuses_cached_direct_dispatch_without_callable_reresolve`
+
+The tests now assert two things explicitly:
+
+- readonly-inline direct-dispatch cache stores the fast callback pointers when the binding is cached
+- after the cache is primed, clearing `metaMethodDescriptor` and known-native callable/function cache entries still
+  keeps the readonly-inline hit path on the fast callback instead of falling back through the generic wrapper lane
+
+That locks the intended steady-state contract directly.
+
+### Runtime Change
+
+The readonly-inline callback metadata is now cached as part of the shared direct-dispatch record:
+
+- `zr_vm_core/include/zr_vm_core/object_known_native_dispatch.h`
+  - adds typed cached function-pointer fields:
+    - `readonlyInlineGetFastCallback`
+    - `readonlyInlineSetNoResultFastCallback`
+- `zr_vm_library/src/zr_vm_library/native_binding/native_binding_internal.h`
+  - populates those cached fields when native binding direct-dispatch cache is refreshed
+- `zr_vm_core/src/zr_vm_core/object/object_call.c`
+  - mirrors the same cached-field population on the core-side direct-dispatch refresh helper
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+  - changes cached readonly-inline get/set hit paths to call the cached fast callback fields directly
+- `zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c`
+  - keeps the narrower direct-binding readonly-inline helpers aligned with the same cached metadata contract
+
+This slice does not add benchmark-only branching. It only finishes the cached metadata needed by the already-proven
+readonly-inline object/index fast path.
+
+### Evidence
+
+Against the accepted slice-58 focused profile archive:
+
+- `map_object_access`: `27,393,536 -> 27,353,141 Ir` (`-0.15%`)
+- `zr_container_map_get_item_readonly_inline_fast`: stayed at `996,093 Ir`
+- `ZrCore_Object_GetByIndexUnchecked`: `795,055 -> 770,468 Ir` (`-3.09%`)
+- `zr_container_map_set_item_readonly_inline_no_result_fast`: stayed at `544,218 Ir`
+- `ZrCore_Object_SetByIndexUnchecked`: `405,943 -> 393,644 Ir` (`-3.03%`)
+
+Interpretation:
+
+- the `Map` container callback bodies themselves stayed flat
+- the object-side get/set shell around those callbacks shrank measurably
+- this is the intended cut: finish the cached readonly-inline metadata so the wrapper work drops without touching the
+  already-hot container core
+
+Fresh map-only core reruns were noisy on this host after rebuilds:
+
+- accepted slice-58 baseline: mean `96.860 ms`, median `96.605 ms`
+- first slice-59 rerun: mean `98.216 ms`, median `97.695 ms`
+- repeat slice-59 rerun: mean `112.771 ms`, median `112.320 ms`
+
+Interpretation:
+
+- the deterministic callgrind evidence is positive and aligned with the intended wrapper cut
+- the wall-clock signal is currently too noisy to claim a timing win or a stable regression from this slice alone
+- acceptance for this slice therefore rests on the deterministic profile drop plus the strengthened cache-contract tests,
+  not on the unstable wall samples
+
+### Validation
+
+Accepted slice-59 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `51 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `41 Tests 0 Failures`
+- WSL clang (`build-wsl-clang`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `51 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `41 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build-msvc-cli-smoke`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+- Fresh focused benchmarks (`build/benchmark-gcc-release`):
+  - profile tier rerun passed on `map_object_access`
+  - core tier rerun passed on `map_object_access`
+  - archived evidence directories:
+    - `build/benchmark-gcc-release/tests_generated/performance_profile_index_cached_readonly_inline_callback_cache_after_20260418_map_only`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_index_cached_readonly_inline_callback_cache_after_20260418_map_only`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_index_cached_readonly_inline_callback_cache_after_20260418_map_only_repeat`
+
+## Slice 56: Readonly-Inline Meta-Method Fast Callback
+
+### Context
+
+After slice 55, the `map_object_access` object/container line had already been narrowed into cached index-contract
+direct dispatch, but the runtime still entered the generic direct-binding callback context even for the exact `Map`
+readonly-inline shape.
+
+Fresh hotspot evidence before this slice showed:
+
+- `map_object_access`: `28,867,249 Ir`
+- `zr_container_map_get_item = 1,127,229 Ir`
+- `zr_container_map_set_item = 669,379 Ir`
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineOneArgumentStack = 704,856 Ir`
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineTwoArgumentsNoResultStack = 414,100 Ir`
+
+### Root Cause
+
+The `Map` meta-method descriptors already proved a narrower lane than the generic readonly-inline bound-callback shell:
+
+- fixed receiver usage
+- readonly inline value context
+- no self rebind
+- no-result set variant
+
+But the runtime still built the generic bound callback context and reached the callback through the older
+meta-method/bound dispatcher path. For `Map` steady-state access, that was redundant. The profitable cut was to let the
+descriptor expose direct readonly-inline fast callbacks and have the index-contract direct-binding lane call them first.
+
+### Regression Coverage
+
+This slice extends the same known-native fast-path suite in:
+
+- `tests/core/test_object_call_known_native_fast_path.c`
+  - `test_get_by_index_known_native_readonly_inline_fast_path_prefers_meta_method_fast_callback`
+  - `test_set_by_index_known_native_readonly_inline_fast_path_prefers_meta_method_fast_callback`
+
+The tests lock the intended contract directly: once the readonly-inline direct-dispatch shape is proven, the `Map`
+meta-method fast callbacks must win over the generic fallback callback lane.
+
+### Runtime Change
+
+The readonly-inline fast-callback contract is now wired across the native binding and object-call stack:
+
+- `zr_vm_library/include/zr_vm_library/native_binding.h`
+  - add `readonlyInlineGetFastCallback`
+  - add `readonlyInlineSetNoResultFastCallback`
+- `zr_vm_core/src/zr_vm_core/object/object_call.c`
+  - mirror the new fast-callback fields into the runtime-side meta-method descriptor layout
+- `zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c`
+  - call the meta-method fast callbacks before falling back to the generic bound callback context
+- `zr_vm_lib_container/src/zr_vm_lib_container/module.c`
+  - split the old `Map` get/set callbacks into shared cores plus:
+    - `zr_container_map_get_item_readonly_inline_fast(...)`
+    - `zr_container_map_set_item_readonly_inline_no_result_fast(...)`
+  - wire both into `kMapMetaMethods[]`
+
+This slice does not add benchmark-only branches. It only lets the already-proven `Map` meta-method shape run through a
+narrower shared runtime lane.
+
+### Evidence
+
+Against the older direct-binding map-only profile archive:
+
+- `map_object_access`: `28,867,249 -> 28,163,286 Ir` (`-2.44%`)
+- `zr_container_map_get_item -> zr_container_map_get_item_readonly_inline_fast`: `1,127,229 -> 996,093 Ir`
+- `zr_container_map_set_item -> zr_container_map_set_item_readonly_inline_no_result_fast`: `669,379 -> 544,218 Ir`
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineOneArgumentStack`: `704,856 -> 573,720 Ir`
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineTwoArgumentsNoResultStack`: `414,100 -> 307,500 Ir`
+- `ZrLib_TempValueRoot_Begin`: `542,836 -> 486,552 Ir`
+- `ZrLib_TempValueRoot_End`: `238,108 -> 213,400 Ir`
+
+Fresh map-only core wall on the same slice was noisy:
+
+- mean wall: `119.706 ms -> 124.978 ms`
+- median wall: `105.461 ms -> 114.908 ms`
+
+Interpretation:
+
+- this slice is acceptance-worthy on deterministic callgrind evidence, not on wall mean
+- the structural win is real: the `Map` get/set bodies and readonly-inline wrappers both shrink materially
+- the next profitable follow-up should stay on the same line and delete the remaining wrapper shell around those fast
+  callbacks instead of moving back up into generic object-call machinery
+
+### Validation
+
+Accepted slice-56 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `49 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `41 Tests 0 Failures`
+- WSL clang (`build-wsl-clang`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `49 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `41 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build-msvc-cli-smoke`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+- Fresh focused benchmarks (`build/benchmark-gcc-release`):
+  - profile tier rerun passed on `map_object_access`
+  - core tier rerun passed on `map_object_access`
+  - archived evidence directories:
+    - `build/benchmark-gcc-release/tests_generated/performance_profile_index_meta_fast_callback_after_20260418_map_only`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_index_meta_fast_callback_after_20260418_map_only`
+
+## Slice 54: Index-Contract Direct-Binding Narrow Lanes
+
+### Context
+
+After slice 53, the hottest remaining `map_object_access` object/native line was still the cached index-contract
+dispatch shell, not the container body itself.
+
+Fresh pre-slice hotspot evidence on `map_object_access` showed:
+
+- callgrind total Ir: `29,454,754`
+- `ZrCore_Object_CallDirectBindingFastOneArgument = 811,404 Ir`
+- `ZrCore_Object_CallDirectBindingFastTwoArguments = 565,800 Ir`
+- combined generic direct-binding wrapper cost: `1,377,204 Ir`
+- `zr_container_map_set_item = 800,599 Ir`
+
+That matched the active hypothesis from the previous note: the cache already proved a narrow
+`NO_SELF_REBIND + INLINE_VALUE_CONTEXT + READONLY_INLINE...` shape, but `object.c` still paid the generic
+`CallDirectBindingFast*` wrapper tax on every hot `Map` get/set.
+
+### Root Cause
+
+`ZrCore_Object_GetByIndexUnchecked(...)` and `ZrCore_Object_SetByIndexUnchecked(...)` resolved and cached the direct
+dispatch metadata correctly, but then still entered the shared generic direct-binding wrappers:
+
+- `ZrCore_Object_CallDirectBindingFastOneArgument(...)`
+- `ZrCore_Object_CallDirectBindingFastTwoArgumentsNoResult(...)`
+
+Those wrappers must keep all fallback logic alive:
+
+- flag decoding
+- debug-hook gating
+- generic readonly-inline reuse checks
+- generic no-result / result shell selection
+
+For `Map` steady-state access, that work is redundant. The cached index contract already proves the exact shape that is
+executing, and the interpreter hot path is overwhelmingly stack-resident. The profitable cut was therefore to add a
+much narrower callsite lane instead of asking the generic wrapper to rediscover the same facts every time.
+
+### Regression Coverage
+
+This slice kept the existing set-side readonly-inline contracts and added a matching get-side contract:
+
+- `tests/core/test_object_call_known_native_fast_path.c`
+  - `test_get_by_index_known_native_readonly_inline_fast_path_reuses_input_pointers`
+  - `test_set_by_index_known_native_readonly_inline_fast_path_can_ignore_result`
+  - `test_set_by_index_known_native_readonly_inline_fast_path_can_ignore_result_with_non_contiguous_stack_inputs`
+  - `test_get_by_index_known_native_stack_root_fast_path_caches_direct_dispatch`
+  - `test_set_by_index_known_native_stack_root_fast_path_caches_direct_dispatch`
+
+The new get-side test locks the new intended contract directly: when the cached index dispatch is readonly-inline and
+the operands already live on the VM stack, the runtime must reuse those exact input pointers instead of paying through
+the generic direct-binding shell first.
+
+### Runtime Change
+
+This slice adds a dedicated module,
+`zr_vm_core/src/zr_vm_core/object/object_index_contract_direct_binding.c`, instead of stacking more logic into the
+already oversized `object.c` / `object_call.c` pair.
+
+That module now provides two narrow lanes:
+
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineOneArgumentStack(...)`
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineTwoArgumentsNoResultStack(...)`
+
+`zr_vm_core/src/zr_vm_core/object/object.c` now probes those lanes first after cached known-native index-contract
+resolution and before falling back to the generic direct-binding wrappers.
+
+The new lanes only activate when the already-cached dispatch proves the exact hot steady-state shape:
+
+- `usesReceiver`
+- fixed raw arity (`2` for get, `3` for set)
+- readonly inline value-context flags already present
+- stack-resident inputs
+- debug hook inactive
+
+If any of those facts stop being true, the old generic wrapper chain still handles the call exactly as before.
+
+### Evidence
+
+Against the fresh pre-slice profile hotspot:
+
+- `map_object_access`: `29,454,754 -> 28,867,249 Ir` (`-1.99%`)
+- combined generic direct-binding wrapper pair:
+  - `811,404 + 565,800 -> 704,856 + 414,100 Ir`
+  - `1,377,204 -> 1,118,956 Ir` (`-18.75%`)
+- `zr_container_map_set_item`: `800,599 -> 669,379 Ir` (`-16.39%`)
+- `value_copy` helper count: `74,716 -> 70,616` (`-5.49%`)
+- `value_reset_null` helper count: `8,704 -> 4,604` (`-47.10%`)
+
+Fresh slice-54 hotspot picture on `map_object_access`:
+
+- `zr_container_map_get_item = 1,127,229 Ir`
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineOneArgumentStack = 704,856 Ir`
+- `zr_container_map_set_item = 669,379 Ir`
+- `ZrCore_Object_GetByIndexUnchecked = 573,748 Ir`
+- `ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineTwoArgumentsNoResultStack = 414,100 Ir`
+
+Compared with the pre-slice annotate snapshot, the old generic wrapper symbols dropped out of the visible top set
+entirely and were replaced by the narrower index-contract lanes.
+
+Fresh map-only core wall rerun (`1` warmup, `5` measured iterations, `zr_interp` only):
+
+- previous accepted local reference: `108.177 ms`
+- slice-54 rerun: `106.297 ms`
+- mean delta: `-1.74%`
+- median delta: `107.557 ms -> 103.790 ms` (`-3.50%`)
+
+An immediate post-change four-case focused spot-check (`dispatch_loops,map_object_access,call_chain_polymorphic,
+mixed_service_loop`, `1` warmup, `3` measured iterations) also landed at:
+
+- `dispatch_loops = 256.119 ms`
+- `map_object_access = 94.807 ms`
+- `call_chain_polymorphic = 88.048 ms`
+- `mixed_service_loop = 123.959 ms`
+
+Later chained multi-case reruns on the same workstation were materially noisier, so slice acceptance for this cut is
+anchored on the stable map-only/core and map-only/profile evidence above rather than those aggregate wall samples.
+
+Interpretation:
+
+- this slice is acceptance-worthy because it deletes repeated generic wrapper work from the exact hot cached
+  index-contract line the benchmark is actually spending time on
+- the map-only wall gain is modest but repeatable, while the instruction-count reduction is clean and directly aligned
+  with the intended callsite cut
+- the next profitable work should now move one level deeper into the new remaining tops:
+  - `zr_container_map_get_item`
+  - `zr_container_map_set_item`
+  - `ZrLib_TempValueRoot_Begin`
+
+### Validation
+
+Accepted slice-54 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `47 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `40 Tests 0 Failures`
+- WSL clang (`build-wsl-clang`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `47 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `40 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build-msvc-cli-smoke`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+- Fresh focused benchmarks (`build/benchmark-gcc-release`):
+  - core tier map-only rerun passed (`1` warmup, `5` measured)
+  - profile tier map-only rerun passed with callgrind counting enabled
+  - four-case focused spot-check rerun passed, but later chained repeats were archived only as noise records
+  - archived evidence directories:
+    - `build/benchmark-gcc-release/tests_generated/performance_core_index_direct_binding_after_20260418_map_only`
+    - `build/benchmark-gcc-release/tests_generated/performance_profile_index_direct_binding_after_20260418_map_only`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_index_direct_binding_after_20260418_four_case_repeat`
+
+## Slice 54: Four-Slot Exact-Key Map Lookup Cache
+
+### Context
+
+After rejecting the content-equal dynamic-string cache branch, the focused `map_object_access` profile had settled at:
+
+- `map_object_access = 28,663,995 Ir`
+- `zr_container_map_find_index.part.0 = 1,794,018 Ir`
+- `zr_container_map_get_item_readonly_inline_fast = 909,633 Ir`
+- `ZrCore_Object_GetByIndexUncheckedStackOperands = 647,530 Ir`
+
+That left the exact-key map lookup line as the largest remaining container-local hotspot on this benchmark. The benchmark
+itself cycles only four labels through `labelFor(slot) + "_slot"`, so the single-slot exact-key cache was still
+thrashing even after the earlier readonly-inline and direct-dispatch cuts.
+
+### Root Cause
+
+The regressed content-equal cache attempt already proved that broadening the cache by string equality was the wrong
+direction for steady-state throughput.
+
+The profitable remaining cut was narrower:
+
+- keep the cache exact-key only
+- keep it bound to the current `entries` array
+- expand it from one slot to a very small hot set that can survive the benchmark's four-key rotation
+- validate each cache hit against the current array cell so stale entry reuse never leaks past structural mutation
+
+### Regression Coverage
+
+`tests/container/test_container_runtime.c` now adds and keeps:
+
+- `test_container_map_runtime_repeated_index_access_primes_entries_and_pair_field_caches`
+- `test_container_map_runtime_four_key_concat_cycle_preserves_values`
+
+The first test locks the existing map-entry/pair-field cache priming contract. The second reproduces the hot benchmark
+shape directly: repeated `labelFor()` string concat over a four-key cycle must keep returning the correct accumulated
+values while the map cache rotates through multiple exact key objects.
+
+### Runtime Change
+
+`zr_vm_lib_container/src/zr_vm_lib_container/module.c` now changes the hot map lookup cache from a single exact-key slot
+to a four-slot exact-key cache:
+
+- `ZrContainerHotMapLookupCache` stores `slots[4]` plus the active `entries` array
+- `zr_container_update_hot_map_lookup_cache(...)` promotes exact-key hits to the front and inserts new hits in a small
+  LRU-style order
+- `zr_container_try_hot_map_lookup_cache(...)` only accepts a hit when:
+  - the cached `entries` pointer still matches
+  - the cached index is still in range
+  - the current array cell still points at the same cached entry object
+- string-key lookup still falls back to the existing exact-key scan and then the content-equality comparison path on
+  cache miss
+
+This slice deliberately does **not** reintroduce any content-equal sticky cache reuse.
+
+### Evidence
+
+Against the immediate post-revert focused profile snapshot:
+
+- `dispatch_loops`: `437,553,933 -> 437,531,705 Ir` (`-0.01%`, flat)
+- `map_object_access`: `28,663,995 -> 28,321,889 Ir` (`-1.19%`)
+- `zr_container_map_find_index.part.0`: `1,794,018 -> 1,342,562 Ir` (`-25.17%`)
+- `zr_container_map_get_item_readonly_inline_fast`: `909,633 -> 909,633 Ir` (flat)
+- `ZrCore_Object_GetByIndexUncheckedStackOperands`: `647,530 -> 647,530 Ir` (flat)
+
+Fresh slice-54 hotspot picture on `map_object_access`:
+
+- `zr_container_map_find_index.part.0 = 1,342,562 Ir`
+- `zr_container_map_get_item_readonly_inline_fast = 909,633 Ir`
+- `ZrCore_Object_GetByIndexUncheckedStackOperands = 647,530 Ir`
+
+Fresh focused core wall rerun on this slice:
+
+- `dispatch_loops = 207.399 ms`
+- `map_object_access = 89.406 ms`
+
+Interpretation:
+
+- this slice is acceptance-worthy because it materially shrinks the hottest remaining container-local lookup function
+  without moving cost into `dispatch_loops`
+- the whole-case `map_object_access` callgrind total also moves down, so this is not just a local reshuffle
+- the remaining hotter shared-low-level line on `map_object_access` is now
+  `ZrCore_Object_GetByIndexUncheckedStackOperands`, not the exact-key cache itself
+- the next profitable cut should pivot to the shared object index contract lane:
+  - `ZrCore_Object_GetByIndexUncheckedStackOperands`
+  - `object_get_by_index_unchecked_core`
+  - the surrounding known-native/index direct-dispatch path
+
+### Validation
+
+Accepted slice-54 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - `zr_vm_container_runtime_test`: `37 Tests 0 Failures`
+  - `zr_vm_execution_add_stack_relocation_test`: `14 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `51 Tests 0 Failures`
+- WSL clang (`build-wsl-clang`):
+  - `zr_vm_container_runtime_test`: `37 Tests 0 Failures`
+  - `zr_vm_execution_add_stack_relocation_test`: `14 Tests 0 Failures`
+  - `zr_vm_object_call_known_native_fast_path_test`: `51 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build-msvc-cli-smoke`):
+  - imported Visual Studio x64 command-line environment
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+- Fresh focused benchmarks (`build/benchmark-gcc-release`):
+  - profile tier rerun passed on `dispatch_loops,map_object_access`
+  - core tier rerun passed on `dispatch_loops,map_object_access`
+  - archived evidence directories:
+    - `build/benchmark-gcc-release/tests_generated/performance_profile_t66_multislot_exact_key_after_20260418`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_t66_multislot_exact_key_after_20260418`
+
+## Slice 53: Exact-String Concat Stack-Restore Removal
+
+### Context
+
+After slice 52, `map_object_access` still kept a visible concat cost on:
+
+- `var key = label + "_slot";`
+
+The immediate pre-simplify focused profile sample on the same narrowed benchmark subset had:
+
+- `dispatch_loops`: `459,812,252 Ir`
+- `map_object_access`: `43,131,769 Ir`
+
+and the `map_object_access` annotate snapshot still showed the exact-string concat shell itself:
+
+- `execution_try_concat_exact_strings.part.0 = 606,356 Ir`
+- `ZrCore_String_ConcatPair = 323,663 Ir`
+- `ZrCore_Function_StackAnchorInit = 210,315 Ir`
+
+### Root Cause
+
+`execution_try_concat_exact_strings(...)` was still treating ordinary stack-rooted exact string pairs like a generic
+relocation-sensitive path:
+
+- initialize stack anchors for both operands
+- restore both stack slots
+- copy both values into locals
+- refresh forwarded object pointers
+
+That work was dead on the steady-state exact-string lane.
+
+This helper does **not** reserve scratch stack space, and `ZrCore_String_ConcatPair(...)` copies source bytes before it
+enters the allocating string-creation step. So the benchmark's `label + "_slot"` path was still paying two stack-slot
+restores plus the surrounding insurance even though exact concat never needed them.
+
+### Regression Coverage
+
+This slice extended the existing exact-concat relocation suite in:
+
+- `tests/core/test_execution_add_stack_relocation.c`
+
+The active contracts now include:
+
+- `test_try_builtin_add_exact_string_pair_avoids_scratch_stack_growth`
+- `test_concat_values_to_destination_exact_string_pair_avoids_scratch_stack_growth`
+- `test_execution_add_exact_string_pair_writes_directly_without_value_copy_helper`
+- `test_try_builtin_add_exact_string_pair_stack_inputs_avoid_stack_get_value_helper`
+- `test_try_builtin_add_exact_string_pair_pinned_stack_inputs_avoid_stack_get_value_helper`
+
+The new tests lock the intended steady-state contract directly: exact string pairs must stay off the scratch stack and
+must not bounce back through `stack_get_value` restore work just because the operands currently live in normal stack
+slots.
+
+### Runtime Change
+
+`zr_vm_core/src/zr_vm_core/execution/execution_numeric.c` now simplifies
+`execution_try_concat_exact_strings(...)` to the actual fast-path behavior:
+
+- validate exact string operands
+- call `ZrCore_String_ConcatPair(...)` directly on the incoming operands
+- materialize the result without stack-anchor / restore / stable-copy insurance
+
+The generic mixed-type concat path in `concat_values_to_destination(...)` stays unchanged. This slice only deletes dead
+work from the exact-string lane.
+
+### Evidence
+
+Against the accepted slice-52 focused baseline:
+
+- `dispatch_loops`: `459,798,847 -> 459,789,514 Ir` (`-0.00%`, flat)
+- `map_object_access`: `43,979,996 -> 42,253,979 Ir` (`-3.92%`)
+
+Against the immediate pre-simplify focused profile sample in this same slice:
+
+- `map_object_access`: `43,131,769 -> 42,253,979 Ir` (`-2.04%`)
+- `stack_get_value` helper count on `map_object_access`: `24,618 -> 16,424` (`-33.29%`)
+
+Fresh slice-53 hotspot picture on `map_object_access`:
+
+- `ZrCore_Function_CallPreparedSingleResultFastRestoreCallback = 1,647,664 Ir`
+- `zr_container_map_find_index.part.0 = 1,745,742 Ir`
+- `ZrCore_Object_GetByIndexUnchecked = 614,711 Ir` (top helper)
+- `ZrCore_String_ConcatPair = 323,663 Ir`
+
+Compared to the pre-simplify annotate snapshot, `execution_try_concat_exact_strings.part.0` dropped out of the visible
+top set entirely after the stack-restore shell was removed.
+
+Fresh focused core wall reruns (`3` measured iterations, `dispatch_loops,map_object_access` only):
+
+- run 1:
+  - `dispatch_loops = 228.064 ms`
+  - `map_object_access = 98.907 ms`
+- run 2:
+  - `dispatch_loops = 212.793 ms`
+  - `map_object_access = 96.896 ms`
+- run 3:
+  - `dispatch_loops = 215.601 ms`
+  - `map_object_access = 98.528 ms`
+
+Compared with the accepted slice-52 wall:
+
+- `map_object_access`: `100.811 ms -> 96.896~98.907 ms` (`-1.89%` to `-3.88%`)
+- `dispatch_loops`: profile stayed flat, while core wall returned near the slice-52 range after the first noisy rerun
+
+Interpretation:
+
+- this slice is acceptance-worthy because it deletes real exact-string steady-state work from a benchmarked hot line
+- the gain lands directly on `map_object_access`, with repeatable wall improvement and a clear helper-count reduction
+- `dispatch_loops` does not show a profile regression; its wall remains in the same general band with one noisy outlier
+- the next profitable `map_object_access` work should go back to the hotter object/native line:
+  - `ZrCore_Function_CallPreparedSingleResultFastRestoreCallback`
+  - `object_call_known_native_fast_one_argument.part.0`
+  - `object_direct_binding_stack_root_callback_fast`
+
+### Validation
+
+Accepted slice-53 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - `zr_vm_execution_add_stack_relocation_test`: `10 Tests 0 Failures`
+  - `zr_vm_instructions_test`: `90 Tests 0 Failures`
+- WSL clang (`build-wsl-clang`):
+  - `zr_vm_execution_add_stack_relocation_test`: `10 Tests 0 Failures`
+  - `zr_vm_instructions_test`: `90 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build\\codex-msvc-cli-debug`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+- Fresh focused benchmarks (`build/benchmark-gcc-release`):
+  - profile tier rerun passed on `dispatch_loops,map_object_access`
+  - core tier rerun passed repeatedly on `dispatch_loops,map_object_access`
+  - archived evidence directories:
+    - `build/benchmark-gcc-release/tests_generated/performance_profile_exact_concat_stack_restore_after_20260417`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_exact_concat_stack_restore_after_20260417`
+    - `build/benchmark-gcc-release/tests_generated/performance_core_exact_concat_stack_restore_after_repeat_20260417`
+
+## Slice 52: Known-Native Single-Result Restore Merge
+
+### Context
+
+On the current W2 line, the focused accepted baseline before this slice was:
+
+- `dispatch_loops`: `467,802,558 Ir`
+- `map_object_access`: `44,187,075 Ir`
+
+The remaining `map_object_access` object/native stack was still concentrated in:
+
+- `object_call_known_native_fast_one_argument.part.0 = 1,360,536 Ir`
+- `native_binding_dispatch_cached_stack_root_one_argument = 1,294,968 Ir`
+- `object_complete_known_native_fast_call = 1,205,008 Ir`
+- `ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFast = 1,008,272 Ir`
+
+### Root Cause
+
+The one/two-argument known-native object-call fast path had already eliminated the generic `PreCall` hop, but the
+single-result return still paid through two layers:
+
+- `object_complete_known_native_fast_call(...)`
+- `ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFast(...)`
+
+That meant the prepared native helper normalized the return back into scratch `functionBase`, then `object_call.c`
+restored outer-frame anchors and copied the same value again into the final destination.
+
+The previously tried direct `returnDestination` rewrite remains rejected on this line. The remaining profitable cut was
+to delete object-call-local post-call work instead of retargeting the prepared native helper.
+
+### Regression Coverage
+
+This slice reused the existing known-native object-call regression suite rather than adding another dedicated test file.
+The active contracts stayed locked by:
+
+- `tests/core/test_object_call_known_native_fast_path.c`
+  - `test_object_call_known_native_fast_path_restores_outer_frame_bounds_after_growth`
+  - `test_object_call_known_native_fast_path_preserves_receiver_when_result_aliases_receiver_slot`
+  - `test_object_call_known_native_fast_path_reuses_single_nested_call_info_node`
+  - `test_object_call_known_native_fast_path_accepts_non_stack_gc_inputs`
+  - `test_set_by_index_known_native_fast_path_accepts_two_stack_rooted_arguments`
+
+These already cover stack growth, nested call-info reuse, result alias safety, and index-contract call layout on the
+same narrowed object/native lane.
+
+### Runtime Change
+
+`zr_vm_core/include/zr_vm_core/function.h`, `zr_vm_core/src/zr_vm_core/function.c`, and
+`zr_vm_core/src/zr_vm_core/object/object_call.c` now add and use:
+
+- `ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFastRestore(...)`
+
+That helper keeps the existing stack-local native call-info fast path but absorbs the hot object-call tail work:
+
+- saved stack-top restore
+- saved call-info top restore
+- anchored result restore
+- final single-result copy into the caller-visible destination
+
+The debug-hook path still stays on the older generic resolved-native helper, so the accepted steady-state cut only
+touches the release/profile fast lane.
+
+### Evidence
+
+Against the fresh slice-51 focused baseline:
+
+- `dispatch_loops`: `467,802,558 -> 459,798,847 Ir` (`-1.71%`)
+- `map_object_access`: `44,187,075 -> 43,979,996 Ir` (`-0.47%`)
+
+Fresh slice-52 hotspot picture on `map_object_access`:
+
+- `ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFastRestore = 1,524,704 Ir`
+- `object_call_known_native_fast_one_argument.part.0 = 1,360,536 Ir`
+- `native_binding_dispatch_cached_stack_root_one_argument = 1,270,380 Ir`
+- `object_call_known_native_fast_two_arguments.part.0 = 799,500 Ir`
+- `object_complete_known_native_fast_call = 737,760 Ir`
+- `native_binding_dispatch_stack_root_callback_lane = 565,616 Ir`
+- `ZrLib_TempValueRoot_Begin = 542,836 Ir`
+
+Compared to slice 51, the old object-call-local completion shell dropped materially:
+
+- `object_complete_known_native_fast_call`: `1,205,008 -> 737,760 Ir` (`-38.77%`)
+
+Fresh focused core wall on this slice:
+
+- `dispatch_loops = 210.994 ms`
+- `map_object_access = 100.811 ms`
+
+Interpretation:
+
+- this slice is acceptance-worthy because it deletes a real object-call-local layer instead of merely moving the same
+  cost around
+- the gain is modest on `map_object_access`, but deterministic and aligned with the still-hot known-native object-call
+  line
+- `dispatch_loops` also benefits because the same shared result/copy machinery sits on broader resolved-call traffic
+- the next profitable `map_object_access` work should remain on:
+  - `object_call_known_native_fast_one_argument.part.0`
+  - `native_binding_dispatch_cached_stack_root_one_argument`
+  - `ZrLib_TempValueRoot_Begin`
+
+### Validation
+
+Accepted slice-52 state:
+
+- WSL gcc (`build-wsl-gcc`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `26 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `37 Tests 0 Failures`
+  - `zr_vm_module_system_test`: `87 Tests 0 Failures`
+  - `zr_vm_execution_add_stack_relocation_test`: `8 Tests 0 Failures`
+  - `zr_vm_execution_member_access_fast_paths_test`: `46 Tests 0 Failures`
+  - `zr_vm_instructions_test`: `90 Tests 0 Failures`
+- WSL clang (`build-wsl-clang`):
+  - `zr_vm_object_call_known_native_fast_path_test`: `26 Tests 0 Failures`
+  - `zr_vm_container_runtime_test`: `37 Tests 0 Failures`
+  - `zr_vm_module_system_test`: `87 Tests 0 Failures`
+  - `zr_vm_execution_add_stack_relocation_test`: `8 Tests 0 Failures`
+  - `zr_vm_execution_member_access_fast_paths_test`: `46 Tests 0 Failures`
+  - `zr_vm_instructions_test`: `90 Tests 0 Failures`
+- Windows MSVC CLI smoke (`build\\codex-msvc-cli-debug`):
+  - rebuilt target `zr_vm_cli_executable`
+  - ran `tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output remained `hello world`
+- Fresh focused benchmarks (`build/benchmark-gcc-release`):
+  - profile tier rerun passed on `dispatch_loops,map_object_access`
+  - core tier rerun passed on `dispatch_loops,map_object_access`

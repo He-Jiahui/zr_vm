@@ -897,6 +897,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED): fprintf(file, "SUPER_DYN_TAIL_CALL_CACHED"); break;
             case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED): fprintf(file, "SUPER_META_TAIL_CALL_CACHED"); break;
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL): fprintf(file, "KNOWN_VM_CALL"); break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL): fprintf(file, "KNOWN_VM_MEMBER_CALL"); break;
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL): fprintf(file, "KNOWN_VM_TAIL_CALL"); break;
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL): fprintf(file, "KNOWN_NATIVE_CALL"); break;
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL): fprintf(file, "KNOWN_NATIVE_TAIL_CALL"); break;
@@ -1064,6 +1065,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
             case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
@@ -1685,6 +1687,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
                 fprintf(file, "KNOWN_VM_CALL");
                 break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+                fprintf(file, "KNOWN_VM_MEMBER_CALL");
+                break;
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
                 fprintf(file, "KNOWN_VM_TAIL_CALL");
                 break;
@@ -1973,6 +1978,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
             case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):

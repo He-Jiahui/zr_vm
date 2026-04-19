@@ -44,6 +44,9 @@ ZR_FORCE_INLINE void ZrCore_RawObject_Construct(SZrRawObject *super, EZrRawObjec
     super->garbageCollectMark.anchorScopeDepth = ZR_GC_SCOPE_DEPTH_NONE;
     super->garbageCollectMark.pinFlags = ZR_GARBAGE_COLLECT_PIN_KIND_NONE;
     super->garbageCollectMark.promotionReason = ZR_GARBAGE_COLLECT_PROMOTION_REASON_NONE;
+    super->garbageCollectMark.ignoredRegistryIndex = ZR_MAX_SIZE;
+    super->garbageCollectMark.rememberedRegistryIndex = ZR_MAX_SIZE;
+    super->garbageCollectMark.regionDescriptorIndex = ZR_MAX_SIZE;
     super->garbageCollectMark.forwardingAddress = ZR_NULL;
     super->garbageCollectMark.forwardingRefLocation = ZR_NULL;
     super->gcList = ZR_NULL;

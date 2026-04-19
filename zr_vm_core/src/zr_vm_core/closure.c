@@ -96,7 +96,16 @@ SZrClosureNative *ZrCore_ClosureNative_New(struct SZrState *state, TZrSize closu
                                  sizeof(SZrClosureNative) + extraCaptureCount * sizeof(SZrTypeValue *) + extraOwnerBytes,
                                  ZR_TRUE);
     SZrClosureNative *closure = ZR_CAST_NATIVE_CLOSURE(state, object);
+    closure->nativeFunction = ZR_NULL;
     closure->aotShimFunction = ZR_NULL;
+    closure->nativeBindingLookupIndex = ZR_MAX_SIZE;
+    closure->nativeBindingDescriptor = ZR_NULL;
+    closure->nativeBindingModuleDescriptor = ZR_NULL;
+    closure->nativeBindingTypeDescriptor = ZR_NULL;
+    closure->nativeBindingOwnerPrototype = ZR_NULL;
+    closure->nativeBindingKind = 0u;
+    closure->nativeBindingUsesReceiver = ZR_FALSE;
+    ZrCore_Memory_RawSet(&closure->nativeBindingDirectDispatch, 0, sizeof(closure->nativeBindingDirectDispatch));
     closure->closureValueCount = closureValueCount;
     if (closureValueCount > 0) {
         ZrCore_Memory_RawSet(closure->closureValuesExtend, 0, sizeof(SZrClosureValue *) * closureValueCount);

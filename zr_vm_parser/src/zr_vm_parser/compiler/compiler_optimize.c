@@ -131,7 +131,25 @@ static void optimizer_info_init(SZrOptimizerInstructionInfo *info) {
     info->operand1Index1IsSlot = ZR_TRUE;
 }
 
-static void optimizer_classify_instruction(const TZrInstruction *instruction, SZrOptimizerInstructionInfo *info) {
+static TZrUInt16 optimizer_known_vm_member_call_argument_count(const SZrFunction *function,
+                                                               const TZrInstruction *instruction) {
+    TZrUInt32 cacheIndex;
+
+    if (function == ZR_NULL || instruction == ZR_NULL || function->callSiteCaches == ZR_NULL) {
+        return 0;
+    }
+
+    cacheIndex = (TZrUInt32)instruction->instruction.operand.operand1[0];
+    if (cacheIndex >= function->callSiteCacheLength) {
+        return 0;
+    }
+
+    return (TZrUInt16)function->callSiteCaches[cacheIndex].argumentCount;
+}
+
+static void optimizer_classify_instruction(const SZrFunction *function,
+                                           const TZrInstruction *instruction,
+                                           SZrOptimizerInstructionInfo *info) {
     EZrInstructionCode opcode;
 
     optimizer_info_init(info);
@@ -414,6 +432,14 @@ static void optimizer_classify_instruction(const TZrInstruction *instruction, SZ
             info->hasRangeRead = ZR_TRUE;
             info->rangeReadStart = instruction->instruction.operand.operand1[0];
             info->rangeReadCount = (TZrUInt16)(instruction->instruction.operand.operand1[1] + 1);
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            info->allowSlotReuse = ZR_FALSE;
+            return;
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+            info->operand1Index1IsSlot = ZR_FALSE;
+            info->hasRangeRead = ZR_TRUE;
+            info->rangeReadStart = instruction->instruction.operandExtra;
+            info->rangeReadCount = (TZrUInt16)(optimizer_known_vm_member_call_argument_count(function, instruction) + 1u);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             info->allowSlotReuse = ZR_FALSE;
             return;
@@ -1013,7 +1039,7 @@ static TZrBool optimizer_try_forward_adjacent_get_stack_reads(TZrInstruction *in
 
         keep[writerIndex] = 0;
         changed = ZR_TRUE;
-        optimizer_classify_instruction(&instructions[instructionIndex], info);
+        optimizer_classify_instruction(cs != ZR_NULL ? cs->currentFunction : ZR_NULL, &instructions[instructionIndex], info);
         if (info->readCount == 0 || info->hasRangeRead || info->readsAllSlots) {
             break;
         }
@@ -1099,6 +1125,9 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
             return;
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            return;
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
             optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
             return;
@@ -1129,7 +1158,8 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
     }
 }
 
-static TZrUInt32 optimizer_compute_max_stack_slot(const TZrInstruction *instructions,
+static TZrUInt32 optimizer_compute_max_stack_slot(const SZrFunction *function,
+                                                  const TZrInstruction *instructions,
                                                   TZrSize instructionCount,
                                                   TZrSize localFloor,
                                                   TZrSize oldMaxStackSlotCount) {
@@ -1140,7 +1170,7 @@ static TZrUInt32 optimizer_compute_max_stack_slot(const TZrInstruction *instruct
         SZrOptimizerInstructionInfo info;
         TZrSize readIndex;
 
-        optimizer_classify_instruction(&instructions[instructionIndex], &info);
+        optimizer_classify_instruction(function, &instructions[instructionIndex], &info);
         if (info.readsAllSlots) {
             return (TZrUInt32)oldMaxStackSlotCount;
         }
@@ -1170,7 +1200,9 @@ static TZrUInt32 optimizer_compute_max_stack_slot(const TZrInstruction *instruct
     return maxSlot;
 }
 
-static TZrBool optimizer_can_dense_compact_slots(const TZrInstruction *instructions, TZrSize instructionCount) {
+static TZrBool optimizer_can_dense_compact_slots(const SZrFunction *function,
+                                                 const TZrInstruction *instructions,
+                                                 TZrSize instructionCount) {
     TZrSize instructionIndex;
 
     if (instructions == ZR_NULL) {
@@ -1179,7 +1211,7 @@ static TZrBool optimizer_can_dense_compact_slots(const TZrInstruction *instructi
 
     for (instructionIndex = 0; instructionIndex < instructionCount; instructionIndex++) {
         SZrOptimizerInstructionInfo info;
-        optimizer_classify_instruction(&instructions[instructionIndex], &info);
+        optimizer_classify_instruction(function, &instructions[instructionIndex], &info);
         if (info.hasRangeRead || info.readsAllSlots) {
             return ZR_FALSE;
         }
@@ -1263,7 +1295,7 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
     TZrBool changed = ZR_FALSE;
 
     if (cs == ZR_NULL || instructions == ZR_NULL || slotCount == 0 ||
-        !optimizer_can_dense_compact_slots(instructions, instructionCount)) {
+        !optimizer_can_dense_compact_slots(cs->currentFunction, instructions, instructionCount)) {
         return;
     }
 
@@ -1319,7 +1351,7 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
     optimizer_remap_compiler_metadata_slots(cs, slotMap, slotCount);
     for (instructionIndex = 0; instructionIndex < instructionCount; instructionIndex++) {
         SZrOptimizerInstructionInfo info;
-        optimizer_classify_instruction(&instructions[instructionIndex], &info);
+        optimizer_classify_instruction(cs->currentFunction, &instructions[instructionIndex], &info);
         optimizer_remap_instruction_slots(&instructions[instructionIndex], &info, slotMap, slotCount);
     }
 
@@ -1327,7 +1359,8 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
     free(slotMap);
 }
 
-static void optimizer_build_block_intervals(const TZrInstruction *instructions,
+static void optimizer_build_block_intervals(const SZrFunction *function,
+                                            const TZrInstruction *instructions,
                                             const SZrOptimizerBlock *block,
                                             const TZrUInt8 *liveIn,
                                             const TZrUInt8 *liveOut,
@@ -1377,7 +1410,7 @@ static void optimizer_build_block_intervals(const TZrInstruction *instructions,
         SZrOptimizerInstructionInfo info;
         TZrSize index;
 
-        optimizer_classify_instruction(&instructions[instructionIndex], &info);
+        optimizer_classify_instruction(function, &instructions[instructionIndex], &info);
         if (!info.allowSlotReuse || info.readsAllSlots || info.hasRangeRead) {
             free(firstDef);
             free(lastDef);
@@ -1585,7 +1618,7 @@ ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) {
     for (blockIndex = 0; blockIndex < instructionCount; blockIndex++) {
         SZrOptimizerInstructionInfo info;
 
-        optimizer_classify_instruction(&instructions[blockIndex], &info);
+        optimizer_classify_instruction(cs->currentFunction, &instructions[blockIndex], &info);
         if (info.hasRelativeJump) {
             TZrInt32 target = (TZrInt32)blockIndex + 1 + optimizer_relative_jump_offset(&instructions[blockIndex]);
             if (target >= 0 && (TZrSize)target <= instructionCount) {
@@ -1623,7 +1656,7 @@ ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) {
         blocks[blockIndex].end = nextIndex;
         for (instructionIndex = blocks[blockIndex].start; instructionIndex < blocks[blockIndex].end; instructionIndex++) {
             SZrOptimizerInstructionInfo info;
-            optimizer_classify_instruction(&instructions[instructionIndex], &info);
+            optimizer_classify_instruction(cs->currentFunction, &instructions[instructionIndex], &info);
             optimizer_mark_use_set(useSets + (blockIndex * slotCount),
                                    defSets + (blockIndex * slotCount),
                                    slotCount,
@@ -1633,7 +1666,7 @@ ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) {
             }
         }
 
-        optimizer_classify_instruction(&instructions[blocks[blockIndex].end - 1], &tailInfo);
+        optimizer_classify_instruction(cs->currentFunction, &instructions[blocks[blockIndex].end - 1], &tailInfo);
         if (tailInfo.hasRelativeJump) {
             TZrInt32 target =
                     (TZrInt32)(blocks[blockIndex].end - 1) + 1 +
@@ -1716,13 +1749,13 @@ ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) {
                 continue;
             }
 
-            optimizer_classify_instruction(&instructions[currentInstructionIndex], &info);
+            optimizer_classify_instruction(cs->currentFunction, &instructions[currentInstructionIndex], &info);
             if (optimizer_try_rewrite_dead_result_to_ret(&instructions[currentInstructionIndex],
                                                          live,
                                                          slotCount,
                                                          localSlots)) {
                 changed = ZR_TRUE;
-                optimizer_classify_instruction(&instructions[currentInstructionIndex], &info);
+                optimizer_classify_instruction(cs->currentFunction, &instructions[currentInstructionIndex], &info);
             }
             if (optimizer_try_forward_adjacent_get_stack_reads(instructions,
                                                                cs,
@@ -1734,7 +1767,7 @@ ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) {
                                                                currentInstructionIndex,
                                                                &info)) {
                 changed = ZR_TRUE;
-                optimizer_classify_instruction(&instructions[currentInstructionIndex], &info);
+                optimizer_classify_instruction(cs->currentFunction, &instructions[currentInstructionIndex], &info);
             }
             if (optimizer_is_dead_null_clear(cs,
                                              &instructions[currentInstructionIndex],
@@ -1763,7 +1796,8 @@ ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) {
         for (slotIndex = 0; slotIndex < slotCount; slotIndex++) {
             slotMap[slotIndex] = (TZrUInt16)slotIndex;
         }
-        optimizer_build_block_intervals(instructions,
+        optimizer_build_block_intervals(cs->currentFunction,
+                                        instructions,
                                         &blocks[blockIndex],
                                         liveInSets + (blockIndex * slotCount),
                                         liveOutSets + (blockIndex * slotCount),
@@ -1778,7 +1812,7 @@ ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) {
                 continue;
             }
 
-            optimizer_classify_instruction(&instructions[instructionIndex], &info);
+            optimizer_classify_instruction(cs->currentFunction, &instructions[instructionIndex], &info);
             optimizer_remap_instruction_slots(&instructions[instructionIndex], &info, slotMap, slotCount);
         }
     }
@@ -1796,7 +1830,7 @@ ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) {
 
         {
             SZrOptimizerInstructionInfo info;
-            optimizer_classify_instruction(&instructions[blockIndex], &info);
+            optimizer_classify_instruction(cs->currentFunction, &instructions[blockIndex], &info);
             if (info.hasRelativeJump) {
                 TZrInt32 oldTarget = (TZrInt32)blockIndex + 1 + optimizer_relative_jump_offset(&instructions[blockIndex]);
                 if (oldTarget >= 0 && (TZrSize)oldTarget <= instructionCount) {
@@ -1839,7 +1873,8 @@ ZR_PARSER_API void optimize_instructions(SZrCompilerState *cs) {
     }
 
     cs->maxStackSlotCount =
-            optimizer_compute_max_stack_slot((TZrInstruction *)cs->instructions.head,
+            optimizer_compute_max_stack_slot(cs->currentFunction,
+                                             (TZrInstruction *)cs->instructions.head,
                                              cs->instructions.length,
                                              localFloor,
                                              cs->maxStackSlotCount);

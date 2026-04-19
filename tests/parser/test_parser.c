@@ -24,6 +24,7 @@
 #endif
 #include "unity.h"
 #include "zr_vm_parser.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/global.h"
@@ -246,6 +247,22 @@ static SZrAstNode *parse_source_with_diagnostic(SZrState *state,
 
     ZrParser_State_Free(&parserState);
     return ast;
+}
+
+static void assert_token_location_matches(const SZrFileRange *location,
+                                          TZrSize startOffset,
+                                          TZrInt32 startLine,
+                                          TZrInt32 startColumn,
+                                          TZrSize endOffset,
+                                          TZrInt32 endLine,
+                                          TZrInt32 endColumn) {
+    TEST_ASSERT_NOT_NULL(location);
+    TEST_ASSERT_EQUAL_UINT32((unsigned int)startOffset, (unsigned int)location->start.offset);
+    TEST_ASSERT_EQUAL_INT(startLine, location->start.line);
+    TEST_ASSERT_EQUAL_INT(startColumn, location->start.column);
+    TEST_ASSERT_EQUAL_UINT32((unsigned int)endOffset, (unsigned int)location->end.offset);
+    TEST_ASSERT_EQUAL_INT(endLine, location->end.line);
+    TEST_ASSERT_EQUAL_INT(endColumn, location->end.column);
 }
 
 // 测试初始化和清理
@@ -3019,6 +3036,56 @@ static void test_compiler_lambda_crlf_debug_metadata(void) {
     TEST_DIVIDER();
 }
 
+static void test_current_token_location_tracks_crlf_and_multiline_template_ranges(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Parser Token Location Tracking";
+    const char *source =
+            "var first = 1;\r\n"
+            "var text = `ab\r\n"
+            "cd`;\r\n"
+            "return text;\r\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrParserState parserState;
+    SZrFileRange location;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "token_location_ranges.zr", 24);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ZrParser_State_Init(&parserState, state, source, strlen(source), sourceName);
+
+    TEST_ASSERT_EQUAL_INT(ZR_TK_VAR, parserState.lexer->t.token);
+    location = get_current_token_location(&parserState);
+    assert_token_location_matches(&location, 0u, 1, 1, 3u, 1, 4);
+
+    while (parserState.lexer->t.token != ZR_TK_TEMPLATE_STRING &&
+           parserState.lexer->t.token != ZR_TK_EOS) {
+        ZrParser_Lexer_Next(parserState.lexer);
+    }
+    TEST_ASSERT_EQUAL_INT(ZR_TK_TEMPLATE_STRING, parserState.lexer->t.token);
+    location = get_current_token_location(&parserState);
+    assert_token_location_matches(&location, 27u, 2, 12, 35u, 3, 4);
+
+    while (parserState.lexer->t.token != ZR_TK_RETURN &&
+           parserState.lexer->t.token != ZR_TK_EOS) {
+        ZrParser_Lexer_Next(parserState.lexer);
+    }
+    TEST_ASSERT_EQUAL_INT(ZR_TK_RETURN, parserState.lexer->t.token);
+    location = get_current_token_location(&parserState);
+    assert_token_location_matches(&location, 38u, 4, 1, 44u, 4, 7);
+
+    ZrParser_State_Free(&parserState);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 // 测试 break/continue 语句编译
 static void test_compiler_break_continue(void) {
     SZrTestTimer timer;
@@ -3211,6 +3278,7 @@ int main(void) {
     RUN_TEST(test_compiler_lambda_expression);
     RUN_TEST(test_compiler_parenthesized_lambda_iife);
     RUN_TEST(test_compiler_lambda_crlf_debug_metadata);
+    RUN_TEST(test_current_token_location_tracks_crlf_and_multiline_template_ranges);
     RUN_TEST(test_compiler_break_continue);
     RUN_TEST(test_compiler_out_statement);
     

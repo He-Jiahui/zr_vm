@@ -11,8 +11,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#if defined(ZR_DEBUG)
 static TZrBool hash_set_trace_enabled(void);
 static void hash_set_trace(const TZrChar *format, ...);
+#else
+#define hash_set_trace(...) ((void)0)
+#endif
 
 static TZrSize zr_hash_pair_pool_block_bytes(TZrSize capacity) {
     TZrSize extraPairs = capacity > ZR_HASH_PAIR_POOL_INLINE_COUNT ? capacity - ZR_HASH_PAIR_POOL_INLINE_COUNT : 0;
@@ -230,6 +234,7 @@ TZrBool ZrCore_HashSet_GrowDenseSequentialIntKeys(SZrState *state, SZrHashSet *s
     return ZR_TRUE;
 }
 
+#if defined(ZR_DEBUG)
 static TZrBool hash_set_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -257,3 +262,4 @@ static void hash_set_trace(const TZrChar *format, ...) {
     fflush(stderr);
     va_end(arguments);
 }
+#endif

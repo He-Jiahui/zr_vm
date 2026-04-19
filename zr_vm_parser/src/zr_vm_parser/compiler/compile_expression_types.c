@@ -1202,6 +1202,29 @@ static TZrUInt32 primary_member_chain_direct_local_slot(SZrCompilerState *cs, SZ
     return find_local_var(cs, propertyNode->data.identifier.name);
 }
 
+static TZrBool stage_pending_receiver_binding(SZrCompilerState *cs,
+                                              TZrUInt32 receiverSourceSlot,
+                                              TZrUInt32 *outReceiverSlot) {
+    TZrUInt32 receiverSlot;
+
+    if (cs == ZR_NULL || outReceiverSlot == ZR_NULL || cs->hasError ||
+        receiverSourceSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+
+    receiverSlot = allocate_stack_slot(cs);
+    emit_instruction(cs,
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                          (TZrUInt16)receiverSlot,
+                                          (TZrInt32)receiverSourceSlot));
+    if (cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    *outReceiverSlot = receiverSlot;
+    return ZR_TRUE;
+}
+
 static TZrBool emit_argument_conversion_if_needed(SZrCompilerState *cs,
                                                   SZrAstNode *argNode,
                                                   TZrUInt32 argSlot,
@@ -1794,12 +1817,17 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                          SZrString **ioRootTypeName, TZrBool *ioRootIsTypeReference,
                                          EZrOwnershipQualifier *ioRootOwnershipQualifier,
                                          TZrBool rootUsesSuperLookup,
-                                         TZrUInt32 superReceiverSlot) {
+                                         TZrUInt32 superReceiverSlot,
+                                         TZrUInt32 preferredDirectMemberCallResultSlot) {
     TZrUInt32 currentSlot;
     TZrUInt32 pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
     TZrUInt32 pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
+    TZrUInt32 pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
     SZrString *pendingCallResultTypeName = ZR_NULL;
     const SZrTypeMemberInfo *pendingCallMemberInfo = ZR_NULL;
+    TZrBool pendingReceiverRequiresBinding = ZR_FALSE;
     SZrString *rootTypeName = ioRootTypeName != ZR_NULL ? *ioRootTypeName : ZR_NULL;
     TZrBool rootIsTypeReference = ioRootIsTypeReference != ZR_NULL ? *ioRootIsTypeReference : ZR_FALSE;
     EZrOwnershipQualifier rootOwnershipQualifier =
@@ -1832,6 +1860,11 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                      members->nodes[i + 1] != ZR_NULL &&
                      members->nodes[i + 1]->type == ZR_AST_FUNCTION_CALL);
             TZrBool memberUsesSuperLookup = superLookupActive && i == memberStartIndex;
+
+            pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
+            pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
+            pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
+            pendingReceiverRequiresBinding = ZR_FALSE;
 
             if (!memberExpr->computed && memberExpr->property != ZR_NULL &&
                 memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
@@ -1903,40 +1936,45 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     }
 
                     if (nextIsFunctionCall && bindReceiverForCall) {
-                        TZrUInt32 receiverSourceSlot = currentSlot;
-                        pendingReceiverSlot = allocate_stack_slot(cs);
+                        pendingReceiverSourceSlot = currentSlot;
+                        pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
 
                         pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
                         if (memberUsesSuperLookup) {
-                            receiverSourceSlot = superReceiverSlot;
+                            pendingReceiverSourceSlot = superReceiverSlot;
                         } else if (typeMember != ZR_NULL &&
                             typeMember->memberType == ZR_AST_STRUCT_METHOD &&
                             i == memberStartIndex) {
                             TZrUInt32 directLocalSlot = primary_member_chain_direct_local_slot(cs, propertyNode);
                             if (directLocalSlot != ZR_PARSER_SLOT_NONE) {
-                                receiverSourceSlot = directLocalSlot;
+                                pendingReceiverSourceSlot = directLocalSlot;
                                 pendingReceiverWritebackSlot = directLocalSlot;
                             }
                         }
-
-                        emit_instruction(cs, create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
-                                                                  (TZrUInt16)pendingReceiverSlot,
-                                                                  (TZrInt32)receiverSourceSlot));
+                        pendingReceiverRequiresBinding = pendingReceiverSourceSlot != ZR_PARSER_SLOT_NONE;
                     } else {
                         pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
                         pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
+                        pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
+                        pendingReceiverRequiresBinding = ZR_FALSE;
                     }
 
                     if (!memberExpr->computed) {
                         SZrString *memberSymbol = resolve_member_expression_symbol(cs, memberExpr);
-                        if (memberUsesSuperLookup &&
-                            typeMember != ZR_NULL &&
-                            typeMember->isMetaMethod &&
+                    if (memberUsesSuperLookup &&
+                        typeMember != ZR_NULL &&
+                        typeMember->isMetaMethod &&
                             typeMember->metaType != ZR_META_CONSTRUCTOR) {
                             if (!nextIsFunctionCall) {
                                 ZrParser_Compiler_Error(cs,
                                                         "super meta members must be invoked as calls",
                                                         member->location);
+                                return;
+                            }
+                            if (pendingReceiverRequiresBinding &&
+                                !stage_pending_receiver_binding(cs,
+                                                               pendingReceiverSourceSlot,
+                                                               &pendingReceiverSlot)) {
                                 return;
                             }
                             if (!emit_member_function_constant_to_slot(cs, currentSlot, typeMember, member->location)) {
@@ -1948,6 +1986,9 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                                                                   typeMember,
                                                                                                   0);
                             TZrBool canEmitMemberSlot = declaredFieldMatch;
+                            TZrBool memberEntryBoundAtCompileTime = ZR_FALSE;
+                            TZrBool canUseDirectKnownVmMemberCall =
+                                    ZR_FALSE;
                             if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
                                 ZrParser_Compiler_Error(cs,
                                                         "Failed to register member access symbol",
@@ -1955,7 +1996,43 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                 return;
                             }
 
-                            if (canEmitMemberSlot) {
+                            memberEntryBoundAtCompileTime =
+                                    cs->currentFunction != ZR_NULL &&
+                                    cs->currentFunction->memberEntries != ZR_NULL &&
+                                    memberId < cs->currentFunction->memberEntryLength &&
+                                    cs->currentFunction->memberEntries[memberId].entryKind ==
+                                            ZR_FUNCTION_MEMBER_ENTRY_KIND_BOUND_DESCRIPTOR;
+                            canUseDirectKnownVmMemberCall =
+                                    nextIsFunctionCall &&
+                                    !cs->isInTailCallContext &&
+                                    pendingReceiverRequiresBinding &&
+                                    !memberUsesSuperLookup &&
+                                    memberEntryBoundAtCompileTime &&
+                                    typeMember != ZR_NULL &&
+                                    typeMember->compiledFunction != ZR_NULL &&
+                                    typeMember->compiledFunction->closureValueLength == 0;
+
+                            if (canUseDirectKnownVmMemberCall) {
+                                if (preferredDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE &&
+                                    pendingReceiverWritebackSlot == ZR_PARSER_SLOT_NONE &&
+                                    pendingReceiverSourceSlot == currentSlot &&
+                                    currentSlot == preferredDirectMemberCallResultSlot + 1u) {
+                                    pendingReceiverSlot = currentSlot;
+                                    pendingDirectMemberCallResultSlot = preferredDirectMemberCallResultSlot;
+                                } else if (pendingReceiverRequiresBinding &&
+                                           !stage_pending_receiver_binding(cs,
+                                                                          pendingReceiverSourceSlot,
+                                                                          &pendingReceiverSlot)) {
+                                    return;
+                                }
+                                pendingDirectMemberCallMemberEntryIndex = memberId;
+                            } else if (canEmitMemberSlot) {
+                                if (pendingReceiverRequiresBinding &&
+                                    !stage_pending_receiver_binding(cs,
+                                                                   pendingReceiverSourceSlot,
+                                                                   &pendingReceiverSlot)) {
+                                    return;
+                                }
                                 if (!emit_member_slot_get(cs,
                                                           currentSlot,
                                                           currentSlot,
@@ -1964,6 +2041,12 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                     return;
                                 }
                             } else {
+                                if (pendingReceiverRequiresBinding &&
+                                    !stage_pending_receiver_binding(cs,
+                                                                   pendingReceiverSourceSlot,
+                                                                   &pendingReceiverSlot)) {
+                                    return;
+                                }
                                 emit_instruction(cs,
                                                  create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
                                                                       (TZrUInt16)currentSlot,
@@ -1976,6 +2059,12 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                             ZrParser_Compiler_Error(cs,
                                                     "super only supports direct member names, not computed member access",
                                                     member->location);
+                            return;
+                        }
+                        if (pendingReceiverRequiresBinding &&
+                            !stage_pending_receiver_binding(cs,
+                                                           pendingReceiverSourceSlot,
+                                                           &pendingReceiverSlot)) {
                             return;
                         }
                         TZrUInt32 keyTargetSlot =
@@ -2117,6 +2206,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             TZrUInt32 argCount = 0;
             TZrUInt32 argBaseSlot = currentSlot + 1;
             TZrUInt32 compiledMemberArgCount = 0;
+            TZrUInt32 callResultSlot = currentSlot;
             if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE) {
                 argCount = 1;
                 argBaseSlot = pendingReceiverSlot + 1;
@@ -2203,6 +2293,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             }
 
             {
+                TZrUInt16 directMemberCallCacheIndex = 0;
+                TZrBool useKnownVmDirectMemberCallOpcode = ZR_FALSE;
                 TZrBool useResolvedFunctionMetaCallOpcode =
                         activeCallMemberInfo == ZR_NULL &&
                         resolved_function_call_uses_meta_call_opcode(resolvedFunctionType);
@@ -2216,6 +2308,27 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         !useMetaCallOpcode &&
                         activeCallMemberInfo->compiledFunction != ZR_NULL;
                 TZrBool emitMetaCallOpcode = useMetaCallOpcode || useResolvedFunctionMetaCallOpcode;
+                if (pendingDirectMemberCallMemberEntryIndex != ZR_PARSER_MEMBER_ID_NONE &&
+                    activeCallMemberInfo != ZR_NULL &&
+                    !emitMetaCallOpcode &&
+                    pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
+                    activeCallMemberInfo->compiledFunction != ZR_NULL &&
+                    activeCallMemberInfo->compiledFunction->closureValueLength == 0) {
+                    if (!reserve_member_slot_get_cache(cs,
+                                                       pendingDirectMemberCallMemberEntryIndex,
+                                                       argCount,
+                                                       &directMemberCallCacheIndex,
+                                                       member->location)) {
+                        if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                            ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                        }
+                        free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                        free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                        ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                        return;
+                    }
+                    useKnownVmDirectMemberCallOpcode = ZR_TRUE;
+                }
                 EZrInstructionCode callOpcode =
                         cs->isInTailCallContext
                                 ? (emitMetaCallOpcode
@@ -2232,11 +2345,29 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                       : (useKnownVmMemberCallOpcode
                                                                  ? ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)
                                                                  : ZR_INSTRUCTION_ENUM(FUNCTION_CALL))));
-                emit_instruction(cs,
-                                 create_instruction_2(callOpcode,
-                                                      (TZrUInt16)currentSlot,
-                                                      (TZrUInt16)currentSlot,
-                                                      (TZrUInt16)argCount));
+                if (useKnownVmDirectMemberCallOpcode) {
+                    if (pendingDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE) {
+                        callResultSlot = pendingDirectMemberCallResultSlot;
+                    }
+                    if (!emit_known_vm_member_call_cached(cs,
+                                                          callResultSlot,
+                                                          directMemberCallCacheIndex,
+                                                          member->location)) {
+                        if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                            ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                        }
+                        free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                        free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                        ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                        return;
+                    }
+                } else {
+                    emit_instruction(cs,
+                                     create_instruction_2(callOpcode,
+                                                          (TZrUInt16)currentSlot,
+                                                          (TZrUInt16)currentSlot,
+                                                          (TZrUInt16)argCount));
+                }
             }
             if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
                 pendingReceiverWritebackSlot != ZR_PARSER_SLOT_NONE) {
@@ -2245,9 +2376,16 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                       (TZrUInt16)pendingReceiverWritebackSlot,
                                                       (TZrInt32)pendingReceiverSlot));
             }
+            if (pendingDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE) {
+                currentSlot = pendingDirectMemberCallResultSlot;
+            }
             collapse_stack_to_slot(cs, currentSlot);
             pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverWritebackSlot = ZR_PARSER_SLOT_NONE;
+            pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
+            pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
+            pendingReceiverRequiresBinding = ZR_FALSE;
+            pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
             if (activeCallMemberInfo != ZR_NULL) {
                 hasContractReturnType =
                         infer_member_call_contract_return_type(cs, activeCallMemberInfo, call, &contractReturnType);

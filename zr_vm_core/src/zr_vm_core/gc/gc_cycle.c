@@ -195,7 +195,7 @@ static void garbage_collector_trace_callsite_cache_slot(const SZrFunction *funct
 
     fprintf(stderr,
             "[gc-callsite-sanitize] phase=%s event=%s function=%p name=%s cacheIndex=%u kind=%s instructionIndex=%u "
-            "slotIndex=%u receiver=%p receiverObject=%p owner=%p memberName=%p target=%p receiverVersion=%u ownerVersion=%u receiverElementCount=%u descriptorIndex=%u "
+            "slotIndex=%u receiver=%p receiverObject=%p owner=%p memberName=%p target=%p receiverVersion=%u ownerVersion=%u descriptorIndex=%u "
             "isStatic=%u picSlotCount=%u picNextInsertIndex=%u\n",
             phase != ZR_NULL ? phase : "unknown",
             event != ZR_NULL ? event : "unknown",
@@ -212,7 +212,6 @@ static void garbage_collector_trace_callsite_cache_slot(const SZrFunction *funct
             (const void *)slot->cachedFunction,
             (unsigned int)slot->cachedReceiverVersion,
             (unsigned int)slot->cachedOwnerVersion,
-            (unsigned int)slot->cachedReceiverElementCount,
             (unsigned int)slot->cachedDescriptorIndex,
             (unsigned int)slot->cachedIsStatic,
             (unsigned int)cacheEntry->picSlotCount,
@@ -505,6 +504,266 @@ static TZrBool garbage_collector_closure_references_live_young(SZrState *state, 
     return ZR_FALSE;
 }
 
+static ZR_FORCE_INLINE TZrBool garbage_collector_string_references_live_young(const SZrString *stringObject) {
+    return stringObject != ZR_NULL &&
+           garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(stringObject));
+}
+
+static ZR_FORCE_INLINE TZrBool garbage_collector_typed_type_ref_references_live_young(
+        const SZrFunctionTypedTypeRef *typeRef) {
+    return typeRef != ZR_NULL &&
+           (garbage_collector_string_references_live_young(typeRef->typeName) ||
+            garbage_collector_string_references_live_young(typeRef->elementTypeName));
+}
+
+static TZrBool garbage_collector_metadata_parameters_reference_live_young(
+        const SZrFunctionMetadataParameter *parameters,
+        TZrUInt32 parameterCount) {
+    if (parameters == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0; index < parameterCount; index++) {
+        const SZrFunctionMetadataParameter *parameter = &parameters[index];
+
+        if (garbage_collector_string_references_live_young(parameter->name) ||
+            garbage_collector_typed_type_ref_references_live_young(&parameter->type) ||
+            (parameter->hasDefaultValue && garbage_collector_value_references_live_young(&parameter->defaultValue)) ||
+            (parameter->hasDecoratorMetadata &&
+             garbage_collector_value_references_live_young(&parameter->decoratorMetadataValue))) {
+            return ZR_TRUE;
+        }
+        if (parameter->decoratorNames != ZR_NULL) {
+            for (TZrUInt32 decoratorIndex = 0; decoratorIndex < parameter->decoratorCount; decoratorIndex++) {
+                if (garbage_collector_string_references_live_young(parameter->decoratorNames[decoratorIndex])) {
+                    return ZR_TRUE;
+                }
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool garbage_collector_function_callsite_caches_reference_live_young(const SZrFunction *function) {
+    if (function == ZR_NULL || function->callSiteCaches == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 cacheIndex = 0; cacheIndex < function->callSiteCacheLength; cacheIndex++) {
+        const SZrFunctionCallSiteCacheEntry *cacheEntry = &function->callSiteCaches[cacheIndex];
+        TZrUInt32 picLimit = cacheEntry->picSlotCount;
+
+        if (picLimit > ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY) {
+            picLimit = ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY;
+        }
+        for (TZrUInt32 picIndex = 0; picIndex < picLimit; picIndex++) {
+            const SZrFunctionCallSitePicSlot *slot = &cacheEntry->picSlots[picIndex];
+
+            if (garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverPrototype)) ||
+                garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedOwnerPrototype)) ||
+                garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject)) ||
+                garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedFunction)) ||
+                garbage_collector_string_references_live_young(slot->cachedMemberName)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool garbage_collector_function_references_live_young(SZrState *state, SZrRawObject *object) {
+    SZrFunction *function;
+
+    if (state == ZR_NULL || object == ZR_NULL || object->type != ZR_RAW_OBJECT_TYPE_FUNCTION) {
+        return ZR_FALSE;
+    }
+
+    function = ZR_CAST_FUNCTION(state, object);
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->ownerFunction)) ||
+        garbage_collector_string_references_live_young(function->functionName) ||
+        garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->runtimeDecoratorMetadata)) ||
+        garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->runtimeDecoratorDecorators)) ||
+        garbage_collector_raw_object_is_live_young(ZR_CAST_RAW_OBJECT_AS_SUPER(function->cachedStatelessClosure)) ||
+        garbage_collector_string_references_live_young(function->sourceCodeList) ||
+        garbage_collector_string_references_live_young(function->sourceHash) ||
+        (function->hasDecoratorMetadata && garbage_collector_value_references_live_young(&function->decoratorMetadataValue)) ||
+        garbage_collector_function_callsite_caches_reference_live_young(function)) {
+        return ZR_TRUE;
+    }
+
+    for (TZrUInt32 index = 0; index < function->closureValueLength; index++) {
+        if (garbage_collector_string_references_live_young(function->closureValueList[index].name)) {
+            return ZR_TRUE;
+        }
+    }
+    for (TZrUInt32 index = 0; index < function->constantValueLength; index++) {
+        if (garbage_collector_value_references_live_young(&function->constantValueList[index])) {
+            return ZR_TRUE;
+        }
+    }
+    for (TZrUInt32 index = 0; index < function->catchClauseCount; index++) {
+        if (garbage_collector_string_references_live_young(function->catchClauseList[index].typeName)) {
+            return ZR_TRUE;
+        }
+    }
+    for (TZrUInt32 index = 0; index < function->childFunctionLength; index++) {
+        if (function->childFunctionList[index].super.type == ZR_RAW_OBJECT_TYPE_FUNCTION &&
+            garbage_collector_raw_object_is_live_young(&function->childFunctionList[index].super)) {
+            return ZR_TRUE;
+        }
+    }
+    for (TZrUInt32 index = 0; index < function->localVariableLength; index++) {
+        if (garbage_collector_string_references_live_young(function->localVariableList[index].name)) {
+            return ZR_TRUE;
+        }
+    }
+    for (TZrUInt32 index = 0; index < function->exportedVariableLength; index++) {
+        if (garbage_collector_string_references_live_young(function->exportedVariables[index].name)) {
+            return ZR_TRUE;
+        }
+    }
+    for (TZrUInt32 index = 0; index < function->typedLocalBindingLength; index++) {
+        if (garbage_collector_string_references_live_young(function->typedLocalBindings[index].name) ||
+            garbage_collector_typed_type_ref_references_live_young(&function->typedLocalBindings[index].type)) {
+            return ZR_TRUE;
+        }
+    }
+    for (TZrUInt32 index = 0; index < function->typedExportedSymbolLength; index++) {
+        const SZrFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[index];
+
+        if (garbage_collector_string_references_live_young(symbol->name) ||
+            garbage_collector_typed_type_ref_references_live_young(&symbol->valueType)) {
+            return ZR_TRUE;
+        }
+        if (symbol->parameterTypes != ZR_NULL) {
+            for (TZrUInt32 parameterIndex = 0; parameterIndex < symbol->parameterCount; parameterIndex++) {
+                if (garbage_collector_typed_type_ref_references_live_young(&symbol->parameterTypes[parameterIndex])) {
+                    return ZR_TRUE;
+                }
+            }
+        }
+    }
+    if (function->staticImports != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->staticImportLength; index++) {
+            if (garbage_collector_string_references_live_young(function->staticImports[index])) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    if (function->moduleEntryEffects != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->moduleEntryEffectLength; index++) {
+            if (garbage_collector_string_references_live_young(function->moduleEntryEffects[index].moduleName) ||
+                garbage_collector_string_references_live_young(function->moduleEntryEffects[index].symbolName)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    if (function->exportedCallableSummaries != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->exportedCallableSummaryLength; index++) {
+            const SZrFunctionCallableSummary *summary = &function->exportedCallableSummaries[index];
+
+            if (garbage_collector_string_references_live_young(summary->name)) {
+                return ZR_TRUE;
+            }
+            if (summary->effects != ZR_NULL) {
+                for (TZrUInt32 effectIndex = 0; effectIndex < summary->effectCount; effectIndex++) {
+                    if (garbage_collector_string_references_live_young(summary->effects[effectIndex].moduleName) ||
+                        garbage_collector_string_references_live_young(summary->effects[effectIndex].symbolName)) {
+                        return ZR_TRUE;
+                    }
+                }
+            }
+        }
+    }
+    if (function->topLevelCallableBindings != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->topLevelCallableBindingLength; index++) {
+            if (garbage_collector_string_references_live_young(function->topLevelCallableBindings[index].name)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    if (garbage_collector_metadata_parameters_reference_live_young(
+                function->parameterMetadata, function->parameterMetadataCount)) {
+        return ZR_TRUE;
+    }
+    for (TZrUInt32 index = 0; index < function->compileTimeVariableInfoLength; index++) {
+        const SZrFunctionCompileTimeVariableInfo *info = &function->compileTimeVariableInfos[index];
+
+        if (garbage_collector_string_references_live_young(info->name) ||
+            garbage_collector_typed_type_ref_references_live_young(&info->type)) {
+            return ZR_TRUE;
+        }
+        if (info->pathBindings != ZR_NULL) {
+            for (TZrUInt32 bindingIndex = 0; bindingIndex < info->pathBindingCount; bindingIndex++) {
+                if (garbage_collector_string_references_live_young(info->pathBindings[bindingIndex].path) ||
+                    garbage_collector_string_references_live_young(info->pathBindings[bindingIndex].targetName)) {
+                    return ZR_TRUE;
+                }
+            }
+        }
+    }
+    for (TZrUInt32 index = 0; index < function->compileTimeFunctionInfoLength; index++) {
+        const SZrFunctionCompileTimeFunctionInfo *info = &function->compileTimeFunctionInfos[index];
+
+        if (garbage_collector_string_references_live_young(info->name) ||
+            garbage_collector_typed_type_ref_references_live_young(&info->returnType) ||
+            garbage_collector_metadata_parameters_reference_live_young(info->parameters, info->parameterCount)) {
+            return ZR_TRUE;
+        }
+    }
+    if (function->escapeBindings != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->escapeBindingLength; index++) {
+            if (garbage_collector_string_references_live_young(function->escapeBindings[index].name)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    if (function->decoratorNames != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->decoratorCount; index++) {
+            if (garbage_collector_string_references_live_young(function->decoratorNames[index])) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    if (function->memberEntries != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->memberEntryLength; index++) {
+            if (garbage_collector_string_references_live_young(function->memberEntries[index].symbol)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    if (function->prototypeInstances != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->prototypeInstancesLength; index++) {
+            if (garbage_collector_raw_object_is_live_young(
+                        ZR_CAST_RAW_OBJECT_AS_SUPER(function->prototypeInstances[index]))) {
+                return ZR_TRUE;
+            }
+        }
+    }
+    for (TZrUInt32 index = 0; index < function->semIrTypeTableLength; index++) {
+        if (garbage_collector_typed_type_ref_references_live_young(&function->semIrTypeTable[index])) {
+            return ZR_TRUE;
+        }
+    }
+    if (function->testInfos != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < function->testInfoLength; index++) {
+            if (garbage_collector_string_references_live_young(function->testInfos[index].name) ||
+                garbage_collector_metadata_parameters_reference_live_young(
+                        function->testInfos[index].parameters, function->testInfos[index].parameterCount)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool garbage_collector_native_data_references_live_young(SZrRawObject *object) {
     struct SZrNativeData *nativeData;
 
@@ -565,6 +824,7 @@ static TZrBool garbage_collector_object_references_live_young(SZrState *state, S
             return garbage_collector_value_references_live_young(value);
         }
         case ZR_RAW_OBJECT_TYPE_FUNCTION:
+            return garbage_collector_function_references_live_young(state, object);
         case ZR_RAW_OBJECT_TYPE_THREAD:
             return ZR_TRUE;
         case ZR_RAW_OBJECT_TYPE_NATIVE_DATA:
@@ -591,10 +851,15 @@ static void garbage_collector_prune_remembered_registry(SZrState *state) {
             ZrCore_RawObject_IsUnreferenced(state, object) ||
             object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED ||
             !garbage_collector_object_references_live_young(state, object)) {
+            if (object != ZR_NULL) {
+                object->garbageCollectMark.rememberedRegistryIndex = ZR_MAX_SIZE;
+            }
             continue;
         }
 
-        collector->rememberedObjects[newCount++] = object;
+        collector->rememberedObjects[newCount] = object;
+        object->garbageCollectMark.rememberedRegistryIndex = newCount;
+        newCount++;
     }
 
     for (TZrSize index = newCount; index < collector->rememberedObjectCount; index++) {
@@ -635,7 +900,9 @@ static void garbage_collector_remember_promoted_minor_object(SZrState *state, SZ
         return;
     }
 
-    collector->rememberedObjects[collector->rememberedObjectCount++] = object;
+    collector->rememberedObjects[collector->rememberedObjectCount] = object;
+    object->garbageCollectMark.rememberedRegistryIndex = collector->rememberedObjectCount;
+    collector->rememberedObjectCount++;
     collector->statsSnapshot.rememberedObjectCount = (TZrUInt32)collector->rememberedObjectCount;
 }
 
@@ -810,7 +1077,9 @@ static TZrSize garbage_collector_rewrite_raw_object_slot_counted(SZrRawObject **
     return *slot != before ? 1u : 0u;
 }
 
-static TZrSize garbage_collector_rewrite_raw_object_registry(SZrRawObject **items, TZrSize count) {
+static TZrSize garbage_collector_rewrite_raw_object_registry(SZrRawObject **items,
+                                                             TZrSize count,
+                                                             TZrBool isIgnoredRegistry) {
     TZrSize work = 0;
     TZrSize index;
 
@@ -824,6 +1093,13 @@ static TZrSize garbage_collector_rewrite_raw_object_registry(SZrRawObject **item
         garbage_collector_rewrite_raw_object_slot(&items[index]);
         if (items[index] != before) {
             work++;
+        }
+        if (items[index] != ZR_NULL) {
+            if (isIgnoredRegistry) {
+                items[index]->garbageCollectMark.ignoredRegistryIndex = index;
+            } else {
+                items[index]->garbageCollectMark.rememberedRegistryIndex = index;
+            }
         }
     }
 
@@ -1372,6 +1648,16 @@ static TZrSize garbage_collector_rewrite_forwarded_roots(SZrState *state) {
         }
     }
 
+    for (TZrSize bucketIndex = 0; bucketIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_COUNT; bucketIndex++) {
+        for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH; depthIndex++) {
+            ZrStringConcatPairCacheEntry *entry = &global->stringConcatPairCache[bucketIndex][depthIndex];
+
+            garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&entry->left);
+            garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&entry->right);
+            garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&entry->result);
+        }
+    }
+
     for (TZrSize metaIndex = 0; metaIndex < ZR_META_ENUM_MAX; metaIndex++) {
         garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&global->metaFunctionName[metaIndex]);
     }
@@ -1387,9 +1673,11 @@ static TZrSize garbage_collector_rewrite_forwarded_roots(SZrState *state) {
 
     if (global->garbageCollector != ZR_NULL) {
         work += garbage_collector_rewrite_raw_object_registry(global->garbageCollector->ignoredObjects,
-                                                              global->garbageCollector->ignoredObjectCount);
+                                                              global->garbageCollector->ignoredObjectCount,
+                                                              ZR_TRUE);
         work += garbage_collector_rewrite_raw_object_registry(global->garbageCollector->rememberedObjects,
-                                                              global->garbageCollector->rememberedObjectCount);
+                                                              global->garbageCollector->rememberedObjectCount,
+                                                              ZR_FALSE);
     }
 
     work += garbage_collector_rewrite_object_graph(state, ZR_CAST_RAW_OBJECT_AS_SUPER(state));
@@ -1470,6 +1758,7 @@ static TZrBool garbage_collector_object_supports_evacuation(SZrState *state, SZr
 static void garbage_collector_apply_minor_target(SZrState *state,
                                                  SZrRawObject *object,
                                                  TZrUInt32 regionId,
+                                                 TZrSize regionDescriptorIndex,
                                                  EZrGarbageCollectRegionKind regionKind,
                                                  EZrGarbageCollectStorageKind storageKind,
                                                  EZrGarbageCollectGenerationalObjectStatus generationalStatus,
@@ -1482,6 +1771,7 @@ static void garbage_collector_apply_minor_target(SZrState *state,
     ZrCore_RawObject_SetStorageKind(object, storageKind);
     ZrCore_RawObject_SetRegionKind(object, regionKind);
     object->garbageCollectMark.regionId = regionId;
+    object->garbageCollectMark.regionDescriptorIndex = regionDescriptorIndex;
     object->garbageCollectMark.generationalStatus = generationalStatus;
     object->garbageCollectMark.promotionReason = promotionReason;
     object->garbageCollectMark.survivalAge = survivalAge;
@@ -1498,11 +1788,18 @@ static void garbage_collector_reassign_minor_target(SZrState *state,
                                                  TZrSize objectSize) {
     TZrUInt32 previousRegionId = object->garbageCollectMark.regionId;
     TZrUInt32 regionId;
+    TZrSize regionDescriptorIndex;
 
-    regionId = garbage_collector_reassign_region_id(state->global, previousRegionId, regionKind, objectSize);
+    regionId = garbage_collector_reassign_region_id_cached(state->global,
+                                                           previousRegionId,
+                                                           object->garbageCollectMark.regionDescriptorIndex,
+                                                           regionKind,
+                                                           objectSize,
+                                                           &regionDescriptorIndex);
     garbage_collector_apply_minor_target(state,
                                          object,
                                          regionId,
+                                         regionDescriptorIndex,
                                          regionKind,
                                          storageKind,
                                          generationalStatus,
@@ -1522,6 +1819,7 @@ static SZrRawObject *garbage_collector_clone_for_minor_evacuation(
     SZrRawObject *cloneObject;
     SZrRawObject *insertedNext;
     TZrUInt32 cloneRegionId;
+    TZrSize cloneRegionDescriptorIndex;
     TZrBool wasClosedClosureValue = ZR_FALSE;
 
     if (state == ZR_NULL || object == ZR_NULL) {
@@ -1544,6 +1842,7 @@ static SZrRawObject *garbage_collector_clone_for_minor_evacuation(
     }
 
     cloneRegionId = cloneObject->garbageCollectMark.regionId;
+    cloneRegionDescriptorIndex = cloneObject->garbageCollectMark.regionDescriptorIndex;
     insertedNext = cloneObject->next;
     ZrCore_Memory_RawCopy(cloneObject, object, objectSize);
     cloneObject->next = insertedNext;
@@ -1553,6 +1852,7 @@ static SZrRawObject *garbage_collector_clone_for_minor_evacuation(
     garbage_collector_apply_minor_target(state,
                                          cloneObject,
                                          cloneRegionId,
+                                         cloneRegionDescriptorIndex,
                                          regionKind,
                                          storageKind,
                                          generationalStatus,
@@ -1731,6 +2031,7 @@ static TZrSize garbage_collector_run_old_compaction(SZrState *state) {
     collector = state->global->garbageCollector;
     garbage_collector_clear_forwarding_metadata(collector);
     collector->currentOldRegionId = 0u;
+    collector->currentOldRegionIndex = ZR_MAX_SIZE;
     collector->currentOldRegionUsedBytes = 0u;
 
     object = collector->gcObjectList;

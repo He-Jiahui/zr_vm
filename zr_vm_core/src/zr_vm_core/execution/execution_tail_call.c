@@ -29,17 +29,6 @@ TZrBool execution_prepare_meta_call_target(SZrState *state, TZrStackValuePointer
     return ZR_TRUE;
 }
 
-static TZrBool execution_callinfo_has_cleanup_registrations(SZrState *state, SZrCallInfo *callInfo) {
-    TZrStackValuePointer frameBase;
-
-    if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    frameBase = callInfo->functionBase.valuePointer + 1;
-    return state->toBeClosedValueList.valuePointer >= frameBase;
-}
-
 TZrBool execution_try_reuse_tail_call_frame(SZrState *state,
                                             SZrCallInfo *callInfo,
                                             TZrStackValuePointer functionPointer) {
@@ -55,7 +44,7 @@ TZrBool execution_try_reuse_tail_call_frame(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (execution_callinfo_has_cleanup_registrations(state, callInfo)) {
+    if (execution_callinfo_has_pending_close_work(state, callInfo)) {
         return ZR_FALSE;
     }
 

@@ -165,6 +165,16 @@ ZR_CORE_API void ZrCore_String_Concat(struct SZrState *state, TZrSize count);
 
 ZR_CORE_API void ZrCore_String_ConcatSafe(struct SZrState *state, TZrSize count);
 
+ZR_CORE_API SZrString *ZrCore_String_ConcatPair(struct SZrState *state,
+                                                const SZrString *left,
+                                                const SZrString *right);
+
+ZR_CORE_API SZrString *ZrCore_String_ConcatStringAndNative(struct SZrState *state,
+                                                           const SZrString *stringValue,
+                                                           TZrNativeString nativeString,
+                                                           TZrSize nativeLength,
+                                                           TZrBool stringOnLeft);
+
 
 // todo: number to string
 ZR_CORE_API SZrString *ZrCore_String_FromNumber(struct SZrState *state, struct SZrTypeValue *value);

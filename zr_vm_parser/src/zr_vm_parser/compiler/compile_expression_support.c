@@ -24,6 +24,7 @@ static TZrBool compiler_append_callsite_cache_entry(SZrCompilerState *cs,
                                                     EZrFunctionCallSiteCacheKind kind,
                                                     TZrUInt32 instructionIndex,
                                                     TZrUInt32 memberEntryIndex,
+                                                    TZrUInt32 argumentCount,
                                                     TZrUInt16 *outCacheIndex,
                                                     SZrFileRange location) {
     SZrFunctionCallSiteCacheEntry *newEntries;
@@ -69,7 +70,7 @@ static TZrBool compiler_append_callsite_cache_entry(SZrCompilerState *cs,
     newEntries[oldCount].instructionIndex = instructionIndex;
     newEntries[oldCount].memberEntryIndex = memberEntryIndex;
     newEntries[oldCount].deoptId = ZR_RUNTIME_SEMIR_DEOPT_ID_NONE;
-    newEntries[oldCount].argumentCount = 0;
+    newEntries[oldCount].argumentCount = argumentCount;
 
     cs->currentFunction->callSiteCaches = newEntries;
     cs->currentFunction->callSiteCacheLength = (TZrUInt32)newCount;
@@ -101,6 +102,7 @@ static TZrBool emit_member_slot_instruction(SZrCompilerState *cs,
                                               cacheKind,
                                               (TZrUInt32)cs->instructionCount,
                                               memberEntryIndex,
+                                              0u,
                                               &cacheIndex,
                                               location)) {
         return ZR_FALSE;
@@ -125,6 +127,40 @@ TZrBool emit_member_slot_get(SZrCompilerState *cs,
                                         receiverSlot,
                                         memberEntryIndex,
                                         location);
+}
+
+TZrBool reserve_member_slot_get_cache(SZrCompilerState *cs,
+                                      TZrUInt32 memberEntryIndex,
+                                      TZrUInt32 argumentCount,
+                                      TZrUInt16 *outCacheIndex,
+                                      SZrFileRange location) {
+    return compiler_append_callsite_cache_entry(cs,
+                                                ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET,
+                                                (TZrUInt32)cs->instructionCount,
+                                                memberEntryIndex,
+                                                argumentCount,
+                                                outCacheIndex,
+                                                location);
+}
+
+TZrBool emit_known_vm_member_call_cached(SZrCompilerState *cs,
+                                         TZrUInt32 destinationSlot,
+                                         TZrUInt16 cacheIndex,
+                                         SZrFileRange location) {
+    TZrInstruction instruction;
+
+    ZR_UNUSED_PARAMETER(location);
+
+    if (cs == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    instruction = create_instruction_2(ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL),
+                                       ZR_COMPILE_SLOT_U16(destinationSlot),
+                                       cacheIndex,
+                                       0u);
+    emit_instruction(cs, instruction);
+    return !cs->hasError;
 }
 
 TZrBool emit_member_slot_set(SZrCompilerState *cs,
@@ -1451,11 +1487,23 @@ SZrString *resolve_member_expression_symbol(SZrCompilerState *cs, SZrMemberExpre
 }
 
 TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot) {
+    TZrBool oldTailCallContext;
+
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return ZR_PARSER_SLOT_NONE;
     }
 
+    oldTailCallContext = cs->isInTailCallContext;
+    cs->isInTailCallContext = ZR_FALSE;
+
+    if (node->type == ZR_AST_PRIMARY_EXPRESSION) {
+        TZrUInt32 slot = compile_primary_expression_into_slot(cs, node, targetSlot);
+        cs->isInTailCallContext = oldTailCallContext;
+        return slot;
+    }
+
     compile_expression_non_tail(cs, node);
+    cs->isInTailCallContext = oldTailCallContext;
     if (cs->hasError) {
         return ZR_PARSER_SLOT_NONE;
     }

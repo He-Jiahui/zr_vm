@@ -180,6 +180,9 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     TZrUInt32 currentEdenRegionId;
     TZrUInt32 currentSurvivorRegionId;
     TZrUInt32 currentOldRegionId;
+    TZrSize currentEdenRegionIndex;
+    TZrSize currentSurvivorRegionIndex;
+    TZrSize currentOldRegionIndex;
     TZrUInt64 currentEdenRegionUsedBytes;
     TZrUInt64 currentSurvivorRegionUsedBytes;
     TZrUInt64 currentOldRegionUsedBytes;

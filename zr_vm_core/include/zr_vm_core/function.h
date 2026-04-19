@@ -10,6 +10,7 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
 struct SZrState;
+struct SZrCallInfo;
 struct SZrTypeValueOnStack;
 struct SZrString;
 struct SZrObject;
@@ -349,18 +350,15 @@ typedef enum EZrFunctionCallSitePicAccessKind {
 } EZrFunctionCallSitePicAccessKind;
 
 #define ZR_FUNCTION_CALLSITE_PIC_SLOT_FLAG_NON_HIDDEN_STRING_PAIR_FAST_SET ((TZrUInt16)0x0080u)
-
 typedef struct SZrFunctionCallSitePicSlot {
     struct SZrObjectPrototype *cachedReceiverPrototype;
     struct SZrObjectPrototype *cachedOwnerPrototype;
     struct SZrObject *cachedReceiverObject;
-    struct SZrHashKeyValuePair **cachedReceiverBuckets;
     struct SZrHashKeyValuePair *cachedReceiverPair;
     struct SZrFunction *cachedFunction;
     struct SZrString *cachedMemberName;
     TZrUInt32 cachedReceiverVersion;
     TZrUInt32 cachedOwnerVersion;
-    TZrUInt32 cachedReceiverElementCount;
     TZrUInt32 cachedDescriptorIndex;
     TZrUInt8 cachedIsStatic;
     TZrUInt8 cachedAccessKind;
@@ -590,6 +588,66 @@ ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallResolvedVmFunction(struct
                                                                      TZrSize resultCount,
                                                                      TZrStackValuePointer returnDestination);
 
+/*
+ * Hot interpreter call sites already prepare state->stackTop to
+ * stackPointer + 1 + argumentsCount before entering precall. This variant
+ * preserves the normal resolved-vm semantics while letting those callers skip
+ * the redundant stackTop write on the hot path.
+ */
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallPreparedResolvedVmFunction(struct SZrState *state,
+                                                                             TZrStackValuePointer stackPointer,
+                                                                             struct SZrFunction *function,
+                                                                             TZrSize argumentsCount,
+                                                                             TZrSize resultCount,
+                                                                             TZrStackValuePointer returnDestination);
+
+/*
+ * Hot prepared resolved-VM call sites can often prove the exact-args,
+ * no-entry-clear, no-debug steady-state shape before entering the generic
+ * precall logic. This helper returns ZR_NULL when any colder condition forces
+ * fallback to ZrCore_Function_PreCallPreparedResolvedVmFunction.
+ */
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_TryPreCallPreparedResolvedVmFunctionExactArgsSteadyState(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        struct SZrFunction *function,
+        TZrSize argumentsCount,
+        TZrSize resultCount,
+        TZrStackValuePointer returnDestination);
+
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallResolvedNativeFunction(struct SZrState *state,
+                                                                          TZrStackValuePointer stackPointer,
+                                                                          FZrNativeFunction nativeFunction,
+                                                                          TZrSize resultCount,
+                                                                          TZrStackValuePointer returnDestination);
+
+ZR_CORE_API TZrSize ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFast(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        TZrStackValuePointer preparedFunctionTop,
+        FZrNativeFunction nativeFunction,
+        TZrStackValuePointer returnDestination);
+
+ZR_CORE_API TZrBool ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFastRestore(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        TZrStackValuePointer preparedFunctionTop,
+        FZrNativeFunction nativeFunction,
+        TZrMemoryOffset savedStackTopOffset,
+        struct SZrCallInfo *savedCallInfo,
+        TZrMemoryOffset originalCallInfoTopOffset,
+        TZrBool hasOriginalCallInfoTopAnchor,
+        struct SZrTypeValue *result,
+        TZrMemoryOffset resultOffset,
+        TZrBool hasResultAnchor);
+
+ZR_CORE_API TZrSize ZrCore_Function_CallPreparedResolvedNativeFunction(struct SZrState *state,
+                                                                       TZrStackValuePointer stackPointer,
+                                                                       TZrStackValuePointer preparedFunctionTop,
+                                                                       FZrNativeFunction nativeFunction,
+                                                                       TZrSize resultCount,
+                                                                       TZrStackValuePointer returnDestination);
+
 ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownNativeValue(struct SZrState *state,
                                                                  TZrStackValuePointer stackPointer,
                                                                  struct SZrTypeValue *callableValue,
@@ -597,8 +655,18 @@ ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallKnownNativeValue(struct S
                                                                  TZrStackValuePointer returnDestination);
 
 ZR_CORE_API TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
-                                                  struct SZrCallInfo *callInfo,
-                                                  TZrStackValuePointer stackPointer);
+                                                   struct SZrCallInfo *callInfo,
+                                                   TZrStackValuePointer stackPointer);
 
 ZR_CORE_API void ZrCore_Function_PostCall(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount);
+
+/*
+ * Hot interpreter returns commonly resolve to a single result with no debug
+ * hook state and plain call status. This variant lets those callers skip the
+ * generic multi-result PostCall bookkeeping once they have already proven that
+ * shape.
+ */
+ZR_CORE_API void ZrCore_Function_PostCallPreparedSingleResultFast(struct SZrState *state,
+                                                                  struct SZrCallInfo *callInfo,
+                                                                  TZrSize resultCount);
 #endif // ZR_VM_CORE_FUNCTION_H

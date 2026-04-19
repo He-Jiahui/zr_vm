@@ -29,6 +29,7 @@ void emit_type_conversion(SZrCompilerState *cs,
                           TZrUInt32 destSlot,
                           TZrUInt32 srcSlot,
                           EZrInstructionCode conversionOpcode);
+TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
 
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node);
@@ -1865,7 +1866,7 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
         // 如果有初始值，编译初始值表达式
         if (decl->value != ZR_NULL) {
             TZrUInt32 reservedVarSlot = allocate_stack_slot(cs);
-            TZrUInt32 initializerSlot;
+            TZrUInt32 initializerSlot = ZR_PARSER_SLOT_NONE;
             TZrUInt32 activateOffset;
 
             compile_statement_trace("var decl initializer compile start reservedSlot=%u stackCount=%llu",
@@ -1882,11 +1883,12 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                 return;
             }
 
-            ZrParser_Expression_Compile(cs, decl->value);
-            compile_statement_trace("var decl initializer compile done hasError=%d stackCount=%llu",
+            initializerSlot = compile_expression_into_slot(cs, decl->value, reservedVarSlot);
+            compile_statement_trace("var decl initializer compile done hasError=%d stackCount=%llu initializerSlot=%u",
                                     (int)cs->hasError,
-                                    (unsigned long long)cs->stackSlotCount);
-            if (cs->hasError || cs->stackSlotCount == 0) {
+                                    (unsigned long long)cs->stackSlotCount,
+                                    (unsigned int)initializerSlot);
+            if (cs->hasError || initializerSlot == ZR_PARSER_SLOT_NONE || cs->stackSlotCount == 0) {
                 if (initializerTypeInitialized) {
                     ZrParser_InferredType_Free(cs->state, &initializerType);
                 }
@@ -1896,7 +1898,6 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                 return;
             }
 
-            initializerSlot = (TZrUInt32)(cs->stackSlotCount - 1);
             compile_statement_trace("var decl bind initializer slot=%u reserved=%u",
                                     (unsigned int)initializerSlot,
                                     (unsigned int)reservedVarSlot);

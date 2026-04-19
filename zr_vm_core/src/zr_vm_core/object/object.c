@@ -6,6 +6,7 @@
 #include "object/object_super_array_internal.h"
 
 #include "zr_vm_core/call_info.h"
+#include "zr_vm_core/closure.h"
 #include "zr_vm_core/conversion.h"
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/function.h"
@@ -17,6 +18,7 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_common/zr_ast_constants.h"
+#include "zr_vm_library/native_binding.h"
 #include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -24,8 +26,25 @@
 
 #define ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS ((TZrUInt8)1)
 
+enum {
+    ZR_OBJECT_CACHED_INDEX_READONLY_INLINE_GET_FLAGS =
+            ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_NO_SELF_REBIND |
+            ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_INLINE_VALUE_CONTEXT |
+            ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_RESULT_ALWAYS_WRITTEN |
+            ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT,
+    ZR_OBJECT_CACHED_INDEX_READONLY_INLINE_SET_FLAGS =
+            ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_NO_SELF_REBIND |
+            ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_INLINE_VALUE_CONTEXT |
+            ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT |
+            ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_RESULT_OPTIONAL
+};
+
+#if defined(ZR_DEBUG)
 static TZrBool object_trace_enabled(void);
 static void object_trace(const TZrChar *format, ...);
+#else
+#define object_trace(...) ((void)0)
+#endif
 
 static const TZrChar *object_module_name_string(SZrState *state, const SZrObjectModule *module) {
     if (state == ZR_NULL || module == ZR_NULL) {
@@ -251,6 +270,37 @@ static void object_unpin_value_object(SZrGlobalState *global, const SZrTypeValue
     }
 
     object_unpin_raw_object(global, ZrCore_Value_GetRawObject(value), ZR_TRUE);
+}
+
+static ZR_FORCE_INLINE TZrBool object_value_resides_on_vm_stack(const SZrState *state, const SZrTypeValue *value) {
+    TZrStackValuePointer stackValue;
+
+    if (state == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stackValue = ZR_CAST(TZrStackValuePointer, value);
+    return (TZrBool)(stackValue >= state->stackBase.valuePointer && stackValue < state->stackTail.valuePointer);
+}
+
+static ZR_FORCE_INLINE SZrObjectPrototype *object_resolve_index_receiver_prototype_unchecked(
+        SZrState *state,
+        const SZrTypeValue *receiver,
+        SZrObject *object) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(object != ZR_NULL);
+    ZR_ASSERT(receiver->type == ZR_VALUE_TYPE_OBJECT || receiver->type == ZR_VALUE_TYPE_ARRAY);
+
+    if (object->prototype != ZR_NULL) {
+        return object->prototype;
+    }
+
+    if (state->global == ZR_NULL || receiver->type >= ZR_VALUE_TYPE_ENUM_MAX) {
+        return ZR_NULL;
+    }
+
+    return state->global->basicTypeObjectPrototype[receiver->type];
 }
 
 static ZR_FORCE_INLINE void object_refresh_cached_string_lookup_pair(SZrObject *object,
@@ -521,6 +571,494 @@ static ZR_FORCE_INLINE TZrBool object_can_use_direct_index_fallback_unchecked(co
     return object->prototype == ZR_NULL || object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY;
 }
 
+static ZR_FORCE_INLINE TZrBool object_value_is_struct_instance_local(SZrState *state, const SZrTypeValue *value) {
+    SZrObject *object;
+
+    if (state == ZR_NULL || value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT || value->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object = ZR_CAST_OBJECT(state, value->value.object);
+    return object != ZR_NULL && object->internalType == ZR_OBJECT_INTERNAL_TYPE_STRUCT;
+}
+
+static ZR_FORCE_INLINE TZrBool object_cached_readonly_inline_get_fast_shape_matches(
+        const SZrObjectKnownNativeDirectDispatch *directDispatch) {
+    return (TZrBool)(directDispatch != ZR_NULL &&
+                     directDispatch->readonlyInlineGetFastCallback != ZR_NULL &&
+                     directDispatch->usesReceiver &&
+                     directDispatch->rawArgumentCount == 2u &&
+                     (directDispatch->reserved0 & ZR_OBJECT_CACHED_INDEX_READONLY_INLINE_GET_FLAGS) ==
+                             ZR_OBJECT_CACHED_INDEX_READONLY_INLINE_GET_FLAGS);
+}
+
+static ZR_FORCE_INLINE TZrBool object_cached_readonly_inline_set_fast_shape_matches(
+        const SZrObjectKnownNativeDirectDispatch *directDispatch) {
+    return (TZrBool)(directDispatch != ZR_NULL &&
+                     directDispatch->readonlyInlineSetNoResultFastCallback != ZR_NULL &&
+                     directDispatch->usesReceiver &&
+                     directDispatch->rawArgumentCount == 3u &&
+                     (directDispatch->reserved0 & ZR_OBJECT_CACHED_INDEX_READONLY_INLINE_SET_FLAGS) ==
+                             ZR_OBJECT_CACHED_INDEX_READONLY_INLINE_SET_FLAGS);
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_call_hot_cached_known_native_get_by_index_readonly_inline_stack_operands(
+        SZrState *state,
+        const SZrObject *object,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        SZrTypeValue *result) {
+    const SZrObjectKnownNativeDirectDispatch *directDispatch;
+    FZrObjectKnownNativeReadonlyInlineGetFastCallback fastCallback;
+    TZrBool success = ZR_FALSE;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(object != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(key != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+
+    if (state->debugHookSignal != 0u ||
+        object->internalType == ZR_OBJECT_INTERNAL_TYPE_STRUCT ||
+        object->prototype == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    directDispatch = &object->prototype->indexContract.getByIndexKnownNativeDirectDispatch;
+    fastCallback = directDispatch->readonlyInlineGetFastCallback;
+    if (fastCallback == ZR_NULL ||
+        ((directDispatch->reserved1 &
+          ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_HOT_FLAG_READONLY_INLINE_GET_FAST_READY) == 0u &&
+         !object_cached_readonly_inline_get_fast_shape_matches(directDispatch))) {
+        return ZR_FALSE;
+    }
+
+    success = fastCallback(state, receiver, key, result);
+    if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
+        ZrCore_Value_ResetAsNullNoProfile(result);
+        success = ZR_TRUE;
+    }
+
+    return state->threadStatus == ZR_THREAD_STATUS_FINE && success;
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_call_hot_cached_known_native_set_by_index_readonly_inline_stack_operands(
+        SZrState *state,
+        const SZrObject *object,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        const SZrTypeValue *value) {
+    const SZrObjectKnownNativeDirectDispatch *directDispatch;
+    FZrObjectKnownNativeReadonlyInlineSetNoResultFastCallback fastCallback;
+    TZrBool success = ZR_FALSE;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(object != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(key != ZR_NULL);
+    ZR_ASSERT(value != ZR_NULL);
+
+    if (state->debugHookSignal != 0u ||
+        object->internalType == ZR_OBJECT_INTERNAL_TYPE_STRUCT ||
+        object->prototype == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    directDispatch = &object->prototype->indexContract.setByIndexKnownNativeDirectDispatch;
+    fastCallback = directDispatch->readonlyInlineSetNoResultFastCallback;
+    if (fastCallback == ZR_NULL ||
+        ((directDispatch->reserved1 &
+          ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_HOT_FLAG_READONLY_INLINE_SET_NO_RESULT_FAST_READY) == 0u &&
+         !object_cached_readonly_inline_set_fast_shape_matches(directDispatch))) {
+        return ZR_FALSE;
+    }
+
+    success = fastCallback(state, receiver, key, value);
+    if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
+        success = ZR_TRUE;
+    }
+
+    return state->threadStatus == ZR_THREAD_STATUS_FINE && success;
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_get_by_index_readonly_inline_fast_stack_operands(
+        SZrState *state,
+        SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        SZrTypeValue *result) {
+    SZrObject *object;
+
+    if (state == ZR_NULL || receiver == ZR_NULL || key == ZR_NULL || result == ZR_NULL ||
+        (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+        receiver->value.object == ZR_NULL ||
+        ZR_VALUE_IS_TYPE_INT(key->type)) {
+        return ZR_FALSE;
+    }
+
+    object = ZR_CAST_OBJECT(state, receiver->value.object);
+    if (object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return object_try_call_hot_cached_known_native_get_by_index_readonly_inline_stack_operands(
+            state, object, receiver, key, result);
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_set_by_index_readonly_inline_fast_stack_operands(
+        SZrState *state,
+        SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        const SZrTypeValue *value) {
+    SZrObject *object;
+
+    if (state == ZR_NULL || receiver == ZR_NULL || key == ZR_NULL || value == ZR_NULL ||
+        (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
+        receiver->value.object == ZR_NULL ||
+        ZR_VALUE_IS_TYPE_INT(key->type)) {
+        return ZR_FALSE;
+    }
+
+    object = ZR_CAST_OBJECT(state, receiver->value.object);
+    if (object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return object_try_call_hot_cached_known_native_set_by_index_readonly_inline_stack_operands(
+            state, object, receiver, key, value);
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_get_cached_known_native_index_contract_callable(
+        SZrFunction *function,
+        SZrRawObject *cachedCallable,
+        FZrNativeFunction cachedNativeFunction,
+        SZrRawObject **outCallableObject,
+        FZrNativeFunction *outNativeFunction) {
+    SZrRawObject *rawCallable;
+
+    if (outCallableObject != ZR_NULL) {
+        *outCallableObject = ZR_NULL;
+    }
+    if (outNativeFunction != ZR_NULL) {
+        *outNativeFunction = ZR_NULL;
+    }
+
+    if (function == ZR_NULL || outCallableObject == ZR_NULL || outNativeFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    rawCallable = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+    if (rawCallable == cachedCallable && cachedNativeFunction != ZR_NULL) {
+        *outCallableObject = cachedCallable;
+        *outNativeFunction = cachedNativeFunction;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_call_cached_known_native_get_by_index_readonly_inline_mode(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        SZrTypeValue *result,
+        TZrBool stackOperandsGuaranteed) {
+    FZrObjectKnownNativeReadonlyInlineGetFastCallback fastCallback;
+    TZrBool success = ZR_FALSE;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(directDispatch != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(key != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+
+    if (state->debugHookSignal != 0u) {
+        return ZR_FALSE;
+    }
+
+    fastCallback = directDispatch->readonlyInlineGetFastCallback;
+    if (fastCallback == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if ((directDispatch->reserved1 & ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_HOT_FLAG_READONLY_INLINE_GET_FAST_READY) ==
+            0u &&
+        !object_cached_readonly_inline_get_fast_shape_matches(directDispatch)) {
+        return ZR_FALSE;
+    }
+    if (!stackOperandsGuaranteed &&
+        (!object_value_resides_on_vm_stack(state, receiver) || !object_value_resides_on_vm_stack(state, key))) {
+        return ZR_FALSE;
+    }
+    success = fastCallback(state, receiver, key, result);
+    if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
+        ZrCore_Value_ResetAsNullNoProfile(result);
+        success = ZR_TRUE;
+    }
+
+    return state->threadStatus == ZR_THREAD_STATUS_FINE && success;
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_call_cached_known_native_get_by_index_readonly_inline(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        SZrTypeValue *result) {
+    return object_try_call_cached_known_native_get_by_index_readonly_inline_mode(
+            state, directDispatch, receiver, key, result, ZR_FALSE);
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_call_cached_known_native_get_by_index_readonly_inline_stack_operands(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        SZrTypeValue *result) {
+    return object_try_call_cached_known_native_get_by_index_readonly_inline_mode(
+            state, directDispatch, receiver, key, result, ZR_TRUE);
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_call_cached_known_native_set_by_index_readonly_inline_mode(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        const SZrTypeValue *value,
+        TZrBool stackOperandsGuaranteed) {
+    FZrObjectKnownNativeReadonlyInlineSetNoResultFastCallback fastCallback;
+    TZrBool success = ZR_FALSE;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(directDispatch != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(key != ZR_NULL);
+    ZR_ASSERT(value != ZR_NULL);
+
+    if (state->debugHookSignal != 0u) {
+        return ZR_FALSE;
+    }
+
+    fastCallback = directDispatch->readonlyInlineSetNoResultFastCallback;
+    if (fastCallback == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if ((directDispatch->reserved1 &
+         ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_HOT_FLAG_READONLY_INLINE_SET_NO_RESULT_FAST_READY) == 0u &&
+        !object_cached_readonly_inline_set_fast_shape_matches(directDispatch)) {
+        return ZR_FALSE;
+    }
+    if (!stackOperandsGuaranteed &&
+        (!object_value_resides_on_vm_stack(state, receiver) || !object_value_resides_on_vm_stack(state, key) ||
+         !object_value_resides_on_vm_stack(state, value))) {
+        return ZR_FALSE;
+    }
+    success = fastCallback(state, receiver, key, value);
+    if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
+        success = ZR_TRUE;
+    }
+
+    return state->threadStatus == ZR_THREAD_STATUS_FINE && success;
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_call_cached_known_native_set_by_index_readonly_inline(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        const SZrTypeValue *value) {
+    return object_try_call_cached_known_native_set_by_index_readonly_inline_mode(
+            state, directDispatch, receiver, key, value, ZR_FALSE);
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_call_cached_known_native_set_by_index_readonly_inline_stack_operands(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        const SZrTypeValue *value) {
+    return object_try_call_cached_known_native_set_by_index_readonly_inline_mode(
+            state, directDispatch, receiver, key, value, ZR_TRUE);
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_cache_known_native_index_contract_callable(
+        SZrState *state,
+        SZrFunction *function,
+        TZrSize expectedArgumentCount,
+        SZrRawObject **cachedCallableSlot,
+        FZrNativeFunction *cachedNativeFunctionSlot,
+        SZrObjectKnownNativeDirectDispatch *cachedDirectDispatchSlot,
+        SZrRawObject **outCallableObject,
+        FZrNativeFunction *outNativeFunction) {
+    SZrRawObject *rawCallable;
+    SZrClosureNative *nativeClosure;
+    FZrNativeFunction nativeFunction;
+
+    if (outCallableObject != ZR_NULL) {
+        *outCallableObject = ZR_NULL;
+    }
+    if (outNativeFunction != ZR_NULL) {
+        *outNativeFunction = ZR_NULL;
+    }
+
+    if (state == ZR_NULL || function == ZR_NULL || cachedCallableSlot == ZR_NULL || cachedNativeFunctionSlot == ZR_NULL ||
+        cachedDirectDispatchSlot == ZR_NULL || outCallableObject == ZR_NULL || outNativeFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    rawCallable = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+    if (*cachedCallableSlot == rawCallable && *cachedNativeFunctionSlot != ZR_NULL) {
+        *outCallableObject = rawCallable;
+        *outNativeFunction = *cachedNativeFunctionSlot;
+        return ZR_TRUE;
+    }
+
+    *cachedCallableSlot = ZR_NULL;
+    *cachedNativeFunctionSlot = ZR_NULL;
+    memset(cachedDirectDispatchSlot, 0, sizeof(*cachedDirectDispatchSlot));
+    if (rawCallable == ZR_NULL ||
+        !rawCallable->isNative ||
+        rawCallable->type != ZR_RAW_OBJECT_TYPE_CLOSURE ||
+        !ZrCore_RawObject_IsPermanent(state, rawCallable)) {
+        return ZR_FALSE;
+    }
+
+    nativeClosure = ZR_CAST(SZrClosureNative *, rawCallable);
+    nativeFunction = nativeClosure != ZR_NULL ? nativeClosure->nativeFunction : ZR_NULL;
+    if (nativeFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *cachedCallableSlot = rawCallable;
+    *cachedNativeFunctionSlot = nativeFunction;
+    (void)ZrCore_Object_TryResolveKnownNativeDirectDispatch(
+            state,
+            rawCallable,
+            expectedArgumentCount,
+            cachedDirectDispatchSlot);
+    *outCallableObject = rawCallable;
+    *outNativeFunction = nativeFunction;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool object_resolve_known_native_index_contract_callable(
+        SZrState *state,
+        SZrFunction *function,
+        TZrSize expectedArgumentCount,
+        SZrRawObject **cachedCallableSlot,
+        FZrNativeFunction *cachedNativeFunctionSlot,
+        SZrObjectKnownNativeDirectDispatch *cachedDirectDispatchSlot,
+        SZrRawObject **outCallableObject,
+        FZrNativeFunction *outNativeFunction) {
+    if (object_try_get_cached_known_native_index_contract_callable(
+                function,
+                cachedCallableSlot != ZR_NULL ? *cachedCallableSlot : ZR_NULL,
+                cachedNativeFunctionSlot != ZR_NULL ? *cachedNativeFunctionSlot : ZR_NULL,
+                outCallableObject,
+                outNativeFunction)) {
+        return ZR_TRUE;
+    }
+
+    return object_try_cache_known_native_index_contract_callable(
+            state,
+            function,
+            expectedArgumentCount,
+            cachedCallableSlot,
+            cachedNativeFunctionSlot,
+            cachedDirectDispatchSlot,
+            outCallableObject,
+            outNativeFunction);
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_call_cached_known_native_get_by_index_dispatch(
+        SZrState *state,
+        SZrFunction *function,
+        SZrIndexContract *indexContract,
+        const SZrObjectKnownNativeDirectDispatch *directDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        SZrTypeValue *result) {
+    SZrRawObject *nativeCallableObject = ZR_NULL;
+    FZrNativeFunction nativeFunction = ZR_NULL;
+
+    if (state == ZR_NULL || function == ZR_NULL || indexContract == ZR_NULL || directDispatch == ZR_NULL ||
+        receiver == ZR_NULL || key == ZR_NULL || result == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrCore_Object_CallDirectBindingFastOneArgument(state, directDispatch, receiver, key, result)) {
+        return ZR_TRUE;
+    }
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        return ZR_FALSE;
+    }
+
+    if (!object_try_get_cached_known_native_index_contract_callable(function,
+                                                                    indexContract->getByIndexKnownNativeCallable,
+                                                                    indexContract->getByIndexKnownNativeFunction,
+                                                                    &nativeCallableObject,
+                                                                    &nativeFunction)) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_Object_CallKnownNativeFastOneArgument(state,
+                                                        nativeCallableObject,
+                                                        nativeFunction,
+                                                        directDispatch,
+                                                        receiver,
+                                                        key,
+                                                        result);
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_call_cached_known_native_set_by_index_dispatch(
+        SZrState *state,
+        SZrFunction *function,
+        SZrIndexContract *indexContract,
+        const SZrObjectKnownNativeDirectDispatch *directDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *key,
+        const SZrTypeValue *value) {
+    SZrRawObject *nativeCallableObject = ZR_NULL;
+    FZrNativeFunction nativeFunction = ZR_NULL;
+    SZrTypeValue ignoredResult;
+
+    if (state == ZR_NULL || function == ZR_NULL || indexContract == ZR_NULL || directDispatch == ZR_NULL ||
+        receiver == ZR_NULL || key == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrCore_Object_CallDirectBindingFastTwoArgumentsNoResult(state, directDispatch, receiver, key, value)) {
+        return ZR_TRUE;
+    }
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_ResetAsNull(&ignoredResult);
+    if (ZrCore_Object_CallDirectBindingFastTwoArguments(state, directDispatch, receiver, key, value, &ignoredResult)) {
+        return ZR_TRUE;
+    }
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        return ZR_FALSE;
+    }
+
+    if (!object_try_get_cached_known_native_index_contract_callable(function,
+                                                                    indexContract->setByIndexKnownNativeCallable,
+                                                                    indexContract->setByIndexKnownNativeFunction,
+                                                                    &nativeCallableObject,
+                                                                    &nativeFunction)) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_Object_CallKnownNativeFastTwoArguments(state,
+                                                         nativeCallableObject,
+                                                         nativeFunction,
+                                                         directDispatch,
+                                                         receiver,
+                                                         key,
+                                                         value,
+                                                         &ignoredResult);
+}
+
 static TZrBool object_get_index_length(SZrState *state,
                                        SZrTypeValue *receiver,
                                        SZrTypeValue *result) {
@@ -694,6 +1232,8 @@ static const SZrTypeValue *object_resolve_storage_key(SZrState *state,
 void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key, const SZrTypeValue *value) {
     SZrTypeValue normalizedKey;
     const SZrTypeValue *storageKey = key;
+    SZrHashSet *nodeMap;
+    SZrHashKeyValuePair *pair;
     TZrBool objectPinned = ZR_FALSE;
     TZrBool keyPinned = ZR_FALSE;
     TZrBool valuePinned = ZR_FALSE;
@@ -736,6 +1276,14 @@ void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZr
         return;
     }
 
+    nodeMap = &object->nodeMap;
+    pair = ZrCore_HashSet_Find(state, nodeMap, storageKey);
+    if (pair != ZR_NULL) {
+        ZrCore_Object_SetExistingPairValueUnchecked(state, object, pair, value);
+        object->memberVersion++;
+        return;
+    }
+
     if (!object_pin_raw_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &objectPinned) ||
         !object_pin_value_object(state, storageKey, &keyPinned) ||
         !object_pin_value_object(state, value, &valuePinned)) {
@@ -746,17 +1294,13 @@ void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZr
         return;
     }
 
-    SZrHashSet *nodeMap = &object->nodeMap;
-    SZrHashKeyValuePair *pair = ZrCore_HashSet_Find(state, nodeMap, storageKey);
+    pair = ZrCore_HashSet_Add(state, nodeMap, storageKey);
     if (pair == ZR_NULL) {
-        pair = ZrCore_HashSet_Add(state, nodeMap, storageKey);
-        if (pair == ZR_NULL) {
-            object_unpin_value_object(state->global, value, valuePinned);
-            object_unpin_value_object(state->global, storageKey, keyPinned);
-            object_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
-            ZrCore_Log_Error(state, "failed to allocate object storage entry");
-            return;
-        }
+        object_unpin_value_object(state->global, value, valuePinned);
+        object_unpin_value_object(state->global, storageKey, keyPinned);
+        object_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
+        ZrCore_Log_Error(state, "failed to allocate object storage entry");
+        return;
     }
     ZrCore_Value_Copy(state, &pair->value, value);
     ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->key);
@@ -812,6 +1356,7 @@ void ZrCore_Object_SetExistingPairValueUnchecked(SZrState *state,
     }
 }
 
+#if defined(ZR_DEBUG)
 static TZrBool object_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -839,6 +1384,7 @@ static void object_trace(const TZrChar *format, ...) {
     fflush(stderr);
     va_end(arguments);
 }
+#endif
 
 const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key) {
     const SZrTypeValue *resolvedValue;
@@ -1539,7 +2085,7 @@ TZrBool ZrCore_Object_SetMemberWithKeyUnchecked(struct SZrState *state,
     const SZrTypeValue *prototypeValue;
     TZrBool isPrototypeReceiver;
 
-    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_SET_MEMBER);
+    object_record_helper(state, ZR_PROFILE_HELPER_SET_MEMBER);
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(receiver != ZR_NULL);
     ZR_ASSERT(memberName != ZR_NULL);
@@ -1574,6 +2120,7 @@ TZrBool ZrCore_Object_SetMemberWithKeyUnchecked(struct SZrState *state,
         if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY &&
             descriptor->setterFunction != ZR_NULL) {
             SZrTypeValue ignoredResult;
+            ZrCore_Value_ResetAsNull(&ignoredResult);
             return ZrCore_Object_CallFunctionWithReceiver(state,
                                                           descriptor->setterFunction,
                                                           receiver,
@@ -1626,7 +2173,7 @@ TZrBool ZrCore_Object_SetMemberCachedDescriptorUnchecked(struct SZrState *state,
     TZrBool isPrototypeReceiver;
     SZrTypeValue memberKey;
 
-    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_SET_MEMBER);
+    object_record_helper(state, ZR_PROFILE_HELPER_SET_MEMBER);
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(receiver != ZR_NULL);
     ZR_ASSERT(ownerPrototype != ZR_NULL);
@@ -1658,6 +2205,7 @@ TZrBool ZrCore_Object_SetMemberCachedDescriptorUnchecked(struct SZrState *state,
 
     if (descriptor->kind == ZR_MEMBER_DESCRIPTOR_KIND_PROPERTY && descriptor->setterFunction != ZR_NULL) {
         SZrTypeValue ignoredResult;
+        ZrCore_Value_ResetAsNull(&ignoredResult);
         return ZrCore_Object_CallFunctionWithReceiver(state,
                                                       descriptor->setterFunction,
                                                       receiver,
@@ -1924,16 +2472,21 @@ TZrBool ZrCore_Object_InvokeResolvedFunction(struct SZrState *state,
                                                   result);
 }
 
-TZrBool ZrCore_Object_GetByIndexUnchecked(struct SZrState *state,
-                                          SZrTypeValue *receiver,
-                                          const SZrTypeValue *key,
-                                          SZrTypeValue *result) {
+static ZR_FORCE_INLINE TZrBool object_get_by_index_unchecked_core(SZrState *state,
+                                                                  SZrTypeValue *receiver,
+                                                                  const SZrTypeValue *key,
+                                                                  SZrTypeValue *result,
+                                                                  TZrBool stackOperandsGuaranteed) {
     SZrObject *object;
     SZrObjectPrototype *prototype;
+    SZrIndexContract *indexContract;
+    const SZrObjectKnownNativeDirectDispatch *cachedDirectDispatch;
+    SZrFunction *indexFunction;
+    TZrBool canTryKnownNativeIndexFastPath = ZR_FALSE;
     const SZrTypeValue *resolvedValue;
     TZrBool superArrayApplicable = ZR_FALSE;
 
-    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_GET_BY_INDEX);
+    object_record_helper(state, ZR_PROFILE_HELPER_GET_BY_INDEX);
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(receiver != ZR_NULL);
     ZR_ASSERT(key != ZR_NULL);
@@ -1945,17 +2498,105 @@ TZrBool ZrCore_Object_GetByIndexUnchecked(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!ZrCore_Object_SuperArrayTryGetIntFast(state, receiver, key, result, &superArrayApplicable)) {
+    if (stackOperandsGuaranteed && !ZR_VALUE_IS_TYPE_INT(key->type)) {
+        if (object_try_call_hot_cached_known_native_get_by_index_readonly_inline_stack_operands(
+                    state,
+                    object,
+                    receiver,
+                    key,
+                    result)) {
+            return ZR_TRUE;
+        }
+    }
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
         return ZR_FALSE;
     }
-    if (superArrayApplicable) {
-        return ZR_TRUE;
+
+    if (ZR_VALUE_IS_TYPE_INT(key->type)) {
+        if (!ZrCore_Object_SuperArrayTryGetIntFast(state, receiver, key, result, &superArrayApplicable)) {
+            return ZR_FALSE;
+        }
+        if (superArrayApplicable) {
+            return ZR_TRUE;
+        }
     }
 
-    prototype = object_value_resolve_prototype_unchecked(state, receiver);
+    prototype = object_resolve_index_receiver_prototype_unchecked(state, receiver, object);
     if (prototype != ZR_NULL && prototype->indexContract.getByIndexFunction != ZR_NULL) {
+        SZrRawObject *nativeCallableObject = ZR_NULL;
+        FZrNativeFunction nativeFunction = ZR_NULL;
+
+        indexContract = &prototype->indexContract;
+        cachedDirectDispatch = &indexContract->getByIndexKnownNativeDirectDispatch;
+        indexFunction = indexContract->getByIndexFunction;
+        canTryKnownNativeIndexFastPath = (TZrBool)(object->internalType != ZR_OBJECT_INTERNAL_TYPE_STRUCT);
+
+        if (canTryKnownNativeIndexFastPath) {
+            if ((stackOperandsGuaranteed
+                          ? object_try_call_cached_known_native_get_by_index_readonly_inline_stack_operands(
+                                     state, cachedDirectDispatch, receiver, key, result)
+                          : object_try_call_cached_known_native_get_by_index_readonly_inline(
+                                     state, cachedDirectDispatch, receiver, key, result))) {
+                return ZR_TRUE;
+            }
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
+            if (object_try_call_cached_known_native_get_by_index_dispatch(state,
+                                                                          indexFunction,
+                                                                          indexContract,
+                                                                          cachedDirectDispatch,
+                                                                          receiver,
+                                                                          key,
+                                                                          result)) {
+                return ZR_TRUE;
+            }
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
+        }
+
+        if (canTryKnownNativeIndexFastPath &&
+            object_resolve_known_native_index_contract_callable(state,
+                                                                indexFunction,
+                                                                1u,
+                                                                &indexContract->getByIndexKnownNativeCallable,
+                                                                &indexContract->getByIndexKnownNativeFunction,
+                                                                &indexContract->getByIndexKnownNativeDirectDispatch,
+                                                                 &nativeCallableObject,
+                                                                &nativeFunction)) {
+            if ((stackOperandsGuaranteed
+                         ? object_try_call_cached_known_native_get_by_index_readonly_inline_stack_operands(
+                                    state, &indexContract->getByIndexKnownNativeDirectDispatch, receiver, key, result)
+                         : object_try_call_cached_known_native_get_by_index_readonly_inline(
+                                    state, &indexContract->getByIndexKnownNativeDirectDispatch, receiver, key, result))) {
+                return ZR_TRUE;
+            }
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
+            if (ZrCore_Object_CallDirectBindingFastOneArgument(
+                        state,
+                        &indexContract->getByIndexKnownNativeDirectDispatch,
+                        receiver,
+                        key,
+                        result)) {
+                return ZR_TRUE;
+            }
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
+            return ZrCore_Object_CallKnownNativeFastOneArgument(state,
+                                                                nativeCallableObject,
+                                                                nativeFunction,
+                                                                &indexContract->getByIndexKnownNativeDirectDispatch,
+                                                                receiver,
+                                                                key,
+                                                                result);
+        }
+
         return ZrCore_Object_CallFunctionWithReceiver(state,
-                                                      prototype->indexContract.getByIndexFunction,
+                                                      indexFunction,
                                                       receiver,
                                                       key,
                                                       1,
@@ -1982,6 +2623,27 @@ TZrBool ZrCore_Object_GetByIndexUnchecked(struct SZrState *state,
         ZrCore_Value_Copy(state, result, resolvedValue);
     }
     return ZR_TRUE;
+}
+
+TZrBool ZrCore_Object_GetByIndexUnchecked(struct SZrState *state,
+                                          SZrTypeValue *receiver,
+                                          const SZrTypeValue *key,
+                                          SZrTypeValue *result) {
+    return object_get_by_index_unchecked_core(state, receiver, key, result, ZR_FALSE);
+}
+
+TZrBool ZrCore_Object_GetByIndexUncheckedStackOperands(struct SZrState *state,
+                                                       SZrTypeValue *receiver,
+                                                       const SZrTypeValue *key,
+                                                       SZrTypeValue *result) {
+    return object_get_by_index_unchecked_core(state, receiver, key, result, ZR_TRUE);
+}
+
+TZrBool ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands(struct SZrState *state,
+                                                                   SZrTypeValue *receiver,
+                                                                   const SZrTypeValue *key,
+                                                                   SZrTypeValue *result) {
+    return object_try_get_by_index_readonly_inline_fast_stack_operands(state, receiver, key, result);
 }
 
 TZrBool ZrCore_Object_SetByIndex(struct SZrState *state,
@@ -2016,15 +2678,17 @@ TZrBool ZrCore_Object_GetByIndex(struct SZrState *state,
     return ZrCore_Object_GetByIndexUnchecked(state, receiver, key, result);
 }
 
-TZrBool ZrCore_Object_SetByIndexUnchecked(struct SZrState *state,
-                                          SZrTypeValue *receiver,
-                                          const SZrTypeValue *key,
-                                          const SZrTypeValue *value) {
+static ZR_FORCE_INLINE TZrBool object_set_by_index_unchecked_core(SZrState *state,
+                                                                  SZrTypeValue *receiver,
+                                                                  const SZrTypeValue *key,
+                                                                  const SZrTypeValue *value,
+                                                                  TZrBool stackOperandsGuaranteed) {
     SZrObject *object;
     SZrObjectPrototype *prototype;
+    SZrIndexContract *indexContract;
     TZrBool superArrayApplicable = ZR_FALSE;
 
-    ZrCore_Profile_RecordHelperCurrent(ZR_PROFILE_HELPER_SET_BY_INDEX);
+    object_record_helper(state, ZR_PROFILE_HELPER_SET_BY_INDEX);
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(receiver != ZR_NULL);
     ZR_ASSERT(key != ZR_NULL);
@@ -2036,18 +2700,119 @@ TZrBool ZrCore_Object_SetByIndexUnchecked(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    if (!ZrCore_Object_SuperArrayTrySetIntFast(state, receiver, key, value, &superArrayApplicable)) {
+    if (stackOperandsGuaranteed && !ZR_VALUE_IS_TYPE_INT(key->type)) {
+        if (object_try_call_hot_cached_known_native_set_by_index_readonly_inline_stack_operands(
+                    state,
+                    object,
+                    receiver,
+                    key,
+                    value)) {
+            return ZR_TRUE;
+        }
+    }
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
         return ZR_FALSE;
     }
-    if (superArrayApplicable) {
-        return ZR_TRUE;
+
+    if (ZR_VALUE_IS_TYPE_INT(key->type)) {
+        if (!ZrCore_Object_SuperArrayTrySetIntFast(state, receiver, key, value, &superArrayApplicable)) {
+            return ZR_FALSE;
+        }
+        if (superArrayApplicable) {
+            return ZR_TRUE;
+        }
     }
 
-    prototype = object_value_resolve_prototype_unchecked(state, receiver);
+    prototype = object_resolve_index_receiver_prototype_unchecked(state, receiver, object);
     if (prototype != ZR_NULL && prototype->indexContract.setByIndexFunction != ZR_NULL) {
         SZrTypeValue ignoredResult;
+        const SZrObjectKnownNativeDirectDispatch *cachedDirectDispatch;
+        SZrFunction *indexFunction;
+        SZrRawObject *nativeCallableObject = ZR_NULL;
+        FZrNativeFunction nativeFunction = ZR_NULL;
+        indexContract = &prototype->indexContract;
+        cachedDirectDispatch = &indexContract->setByIndexKnownNativeDirectDispatch;
+        indexFunction = indexContract->setByIndexFunction;
+
+        if (object->internalType != ZR_OBJECT_INTERNAL_TYPE_STRUCT) {
+            if ((stackOperandsGuaranteed
+                          ? object_try_call_cached_known_native_set_by_index_readonly_inline_stack_operands(
+                                     state, cachedDirectDispatch, receiver, key, value)
+                          : object_try_call_cached_known_native_set_by_index_readonly_inline(
+                                     state, cachedDirectDispatch, receiver, key, value))) {
+                return ZR_TRUE;
+            }
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
+            if (object_try_call_cached_known_native_set_by_index_dispatch(state,
+                                                                          indexFunction,
+                                                                          indexContract,
+                                                                          cachedDirectDispatch,
+                                                                          receiver,
+                                                                          key,
+                                                                          value)) {
+                return ZR_TRUE;
+            }
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
+        }
+
+        if (object->internalType != ZR_OBJECT_INTERNAL_TYPE_STRUCT &&
+            object_resolve_known_native_index_contract_callable(state,
+                                                                indexFunction,
+                                                                2u,
+                                                                &indexContract->setByIndexKnownNativeCallable,
+                                                                &indexContract->setByIndexKnownNativeFunction,
+                                                                &indexContract->setByIndexKnownNativeDirectDispatch,
+                                                                 &nativeCallableObject,
+                                                                 &nativeFunction)) {
+            if ((stackOperandsGuaranteed
+                         ? object_try_call_cached_known_native_set_by_index_readonly_inline_stack_operands(
+                                    state, &indexContract->setByIndexKnownNativeDirectDispatch, receiver, key, value)
+                         : object_try_call_cached_known_native_set_by_index_readonly_inline(
+                                    state, &indexContract->setByIndexKnownNativeDirectDispatch, receiver, key, value))) {
+                return ZR_TRUE;
+            }
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
+            if (ZrCore_Object_CallDirectBindingFastTwoArgumentsNoResult(state,
+                                                                        &indexContract->setByIndexKnownNativeDirectDispatch,
+                                                                        receiver,
+                                                                        key,
+                                                                        value)) {
+                return ZR_TRUE;
+            }
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
+            ZrCore_Value_ResetAsNull(&ignoredResult);
+            if (ZrCore_Object_CallDirectBindingFastTwoArguments(
+                        state,
+                        &indexContract->setByIndexKnownNativeDirectDispatch,
+                        receiver,
+                        key,
+                        value,
+                        &ignoredResult)) {
+                return ZR_TRUE;
+            }
+            if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                return ZR_FALSE;
+            }
+            return ZrCore_Object_CallKnownNativeFastTwoArguments(state,
+                                                                 nativeCallableObject,
+                                                                 nativeFunction,
+                                                                 &indexContract->setByIndexKnownNativeDirectDispatch,
+                                                                 receiver,
+                                                                 key,
+                                                                 value,
+                                                                 &ignoredResult);
+        }
+
         return ZrCore_Object_CallFunctionWithReceiverTwoArguments(state,
-                                                                 prototype->indexContract.setByIndexFunction,
+                                                                 indexContract->setByIndexFunction,
                                                                  receiver,
                                                                  key,
                                                                  value,
@@ -2060,6 +2825,27 @@ TZrBool ZrCore_Object_SetByIndexUnchecked(struct SZrState *state,
 
     ZrCore_Object_SetValue(state, object, key, value);
     return ZR_TRUE;
+}
+
+TZrBool ZrCore_Object_SetByIndexUnchecked(struct SZrState *state,
+                                          SZrTypeValue *receiver,
+                                          const SZrTypeValue *key,
+                                          const SZrTypeValue *value) {
+    return object_set_by_index_unchecked_core(state, receiver, key, value, ZR_FALSE);
+}
+
+TZrBool ZrCore_Object_SetByIndexUncheckedStackOperands(struct SZrState *state,
+                                                       SZrTypeValue *receiver,
+                                                       const SZrTypeValue *key,
+                                                       const SZrTypeValue *value) {
+    return object_set_by_index_unchecked_core(state, receiver, key, value, ZR_TRUE);
+}
+
+TZrBool ZrCore_Object_TrySetByIndexReadonlyInlineFastStackOperands(struct SZrState *state,
+                                                                   SZrTypeValue *receiver,
+                                                                   const SZrTypeValue *key,
+                                                                   const SZrTypeValue *value) {
+    return object_try_set_by_index_readonly_inline_fast_stack_operands(state, receiver, key, value);
 }
 
 TZrBool ZrCore_Object_IterInit(struct SZrState *state,
@@ -2245,6 +3031,16 @@ void ZrCore_ObjectPrototype_SetIndexContract(SZrObjectPrototype *prototype,
     }
 
     prototype->indexContract = *contract;
+    prototype->indexContract.getByIndexKnownNativeCallable = ZR_NULL;
+    prototype->indexContract.setByIndexKnownNativeCallable = ZR_NULL;
+    prototype->indexContract.getByIndexKnownNativeFunction = ZR_NULL;
+    prototype->indexContract.setByIndexKnownNativeFunction = ZR_NULL;
+    memset(&prototype->indexContract.getByIndexKnownNativeDirectDispatch,
+           0,
+           sizeof(prototype->indexContract.getByIndexKnownNativeDirectDispatch));
+    memset(&prototype->indexContract.setByIndexKnownNativeDirectDispatch,
+           0,
+           sizeof(prototype->indexContract.setByIndexKnownNativeDirectDispatch));
 }
 
 void ZrCore_ObjectPrototype_SetIterableContract(SZrObjectPrototype *prototype,

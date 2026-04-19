@@ -141,7 +141,14 @@ fn check_status(status: sys::ZrRustBindingStatus) -> Result<(), Error> {
     if status == sys::ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_OK {
         Ok(())
     } else {
-        Err(last_error())
+        let mut error = last_error();
+        // The direct FFI return code is authoritative even if the thread-local
+        // error snapshot is cleared by later teardown on some platforms.
+        error.status = status;
+        if error.message.is_empty() {
+            error.message = format!("{status:?}");
+        }
+        Err(error)
     }
 }
 
@@ -619,9 +626,22 @@ impl Drop for Value {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    fn acquire_test_lock() -> MutexGuard<'static, ()> {
+        static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+        // The binding layer still carries process-global C state.
+        // Keep Rust tests single-threaded within this test binary.
+        TEST_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("rust binding unit tests should acquire the process-global lock")
+    }
 
     #[test]
     fn scaffold_compile_and_run_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
         let temp = tempfile::tempdir()?;
         let root = temp.path().join("roundtrip_project");
         let workspace = ProjectWorkspace::scaffold(&root, "roundtrip_project")?;
@@ -679,7 +699,361 @@ mod tests {
     }
 
     #[test]
+    fn open_missing_project_reports_not_found_error() -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
+        let temp = tempfile::tempdir()?;
+        let missing = temp.path().join("missing_project.zrp");
+        let error = match ProjectWorkspace::open(&missing) {
+            Ok(_) => panic!("missing project should fail to open"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            error.status,
+            sys::ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_NOT_FOUND
+        );
+        assert!(
+            error.message.contains("failed to load project")
+                || error.message.contains("NOT_FOUND")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bare_runtime_run_is_unsupported() -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
+        let temp = tempfile::tempdir()?;
+        let root = temp.path().join("bare_runtime_project");
+        let workspace = ProjectWorkspace::scaffold(&root, "bare_runtime_project")?;
+        fs::write(workspace.project_root()?.join("src").join("main.zr"), "return 99;\n")?;
+
+        let mut runtime = RuntimeBuilder::bare().build()?;
+        let error = match workspace.run(&mut runtime, &RunOptions::default()) {
+            Ok(_) => panic!("bare runtime project run should be unsupported"),
+            Err(error) => error,
+        };
+        assert_eq!(
+            error.status,
+            sys::ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_UNSUPPORTED
+        );
+        assert!(
+            error.message.contains("bare runtime execution is not implemented yet")
+                || error.message.contains("UNSUPPORTED")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn incremental_toggle_prunes_stale_intermediate_and_keeps_binary_run_stable(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
+        let temp = tempfile::tempdir()?;
+        let root = temp.path().join("incremental_toggle_project");
+        let workspace = ProjectWorkspace::scaffold(&root, "incremental_toggle_project")?;
+        let project_root = workspace.project_root()?;
+        fs::write(
+            project_root.join("src").join("main.zr"),
+            concat!(
+                "var decorated = %import(\"decorated_user\");\n",
+                "\n",
+                "return decorated.verifyDecorators() + decorated.decoratedBonus();\n",
+            ),
+        )?;
+        fs::write(
+            project_root.join("src").join("decorated_user.zr"),
+            concat!(
+                "%module \"decorated_user\";\n",
+                "\n",
+                "var decorators = %import(\"decorators\");\n",
+                "var markClass = decorators.markClass;\n",
+                "var markField = decorators.markField;\n",
+                "var markMethod = decorators.markMethod;\n",
+                "var markProperty = decorators.markProperty;\n",
+                "var markFunction = decorators.markFunction;\n",
+                "\n",
+                "#markClass#\n",
+                "pub class User {\n",
+                "    #markField#\n",
+                "    pub var id: int = 1;\n",
+                "\n",
+                "    pri var _value: int = 2;\n",
+                "\n",
+                "    #markMethod#\n",
+                "    pub load(v: int): int {\n",
+                "        return v;\n",
+                "    }\n",
+                "\n",
+                "    #markProperty#\n",
+                "    pub get value: int {\n",
+                "        return this._value;\n",
+                "    }\n",
+                "}\n",
+                "\n",
+                "#markFunction#\n",
+                "pub decoratedBonus(): int {\n",
+                "    var meta = %type(decoratedBonus).metadata;\n",
+                "    return meta.instrumented ? 16 : 0;\n",
+                "}\n",
+                "\n",
+                "pub var verifyDecorators = () => {\n",
+                "    var seed = 0;\n",
+                "    var typeMeta = %type(User).metadata;\n",
+                "    var fieldMeta = %type(User).members.id[0].metadata;\n",
+                "    var methodMeta = %type(User).members.load[0].metadata;\n",
+                "    var propertyMeta = %type(User).members.value[0].metadata;\n",
+                "\n",
+                "    if (typeMeta.runtimeSerializable) {\n",
+                "        seed = seed + 1;\n",
+                "    }\n",
+                "    if (fieldMeta.isRuntimeField) {\n",
+                "        seed = seed + 2;\n",
+                "    }\n",
+                "    if (methodMeta.isRuntimeMethod) {\n",
+                "        seed = seed + 4;\n",
+                "    }\n",
+                "    if (propertyMeta.isRuntimeProperty) {\n",
+                "        seed = seed + 8;\n",
+                "    }\n",
+                "\n",
+                "    return seed;\n",
+                "};\n",
+            ),
+        )?;
+        fs::write(
+            project_root.join("src").join("decorators.zr"),
+            concat!(
+                "%module \"decorators\";\n",
+                "\n",
+                "pub markClass(target: %type Class): void {\n",
+                "    target.metadata.runtimeSerializable = true;\n",
+                "}\n",
+                "\n",
+                "pub markFunction(target: %type Function): void {\n",
+                "    target.metadata.instrumented = true;\n",
+                "}\n",
+                "\n",
+                "pub markField(target: %type Field): void {\n",
+                "    target.metadata.isRuntimeField = true;\n",
+                "}\n",
+                "\n",
+                "pub markMethod(target: %type Method): void {\n",
+                "    target.metadata.isRuntimeMethod = true;\n",
+                "}\n",
+                "\n",
+                "pub markProperty(target: %type Property): void {\n",
+                "    target.metadata.isRuntimeProperty = true;\n",
+                "}\n",
+            ),
+        )?;
+
+        let mut runtime = RuntimeBuilder::standard().build()?;
+        let first_compile = workspace.compile(
+            &mut runtime,
+            &CompileOptions {
+                emit_intermediate: true,
+                incremental: true,
+            },
+        )?;
+        assert_eq!(
+            first_compile,
+            CompileResult {
+                compiled: 3,
+                skipped: 0,
+                removed: 0,
+            }
+        );
+
+        let main_artifacts = workspace.resolve_artifacts(None)?;
+        let decorated_artifacts = workspace.resolve_artifacts(Some("decorated_user"))?;
+        let decorators_artifacts = workspace.resolve_artifacts(Some("decorators"))?;
+        assert!(main_artifacts.zro.exists());
+        assert!(decorated_artifacts.zro.exists());
+        assert!(decorators_artifacts.zro.exists());
+        assert!(main_artifacts.zri.exists());
+        assert!(decorated_artifacts.zri.exists());
+        assert!(decorators_artifacts.zri.exists());
+
+        let manifest = workspace.load_manifest()?;
+        assert_eq!(manifest.version, 2);
+        assert_eq!(manifest.entries.len(), 3);
+        let main_entry = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.module_name == "main")
+            .unwrap();
+        let decorated_entry = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.module_name == "decorated_user")
+            .unwrap();
+        let decorators_entry = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.module_name == "decorators")
+            .unwrap();
+        assert_eq!(main_entry.imports, vec!["decorated_user".to_string()]);
+        assert_eq!(decorated_entry.imports, vec!["decorators".to_string()]);
+        assert!(decorators_entry.imports.is_empty());
+
+        let second_compile = workspace.compile(
+            &mut runtime,
+            &CompileOptions {
+                emit_intermediate: false,
+                incremental: true,
+            },
+        )?;
+        assert_eq!(
+            second_compile,
+            CompileResult {
+                compiled: 0,
+                skipped: 3,
+                removed: 0,
+            }
+        );
+        assert!(main_artifacts.zro.exists());
+        assert!(decorated_artifacts.zro.exists());
+        assert!(decorators_artifacts.zro.exists());
+        assert!(!main_artifacts.zri.exists());
+        assert!(!decorated_artifacts.zri.exists());
+        assert!(!decorators_artifacts.zri.exists());
+
+        let manifest = workspace.load_manifest()?;
+        assert_eq!(manifest.version, 2);
+        assert_eq!(manifest.entries.len(), 3);
+        let main_entry = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.module_name == "main")
+            .unwrap();
+        let decorated_entry = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.module_name == "decorated_user")
+            .unwrap();
+        let decorators_entry = manifest
+            .entries
+            .iter()
+            .find(|entry| entry.module_name == "decorators")
+            .unwrap();
+        assert_eq!(main_entry.imports, vec!["decorated_user".to_string()]);
+        assert_eq!(decorated_entry.imports, vec!["decorators".to_string()]);
+        assert!(decorators_entry.imports.is_empty());
+        if !main_entry.zri_path.as_os_str().is_empty() {
+            assert!(!main_entry.zri_path.exists());
+        }
+        if !decorated_entry.zri_path.as_os_str().is_empty() {
+            assert!(!decorated_entry.zri_path.exists());
+        }
+        if !decorators_entry.zri_path.as_os_str().is_empty() {
+            assert!(!decorators_entry.zri_path.exists());
+        }
+
+        let first_binary = workspace.run(
+            &mut runtime,
+            &RunOptions {
+                execution_mode: ExecutionMode::Binary,
+                ..RunOptions::default()
+            },
+        )?;
+        assert_eq!(first_binary.kind(), ValueKind::Int);
+        assert_eq!(first_binary.as_int()?, 31);
+
+        let third_compile = workspace.compile(
+            &mut runtime,
+            &CompileOptions {
+                emit_intermediate: false,
+                incremental: true,
+            },
+        )?;
+        assert_eq!(
+            third_compile,
+            CompileResult {
+                compiled: 0,
+                skipped: 3,
+                removed: 0,
+            }
+        );
+        assert!(!main_artifacts.zri.exists());
+        assert!(!decorated_artifacts.zri.exists());
+        assert!(!decorators_artifacts.zri.exists());
+
+        let second_binary = workspace.run(
+            &mut runtime,
+            &RunOptions {
+                execution_mode: ExecutionMode::Binary,
+                ..RunOptions::default()
+            },
+        )?;
+        assert_eq!(second_binary.kind(), ValueKind::Int);
+        assert_eq!(second_binary.as_int()?, 31);
+        Ok(())
+    }
+
+    #[test]
+    fn named_module_run_preserves_module_name_and_program_args() -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
+        let temp = tempfile::tempdir()?;
+        let root = temp.path().join("module_run_project");
+        let workspace = ProjectWorkspace::scaffold(&root, "module_run_project")?;
+        let project_root = workspace.project_root()?;
+        fs::write(project_root.join("src").join("main.zr"), "return 17;\n")?;
+        fs::create_dir_all(project_root.join("src").join("tools"))?;
+        fs::write(
+            project_root.join("src").join("tools").join("seed.zr"),
+            concat!(
+                "var system = %import(\"zr.system\");\n",
+                "\n",
+                "fingerprint(): int {\n",
+                "    var count = 0;\n",
+                "    var score = 0;\n",
+                "    for (var item in system.process.arguments) {\n",
+                "        if (count == 0 && item == \"tools.seed\") {\n",
+                "            score = score + 100;\n",
+                "        } else if (count == 1 && item == \"foo\") {\n",
+                "            score = score + 10;\n",
+                "        } else if (count == 2 && item == \"bar\") {\n",
+                "            score = score + 1;\n",
+                "        }\n",
+                "        count = count + 1;\n",
+                "    }\n",
+                "    return count * 1000 + score;\n",
+                "}\n",
+                "\n",
+                "return fingerprint();\n",
+            ),
+        )?;
+
+        let artifacts = workspace.resolve_artifacts(Some("tools.seed"))?;
+        assert_eq!(artifacts.zro, root.join("bin").join("tools").join("seed.zro"));
+        assert_eq!(artifacts.zri, root.join("bin").join("tools").join("seed.zri"));
+
+        let mut runtime = RuntimeBuilder::standard().build()?;
+        let interp = workspace.run(
+            &mut runtime,
+            &RunOptions {
+                execution_mode: ExecutionMode::Interp,
+                module_name: Some("tools.seed".to_string()),
+                program_args: vec!["foo".to_string(), "bar".to_string()],
+            },
+        )?;
+        assert_eq!(interp.kind(), ValueKind::Int);
+        assert_eq!(interp.as_int()?, 3111);
+
+        let binary = workspace.run(
+            &mut runtime,
+            &RunOptions {
+                execution_mode: ExecutionMode::Binary,
+                module_name: Some("tools.seed".to_string()),
+                program_args: vec!["foo".to_string(), "bar".to_string()],
+            },
+        )?;
+        assert_eq!(binary.kind(), ValueKind::Int);
+        assert_eq!(binary.as_int()?, 3111);
+        Ok(())
+    }
+
+    #[test]
     fn owned_array_and_object_accessors_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
         let mut array = Value::new_array()?;
         assert_eq!(array.kind(), ValueKind::Array);
         assert_eq!(array.ownership_kind(), OwnershipKind::None);
@@ -704,6 +1078,7 @@ mod tests {
 
     #[test]
     fn scalar_value_kind_and_ownership_metadata_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
         let null_value = Value::new_null()?;
         assert_eq!(null_value.kind(), ValueKind::Null);
         assert_eq!(null_value.ownership_kind(), OwnershipKind::None);
@@ -732,6 +1107,7 @@ mod tests {
 
     #[test]
     fn call_module_export_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
         let temp = tempfile::tempdir()?;
         let root = temp.path().join("call_export_project");
         let workspace = ProjectWorkspace::scaffold(&root, "call_export_project")?;

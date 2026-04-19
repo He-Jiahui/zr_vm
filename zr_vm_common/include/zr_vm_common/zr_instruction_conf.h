@@ -198,6 +198,7 @@
     Z(LOGICAL_EQUAL_STRING)                                                                                            \
     Z(LOGICAL_NOT_EQUAL_STRING)                                                                                        \
     Z(KNOWN_VM_CALL)                                                                                                   \
+    Z(KNOWN_VM_MEMBER_CALL)                                                                                            \
     Z(KNOWN_VM_TAIL_CALL)                                                                                              \
     Z(KNOWN_NATIVE_CALL)                                                                                               \
     Z(KNOWN_NATIVE_TAIL_CALL)                                                                                          \

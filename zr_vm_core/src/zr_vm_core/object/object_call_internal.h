@@ -17,11 +17,83 @@ ZR_CORE_API TZrBool ZrCore_Object_CallFunctionWithReceiver(SZrState *state,
                                                            TZrSize argumentCount,
                                                            SZrTypeValue *result);
 
+ZR_CORE_API TZrBool ZrCore_Object_CallFunctionWithReceiverOneArgumentFast(SZrState *state,
+                                                                          struct SZrFunction *function,
+                                                                          const SZrTypeValue *receiver,
+                                                                          const SZrTypeValue *argument0,
+                                                                          SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_CallKnownNativeFastOneArgument(SZrState *state,
+                                                                 struct SZrRawObject *callableObject,
+                                                                 FZrNativeFunction nativeFunction,
+                                                                 const SZrObjectKnownNativeDirectDispatch *directBindingDispatch,
+                                                                 const SZrTypeValue *receiver,
+                                                                 const SZrTypeValue *argument0,
+                                                                 SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_CallDirectBindingFastOneArgument(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directBindingDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *argument0,
+        SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineOneArgumentStack(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directBindingDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *argument0,
+        SZrTypeValue *result);
+
 ZR_CORE_API TZrBool ZrCore_Object_CallFunctionWithReceiverTwoArguments(SZrState *state,
                                                                        struct SZrFunction *function,
                                                                        SZrTypeValue *receiver,
                                                                        const SZrTypeValue *argument0,
                                                                        const SZrTypeValue *argument1,
                                                                        SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_CallFunctionWithReceiverTwoArgumentsFast(SZrState *state,
+                                                                           struct SZrFunction *function,
+                                                                           const SZrTypeValue *receiver,
+                                                                           const SZrTypeValue *argument0,
+                                                                           const SZrTypeValue *argument1,
+                                                                           SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_CallKnownNativeFastTwoArguments(SZrState *state,
+                                                                  struct SZrRawObject *callableObject,
+                                                                  FZrNativeFunction nativeFunction,
+                                                                  const SZrObjectKnownNativeDirectDispatch *directBindingDispatch,
+                                                                  const SZrTypeValue *receiver,
+                                                                  const SZrTypeValue *argument0,
+                                                                  const SZrTypeValue *argument1,
+                                                                  SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_CallDirectBindingFastTwoArguments(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directBindingDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *argument0,
+        const SZrTypeValue *argument1,
+        SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_CallDirectBindingFastTwoArgumentsNoResult(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directBindingDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *argument0,
+        const SZrTypeValue *argument1);
+
+ZR_CORE_API TZrBool ZrCore_Object_TryCallIndexContractDirectBindingReadonlyInlineTwoArgumentsNoResultStack(
+        SZrState *state,
+        const SZrObjectKnownNativeDirectDispatch *directBindingDispatch,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *argument0,
+        const SZrTypeValue *argument1);
+
+ZR_CORE_API TZrBool ZrCore_Object_TryResolveKnownNativeDirectDispatch(
+        SZrState *state,
+        struct SZrRawObject *callableObject,
+        TZrSize expectedArgumentCount,
+        SZrObjectKnownNativeDirectDispatch *outDispatch);
 
 #endif

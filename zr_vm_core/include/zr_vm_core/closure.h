@@ -7,6 +7,7 @@
 
 #include "zr_vm_core/conf.h"
 #include "zr_vm_core/conversion.h"
+#include "zr_vm_core/object_known_native_dispatch.h"
 #include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/stack.h"
@@ -42,6 +43,14 @@ struct ZR_STRUCT_ALIGN SZrClosureNative {
     // SZrRawObject *gcList;
     FZrNativeFunction nativeFunction;
     struct SZrFunction *aotShimFunction;
+    TZrSize nativeBindingLookupIndex;
+    TZrPtr nativeBindingDescriptor;
+    TZrPtr nativeBindingModuleDescriptor;
+    TZrPtr nativeBindingTypeDescriptor;
+    TZrPtr nativeBindingOwnerPrototype;
+    TZrUInt32 nativeBindingKind;
+    TZrUInt32 nativeBindingUsesReceiver;
+    SZrObjectKnownNativeDirectDispatch nativeBindingDirectDispatch;
     TZrSize closureValueCount;
     SZrTypeValue *closureValuesExtend[1];
 };

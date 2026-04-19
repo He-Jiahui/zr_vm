@@ -294,10 +294,11 @@ void execution_pop_exception_handler(SZrState *state, SZrVmExceptionHandlerState
 }
 
 void execution_discard_exception_handlers_for_callinfo(SZrState *state, SZrCallInfo *callInfo) {
-    while (state != ZR_NULL && state->exceptionHandlerStackLength > 0 &&
-           state->exceptionHandlerStack[state->exceptionHandlerStackLength - 1].callInfo == callInfo) {
-        state->exceptionHandlerStackLength--;
+    if (state == ZR_NULL || callInfo == ZR_NULL || state->exceptionHandlerStackLength == 0u) {
+        return;
     }
+
+    execution_discard_exception_handlers_for_callinfo_fast(state, callInfo);
 }
 
 const SZrFunctionExceptionHandlerInfo *execution_lookup_exception_handler_info(
@@ -496,7 +497,7 @@ TZrBool execution_unwind_exception_to_handler(SZrState *state, SZrCallInfo **ioC
             execution_pop_exception_handler(state, handlerState);
         }
 
-        execution_discard_exception_handlers_for_callinfo(state, callInfo);
+        execution_discard_exception_handlers_for_callinfo_fast(state, callInfo);
         state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
         ZrCore_Closure_CloseClosure(state,
                                     callInfo->functionBase.valuePointer + 1,

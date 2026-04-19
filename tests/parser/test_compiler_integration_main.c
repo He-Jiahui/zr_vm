@@ -85,6 +85,10 @@ extern void test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_op
 extern void test_typed_quickening_promotes_const_and_plain_destination_variants(void);
 extern void test_known_native_calls_quicken_to_dedicated_call_family(void);
 extern void test_typed_member_calls_quicken_to_known_vm_call_family(void);
+extern void test_typed_member_call_initializers_bind_directly_into_local_slots(void);
+extern void test_typed_member_call_binary_operands_bind_directly_into_operand_slots(void);
+extern void test_nested_argument_calls_do_not_reuse_tail_call_lowering(void);
+extern void test_known_vm_call_results_keep_typed_arithmetic_specialization(void);
 extern void test_direct_child_function_calls_quicken_to_known_vm_call_family(void);
 extern void test_loop_child_function_calls_quicken_to_known_vm_call_family(void);
 extern void test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call(void);
@@ -209,6 +213,10 @@ int main(void) {
     RUN_TEST(test_typed_quickening_promotes_const_and_plain_destination_variants);
     RUN_TEST(test_known_native_calls_quicken_to_dedicated_call_family);
     RUN_TEST(test_typed_member_calls_quicken_to_known_vm_call_family);
+    RUN_TEST(test_typed_member_call_initializers_bind_directly_into_local_slots);
+    RUN_TEST(test_typed_member_call_binary_operands_bind_directly_into_operand_slots);
+    RUN_TEST(test_nested_argument_calls_do_not_reuse_tail_call_lowering);
+    RUN_TEST(test_known_vm_call_results_keep_typed_arithmetic_specialization);
     RUN_TEST(test_direct_child_function_calls_quicken_to_known_vm_call_family);
     RUN_TEST(test_loop_child_function_calls_quicken_to_known_vm_call_family);
     RUN_TEST(test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call);

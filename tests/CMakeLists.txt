@@ -237,6 +237,10 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/tests/core/test_precall_frame_slot_reset.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_postcall_fast_paths_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_postcall_fast_paths.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_tail_reuse_callinfo_reset_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_tail_reuse_callinfo_reset.c
     )
@@ -290,6 +294,11 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_precall_frame_slot_reset_test)
+    target_include_directories(zr_vm_postcall_fast_paths_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_postcall_fast_paths_test)
     target_include_directories(zr_vm_tail_reuse_callinfo_reset_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
@@ -474,6 +483,7 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_features.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_regressions.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_escape_metadata_pipeline.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/call_chain_polymorphic_compile_fixture.c
             ${CMAKE_SOURCE_DIR}/tests/parser/matrix_add_2d_compile_fixture.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_integration_main.c
     )
@@ -512,6 +522,51 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         target_link_libraries(zr_vm_compiler_integration_test PRIVATE zr_vm_lib_network_shared)
     elseif (TARGET zr_vm_lib_network_static)
         target_link_libraries(zr_vm_compiler_integration_test PRIVATE zr_vm_lib_network_static)
+    endif ()
+
+    zr_vm_add_unity_test_target(
+            zr_vm_compiler_call_lowering_focus_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_regressions.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/call_chain_polymorphic_compile_fixture.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/matrix_add_2d_compile_fixture.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_call_lowering_focus_main.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
+    target_include_directories(zr_vm_compiler_call_lowering_focus_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_compiler_call_lowering_focus_test)
+    if (TARGET zr_vm_lib_math_shared)
+        target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_math_shared)
+    elseif (TARGET zr_vm_lib_math_static)
+        target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_math_static)
+    endif ()
+    if (TARGET zr_vm_lib_system_shared)
+        target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_system_shared)
+    elseif (TARGET zr_vm_lib_system_static)
+        target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_system_static)
+    endif ()
+    if (TARGET zr_vm_lib_container_shared)
+        target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_container_shared)
+    elseif (TARGET zr_vm_lib_container_static)
+        target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_container_static)
+    endif ()
+    if (TARGET zr_vm_lib_ffi_shared)
+        target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_ffi_shared)
+    elseif (TARGET zr_vm_lib_ffi_static)
+        target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_ffi_static)
+    endif ()
+    if (TARGET zr_vm_lib_network_shared)
+        target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_network_shared)
+    elseif (TARGET zr_vm_lib_network_static)
+        target_link_libraries(zr_vm_compiler_call_lowering_focus_test PRIVATE zr_vm_lib_network_static)
     endif ()
 
     zr_vm_add_unity_test_target(
@@ -597,6 +652,16 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
     )
     zr_vm_link_parser_core_plus_library(zr_vm_project_import_resolver_test)
+
+    zr_vm_add_unity_test_target(
+            zr_vm_native_binding_direct_call_test
+            ${CMAKE_SOURCE_DIR}/tests/library/test_native_binding_direct_call.c
+    )
+    target_include_directories(zr_vm_native_binding_direct_call_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_native_binding_direct_call_test)
 
     zr_vm_add_unity_test_target(
             zr_vm_rust_binding_api_test
@@ -936,6 +1001,62 @@ if (TARGET zr_vm_cli_executable AND
     zr_vm_link_core(zr_vm_cli_args_test)
 endif ()
 
+if (TARGET zr_vm_cli_executable AND
+        (TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
+        (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static) AND
+        (TARGET zr_vm_library_shared OR TARGET zr_vm_library_static))
+    zr_vm_add_unity_test_target(
+            zr_vm_cli_project_incremental_test
+            ${CMAKE_SOURCE_DIR}/tests/cli/test_cli_project_incremental.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/compiler/compiler.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/project/project.c
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
+    )
+    target_include_directories(zr_vm_cli_project_incremental_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src
+            ${CMAKE_SOURCE_DIR}/zr_vm_cli/src/zr_vm_cli
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
+    )
+    if (BUILD_SHARED_LIB)
+        target_link_libraries(zr_vm_cli_project_incremental_test PRIVATE
+                zr_vm_parser_shared
+                zr_vm_core_shared
+                zr_vm_library_shared
+                zr_vm_lib_math_shared
+                zr_vm_lib_system_shared
+                zr_vm_lib_container_shared
+                zr_vm_lib_ffi_shared
+                zr_vm_lib_network_shared
+        )
+    else ()
+        target_link_libraries(zr_vm_cli_project_incremental_test PRIVATE
+                zr_vm_parser_static
+                zr_vm_core_static
+                zr_vm_library_static
+                zr_vm_lib_math_static
+                zr_vm_lib_system_static
+                zr_vm_lib_container_static
+                zr_vm_lib_ffi_static
+                zr_vm_lib_network_static
+        )
+    endif ()
+    if (TARGET zr_vm_lib_thread_shared)
+        target_link_libraries(zr_vm_cli_project_incremental_test PRIVATE zr_vm_lib_thread_shared)
+        target_compile_definitions(zr_vm_cli_project_incremental_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
+    elseif (TARGET zr_vm_lib_thread_static)
+        target_link_libraries(zr_vm_cli_project_incremental_test PRIVATE zr_vm_lib_thread_static)
+        target_compile_definitions(zr_vm_cli_project_incremental_test PRIVATE ZR_VM_HAS_THREAD_MODULE=1)
+    endif ()
+endif ()
+
 if (TARGET zr_vm_cli_executable)
     add_executable(
             zr_vm_cli_repl_e2e_test
@@ -1080,10 +1201,10 @@ endif ()
 set(core_runtime_executables "")
 if (TARGET zr_vm_gc_test AND TARGET zr_vm_instructions_test AND TARGET zr_vm_meta_test AND TARGET zr_vm_native_closure_value_test AND TARGET zr_vm_runtime_crash_recovery_test AND TARGET zr_vm_value_copy_fast_paths_test AND TARGET zr_vm_execution_member_access_fast_paths_test AND TARGET zr_vm_precall_frame_slot_reset_test AND TARGET zr_vm_tail_reuse_callinfo_reset_test AND TARGET zr_vm_vm_closure_precall_test)
     set(core_runtime_executables
-            "$<TARGET_FILE:zr_vm_gc_test>;$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_native_closure_value_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>;$<TARGET_FILE:zr_vm_value_copy_fast_paths_test>;$<TARGET_FILE:zr_vm_execution_member_access_fast_paths_test>;$<TARGET_FILE:zr_vm_precall_frame_slot_reset_test>;$<TARGET_FILE:zr_vm_tail_reuse_callinfo_reset_test>;$<TARGET_FILE:zr_vm_vm_closure_precall_test>"
+            "$<TARGET_FILE:zr_vm_gc_test>;$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_native_closure_value_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>;$<TARGET_FILE:zr_vm_value_copy_fast_paths_test>;$<TARGET_FILE:zr_vm_execution_member_access_fast_paths_test>;$<TARGET_FILE:zr_vm_precall_frame_slot_reset_test>;$<TARGET_FILE:zr_vm_postcall_fast_paths_test>;$<TARGET_FILE:zr_vm_tail_reuse_callinfo_reset_test>;$<TARGET_FILE:zr_vm_vm_closure_precall_test>"
     )
     set(core_runtime_smoke_executables
-            "$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>;$<TARGET_FILE:zr_vm_value_copy_fast_paths_test>;$<TARGET_FILE:zr_vm_execution_member_access_fast_paths_test>;$<TARGET_FILE:zr_vm_precall_frame_slot_reset_test>;$<TARGET_FILE:zr_vm_tail_reuse_callinfo_reset_test>;$<TARGET_FILE:zr_vm_vm_closure_precall_test>"
+            "$<TARGET_FILE:zr_vm_instructions_test>;$<TARGET_FILE:zr_vm_meta_test>;$<TARGET_FILE:zr_vm_runtime_crash_recovery_test>;$<TARGET_FILE:zr_vm_value_copy_fast_paths_test>;$<TARGET_FILE:zr_vm_execution_member_access_fast_paths_test>;$<TARGET_FILE:zr_vm_precall_frame_slot_reset_test>;$<TARGET_FILE:zr_vm_postcall_fast_paths_test>;$<TARGET_FILE:zr_vm_tail_reuse_callinfo_reset_test>;$<TARGET_FILE:zr_vm_vm_closure_precall_test>"
     )
     set(core_runtime_core_executables "${core_runtime_executables}")
     set(core_runtime_stress_executables "${core_runtime_executables}")
@@ -1225,6 +1346,21 @@ if (TARGET zr_vm_cli_args_test)
             "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_cli_args_test>"
             "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_cli_args_test>"
             "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_cli_args_test>"
+            "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
+            "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
+            -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
+    )
+endif ()
+
+if (TARGET zr_vm_cli_project_incremental_test)
+    add_test(
+            NAME cli_project_incremental
+            COMMAND ${CMAKE_COMMAND}
+            "-DSUITE_NAME=cli_project_incremental"
+            "-DEXECUTABLES=$<TARGET_FILE:zr_vm_cli_project_incremental_test>"
+            "-DEXECUTABLES_SMOKE=$<TARGET_FILE:zr_vm_cli_project_incremental_test>"
+            "-DEXECUTABLES_CORE=$<TARGET_FILE:zr_vm_cli_project_incremental_test>"
+            "-DEXECUTABLES_STRESS=$<TARGET_FILE:zr_vm_cli_project_incremental_test>"
             "-DHOST_BINARY_DIR=${CMAKE_BINARY_DIR}"
             "-DRUN_WORKING_DIRECTORY=${CMAKE_BINARY_DIR}"
             -P ${ZR_VM_SUITE_RUNNER_SCRIPT}
@@ -1420,6 +1556,7 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
             language_server_stdio_smoke
             projects
             cli_args
+            cli_project_incremental
             escape_pipeline
             cli_debug_e2e
             cli_repl_e2e

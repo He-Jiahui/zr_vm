@@ -104,6 +104,384 @@ typedef struct ZrLibrary_NativeRegistryState {
     TZrChar lastErrorMessage[ZR_LIBRARY_NATIVE_REGISTRY_ERROR_BUFFER_LENGTH];
 } ZrLibrary_NativeRegistryState;
 
+TZrInt64 native_binding_dispatcher(SZrState *state);
+TZrInt64 native_binding_dispatch_cached_stack_root_one_argument(SZrState *state);
+TZrInt64 native_binding_dispatch_cached_stack_root_two_arguments(SZrState *state);
+
+static ZR_FORCE_INLINE TZrUInt32 native_binding_descriptor_dispatch_flags(EZrLibResolvedBindingKind bindingKind,
+                                                                          const void *descriptor) {
+    switch (bindingKind) {
+        case ZR_LIB_RESOLVED_BINDING_FUNCTION: {
+            const ZrLibFunctionDescriptor *functionDescriptor = (const ZrLibFunctionDescriptor *)descriptor;
+            return functionDescriptor != ZR_NULL ? functionDescriptor->dispatchFlags : 0U;
+        }
+        case ZR_LIB_RESOLVED_BINDING_METHOD: {
+            const ZrLibMethodDescriptor *methodDescriptor = (const ZrLibMethodDescriptor *)descriptor;
+            return methodDescriptor != ZR_NULL ? methodDescriptor->dispatchFlags : 0U;
+        }
+        case ZR_LIB_RESOLVED_BINDING_META_METHOD: {
+            const ZrLibMetaMethodDescriptor *metaMethodDescriptor = (const ZrLibMetaMethodDescriptor *)descriptor;
+            return metaMethodDescriptor != ZR_NULL ? metaMethodDescriptor->dispatchFlags : 0U;
+        }
+        default:
+            return 0U;
+    }
+}
+
+static ZR_FORCE_INLINE TZrBool native_binding_descriptor_fixed_argument_count(EZrLibResolvedBindingKind bindingKind,
+                                                                              const void *descriptor,
+                                                                              TZrSize *outCount) {
+    TZrUInt16 minArgumentCount;
+    TZrUInt16 maxArgumentCount;
+
+    if (descriptor == ZR_NULL || outCount == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (bindingKind) {
+        case ZR_LIB_RESOLVED_BINDING_FUNCTION: {
+            const ZrLibFunctionDescriptor *functionDescriptor = (const ZrLibFunctionDescriptor *)descriptor;
+            if (functionDescriptor == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            minArgumentCount = functionDescriptor->minArgumentCount;
+            maxArgumentCount = functionDescriptor->maxArgumentCount;
+            break;
+        }
+        case ZR_LIB_RESOLVED_BINDING_METHOD: {
+            const ZrLibMethodDescriptor *methodDescriptor = (const ZrLibMethodDescriptor *)descriptor;
+            if (methodDescriptor == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            minArgumentCount = methodDescriptor->minArgumentCount;
+            maxArgumentCount = methodDescriptor->maxArgumentCount;
+            break;
+        }
+        case ZR_LIB_RESOLVED_BINDING_META_METHOD: {
+            const ZrLibMetaMethodDescriptor *metaMethodDescriptor = (const ZrLibMetaMethodDescriptor *)descriptor;
+            if (metaMethodDescriptor == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            minArgumentCount = metaMethodDescriptor->minArgumentCount;
+            maxArgumentCount = metaMethodDescriptor->maxArgumentCount;
+            break;
+        }
+        default:
+            return ZR_FALSE;
+    }
+
+    if (minArgumentCount != maxArgumentCount) {
+        return ZR_FALSE;
+    }
+
+    *outCount = (TZrSize)minArgumentCount;
+    return ZR_TRUE;
+}
+static ZR_FORCE_INLINE TZrBool native_binding_descriptor_uses_receiver(EZrLibResolvedBindingKind bindingKind,
+                                                                       const void *descriptor) {
+    switch (bindingKind) {
+        case ZR_LIB_RESOLVED_BINDING_FUNCTION:
+            return ZR_FALSE;
+        case ZR_LIB_RESOLVED_BINDING_METHOD: {
+            const ZrLibMethodDescriptor *methodDescriptor = (const ZrLibMethodDescriptor *)descriptor;
+            return methodDescriptor != ZR_NULL && !methodDescriptor->isStatic;
+        }
+        case ZR_LIB_RESOLVED_BINDING_META_METHOD:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static ZR_FORCE_INLINE FZrLibBoundCallback native_binding_descriptor_callback(EZrLibResolvedBindingKind bindingKind,
+                                                                              const void *descriptor) {
+    switch (bindingKind) {
+        case ZR_LIB_RESOLVED_BINDING_FUNCTION: {
+            const ZrLibFunctionDescriptor *functionDescriptor = (const ZrLibFunctionDescriptor *)descriptor;
+            return functionDescriptor != ZR_NULL ? functionDescriptor->callback : ZR_NULL;
+        }
+        case ZR_LIB_RESOLVED_BINDING_METHOD: {
+            const ZrLibMethodDescriptor *methodDescriptor = (const ZrLibMethodDescriptor *)descriptor;
+            return methodDescriptor != ZR_NULL ? methodDescriptor->callback : ZR_NULL;
+        }
+        case ZR_LIB_RESOLVED_BINDING_META_METHOD: {
+            const ZrLibMetaMethodDescriptor *metaMethodDescriptor = (const ZrLibMetaMethodDescriptor *)descriptor;
+            return metaMethodDescriptor != ZR_NULL ? metaMethodDescriptor->callback : ZR_NULL;
+        }
+        default:
+            return ZR_NULL;
+    }
+}
+
+static ZR_FORCE_INLINE FZrNativeFunction native_binding_closure_dispatcher_for_cached_binding(
+        const SZrClosureNative *closure) {
+    EZrLibResolvedBindingKind bindingKind;
+    const void *descriptor;
+    TZrUInt32 dispatchFlags;
+    TZrSize argumentCount;
+
+    if (closure == ZR_NULL || closure->nativeBindingDescriptor == ZR_NULL) {
+        return native_binding_dispatcher;
+    }
+
+    bindingKind = (EZrLibResolvedBindingKind)closure->nativeBindingKind;
+    descriptor = (const void *)closure->nativeBindingDescriptor;
+    dispatchFlags = native_binding_descriptor_dispatch_flags(bindingKind, descriptor);
+    if ((dispatchFlags & ZR_LIB_NATIVE_DISPATCH_FLAG_STACK_ROOT_CONTEXT) != 0U &&
+        native_binding_descriptor_fixed_argument_count(bindingKind, descriptor, &argumentCount)) {
+        if (argumentCount == 1u) {
+            return native_binding_dispatch_cached_stack_root_one_argument;
+        }
+        if (argumentCount == 2u) {
+            return native_binding_dispatch_cached_stack_root_two_arguments;
+        }
+    }
+
+    return native_binding_dispatcher;
+}
+
+static ZR_FORCE_INLINE void native_binding_closure_refresh_direct_dispatch_cache(SZrClosureNative *closure) {
+    EZrLibResolvedBindingKind bindingKind;
+    const void *descriptor;
+    TZrUInt32 dispatchFlags;
+    TZrSize argumentCount;
+    FZrLibBoundCallback callback;
+
+    if (closure == ZR_NULL) {
+        return;
+    }
+
+    memset(&closure->nativeBindingDirectDispatch, 0, sizeof(closure->nativeBindingDirectDispatch));
+    if (closure->nativeBindingDescriptor == ZR_NULL || closure->nativeBindingUsesReceiver == 0u) {
+        return;
+    }
+
+    bindingKind = (EZrLibResolvedBindingKind)closure->nativeBindingKind;
+    descriptor = (const void *)closure->nativeBindingDescriptor;
+    dispatchFlags = native_binding_descriptor_dispatch_flags(bindingKind, descriptor);
+    if ((dispatchFlags & ZR_LIB_NATIVE_DISPATCH_FLAG_STACK_ROOT_CONTEXT) == 0u ||
+        !native_binding_descriptor_fixed_argument_count(bindingKind, descriptor, &argumentCount)) {
+        return;
+    }
+
+    callback = native_binding_descriptor_callback(bindingKind, descriptor);
+    if (callback == ZR_NULL) {
+        return;
+    }
+
+    closure->nativeBindingDirectDispatch.callback = callback;
+    closure->nativeBindingDirectDispatch.moduleDescriptor = closure->nativeBindingModuleDescriptor;
+    closure->nativeBindingDirectDispatch.typeDescriptor = closure->nativeBindingTypeDescriptor;
+    closure->nativeBindingDirectDispatch.ownerPrototype = (SZrObjectPrototype *)closure->nativeBindingOwnerPrototype;
+    closure->nativeBindingDirectDispatch.rawArgumentCount = (TZrUInt32)(argumentCount + 1u);
+    closure->nativeBindingDirectDispatch.usesReceiver = ZR_TRUE;
+    if ((dispatchFlags & ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SELF_REBIND) != 0u) {
+        closure->nativeBindingDirectDispatch.reserved0 =
+                (TZrUInt8)(closure->nativeBindingDirectDispatch.reserved0 |
+                           ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_NO_SELF_REBIND);
+    }
+    if ((dispatchFlags & ZR_LIB_NATIVE_DISPATCH_FLAG_INLINE_VALUE_CONTEXT) != 0u) {
+        closure->nativeBindingDirectDispatch.reserved0 =
+                (TZrUInt8)(closure->nativeBindingDirectDispatch.reserved0 |
+                           ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_INLINE_VALUE_CONTEXT);
+    }
+    if ((dispatchFlags & ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_ALWAYS_WRITTEN) != 0u) {
+        closure->nativeBindingDirectDispatch.reserved0 =
+                (TZrUInt8)(closure->nativeBindingDirectDispatch.reserved0 |
+                           ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_RESULT_ALWAYS_WRITTEN);
+    }
+    if ((dispatchFlags & ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT) != 0u) {
+        closure->nativeBindingDirectDispatch.reserved0 =
+                (TZrUInt8)(closure->nativeBindingDirectDispatch.reserved0 |
+                           ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT);
+    }
+    if ((dispatchFlags & ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_OPTIONAL) != 0u) {
+        closure->nativeBindingDirectDispatch.reserved0 =
+                (TZrUInt8)(closure->nativeBindingDirectDispatch.reserved0 |
+                           ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_FLAG_RESULT_OPTIONAL);
+    }
+    switch (bindingKind) {
+        case ZR_LIB_RESOLVED_BINDING_FUNCTION:
+            closure->nativeBindingDirectDispatch.functionDescriptor = descriptor;
+            break;
+        case ZR_LIB_RESOLVED_BINDING_METHOD:
+            closure->nativeBindingDirectDispatch.methodDescriptor = descriptor;
+            break;
+        case ZR_LIB_RESOLVED_BINDING_META_METHOD:
+            closure->nativeBindingDirectDispatch.metaMethodDescriptor = descriptor;
+            closure->nativeBindingDirectDispatch.readonlyInlineGetFastCallback =
+                    ((const ZrLibMetaMethodDescriptor *)descriptor)->readonlyInlineGetFastCallback;
+            closure->nativeBindingDirectDispatch.readonlyInlineSetNoResultFastCallback =
+                    ((const ZrLibMetaMethodDescriptor *)descriptor)->readonlyInlineSetNoResultFastCallback;
+            break;
+        default:
+            memset(&closure->nativeBindingDirectDispatch, 0, sizeof(closure->nativeBindingDirectDispatch));
+            break;
+    }
+}
+
+static ZR_FORCE_INLINE void native_binding_closure_store_cached_binding(SZrClosureNative *closure,
+                                                                        TZrSize index,
+                                                                        EZrLibResolvedBindingKind bindingKind,
+                                                                        const ZrLibModuleDescriptor *moduleDescriptor,
+                                                                        const ZrLibTypeDescriptor *typeDescriptor,
+                                                                        SZrObjectPrototype *ownerPrototype,
+                                                                        const void *descriptor) {
+    if (closure == ZR_NULL) {
+        return;
+    }
+
+    closure->nativeBindingLookupIndex = index;
+    closure->nativeBindingDescriptor = (TZrPtr)descriptor;
+    closure->nativeBindingModuleDescriptor = (TZrPtr)moduleDescriptor;
+    closure->nativeBindingTypeDescriptor = (TZrPtr)typeDescriptor;
+    closure->nativeBindingOwnerPrototype = (TZrPtr)ownerPrototype;
+    closure->nativeBindingKind = (TZrUInt32)bindingKind;
+    closure->nativeBindingUsesReceiver = native_binding_descriptor_uses_receiver(bindingKind, descriptor);
+    native_binding_closure_refresh_direct_dispatch_cache(closure);
+    closure->nativeFunction = native_binding_closure_dispatcher_for_cached_binding(closure);
+}
+
+static ZR_FORCE_INLINE void native_binding_closure_invalidate_cached_lookup(SZrClosureNative *closure) {
+    if (closure == ZR_NULL) {
+        return;
+    }
+
+    closure->nativeBindingLookupIndex = ZR_MAX_SIZE;
+}
+
+static ZR_FORCE_INLINE TZrBool native_binding_closure_try_build_cached_entry(SZrClosureNative *closure,
+                                                                             ZrLibBindingEntry *entry) {
+    if (closure == ZR_NULL || entry == ZR_NULL || closure->nativeBindingDescriptor == ZR_NULL ||
+        closure->nativeBindingModuleDescriptor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    entry->closure = closure;
+    entry->bindingKind = (EZrLibResolvedBindingKind)closure->nativeBindingKind;
+    entry->moduleDescriptor = (const ZrLibModuleDescriptor *)closure->nativeBindingModuleDescriptor;
+    entry->typeDescriptor = (const ZrLibTypeDescriptor *)closure->nativeBindingTypeDescriptor;
+    entry->ownerPrototype = (SZrObjectPrototype *)closure->nativeBindingOwnerPrototype;
+
+    switch (entry->bindingKind) {
+        case ZR_LIB_RESOLVED_BINDING_FUNCTION:
+            entry->descriptor.functionDescriptor = (const ZrLibFunctionDescriptor *)closure->nativeBindingDescriptor;
+            return ZR_TRUE;
+        case ZR_LIB_RESOLVED_BINDING_METHOD:
+            entry->descriptor.methodDescriptor = (const ZrLibMethodDescriptor *)closure->nativeBindingDescriptor;
+            return ZR_TRUE;
+        case ZR_LIB_RESOLVED_BINDING_META_METHOD:
+            entry->descriptor.metaMethodDescriptor =
+                    (const ZrLibMetaMethodDescriptor *)closure->nativeBindingDescriptor;
+            return ZR_TRUE;
+        default:
+            memset(entry, 0, sizeof(*entry));
+            return ZR_FALSE;
+    }
+}
+
+static ZR_FORCE_INLINE TZrBool native_binding_closure_try_get_cached_callback(const SZrClosureNative *closure,
+                                                                              FZrLibBoundCallback *outCallback) {
+    if (outCallback != ZR_NULL) {
+        *outCallback = ZR_NULL;
+    }
+
+    if (closure == ZR_NULL || outCallback == ZR_NULL || closure->nativeBindingDescriptor == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outCallback = native_binding_descriptor_callback((EZrLibResolvedBindingKind)closure->nativeBindingKind,
+                                                      (const void *)closure->nativeBindingDescriptor);
+    return *outCallback != ZR_NULL;
+}
+
+static ZR_FORCE_INLINE void native_binding_init_call_context_layout_cached(ZrLibCallContext *context,
+                                                                           TZrStackValuePointer functionBase,
+                                                                           TZrSize rawArgumentCount,
+                                                                           TZrBool usesReceiver) {
+    if (context == ZR_NULL) {
+        return;
+    }
+
+    context->rawArgumentCount = rawArgumentCount;
+    context->stackLayoutUsesReceiver = usesReceiver;
+    context->stackLayoutAnchored = ZR_FALSE;
+    context->stackBasePointer = ZR_NULL;
+
+    if (!usesReceiver) {
+        context->argumentBase = functionBase + 1;
+        context->argumentValues = ZR_NULL;
+        context->argumentValuePointers = ZR_NULL;
+        context->argumentCount = rawArgumentCount;
+        context->selfValue = ZR_NULL;
+        return;
+    }
+
+    context->selfValue = rawArgumentCount > 0 ? ZrCore_Stack_GetValue(functionBase + 1) : ZR_NULL;
+    context->argumentBase = rawArgumentCount > 0 ? functionBase + 2 : functionBase + 1;
+    context->argumentValues = ZR_NULL;
+    context->argumentValuePointers = ZR_NULL;
+    context->argumentCount = rawArgumentCount > 0 ? rawArgumentCount - 1 : 0;
+}
+
+static ZR_FORCE_INLINE void native_binding_init_cached_stack_root_context(ZrLibCallContext *context,
+                                                                          SZrState *state,
+                                                                          const ZrLibBindingEntry *entry,
+                                                                          TZrStackValuePointer functionBase,
+                                                                          TZrSize rawArgumentCount,
+                                                                          TZrBool usesReceiver) {
+    if (context == ZR_NULL || entry == ZR_NULL) {
+        return;
+    }
+
+    context->state = state;
+    context->moduleDescriptor = entry->moduleDescriptor;
+    context->typeDescriptor = entry->typeDescriptor;
+    context->functionDescriptor =
+            entry->bindingKind == ZR_LIB_RESOLVED_BINDING_FUNCTION ? entry->descriptor.functionDescriptor : ZR_NULL;
+    context->methodDescriptor =
+            entry->bindingKind == ZR_LIB_RESOLVED_BINDING_METHOD ? entry->descriptor.methodDescriptor : ZR_NULL;
+    context->metaMethodDescriptor =
+            entry->bindingKind == ZR_LIB_RESOLVED_BINDING_META_METHOD ? entry->descriptor.metaMethodDescriptor
+                                                                      : ZR_NULL;
+    context->ownerPrototype = entry->ownerPrototype;
+    context->constructTargetPrototype = entry->ownerPrototype;
+    context->functionBase = functionBase;
+    native_binding_init_call_context_layout_cached(context, functionBase, rawArgumentCount, usesReceiver);
+}
+
+static ZR_FORCE_INLINE void native_binding_init_cached_stack_root_context_from_closure(
+        ZrLibCallContext *context,
+        SZrState *state,
+        const SZrClosureNative *closure,
+        TZrStackValuePointer functionBase,
+        TZrSize rawArgumentCount,
+        TZrBool usesReceiver) {
+    EZrLibResolvedBindingKind bindingKind;
+
+    if (context == ZR_NULL || closure == ZR_NULL) {
+        return;
+    }
+
+    bindingKind = (EZrLibResolvedBindingKind)closure->nativeBindingKind;
+    context->state = state;
+    context->moduleDescriptor = (const ZrLibModuleDescriptor *)closure->nativeBindingModuleDescriptor;
+    context->typeDescriptor = (const ZrLibTypeDescriptor *)closure->nativeBindingTypeDescriptor;
+    context->ownerPrototype = (SZrObjectPrototype *)closure->nativeBindingOwnerPrototype;
+    context->constructTargetPrototype = context->ownerPrototype;
+    context->functionDescriptor = bindingKind == ZR_LIB_RESOLVED_BINDING_FUNCTION
+                                          ? (const ZrLibFunctionDescriptor *)closure->nativeBindingDescriptor
+                                          : ZR_NULL;
+    context->methodDescriptor = bindingKind == ZR_LIB_RESOLVED_BINDING_METHOD
+                                        ? (const ZrLibMethodDescriptor *)closure->nativeBindingDescriptor
+                                        : ZR_NULL;
+    context->metaMethodDescriptor = bindingKind == ZR_LIB_RESOLVED_BINDING_META_METHOD
+                                            ? (const ZrLibMetaMethodDescriptor *)closure->nativeBindingDescriptor
+                                            : ZR_NULL;
+    context->functionBase = functionBase;
+    native_binding_init_call_context_layout_cached(context, functionBase, rawArgumentCount, usesReceiver);
+}
+
 #define kNativeEnumValueFieldName "__zr_enumValue"
 #define kNativeEnumNameFieldName "__zr_enumName"
 #define kNativeEnumValueTypeFieldName "__zr_enumValueTypeName"
@@ -292,7 +670,6 @@ void native_registry_resolve_type_relationships(SZrState *state,
                                                        SZrObjectModule *module,
                                                        const ZrLibModuleDescriptor *descriptor);
 TZrBool native_binding_auto_check_arity(const ZrLibCallContext *context);
-TZrInt64 native_binding_dispatcher(SZrState *state);
 TZrStackValuePointer native_binding_temp_root_slot(ZrLibTempValueRoot *root);
 
 #endif // ZR_VM_LIBRARY_NATIVE_BINDING_INTERNAL_H

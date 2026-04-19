@@ -179,13 +179,30 @@ static TZrInt32 next_char(SZrLexState *ls) {
         }
         ls->currentChar = '\n';
         ls->lineNumber++;
+        ls->currentLineStartOffset = ls->currentPos;
         return ls->currentChar;
     }
 
     if (ls->currentChar == '\n') {
         ls->lineNumber++;
+        ls->currentLineStartOffset = ls->currentPos;
     }
     return ls->currentChar;
+}
+
+static void lexer_record_token_start(SZrLexState *ls) {
+    if (ls == ZR_NULL) {
+        return;
+    }
+
+    ls->tokenStartLine = ls->lineNumber > 0 ? ls->lineNumber : 1;
+    ls->tokenStartLineStart = ls->currentLineStartOffset;
+    if (ls->currentChar == ZR_PARSER_LEXER_EOZ) {
+        ls->tokenStartOffset = ls->currentPos;
+        return;
+    }
+
+    ls->tokenStartOffset = ls->currentPos > 0 ? ls->currentPos - 1 : 0;
 }
 
 // 辅助函数：保存字符到缓冲区
@@ -606,6 +623,7 @@ static EZrToken llex(SZrLexState *ls, TZrSemInfo *seminfo) {
     skip_whitespace_and_comments(ls);
 
     ls->lastLine = ls->lineNumber;
+    lexer_record_token_start(ls);
 
     if (ls->currentChar == ZR_PARSER_LEXER_EOZ) {
         return ZR_TK_EOS;
@@ -839,6 +857,10 @@ void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source
     ls->currentPos = 0;
     ls->lineNumber = 1;
     ls->lastLine = 1;
+    ls->currentLineStartOffset = 0;
+    ls->tokenStartOffset = 0;
+    ls->tokenStartLineStart = 0;
+    ls->tokenStartLine = 1;
     ls->sourceName = sourceName;
     ls->currentTokenHadError = ZR_FALSE;
     ls->currentTokenErrorMessage = ZR_NULL;
@@ -852,6 +874,13 @@ void ZrParser_Lexer_Init(SZrLexState *ls, SZrState *state, const TZrChar *source
     ls->lookaheadChar = 0;
     ls->lookaheadLine = 1;
     ls->lookaheadLastLine = 1;
+    ls->lookaheadCurrentLineStartOffset = 0;
+    ls->lookaheadTokenStartOffset = 0;
+    ls->lookaheadTokenStartLineStart = 0;
+    ls->lookaheadTokenStartLine = 1;
+    ls->filePositionCacheOffset = 0;
+    ls->filePositionCacheLineStart = 0;
+    ls->filePositionCacheLine = 1;
 
     // 分配初始缓冲区
     ls->bufferSize = ZR_PARSER_LEXER_BUFFER_INITIAL_SIZE;
@@ -884,6 +913,10 @@ void ZrParser_Lexer_Next(SZrLexState *ls) {
         ls->currentChar = ls->lookaheadChar;
         ls->lineNumber = ls->lookaheadLine;
         ls->lastLine = ls->lookaheadLastLine;
+        ls->currentLineStartOffset = ls->lookaheadCurrentLineStartOffset;
+        ls->tokenStartOffset = ls->lookaheadTokenStartOffset;
+        ls->tokenStartLineStart = ls->lookaheadTokenStartLineStart;
+        ls->tokenStartLine = ls->lookaheadTokenStartLine;
         ls->lookahead.token = ZR_TK_EOS;  // 清除 lookahead 缓存
     } else {
         TZrSemInfo seminfo;
@@ -905,6 +938,10 @@ EZrToken ZrParser_Lexer_Lookahead(SZrLexState *ls) {
         TZrInt32 savedChar = ls->currentChar;
         TZrInt32 savedLine = ls->lineNumber;
         TZrInt32 savedLastLine = ls->lastLine;
+        TZrSize savedCurrentLineStartOffset = ls->currentLineStartOffset;
+        TZrSize savedTokenStartOffset = ls->tokenStartOffset;
+        TZrSize savedTokenStartLineStart = ls->tokenStartLineStart;
+        TZrInt32 savedTokenStartLine = ls->tokenStartLine;
         SZrToken savedToken = ls->t;
 
         // 读取下一个 token
@@ -922,12 +959,20 @@ EZrToken ZrParser_Lexer_Lookahead(SZrLexState *ls) {
         ls->lookaheadChar = ls->currentChar;
         ls->lookaheadLine = ls->lineNumber;
         ls->lookaheadLastLine = ls->lastLine;
+        ls->lookaheadCurrentLineStartOffset = ls->currentLineStartOffset;
+        ls->lookaheadTokenStartOffset = ls->tokenStartOffset;
+        ls->lookaheadTokenStartLineStart = ls->tokenStartLineStart;
+        ls->lookaheadTokenStartLine = ls->tokenStartLine;
 
         // 恢复状态（必须恢复所有被修改的字段）
         ls->currentPos = savedPos;
         ls->currentChar = savedChar;
         ls->lineNumber = savedLine;
         ls->lastLine = savedLastLine;
+        ls->currentLineStartOffset = savedCurrentLineStartOffset;
+        ls->tokenStartOffset = savedTokenStartOffset;
+        ls->tokenStartLineStart = savedTokenStartLineStart;
+        ls->tokenStartLine = savedTokenStartLine;
         ls->t = savedToken;
     }
     return ls->lookahead.token;

@@ -95,8 +95,14 @@ typedef struct ZrLibCallContext {
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argumentBase;
     SZrTypeValue *argumentValues;
+    SZrTypeValue **argumentValuePointers;
     TZrSize argumentCount;
     SZrTypeValue *selfValue;
+    SZrFunctionStackAnchor functionBaseAnchor;
+    TZrStackValuePointer stackBasePointer;
+    TZrSize rawArgumentCount;
+    TZrBool stackLayoutUsesReceiver;
+    TZrBool stackLayoutAnchored;
 } ZrLibCallContext;
 
 typedef struct ZrLibTempValueRoot {
@@ -122,6 +128,24 @@ typedef struct ZrLibTempValueRoot {
 } ZrLibTempValueRoot;
 
 typedef TZrBool (*FZrLibBoundCallback)(ZrLibCallContext *context, SZrTypeValue *result);
+typedef TZrBool (*FZrLibMetaMethodReadonlyInlineGetFastCallback)(SZrState *state,
+                                                                 const SZrTypeValue *selfValue,
+                                                                 const SZrTypeValue *argument0,
+                                                                 SZrTypeValue *result);
+typedef TZrBool (*FZrLibMetaMethodReadonlyInlineSetNoResultFastCallback)(SZrState *state,
+                                                                         const SZrTypeValue *selfValue,
+                                                                         const SZrTypeValue *argument0,
+                                                                         const SZrTypeValue *argument1);
+
+typedef enum EZrLibNativeDispatchFlag {
+    ZR_LIB_NATIVE_DISPATCH_FLAG_NONE = 0,
+    ZR_LIB_NATIVE_DISPATCH_FLAG_STACK_ROOT_CONTEXT = 1u << 0,
+    ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SELF_REBIND = 1u << 1,
+    ZR_LIB_NATIVE_DISPATCH_FLAG_INLINE_VALUE_CONTEXT = 1u << 2,
+    ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_ALWAYS_WRITTEN = 1u << 3,
+    ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT = 1u << 4,
+    ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_OPTIONAL = 1u << 5
+} EZrLibNativeDispatchFlag;
 
 typedef struct ZrLibFunctionDescriptor {
     const TZrChar *name;
@@ -135,6 +159,7 @@ typedef struct ZrLibFunctionDescriptor {
     const ZrLibGenericParameterDescriptor *genericParameters;
     TZrSize genericParameterCount;
     TZrUInt32 contractRole;
+    TZrUInt32 dispatchFlags;
 } ZrLibFunctionDescriptor;
 
 typedef struct ZrLibMethodDescriptor {
@@ -150,6 +175,7 @@ typedef struct ZrLibMethodDescriptor {
     TZrUInt32 contractRole;
     const ZrLibGenericParameterDescriptor *genericParameters;
     TZrSize genericParameterCount;
+    TZrUInt32 dispatchFlags;
 } ZrLibMethodDescriptor;
 
 typedef struct ZrLibMetaMethodDescriptor {
@@ -163,6 +189,9 @@ typedef struct ZrLibMetaMethodDescriptor {
     TZrSize parameterCount;
     const ZrLibGenericParameterDescriptor *genericParameters;
     TZrSize genericParameterCount;
+    TZrUInt32 dispatchFlags;
+    FZrLibMetaMethodReadonlyInlineGetFastCallback readonlyInlineGetFastCallback;
+    FZrLibMetaMethodReadonlyInlineSetNoResultFastCallback readonlyInlineSetNoResultFastCallback;
 } ZrLibMetaMethodDescriptor;
 
 typedef struct ZrLibConstantDescriptor {
@@ -444,6 +473,9 @@ ZR_LIBRARY_API SZrObjectModule *ZrLib_Module_GetLoaded(SZrState *state, const TZ
 ZR_LIBRARY_API const SZrTypeValue *ZrLib_Module_GetExport(SZrState *state,
                                                           const TZrChar *moduleName,
                                                           const TZrChar *exportName);
+ZR_LIBRARY_API const TZrChar *ZrLib_CallableValue_GetNativeBindingReturnTypeName(
+        SZrState *state,
+        const SZrTypeValue *callableValue);
 
 ZR_LIBRARY_API TZrBool ZrLib_CallValue(SZrState *state,
                                        const SZrTypeValue *callable,

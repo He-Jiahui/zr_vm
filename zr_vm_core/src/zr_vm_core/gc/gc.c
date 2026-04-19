@@ -346,6 +346,9 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     gc->currentEdenRegionId = 0u;
     gc->currentSurvivorRegionId = 0u;
     gc->currentOldRegionId = 0u;
+    gc->currentEdenRegionIndex = ZR_MAX_SIZE;
+    gc->currentSurvivorRegionIndex = ZR_MAX_SIZE;
+    gc->currentOldRegionIndex = ZR_MAX_SIZE;
     gc->currentEdenRegionUsedBytes = 0u;
     gc->currentSurvivorRegionUsedBytes = 0u;
     gc->currentOldRegionUsedBytes = 0u;
@@ -549,33 +552,44 @@ TZrBool ZrCore_GarbageCollector_IgnoreObject(SZrState *state, SZrRawObject *obje
         return ZR_FALSE;
     }
 
-    collector->ignoredObjects[collector->ignoredObjectCount++] = object;
+    collector->ignoredObjects[collector->ignoredObjectCount] = object;
+    object->garbageCollectMark.ignoredRegistryIndex = collector->ignoredObjectCount;
+    collector->ignoredObjectCount++;
     garbage_collector_mark_ignored_root_if_needed(state, object);
     return ZR_TRUE;
 }
 
 TZrBool ZrCore_GarbageCollector_UnignoreObject(SZrGlobalState *global, SZrRawObject *object) {
     SZrGarbageCollector *collector;
+    TZrSize index;
+    TZrSize lastIndex;
+    SZrRawObject *movedObject;
 
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
         return ZR_FALSE;
     }
 
     collector = global->garbageCollector;
-    for (TZrSize i = 0; i < collector->ignoredObjectCount; i++) {
-        if (collector->ignoredObjects[i] == object) {
-            for (TZrSize move = i + 1; move < collector->ignoredObjectCount; move++) {
-                collector->ignoredObjects[move - 1] = collector->ignoredObjects[move];
-            }
-            collector->ignoredObjectCount--;
-            if (collector->ignoredObjects != ZR_NULL) {
-                collector->ignoredObjects[collector->ignoredObjectCount] = ZR_NULL;
-            }
-            return ZR_TRUE;
-        }
+    index = object->garbageCollectMark.ignoredRegistryIndex;
+    if (collector->ignoredObjects == ZR_NULL || index >= collector->ignoredObjectCount ||
+        collector->ignoredObjects[index] != object) {
+        object->garbageCollectMark.ignoredRegistryIndex = ZR_MAX_SIZE;
+        return ZR_FALSE;
     }
 
-    return ZR_FALSE;
+    lastIndex = collector->ignoredObjectCount - 1u;
+    movedObject = collector->ignoredObjects[lastIndex];
+    collector->ignoredObjects[lastIndex] = ZR_NULL;
+    collector->ignoredObjectCount = lastIndex;
+    if (index != lastIndex) {
+        collector->ignoredObjects[index] = movedObject;
+        if (movedObject != ZR_NULL) {
+            movedObject->garbageCollectMark.ignoredRegistryIndex = index;
+        }
+    }
+    object->garbageCollectMark.ignoredRegistryIndex = ZR_MAX_SIZE;
+
+    return ZR_TRUE;
 }
 
 TZrBool ZrCore_GarbageCollector_IsObjectIgnored(SZrGlobalState *global, SZrRawObject *object) {
@@ -850,8 +864,13 @@ void ZrCore_GarbageCollector_PinObject(SZrState *state,
     }
     ZrCore_RawObject_SetStorageKind(object, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_PINNED);
     ZrCore_RawObject_SetRegionKind(object, ZR_GARBAGE_COLLECT_REGION_KIND_PINNED);
-    object->garbageCollectMark.regionId = garbage_collector_reassign_region_id(
-            state->global, previousRegionId, ZR_GARBAGE_COLLECT_REGION_KIND_PINNED, objectSize);
+    object->garbageCollectMark.regionId = garbage_collector_reassign_region_id_cached(
+            state->global,
+            previousRegionId,
+            object->garbageCollectMark.regionDescriptorIndex,
+            ZR_GARBAGE_COLLECT_REGION_KIND_PINNED,
+            objectSize,
+            &object->garbageCollectMark.regionDescriptorIndex);
     garbage_collector_mark_raw_object_escaped_internal(state,
                                                        object,
                                                        escapeFlags,

@@ -21,9 +21,19 @@ static const TZrChar *kContainerEntriesField = "__zr_entries";
 static const TZrChar *kContainerSourceField = "__zr_source";
 static const TZrChar *kContainerIndexField = "__zr_index";
 static const TZrChar *kContainerNextNodeField = "__zr_nextNode";
+static const TZrChar *kContainerCountField = "count";
+static const TZrChar *kContainerLengthField = "length";
+static const TZrChar *kContainerCapacityField = "capacity";
+static const TZrChar *kContainerCurrentField = "current";
+static const TZrChar *kContainerValueField = "value";
+static const TZrChar *kContainerNextField = "next";
+static const TZrChar *kContainerPreviousField = "previous";
+static const TZrChar *kContainerPairFirstField = "first";
+static const TZrChar *kContainerPairSecondField = "second";
 
 enum {
-    ZR_CONTAINER_FIELD_CACHE_CAPACITY = 48
+    ZR_CONTAINER_FIELD_CACHE_CAPACITY = 48,
+    ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT = 4
 };
 
 typedef struct ZrContainerFieldStringCacheEntry {
@@ -31,12 +41,102 @@ typedef struct ZrContainerFieldStringCacheEntry {
     SZrString *fieldString;
 } ZrContainerFieldStringCacheEntry;
 
+typedef struct ZrContainerHotFieldStringCache {
+    TZrUInt64 cacheIdentity;
+    SZrString *entriesFieldString;
+    SZrString *pairFirstFieldString;
+    SZrString *pairSecondFieldString;
+} ZrContainerHotFieldStringCache;
+
+typedef struct ZrContainerHotMapLookupCacheSlot {
+    SZrRawObject *keyObject;
+    TZrUInt32 entriesMemberVersion;
+    TZrSize index;
+    SZrObject *entryObject;
+} ZrContainerHotMapLookupCacheSlot;
+
+typedef struct ZrContainerHotMapLookupCache {
+    TZrUInt64 cacheIdentity;
+    SZrObject *entries;
+    SZrRawObject *lastKeyObject;
+    TZrUInt32 lastEntriesMemberVersion;
+    TZrSize lastIndex;
+    SZrObject *lastEntryObject;
+    TZrUInt8 nextSlotIndex;
+    ZrContainerHotMapLookupCacheSlot slots[ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT];
+} ZrContainerHotMapLookupCache;
+
+#if defined(ZR_DEBUG)
+static ZrVmLibContainerDebugHotMapLookupStats gZrContainerDebugHotMapLookupStats = {0};
+#endif
+
 static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state);
 static TZrInt64 zr_container_linked_list_iterator_move_next_native(SZrState *state);
+static ZR_FORCE_INLINE SZrObject *zr_container_array_get_object_fast(SZrState *state,
+                                                                     SZrObject *array,
+                                                                     TZrSize index);
+static ZR_FORCE_INLINE SZrHashKeyValuePair **zr_container_hot_field_pair_slot(SZrObject *object,
+                                                                               const TZrChar *fieldName);
+static ZR_FORCE_INLINE void zr_container_refresh_cached_field_slot(SZrState *state,
+                                                                   SZrObject *object,
+                                                                   SZrString *fieldString,
+                                                                   SZrHashKeyValuePair **hotPairSlot);
+
+static ZR_FORCE_INLINE TZrBool zr_container_field_name_equals(const TZrChar *fieldName, const TZrChar *expectedFieldName) {
+    return fieldName == expectedFieldName ||
+           (fieldName != ZR_NULL && expectedFieldName != ZR_NULL && strcmp(fieldName, expectedFieldName) == 0);
+}
+
+void ZrVmLibContainer_Debug_ResetHotMapLookupStats(void) {
+#if defined(ZR_DEBUG)
+    memset(&gZrContainerDebugHotMapLookupStats, 0, sizeof(gZrContainerDebugHotMapLookupStats));
+#endif
+}
+
+ZrVmLibContainerDebugHotMapLookupStats ZrVmLibContainer_Debug_GetHotMapLookupStats(void) {
+#if defined(ZR_DEBUG)
+    return gZrContainerDebugHotMapLookupStats;
+#else
+    ZrVmLibContainerDebugHotMapLookupStats stats = {0};
+    return stats;
+#endif
+}
+
+static SZrString *zr_container_cache_field_string_once(SZrState *state,
+                                                       const TZrChar *fieldName,
+                                                       SZrString **slot) {
+    SZrString *fieldString;
+
+    if (state == ZR_NULL || fieldName == ZR_NULL || slot == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (*slot != ZR_NULL) {
+        return *slot;
+    }
+
+    fieldString = ZrCore_String_Create(state, (TZrNativeString)fieldName, strlen(fieldName));
+    if (fieldString == ZR_NULL) {
+        return ZR_NULL;
+    }
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    *slot = fieldString;
+    return fieldString;
+}
 
 static SZrString *zr_container_cached_field_string(SZrState *state, const TZrChar *fieldName) {
     static TZrUInt64 cachedGlobalCacheIdentity = 0;
     static ZrContainerFieldStringCacheEntry cache[ZR_CONTAINER_FIELD_CACHE_CAPACITY];
+    static SZrString *cachedItemsFieldString = ZR_NULL;
+    static SZrString *cachedEntriesFieldString = ZR_NULL;
+    static SZrString *cachedCountFieldString = ZR_NULL;
+    static SZrString *cachedLengthFieldString = ZR_NULL;
+    static SZrString *cachedCapacityFieldString = ZR_NULL;
+    static SZrString *cachedValueFieldString = ZR_NULL;
+    static SZrString *cachedNextFieldString = ZR_NULL;
+    static SZrString *cachedPreviousFieldString = ZR_NULL;
+    static SZrString *cachedPairFirstFieldString = ZR_NULL;
+    static SZrString *cachedPairSecondFieldString = ZR_NULL;
 
     if (state == ZR_NULL || state->global == ZR_NULL || fieldName == ZR_NULL) {
         return ZR_NULL;
@@ -45,6 +145,47 @@ static SZrString *zr_container_cached_field_string(SZrState *state, const TZrCha
     if (cachedGlobalCacheIdentity != state->global->cacheIdentity) {
         cachedGlobalCacheIdentity = state->global->cacheIdentity;
         memset(cache, 0, sizeof(cache));
+        cachedItemsFieldString = ZR_NULL;
+        cachedEntriesFieldString = ZR_NULL;
+        cachedCountFieldString = ZR_NULL;
+        cachedLengthFieldString = ZR_NULL;
+        cachedCapacityFieldString = ZR_NULL;
+        cachedValueFieldString = ZR_NULL;
+        cachedNextFieldString = ZR_NULL;
+        cachedPreviousFieldString = ZR_NULL;
+        cachedPairFirstFieldString = ZR_NULL;
+        cachedPairSecondFieldString = ZR_NULL;
+    }
+
+    if (zr_container_field_name_equals(fieldName, kContainerItemsField)) {
+        return zr_container_cache_field_string_once(state, kContainerItemsField, &cachedItemsFieldString);
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerEntriesField)) {
+        return zr_container_cache_field_string_once(state, kContainerEntriesField, &cachedEntriesFieldString);
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerCountField)) {
+        return zr_container_cache_field_string_once(state, kContainerCountField, &cachedCountFieldString);
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerLengthField)) {
+        return zr_container_cache_field_string_once(state, kContainerLengthField, &cachedLengthFieldString);
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerCapacityField)) {
+        return zr_container_cache_field_string_once(state, kContainerCapacityField, &cachedCapacityFieldString);
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerValueField)) {
+        return zr_container_cache_field_string_once(state, kContainerValueField, &cachedValueFieldString);
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerNextField)) {
+        return zr_container_cache_field_string_once(state, kContainerNextField, &cachedNextFieldString);
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerPreviousField)) {
+        return zr_container_cache_field_string_once(state, kContainerPreviousField, &cachedPreviousFieldString);
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerPairFirstField)) {
+        return zr_container_cache_field_string_once(state, kContainerPairFirstField, &cachedPairFirstFieldString);
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerPairSecondField)) {
+        return zr_container_cache_field_string_once(state, kContainerPairSecondField, &cachedPairSecondFieldString);
     }
 
     for (TZrSize index = 0; index < ZR_CONTAINER_FIELD_CACHE_CAPACITY; index++) {
@@ -90,6 +231,211 @@ static TZrBool zr_container_make_field_key(SZrState *state, const TZrChar *field
     ZrCore_Value_InitAsRawObject(state, outKey, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
     outKey->type = ZR_VALUE_TYPE_STRING;
     return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE ZrContainerHotFieldStringCache *zr_container_hot_field_string_cache(SZrState *state) {
+    static ZrContainerHotFieldStringCache cache = {0};
+
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (cache.cacheIdentity != state->global->cacheIdentity) {
+        memset(&cache, 0, sizeof(cache));
+        cache.cacheIdentity = state->global->cacheIdentity;
+    }
+
+    return &cache;
+}
+
+static ZR_FORCE_INLINE ZrContainerHotMapLookupCache *zr_container_hot_map_lookup_cache(SZrState *state) {
+    static ZrContainerHotMapLookupCache cache = {0};
+
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (cache.cacheIdentity != state->global->cacheIdentity) {
+        memset(&cache, 0, sizeof(cache));
+        cache.cacheIdentity = state->global->cacheIdentity;
+    }
+
+    return &cache;
+}
+
+static ZR_FORCE_INLINE void zr_container_reset_hot_map_lookup_cache_state(ZrContainerHotMapLookupCache *cache,
+                                                                          SZrObject *entries) {
+    if (cache == ZR_NULL) {
+        return;
+    }
+
+    cache->entries = entries;
+    cache->lastKeyObject = ZR_NULL;
+    cache->lastEntriesMemberVersion = 0u;
+    cache->lastIndex = 0u;
+    cache->lastEntryObject = ZR_NULL;
+    cache->nextSlotIndex = 0u;
+    memset(cache->slots, 0, sizeof(cache->slots));
+}
+
+static ZR_FORCE_INLINE void zr_container_commit_hot_map_lookup_cache_hit(ZrContainerHotMapLookupCache *cache,
+                                                                         const ZrContainerHotMapLookupCacheSlot *slot,
+                                                                         TZrSize *outIndex,
+                                                                         SZrObject **outEntryObject) {
+    ZR_ASSERT(cache != ZR_NULL);
+    ZR_ASSERT(slot != ZR_NULL);
+
+    cache->lastKeyObject = slot->keyObject;
+    cache->lastEntriesMemberVersion = slot->entriesMemberVersion;
+    cache->lastIndex = slot->index;
+    cache->lastEntryObject = slot->entryObject;
+#if defined(ZR_DEBUG)
+    gZrContainerDebugHotMapLookupStats.hotHitCount++;
+    gZrContainerDebugHotMapLookupStats.memberVersionHitCount++;
+#endif
+    if (outIndex != ZR_NULL) {
+        *outIndex = slot->index;
+    }
+    if (outEntryObject != ZR_NULL) {
+        *outEntryObject = slot->entryObject;
+    }
+}
+
+static ZR_FORCE_INLINE TZrBool zr_container_try_hot_map_lookup_cache_slot(
+        ZrContainerHotMapLookupCache *cache,
+        const ZrContainerHotMapLookupCacheSlot *slot,
+        SZrRawObject *keyObject,
+        TZrUInt32 entriesMemberVersion,
+        TZrSize *outIndex,
+        SZrObject **outEntryObject) {
+    if (cache == ZR_NULL || slot == ZR_NULL || slot->keyObject != keyObject ||
+        slot->entriesMemberVersion != entriesMemberVersion || slot->entryObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    zr_container_commit_hot_map_lookup_cache_hit(cache, slot, outIndex, outEntryObject);
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE void zr_container_update_hot_map_lookup_cache(SZrState *state,
+                                                                     SZrObject *entries,
+                                                                     SZrRawObject *keyObject,
+                                                                     TZrSize index,
+                                                                     SZrObject *entryObject) {
+    ZrContainerHotMapLookupCache *cache = zr_container_hot_map_lookup_cache(state);
+    ZrContainerHotMapLookupCacheSlot slotValue = {0};
+    TZrSize insertIndex;
+    TZrUInt32 entriesMemberVersion;
+
+    if (cache == ZR_NULL || entries == ZR_NULL || keyObject == ZR_NULL || entryObject == ZR_NULL) {
+        return;
+    }
+
+    entriesMemberVersion = entries->memberVersion;
+
+    if (cache->entries != entries) {
+        zr_container_reset_hot_map_lookup_cache_state(cache, entries);
+    }
+
+    cache->lastKeyObject = keyObject;
+    cache->lastEntriesMemberVersion = entriesMemberVersion;
+    cache->lastIndex = index;
+    cache->lastEntryObject = entryObject;
+
+    slotValue.keyObject = keyObject;
+    slotValue.entriesMemberVersion = entriesMemberVersion;
+    slotValue.index = index;
+    slotValue.entryObject = entryObject;
+
+    for (TZrSize slotIndex = 0; slotIndex < ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT; slotIndex++) {
+        if (cache->slots[slotIndex].keyObject == keyObject &&
+            cache->slots[slotIndex].entriesMemberVersion == entriesMemberVersion) {
+            cache->slots[slotIndex] = slotValue;
+            return;
+        }
+    }
+
+    insertIndex = ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT;
+    for (TZrSize slotIndex = 0; slotIndex < ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT; slotIndex++) {
+        if (cache->slots[slotIndex].keyObject == ZR_NULL ||
+            cache->slots[slotIndex].entryObject == ZR_NULL) {
+            insertIndex = slotIndex;
+            break;
+        }
+    }
+
+    if (insertIndex == ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT) {
+        insertIndex = cache->nextSlotIndex % ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT;
+    }
+    cache->slots[insertIndex] = slotValue;
+    cache->nextSlotIndex = (TZrUInt8)((insertIndex + 1u) % ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT);
+}
+
+static ZR_FORCE_INLINE TZrBool zr_container_try_hot_map_lookup_cache(SZrState *state,
+                                                                     ZrContainerHotMapLookupCache *cache,
+                                                                     SZrObject *entries,
+                                                                     SZrRawObject *keyObject,
+                                                                     TZrSize *outIndex,
+                                                                     SZrObject **outEntryObject) {
+    TZrUInt32 entriesMemberVersion;
+
+    if (state == ZR_NULL || cache == ZR_NULL || entries == ZR_NULL || keyObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    entriesMemberVersion = entries->memberVersion;
+
+    if (cache->entries != entries) {
+        zr_container_reset_hot_map_lookup_cache_state(cache, entries);
+        return ZR_FALSE;
+    }
+
+    if (cache->lastKeyObject == keyObject &&
+        cache->lastEntryObject != ZR_NULL &&
+        cache->lastEntriesMemberVersion == entriesMemberVersion) {
+        ZrContainerHotMapLookupCacheSlot lastSlot = {
+                .keyObject = cache->lastKeyObject,
+                .entriesMemberVersion = cache->lastEntriesMemberVersion,
+                .index = cache->lastIndex,
+                .entryObject = cache->lastEntryObject};
+
+        zr_container_commit_hot_map_lookup_cache_hit(cache, &lastSlot, outIndex, outEntryObject);
+        return ZR_TRUE;
+    }
+
+    if (zr_container_try_hot_map_lookup_cache_slot(
+                cache, &cache->slots[0], keyObject, entriesMemberVersion, outIndex, outEntryObject) ||
+        zr_container_try_hot_map_lookup_cache_slot(
+                cache, &cache->slots[1], keyObject, entriesMemberVersion, outIndex, outEntryObject) ||
+        zr_container_try_hot_map_lookup_cache_slot(
+                cache, &cache->slots[2], keyObject, entriesMemberVersion, outIndex, outEntryObject) ||
+        zr_container_try_hot_map_lookup_cache_slot(
+                cache, &cache->slots[3], keyObject, entriesMemberVersion, outIndex, outEntryObject)) {
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE SZrString *zr_container_entries_field_string_fast(SZrState *state) {
+    ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
+
+    return cache != ZR_NULL ? zr_container_cache_field_string_once(state, kContainerEntriesField, &cache->entriesFieldString)
+                            : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrString *zr_container_pair_first_field_string_fast(SZrState *state) {
+    ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
+
+    return cache != ZR_NULL ? zr_container_cache_field_string_once(state, kContainerPairFirstField, &cache->pairFirstFieldString)
+                            : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrString *zr_container_pair_second_field_string_fast(SZrState *state) {
+    ZrContainerHotFieldStringCache *cache = zr_container_hot_field_string_cache(state);
+
+    return cache != ZR_NULL ? zr_container_cache_field_string_once(state, kContainerPairSecondField, &cache->pairSecondFieldString)
+                            : ZR_NULL;
 }
 
 static SZrObjectPrototype *zr_container_iterator_runtime_prototype(SZrState *state,
@@ -239,14 +585,39 @@ static TZrBool zr_container_set_value_field_fast(SZrState *state,
                                                  const TZrChar *fieldName,
                                                  const SZrTypeValue *value) {
     SZrTypeValue key;
+    SZrString *fieldString;
+    SZrHashKeyValuePair **hotPairSlot;
+    TZrBool isHiddenItemsField;
 
     if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || value == ZR_NULL ||
         !zr_container_make_field_key(state, fieldName, &key)) {
         return ZR_FALSE;
     }
 
+    fieldString = ZR_CAST_STRING(state, key.value.object);
+    hotPairSlot = zr_container_hot_field_pair_slot(object, fieldName);
     ZrCore_Object_SetValue(state, object, &key, value);
-    return state->threadStatus == ZR_THREAD_STATUS_FINE;
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        return ZR_FALSE;
+    }
+
+    if (hotPairSlot != ZR_NULL && fieldString != ZR_NULL) {
+        zr_container_refresh_cached_field_slot(state, object, fieldString, hotPairSlot);
+    }
+
+    isHiddenItemsField = zr_container_field_name_equals(fieldName, kContainerItemsField) ||
+                         zr_container_field_name_equals(fieldName, kContainerEntriesField);
+    if (isHiddenItemsField) {
+        object->cachedHiddenItemsObject = ZR_NULL;
+        if ((value->type == ZR_VALUE_TYPE_OBJECT || value->type == ZR_VALUE_TYPE_ARRAY) && value->value.object != ZR_NULL) {
+            SZrObject *hiddenItemsObject = ZR_CAST_OBJECT(state, value->value.object);
+
+            if (hiddenItemsObject != ZR_NULL && hiddenItemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+                object->cachedHiddenItemsObject = hiddenItemsObject;
+            }
+        }
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool zr_container_set_int_field_fast(SZrState *state,
@@ -260,6 +631,17 @@ static TZrBool zr_container_set_int_field_fast(SZrState *state,
     }
 
     ZrCore_Value_InitAsInt(state, &fieldValue, value);
+    return zr_container_set_value_field_fast(state, object, fieldName, &fieldValue);
+}
+
+static TZrBool zr_container_set_null_field_fast(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
+    SZrTypeValue fieldValue;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrLib_Value_SetNull(&fieldValue);
     return zr_container_set_value_field_fast(state, object, fieldName, &fieldValue);
 }
 
@@ -297,11 +679,450 @@ static SZrObject *zr_container_get_object_field(SZrState *state, SZrObject *obje
     return ZR_CAST_OBJECT(state, value->value.object);
 }
 
+static ZR_FORCE_INLINE SZrHashKeyValuePair **zr_container_hot_field_pair_slot(SZrObject *object,
+                                                                               const TZrChar *fieldName) {
+    if (object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (zr_container_field_name_equals(fieldName, kContainerItemsField) ||
+        zr_container_field_name_equals(fieldName, kContainerEntriesField)) {
+        return &object->cachedHiddenItemsPair;
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerLengthField) ||
+        zr_container_field_name_equals(fieldName, kContainerCountField) ||
+        zr_container_field_name_equals(fieldName, kContainerPairFirstField)) {
+        return &object->cachedLengthPair;
+    }
+    if (zr_container_field_name_equals(fieldName, kContainerCapacityField) ||
+        zr_container_field_name_equals(fieldName, kContainerPairSecondField)) {
+        return &object->cachedCapacityPair;
+    }
+
+    return ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_find_own_string_pair_exact(SZrObject *object,
+                                                                                     SZrString *fieldString) {
+    SZrHashKeyValuePair *pair;
+    TZrUInt64 hash;
+
+    if (object == ZR_NULL || fieldString == ZR_NULL || !object->nodeMap.isValid || object->nodeMap.buckets == ZR_NULL ||
+        object->nodeMap.capacity == 0) {
+        return ZR_NULL;
+    }
+
+    hash = ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString)->hash;
+    for (pair = ZrCore_HashSet_GetBucket(&object->nodeMap, hash); pair != ZR_NULL; pair = pair->next) {
+        if (pair->key.type == ZR_VALUE_TYPE_STRING &&
+            pair->key.value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString)) {
+            return pair;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static ZR_FORCE_INLINE TZrBool zr_container_pair_matches_field_string(SZrState *state,
+                                                                      SZrHashKeyValuePair *pair,
+                                                                      SZrString *fieldString) {
+    SZrString *pairKeyString;
+
+    if (state == ZR_NULL || pair == ZR_NULL || fieldString == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING ||
+        pair->key.value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (pair->key.value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString)) {
+        return ZR_TRUE;
+    }
+
+    pairKeyString = ZR_CAST_STRING(state, pair->key.value.object);
+    return pairKeyString != ZR_NULL && ZrCore_String_Equal(pairKeyString, fieldString);
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_try_match_cached_field_pair_exact(SZrHashKeyValuePair *pair,
+                                                                                            SZrString *fieldString) {
+    if (pair == ZR_NULL || fieldString == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING ||
+        pair->key.value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString)) {
+        return ZR_NULL;
+    }
+
+    return pair;
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_find_own_cached_field_pair_fast(
+        SZrState *state,
+        SZrObject *object,
+        SZrString *fieldString,
+        SZrHashKeyValuePair **hotPairSlot) {
+    SZrHashKeyValuePair *pair;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldString == ZR_NULL || !object->nodeMap.isValid ||
+        object->nodeMap.buckets == ZR_NULL || object->nodeMap.capacity == 0) {
+        return ZR_NULL;
+    }
+
+    pair = (hotPairSlot != ZR_NULL) ? *hotPairSlot : ZR_NULL;
+    if (zr_container_pair_matches_field_string(state, pair, fieldString)) {
+        return pair;
+    }
+
+    pair = object->cachedStringLookupPair;
+    if (zr_container_pair_matches_field_string(state, pair, fieldString)) {
+        if (hotPairSlot != ZR_NULL) {
+            *hotPairSlot = pair;
+        }
+        return pair;
+    }
+
+    pair = zr_container_find_own_string_pair_exact(object, fieldString);
+    if (pair == ZR_NULL) {
+        ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+        key.type = ZR_VALUE_TYPE_STRING;
+        pair = ZrCore_HashSet_Find(state, &object->nodeMap, &key);
+    }
+
+    object->cachedStringLookupPair = pair;
+    if (hotPairSlot != ZR_NULL) {
+        *hotPairSlot = pair;
+    }
+    return pair;
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *zr_container_get_cached_field_value_fast(
+        SZrState *state,
+        SZrObject *object,
+        SZrString *fieldString,
+        SZrHashKeyValuePair **hotPairSlot) {
+    SZrHashKeyValuePair *pair = zr_container_find_own_cached_field_pair_fast(state, object, fieldString, hotPairSlot);
+
+    return pair != ZR_NULL ? &pair->value : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE void zr_container_refresh_cached_field_slot(SZrState *state,
+                                                                   SZrObject *object,
+                                                                   SZrString *fieldString,
+                                                                   SZrHashKeyValuePair **hotPairSlot) {
+    SZrHashKeyValuePair *pair;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldString == ZR_NULL || hotPairSlot == ZR_NULL) {
+        return;
+    }
+
+    pair = object->cachedStringLookupPair;
+    if (!zr_container_pair_matches_field_string(state, pair, fieldString)) {
+        pair = zr_container_find_own_string_pair_exact(object, fieldString);
+        object->cachedStringLookupPair = pair;
+    }
+    *hotPairSlot = pair;
+}
+
+static ZR_FORCE_INLINE TZrBool zr_container_set_cached_field_value_fast(SZrState *state,
+                                                                        SZrObject *object,
+                                                                        SZrString *fieldString,
+                                                                        SZrHashKeyValuePair **hotPairSlot,
+                                                                        const SZrTypeValue *value,
+                                                                        TZrBool refreshHiddenItemsObject) {
+    SZrHashKeyValuePair *pair;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldString == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pair = zr_container_find_own_cached_field_pair_fast(state, object, fieldString, hotPairSlot);
+    if (pair != ZR_NULL) {
+        ZrCore_Object_SetExistingPairValueUnchecked(state, object, pair, value);
+        if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+            return ZR_FALSE;
+        }
+
+        object->memberVersion++;
+        if (refreshHiddenItemsObject) {
+            object->cachedHiddenItemsObject = ZR_NULL;
+            if ((value->type == ZR_VALUE_TYPE_OBJECT || value->type == ZR_VALUE_TYPE_ARRAY) && value->value.object != ZR_NULL) {
+                SZrObject *hiddenItemsObject = ZR_CAST_OBJECT(state, value->value.object);
+
+                if (hiddenItemsObject != ZR_NULL && hiddenItemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+                    object->cachedHiddenItemsObject = hiddenItemsObject;
+                }
+            }
+        }
+        return ZR_TRUE;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Object_SetValue(state, object, &key, value);
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        return ZR_FALSE;
+    }
+
+    zr_container_refresh_cached_field_slot(state, object, fieldString, hotPairSlot);
+    if (refreshHiddenItemsObject) {
+        object->cachedHiddenItemsObject = ZR_NULL;
+        if ((value->type == ZR_VALUE_TYPE_OBJECT || value->type == ZR_VALUE_TYPE_ARRAY) && value->value.object != ZR_NULL) {
+            SZrObject *hiddenItemsObject = ZR_CAST_OBJECT(state, value->value.object);
+
+            if (hiddenItemsObject != ZR_NULL && hiddenItemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+                object->cachedHiddenItemsObject = hiddenItemsObject;
+            }
+        }
+    }
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair *zr_container_find_own_field_pair_fast(SZrState *state,
+                                                                                   SZrObject *object,
+                                                                                   const TZrChar *fieldName) {
+    SZrString *fieldString;
+    SZrHashKeyValuePair *pair;
+    SZrHashKeyValuePair **hotPairSlot;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL || !object->nodeMap.isValid ||
+        object->nodeMap.buckets == ZR_NULL || object->nodeMap.capacity == 0) {
+        return ZR_NULL;
+    }
+
+    hotPairSlot = zr_container_hot_field_pair_slot(object, fieldName);
+    if (hotPairSlot != ZR_NULL && *hotPairSlot != ZR_NULL) {
+        return *hotPairSlot;
+    }
+
+    fieldString = zr_container_cached_field_string(state, fieldName);
+    if (fieldString == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pair = object->cachedStringLookupPair;
+    if (pair != ZR_NULL &&
+        pair->key.type == ZR_VALUE_TYPE_STRING &&
+        pair->key.value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString)) {
+        if (hotPairSlot != ZR_NULL) {
+            *hotPairSlot = pair;
+        }
+        return pair;
+    }
+
+    pair = zr_container_find_own_string_pair_exact(object, fieldString);
+    if (pair != ZR_NULL) {
+        object->cachedStringLookupPair = pair;
+        if (hotPairSlot != ZR_NULL) {
+            *hotPairSlot = pair;
+        }
+        return pair;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(fieldString));
+    key.type = ZR_VALUE_TYPE_STRING;
+    pair = ZrCore_HashSet_Find(state, &object->nodeMap, &key);
+    object->cachedStringLookupPair = pair;
+    if (hotPairSlot != ZR_NULL) {
+        *hotPairSlot = pair;
+    }
+    return pair;
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *zr_container_get_own_field_value_fast(SZrState *state,
+                                                                                  SZrObject *object,
+                                                                                  const TZrChar *fieldName) {
+    SZrHashKeyValuePair *pair;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pair = zr_container_find_own_field_pair_fast(state, object, fieldName);
+    if (pair != ZR_NULL) {
+        return &pair->value;
+    }
+
+    return zr_container_get_field_value(state, object, fieldName);
+}
+
+static ZR_FORCE_INLINE SZrObject *zr_container_get_object_field_fast(SZrState *state,
+                                                                     SZrObject *object,
+                                                                     const TZrChar *fieldName) {
+    const SZrTypeValue *value = zr_container_get_own_field_value_fast(state, object, fieldName);
+
+    if (value == ZR_NULL || (value->type != ZR_VALUE_TYPE_OBJECT && value->type != ZR_VALUE_TYPE_ARRAY) ||
+        value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_OBJECT(state, value->value.object);
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *zr_container_pair_get_first_fast(SZrState *state, SZrObject *pair) {
+    SZrString *fieldString = zr_container_pair_first_field_string_fast(state);
+    SZrHashKeyValuePair *cachedPair =
+            zr_container_try_match_cached_field_pair_exact(pair != ZR_NULL ? pair->cachedLengthPair : ZR_NULL, fieldString);
+    const SZrTypeValue *value =
+            cachedPair != ZR_NULL
+                    ? &cachedPair->value
+                    : zr_container_get_cached_field_value_fast(state,
+                                                               pair,
+                                                               fieldString,
+                                                               pair != ZR_NULL ? &pair->cachedLengthPair : ZR_NULL);
+
+    return value != ZR_NULL ? value : zr_container_get_own_field_value_fast(state, pair, kContainerPairFirstField);
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *zr_container_pair_get_second_fast(SZrState *state, SZrObject *pair) {
+    SZrString *fieldString = zr_container_pair_second_field_string_fast(state);
+    SZrHashKeyValuePair *cachedPair =
+            zr_container_try_match_cached_field_pair_exact(pair != ZR_NULL ? pair->cachedCapacityPair : ZR_NULL, fieldString);
+    const SZrTypeValue *value =
+            cachedPair != ZR_NULL
+                    ? &cachedPair->value
+                    : zr_container_get_cached_field_value_fast(state,
+                                                               pair,
+                                                               fieldString,
+                                                               pair != ZR_NULL ? &pair->cachedCapacityPair : ZR_NULL);
+
+    return value != ZR_NULL ? value : zr_container_get_own_field_value_fast(state, pair, kContainerPairSecondField);
+}
+
+static ZR_FORCE_INLINE TZrBool zr_container_pair_set_second_fast(SZrState *state,
+                                                                 SZrObject *pair,
+                                                                 const SZrTypeValue *value) {
+    SZrString *fieldString = zr_container_pair_second_field_string_fast(state);
+    SZrHashKeyValuePair *cachedPair;
+
+    if (state == ZR_NULL || pair == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    cachedPair = zr_container_try_match_cached_field_pair_exact(pair->cachedCapacityPair, fieldString);
+    if (cachedPair != ZR_NULL) {
+        ZrCore_Object_SetExistingPairValueUnchecked(state, pair, cachedPair, value);
+        if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+            return ZR_FALSE;
+        }
+
+        pair->memberVersion++;
+        pair->cachedStringLookupPair = cachedPair;
+        return ZR_TRUE;
+    }
+
+    if (fieldString != ZR_NULL &&
+        zr_container_set_cached_field_value_fast(state,
+                                                 pair,
+                                                 fieldString,
+                                                 pair != ZR_NULL ? &pair->cachedCapacityPair : ZR_NULL,
+                                                 value,
+                                                 ZR_FALSE)) {
+        return ZR_TRUE;
+    }
+    return zr_container_set_value_field_fast(state, pair, kContainerPairSecondField, value);
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *zr_container_map_entry_get_first_value_fast(SZrState *state,
+                                                                                        SZrObject *entryObject) {
+    SZrHashKeyValuePair *cachedPair;
+
+    if (state == ZR_NULL || entryObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cachedPair = entryObject->cachedLengthPair;
+    if (cachedPair != ZR_NULL) {
+        return &cachedPair->value;
+    }
+
+    return zr_container_pair_get_first_fast(state, entryObject);
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *zr_container_map_entry_get_second_value_fast(SZrState *state,
+                                                                                         SZrObject *entryObject) {
+    SZrHashKeyValuePair *cachedPair;
+
+    if (state == ZR_NULL || entryObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cachedPair = entryObject->cachedCapacityPair;
+    if (cachedPair != ZR_NULL) {
+        return &cachedPair->value;
+    }
+
+    return zr_container_pair_get_second_fast(state, entryObject);
+}
+
+static ZR_FORCE_INLINE TZrBool zr_container_map_entry_set_second_value_fast(SZrState *state,
+                                                                            SZrObject *entryObject,
+                                                                            const SZrTypeValue *value) {
+    SZrHashKeyValuePair *cachedPair;
+
+    if (state == ZR_NULL || entryObject == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    cachedPair = entryObject->cachedCapacityPair;
+    if (cachedPair == ZR_NULL) {
+        return zr_container_pair_set_second_fast(state, entryObject, value);
+    }
+
+    ZrCore_Object_SetExistingPairValueUnchecked(state, entryObject, cachedPair, value);
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        return ZR_FALSE;
+    }
+
+    entryObject->memberVersion++;
+    entryObject->cachedStringLookupPair = cachedPair;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *zr_container_array_get_value_fast(SZrState *state,
+                                                                             SZrObject *array,
+                                                                             TZrSize index) {
+    SZrHashKeyValuePair *pair;
+
+    if (state == ZR_NULL || array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return ZR_NULL;
+    }
+
+    if (array->nodeMap.isValid && array->nodeMap.buckets != ZR_NULL && index < array->nodeMap.elementCount &&
+        index < array->nodeMap.capacity) {
+        pair = array->nodeMap.buckets[index];
+        if (pair != ZR_NULL &&
+            ZR_VALUE_IS_TYPE_SIGNED_INT(pair->key.type) &&
+            pair->key.value.nativeObject.nativeInt64 == (TZrInt64)index) {
+            return &pair->value;
+        }
+    }
+
+    return ZrLib_Array_Get(state, array, index);
+}
+
+static ZR_FORCE_INLINE TZrSize zr_container_array_length_fast(SZrObject *array) {
+    if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return 0u;
+    }
+
+    return array->nodeMap.elementCount;
+}
+
+static ZR_FORCE_INLINE SZrObject *zr_container_array_get_object_fast(SZrState *state,
+                                                                     SZrObject *array,
+                                                                     TZrSize index) {
+    const SZrTypeValue *entryValue = zr_container_array_get_value_fast(state, array, index);
+
+    if (entryValue == ZR_NULL || entryValue->type != ZR_VALUE_TYPE_OBJECT || entryValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_OBJECT(state, entryValue->value.object);
+}
+
 static TZrInt64 zr_container_get_int_field(SZrState *state,
                                            SZrObject *object,
                                            const TZrChar *fieldName,
                                            TZrInt64 defaultValue) {
-    const SZrTypeValue *value = zr_container_get_field_value(state, object, fieldName);
+    const SZrTypeValue *value = zr_container_get_own_field_value_fast(state, object, fieldName);
 
     if (value == ZR_NULL) {
         return defaultValue;
@@ -522,15 +1343,93 @@ static TZrBool zr_container_storage_remove_at(SZrState *state, SZrObject *array,
 }
 
 static SZrObject *zr_container_ensure_hidden_array(SZrState *state, SZrObject *object, const TZrChar *fieldName) {
-    SZrObject *array = zr_container_get_object_field(state, object, fieldName);
+    SZrObject *array = zr_container_get_object_field_fast(state, object, fieldName);
     if (array != ZR_NULL && array->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
         return array;
     }
 
     array = ZrLib_Array_New(state);
     if (array != ZR_NULL) {
-        zr_container_set_object_field(state, object, fieldName, array);
+        SZrTypeValue fieldValue;
+
+        ZrLib_Value_SetObject(state, &fieldValue, array, ZR_VALUE_TYPE_ARRAY);
+        if (!zr_container_set_value_field_fast(state, object, fieldName, &fieldValue)) {
+            return ZR_NULL;
+        }
     }
+    return array;
+}
+
+static ZR_FORCE_INLINE SZrObject *zr_container_get_entries_array_fast(SZrState *state, SZrObject *object) {
+    SZrString *fieldString;
+    SZrHashKeyValuePair *pair;
+    SZrObject *array;
+
+    if (state == ZR_NULL || object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    array = object->cachedHiddenItemsObject;
+    if (array != ZR_NULL && array->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return array;
+    }
+
+    fieldString = zr_container_entries_field_string_fast(state);
+    pair = zr_container_find_own_cached_field_pair_fast(state, object, fieldString, &object->cachedHiddenItemsPair);
+    if (pair == ZR_NULL || (pair->value.type != ZR_VALUE_TYPE_OBJECT && pair->value.type != ZR_VALUE_TYPE_ARRAY) ||
+        pair->value.value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    array = ZR_CAST_OBJECT(state, pair->value.value.object);
+    if (array == ZR_NULL || array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        object->cachedHiddenItemsObject = ZR_NULL;
+        return ZR_NULL;
+    }
+
+    object->cachedHiddenItemsObject = array;
+    return array;
+}
+
+static ZR_FORCE_INLINE SZrObject *zr_container_get_entries_array_cached_fast(SZrState *state, SZrObject *object) {
+    SZrObject *array;
+
+    if (object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    array = object->cachedHiddenItemsObject;
+    if (array != ZR_NULL && array->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return array;
+    }
+
+    return zr_container_get_entries_array_fast(state, object);
+}
+
+static ZR_FORCE_INLINE SZrObject *zr_container_ensure_entries_array_fast(SZrState *state, SZrObject *object) {
+    SZrObject *array = zr_container_get_entries_array_fast(state, object);
+
+    if (array != ZR_NULL) {
+        return array;
+    }
+
+    array = ZrLib_Array_New(state);
+    if (array != ZR_NULL) {
+        SZrTypeValue fieldValue;
+        SZrString *fieldString = zr_container_entries_field_string_fast(state);
+
+        ZrLib_Value_SetObject(state, &fieldValue, array, ZR_VALUE_TYPE_ARRAY);
+        if (fieldString == ZR_NULL ||
+            !zr_container_set_cached_field_value_fast(state,
+                                                      object,
+                                                      fieldString,
+                                                      &object->cachedHiddenItemsPair,
+                                                      &fieldValue,
+                                                      ZR_TRUE)) {
+            return ZR_NULL;
+        }
+    }
+
     return array;
 }
 
@@ -540,14 +1439,22 @@ static SZrObject *zr_container_make_pair(SZrState *state, const SZrTypeValue *fi
         return ZR_NULL;
     }
     if (first != ZR_NULL) {
-        zr_container_set_value_field(state, pair, "first", first);
+        if (!zr_container_set_value_field_fast(state, pair, kContainerPairFirstField, first)) {
+            return ZR_NULL;
+        }
     } else {
-        zr_container_set_null_field(state, pair, "first");
+        if (!zr_container_set_null_field_fast(state, pair, kContainerPairFirstField)) {
+            return ZR_NULL;
+        }
     }
     if (second != ZR_NULL) {
-        zr_container_set_value_field(state, pair, "second", second);
+        if (!zr_container_set_value_field_fast(state, pair, kContainerPairSecondField, second)) {
+            return ZR_NULL;
+        }
     } else {
-        zr_container_set_null_field(state, pair, "second");
+        if (!zr_container_set_null_field_fast(state, pair, kContainerPairSecondField)) {
+            return ZR_NULL;
+        }
     }
     return pair;
 }
@@ -570,40 +1477,207 @@ static SZrObject *zr_container_make_linked_node(SZrState *state, const SZrTypeVa
 static TZrBool zr_container_map_find_index(SZrState *state,
                                            SZrObject *entries,
                                            const SZrTypeValue *key,
-                                           TZrSize *outIndex) {
+                                           TZrSize *outIndex,
+                                           SZrObject **outEntryObject) {
     TZrUInt64 wantedHash;
     TZrSize length;
 
     if (outIndex != ZR_NULL) {
         *outIndex = 0;
     }
+    if (outEntryObject != ZR_NULL) {
+        *outEntryObject = ZR_NULL;
+    }
     if (state == ZR_NULL || entries == ZR_NULL || key == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    wantedHash = zr_container_value_hash(state, key);
-    length = ZrLib_Array_Length(entries);
-    for (TZrSize index = 0; index < length; index++) {
-        const SZrTypeValue *entryValue = ZrLib_Array_Get(state, entries, index);
-        SZrObject *entryObject;
-        const SZrTypeValue *entryKey;
+    if (key->type == ZR_VALUE_TYPE_STRING && key->value.object != ZR_NULL) {
+        SZrRawObject *wantedRawObject = key->value.object;
+        SZrString *wantedString = ZR_NULL;
 
-        if (entryValue == ZR_NULL || entryValue->type != ZR_VALUE_TYPE_OBJECT || entryValue->value.object == ZR_NULL) {
+        wantedHash = wantedRawObject->hash;
+        {
+            ZrContainerHotMapLookupCache *cache = zr_container_hot_map_lookup_cache(state);
+
+            if (zr_container_try_hot_map_lookup_cache(state,
+                                                      cache,
+                                                      entries,
+                                                      wantedRawObject,
+                                                      outIndex,
+                                                      outEntryObject)) {
+                return ZR_TRUE;
+            }
+        }
+
+        wantedString = ZR_CAST_STRING(state, wantedRawObject);
+        if (wantedString == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        length = zr_container_array_length_fast(entries);
+        for (TZrSize index = 0; index < length; index++) {
+            const SZrTypeValue *entryKey;
+            SZrObject *entryObject = zr_container_array_get_object_fast(state, entries, index);
+
+            if (entryObject == ZR_NULL) {
+                continue;
+            }
+
+            entryKey = zr_container_map_entry_get_first_value_fast(state, entryObject);
+            if (entryKey == ZR_NULL || entryKey->type != ZR_VALUE_TYPE_STRING || entryKey->value.object == ZR_NULL) {
+                continue;
+            }
+            if (entryKey->value.object == wantedRawObject) {
+                if (outIndex != ZR_NULL) {
+                    *outIndex = index;
+                }
+                if (outEntryObject != ZR_NULL) {
+                    *outEntryObject = entryObject;
+                }
+                zr_container_update_hot_map_lookup_cache(state,
+                                                         entries,
+                                                         wantedRawObject,
+                                                         index,
+                                                         entryObject);
+                return ZR_TRUE;
+            }
+            if (entryKey->value.object->hash != wantedHash) {
+                continue;
+            }
+
+            {
+                SZrString *entryString = ZR_CAST_STRING(state, entryKey->value.object);
+
+                if (entryString != ZR_NULL && ZrCore_String_Equal(entryString, wantedString)) {
+                    if (outIndex != ZR_NULL) {
+                        *outIndex = index;
+                    }
+                    if (outEntryObject != ZR_NULL) {
+                        *outEntryObject = entryObject;
+                    }
+                    zr_container_update_hot_map_lookup_cache(state,
+                                                             entries,
+                                                             wantedRawObject,
+                                                             index,
+                                                             entryObject);
+                    return ZR_TRUE;
+                }
+            }
+        }
+
+        zr_container_update_hot_map_lookup_cache(state, entries, wantedRawObject, 0u, ZR_NULL);
+        return ZR_FALSE;
+    }
+
+    wantedHash = zr_container_value_hash(state, key);
+    length = zr_container_array_length_fast(entries);
+    for (TZrSize index = 0; index < length; index++) {
+        const SZrTypeValue *entryKey;
+        SZrObject *entryObject = zr_container_array_get_object_fast(state, entries, index);
+
+        if (entryObject == ZR_NULL) {
             continue;
         }
 
-        entryObject = ZR_CAST_OBJECT(state, entryValue->value.object);
-        entryKey = zr_container_get_field_value(state, entryObject, "first");
+        entryKey = zr_container_map_entry_get_first_value_fast(state, entryObject);
         if (entryKey != ZR_NULL && zr_container_value_hash(state, entryKey) == wantedHash &&
             zr_container_values_equal(state, entryKey, key)) {
             if (outIndex != ZR_NULL) {
                 *outIndex = index;
+            }
+            if (outEntryObject != ZR_NULL) {
+                *outEntryObject = entryObject;
             }
             return ZR_TRUE;
         }
     }
 
     return ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE SZrObject *zr_container_map_find_entry_object_fast(SZrState *state,
+                                                                          SZrObject *entries,
+                                                                          const SZrTypeValue *key) {
+    TZrUInt64 wantedHash;
+    TZrSize length;
+
+    if (state == ZR_NULL || entries == ZR_NULL || key == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (key->type == ZR_VALUE_TYPE_STRING && key->value.object != ZR_NULL) {
+        SZrRawObject *wantedRawObject = key->value.object;
+        SZrString *wantedString = ZR_NULL;
+        SZrObject *entryObject = ZR_NULL;
+
+        wantedHash = wantedRawObject->hash;
+        {
+            ZrContainerHotMapLookupCache *cache = zr_container_hot_map_lookup_cache(state);
+
+            if (zr_container_try_hot_map_lookup_cache(
+                        state, cache, entries, wantedRawObject, ZR_NULL, &entryObject)) {
+                return entryObject;
+            }
+        }
+
+        wantedString = ZR_CAST_STRING(state, wantedRawObject);
+        if (wantedString == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        length = zr_container_array_length_fast(entries);
+        for (TZrSize index = 0; index < length; index++) {
+            const SZrTypeValue *entryKey;
+
+            entryObject = zr_container_array_get_object_fast(state, entries, index);
+            if (entryObject == ZR_NULL) {
+                continue;
+            }
+
+            entryKey = zr_container_map_entry_get_first_value_fast(state, entryObject);
+            if (entryKey == ZR_NULL || entryKey->type != ZR_VALUE_TYPE_STRING || entryKey->value.object == ZR_NULL) {
+                continue;
+            }
+            if (entryKey->value.object == wantedRawObject) {
+                zr_container_update_hot_map_lookup_cache(state, entries, wantedRawObject, index, entryObject);
+                return entryObject;
+            }
+            if (entryKey->value.object->hash != wantedHash) {
+                continue;
+            }
+
+            {
+                SZrString *entryString = ZR_CAST_STRING(state, entryKey->value.object);
+
+                if (entryString != ZR_NULL && ZrCore_String_Equal(entryString, wantedString)) {
+                    zr_container_update_hot_map_lookup_cache(state, entries, wantedRawObject, index, entryObject);
+                    return entryObject;
+                }
+            }
+        }
+
+        return ZR_NULL;
+    }
+
+    wantedHash = zr_container_value_hash(state, key);
+    length = zr_container_array_length_fast(entries);
+    for (TZrSize index = 0; index < length; index++) {
+        const SZrTypeValue *entryKey;
+        SZrObject *entryObject = zr_container_array_get_object_fast(state, entries, index);
+
+        if (entryObject == ZR_NULL) {
+            continue;
+        }
+
+        entryKey = zr_container_map_entry_get_first_value_fast(state, entryObject);
+        if (entryKey != ZR_NULL && zr_container_value_hash(state, entryKey) == wantedHash &&
+            zr_container_values_equal(state, entryKey, key)) {
+            return entryObject;
+        }
+    }
+
+    return ZR_NULL;
 }
 
 static TZrBool zr_container_set_find_index(SZrState *state,
@@ -643,7 +1717,7 @@ static TZrBool zr_container_array_ensure_capacity(SZrState *state, SZrObject *ar
         return ZR_FALSE;
     }
 
-    capacity = zr_container_get_int_field(state, arrayObject, "capacity", 0);
+    capacity = zr_container_get_int_field(state, arrayObject, kContainerCapacityField, 0);
     if ((TZrSize)capacity >= requiredLength) {
         return ZR_TRUE;
     }
@@ -654,7 +1728,7 @@ static TZrBool zr_container_array_ensure_capacity(SZrState *state, SZrObject *ar
     while ((TZrSize)capacity < requiredLength) {
         capacity *= ZR_CONTAINER_SEQUENCE_GROWTH_FACTOR;
     }
-    return zr_container_set_int_field_fast(state, arrayObject, "capacity", capacity);
+    return zr_container_set_int_field_fast(state, arrayObject, kContainerCapacityField, capacity);
 }
 
 static TZrBool zr_container_array_prepare_backing_storage(SZrState *state,
@@ -1183,8 +2257,8 @@ static TZrBool zr_container_map_contains_key(ZrLibCallContext *context, SZrTypeV
         return ZR_FALSE;
     }
 
-    entries = zr_container_ensure_hidden_array(context->state, self, kContainerEntriesField);
-    found = zr_container_map_find_index(context->state, entries, ZrLib_CallContext_Argument(context, 0), ZR_NULL);
+    entries = zr_container_ensure_entries_array_fast(context->state, self);
+    found = zr_container_map_find_index(context->state, entries, ZrLib_CallContext_Argument(context, 0), ZR_NULL, ZR_NULL);
     ZrLib_Value_SetBool(context->state, result, found);
     return ZR_TRUE;
 }
@@ -1198,8 +2272,8 @@ static TZrBool zr_container_map_remove(ZrLibCallContext *context, SZrTypeValue *
         return ZR_FALSE;
     }
 
-    entries = zr_container_ensure_hidden_array(context->state, self, kContainerEntriesField);
-    if (!zr_container_map_find_index(context->state, entries, ZrLib_CallContext_Argument(context, 0), &index) ||
+    entries = zr_container_ensure_entries_array_fast(context->state, self);
+    if (!zr_container_map_find_index(context->state, entries, ZrLib_CallContext_Argument(context, 0), &index, ZR_NULL) ||
         !zr_container_storage_remove_at(context->state, entries, index)) {
         ZrLib_Value_SetBool(context->state, result, ZR_FALSE);
         return ZR_TRUE;
@@ -1233,7 +2307,7 @@ static TZrBool zr_container_map_get_iterator(ZrLibCallContext *context, SZrTypeV
         return ZR_FALSE;
     }
 
-    entries = zr_container_ensure_hidden_array(context->state, self, kContainerEntriesField);
+    entries = zr_container_ensure_entries_array_fast(context->state, self);
     iterator = zr_container_iterator_make(context->state,
                                           entries,
                                           ZR_VALUE_TYPE_ARRAY,
@@ -1243,72 +2317,176 @@ static TZrBool zr_container_map_get_iterator(ZrLibCallContext *context, SZrTypeV
     return iterator != ZR_NULL && zr_container_finish_object(context, result, iterator);
 }
 
-static TZrBool zr_container_map_get_item(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *self = zr_container_self_object(context);
-    SZrObject *entries;
-    TZrSize index;
-    const SZrTypeValue *entryValue;
+static ZR_FORCE_INLINE TZrBool zr_container_map_get_item_core(SZrState *state,
+                                                              const SZrTypeValue *selfValue,
+                                                              const SZrTypeValue *keyValue,
+                                                              SZrTypeValue *result) {
+    SZrObject *self;
     SZrObject *entryObject;
+    SZrObject *entries;
     const SZrTypeValue *mappedValue;
 
-    if (self == ZR_NULL || result == ZR_NULL) {
+    if (state == ZR_NULL || selfValue == ZR_NULL || result == ZR_NULL ||
+        (selfValue->type != ZR_VALUE_TYPE_OBJECT && selfValue->type != ZR_VALUE_TYPE_ARRAY)) {
         return ZR_FALSE;
     }
 
-    entries = zr_container_ensure_hidden_array(context->state, self, kContainerEntriesField);
-    if (!zr_container_map_find_index(context->state, entries, ZrLib_CallContext_Argument(context, 0), &index)) {
+    self = ZR_CAST_OBJECT(state, selfValue->value.object);
+    if (self == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    entries = zr_container_ensure_entries_array_fast(state, self);
+    entryObject = zr_container_map_find_entry_object_fast(state, entries, keyValue);
+    if (entryObject == ZR_NULL) {
         ZrLib_Value_SetNull(result);
         return ZR_TRUE;
     }
 
-    entryValue = ZrLib_Array_Get(context->state, entries, index);
-    if (entryValue == ZR_NULL || entryValue->type != ZR_VALUE_TYPE_OBJECT || entryValue->value.object == ZR_NULL) {
-        ZrLib_Value_SetNull(result);
-        return ZR_TRUE;
-    }
-
-    entryObject = ZR_CAST_OBJECT(context->state, entryValue->value.object);
-    mappedValue = zr_container_get_field_value(context->state, entryObject, "second");
+    mappedValue = zr_container_map_entry_get_second_value_fast(state, entryObject);
     if (mappedValue != ZR_NULL) {
-        ZrCore_Value_Copy(context->state, result, mappedValue);
+        ZrCore_Value_Copy(state, result, mappedValue);
     } else {
         ZrLib_Value_SetNull(result);
     }
     return ZR_TRUE;
 }
 
-static TZrBool zr_container_map_set_item(ZrLibCallContext *context, SZrTypeValue *result) {
-    SZrObject *self = zr_container_self_object(context);
-    SZrObject *entries;
-    TZrSize index;
-    const SZrTypeValue *keyValue;
-    const SZrTypeValue *mappedValue;
-
-    if (self == ZR_NULL || result == ZR_NULL) {
+static TZrBool zr_container_map_get_item(ZrLibCallContext *context, SZrTypeValue *result) {
+    if (context == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    keyValue = ZrLib_CallContext_Argument(context, 0);
-    mappedValue = ZrLib_CallContext_Argument(context, 1);
-    entries = zr_container_ensure_hidden_array(context->state, self, kContainerEntriesField);
-    if (zr_container_map_find_index(context->state, entries, keyValue, &index)) {
-        const SZrTypeValue *entryValue = ZrLib_Array_Get(context->state, entries, index);
-        if (entryValue != ZR_NULL && entryValue->type == ZR_VALUE_TYPE_OBJECT && entryValue->value.object != ZR_NULL) {
-            zr_container_set_value_field(context->state, ZR_CAST_OBJECT(context->state, entryValue->value.object), "second", mappedValue);
+    return zr_container_map_get_item_core(context->state,
+                                          ZrLib_CallContext_Self(context),
+                                          ZrLib_CallContext_Argument(context, 0),
+                                          result);
+}
+
+static ZR_FORCE_INLINE TZrBool zr_container_map_get_item_readonly_inline_fast(SZrState *state,
+                                                                              const SZrTypeValue *selfValue,
+                                                                              const SZrTypeValue *keyValue,
+                                                                              SZrTypeValue *result) {
+    SZrObject *self;
+    SZrObject *entries;
+    SZrObject *entryObject;
+    const SZrTypeValue *mappedValue;
+
+    if (state == ZR_NULL || selfValue == ZR_NULL || keyValue == ZR_NULL || result == ZR_NULL ||
+        (selfValue->type != ZR_VALUE_TYPE_OBJECT && selfValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        return ZR_FALSE;
+    }
+
+    self = ZR_CAST_OBJECT(state, selfValue->value.object);
+    if (self == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    entries = zr_container_get_entries_array_cached_fast(state, self);
+    if (entries == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    entryObject = zr_container_map_find_entry_object_fast(state, entries, keyValue);
+    if (entryObject == ZR_NULL) {
+        ZrCore_Value_ResetAsNullNoProfile(result);
+        return ZR_TRUE;
+    }
+
+    mappedValue = zr_container_map_entry_get_second_value_fast(state, entryObject);
+    if (mappedValue != ZR_NULL) {
+        ZrCore_Value_CopyNoProfile(state, result, mappedValue);
+    } else {
+        ZrCore_Value_ResetAsNullNoProfile(result);
+    }
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool zr_container_map_set_item_core(SZrState *state,
+                                                              const SZrTypeValue *selfValue,
+                                                              const SZrTypeValue *keyValue,
+                                                              const SZrTypeValue *mappedValue,
+                                                              SZrTypeValue *result) {
+    SZrObject *self;
+    SZrObject *entries;
+    SZrObject *entryObject;
+    TZrBool insertedNewEntry = ZR_FALSE;
+
+    if (state == ZR_NULL || selfValue == ZR_NULL || keyValue == ZR_NULL || mappedValue == ZR_NULL ||
+        (selfValue->type != ZR_VALUE_TYPE_OBJECT && selfValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        return ZR_FALSE;
+    }
+
+    self = ZR_CAST_OBJECT(state, selfValue->value.object);
+    if (self == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    entries = zr_container_ensure_entries_array_fast(state, self);
+    entryObject = zr_container_map_find_entry_object_fast(state, entries, keyValue);
+    if (entryObject != ZR_NULL) {
+        if (!zr_container_map_entry_set_second_value_fast(state, entryObject, mappedValue)) {
+            return ZR_FALSE;
         }
     } else {
-        SZrObject *pair = zr_container_make_pair(context->state, keyValue, mappedValue);
+        SZrObject *pair = zr_container_make_pair(state, keyValue, mappedValue);
         SZrTypeValue pairValue;
         if (pair == ZR_NULL) {
             return ZR_FALSE;
         }
-        ZrLib_Value_SetObject(context->state, &pairValue, pair, ZR_VALUE_TYPE_OBJECT);
-        ZrLib_Array_PushValue(context->state, entries, &pairValue);
+        ZrLib_Value_SetObject(state, &pairValue, pair, ZR_VALUE_TYPE_OBJECT);
+        ZrLib_Array_PushValue(state, entries, &pairValue);
+        insertedNewEntry = ZR_TRUE;
     }
 
-    zr_container_set_int_field(context->state, self, "count", (TZrInt64)ZrLib_Array_Length(entries));
-    ZrCore_Value_Copy(context->state, result, mappedValue);
+    if (insertedNewEntry && !zr_container_set_int_field_fast(state, self, kContainerCountField, (TZrInt64)ZrLib_Array_Length(entries))) {
+        return ZR_FALSE;
+    }
+    if (result != ZR_NULL) {
+        ZrCore_Value_Copy(state, result, mappedValue);
+    }
     return ZR_TRUE;
+}
+
+static TZrBool zr_container_map_set_item(ZrLibCallContext *context, SZrTypeValue *result) {
+    if (context == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return zr_container_map_set_item_core(context->state,
+                                          ZrLib_CallContext_Self(context),
+                                          ZrLib_CallContext_Argument(context, 0),
+                                          ZrLib_CallContext_Argument(context, 1),
+                                          result);
+}
+
+static ZR_FORCE_INLINE TZrBool zr_container_map_set_item_readonly_inline_no_result_fast(
+        SZrState *state,
+        const SZrTypeValue *selfValue,
+        const SZrTypeValue *keyValue,
+        const SZrTypeValue *mappedValue) {
+    SZrObject *self;
+    SZrObject *entries;
+    SZrObject *entryObject = ZR_NULL;
+
+    if (state == ZR_NULL || selfValue == ZR_NULL || keyValue == ZR_NULL || mappedValue == ZR_NULL ||
+        (selfValue->type != ZR_VALUE_TYPE_OBJECT && selfValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        return ZR_FALSE;
+    }
+
+    self = ZR_CAST_OBJECT(state, selfValue->value.object);
+    if (self == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    entries = zr_container_get_entries_array_cached_fast(state, self);
+    if (entries != ZR_NULL) {
+        entryObject = zr_container_map_find_entry_object_fast(state, entries, keyValue);
+    }
+    if (entryObject != ZR_NULL) {
+        return zr_container_map_entry_set_second_value_fast(state, entryObject, mappedValue);
+    }
+
+    return zr_container_map_set_item_core(state, selfValue, keyValue, mappedValue, ZR_NULL);
 }
 
 static TZrBool zr_container_set_constructor(ZrLibCallContext *context, SZrTypeValue *result) {
@@ -1333,7 +2511,7 @@ static TZrBool zr_container_set_add(ZrLibCallContext *context, SZrTypeValue *res
         return ZR_FALSE;
     }
 
-    entries = zr_container_ensure_hidden_array(context->state, self, kContainerEntriesField);
+    entries = zr_container_ensure_entries_array_fast(context->state, self);
     value = ZrLib_CallContext_Argument(context, 0);
     if (zr_container_set_find_index(context->state, entries, value, ZR_NULL)) {
         ZrLib_Value_SetBool(context->state, result, ZR_FALSE);
@@ -1354,7 +2532,7 @@ static TZrBool zr_container_set_contains(ZrLibCallContext *context, SZrTypeValue
         return ZR_FALSE;
     }
 
-    entries = zr_container_ensure_hidden_array(context->state, self, kContainerEntriesField);
+    entries = zr_container_ensure_entries_array_fast(context->state, self);
     ZrLib_Value_SetBool(context->state,
                         result,
                         zr_container_set_find_index(context->state, entries, ZrLib_CallContext_Argument(context, 0), ZR_NULL));
@@ -1370,7 +2548,7 @@ static TZrBool zr_container_set_remove(ZrLibCallContext *context, SZrTypeValue *
         return ZR_FALSE;
     }
 
-    entries = zr_container_ensure_hidden_array(context->state, self, kContainerEntriesField);
+    entries = zr_container_ensure_entries_array_fast(context->state, self);
     if (!zr_container_set_find_index(context->state, entries, ZrLib_CallContext_Argument(context, 0), &index) ||
         !zr_container_storage_remove_at(context->state, entries, index)) {
         ZrLib_Value_SetBool(context->state, result, ZR_FALSE);
@@ -1405,7 +2583,7 @@ static TZrBool zr_container_set_get_iterator(ZrLibCallContext *context, SZrTypeV
         return ZR_FALSE;
     }
 
-    entries = zr_container_ensure_hidden_array(context->state, self, kContainerEntriesField);
+    entries = zr_container_ensure_entries_array_fast(context->state, self);
     iterator = zr_container_iterator_make(context->state,
                                           entries,
                                           ZR_VALUE_TYPE_ARRAY,
@@ -1741,8 +2919,35 @@ static const ZrLibMethodDescriptor kMapMethods[] = {
 };
 static const ZrLibMetaMethodDescriptor kMapMetaMethods[] = {
         {ZR_META_CONSTRUCTOR, 0, 0, zr_container_map_constructor, "Map<K,V>", ZR_NULL, ZR_NULL, 0},
-        {ZR_META_GET_ITEM, 1, 1, zr_container_map_get_item, "V", ZR_NULL, kMapKeyParameter, ZR_ARRAY_COUNT(kMapKeyParameter)},
-        {ZR_META_SET_ITEM, 2, 2, zr_container_map_set_item, "V", ZR_NULL, kMapSetItemParameters, ZR_ARRAY_COUNT(kMapSetItemParameters)},
+        {.metaType = ZR_META_GET_ITEM,
+         .minArgumentCount = 1,
+         .maxArgumentCount = 1,
+         .callback = zr_container_map_get_item,
+         .returnTypeName = "V",
+         .documentation = ZR_NULL,
+         .parameters = kMapKeyParameter,
+         .parameterCount = ZR_ARRAY_COUNT(kMapKeyParameter),
+         .dispatchFlags = ZR_LIB_NATIVE_DISPATCH_FLAG_STACK_ROOT_CONTEXT |
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SELF_REBIND |
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_INLINE_VALUE_CONTEXT |
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_ALWAYS_WRITTEN |
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT,
+         .readonlyInlineGetFastCallback = zr_container_map_get_item_readonly_inline_fast},
+        {.metaType = ZR_META_SET_ITEM,
+         .minArgumentCount = 2,
+         .maxArgumentCount = 2,
+         .callback = zr_container_map_set_item,
+         .returnTypeName = "V",
+         .documentation = ZR_NULL,
+         .parameters = kMapSetItemParameters,
+         .parameterCount = ZR_ARRAY_COUNT(kMapSetItemParameters),
+         .dispatchFlags = ZR_LIB_NATIVE_DISPATCH_FLAG_STACK_ROOT_CONTEXT |
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_NO_SELF_REBIND |
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_INLINE_VALUE_CONTEXT |
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_ALWAYS_WRITTEN |
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_READONLY_INLINE_VALUE_CONTEXT |
+                          ZR_LIB_NATIVE_DISPATCH_FLAG_RESULT_OPTIONAL,
+         .readonlyInlineSetNoResultFastCallback = zr_container_map_set_item_readonly_inline_no_result_fast},
 };
 
 static const ZrLibFieldDescriptor kSetFields[] = {

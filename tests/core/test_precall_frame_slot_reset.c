@@ -346,6 +346,188 @@ static void test_resolved_vm_precall_keeps_transient_temp_slots_intact_when_no_e
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrInstruction instructions[1] = {0};
+    TZrStackValuePointer callBase;
+    SZrTypeValue *callableValue;
+    SZrCallInfo *callInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->stackSize = 2;
+    function->parameterCount = 1;
+    function->instructionsList = instructions;
+    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    function->localVariableList = ZR_NULL;
+    function->localVariableLength = 0;
+
+    callBase = state->stackTop.valuePointer;
+    callBase = ZrCore_Function_CheckStackAndGc(state, 1 + function->stackSize, callBase);
+    callableValue = ZrCore_Stack_GetValue(callBase);
+    TEST_ASSERT_NOT_NULL(callableValue);
+
+    ZrCore_Value_InitAsRawObject(state, callableValue, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_FUNCTION, callableValue->type);
+
+    ZrCore_Value_InitAsInt(state, &callBase[1].value, 77);
+    callBase[1].toBeClosedValueOffset = 9u;
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = callBase + 2;
+    callInfo = ZrCore_Function_PreCallResolvedVmFunction(state, callBase, function, 1, 1, callBase + 1);
+    TEST_ASSERT_NOT_NULL(callInfo);
+    TEST_ASSERT_EQUAL_UINT32(2u, function->vmEntryClearStackSizePlusOne);
+
+    callInfo->callStatus = (EZrCallStatus)(ZR_CALL_STATUS_NATIVE_CALL | ZR_CALL_STATUS_ALLOW_HOOK);
+    callInfo->context.nativeContext.previousErrorFunction = 77u;
+    callInfo->context.nativeContext.continuationArguments = (TZrNativePtr)0x1234;
+    callInfo->yieldContext.returnValueCount = 99u;
+    callInfo->returnDestinationReusableOffset = 55u;
+    callInfo->hasReturnDestination = ZR_FALSE;
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = callBase + 2;
+    callInfo = ZrCore_Function_PreCallResolvedVmFunction(state, callBase, function, 1, 1, callBase + 1);
+    TEST_ASSERT_NOT_NULL(callInfo);
+
+    TEST_ASSERT_EQUAL_INT(ZR_CALL_STATUS_NONE, callInfo->callStatus);
+    TEST_ASSERT_EQUAL_PTR(instructions, callInfo->context.context.programCounter);
+    TEST_ASSERT_EQUAL_INT(ZR_DEBUG_SIGNAL_NONE, callInfo->context.context.trap);
+    TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)callInfo->context.context.variableArgumentCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, callInfo->yieldContext.returnValueCount);
+    TEST_ASSERT_EQUAL_PTR(callBase + 1, callInfo->returnDestination);
+    TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)callInfo->returnDestinationReusableOffset);
+    TEST_ASSERT_TRUE(callInfo->hasReturnDestination);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_prepared_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrInstruction instructions[1] = {0};
+    TZrStackValuePointer callBase;
+    SZrTypeValue *callableValue;
+    SZrCallInfo *callInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->stackSize = 2;
+    function->parameterCount = 1;
+    function->instructionsList = instructions;
+    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    function->localVariableList = ZR_NULL;
+    function->localVariableLength = 0;
+
+    callBase = state->stackTop.valuePointer;
+    callBase = ZrCore_Function_CheckStackAndGc(state, 1 + function->stackSize, callBase);
+    callableValue = ZrCore_Stack_GetValue(callBase);
+    TEST_ASSERT_NOT_NULL(callableValue);
+
+    ZrCore_Value_InitAsRawObject(state, callableValue, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_FUNCTION, callableValue->type);
+
+    ZrCore_Value_InitAsInt(state, &callBase[1].value, 177);
+    callBase[1].toBeClosedValueOffset = 19u;
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = callBase + 2;
+    callInfo = ZrCore_Function_PreCallPreparedResolvedVmFunction(state, callBase, function, 1, 1, callBase + 1);
+    TEST_ASSERT_NOT_NULL(callInfo);
+    TEST_ASSERT_EQUAL_UINT32(2u, function->vmEntryClearStackSizePlusOne);
+
+    callInfo->callStatus = (EZrCallStatus)(ZR_CALL_STATUS_NATIVE_CALL | ZR_CALL_STATUS_ALLOW_HOOK);
+    callInfo->context.nativeContext.previousErrorFunction = 177u;
+    callInfo->context.nativeContext.continuationArguments = (TZrNativePtr)0x5678;
+    callInfo->yieldContext.returnValueCount = 199u;
+    callInfo->returnDestinationReusableOffset = 75u;
+    callInfo->hasReturnDestination = ZR_FALSE;
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = callBase + 2;
+    callInfo = ZrCore_Function_PreCallPreparedResolvedVmFunction(state, callBase, function, 1, 1, callBase + 1);
+    TEST_ASSERT_NOT_NULL(callInfo);
+
+    TEST_ASSERT_EQUAL_INT(ZR_CALL_STATUS_NONE, callInfo->callStatus);
+    TEST_ASSERT_EQUAL_PTR(instructions, callInfo->context.context.programCounter);
+    TEST_ASSERT_EQUAL_INT(ZR_DEBUG_SIGNAL_NONE, callInfo->context.context.trap);
+    TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)callInfo->context.context.variableArgumentCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, callInfo->yieldContext.returnValueCount);
+    TEST_ASSERT_EQUAL_PTR(callBase + 1, callInfo->returnDestination);
+    TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)callInfo->returnDestinationReusableOffset);
+    TEST_ASSERT_TRUE(callInfo->hasReturnDestination);
+    TEST_ASSERT_EQUAL_PTR(callBase + 2, state->stackTop.valuePointer);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_on_cached_path(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrInstruction instructions[1] = {0};
+    TZrStackValuePointer callBase;
+    SZrTypeValue *callableValue;
+    SZrCallInfo *callInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->stackSize = 2;
+    function->parameterCount = 1;
+    function->instructionsList = instructions;
+    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    function->localVariableList = ZR_NULL;
+    function->localVariableLength = 0;
+
+    callBase = state->stackTop.valuePointer;
+    callBase = ZrCore_Function_CheckStackAndGc(state, 1 + function->stackSize, callBase);
+    callableValue = ZrCore_Stack_GetValue(callBase);
+    TEST_ASSERT_NOT_NULL(callableValue);
+
+    ZrCore_Value_InitAsRawObject(state, callableValue, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_FUNCTION, callableValue->type);
+
+    ZrCore_Value_InitAsInt(state, &callBase[1].value, 177);
+    callBase[1].toBeClosedValueOffset = 19u;
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = callBase + 2;
+    callInfo = ZrCore_Function_PreCallPreparedResolvedVmFunction(state, callBase, function, 1, 1, callBase + 1);
+    TEST_ASSERT_NOT_NULL(callInfo);
+    TEST_ASSERT_EQUAL_UINT32(2u, function->vmEntryClearStackSizePlusOne);
+
+    callInfo->callStatus = (EZrCallStatus)(ZR_CALL_STATUS_NATIVE_CALL | ZR_CALL_STATUS_ALLOW_HOOK);
+    callInfo->context.nativeContext.previousErrorFunction = 177u;
+    callInfo->context.nativeContext.continuationArguments = (TZrNativePtr)0x5678;
+    callInfo->yieldContext.returnValueCount = 199u;
+    callInfo->returnDestinationReusableOffset = 75u;
+    callInfo->hasReturnDestination = ZR_FALSE;
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = callBase + 2;
+    callInfo = ZrCore_Function_TryPreCallPreparedResolvedVmFunctionExactArgsSteadyState(
+            state, callBase, function, 1, 1, callBase + 1);
+    TEST_ASSERT_NOT_NULL(callInfo);
+    TEST_ASSERT_EQUAL_INT(ZR_CALL_STATUS_NONE, callInfo->callStatus);
+    TEST_ASSERT_EQUAL_PTR(instructions, callInfo->context.context.programCounter);
+    TEST_ASSERT_EQUAL_INT(ZR_DEBUG_SIGNAL_NONE, callInfo->context.context.trap);
+    TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)callInfo->context.context.variableArgumentCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, callInfo->yieldContext.returnValueCount);
+    TEST_ASSERT_EQUAL_PTR(callBase + 1, callInfo->returnDestination);
+    TEST_ASSERT_EQUAL_UINT32(0u, (TZrUInt32)callInfo->returnDestinationReusableOffset);
+    TEST_ASSERT_TRUE(callInfo->hasReturnDestination);
+    TEST_ASSERT_EQUAL_PTR(callBase + 2, state->stackTop.valuePointer);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_precall_growth_clears_newly_exposed_entry_local_slots_with_dirty_allocator(void) {
     TestDirtyAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_dirty_allocator(&allocatorContext);
@@ -606,6 +788,9 @@ int main(void) {
     RUN_TEST(test_precall_clears_reused_frame_slot_metadata);
     RUN_TEST(test_resolved_vm_precall_clears_reused_frame_slot_metadata_with_explicit_argument_count);
     RUN_TEST(test_resolved_vm_precall_keeps_transient_temp_slots_intact_when_no_entry_locals_need_null_reset);
+    RUN_TEST(test_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info);
+    RUN_TEST(test_prepared_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info);
+    RUN_TEST(test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_on_cached_path);
     RUN_TEST(test_precall_growth_clears_newly_exposed_entry_local_slots_with_dirty_allocator);
     RUN_TEST(test_precall_growth_reuses_cached_zero_capture_closure_across_repeated_growths_with_dirty_allocator);
     RUN_TEST(test_precall_growth_with_existing_vm_closure_clears_newly_exposed_entry_local_slots_with_dirty_allocator);

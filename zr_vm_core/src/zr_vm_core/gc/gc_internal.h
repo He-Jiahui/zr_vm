@@ -25,9 +25,31 @@
 
 #define ZR_GC_FLAG_EXPLICIT_COLLECTION_REQUEST ((TZrUInt32)1u)
 
-TZrBool garbage_collector_ignore_registry_contains(SZrGarbageCollector *collector, SZrRawObject *object);
+static ZR_FORCE_INLINE TZrBool garbage_collector_ignore_registry_contains(SZrGarbageCollector *collector,
+                                                                          SZrRawObject *object) {
+    TZrSize index;
+
+    if (collector == ZR_NULL || object == ZR_NULL || collector->ignoredObjects == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    index = object->garbageCollectMark.ignoredRegistryIndex;
+    return index < collector->ignoredObjectCount && collector->ignoredObjects[index] == object;
+}
+
 TZrBool garbage_collector_ensure_ignore_registry_capacity(SZrGlobalState *global, TZrSize minCapacity);
-TZrBool garbage_collector_remembered_registry_contains(SZrGarbageCollector *collector, SZrRawObject *object);
+static ZR_FORCE_INLINE TZrBool garbage_collector_remembered_registry_contains(SZrGarbageCollector *collector,
+                                                                              SZrRawObject *object) {
+    TZrSize index;
+
+    if (collector == ZR_NULL || object == ZR_NULL || collector->rememberedObjects == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    index = object->garbageCollectMark.rememberedRegistryIndex;
+    return index < collector->rememberedObjectCount && collector->rememberedObjects[index] == object;
+}
+
 TZrBool garbage_collector_ensure_remembered_registry_capacity(SZrGlobalState *global, TZrSize minCapacity);
 TZrBool garbage_collector_object_can_hold_gc_references(const SZrRawObject *object);
 TZrSize garbage_collector_get_object_base_size(SZrState *state, SZrRawObject *object);
@@ -50,12 +72,26 @@ SZrRawObject *garbage_collector_new_raw_object_in_region(SZrState *state,
                                                          TZrBool isNative,
                                                          EZrGarbageCollectRegionKind regionKind,
                                                          EZrGarbageCollectStorageKind storageKind);
+TZrUInt32 garbage_collector_allocate_region_id_cached(SZrGlobalState *global,
+                                                      EZrGarbageCollectRegionKind regionKind,
+                                                      TZrSize objectSize,
+                                                      TZrSize *outRegionDescriptorIndex);
 TZrUInt32 garbage_collector_allocate_region_id(SZrGlobalState *global,
                                                EZrGarbageCollectRegionKind regionKind,
                                                TZrSize objectSize);
+void garbage_collector_release_region_allocation_cached(SZrGlobalState *global,
+                                                        TZrUInt32 regionId,
+                                                        TZrSize regionDescriptorIndex,
+                                                        TZrSize objectSize);
 void garbage_collector_release_region_allocation(SZrGlobalState *global,
                                                  TZrUInt32 regionId,
                                                  TZrSize objectSize);
+TZrUInt32 garbage_collector_reassign_region_id_cached(SZrGlobalState *global,
+                                                      TZrUInt32 previousRegionId,
+                                                      TZrSize previousRegionDescriptorIndex,
+                                                      EZrGarbageCollectRegionKind newRegionKind,
+                                                      TZrSize objectSize,
+                                                      TZrSize *outRegionDescriptorIndex);
 TZrUInt32 garbage_collector_reassign_region_id(SZrGlobalState *global,
                                                TZrUInt32 previousRegionId,
                                                EZrGarbageCollectRegionKind newRegionKind,

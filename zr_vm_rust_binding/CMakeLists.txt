@@ -86,6 +86,7 @@ else ()
 endif ()
 if (ZR_VM_RUST_BINDING_CARGO_EXECUTABLE AND TARGET zr_vm_rust_binding_shared)
     set(zr_vm_rust_binding_rust_workspace "${CMAKE_CURRENT_SOURCE_DIR}/rust")
+    set(zr_vm_rust_binding_cargo_target_dir "${CMAKE_BINARY_DIR}/cargo/zr_vm_rust_binding")
 
     if (WIN32)
         set(zr_vm_rust_binding_runtime_env_name "PATH")
@@ -100,6 +101,7 @@ if (ZR_VM_RUST_BINDING_CARGO_EXECUTABLE AND TARGET zr_vm_rust_binding_shared)
 
     add_custom_target(zr_vm_rust_binding_rust_check
             COMMAND ${CMAKE_COMMAND} -E env
+                    "CARGO_TARGET_DIR=${zr_vm_rust_binding_cargo_target_dir}"
                     "ZR_VM_RUST_BINDING_LIB_DIR=$<TARGET_LINKER_FILE_DIR:zr_vm_rust_binding_shared>"
                     "${zr_vm_rust_binding_runtime_env_name}=${zr_vm_rust_binding_runtime_env_value}"
                     ${ZR_VM_RUST_BINDING_CARGO_EXECUTABLE} check --workspace
@@ -111,6 +113,7 @@ if (ZR_VM_RUST_BINDING_CARGO_EXECUTABLE AND TARGET zr_vm_rust_binding_shared)
 
     add_custom_target(zr_vm_rust_binding_rust_test
             COMMAND ${CMAKE_COMMAND} -E env
+                    "CARGO_TARGET_DIR=${zr_vm_rust_binding_cargo_target_dir}"
                     "ZR_VM_RUST_BINDING_LIB_DIR=$<TARGET_LINKER_FILE_DIR:zr_vm_rust_binding_shared>"
                     "${zr_vm_rust_binding_runtime_env_name}=${zr_vm_rust_binding_runtime_env_value}"
                     ${ZR_VM_RUST_BINDING_CARGO_EXECUTABLE} test --workspace
@@ -124,6 +127,7 @@ if (ZR_VM_RUST_BINDING_CARGO_EXECUTABLE AND TARGET zr_vm_rust_binding_shared)
         add_test(
                 NAME zr_vm_rust_binding_cargo_check
                 COMMAND ${CMAKE_COMMAND} -E env
+                        "CARGO_TARGET_DIR=${zr_vm_rust_binding_cargo_target_dir}"
                         "ZR_VM_RUST_BINDING_LIB_DIR=$<TARGET_LINKER_FILE_DIR:zr_vm_rust_binding_shared>"
                         "${zr_vm_rust_binding_runtime_env_name}=${zr_vm_rust_binding_runtime_env_value}"
                         ${ZR_VM_RUST_BINDING_CARGO_EXECUTABLE} check --workspace
@@ -135,6 +139,7 @@ if (ZR_VM_RUST_BINDING_CARGO_EXECUTABLE AND TARGET zr_vm_rust_binding_shared)
         add_test(
                 NAME zr_vm_rust_binding_cargo_test
                 COMMAND ${CMAKE_COMMAND} -E env
+                        "CARGO_TARGET_DIR=${zr_vm_rust_binding_cargo_target_dir}"
                         "ZR_VM_RUST_BINDING_LIB_DIR=$<TARGET_LINKER_FILE_DIR:zr_vm_rust_binding_shared>"
                         "${zr_vm_rust_binding_runtime_env_name}=${zr_vm_rust_binding_runtime_env_value}"
                         ${ZR_VM_RUST_BINDING_CARGO_EXECUTABLE} test --workspace

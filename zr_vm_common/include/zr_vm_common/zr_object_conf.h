@@ -19,6 +19,7 @@
 #define ZR_GARBAGE_COLLECT_STEP_LOG2_SIZE 17 /* 128KB */
 // wait memory to 200% before starting new gc cycle
 #define ZR_GARBAGE_COLLECT_PAUSE_THRESHOLD_PERCENT 200
+#define ZR_OBJECT_DENSE_LOOKUP_CACHE_SLOT_COUNT 4
 #define ZR_GC_SCOPE_DEPTH_NONE ((TZrUInt32)0xFFFFFFFFu)
 
 
@@ -213,6 +214,9 @@ struct SZrGarbageCollectionObjectMark {
     TZrUInt32 anchorScopeDepth;
     TZrUInt32 pinFlags;
     EZrGarbageCollectPromotionReason promotionReason;
+    TZrSize ignoredRegistryIndex;
+    TZrSize rememberedRegistryIndex;
+    TZrSize regionDescriptorIndex;
     TZrPtr forwardingAddress;
     TZrPtr forwardingRefLocation;
 };

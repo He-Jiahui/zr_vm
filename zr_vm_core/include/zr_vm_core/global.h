@@ -34,6 +34,12 @@ struct SZrGarbageCollector;
 // from string.h
 struct SZrString;
 
+typedef struct ZrStringConcatPairCacheEntry {
+    struct SZrString *left;
+    struct SZrString *right;
+    struct SZrString *result;
+} ZrStringConcatPairCacheEntry;
+
 typedef struct SZrObjectModule *(*FZrNativeModuleLoader)(struct SZrState *state,
                                                          struct SZrString *moduleName,
                                                          TZrPtr userData);
@@ -68,6 +74,8 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     // FOR API STRING CACHE
     struct SZrString *stringHashApiCache[ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT]
                                         [ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH];
+    ZrStringConcatPairCacheEntry stringConcatPairCache[ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_COUNT]
+                                                      [ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH];
     struct SZrString *metaFunctionName[ZR_META_ENUM_MAX];
 
     // Global Module Registry

@@ -266,6 +266,465 @@ static void test_rust_binding_scaffold_compile_and_run_round_trip(void) {
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
 }
 
+static void test_rust_binding_open_missing_project_reports_not_found_error_info(void) {
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar missingProjectPath[ZR_TESTS_PATH_MAX];
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingErrorInfo errorInfo;
+
+    memset(&errorInfo, 0, sizeof(errorInfo));
+    build_workspace_root("missing_project", workspaceRoot, sizeof(workspaceRoot));
+    clean_directory_tree(workspaceRoot);
+    snprintf(missingProjectPath, sizeof(missingProjectPath), "%s/missing_project.zrp", workspaceRoot);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_NOT_FOUND,
+                          ZrRustBinding_Project_Open(missingProjectPath, &workspace));
+    TEST_ASSERT_NULL(workspace);
+    ZrRustBinding_GetLastErrorInfo(&errorInfo);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_NOT_FOUND, errorInfo.status);
+    TEST_ASSERT_NOT_NULL(strstr(errorInfo.message, "failed to load project"));
+}
+
+static void test_rust_binding_bare_runtime_run_reports_unsupported_error_info(void) {
+    static const TZrChar *projectName = "bare_runtime_project";
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingRuntimeOptions runtimeOptions;
+    ZrRustBindingRunOptions runOptions;
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingRuntime *runtime = ZR_NULL;
+    ZrRustBindingValue *result = ZR_NULL;
+    ZrRustBindingErrorInfo errorInfo;
+
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&runtimeOptions, 0, sizeof(runtimeOptions));
+    memset(&runOptions, 0, sizeof(runOptions));
+    memset(&errorInfo, 0, sizeof(errorInfo));
+
+    build_workspace_root("bare_runtime", workspaceRoot, sizeof(workspaceRoot));
+    clean_directory_tree(workspaceRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", workspaceRoot);
+
+    scaffoldOptions.rootPath = workspaceRoot;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Scaffold(&scaffoldOptions, &workspace));
+    TEST_ASSERT_NOT_NULL(workspace);
+    TEST_ASSERT_TRUE(write_text_file(mainPath, "return 99;\n"));
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_NewBare(&runtimeOptions, &runtime));
+    TEST_ASSERT_NOT_NULL(runtime);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_UNSUPPORTED,
+                          ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result));
+    TEST_ASSERT_NULL(result);
+    ZrRustBinding_GetLastErrorInfo(&errorInfo);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_UNSUPPORTED, errorInfo.status);
+    TEST_ASSERT_NOT_NULL(strstr(errorInfo.message, "bare runtime execution is not implemented yet"));
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ProjectWorkspace_Free(workspace));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
+}
+
+static void test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_keeps_binary_run_stable(void) {
+    static const TZrChar *projectName = "incremental_toggle_project";
+    static const TZrChar *mainSource =
+            "var decorated = %import(\"decorated_user\");\n"
+            "\n"
+            "return decorated.verifyDecorators() + decorated.decoratedBonus();\n";
+    static const TZrChar *decoratedUserSource =
+            "%module \"decorated_user\";\n"
+            "\n"
+            "var decorators = %import(\"decorators\");\n"
+            "var markClass = decorators.markClass;\n"
+            "var markField = decorators.markField;\n"
+            "var markMethod = decorators.markMethod;\n"
+            "var markProperty = decorators.markProperty;\n"
+            "var markFunction = decorators.markFunction;\n"
+            "\n"
+            "#markClass#\n"
+            "pub class User {\n"
+            "    #markField#\n"
+            "    pub var id: int = 1;\n"
+            "\n"
+            "    pri var _value: int = 2;\n"
+            "\n"
+            "    #markMethod#\n"
+            "    pub load(v: int): int {\n"
+            "        return v;\n"
+            "    }\n"
+            "\n"
+            "    #markProperty#\n"
+            "    pub get value: int {\n"
+            "        return this._value;\n"
+            "    }\n"
+            "}\n"
+            "\n"
+            "#markFunction#\n"
+            "pub decoratedBonus(): int {\n"
+            "    var meta = %type(decoratedBonus).metadata;\n"
+            "    return meta.instrumented ? 16 : 0;\n"
+            "}\n"
+            "\n"
+            "pub var verifyDecorators = () => {\n"
+            "    var seed = 0;\n"
+            "    var typeMeta = %type(User).metadata;\n"
+            "    var fieldMeta = %type(User).members.id[0].metadata;\n"
+            "    var methodMeta = %type(User).members.load[0].metadata;\n"
+            "    var propertyMeta = %type(User).members.value[0].metadata;\n"
+            "\n"
+            "    if (typeMeta.runtimeSerializable) {\n"
+            "        seed = seed + 1;\n"
+            "    }\n"
+            "    if (fieldMeta.isRuntimeField) {\n"
+            "        seed = seed + 2;\n"
+            "    }\n"
+            "    if (methodMeta.isRuntimeMethod) {\n"
+            "        seed = seed + 4;\n"
+            "    }\n"
+            "    if (propertyMeta.isRuntimeProperty) {\n"
+            "        seed = seed + 8;\n"
+            "    }\n"
+            "\n"
+            "    return seed;\n"
+            "};\n";
+    static const TZrChar *decoratorsSource =
+            "%module \"decorators\";\n"
+            "\n"
+            "pub markClass(target: %type Class): void {\n"
+            "    target.metadata.runtimeSerializable = true;\n"
+            "}\n"
+            "\n"
+            "pub markFunction(target: %type Function): void {\n"
+            "    target.metadata.instrumented = true;\n"
+            "}\n"
+            "\n"
+            "pub markField(target: %type Field): void {\n"
+            "    target.metadata.isRuntimeField = true;\n"
+            "}\n"
+            "\n"
+            "pub markMethod(target: %type Method): void {\n"
+            "    target.metadata.isRuntimeMethod = true;\n"
+            "}\n"
+            "\n"
+            "pub markProperty(target: %type Property): void {\n"
+            "    target.metadata.isRuntimeProperty = true;\n"
+            "}\n";
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    TZrChar decoratedUserPath[ZR_TESTS_PATH_MAX];
+    TZrChar decoratorsPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainZroPath[ZR_TESTS_PATH_MAX];
+    TZrChar decoratedUserZroPath[ZR_TESTS_PATH_MAX];
+    TZrChar decoratorsZroPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainZriPath[ZR_TESTS_PATH_MAX];
+    TZrChar decoratedUserZriPath[ZR_TESTS_PATH_MAX];
+    TZrChar decoratorsZriPath[ZR_TESTS_PATH_MAX];
+    TZrChar pathBuffer[ZR_TESTS_PATH_MAX];
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingRuntimeOptions runtimeOptions;
+    ZrRustBindingCompileOptions compileOptions;
+    ZrRustBindingRunOptions runOptions;
+    ZrRustBindingCompileResult *compileResult = ZR_NULL;
+    ZrRustBindingManifestSnapshot *manifestSnapshot = ZR_NULL;
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingRuntime *runtime = ZR_NULL;
+    ZrRustBindingValue *result = ZR_NULL;
+    TZrSize compiledCount = 0;
+    TZrSize skippedCount = 0;
+    TZrSize removedCount = 0;
+    TZrSize manifestEntryCount = 0;
+    TZrSize mainEntryIndex = 0;
+    TZrSize decoratedUserEntryIndex = 0;
+    TZrSize decoratorsEntryIndex = 0;
+    TZrSize importCount = 0;
+    TZrInt64 intValue = 0;
+
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&runtimeOptions, 0, sizeof(runtimeOptions));
+    memset(&compileOptions, 0, sizeof(compileOptions));
+    memset(&runOptions, 0, sizeof(runOptions));
+    memset(pathBuffer, 0, sizeof(pathBuffer));
+
+    build_workspace_root("incremental_toggle", workspaceRoot, sizeof(workspaceRoot));
+    clean_directory_tree(workspaceRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", workspaceRoot);
+    snprintf(decoratedUserPath, sizeof(decoratedUserPath), "%s/src/decorated_user.zr", workspaceRoot);
+    snprintf(decoratorsPath, sizeof(decoratorsPath), "%s/src/decorators.zr", workspaceRoot);
+    snprintf(mainZroPath, sizeof(mainZroPath), "%s/bin/main.zro", workspaceRoot);
+    snprintf(decoratedUserZroPath, sizeof(decoratedUserZroPath), "%s/bin/decorated_user.zro", workspaceRoot);
+    snprintf(decoratorsZroPath, sizeof(decoratorsZroPath), "%s/bin/decorators.zro", workspaceRoot);
+    snprintf(mainZriPath, sizeof(mainZriPath), "%s/bin/main.zri", workspaceRoot);
+    snprintf(decoratedUserZriPath, sizeof(decoratedUserZriPath), "%s/bin/decorated_user.zri", workspaceRoot);
+    snprintf(decoratorsZriPath, sizeof(decoratorsZriPath), "%s/bin/decorators.zri", workspaceRoot);
+
+    scaffoldOptions.rootPath = workspaceRoot;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Scaffold(&scaffoldOptions, &workspace));
+    TEST_ASSERT_NOT_NULL(workspace);
+    TEST_ASSERT_TRUE(write_text_file(mainPath, mainSource));
+    TEST_ASSERT_TRUE(write_text_file(decoratedUserPath, decoratedUserSource));
+    TEST_ASSERT_TRUE(write_text_file(decoratorsPath, decoratorsSource));
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_NewStandard(&runtimeOptions, &runtime));
+    TEST_ASSERT_NOT_NULL(runtime);
+
+    compileOptions.emitIntermediate = ZR_TRUE;
+    compileOptions.incremental = ZR_TRUE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Compile(runtime, workspace, &compileOptions, &compileResult));
+    TEST_ASSERT_NOT_NULL(compileResult);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_CompileResult_GetCounts(compileResult,
+                                                                &compiledCount,
+                                                                &skippedCount,
+                                                                &removedCount));
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)compiledCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)skippedCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)removedCount);
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(mainZroPath));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(decoratedUserZroPath));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(decoratorsZroPath));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(mainZriPath));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(decoratedUserZriPath));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(decoratorsZriPath));
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectWorkspace_LoadManifest(workspace, &manifestSnapshot));
+    TEST_ASSERT_NOT_NULL(manifestSnapshot);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_GetEntryCount(manifestSnapshot, &manifestEntryCount));
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)manifestEntryCount);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_FindEntry(manifestSnapshot, "main", &mainEntryIndex));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_FindEntry(manifestSnapshot,
+                                                                   "decorated_user",
+                                                                   &decoratedUserEntryIndex));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_FindEntry(manifestSnapshot,
+                                                                   "decorators",
+                                                                   &decoratorsEntryIndex));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_GetEntryImportCount(manifestSnapshot,
+                                                                             mainEntryIndex,
+                                                                             &importCount));
+    TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)importCount);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_GetEntryImportCount(manifestSnapshot,
+                                                                             decoratedUserEntryIndex,
+                                                                             &importCount));
+    TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)importCount);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_GetEntryImportCount(manifestSnapshot,
+                                                                             decoratorsEntryIndex,
+                                                                             &importCount));
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)importCount);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ManifestSnapshot_Free(manifestSnapshot));
+    manifestSnapshot = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_CompileResult_Free(compileResult));
+    compileResult = ZR_NULL;
+
+    compileOptions.emitIntermediate = ZR_FALSE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Compile(runtime, workspace, &compileOptions, &compileResult));
+    TEST_ASSERT_NOT_NULL(compileResult);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_CompileResult_GetCounts(compileResult,
+                                                                &compiledCount,
+                                                                &skippedCount,
+                                                                &removedCount));
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)compiledCount);
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)skippedCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)removedCount);
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(mainZroPath));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(decoratedUserZroPath));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(decoratorsZroPath));
+    TEST_ASSERT_FALSE(ZrTests_File_Exists(mainZriPath));
+    TEST_ASSERT_FALSE(ZrTests_File_Exists(decoratedUserZriPath));
+    TEST_ASSERT_FALSE(ZrTests_File_Exists(decoratorsZriPath));
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectWorkspace_LoadManifest(workspace, &manifestSnapshot));
+    TEST_ASSERT_NOT_NULL(manifestSnapshot);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_GetEntryCount(manifestSnapshot, &manifestEntryCount));
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)manifestEntryCount);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_GetEntryZriPath(manifestSnapshot,
+                                                                          mainEntryIndex,
+                                                                          pathBuffer,
+                                                                          sizeof(pathBuffer)));
+    normalize_path_text(pathBuffer);
+    if (pathBuffer[0] != '\0') {
+        TEST_ASSERT_FALSE(ZrTests_File_Exists(pathBuffer));
+    }
+    memset(pathBuffer, 0, sizeof(pathBuffer));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_GetEntryZriPath(manifestSnapshot,
+                                                                          decoratedUserEntryIndex,
+                                                                          pathBuffer,
+                                                                          sizeof(pathBuffer)));
+    normalize_path_text(pathBuffer);
+    if (pathBuffer[0] != '\0') {
+        TEST_ASSERT_FALSE(ZrTests_File_Exists(pathBuffer));
+    }
+    memset(pathBuffer, 0, sizeof(pathBuffer));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ManifestSnapshot_GetEntryZriPath(manifestSnapshot,
+                                                                          decoratorsEntryIndex,
+                                                                          pathBuffer,
+                                                                          sizeof(pathBuffer)));
+    normalize_path_text(pathBuffer);
+    if (pathBuffer[0] != '\0') {
+        TEST_ASSERT_FALSE(ZrTests_File_Exists(pathBuffer));
+    }
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ManifestSnapshot_Free(manifestSnapshot));
+    manifestSnapshot = ZR_NULL;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_CompileResult_Free(compileResult));
+    compileResult = ZR_NULL;
+
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_BINARY;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_VALUE_KIND_INT, ZrRustBinding_Value_GetKind(result));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(31, intValue);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    result = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Compile(runtime, workspace, &compileOptions, &compileResult));
+    TEST_ASSERT_NOT_NULL(compileResult);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_CompileResult_GetCounts(compileResult,
+                                                                &compiledCount,
+                                                                &skippedCount,
+                                                                &removedCount));
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)compiledCount);
+    TEST_ASSERT_EQUAL_UINT32(3u, (unsigned int)skippedCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)removedCount);
+    TEST_ASSERT_FALSE(ZrTests_File_Exists(mainZriPath));
+    TEST_ASSERT_FALSE(ZrTests_File_Exists(decoratedUserZriPath));
+    TEST_ASSERT_FALSE(ZrTests_File_Exists(decoratorsZriPath));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_CompileResult_Free(compileResult));
+    compileResult = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_VALUE_KIND_INT, ZrRustBinding_Value_GetKind(result));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(31, intValue);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ProjectWorkspace_Free(workspace));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
+}
+
+static void test_rust_binding_run_named_module_preserves_module_name_and_program_args(void) {
+    static const TZrChar *projectName = "module_run_project";
+    static const TZrChar *mainSource = "return 17;\n";
+    static const TZrChar *moduleSource =
+            "var system = %import(\"zr.system\");\n"
+            "\n"
+            "fingerprint(): int {\n"
+            "    var count = 0;\n"
+            "    var score = 0;\n"
+            "    for (var item in system.process.arguments) {\n"
+            "        if (count == 0 && item == \"tools.seed\") {\n"
+            "            score = score + 100;\n"
+            "        } else if (count == 1 && item == \"foo\") {\n"
+            "            score = score + 10;\n"
+            "        } else if (count == 2 && item == \"bar\") {\n"
+            "            score = score + 1;\n"
+            "        }\n"
+            "        count = count + 1;\n"
+            "    }\n"
+            "    return count * 1000 + score;\n"
+            "}\n"
+            "\n"
+            "return fingerprint();\n";
+    static const TZrChar *programArgs[] = {"foo", "bar"};
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    TZrChar modulePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar zriPath[ZR_TESTS_PATH_MAX];
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingRuntimeOptions runtimeOptions;
+    ZrRustBindingRunOptions runOptions;
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingRuntime *runtime = ZR_NULL;
+    ZrRustBindingValue *result = ZR_NULL;
+    TZrInt64 intValue = 0;
+
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&runtimeOptions, 0, sizeof(runtimeOptions));
+    memset(&runOptions, 0, sizeof(runOptions));
+
+    build_workspace_root("module_run", workspaceRoot, sizeof(workspaceRoot));
+    clean_directory_tree(workspaceRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", workspaceRoot);
+    snprintf(modulePath, sizeof(modulePath), "%s/src/tools/seed.zr", workspaceRoot);
+
+    scaffoldOptions.rootPath = workspaceRoot;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Scaffold(&scaffoldOptions, &workspace));
+    TEST_ASSERT_NOT_NULL(workspace);
+    TEST_ASSERT_TRUE(write_text_file(mainPath, mainSource));
+    TEST_ASSERT_TRUE(write_text_file(modulePath, moduleSource));
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_NewStandard(&runtimeOptions, &runtime));
+    TEST_ASSERT_NOT_NULL(runtime);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectWorkspace_ResolveArtifacts(workspace,
+                                                                          "tools.seed",
+                                                                          zroPath,
+                                                                          sizeof(zroPath),
+                                                                          zriPath,
+                                                                          sizeof(zriPath)));
+    normalize_path_text(zroPath);
+    normalize_path_text(zriPath);
+    TEST_ASSERT_TRUE(text_ends_with(zroPath, "/bin/tools/seed.zro"));
+    TEST_ASSERT_TRUE(text_ends_with(zriPath, "/bin/tools/seed.zri"));
+
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_INTERP;
+    runOptions.moduleName = "tools.seed";
+    runOptions.programArgs = programArgs;
+    runOptions.programArgCount = 2;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_VALUE_KIND_INT, ZrRustBinding_Value_GetKind(result));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(3111, intValue);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    result = ZR_NULL;
+
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_BINARY;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_VALUE_KIND_INT, ZrRustBinding_Value_GetKind(result));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(3111, intValue);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ProjectWorkspace_Free(workspace));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
+}
+
 static void test_rust_binding_owned_value_array_and_object_accessors(void) {
     ZrRustBindingValue *arrayValue = ZR_NULL;
     ZrRustBindingValue *objectValue = ZR_NULL;
@@ -748,6 +1207,27 @@ static void test_rust_binding_native_module_registration_roundtrip(void) {
                           ZrRustBinding_Project_Compile(runtime, workspace, &compileOptions, &compileResult));
     TEST_ASSERT_NOT_NULL(compileResult);
 
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_INTERP;
+    runStatus = ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result);
+    if (runStatus != ZR_RUST_BINDING_STATUS_OK) {
+        TZrChar message[256];
+        snprintf(message,
+                 sizeof(message),
+                 "native interp run failed status=%d function_status=%d function_step=%u method_status=%d method_step=%u",
+                 (int)runStatus,
+                 (int)functionCapture.callbackStatus,
+                 (unsigned int)functionCapture.failureStep,
+                 (int)methodCapture.callbackStatus,
+                 (unsigned int)methodCapture.failureStep);
+        TEST_FAIL_MESSAGE(message);
+    }
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(125, intValue);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    result = ZR_NULL;
+
     runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_BINARY;
     runStatus = ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result);
     if (runStatus != ZR_RUST_BINDING_STATUS_OK) {
@@ -767,14 +1247,14 @@ static void test_rust_binding_native_module_registration_roundtrip(void) {
                           ZrRustBinding_Value_ReadInt(result, &intValue));
     TEST_ASSERT_EQUAL_INT64(125, intValue);
 
-    TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)functionCapture.callCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)functionCapture.callCount);
     TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)functionCapture.argumentCount);
     TEST_ASSERT_EQUAL_INT64(2, functionCapture.firstValue);
     TEST_ASSERT_EQUAL_INT64(3, functionCapture.secondValue);
     TEST_ASSERT_EQUAL_STRING("host_demo", functionCapture.moduleName);
     TEST_ASSERT_EQUAL_STRING("bump", functionCapture.callableName);
     TEST_ASSERT_EQUAL_STRING("", functionCapture.typeName);
-    TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)methodCapture.callCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)methodCapture.callCount);
     TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)methodCapture.argumentCount);
     TEST_ASSERT_EQUAL_INT64(4, methodCapture.firstValue);
     TEST_ASSERT_EQUAL_INT64(5, methodCapture.secondValue);
@@ -794,6 +1274,183 @@ static void test_rust_binding_native_module_registration_roundtrip(void) {
 
     TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)functionCapture.destroyCount);
     TEST_ASSERT_EQUAL_UINT32(1u, (unsigned int)methodCapture.destroyCount);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ProjectWorkspace_Free(workspace));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
+}
+
+static void test_rust_binding_native_module_registration_release_allows_re_registration(void) {
+    static const TZrChar *projectName = "native_module_reregister_project";
+    static const TZrChar *mainSource =
+            "var host = %import(\"host_demo\");\n"
+            "return host.answer;\n";
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    ZrRustBindingNativeConstantDescriptor constantDescriptor;
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingRuntimeOptions runtimeOptions;
+    ZrRustBindingCompileOptions compileOptions;
+    ZrRustBindingRunOptions runOptions;
+    ZrRustBindingErrorInfo errorInfo;
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingRuntime *runtime = ZR_NULL;
+    ZrRustBindingNativeModuleBuilder *builder = ZR_NULL;
+    ZrRustBindingNativeModule *module = ZR_NULL;
+    ZrRustBindingRuntimeNativeModuleRegistration *registration = ZR_NULL;
+    ZrRustBindingRuntimeNativeModuleRegistration *duplicateRegistration = ZR_NULL;
+    ZrRustBindingCompileResult *compileResult = ZR_NULL;
+    ZrRustBindingValue *result = ZR_NULL;
+    TZrInt64 intValue = 0;
+
+    memset(&constantDescriptor, 0, sizeof(constantDescriptor));
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&runtimeOptions, 0, sizeof(runtimeOptions));
+    memset(&compileOptions, 0, sizeof(compileOptions));
+    memset(&runOptions, 0, sizeof(runOptions));
+    memset(&errorInfo, 0, sizeof(errorInfo));
+
+    constantDescriptor.name = "answer";
+    constantDescriptor.kind = ZR_RUST_BINDING_NATIVE_CONSTANT_KIND_INT;
+    constantDescriptor.documentation = "Answer constant.";
+    constantDescriptor.typeName = "int";
+
+    build_workspace_root("native_module_reregister", workspaceRoot, sizeof(workspaceRoot));
+    clean_directory_tree(workspaceRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", workspaceRoot);
+
+    scaffoldOptions.rootPath = workspaceRoot;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Scaffold(&scaffoldOptions, &workspace));
+    TEST_ASSERT_NOT_NULL(workspace);
+    TEST_ASSERT_TRUE(write_text_file(mainPath, mainSource));
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_NewStandard(&runtimeOptions, &runtime));
+    TEST_ASSERT_NOT_NULL(runtime);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_New("host_demo", &builder));
+    TEST_ASSERT_NOT_NULL(builder);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_SetDocumentation(builder, "Host demo module."));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_SetModuleVersion(builder, "1.0.0"));
+    constantDescriptor.intValue = 100;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_AddConstant(builder, &constantDescriptor));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_Build(builder, &module));
+    TEST_ASSERT_NOT_NULL(module);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_Free(builder));
+    builder = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_RegisterNativeModule(runtime, module, &registration));
+    TEST_ASSERT_NOT_NULL(registration);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_NativeModule_Free(module));
+    module = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_New("host_demo", &builder));
+    TEST_ASSERT_NOT_NULL(builder);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_SetDocumentation(builder, "Host demo module."));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_SetModuleVersion(builder, "1.0.0"));
+    constantDescriptor.intValue = 200;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_AddConstant(builder, &constantDescriptor));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_Build(builder, &module));
+    TEST_ASSERT_NOT_NULL(module);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_Free(builder));
+    builder = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_ALREADY_EXISTS,
+                          ZrRustBinding_Runtime_RegisterNativeModule(runtime, module, &duplicateRegistration));
+    TEST_ASSERT_NULL(duplicateRegistration);
+    ZrRustBinding_GetLastErrorInfo(&errorInfo);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_ALREADY_EXISTS, errorInfo.status);
+    TEST_ASSERT_NOT_NULL(strstr(errorInfo.message, "native module already registered on runtime"));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_NativeModule_Free(module));
+    module = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Compile(runtime, workspace, &compileOptions, &compileResult));
+    TEST_ASSERT_NOT_NULL(compileResult);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_CompileResult_Free(compileResult));
+    compileResult = ZR_NULL;
+
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_INTERP;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(100, intValue);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    result = ZR_NULL;
+
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_BINARY;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(100, intValue);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    result = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_RuntimeNativeModuleRegistration_Free(registration));
+    registration = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_New("host_demo", &builder));
+    TEST_ASSERT_NOT_NULL(builder);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_SetDocumentation(builder, "Host demo module."));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_SetModuleVersion(builder, "1.0.0"));
+    constantDescriptor.intValue = 250;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_AddConstant(builder, &constantDescriptor));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_Build(builder, &module));
+    TEST_ASSERT_NOT_NULL(module);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_NativeModuleBuilder_Free(builder));
+    builder = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_RegisterNativeModule(runtime, module, &registration));
+    TEST_ASSERT_NOT_NULL(registration);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_NativeModule_Free(module));
+    module = ZR_NULL;
+
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_INTERP;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(250, intValue);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    result = ZR_NULL;
+
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_BINARY;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Run(runtime, workspace, &runOptions, &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(250, intValue);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    result = ZR_NULL;
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_RuntimeNativeModuleRegistration_Free(registration));
+    registration = ZR_NULL;
 
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ProjectWorkspace_Free(workspace));
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
@@ -829,10 +1486,15 @@ int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_rust_binding_scaffold_compile_and_run_round_trip);
+    RUN_TEST(test_rust_binding_open_missing_project_reports_not_found_error_info);
+    RUN_TEST(test_rust_binding_bare_runtime_run_reports_unsupported_error_info);
+    RUN_TEST(test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_keeps_binary_run_stable);
+    RUN_TEST(test_rust_binding_run_named_module_preserves_module_name_and_program_args);
     RUN_TEST(test_rust_binding_owned_value_array_and_object_accessors);
     RUN_TEST(test_rust_binding_scalar_value_kind_and_ownership_metadata);
     RUN_TEST(test_rust_binding_call_module_export_with_owned_arguments);
     RUN_TEST(test_rust_binding_native_module_registration_roundtrip);
+    RUN_TEST(test_rust_binding_native_module_registration_release_allows_re_registration);
     RUN_TEST(test_rust_binding_native_builder_rejects_invalid_function_descriptor);
 
     return UNITY_END();

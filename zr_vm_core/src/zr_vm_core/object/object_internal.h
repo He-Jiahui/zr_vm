@@ -180,9 +180,29 @@ ZR_CORE_API TZrBool ZrCore_Object_GetByIndexUnchecked(SZrState *state,
                                                       const SZrTypeValue *key,
                                                       SZrTypeValue *result);
 
+TZrBool ZrCore_Object_GetByIndexUncheckedStackOperands(SZrState *state,
+                                                       SZrTypeValue *receiver,
+                                                       const SZrTypeValue *key,
+                                                       SZrTypeValue *result);
+
+TZrBool ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands(SZrState *state,
+                                                                   SZrTypeValue *receiver,
+                                                                   const SZrTypeValue *key,
+                                                                   SZrTypeValue *result);
+
 ZR_CORE_API TZrBool ZrCore_Object_SetByIndexUnchecked(SZrState *state,
                                                       SZrTypeValue *receiver,
                                                       const SZrTypeValue *key,
                                                       const SZrTypeValue *value);
+
+TZrBool ZrCore_Object_SetByIndexUncheckedStackOperands(SZrState *state,
+                                                       SZrTypeValue *receiver,
+                                                       const SZrTypeValue *key,
+                                                       const SZrTypeValue *value);
+
+TZrBool ZrCore_Object_TrySetByIndexReadonlyInlineFastStackOperands(SZrState *state,
+                                                                   SZrTypeValue *receiver,
+                                                                   const SZrTypeValue *key,
+                                                                   const SZrTypeValue *value);
 
 #endif

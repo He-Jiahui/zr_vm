@@ -3,6 +3,7 @@
 //
 
 #include "execution/execution_internal.h"
+#include "function_precall_internal.h"
 #include "object/object_internal.h"
 #include "object/object_super_array_internal.h"
 
@@ -12,9 +13,19 @@
 static ZR_FORCE_INLINE SZrRawObject *execution_refresh_forwarded_raw_object(SZrRawObject *rawObject);
 static ZR_FORCE_INLINE SZrFunction *execution_refresh_forwarded_function(SZrFunction *function);
 static ZR_FORCE_INLINE SZrClosure *execution_refresh_forwarded_closure(SZrClosure *closure);
+static ZR_FORCE_INLINE SZrFunction *execution_try_resolve_stateless_vm_function_value_fast(
+        SZrState *state,
+        SZrTypeValue *value);
 static ZR_FORCE_INLINE SZrFunction *execution_try_resolve_vm_metadata_function_fast(SZrState *state,
                                                                                      SZrTypeValue *value,
                                                                                      SZrRawObject **outCallableObject);
+static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_prepared_resolved_vm_fast(
+        SZrState *state,
+        TZrStackValuePointer stackPointer,
+        SZrFunction *resolvedFunction,
+        TZrSize argumentsCount,
+        TZrSize resultCount,
+        TZrStackValuePointer returnDestination);
 
 static ZR_FORCE_INLINE TZrBool execution_can_copy_stack_value_by_bits(const SZrTypeValue *destination,
                                                                       const SZrTypeValue *source) {
@@ -69,6 +80,36 @@ static ZR_FORCE_INLINE void execution_assign_stack_value_to_stack_fast_no_profil
     ZrCore_Value_AssignMaterializedStackValueNoProfile(state, destination, source);
 }
 
+static ZR_FORCE_INLINE void execution_post_call_single_result_resolved_source_fast(
+        SZrState *state,
+        SZrCallInfo *callInfo,
+        TZrStackValuePointer returnSource) {
+    TZrStackValuePointer destination;
+    SZrTypeValue *destinationValue;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(callInfo != ZR_NULL);
+    ZR_ASSERT(state->debugHookSignal == 0u);
+    ZR_ASSERT(callInfo->expectedReturnCount == 1u);
+    ZR_ASSERT(callInfo->callStatus == ZR_CALL_STATUS_NONE);
+
+    destination = callInfo->hasReturnDestination ? callInfo->returnDestination : callInfo->functionBase.valuePointer;
+    ZR_ASSERT(destination != ZR_NULL);
+
+    destinationValue = ZrCore_Stack_GetValueNoProfile(destination);
+    if (returnSource == ZR_NULL) {
+        ZrCore_Value_ResetAsNullNoProfile(destinationValue);
+    } else if (returnSource != destination) {
+        execution_copy_stack_value_to_stack_fast_no_profile(
+                state,
+                destinationValue,
+                ZrCore_Stack_GetValueNoProfile(returnSource));
+    }
+
+    state->stackTop.valuePointer = destination + 1;
+    state->callInfoList = callInfo->previous;
+}
+
 static ZR_FORCE_INLINE void execution_prepare_destination_for_direct_store_no_profile(SZrState *state,
                                                                                       SZrTypeValue *destination) {
     ZR_ASSERT(state != ZR_NULL);
@@ -79,6 +120,20 @@ static ZR_FORCE_INLINE void execution_prepare_destination_for_direct_store_no_pr
     } else {
         ZR_ASSERT(destination->ownershipControl == ZR_NULL && destination->ownershipWeakRef == ZR_NULL);
     }
+}
+
+static ZR_FORCE_INLINE void execution_store_vm_function_value_no_profile(SZrTypeValue *destination,
+                                                                         SZrFunction *function) {
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(function != ZR_NULL);
+
+    destination->type = ZR_VALUE_TYPE_FUNCTION;
+    destination->value.object = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+    destination->isGarbageCollectable = ZR_TRUE;
+    destination->isNative = ZR_FALSE;
+    destination->ownershipKind = ZR_OWNERSHIP_VALUE_KIND_NONE;
+    destination->ownershipControl = ZR_NULL;
+    destination->ownershipWeakRef = ZR_NULL;
 }
 
 static ZR_FORCE_INLINE void execution_copy_value_fast(SZrState *state,
@@ -145,15 +200,18 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_fast(SZrState *s
     }
 
     if (callableValue != ZR_NULL && !callableValue->isNative) {
-        resolvedFunction = execution_try_resolve_vm_metadata_function_fast(state, callableValue, ZR_NULL);
-        if (callableValue->type == ZR_VALUE_TYPE_FUNCTION &&
-            (resolvedFunction == ZR_NULL || resolvedFunction->closureValueLength != 0)) {
-            resolvedFunction = ZR_NULL;
+        resolvedFunction = execution_try_resolve_stateless_vm_function_value_fast(state, callableValue);
+        if (resolvedFunction == ZR_NULL) {
+            resolvedFunction = execution_try_resolve_vm_metadata_function_fast(state, callableValue, ZR_NULL);
+            if (callableValue->type == ZR_VALUE_TYPE_FUNCTION &&
+                (resolvedFunction == ZR_NULL || resolvedFunction->closureValueLength != 0)) {
+                resolvedFunction = ZR_NULL;
+            }
         }
     }
 
     if (ZR_LIKELY(resolvedFunction != ZR_NULL)) {
-        return ZrCore_Function_PreCallResolvedVmFunction(
+        return execution_pre_call_prepared_resolved_vm_fast(
                 state,
                 stackPointer,
                 resolvedFunction,
@@ -163,6 +221,168 @@ static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_fast(SZrState *s
     }
 
     return ZrCore_Function_PreCallKnownVmValue(state, stackPointer, callableValue, resultCount, returnDestination);
+}
+
+static ZR_FORCE_INLINE void execution_store_resolved_vm_function_value_fast(SZrState *state,
+                                                                            SZrTypeValue *destination,
+                                                                            SZrFunction *function) {
+    if (state == ZR_NULL || destination == ZR_NULL || function == ZR_NULL) {
+        return;
+    }
+
+    execution_prepare_destination_for_direct_store_no_profile(state, destination);
+    execution_store_vm_function_value_no_profile(destination, function);
+}
+
+static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_prepared_resolved_vm_fast(
+        SZrState *state,
+        TZrStackValuePointer stackPointer,
+        SZrFunction *resolvedFunction,
+        TZrSize argumentsCount,
+        TZrSize resultCount,
+        TZrStackValuePointer returnDestination) {
+    SZrCallInfo *callInfo;
+
+    callInfo = function_try_pre_call_prepared_resolved_vm_exact_args_steady_state_inline(
+            state,
+            stackPointer,
+            resolvedFunction,
+            argumentsCount,
+            resultCount,
+            returnDestination);
+    if (ZR_LIKELY(callInfo != ZR_NULL)) {
+        return callInfo;
+    }
+
+    return ZrCore_Function_PreCallPreparedResolvedVmFunction(state,
+                                                             stackPointer,
+                                                             resolvedFunction,
+                                                             argumentsCount,
+                                                             resultCount,
+                                                             returnDestination);
+}
+
+static ZR_FORCE_INLINE TZrBool execution_try_resolve_known_vm_member_exact_single_slot_fast(
+        SZrFunctionCallSiteCacheEntry *cacheEntry,
+        const SZrTypeValue *receiverValue,
+        SZrFunction **outResolvedFunction,
+        TZrUInt32 *outArgumentCount) {
+    SZrFunctionCallSitePicSlot *slot;
+    SZrObject *receiverObject;
+
+    if (outResolvedFunction != ZR_NULL) {
+        *outResolvedFunction = ZR_NULL;
+    }
+    if (outArgumentCount != ZR_NULL) {
+        *outArgumentCount = 0u;
+    }
+    if (cacheEntry == ZR_NULL || receiverValue == ZR_NULL || cacheEntry->picSlotCount != 1u || cacheEntry->argumentCount == 0u ||
+        receiverValue->value.object == ZR_NULL ||
+        (receiverValue->type != ZR_VALUE_TYPE_OBJECT && receiverValue->type != ZR_VALUE_TYPE_ARRAY)) {
+        return ZR_FALSE;
+    }
+
+    slot = &cacheEntry->picSlots[0];
+    if (slot->cachedFunction == ZR_NULL || slot->cachedReceiverObject == ZR_NULL ||
+        slot->cachedOwnerPrototype == ZR_NULL || slot->cachedReceiverPrototype == ZR_NULL ||
+        receiverValue->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject)) {
+        return ZR_FALSE;
+    }
+
+    receiverObject = ZR_CAST_OBJECT(ZR_NULL, receiverValue->value.object);
+    if (receiverObject == ZR_NULL || receiverObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE ||
+        receiverObject->prototype != slot->cachedReceiverPrototype ||
+        slot->cachedReceiverPrototype->super.memberVersion != slot->cachedReceiverVersion ||
+        slot->cachedOwnerPrototype->super.memberVersion != slot->cachedOwnerVersion ||
+        slot->cachedFunction->closureValueLength != 0u) {
+        return ZR_FALSE;
+    }
+
+    if (outResolvedFunction != ZR_NULL) {
+        *outResolvedFunction = slot->cachedFunction;
+    }
+    if (outArgumentCount != ZR_NULL) {
+        *outArgumentCount = cacheEntry->argumentCount;
+    }
+    cacheEntry->runtimeHitCount++;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_member_fast(
+        SZrState *state,
+        const TZrInstruction *programCounter,
+        SZrFunction *currentFunction,
+        TZrUInt16 cacheIndex,
+        SZrFunctionCallSiteCacheEntry *cacheEntry,
+        TZrStackValuePointer stackPointer,
+        TZrSize resultCount,
+        TZrStackValuePointer returnDestination,
+        SZrProfileRuntime *profileRuntime,
+        TZrBool recordHelpers) {
+    SZrTypeValue *callableValue;
+    SZrTypeValue *receiverValue;
+    SZrFunction *resolvedFunction = ZR_NULL;
+    TZrUInt32 cachedArgumentCount = cacheEntry != ZR_NULL ? cacheEntry->argumentCount : 0u;
+
+    if (ZR_UNLIKELY(recordHelpers)) {
+        profileRuntime->helperCounts[ZR_PROFILE_HELPER_PRECALL]++;
+    }
+
+    callableValue = ZrCore_Stack_GetValueNoProfile(stackPointer);
+    receiverValue = ZrCore_Stack_GetValueNoProfile(stackPointer + 1);
+    if (receiverValue != ZR_NULL &&
+        execution_try_resolve_known_vm_member_exact_single_slot_fast(
+                cacheEntry, receiverValue, &resolvedFunction, &cachedArgumentCount) &&
+        resolvedFunction != ZR_NULL) {
+        /*
+         * The direct member-call opcode skips materializing the bound callable via
+         * GET_MEMBER_SLOT, but VM frames still rely on stackPointer[0] carrying a
+         * function/closure value so frame metadata can be reconstructed on entry.
+         */
+        execution_store_resolved_vm_function_value_fast(state, callableValue, resolvedFunction);
+        return execution_pre_call_prepared_resolved_vm_fast(state,
+                                                            stackPointer,
+                                                            resolvedFunction,
+                                                            cachedArgumentCount,
+                                                            resultCount,
+                                                            returnDestination);
+    }
+    if (receiverValue != ZR_NULL &&
+        execution_member_try_resolve_cached_known_vm_function_entry(state,
+                                                                    currentFunction,
+                                                                    cacheIndex,
+                                                                    cacheEntry,
+                                                                    receiverValue,
+                                                                    &resolvedFunction,
+                                                                    &cachedArgumentCount) &&
+        resolvedFunction != ZR_NULL) {
+        /*
+         * The direct member-call opcode skips materializing the bound callable via
+         * GET_MEMBER_SLOT, but VM frames still rely on stackPointer[0] carrying a
+         * function/closure value so frame metadata can be reconstructed on entry.
+         */
+        execution_store_resolved_vm_function_value_fast(state, callableValue, resolvedFunction);
+        return execution_pre_call_prepared_resolved_vm_fast(state,
+                                                            stackPointer,
+                                                            resolvedFunction,
+                                                            cachedArgumentCount,
+                                                            resultCount,
+                                                            returnDestination);
+    }
+
+    if (callableValue == ZR_NULL || receiverValue == ZR_NULL ||
+        !execution_member_get_cached(state, programCounter, currentFunction, cacheIndex, receiverValue, callableValue)) {
+        return ZR_NULL;
+    }
+
+    return execution_pre_call_known_vm_fast(state,
+                                            stackPointer,
+                                            callableValue,
+                                            cachedArgumentCount,
+                                            resultCount,
+                                            returnDestination,
+                                            profileRuntime,
+                                            ZR_FALSE);
 }
 
 static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_native_fast(SZrState *state,
@@ -220,6 +440,31 @@ static ZR_FORCE_INLINE SZrClosure *execution_refresh_forwarded_closure(SZrClosur
     return closure != ZR_NULL
                    ? (SZrClosure *)execution_refresh_forwarded_raw_object(ZR_CAST_RAW_OBJECT_AS_SUPER(closure))
                    : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrFunction *execution_try_resolve_stateless_vm_function_value_fast(
+        SZrState *state,
+        SZrTypeValue *value) {
+    SZrRawObject *rawObject;
+    SZrFunction *function;
+
+    if (state == ZR_NULL || value == ZR_NULL || value->type != ZR_VALUE_TYPE_FUNCTION || value->isNative ||
+        value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    rawObject = execution_refresh_forwarded_raw_object(value->value.object);
+    if (rawObject == ZR_NULL || rawObject->type != ZR_RAW_OBJECT_TYPE_FUNCTION) {
+        return ZR_NULL;
+    }
+
+    function = ZR_CAST_FUNCTION(state, rawObject);
+    if (function == ZR_NULL || function->closureValueLength != 0u) {
+        return ZR_NULL;
+    }
+
+    value->value.object = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+    return function;
 }
 
 static SZrString *execution_refresh_forwarded_string(SZrString *stringValue) {
@@ -323,6 +568,32 @@ static SZrString *execution_resolve_cached_member_symbol(SZrFunction *function,
     }
 
     return execution_resolve_function_member_symbol(function, cacheEntry->memberEntryIndex);
+}
+
+static ZR_FORCE_INLINE SZrFunctionCallSiteCacheEntry *execution_member_get_cache_entry_dispatch_fast(
+        SZrFunction *function,
+        TZrUInt16 cacheIndex,
+        EZrFunctionCallSiteCacheKind expectedKind) {
+    SZrFunctionCallSiteCacheEntry *entry;
+
+    if (ZR_UNLIKELY(
+                function == ZR_NULL || function->callSiteCaches == ZR_NULL ||
+                cacheIndex >= function->callSiteCacheLength)) {
+        ZrCore_Profile_RecordSlowPathCurrent(ZR_PROFILE_SLOWPATH_CALLSITE_CACHE_MISS);
+        return ZR_NULL;
+    }
+
+    entry = &function->callSiteCaches[cacheIndex];
+    if (ZR_UNLIKELY((EZrFunctionCallSiteCacheKind)entry->kind != expectedKind)) {
+        ZrCore_Profile_RecordSlowPathCurrent(ZR_PROFILE_SLOWPATH_CALLSITE_CACHE_MISS);
+        return ZR_NULL;
+    }
+
+    if (ZR_UNLIKELY(execution_callsite_sanitize_enabled())) {
+        garbage_collector_sanitize_callsite_cache_pic(function, cacheIndex, "runtime-callsite-lookup", entry);
+    }
+
+    return entry;
 }
 
 static TZrBool execution_raise_vm_runtime_error(SZrState *state,
@@ -567,6 +838,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED)] = &&LZrFastInstruction_JUMP_IF_GREATER_SIGNED,
             [ZR_INSTRUCTION_ENUM(FUNCTION_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
+            [ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
@@ -2170,51 +2442,95 @@ LZrFastInstruction_GET_CONSTANT: {
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD) {
                 SZrTypeValue builtinResult;
+                TZrBool builtinNeedsTemporaryResult;
 
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                ZrCore_Value_ResetAsNull(&builtinResult);
-                if (try_builtin_add(state, &builtinResult, opA, opB)) {
-                    if (destination == &ret) {
-                        ret = builtinResult;
-                    } else {
-                        UPDATE_BASE(callInfo);
-                        destination = &BASE(E(instruction))->value;
-                        ZrCore_Value_Copy(state, destination, &builtinResult);
-                    }
-                    // 基础数值和字符串拼接直接在运行时处理。
+                if (execution_try_builtin_add_exact_numeric_fast(destination, opA, opB)) {
+                    // 精确数值对直接命中内联 fast path。
                 } else {
-                    SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_ADD);
-                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
-                    // 调用元方法
-                        TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-                        SZrCallInfo *savedCallInfo = state->callInfoList;
-                        PROTECT_E(state, callInfo, {
-                            TZrStackValuePointer metaBase = ZR_NULL;
-                            TZrStackValuePointer restoredStackTop = savedStackTop;
-                            TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
-                                                                                  savedCallInfo,
-                                                                                  savedStackTop,
-                                                                                  savedStackTop,
-                                                                                  meta,
-                                                                                  opA,
-                                                                                  opB,
-                                                                                  ZR_META_CALL_MAX_ARGUMENTS,
-                                                                                  &metaBase,
-                                                                                  &restoredStackTop);
-                            RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                            if (metaCallSucceeded) {
-                                SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
-                                ZrCore_Value_Copy(state, destination, returnValue);
+                    builtinNeedsTemporaryResult = execution_builtin_add_requires_temporary_result(opA, opB);
+                    if (destination == &ret || !builtinNeedsTemporaryResult) {
+                        if (try_builtin_add(state, destination, opA, opB)) {
+                            // 基础数值和字符串拼接直接在运行时处理。
+                        } else {
+                            SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_ADD);
+                            if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                            // 调用元方法
+                                TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+                                SZrCallInfo *savedCallInfo = state->callInfoList;
+                                PROTECT_E(state, callInfo, {
+                                    TZrStackValuePointer metaBase = ZR_NULL;
+                                    TZrStackValuePointer restoredStackTop = savedStackTop;
+                                    TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                                          savedCallInfo,
+                                                                                          savedStackTop,
+                                                                                          savedStackTop,
+                                                                                          meta,
+                                                                                          opA,
+                                                                                          opB,
+                                                                                          ZR_META_CALL_MAX_ARGUMENTS,
+                                                                                          &metaBase,
+                                                                                          &restoredStackTop);
+                                    RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                                    if (metaCallSucceeded) {
+                                        SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
+                                        ZrCore_Value_Copy(state, destination, returnValue);
+                                    } else {
+                                        ZrCore_Value_ResetAsNull(destination);
+                                    }
+                                    state->stackTop.valuePointer = restoredStackTop;
+                                    state->callInfoList = savedCallInfo;
+                                });
                             } else {
+                                // 无元方法，返回 null
                                 ZrCore_Value_ResetAsNull(destination);
                             }
-                            state->stackTop.valuePointer = restoredStackTop;
-                            state->callInfoList = savedCallInfo;
-                        });
+                        }
                     } else {
-                        // 无元方法，返回 null
-                        ZrCore_Value_ResetAsNull(destination);
+                        ZrCore_Value_ResetAsNull(&builtinResult);
+                        if (try_builtin_add(state, &builtinResult, opA, opB)) {
+                            UPDATE_BASE(callInfo);
+                            destination = &BASE(E(instruction))->value;
+                            ZrCore_Value_Copy(state, destination, &builtinResult);
+                            // 基础数值和字符串拼接直接在运行时处理。
+                        } else {
+                            SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_ADD);
+                            if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                            // 调用元方法
+                                TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+                                SZrCallInfo *savedCallInfo = state->callInfoList;
+                                PROTECT_E(state, callInfo, {
+                                    TZrStackValuePointer metaBase = ZR_NULL;
+                                    TZrStackValuePointer restoredStackTop = savedStackTop;
+                                    TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                                          savedCallInfo,
+                                                                                          savedStackTop,
+                                                                                          savedStackTop,
+                                                                                          meta,
+                                                                                          opA,
+                                                                                          opB,
+                                                                                          ZR_META_CALL_MAX_ARGUMENTS,
+                                                                                          &metaBase,
+                                                                                          &restoredStackTop);
+                                    UPDATE_BASE(callInfo);
+                                    destination = &BASE(E(instruction))->value;
+                                    if (metaCallSucceeded) {
+                                        SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
+                                        ZrCore_Value_Copy(state, destination, returnValue);
+                                    } else {
+                                        ZrCore_Value_ResetAsNull(destination);
+                                    }
+                                    state->stackTop.valuePointer = restoredStackTop;
+                                    state->callInfoList = savedCallInfo;
+                                });
+                            } else {
+                                // 无元方法，返回 null
+                                UPDATE_BASE(callInfo);
+                                destination = &BASE(E(instruction))->value;
+                                ZrCore_Value_ResetAsNull(destination);
+                            }
+                        }
                     }
                 }
             }
@@ -2353,22 +2669,13 @@ LZrFastInstruction_ADD_UNSIGNED_CONST_PLAIN_DEST: {
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(ADD_STRING) {
-                SZrTypeValue concatResult;
-
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 ZR_ASSERT(ZR_VALUE_IS_TYPE_STRING(opA->type) && ZR_VALUE_IS_TYPE_STRING(opB->type));
-                ZrCore_Value_ResetAsNull(&concatResult);
-                if (!concat_values_to_destination(state, &concatResult, opA, opB, ZR_FALSE)) {
+                if (!execution_try_concat_exact_strings(state, destination, opA, opB)) {
                     UPDATE_BASE(callInfo);
                     destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;
                     ZrCore_Value_ResetAsNull(destination);
-                } else if (destination == &ret) {
-                    ret = concatResult;
-                } else {
-                    UPDATE_BASE(callInfo);
-                    destination = &BASE(E(instruction))->value;
-                    ZrCore_Value_Copy(state, destination, &concatResult);
                 }
             }
             DONE(1);
@@ -2547,7 +2854,9 @@ LZrFastInstruction_SUB_UNSIGNED_CONST_PLAIN_DEST: {
             ZR_INSTRUCTION_LABEL(MUL) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
-                if (!execution_try_builtin_mul(state, destination, opA, opB)) {
+                if (execution_try_builtin_mul_exact_numeric_fast(destination, opA, opB)) {
+                    // Exact numeric pairs stay on the inline steady-state path.
+                } else {
                     SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_MUL);
                     if (meta != ZR_NULL && meta->function != ZR_NULL) {
                     // 调用元方法
@@ -2865,27 +3174,25 @@ LZrFastInstruction_DIV_UNSIGNED_CONST_PLAIN_DEST: {
                 opB = &BASE(B1(instruction))->value;
                 if ((ZR_VALUE_IS_TYPE_NUMBER(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opA->type)) &&
                     (ZR_VALUE_IS_TYPE_NUMBER(opB->type) || ZR_VALUE_IS_TYPE_BOOL(opB->type))) {
-                    if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
-                        if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) &&
-                            ZR_VALUE_IS_TYPE_UNSIGNED_INT(opB->type)) {
-                            SAVE_STATE(state, callInfo); // error: modulo by zero
-                            if (ZR_UNLIKELY(opB->value.nativeObject.nativeUInt64 == 0)) {
-                                ZrCore_Debug_RunError(state, "modulo by zero");
-                            }
-                            ALGORITHM_2(nativeUInt64, %, ZR_VALUE_TYPE_UINT64);
-                        } else {
-                            TZrInt64 divisor;
+                    TZrBool divisorWasZero = ZR_FALSE;
 
+                    if (execution_try_builtin_mod_exact_integer_fast(destination, opA, opB, &divisorWasZero)) {
+                        if (ZR_UNLIKELY(divisorWasZero)) {
                             SAVE_STATE(state, callInfo); // error: modulo by zero
-                            divisor = value_to_int64(opB);
-                            if (ZR_UNLIKELY(divisor == 0)) {
-                                ZrCore_Debug_RunError(state, "modulo by zero");
-                            }
-                            if (ZR_UNLIKELY(divisor < 0)) {
-                                divisor = -divisor;
-                            }
-                            ZrCore_Value_InitAsInt(state, destination, value_to_int64(opA) % divisor);
+                            ZrCore_Debug_RunError(state, "modulo by zero");
                         }
+                    } else if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                        TZrInt64 divisor;
+
+                        SAVE_STATE(state, callInfo); // error: modulo by zero
+                        divisor = value_to_int64(opB);
+                        if (ZR_UNLIKELY(divisor == 0)) {
+                            ZrCore_Debug_RunError(state, "modulo by zero");
+                        }
+                        if (ZR_UNLIKELY(divisor < 0)) {
+                            divisor = -divisor;
+                        }
+                        ZrCore_Value_InitAsInt(state, destination, value_to_int64(opA) % divisor);
                     } else {
                         execution_try_binary_numeric_float_fallback_or_raise(
                                 state, ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB, "MOD");
@@ -3695,6 +4002,37 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 }
             }
             DONE(1);
+            ZR_INSTRUCTION_LABEL(KNOWN_VM_MEMBER_CALL) {
+                TZrSize resultSlot = E(instruction);
+                TZrUInt16 cacheIndex = (TZrUInt16)A1(instruction);
+                SZrFunctionCallSiteCacheEntry *cacheEntry;
+                TZrSize parametersCount = 0u;
+                TZrSize expectedReturnCount = 1;
+                SZrCallInfo *nextCallInfo;
+
+                callInfo->context.context.programCounter = programCounter + 1;
+                cacheEntry = execution_member_get_cache_entry_dispatch_fast(
+                        currentFunction, cacheIndex, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
+                parametersCount = cacheEntry != ZR_NULL ? cacheEntry->argumentCount : 0u;
+                state->stackTop.valuePointer = BASE(resultSlot) + parametersCount + 1;
+                nextCallInfo = execution_pre_call_known_vm_member_fast(state,
+                                                                       programCounter,
+                                                                       currentFunction,
+                                                                       cacheIndex,
+                                                                       cacheEntry,
+                                                                       BASE(resultSlot),
+                                                                       expectedReturnCount,
+                                                                       BASE(E(instruction)),
+                                                                       profileRuntime,
+                                                                       recordHelpers);
+                if (nextCallInfo == ZR_NULL) {
+                    ZrCore_Debug_RunError(state, "KNOWN_VM_MEMBER_CALL: invalid cached VM member callable");
+                } else {
+                    callInfo = nextCallInfo;
+                    goto LZrStart;
+                }
+            }
+            DONE(1);
             ZR_INSTRUCTION_LABEL(KNOWN_NATIVE_CALL) {
                 TZrSize functionSlot = A1(instruction);
                 TZrSize parametersCount = B1(instruction);
@@ -4200,12 +4538,14 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
 
                 // save its program counter
                 callInfo->context.context.programCounter = programCounter;
-                execution_discard_exception_handlers_for_callinfo(state, callInfo);
+                if (ZR_UNLIKELY(state->exceptionHandlerStackLength > 0u)) {
+                    execution_discard_exception_handlers_for_callinfo_fast(state, callInfo);
+                }
 
                 if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
                     state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
                 }
-                if (currentFunction != ZR_NULL) {
+                if (currentFunction != ZR_NULL && currentFunction->returnEscapeSlotCount > 0u) {
                     for (TZrSize returnIndex = 0; returnIndex < returnCount; returnIndex++) {
                         ZrCore_Function_ApplyReturnEscape(state,
                                                           currentFunction,
@@ -4213,12 +4553,15 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                                                           &BASE(resultSlot + returnIndex)->value);
                     }
                 }
-                // Always close open upvalues for the returning frame. The to-be-closed
-                // list only tracks close metas, not ordinary captured locals.
-                ZrCore_Closure_CloseClosure(state,
-                                      callInfo->functionBase.valuePointer + 1,
-                                      ZR_THREAD_STATUS_INVALID,
-                                      ZR_FALSE);
+                if (execution_callinfo_has_pending_close_work(state, callInfo)) {
+                    // The to-be-closed list only tracks close metas, not ordinary
+                    // captured locals, so the frame still needs a full closure pass
+                    // when pending close work exists.
+                    ZrCore_Closure_CloseClosure(state,
+                                                callInfo->functionBase.valuePointer + 1,
+                                                ZR_THREAD_STATUS_INVALID,
+                                                ZR_FALSE);
+                }
                 UPDATE_BASE(callInfo);
 
                 // 如果是可变参数函数，需要调整 functionBase 指针
@@ -4227,8 +4570,15 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                     callInfo->functionBase.valuePointer -=
                             callInfo->context.context.variableArgumentCount + variableArguments;
                 }
-                state->stackTop.valuePointer = BASE(resultSlot) + returnCount;
-                ZrCore_Function_PostCall(state, callInfo, returnCount);
+                if (ZR_LIKELY(state->debugHookSignal == 0u &&
+                              callInfo->expectedReturnCount == 1u &&
+                              callInfo->callStatus == ZR_CALL_STATUS_NONE)) {
+                    TZrStackValuePointer returnSource = returnCount > 0u ? BASE(resultSlot) : ZR_NULL;
+                    execution_post_call_single_result_resolved_source_fast(state, callInfo, returnSource);
+                } else {
+                    state->stackTop.valuePointer = BASE(resultSlot) + returnCount;
+                    ZrCore_Function_PostCall(state, callInfo, returnCount);
+                }
                 trap = callInfo->context.context.trap;
                 goto LZrReturn;
             }
@@ -4433,8 +4783,10 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                            opA->type != ZR_VALUE_TYPE_ARRAY &&
                            opA->type != ZR_VALUE_TYPE_STRING) {
                     ZrCore_Debug_RunError(state, "GET_MEMBER: receiver must be an object, array, or string");
-                } else if (!execution_member_get_cached(
-                                   state, programCounter, currentFunction, B1(instruction), opA, destination)) {
+                } else if (!(execution_member_try_dispatch_exact_receiver_pair_get_hot_fast(
+                                     state, currentFunction, B1(instruction), opA, destination) ||
+                             execution_member_get_cached(
+                                     state, programCounter, currentFunction, B1(instruction), opA, destination))) {
                     memberName = execution_resolve_cached_member_symbol(
                             currentFunction,
                             B1(instruction),
@@ -4455,8 +4807,10 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 opA = &BASE(A1(instruction))->value;
                 if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {
                     ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");
-                } else if (!execution_member_set_cached(
-                                   state, programCounter, currentFunction, B1(instruction), opA, destination)) {
+                } else if (!(execution_member_try_dispatch_exact_receiver_pair_set_hot_fast(
+                                     state, currentFunction, B1(instruction), opA, destination) ||
+                             execution_member_set_cached(
+                                     state, programCounter, currentFunction, B1(instruction), opA, destination))) {
                     if (execution_resolve_cached_member_symbol(
                                 currentFunction,
                                 B1(instruction),
@@ -4527,8 +4881,6 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(GET_BY_INDEX) {
-                SZrTypeValue stableReceiver;
-                SZrTypeValue stableKey;
                 SZrTypeValue stableResult;
                 TZrBool resolved = ZR_FALSE;
                 opA = &BASE(A1(instruction))->value;
@@ -4536,14 +4888,35 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {
                     ZrCore_Debug_RunError(state, "GET_BY_INDEX: receiver must be an object or array");
                 } else {
-                    stableReceiver = *opA;
-                    stableKey = *opB;
                     ZrCore_Value_ResetAsNull(&stableResult);
-                    PROTECT_E(state, callInfo, {
-                        resolved = ZrCore_Object_GetByIndexUnchecked(
-                                state, &stableReceiver, &stableKey, &stableResult);
-                    });
-                    RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                    /*
+                     * Keep the hottest readonly-inline index callback off the
+                     * generic PROTECT_E wrapper. The callback already consumes
+                     * stack-rooted operands directly and does not need the full
+                     * generic call-preparation path on steady-state hits.
+                     */
+                    resolved = ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands(
+                            state, opA, opB, &stableResult);
+                    if (resolved) {
+                        ZrCore_Profile_RecordHelperFromState(state, ZR_PROFILE_HELPER_GET_BY_INDEX);
+                        UPDATE_BASE(callInfo);
+                        destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;
+                    } else if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                        SAVE_PC(state, callInfo);
+                        goto LZrReturning;
+                    } else {
+                        /*
+                         * Preserve stack-rooted receiver/key operands so the
+                         * object layer can anchor them directly on known-native
+                         * index contract calls instead of first degrading them
+                         * into local stable copies.
+                         */
+                        PROTECT_E(state, callInfo, {
+                            resolved = ZrCore_Object_GetByIndexUncheckedStackOperands(
+                                    state, opA, opB, &stableResult);
+                        });
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                    }
                     if (resolved) {
                         ZrCore_Value_Copy(state, destination, &stableResult);
                     } else {
@@ -4554,23 +4927,28 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(SET_BY_INDEX) {
-                SZrTypeValue stableReceiver;
-                SZrTypeValue stableKey;
-                SZrTypeValue stableValue;
                 TZrBool resolved = ZR_FALSE;
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
                 if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {
                     ZrCore_Debug_RunError(state, "SET_BY_INDEX: receiver must be an object or array");
                 } else {
-                    stableReceiver = *opA;
-                    stableKey = *opB;
-                    stableValue = *destination;
-                    PROTECT_E(state, callInfo, {
-                        resolved = ZrCore_Object_SetByIndexUnchecked(
-                                state, &stableReceiver, &stableKey, &stableValue);
-                    });
-                    RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                    resolved = ZrCore_Object_TrySetByIndexReadonlyInlineFastStackOperands(
+                            state, opA, opB, destination);
+                    if (resolved) {
+                        ZrCore_Profile_RecordHelperFromState(state, ZR_PROFILE_HELPER_SET_BY_INDEX);
+                        UPDATE_BASE(callInfo);
+                        destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;
+                    } else if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+                        SAVE_PC(state, callInfo);
+                        goto LZrReturning;
+                    } else {
+                        PROTECT_E(state, callInfo, {
+                            resolved = ZrCore_Object_SetByIndexUncheckedStackOperands(
+                                    state, opA, opB, destination);
+                        });
+                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                    }
                     if (!resolved) {
                         ZrCore_Debug_RunError(state, "SET_BY_INDEX: receiver must be an object or array");
                     }

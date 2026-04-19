@@ -180,6 +180,7 @@ static TZrBool zr_cli_resolve_output_path(const TZrChar *rootPath,
                                           const TZrChar *extension,
                                           TZrChar *buffer,
                                           TZrSize bufferSize) {
+    TZrChar moduleSelector[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar normalizedModule[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar relativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrSize rootLength;
@@ -189,8 +190,19 @@ static TZrBool zr_cli_resolve_output_path(const TZrChar *rootPath,
     TZrSize index;
     TZrSize writeIndex = 0;
 
-    if (rootPath == ZR_NULL || moduleName == ZR_NULL || extension == ZR_NULL || buffer == ZR_NULL || bufferSize == 0 ||
-        !ZrCli_Project_NormalizeModuleName(moduleName, normalizedModule, sizeof(normalizedModule))) {
+    if (rootPath == ZR_NULL || moduleName == ZR_NULL || extension == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; moduleName[index] != '\0' && index + 1U < sizeof(moduleSelector); index++) {
+        moduleSelector[index] = moduleName[index] == '.' ? '/' : moduleName[index];
+    }
+    if (moduleName[index] != '\0') {
+        return ZR_FALSE;
+    }
+    moduleSelector[index] = '\0';
+
+    if (!ZrCli_Project_NormalizeModuleName(moduleSelector, normalizedModule, sizeof(normalizedModule))) {
         return ZR_FALSE;
     }
 

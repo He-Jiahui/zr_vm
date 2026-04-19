@@ -15,9 +15,51 @@ TZrBool native_binding_trace_import_enabled(void) {
     return enabled;
 }
 
+static ZR_FORCE_INLINE SZrRawObject *native_binding_refresh_forwarded_raw_object(SZrRawObject *rawObject) {
+    SZrRawObject *forwardedObject;
+
+    if (rawObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    forwardedObject = (SZrRawObject *)rawObject->garbageCollectMark.forwardingAddress;
+    return forwardedObject != ZR_NULL ? forwardedObject : rawObject;
+}
+
+const TZrChar *ZrLib_CallableValue_GetNativeBindingReturnTypeName(SZrState *state, const SZrTypeValue *callableValue) {
+    SZrRawObject *rawObject;
+    SZrClosureNative *closure;
+
+    if (state == ZR_NULL || callableValue == ZR_NULL || callableValue->type != ZR_VALUE_TYPE_CLOSURE ||
+        !callableValue->isNative || callableValue->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    rawObject = native_binding_refresh_forwarded_raw_object(callableValue->value.object);
+    if (rawObject == ZR_NULL || rawObject->type != ZR_RAW_OBJECT_TYPE_CLOSURE) {
+        return ZR_NULL;
+    }
+
+    closure = ZR_CAST_NATIVE_CLOSURE(state, rawObject);
+    if (closure == ZR_NULL || closure->nativeBindingDescriptor == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch ((EZrLibResolvedBindingKind)closure->nativeBindingKind) {
+        case ZR_LIB_RESOLVED_BINDING_FUNCTION:
+            return ((const ZrLibFunctionDescriptor *)closure->nativeBindingDescriptor)->returnTypeName;
+        case ZR_LIB_RESOLVED_BINDING_METHOD:
+            return ((const ZrLibMethodDescriptor *)closure->nativeBindingDescriptor)->returnTypeName;
+        case ZR_LIB_RESOLVED_BINDING_META_METHOD:
+            return ((const ZrLibMetaMethodDescriptor *)closure->nativeBindingDescriptor)->returnTypeName;
+        default:
+            return ZR_NULL;
+    }
+}
+
 void native_binding_init_call_context_layout(ZrLibCallContext *context,
-                                                    TZrStackValuePointer functionBase,
-                                                    TZrSize rawArgumentCount) {
+                                             TZrStackValuePointer functionBase,
+                                             TZrSize rawArgumentCount) {
     TZrBool usesReceiver;
 
     if (context == ZR_NULL) {
@@ -30,19 +72,7 @@ void native_binding_init_call_context_layout(ZrLibCallContext *context,
     } else if (context->metaMethodDescriptor != ZR_NULL) {
         usesReceiver = ZR_TRUE;
     }
-
-    if (!usesReceiver) {
-        context->argumentBase = functionBase + 1;
-        context->argumentValues = ZR_NULL;
-        context->argumentCount = rawArgumentCount;
-        context->selfValue = ZR_NULL;
-        return;
-    }
-
-    context->selfValue = rawArgumentCount > 0 ? ZrCore_Stack_GetValue(functionBase + 1) : ZR_NULL;
-    context->argumentBase = rawArgumentCount > 0 ? functionBase + 2 : functionBase + 1;
-    context->argumentValues = ZR_NULL;
-    context->argumentCount = rawArgumentCount > 0 ? rawArgumentCount - 1 : 0;
+    native_binding_init_call_context_layout_cached(context, functionBase, rawArgumentCount, usesReceiver);
 }
 
 void native_binding_trace_import(SZrState *state, const TZrChar *format, ...) {
@@ -273,28 +303,72 @@ ZrLibBindingEntry *native_registry_find_binding(ZrLibrary_NativeRegistryState *r
                                                        SZrClosureNative *closure) {
     TZrSize cacheSlot;
     TZrSize index;
+    ZrLibBindingEntry *entry;
 
     if (registry == ZR_NULL || closure == ZR_NULL || !registry->bindingEntries.isValid) {
         return ZR_NULL;
     }
 
+    if (closure->nativeBindingLookupIndex != ZR_MAX_SIZE) {
+        entry = native_registry_binding_entry_at(registry, closure->nativeBindingLookupIndex);
+        if (entry != ZR_NULL && entry->closure == closure) {
+            native_registry_promote_binding_lookup_index(registry, closure->nativeBindingLookupIndex);
+            native_binding_closure_store_cached_binding(closure,
+                                                        closure->nativeBindingLookupIndex,
+                                                        entry->bindingKind,
+                                                        entry->moduleDescriptor,
+                                                        entry->typeDescriptor,
+                                                        entry->ownerPrototype,
+                                                        entry->bindingKind == ZR_LIB_RESOLVED_BINDING_FUNCTION
+                                                                ? (const void *)entry->descriptor.functionDescriptor
+                                                                : (entry->bindingKind == ZR_LIB_RESOLVED_BINDING_METHOD
+                                                                           ? (const void *)entry->descriptor.methodDescriptor
+                                                                           : (const void *)entry->descriptor.metaMethodDescriptor));
+            return entry;
+        }
+
+        native_binding_closure_invalidate_cached_lookup(closure);
+    }
+
     for (cacheSlot = 0; cacheSlot < ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_CAPACITY; cacheSlot++) {
         TZrSize cachedIndex = registry->bindingLookupHotIndices[cacheSlot];
-        ZrLibBindingEntry *entry = native_registry_binding_entry_at(registry, cachedIndex);
+        entry = native_registry_binding_entry_at(registry, cachedIndex);
         if (entry == ZR_NULL) {
             registry->bindingLookupHotIndices[cacheSlot] = ZR_LIBRARY_NATIVE_BINDING_LOOKUP_CACHE_INVALID_INDEX;
             continue;
         }
         if (entry->closure == closure) {
             native_registry_promote_binding_lookup_index(registry, cachedIndex);
+            native_binding_closure_store_cached_binding(closure,
+                                                        cachedIndex,
+                                                        entry->bindingKind,
+                                                        entry->moduleDescriptor,
+                                                        entry->typeDescriptor,
+                                                        entry->ownerPrototype,
+                                                        entry->bindingKind == ZR_LIB_RESOLVED_BINDING_FUNCTION
+                                                                ? (const void *)entry->descriptor.functionDescriptor
+                                                                : (entry->bindingKind == ZR_LIB_RESOLVED_BINDING_METHOD
+                                                                           ? (const void *)entry->descriptor.methodDescriptor
+                                                                           : (const void *)entry->descriptor.metaMethodDescriptor));
             return entry;
         }
     }
 
     for (index = 0; index < registry->bindingEntries.length; index++) {
-        ZrLibBindingEntry *entry = (ZrLibBindingEntry *)ZrCore_Array_Get(&registry->bindingEntries, index);
+        entry = (ZrLibBindingEntry *)ZrCore_Array_Get(&registry->bindingEntries, index);
         if (entry != ZR_NULL && entry->closure == closure) {
             native_registry_promote_binding_lookup_index(registry, index);
+            native_binding_closure_store_cached_binding(closure,
+                                                        index,
+                                                        entry->bindingKind,
+                                                        entry->moduleDescriptor,
+                                                        entry->typeDescriptor,
+                                                        entry->ownerPrototype,
+                                                        entry->bindingKind == ZR_LIB_RESOLVED_BINDING_FUNCTION
+                                                                ? (const void *)entry->descriptor.functionDescriptor
+                                                                : (entry->bindingKind == ZR_LIB_RESOLVED_BINDING_METHOD
+                                                                           ? (const void *)entry->descriptor.methodDescriptor
+                                                                           : (const void *)entry->descriptor.metaMethodDescriptor));
             return entry;
         }
     }

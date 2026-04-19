@@ -285,7 +285,7 @@ static TZrBool module_loader_register_export_descriptors(SZrState *state,
 }
 
 static TZrBool module_loader_slot_matches_function(SZrState *state,
-                                                   SZrTypeValue *value,
+                                                   const SZrTypeValue *value,
                                                    SZrFunction *function) {
     SZrFunction *existingFunction;
 
@@ -295,6 +295,23 @@ static TZrBool module_loader_slot_matches_function(SZrState *state,
 
     existingFunction = ZrCore_Closure_GetMetadataFunctionFromValue(state, value);
     return existingFunction == function ? ZR_TRUE : ZR_FALSE;
+}
+
+static const SZrTypeValue *module_loader_get_existing_export_value(SZrState *state,
+                                                                   SZrObjectModule *module,
+                                                                   const SZrFunctionExportedVariable *exported) {
+    if (state == ZR_NULL || module == ZR_NULL || exported == ZR_NULL || exported->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (exported->accessModifier == ZR_ACCESS_CONSTANT_PUBLIC) {
+        return ZrCore_Module_GetPubExport(state, module, exported->name);
+    }
+    if (exported->accessModifier == ZR_ACCESS_CONSTANT_PROTECTED) {
+        return ZrCore_Module_GetProExport(state, module, exported->name);
+    }
+
+    return ZR_NULL;
 }
 
 static SZrFunction *module_loader_find_child_function_for_value(SZrState *state,
@@ -344,6 +361,25 @@ static TZrBool module_loader_bind_exported_function(SZrState *state,
     childFunction = &function->childFunctionList[exported->callableChildIndex];
     if (slotValue == ZR_NULL || childFunction == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    {
+        const SZrTypeValue *existingExport = module_loader_get_existing_export_value(state, module, exported);
+
+        /*
+         * Declaration exports are preinstalled before module entry runs. If the
+         * entry finishes through a tail-call path, the frame slots can be
+         * repurposed before this refresh step runs. Rebinding from the current
+         * slot would then capture the reused tail-call frame state instead of
+         * the original exported closure. Keep the preinstalled export when it
+         * already resolves to the same child function.
+         */
+        if (!forceRecreate &&
+            existingExport != ZR_NULL &&
+            module_loader_slot_matches_function(state, existingExport, childFunction)) {
+            ZrCore_Module_SetExportDescriptorReady(module, exported->name, ZR_TRUE);
+            return ZR_TRUE;
+        }
     }
 
     if (forceRecreate || !module_loader_slot_matches_function(state, slotValue, childFunction)) {

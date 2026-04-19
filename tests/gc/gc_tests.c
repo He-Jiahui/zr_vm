@@ -821,6 +821,51 @@ static void test_gc_ignore_registry_and_phase_metadata(void) {
     TEST_DIVIDER();
 }
 
+static void test_gc_ignore_registry_swap_remove_keeps_remaining_object_queryable(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Ignore Registry Swap Remove Keeps Remaining Object Queryable";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Ignore registry swap-remove bookkeeping",
+              "Removing one ignored object should keep the remaining ignored object queryable without a full linear compaction pass");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrRawObject *first = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+        SZrRawObject *second = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+
+        TEST_ASSERT_NOT_NULL(first);
+        TEST_ASSERT_NOT_NULL(second);
+
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(state, first));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(state, second));
+        TEST_ASSERT_EQUAL_INT(2, (int)gc->ignoredObjectCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, first));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, second));
+
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_UnignoreObject(state->global, first));
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, first));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, second));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_UnignoreObject(state->global, second));
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, second));
+        TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_gc_barrier_unignores_escaped_object(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Barrier Unignores Escaped Object";
@@ -1609,6 +1654,8 @@ static void test_gc_barrier_records_old_to_young_remembered_escape(void) {
 
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, parent));
         TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+        TEST_ASSERT_TRUE(parent->garbageCollectMark.rememberedRegistryIndex < gc->rememberedObjectCount);
+        TEST_ASSERT_EQUAL_PTR(parent, gc->rememberedObjects[parent->garbageCollectMark.rememberedRegistryIndex]);
         TEST_ASSERT_TRUE((child->garbageCollectMark.escapeFlags & ZR_GARBAGE_COLLECT_ESCAPE_KIND_OLD_REFERENCE) != 0u);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_OLD_REFERENCE,
                                  child->garbageCollectMark.promotionReason);
@@ -1665,6 +1712,11 @@ static void test_gc_barrier_records_permanent_to_young_remembered_escape(void) {
 
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(parent)));
         TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+        TEST_ASSERT_TRUE(ZR_CAST_RAW_OBJECT_AS_SUPER(parent)->garbageCollectMark.rememberedRegistryIndex <
+                         gc->rememberedObjectCount);
+        TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(parent),
+                              gc->rememberedObjects[ZR_CAST_RAW_OBJECT_AS_SUPER(parent)
+                                                            ->garbageCollectMark.rememberedRegistryIndex]);
         TEST_ASSERT_TRUE((ZR_CAST_RAW_OBJECT_AS_SUPER(child)->garbageCollectMark.escapeFlags &
                           ZR_GARBAGE_COLLECT_ESCAPE_KIND_GLOBAL_ROOT) != 0u);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT,
@@ -1725,6 +1777,11 @@ static void test_gc_object_set_value_records_old_to_young_remembered_escape_from
 
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(parent)));
         TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+        TEST_ASSERT_TRUE(ZR_CAST_RAW_OBJECT_AS_SUPER(parent)->garbageCollectMark.rememberedRegistryIndex <
+                         gc->rememberedObjectCount);
+        TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(parent),
+                              gc->rememberedObjects[ZR_CAST_RAW_OBJECT_AS_SUPER(parent)
+                                                            ->garbageCollectMark.rememberedRegistryIndex]);
         TEST_ASSERT_TRUE((ZR_CAST_RAW_OBJECT_AS_SUPER(child)->garbageCollectMark.escapeFlags &
                           ZR_GARBAGE_COLLECT_ESCAPE_KIND_OLD_REFERENCE) != 0u);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_OLD_REFERENCE,
@@ -1929,6 +1986,9 @@ static void test_gc_region_allocator_reassigns_pinned_object_region(void) {
 
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_PINNED, object->garbageCollectMark.regionKind);
         TEST_ASSERT_NOT_EQUAL(edenRegionId, object->garbageCollectMark.regionId);
+        TEST_ASSERT_TRUE(object->garbageCollectMark.regionDescriptorIndex < gc->regionCount);
+        TEST_ASSERT_EQUAL_UINT32(object->garbageCollectMark.regionId,
+                                 gc->regions[object->garbageCollectMark.regionDescriptorIndex].id);
 
         reusedObject = createTestObject(state, ZR_VALUE_TYPE_OBJECT, objectSize);
         TEST_ASSERT_NOT_NULL(reusedObject);
@@ -2944,6 +3004,9 @@ static void test_gc_minor_collection_remembers_promoted_parent_holding_young_chi
                                  newParent->garbageCollectMark.storageKind);
         TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, newParent));
+        TEST_ASSERT_TRUE(newParent->garbageCollectMark.rememberedRegistryIndex < gc->rememberedObjectCount);
+        TEST_ASSERT_EQUAL_PTR(newParent,
+                              gc->rememberedObjects[newParent->garbageCollectMark.rememberedRegistryIndex]);
 
         memberName = ZrCore_String_CreateFromNative(state, "child");
         TEST_ASSERT_NOT_NULL(memberName);
@@ -3096,7 +3159,183 @@ static void test_gc_repeated_minor_collections_do_not_churn_region_ids_without_n
             TEST_ASSERT_EQUAL_UINT32(stableParentRegionId, newParent->garbageCollectMark.regionId);
             TEST_ASSERT_EQUAL_UINT32(stableChildRegionId, promotedChild->garbageCollectMark.regionId);
             TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, newParent));
+            TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)ZR_MAX_SIZE,
+                                     (UNITY_UINT64)newParent->garbageCollectMark.rememberedRegistryIndex);
         }
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_current_region_cache_tracks_descriptor_index_across_registry_growth(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Current Region Cache Tracks Descriptor Index Across Registry Growth";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Current region descriptor index cache",
+              "Testing that the active eden-region cache keeps a direct descriptor index, clears it when the region is released, and remains valid after the region registry grows");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        TZrSize objectSize = sizeof(SZrObject);
+        TZrSize iteration;
+
+        gc->youngRegionSize = (TZrUInt64)objectSize;
+        gc->currentEdenRegionId = 0u;
+        gc->currentEdenRegionUsedBytes = 0u;
+        gc->currentEdenRegionIndex = ZR_MAX_SIZE;
+
+        for (iteration = 0u; iteration < 12u; iteration++) {
+            SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, objectSize);
+
+            TEST_ASSERT_NOT_NULL(object);
+            TEST_ASSERT_TRUE(gc->regionCount >= 1u);
+            TEST_ASSERT_TRUE(gc->currentEdenRegionIndex < gc->regionCount);
+            TEST_ASSERT_EQUAL_UINT32(object->garbageCollectMark.regionId, gc->currentEdenRegionId);
+            TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)gc->currentEdenRegionIndex,
+                                     (UNITY_UINT64)object->garbageCollectMark.regionDescriptorIndex);
+            TEST_ASSERT_EQUAL_UINT32(gc->currentEdenRegionId, gc->regions[gc->currentEdenRegionIndex].id);
+            TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)gc->currentEdenRegionUsedBytes,
+                                     (UNITY_UINT64)gc->regions[gc->currentEdenRegionIndex].usedBytes);
+
+            ZrCore_RawObject_MarkAsPermanent(state, object);
+
+            TEST_ASSERT_EQUAL_UINT32(0u, gc->currentEdenRegionId);
+            TEST_ASSERT_EQUAL_UINT64(0u, (UNITY_UINT64)gc->currentEdenRegionUsedBytes);
+            TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)ZR_MAX_SIZE, (UNITY_UINT64)gc->currentEdenRegionIndex);
+            TEST_ASSERT_TRUE(object->garbageCollectMark.regionDescriptorIndex < gc->regionCount);
+            TEST_ASSERT_EQUAL_UINT32(object->garbageCollectMark.regionId,
+                                     gc->regions[object->garbageCollectMark.regionDescriptorIndex].id);
+        }
+
+        TEST_ASSERT_TRUE(gc->regionCount > 8u);
+
+        {
+            SZrRawObject *reusedObject = createTestObject(state, ZR_VALUE_TYPE_OBJECT, objectSize);
+
+            TEST_ASSERT_NOT_NULL(reusedObject);
+            TEST_ASSERT_TRUE(gc->currentEdenRegionIndex < gc->regionCount);
+            TEST_ASSERT_EQUAL_UINT32(reusedObject->garbageCollectMark.regionId, gc->currentEdenRegionId);
+            TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)gc->currentEdenRegionIndex,
+                                     (UNITY_UINT64)reusedObject->garbageCollectMark.regionDescriptorIndex);
+            TEST_ASSERT_EQUAL_UINT32(gc->currentEdenRegionId, gc->regions[gc->currentEdenRegionIndex].id);
+            TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)gc->currentEdenRegionUsedBytes,
+                                     (UNITY_UINT64)gc->regions[gc->currentEdenRegionIndex].usedBytes);
+        }
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static TZrSize gc_test_concat_pair_cache_bucket_index(const SZrString *left, const SZrString *right) {
+    TZrUInt64 leftHash;
+    TZrUInt64 rightHash;
+    TZrUInt64 mixedHash;
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return 0u;
+    }
+
+    leftHash = left->super.hash;
+    rightHash = right->super.hash;
+    mixedHash = (leftHash * 1315423911u) ^ (rightHash + (leftHash << 7u) + (rightHash >> 3u));
+    return (TZrSize)(mixedHash % ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_COUNT);
+}
+
+static const ZrStringConcatPairCacheEntry *gc_test_find_concat_pair_cache_entry(SZrGlobalState *global,
+                                                                                const SZrString *left,
+                                                                                const SZrString *right) {
+    TZrSize bucketIndex;
+
+    if (global == ZR_NULL || left == ZR_NULL || right == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    bucketIndex = gc_test_concat_pair_cache_bucket_index(left, right);
+    for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH; depthIndex++) {
+        const ZrStringConcatPairCacheEntry *entry = &global->stringConcatPairCache[bucketIndex][depthIndex];
+
+        if (entry->left == left && entry->right == right) {
+            return entry;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Short Concat Pair Cache Rewrites Forwarded Entries";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Short concat pair cache forwarding rewrite",
+              "Testing that the exact short-string concat cache keeps left/right/result rooted during minor GC and rewrites the cache slots to the forwarded objects");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *left;
+        SZrString *right;
+        SZrString *result;
+        SZrString *currentLeft;
+        SZrString *currentRight;
+        SZrString *currentResult;
+        const ZrStringConcatPairCacheEntry *entry;
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        gc->youngRegionSize = (TZrUInt64)(sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX + 32u);
+
+        left = ZrCore_String_CreateFromNative(state, "aa");
+        right = ZrCore_String_CreateFromNative(state, "_slot");
+        result = ZrCore_String_ConcatPair(state, left, right);
+
+        TEST_ASSERT_NOT_NULL(left);
+        TEST_ASSERT_NOT_NULL(right);
+        TEST_ASSERT_NOT_NULL(result);
+
+        entry = gc_test_find_concat_pair_cache_entry(state->global, left, right);
+        TEST_ASSERT_NOT_NULL(entry);
+        TEST_ASSERT_EQUAL_PTR(left, entry->left);
+        TEST_ASSERT_EQUAL_PTR(right, entry->right);
+        TEST_ASSERT_EQUAL_PTR(result, entry->result);
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        currentLeft = ZrCore_String_CreateFromNative(state, "aa");
+        currentRight = ZrCore_String_CreateFromNative(state, "_slot");
+        currentResult = ZrCore_String_CreateFromNative(state, "aa_slot");
+
+        TEST_ASSERT_NOT_NULL(currentLeft);
+        TEST_ASSERT_NOT_NULL(currentRight);
+        TEST_ASSERT_NOT_NULL(currentResult);
+        TEST_ASSERT_TRUE(left != currentLeft || right != currentRight || result != currentResult);
+
+        entry = gc_test_find_concat_pair_cache_entry(state->global, currentLeft, currentRight);
+        TEST_ASSERT_NOT_NULL(entry);
+        TEST_ASSERT_EQUAL_PTR(currentLeft, entry->left);
+        TEST_ASSERT_EQUAL_PTR(currentRight, entry->right);
+        TEST_ASSERT_EQUAL_PTR(currentResult, entry->result);
     }
 
     destroyTestState(state);
@@ -3147,6 +3386,7 @@ int main(void) {
     RUN_TEST(test_gc_pause_budget_consumes_multiple_incremental_steps);
     RUN_TEST(test_gc_sweep_slice_budget_limits_single_step_sweep);
     RUN_TEST(test_gc_ignore_registry_and_phase_metadata);
+    RUN_TEST(test_gc_ignore_registry_swap_remove_keeps_remaining_object_queryable);
     RUN_TEST(test_gc_barrier_unignores_escaped_object);
     RUN_TEST(test_gc_region_configuration_defaults);
     RUN_TEST(test_gc_control_plane_updates_snapshot);
@@ -3176,6 +3416,8 @@ int main(void) {
     RUN_TEST(test_gc_minor_collection_rewrites_old_reference_to_forwarded_child);
     RUN_TEST(test_gc_minor_collection_remembers_promoted_parent_holding_young_child);
     RUN_TEST(test_gc_repeated_minor_collections_do_not_churn_region_ids_without_new_young_allocations);
+    RUN_TEST(test_gc_current_region_cache_tracks_descriptor_index_across_registry_growth);
+    RUN_TEST(test_gc_short_concat_pair_cache_rewrites_forwarded_entries);
     RUN_TEST(test_ownership_shared_refcount_and_weak_null_on_release);
     RUN_TEST(test_ownership_unique_can_return_to_gc_control);
     RUN_TEST(test_ownership_weak_expires_when_returned_object_is_released);

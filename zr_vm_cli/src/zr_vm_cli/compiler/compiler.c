@@ -492,6 +492,12 @@ static TZrBool zr_cli_collect_module_recursive(const SZrCliProjectContext *proje
 
         sourceHash = ZrCli_Project_StableHashBytes((const TZrByte *) source, sourceLength);
         ZrCli_Project_HashToHex(sourceHash, recordSlot->sourceHash, sizeof(recordSlot->sourceHash));
+        if (recordSlot->hasBinaryInput &&
+            !zr_cli_hash_file(recordSlot->zroPath, (TZrChar *)recordSlot->zroHash, sizeof(recordSlot->zroHash))) {
+            free(source);
+            snprintf(errorBuffer, errorBufferSize, "failed to hash binary module: %s", recordSlot->zroPath);
+            return ZR_FALSE;
+        }
 
         sourceName = ZrCore_String_CreateFromNative(state, recordSlot->sourcePath);
         ast = ZrParser_Parse(state, source, sourceLength, sourceName);
@@ -676,6 +682,19 @@ static TZrBool zr_cli_module_has_required_outputs(const SZrCliModuleRecord *reco
     return ZR_TRUE;
 }
 
+static TZrBool zr_cli_reconcile_optional_intermediate_output(const SZrCliModuleRecord *record,
+                                                             TZrBool emitIntermediate) {
+    if (record == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!record->hasSourceInput || emitIntermediate) {
+        return ZR_TRUE;
+    }
+
+    return ZrCli_Project_RemoveFileIfExists(record->zriPath);
+}
+
 static TZrBool zr_cli_manifest_entry_matches_record(const SZrCliManifestEntry *entry,
                                                     const SZrCliModuleRecord *record) {
     if (entry == ZR_NULL || record == ZR_NULL) {
@@ -821,6 +840,13 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
         SZrCliModuleRecord *record = &modules.records[index];
 
         if (!record->dirty) {
+            if (!zr_cli_reconcile_optional_intermediate_output(record, command->emitIntermediate)) {
+                ZrCore_Log_Error(scanGlobal->mainThreadState,
+                                 "failed to reconcile intermediate artifact: %s\n",
+                                 record->zriPath);
+                success = ZR_FALSE;
+                goto cleanup;
+            }
             localSummary.skippedCount++;
             continue;
         }
@@ -830,6 +856,14 @@ TZrBool ZrCli_Compiler_CompileProjectWithSummaryAndBootstrap(const SZrCliCommand
                                        command->emitIntermediate,
                                        bootstrap,
                                        userData)) {
+            success = ZR_FALSE;
+            goto cleanup;
+        }
+
+        if (!zr_cli_reconcile_optional_intermediate_output(record, command->emitIntermediate)) {
+            ZrCore_Log_Error(scanGlobal->mainThreadState,
+                             "failed to reconcile intermediate artifact: %s\n",
+                             record->zriPath);
             success = ZR_FALSE;
             goto cleanup;
         }

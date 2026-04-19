@@ -719,6 +719,7 @@ TZrBool native_binding_make_callable_value(SZrState *state,
                                                   SZrTypeValue *value) {
     SZrClosureNative *closure;
     ZrLibBindingEntry entry;
+    TZrSize bindingIndex;
 
     if (state == ZR_NULL || registry == ZR_NULL || moduleDescriptor == ZR_NULL || descriptor == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
@@ -742,6 +743,7 @@ TZrBool native_binding_make_callable_value(SZrState *state,
 
     closure->nativeFunction = native_binding_dispatcher;
     ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    bindingIndex = registry->bindingEntries.length;
 
     entry.closure = closure;
     entry.bindingKind = bindingKind;
@@ -763,6 +765,13 @@ TZrBool native_binding_make_callable_value(SZrState *state,
     }
 
     ZrCore_Array_Push(state, &registry->bindingEntries, &entry);
+    native_binding_closure_store_cached_binding(closure,
+                                                bindingIndex,
+                                                bindingKind,
+                                                moduleDescriptor,
+                                                typeDescriptor,
+                                                ownerPrototype,
+                                                descriptor);
     native_binding_trace_import(state,
                                 "[zr_native_import] make_callable pushed module=%s type=%s kind=%d closure=%p bindings=%llu\n",
                                 moduleDescriptor->moduleName != ZR_NULL ? moduleDescriptor->moduleName : "<null>",

@@ -51,6 +51,7 @@ TZrBool ZrVmLibFfi_Register(SZrGlobalState *global);
 #endif
 
 static const TZrChar *kProbeCounterStateField = "__probe_counter_state";
+static const TZrChar *kModuleEntryFunctionReflectionField = "__zr_reflection_entry_function";
 
 enum {
     ZR_PROBE_INLINE_LABEL_ROOT_STRESS_COUNT = 96
@@ -142,6 +143,28 @@ static TZrBool function_contains_get_member_name(const SZrFunction *function, co
     }
 
     return ZR_FALSE;
+}
+
+static void assert_member_get_callsite_cache_sequence(const SZrFunction *function,
+                                                      const TZrChar *const *expectedNames,
+                                                      TZrUInt32 expectedCount) {
+    TZrUInt32 index;
+
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+    TEST_ASSERT_NOT_NULL(function->memberEntries);
+    TEST_ASSERT_EQUAL_UINT32(expectedCount, function->callSiteCacheLength);
+
+    for (index = 0; index < expectedCount; ++index) {
+        const SZrFunctionCallSiteCacheEntry *entry = &function->callSiteCaches[index];
+        SZrString *memberSymbol;
+
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET, entry->kind);
+        TEST_ASSERT_TRUE(entry->memberEntryIndex < function->memberEntryLength);
+        memberSymbol = function->memberEntries[entry->memberEntryIndex].symbol;
+        TEST_ASSERT_NOT_NULL(memberSymbol);
+        TEST_ASSERT_EQUAL_STRING(expectedNames[index], ZrCore_String_GetNativeString(memberSymbol));
+    }
 }
 
 static void probe_set_int_field(SZrState *state, SZrObject *object, const TZrChar *fieldName, TZrInt64 value) {
@@ -312,7 +335,9 @@ static TZrBool probe_native_device_inspect_label(ZrLibCallContext *context, SZrT
     SZrString *labelAfter = ZR_NULL;
     TZrSize rootCount = 0;
     TZrBool layoutPreserved;
+    TZrBool directStackContext;
     TZrBool gcStable;
+    TZrSize ignoredObjectCount;
     TZrSize index;
     TZrBool success = ZR_FALSE;
     TZrChar tempLabel[48];
@@ -326,6 +351,13 @@ static TZrBool probe_native_device_inspect_label(ZrLibCallContext *context, SZrT
     }
 
     layoutPreserved = context->argumentBase == context->functionBase + 2;
+    directStackContext = context->functionBase != ZR_NULL && context->argumentValues == ZR_NULL &&
+                         ZrLib_CallContext_Self(context) == ZrCore_Stack_GetValue(context->functionBase + 1) &&
+                         ZrLib_CallContext_Argument(context, 0) == ZrCore_Stack_GetValue(context->functionBase + 2);
+    ignoredObjectCount = (context->state != ZR_NULL && context->state->global != ZR_NULL &&
+                          context->state->global->garbageCollector != ZR_NULL)
+                                 ? context->state->global->garbageCollector->ignoredObjectCount
+                                 : 0u;
 
     if (!ZrLib_CallContext_BeginTempValueRoot(context, &summaryRoot)) {
         return ZR_FALSE;
@@ -363,7 +395,9 @@ static TZrBool probe_native_device_inspect_label(ZrLibCallContext *context, SZrT
     gcStable = ZrCore_String_Equal(labelBefore, labelAfter);
     probe_set_string_field_object(context->state, summaryObject, "echoed", labelAfter);
     probe_set_int_field(context->state, summaryObject, "layoutPreserved", layoutPreserved ? 1 : 0);
+    probe_set_int_field(context->state, summaryObject, "directStackContext", directStackContext ? 1 : 0);
     probe_set_int_field(context->state, summaryObject, "gcStable", gcStable ? 1 : 0);
+    probe_set_int_field(context->state, summaryObject, "ignoredObjectCount", (TZrInt64)ignoredObjectCount);
     ZrCore_Value_Copy(context->state, result, ZrLib_TempValueRoot_Value(&summaryRoot));
     success = context->state->threadStatus == ZR_THREAD_STATUS_FINE;
 
@@ -438,6 +472,7 @@ static const ZrLibMethodDescriptor kProbeDeviceMethods[] = {
                 .parameters = kProbeInspectLabelParameters,
                 .parameterCount = ZR_ARRAY_COUNT(kProbeInspectLabelParameters),
                 .contractRole = 0,
+                .dispatchFlags = ZR_LIB_NATIVE_DISPATCH_FLAG_STACK_ROOT_CONTEXT,
         },
 };
 
@@ -519,7 +554,9 @@ static const ZrLibFieldDescriptor kProbeCounterIteratorFields[] = {
 static const ZrLibFieldDescriptor kProbeInspectResultFields[] = {
         {"echoed", "string", "The echoed label after GC stress.", 0},
         {"layoutPreserved", "int", "Whether the raw call layout stayed in place.", 0},
+        {"directStackContext", "int", "Whether self and arguments stayed direct stack-backed inside the callback.", 0},
         {"gcStable", "int", "Whether the label remained readable after GC stress.", 0},
+        {"ignoredObjectCount", "int", "Ignored-object count observed at native callback entry.", 0},
 };
 
 static const ZrLibMethodDescriptor kProbeBoxMethods[] = {
@@ -978,6 +1015,17 @@ static SZrObjectModule *import_native_module(SZrState *state, const TZrChar *mod
     }
 
     return ZrCore_Module_ImportByPath(state, modulePath);
+}
+
+static SZrFunction *resolve_module_entry_function(SZrState *state, SZrObjectModule *module) {
+    const SZrTypeValue *entryValue;
+
+    if (state == ZR_NULL || module == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    entryValue = get_object_field_value(state, &module->super, kModuleEntryFunctionReflectionField);
+    return debug_resolve_function_from_value(state, entryValue);
 }
 
 typedef ZrTestsFixtureSource SZrModuleFixtureSource;
@@ -4145,7 +4193,9 @@ static void test_native_binding_inline_label_inspector_keeps_raw_layout_without_
         SZrObject *resultObject;
         const SZrTypeValue *echoedValue;
         const SZrTypeValue *layoutPreservedValue;
+        const SZrTypeValue *directStackContextValue;
         const SZrTypeValue *gcStableValue;
+        const SZrTypeValue *ignoredObjectCountValue;
         SZrObjectModule *module;
         SZrObjectPrototype *inspectPrototype;
 
@@ -4169,14 +4219,20 @@ static void test_native_binding_inline_label_inspector_keeps_raw_layout_without_
 
         echoedValue = get_object_field_value(state, resultObject, "echoed");
         layoutPreservedValue = get_object_field_value(state, resultObject, "layoutPreserved");
+        directStackContextValue = get_object_field_value(state, resultObject, "directStackContext");
         gcStableValue = get_object_field_value(state, resultObject, "gcStable");
+        ignoredObjectCountValue = get_object_field_value(state, resultObject, "ignoredObjectCount");
         TEST_ASSERT_NOT_NULL(echoedValue);
         TEST_ASSERT_NOT_NULL(layoutPreservedValue);
+        TEST_ASSERT_NOT_NULL(directStackContextValue);
         TEST_ASSERT_NOT_NULL(gcStableValue);
+        TEST_ASSERT_NOT_NULL(ignoredObjectCountValue);
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, echoedValue->type);
         TEST_ASSERT_TRUE(string_equals_cstring(ZR_CAST_STRING(state, echoedValue->value.object), "alpha_label"));
         TEST_ASSERT_EQUAL_INT64(1, layoutPreservedValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(1, directStackContextValue->value.nativeObject.nativeInt64);
         TEST_ASSERT_EQUAL_INT64(1, gcStableValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(0, ignoredObjectCountValue->value.nativeObject.nativeInt64);
 
         ZrCore_Function_Free(state, entryFunction);
         destroy_test_state(state);
@@ -6491,6 +6547,216 @@ static void test_source_runtime_decorated_pub_function_is_directly_callable_from
         state->global->sourceLoader = ZR_NULL;
         g_module_fixture_sources = previousFixtures;
         g_module_fixture_source_count = previousFixtureCount;
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_decorator_import_member_get_callsite_caches_survive_source_import_and_binary_roundtrip(void) {
+    static const SZrModuleFixtureSource kFixtures[] = {
+            MODULE_FIXTURE_SOURCE_TEXT(
+                    "decorators",
+                    "%module \"decorators\";\n"
+                    "\n"
+                    "pub markClass(target: %type Class): void {\n"
+                    "    target.metadata.runtimeSerializable = true;\n"
+                    "}\n"
+                    "\n"
+                    "pub markFunction(target: %type Function): void {\n"
+                    "    target.metadata.instrumented = true;\n"
+                    "}\n"
+                    "\n"
+                    "pub markField(target: %type Field): void {\n"
+                    "    target.metadata.isRuntimeField = true;\n"
+                    "}\n"
+                    "\n"
+                    "pub markMethod(target: %type Method): void {\n"
+                    "    target.metadata.isRuntimeMethod = true;\n"
+                    "}\n"
+                    "\n"
+                    "pub markProperty(target: %type Property): void {\n"
+                    "    target.metadata.isRuntimeProperty = true;\n"
+                    "}\n"),
+            MODULE_FIXTURE_SOURCE_TEXT(
+                    "decorated_user",
+                    "%module \"decorated_user\";\n"
+                    "\n"
+                    "var decorators = %import(\"decorators\");\n"
+                    "var markClass = decorators.markClass;\n"
+                    "var markField = decorators.markField;\n"
+                    "var markMethod = decorators.markMethod;\n"
+                    "var markProperty = decorators.markProperty;\n"
+                    "var markFunction = decorators.markFunction;\n"
+                    "\n"
+                    "#markClass#\n"
+                    "pub class User {\n"
+                    "    #markField#\n"
+                    "    pub var id: int = 1;\n"
+                    "\n"
+                    "    pri var _value: int = 2;\n"
+                    "\n"
+                    "    #markMethod#\n"
+                    "    pub load(v: int): int {\n"
+                    "        return v;\n"
+                    "    }\n"
+                    "\n"
+                    "    #markProperty#\n"
+                    "    pub get value: int {\n"
+                    "        return this._value;\n"
+                    "    }\n"
+                    "}\n"
+                    "\n"
+                    "#markFunction#\n"
+                    "pub decoratedBonus(): int {\n"
+                    "    var meta = %type(decoratedBonus).metadata;\n"
+                    "    return meta.instrumented ? 16 : 0;\n"
+                    "}\n"
+                    "\n"
+                    "pub var verifyDecorators = () => {\n"
+                    "    var seed = 0;\n"
+                    "    var typeMeta = %type(User).metadata;\n"
+                    "    var fieldMeta = %type(User).members.id[0].metadata;\n"
+                    "    var methodMeta = %type(User).members.load[0].metadata;\n"
+                    "    var propertyMeta = %type(User).members.value[0].metadata;\n"
+                    "\n"
+                    "    if (typeMeta.runtimeSerializable) {\n"
+                    "        seed = seed + 1;\n"
+                    "    }\n"
+                    "    if (fieldMeta.isRuntimeField) {\n"
+                    "        seed = seed + 2;\n"
+                    "    }\n"
+                    "    if (methodMeta.isRuntimeMethod) {\n"
+                    "        seed = seed + 4;\n"
+                    "    }\n"
+                    "    if (propertyMeta.isRuntimeProperty) {\n"
+                    "        seed = seed + 8;\n"
+                    "    }\n"
+                    "\n"
+                    "    return seed;\n"
+                    "};\n"),
+    };
+    static const TZrChar *kExpectedCacheMemberNames[] = {
+            "markClass",
+            "markField",
+            "markMethod",
+            "markProperty",
+            "markFunction",
+    };
+    SZrTestTimer timer;
+    const char *testSummary = "Decorator import member-get callsite caches survive source import and binary roundtrip";
+    const SZrModuleFixtureSource *previousFixtures = g_module_fixture_sources;
+    TZrSize previousFixtureCount = g_module_fixture_source_count;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrString *sourceName = ZR_NULL;
+        SZrFunction *entryFunction = ZR_NULL;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        g_module_fixture_sources = kFixtures;
+        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
+        state->global->sourceLoader = module_fixture_source_loader;
+
+        sourceName = ZrCore_String_Create(state,
+                                          "decorated_user.zr",
+                                          strlen("decorated_user.zr"));
+        TEST_ASSERT_NOT_NULL(sourceName);
+        entryFunction = ZrParser_Source_Compile(state, kFixtures[1].source, strlen(kFixtures[1].source), sourceName);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+
+        assert_member_get_callsite_cache_sequence(entryFunction,
+                                                  kExpectedCacheMemberNames,
+                                                  ZR_ARRAY_COUNT(kExpectedCacheMemberNames));
+
+        ZrCore_Function_Free(state, entryFunction);
+        state->global->sourceLoader = ZR_NULL;
+        g_module_fixture_sources = previousFixtures;
+        g_module_fixture_source_count = previousFixtureCount;
+        destroy_test_state(state);
+    }
+
+    {
+        SZrState *state = create_test_state();
+        SZrString *modulePath = ZR_NULL;
+        SZrObjectModule *importedModule = ZR_NULL;
+        SZrObjectModule *cachedModule = ZR_NULL;
+        SZrFunction *entryFunction = ZR_NULL;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        g_module_fixture_sources = kFixtures;
+        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
+        state->global->sourceLoader = module_fixture_source_loader;
+
+        modulePath = ZrCore_String_Create(state, "decorated_user", strlen("decorated_user"));
+        TEST_ASSERT_NOT_NULL(modulePath);
+        importedModule = ZrCore_Module_ImportByPath(state, modulePath);
+        cachedModule = ZrCore_Module_GetFromCache(state, modulePath);
+        TEST_ASSERT_NOT_NULL(cachedModule);
+        TEST_ASSERT_TRUE(importedModule == ZR_NULL || importedModule == cachedModule);
+
+        entryFunction = resolve_module_entry_function(state, cachedModule);
+        TEST_ASSERT_NOT_NULL(entryFunction);
+        assert_member_get_callsite_cache_sequence(entryFunction,
+                                                  kExpectedCacheMemberNames,
+                                                  ZR_ARRAY_COUNT(kExpectedCacheMemberNames));
+
+        state->global->sourceLoader = ZR_NULL;
+        g_module_fixture_sources = previousFixtures;
+        g_module_fixture_source_count = previousFixtureCount;
+        destroy_test_state(state);
+    }
+
+    {
+        SZrState *state = create_test_state();
+        const TZrChar *binaryPath = "decorated_user_callsite_cache_roundtrip.zro";
+        TZrByte *binaryBytes = ZR_NULL;
+        TZrSize binaryLength = 0;
+        SZrModuleFixtureReader reader = {0};
+        SZrIo io;
+        SZrIoSource *sourceObject = ZR_NULL;
+        SZrFunction *runtimeFunction = ZR_NULL;
+
+        TEST_ASSERT_NOT_NULL(state);
+
+        g_module_fixture_sources = kFixtures;
+        g_module_fixture_source_count = ZR_ARRAY_COUNT(kFixtures);
+        state->global->sourceLoader = module_fixture_source_loader;
+
+        binaryBytes = build_module_binary_fixture(state, kFixtures[1].source, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        TEST_ASSERT_TRUE(binaryLength > 0);
+
+        ZrCore_Memory_RawSet(&io, 0, sizeof(io));
+        reader.bytes = binaryBytes;
+        reader.length = binaryLength;
+        reader.consumed = ZR_FALSE;
+        ZrCore_Io_Init(state, &io, module_fixture_reader_read, ZR_NULL, &reader);
+        io.isBinary = ZR_TRUE;
+
+        sourceObject = ZrCore_Io_ReadSourceNew(&io);
+        TEST_ASSERT_NOT_NULL(sourceObject);
+        runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+        TEST_ASSERT_NOT_NULL(runtimeFunction);
+
+        assert_member_get_callsite_cache_sequence(runtimeFunction,
+                                                  kExpectedCacheMemberNames,
+                                                  ZR_ARRAY_COUNT(kExpectedCacheMemberNames));
+
+        ZrCore_Function_Free(state, runtimeFunction);
+        state->global->sourceLoader = ZR_NULL;
+        g_module_fixture_sources = previousFixtures;
+        g_module_fixture_source_count = previousFixtureCount;
+        ZrCore_Io_ReadSourceFree(state->global, sourceObject);
+        free(binaryBytes);
+        remove(binaryPath);
         destroy_test_state(state);
     }
 
@@ -8869,6 +9135,9 @@ int main(void) {
 
     // 39. source runtime decorated pub function 可直接从 imported module 调用
     RUN_TEST(test_source_runtime_decorated_pub_function_is_directly_callable_from_imported_module);
+
+    // 40. decorator import 的 member-get callsite caches 在 source import / binary roundtrip 后保持一致
+    RUN_TEST(test_decorator_import_member_get_callsite_caches_survive_source_import_and_binary_roundtrip);
 
     // 40. source module runtime 注册 enum 静态成员并允许 imported access 正常执行
     RUN_TEST(test_source_module_runtime_registers_enum_members_and_imported_access);

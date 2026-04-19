@@ -143,6 +143,10 @@ typedef struct SZrLexState {
     TZrInt32 currentChar;         // 当前字符
     TZrInt32 lineNumber;          // 当前行号
     TZrInt32 lastLine;            // 上一个 token 的行号
+    TZrSize currentLineStartOffset;
+    TZrSize tokenStartOffset;
+    TZrSize tokenStartLineStart;
+    TZrInt32 tokenStartLine;
     SZrToken t;                 // 当前 token
     SZrToken lookahead;         // 前瞻 token
     // 保存下一个 token 的位置（当使用缓存的 lookahead 时，需要恢复到这个位置）
@@ -150,6 +154,13 @@ typedef struct SZrLexState {
     TZrInt32 lookaheadChar;       // 下一个 token 的字符
     TZrInt32 lookaheadLine;       // 下一个 token 的行号
     TZrInt32 lookaheadLastLine;   // 下一个 token 的上一个 token 的行号
+    TZrSize lookaheadCurrentLineStartOffset;
+    TZrSize lookaheadTokenStartOffset;
+    TZrSize lookaheadTokenStartLineStart;
+    TZrInt32 lookaheadTokenStartLine;
+    TZrSize filePositionCacheOffset;
+    TZrSize filePositionCacheLineStart;
+    TZrInt32 filePositionCacheLine;
     SZrString *sourceName;      // 源文件名
     TZrBool currentTokenHadError;
     const TZrChar *currentTokenErrorMessage;

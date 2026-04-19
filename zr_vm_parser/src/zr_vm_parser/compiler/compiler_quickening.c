@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "compiler_internal.h"
+#include "zr_vm_library/native_binding.h"
 
 #define ZR_COMPILER_QUICKENING_MEMBER_FLAGS_NONE ((TZrUInt8)0)
 
@@ -229,21 +230,46 @@ static TZrBool compiler_quickening_try_fold_direct_result_store(SZrFunction *fun
                                                                 TZrUInt32 instructionIndex);
 static TZrBool compiler_quickening_slot_is_exported_callable_binding(const SZrFunction *function, TZrUInt32 slot);
 static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_latest_prior_callable_provenance(
+        SZrState *state,
         const SZrFunction *function,
         TZrUInt32 instructionIndex,
         TZrUInt32 slot,
         TZrUInt32 depth);
 static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_unique_prior_callable_provenance(
+        SZrState *state,
         const SZrFunction *function,
         TZrUInt32 instructionIndex,
         TZrUInt32 slot,
         TZrUInt32 depth);
 static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_callable_provenance_before_instruction(
+        SZrState *state,
         const SZrFunction *function,
         const TZrBool *blockStarts,
         TZrUInt32 instructionIndex,
         TZrUInt32 slot,
         TZrUInt32 depth);
+static SZrFunction *compiler_quickening_resolve_owner_callable_metadata_from_closure_capture(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt32 closureIndex,
+        TZrUInt32 depth,
+        EZrCompilerQuickeningSlotKind *outSlotKind,
+        EZrCompilerQuickeningCallableProvenanceKind *outProvenance);
+static SZrFunction *compiler_quickening_resolve_callable_metadata_function_for_slot_before_instruction(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 slot,
+        TZrUInt32 depth,
+        EZrCompilerQuickeningSlotKind *outSlotKind,
+        EZrCompilerQuickeningCallableProvenanceKind *outProvenance);
+static SZrFunction *compiler_quickening_resolve_bound_member_callable_metadata_function(
+        SZrState *state,
+        SZrFunction *function,
+        const TZrInstruction *writer,
+        TZrUInt32 writerIndex,
+        EZrCompilerQuickeningSlotKind *outSlotKind,
+        EZrCompilerQuickeningCallableProvenanceKind *outProvenance);
 
 static const TZrChar *compiler_quickening_type_name_text(SZrString *typeName) {
     if (typeName == ZR_NULL) {
@@ -280,6 +306,339 @@ static ZR_FORCE_INLINE EZrCompilerQuickeningSlotKind compiler_quickening_slot_ki
         return ZR_COMPILER_QUICKENING_SLOT_KIND_STRING;
     }
     return ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+}
+
+static ZR_FORCE_INLINE EZrCompilerQuickeningSlotKind compiler_quickening_slot_kind_from_typed_type_ref(
+        const SZrFunctionTypedTypeRef *typeRef) {
+    if (typeRef == ZR_NULL) {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+    }
+
+    if (typeRef->isArray && ZR_VALUE_IS_TYPE_INT(typeRef->elementBaseType)) {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_ARRAY_INT;
+    }
+
+    return compiler_quickening_slot_kind_from_value_type(typeRef->baseType);
+}
+
+static ZR_FORCE_INLINE EZrCompilerQuickeningSlotKind compiler_quickening_slot_kind_from_type_name_text(
+        const TZrChar *typeName) {
+    if (typeName == ZR_NULL || typeName[0] == '\0') {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+    }
+
+    if (strcmp(typeName, "i8") == 0 || strcmp(typeName, "i16") == 0 || strcmp(typeName, "i32") == 0 ||
+        strcmp(typeName, "int") == 0) {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_SIGNED_INT;
+    }
+
+    if (strcmp(typeName, "u8") == 0 || strcmp(typeName, "u16") == 0 || strcmp(typeName, "u32") == 0 ||
+        strcmp(typeName, "uint") == 0) {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_UNSIGNED_INT;
+    }
+
+    if (strcmp(typeName, "bool") == 0) {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_BOOL;
+    }
+
+    if (strcmp(typeName, "float") == 0 || strcmp(typeName, "double") == 0) {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_FLOAT;
+    }
+
+    if (strcmp(typeName, "string") == 0) {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_STRING;
+    }
+
+    if (strcmp(typeName, "Array<int>") == 0 || strcmp(typeName, "container.Array<int>") == 0 ||
+        strcmp(typeName, "zr.container.Array<int>") == 0) {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_ARRAY_INT;
+    }
+
+    return ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+}
+
+static ZR_FORCE_INLINE SZrRawObject *compiler_quickening_refresh_forwarded_raw_object(SZrRawObject *rawObject) {
+    SZrRawObject *forwardedObject;
+
+    if (rawObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    forwardedObject = (SZrRawObject *)rawObject->garbageCollectMark.forwardingAddress;
+    return forwardedObject != ZR_NULL ? forwardedObject : rawObject;
+}
+
+static SZrFunction *compiler_quickening_metadata_function_from_callable_value(
+        SZrState *state,
+        const SZrTypeValue *callableValue) {
+    SZrRawObject *rawObject;
+
+    if (state == ZR_NULL || callableValue == ZR_NULL || callableValue->value.object == ZR_NULL ||
+        (callableValue->type != ZR_VALUE_TYPE_FUNCTION && callableValue->type != ZR_VALUE_TYPE_CLOSURE)) {
+        return ZR_NULL;
+    }
+
+    rawObject = compiler_quickening_refresh_forwarded_raw_object(callableValue->value.object);
+    if (rawObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (rawObject->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+        return ZR_CAST_FUNCTION(state, rawObject);
+    }
+
+    if (rawObject->type != ZR_RAW_OBJECT_TYPE_CLOSURE) {
+        return ZR_NULL;
+    }
+
+    if (callableValue->isNative) {
+        SZrClosureNative *nativeClosure = ZR_CAST_NATIVE_CLOSURE(state, rawObject);
+        return nativeClosure != ZR_NULL ? nativeClosure->aotShimFunction : ZR_NULL;
+    }
+
+    {
+        SZrClosure *closure = ZR_CAST_VM_CLOSURE(state, rawObject);
+        return closure != ZR_NULL ? closure->function : ZR_NULL;
+    }
+}
+
+static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_callable_value_provenance(
+        const SZrTypeValue *callableValue) {
+    if (callableValue == ZR_NULL) {
+        return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    switch (callableValue->type) {
+        case ZR_VALUE_TYPE_FUNCTION:
+        case ZR_VALUE_TYPE_CLOSURE:
+            return callableValue->isNative ? ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_NATIVE
+                                           : ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM;
+        case ZR_VALUE_TYPE_NATIVE_POINTER:
+            return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_NATIVE;
+        default:
+            return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+}
+
+static EZrCompilerQuickeningSlotKind compiler_quickening_slot_kind_from_callable_value(
+        SZrState *state,
+        const SZrTypeValue *callableValue) {
+    SZrFunction *resolvedFunction;
+    const TZrChar *nativeReturnTypeName;
+
+    if (state == ZR_NULL || callableValue == ZR_NULL) {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+    }
+
+    resolvedFunction = compiler_quickening_metadata_function_from_callable_value(state, callableValue);
+    if (resolvedFunction != ZR_NULL && resolvedFunction->hasCallableReturnType) {
+        return compiler_quickening_slot_kind_from_typed_type_ref(&resolvedFunction->callableReturnType);
+    }
+
+    nativeReturnTypeName = ZrLib_CallableValue_GetNativeBindingReturnTypeName(state, callableValue);
+    return compiler_quickening_slot_kind_from_type_name_text(nativeReturnTypeName);
+}
+
+static const SZrTypeValue *compiler_quickening_resolve_prototype_member_callable_value(
+        SZrState *state,
+        SZrObjectPrototype *prototype,
+        SZrString *memberName,
+        const SZrMemberDescriptor **outDescriptor) {
+    SZrTypeValue memberKey;
+
+    if (outDescriptor != ZR_NULL) {
+        *outDescriptor = ZR_NULL;
+    }
+
+    if (state == ZR_NULL || prototype == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (outDescriptor != ZR_NULL) {
+        *outDescriptor = ZrCore_ObjectPrototype_FindMemberDescriptor(prototype, memberName, ZR_TRUE);
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+    memberKey.type = ZR_VALUE_TYPE_STRING;
+    return ZrCore_Object_GetValue(state, &prototype->super, &memberKey);
+}
+
+static SZrObjectPrototype *compiler_quickening_resolve_type_ref_runtime_prototype(
+        SZrState *state,
+        const SZrFunctionTypedTypeRef *typeRef) {
+    const TZrChar *typeNameText;
+    SZrObjectPrototype *prototype;
+
+    if (state == ZR_NULL || typeRef == ZR_NULL || typeRef->typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    typeNameText = compiler_quickening_type_name_text(typeRef->typeName);
+    if (typeNameText == ZR_NULL || typeNameText[0] == '\0') {
+        return ZR_NULL;
+    }
+
+    prototype = ZrLib_Type_FindPrototype(state, typeNameText);
+    if (prototype != ZR_NULL) {
+        return prototype;
+    }
+
+    if (typeRef->baseType == ZR_VALUE_TYPE_ARRAY) {
+        prototype = ZrLib_Type_FindPrototype(state, "Array");
+        if (prototype != ZR_NULL) {
+            return prototype;
+        }
+
+        return ZrLib_Type_FindPrototype(state, "zr.container.Array");
+    }
+
+    return ZR_NULL;
+}
+
+static SZrObjectPrototype *compiler_quickening_resolve_binding_runtime_prototype(
+        SZrState *state,
+        const SZrFunctionTypedLocalBinding *binding) {
+    return compiler_quickening_resolve_type_ref_runtime_prototype(
+            state,
+            binding != ZR_NULL ? &binding->type : ZR_NULL);
+}
+
+static SZrFunction *compiler_quickening_find_prototype_owner_function(SZrFunction *function) {
+    SZrFunction *current = function;
+
+    while (current != ZR_NULL) {
+        if (current->prototypeData != ZR_NULL && current->prototypeCount > 0) {
+            return current;
+        }
+        current = current->ownerFunction;
+    }
+
+    return function;
+}
+
+static SZrFunction *compiler_quickening_find_owner_child_function_by_name(SZrFunction *ownerFunction, SZrString *name) {
+    const TZrChar *targetName;
+
+    if (ownerFunction == ZR_NULL || name == ZR_NULL || ownerFunction->childFunctionList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    targetName = compiler_quickening_type_name_text(name);
+    for (TZrUInt32 childIndex = 0; childIndex < ownerFunction->childFunctionLength; childIndex++) {
+        SZrFunction *childFunction = &ownerFunction->childFunctionList[childIndex];
+        const TZrChar *childName = compiler_quickening_type_name_text(childFunction->functionName);
+
+        if (childFunction->functionName == name) {
+            return childFunction;
+        }
+
+        if (targetName != ZR_NULL && childName != ZR_NULL && strcmp(targetName, childName) == 0) {
+            return childFunction;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrFunction *compiler_quickening_find_owner_child_function_by_stack_slot(SZrFunction *ownerFunction,
+                                                                                 TZrUInt32 stackSlot) {
+    if (ownerFunction == ZR_NULL || ownerFunction->childFunctionList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (ownerFunction->topLevelCallableBindings != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < ownerFunction->topLevelCallableBindingLength; index++) {
+            const SZrFunctionTopLevelCallableBinding *binding = &ownerFunction->topLevelCallableBindings[index];
+            if (binding->stackSlot == stackSlot && binding->callableChildIndex < ownerFunction->childFunctionLength) {
+                return &ownerFunction->childFunctionList[binding->callableChildIndex];
+            }
+        }
+    }
+
+    if (ownerFunction->exportedVariables != ZR_NULL) {
+        for (TZrUInt32 index = 0; index < ownerFunction->exportedVariableLength; index++) {
+            const SZrFunctionExportedVariable *binding = &ownerFunction->exportedVariables[index];
+            if (binding->stackSlot == stackSlot && binding->callableChildIndex < ownerFunction->childFunctionLength) {
+                return &ownerFunction->childFunctionList[binding->callableChildIndex];
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrFunction *compiler_quickening_resolve_owner_callable_metadata_from_closure_capture(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt32 closureIndex,
+        TZrUInt32 depth,
+        EZrCompilerQuickeningSlotKind *outSlotKind,
+        EZrCompilerQuickeningCallableProvenanceKind *outProvenance) {
+    SZrFunction *ownerFunction;
+    const SZrFunctionClosureVariable *closure;
+    SZrFunction *resolvedFunction;
+
+    if (outSlotKind != ZR_NULL) {
+        *outSlotKind = ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+    }
+    if (outProvenance != ZR_NULL) {
+        *outProvenance = ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    if (function == ZR_NULL || function->closureValueList == ZR_NULL || closureIndex >= function->closureValueLength ||
+        depth > function->instructionsLength) {
+        return ZR_NULL;
+    }
+
+    ownerFunction = function->ownerFunction;
+    if (ownerFunction == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    closure = &function->closureValueList[closureIndex];
+
+    resolvedFunction = compiler_quickening_find_owner_child_function_by_name(ownerFunction, closure->name);
+    if (resolvedFunction != ZR_NULL) {
+        if (outSlotKind != ZR_NULL && resolvedFunction->hasCallableReturnType) {
+            *outSlotKind = compiler_quickening_slot_kind_from_typed_type_ref(&resolvedFunction->callableReturnType);
+        }
+        if (outProvenance != ZR_NULL) {
+            *outProvenance = ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM;
+        }
+        return resolvedFunction;
+    }
+
+    if (closure->inStack) {
+        resolvedFunction = compiler_quickening_find_owner_child_function_by_stack_slot(ownerFunction, closure->index);
+        if (resolvedFunction != ZR_NULL) {
+            if (outSlotKind != ZR_NULL && resolvedFunction->hasCallableReturnType) {
+                *outSlotKind = compiler_quickening_slot_kind_from_typed_type_ref(&resolvedFunction->callableReturnType);
+            }
+            if (outProvenance != ZR_NULL) {
+                *outProvenance = ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM;
+            }
+            return resolvedFunction;
+        }
+
+        return compiler_quickening_resolve_callable_metadata_function_for_slot_before_instruction(state,
+                                                                                                  ownerFunction,
+                                                                                                  ownerFunction->instructionsLength,
+                                                                                                  closure->index,
+                                                                                                  depth + 1u,
+                                                                                                  outSlotKind,
+                                                                                                  outProvenance);
+    }
+
+    if (ownerFunction->closureValueList != ZR_NULL && closure->index < ownerFunction->closureValueLength) {
+        return compiler_quickening_resolve_owner_callable_metadata_from_closure_capture(state,
+                                                                                        ownerFunction,
+                                                                                        closure->index,
+                                                                                        depth + 1u,
+                                                                                        outSlotKind,
+                                                                                        outProvenance);
+    }
+
+    return ZR_NULL;
 }
 
 static const SZrFunctionTypedLocalBinding *compiler_quickening_find_typed_local_binding(const SZrFunction *function,
@@ -407,6 +766,156 @@ static const SZrFunctionTypedLocalBinding *compiler_quickening_find_active_typed
     }
 
     return ZR_NULL;
+}
+
+static void compiler_quickening_init_unknown_type_ref(SZrFunctionTypedTypeRef *typeRef) {
+    if (typeRef == ZR_NULL) {
+        return;
+    }
+
+    memset(typeRef, 0, sizeof(*typeRef));
+    typeRef->baseType = ZR_VALUE_TYPE_OBJECT;
+    typeRef->elementBaseType = ZR_VALUE_TYPE_OBJECT;
+}
+
+static TZrBool compiler_quickening_type_name_is_array_like(const TZrChar *typeNameText) {
+    if (typeNameText == ZR_NULL || typeNameText[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(strcmp(typeNameText, "Array") == 0 ||
+                     strncmp(typeNameText, "Array<", 6) == 0 ||
+                     strcmp(typeNameText, "container.Array") == 0 ||
+                     strncmp(typeNameText, "container.Array<", 16) == 0 ||
+                     strcmp(typeNameText, "zr.container.Array") == 0 ||
+                     strncmp(typeNameText, "zr.container.Array<", 19) == 0);
+}
+
+static void compiler_quickening_populate_type_ref_from_type_name(SZrFunctionTypedTypeRef *typeRef,
+                                                                 SZrString *typeName) {
+    const TZrChar *typeNameText;
+
+    compiler_quickening_init_unknown_type_ref(typeRef);
+    if (typeRef == ZR_NULL || typeName == ZR_NULL) {
+        return;
+    }
+
+    typeRef->typeName = typeName;
+    typeNameText = compiler_quickening_type_name_text(typeName);
+    if (typeNameText == ZR_NULL || typeNameText[0] == '\0') {
+        return;
+    }
+
+    if (compiler_quickening_type_name_is_array_like(typeNameText)) {
+        typeRef->baseType = ZR_VALUE_TYPE_ARRAY;
+        typeRef->isArray = ZR_TRUE;
+        if (compiler_quickening_slot_kind_from_type_name_text(typeNameText) ==
+            ZR_COMPILER_QUICKENING_SLOT_KIND_ARRAY_INT) {
+            typeRef->elementBaseType = ZR_VALUE_TYPE_INT64;
+        }
+        return;
+    }
+
+    typeRef->baseType = ZR_VALUE_TYPE_OBJECT;
+}
+
+static TZrBool compiler_quickening_function_constant_read_string(const SZrFunction *function,
+                                                                 TZrUInt32 constantIndex,
+                                                                 SZrString **outString) {
+    const SZrTypeValue *constantValue;
+
+    if (outString != ZR_NULL) {
+        *outString = ZR_NULL;
+    }
+    if (function == ZR_NULL || function->constantValueList == ZR_NULL || outString == ZR_NULL ||
+        constantIndex >= function->constantValueLength) {
+        return ZR_FALSE;
+    }
+
+    constantValue = &function->constantValueList[constantIndex];
+    if (constantValue == ZR_NULL || !ZR_VALUE_IS_TYPE_STRING(constantValue->type) || constantValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outString = ZR_CAST(SZrString *, constantValue->value.object);
+    return ZR_TRUE;
+}
+
+static TZrBool compiler_quickening_resolve_type_ref_from_type_name_constant(
+        const SZrFunction *function,
+        TZrUInt32 constantIndex,
+        SZrFunctionTypedTypeRef *outTypeRef) {
+    SZrString *typeName = ZR_NULL;
+
+    compiler_quickening_init_unknown_type_ref(outTypeRef);
+    if (outTypeRef == ZR_NULL ||
+        !compiler_quickening_function_constant_read_string(function, constantIndex, &typeName)) {
+        return ZR_FALSE;
+    }
+
+    compiler_quickening_populate_type_ref_from_type_name(outTypeRef, typeName);
+    return outTypeRef->typeName != ZR_NULL;
+}
+
+static TZrBool compiler_quickening_resolve_slot_type_ref_before_instruction_in_range(
+        const SZrFunction *function,
+        TZrUInt32 rangeStart,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 slot,
+        TZrUInt32 depth,
+        SZrFunctionTypedTypeRef *outTypeRef) {
+    const SZrFunctionTypedLocalBinding *binding;
+    const TZrInstruction *writer;
+    TZrUInt32 writerIndex = UINT32_MAX;
+
+    compiler_quickening_init_unknown_type_ref(outTypeRef);
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || outTypeRef == ZR_NULL ||
+        depth > function->stackSize + 8u) {
+        return ZR_FALSE;
+    }
+
+    binding = compiler_quickening_find_active_typed_local_binding(function, slot, instructionIndex);
+    if (binding == ZR_NULL &&
+        (function->localVariableList == ZR_NULL || function->localVariableLength == 0)) {
+        binding = compiler_quickening_find_typed_local_binding(function, slot);
+    }
+    if (binding != ZR_NULL && binding->type.typeName != ZR_NULL) {
+        *outTypeRef = binding->type;
+        return ZR_TRUE;
+    }
+
+    writer = compiler_quickening_find_latest_writer_in_range(function,
+                                                             rangeStart,
+                                                             instructionIndex,
+                                                             slot,
+                                                             &writerIndex);
+    if (writer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch ((EZrInstructionCode)writer->instruction.operationCode) {
+        case ZR_INSTRUCTION_ENUM(GET_STACK):
+        case ZR_INSTRUCTION_ENUM(SET_STACK): {
+            TZrUInt32 sourceSlot = (TZrUInt32)writer->instruction.operand.operand2[0];
+            if (sourceSlot == slot) {
+                return ZR_FALSE;
+            }
+            return compiler_quickening_resolve_slot_type_ref_before_instruction_in_range(function,
+                                                                                          rangeStart,
+                                                                                          writerIndex,
+                                                                                          sourceSlot,
+                                                                                          depth + 1u,
+                                                                                          outTypeRef);
+        }
+        case ZR_INSTRUCTION_ENUM(TO_OBJECT):
+        case ZR_INSTRUCTION_ENUM(TO_STRUCT):
+            return compiler_quickening_resolve_type_ref_from_type_name_constant(
+                    function,
+                    (TZrUInt32)writer->instruction.operand.operand1[1],
+                    outTypeRef);
+        default:
+            return ZR_FALSE;
+    }
 }
 
 static TZrBool compiler_quickening_binding_is_int(const SZrFunctionTypedLocalBinding *binding) {
@@ -784,6 +1293,7 @@ static TZrBool compiler_quickening_opcode_uses_call_argument_slots(EZrInstructio
         case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
         case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
@@ -823,6 +1333,12 @@ static TZrUInt32 compiler_quickening_call_argument_count(const SZrFunction *func
         case ZR_INSTRUCTION_ENUM(META_CALL):
         case ZR_INSTRUCTION_ENUM(META_TAIL_CALL):
             return (TZrUInt32)instruction->instruction.operand.operand1[1];
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+            cacheIndex = (TZrUInt32)instruction->instruction.operand.operand1[0];
+            if (function->callSiteCaches != ZR_NULL && cacheIndex < function->callSiteCacheLength) {
+                return function->callSiteCaches[cacheIndex].argumentCount;
+            }
+            return 0;
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED):
@@ -1057,6 +1573,7 @@ static TZrBool compiler_quickening_slot_is_exported_callable_binding(const SZrFu
 }
 
 static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_latest_prior_callable_provenance(
+        SZrState *state,
         const SZrFunction *function,
         TZrUInt32 instructionIndex,
         TZrUInt32 slot,
@@ -1081,13 +1598,39 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_l
             return compiler_quickening_function_constant_callable_kind(
                     function,
                     (TZrUInt32)writer->instruction.operand.operand2[0]);
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT): {
+            EZrCompilerQuickeningCallableProvenanceKind provenance =
+                    ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+            compiler_quickening_resolve_bound_member_callable_metadata_function(
+                    state,
+                    ZR_CAST(SZrFunction *, function),
+                    writer,
+                    writerIndex,
+                    ZR_NULL,
+                    &provenance);
+            return provenance;
+        }
+        case ZR_INSTRUCTION_ENUM(GETUPVAL):
+        case ZR_INSTRUCTION_ENUM(GET_CLOSURE): {
+            EZrCompilerQuickeningCallableProvenanceKind provenance =
+                    ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+            compiler_quickening_resolve_owner_callable_metadata_from_closure_capture(
+                    state,
+                    ZR_CAST(SZrFunction *, function),
+                    (TZrUInt32)writer->instruction.operand.operand1[0],
+                    depth + 1u,
+                    ZR_NULL,
+                    &provenance);
+            return provenance;
+        }
         case ZR_INSTRUCTION_ENUM(GET_STACK):
         case ZR_INSTRUCTION_ENUM(SET_STACK): {
             TZrUInt32 sourceSlot = (TZrUInt32)writer->instruction.operand.operand2[0];
             if (sourceSlot == slot) {
                 return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
             }
-            return compiler_quickening_resolve_latest_prior_callable_provenance(function,
+            return compiler_quickening_resolve_latest_prior_callable_provenance(state,
+                                                                                function,
                                                                                 writerIndex,
                                                                                 sourceSlot,
                                                                                 depth + 1u);
@@ -1098,6 +1641,7 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_l
 }
 
 static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_unique_prior_callable_provenance(
+        SZrState *state,
         const SZrFunction *function,
         TZrUInt32 instructionIndex,
         TZrUInt32 slot,
@@ -1143,13 +1687,39 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_u
             return compiler_quickening_function_constant_callable_kind(
                     function,
                     (TZrUInt32)writer->instruction.operand.operand2[0]);
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT): {
+            EZrCompilerQuickeningCallableProvenanceKind provenance =
+                    ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+            compiler_quickening_resolve_bound_member_callable_metadata_function(
+                    state,
+                    ZR_CAST(SZrFunction *, function),
+                    writer,
+                    writerIndex,
+                    ZR_NULL,
+                    &provenance);
+            return provenance;
+        }
+        case ZR_INSTRUCTION_ENUM(GETUPVAL):
+        case ZR_INSTRUCTION_ENUM(GET_CLOSURE): {
+            EZrCompilerQuickeningCallableProvenanceKind provenance =
+                    ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+            compiler_quickening_resolve_owner_callable_metadata_from_closure_capture(
+                    state,
+                    ZR_CAST(SZrFunction *, function),
+                    (TZrUInt32)writer->instruction.operand.operand1[0],
+                    depth + 1u,
+                    ZR_NULL,
+                    &provenance);
+            return provenance;
+        }
         case ZR_INSTRUCTION_ENUM(GET_STACK):
         case ZR_INSTRUCTION_ENUM(SET_STACK): {
             TZrUInt32 sourceSlot = (TZrUInt32)writer->instruction.operand.operand2[0];
             if (sourceSlot == slot) {
                 return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
             }
-            return compiler_quickening_resolve_latest_prior_callable_provenance(function,
+            return compiler_quickening_resolve_latest_prior_callable_provenance(state,
+                                                                                function,
                                                                                 writerIndex,
                                                                                 sourceSlot,
                                                                                 depth + 1u);
@@ -1261,6 +1831,7 @@ static TZrBool compiler_quickening_find_or_append_uint_constant(SZrState *state,
 }
 
 static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_callable_provenance_before_instruction(
+        SZrState *state,
         const SZrFunction *function,
         const TZrBool *blockStarts,
         TZrUInt32 instructionIndex,
@@ -1297,6 +1868,18 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_c
                 return compiler_quickening_function_constant_callable_kind(
                         function,
                         (TZrUInt32)writer->instruction.operand.operand2[0]);
+            case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT): {
+                EZrCompilerQuickeningCallableProvenanceKind provenance =
+                        ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+                compiler_quickening_resolve_bound_member_callable_metadata_function(
+                        state,
+                        ZR_CAST(SZrFunction *, function),
+                        writer,
+                        scanIndex - 1u,
+                        ZR_NULL,
+                        &provenance);
+                return provenance;
+            }
             case ZR_INSTRUCTION_ENUM(GET_STACK):
             case ZR_INSTRUCTION_ENUM(SET_STACK): {
                 TZrUInt32 sourceSlot = (TZrUInt32)writer->instruction.operand.operand2[0];
@@ -1304,6 +1887,7 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_c
                     return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
                 }
                 return compiler_quickening_resolve_callable_provenance_before_instruction(
+                        state,
                         function,
                         blockStarts,
                         scanIndex - 1u,
@@ -1315,16 +1899,360 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_c
         }
     }
 
-    if (compiler_quickening_slot_is_exported_callable_binding(function, slot) ||
-        (compiler_quickening_find_active_local_variable(function, slot, instructionIndex) == ZR_NULL &&
-         compiler_quickening_find_active_typed_local_binding(function, slot, instructionIndex) == ZR_NULL)) {
-        return compiler_quickening_resolve_unique_prior_callable_provenance(function,
-                                                                            instructionIndex,
-                                                                            slot,
-                                                                            depth + 1u);
+    {
+        EZrCompilerQuickeningCallableProvenanceKind provenance =
+                compiler_quickening_resolve_unique_prior_callable_provenance(
+                        state,
+                        function,
+                        instructionIndex,
+                        slot,
+                        depth + 1u);
+        if (provenance != ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN) {
+            return provenance;
+        }
+    }
+
+    if (compiler_quickening_slot_is_exported_callable_binding(function, slot)) {
+        return compiler_quickening_resolve_latest_prior_callable_provenance(
+                state,
+                function,
+                instructionIndex,
+                slot,
+                depth + 1u);
     }
 
     return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+}
+
+static SZrFunction *compiler_quickening_resolve_bound_member_callable_metadata_function_from_cache(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt32 cacheIndex,
+        EZrCompilerQuickeningSlotKind *outSlotKind) {
+    SZrFunction *prototypeOwner;
+    const SZrFunctionCallSiteCacheEntry *cacheEntry;
+    const SZrFunctionMemberEntry *memberEntry;
+    SZrObjectPrototype *prototype;
+    const SZrMemberDescriptor *descriptor;
+    const SZrTypeValue *callableValue;
+    SZrString *memberName;
+    SZrFunction *resolvedFunction;
+
+    if (outSlotKind != ZR_NULL) {
+        *outSlotKind = ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+    }
+
+    if (state == ZR_NULL || function == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (function->callSiteCaches == ZR_NULL || cacheIndex >= function->callSiteCacheLength) {
+        return ZR_NULL;
+    }
+
+    cacheEntry = &function->callSiteCaches[cacheIndex];
+    if (function->memberEntries == ZR_NULL || cacheEntry->memberEntryIndex >= function->memberEntryLength) {
+        return ZR_NULL;
+    }
+
+    memberEntry = &function->memberEntries[cacheEntry->memberEntryIndex];
+    if (memberEntry->entryKind != ZR_FUNCTION_MEMBER_ENTRY_KIND_BOUND_DESCRIPTOR) {
+        return ZR_NULL;
+    }
+
+    prototypeOwner = compiler_quickening_find_prototype_owner_function(function);
+    if (prototypeOwner == ZR_NULL || prototypeOwner->prototypeCount == 0 ||
+        memberEntry->prototypeIndex >= prototypeOwner->prototypeCount) {
+        return ZR_NULL;
+    }
+
+    if (prototypeOwner->prototypeInstances == ZR_NULL ||
+        prototypeOwner->prototypeInstancesLength <= memberEntry->prototypeIndex ||
+        prototypeOwner->prototypeInstances[memberEntry->prototypeIndex] == ZR_NULL) {
+        ZrCore_Module_CreatePrototypesFromData(state, ZR_NULL, prototypeOwner);
+    }
+
+    if (prototypeOwner->prototypeInstances == ZR_NULL ||
+        prototypeOwner->prototypeInstancesLength <= memberEntry->prototypeIndex) {
+        return ZR_NULL;
+    }
+
+    prototype = prototypeOwner->prototypeInstances[memberEntry->prototypeIndex];
+    if (prototype == ZR_NULL || memberEntry->descriptorIndex >= prototype->memberDescriptorCount) {
+        return ZR_NULL;
+    }
+
+    descriptor = &prototype->memberDescriptors[memberEntry->descriptorIndex];
+    memberName = descriptor->name != ZR_NULL ? descriptor->name : memberEntry->symbol;
+    if (memberName == ZR_NULL) {
+        return descriptor->getterFunction;
+    }
+
+    callableValue = compiler_quickening_resolve_prototype_member_callable_value(
+            state,
+            prototype,
+            memberName,
+            ZR_NULL);
+    if (outSlotKind != ZR_NULL) {
+        *outSlotKind = compiler_quickening_slot_kind_from_callable_value(state, callableValue);
+    }
+    resolvedFunction = compiler_quickening_metadata_function_from_callable_value(state, callableValue);
+    if (resolvedFunction != ZR_NULL) {
+        return resolvedFunction;
+    }
+
+    return descriptor->getterFunction;
+}
+
+static SZrFunction *compiler_quickening_resolve_bound_member_callable_metadata_function(
+        SZrState *state,
+        SZrFunction *function,
+        const TZrInstruction *writer,
+        TZrUInt32 writerIndex,
+        EZrCompilerQuickeningSlotKind *outSlotKind,
+        EZrCompilerQuickeningCallableProvenanceKind *outProvenance) {
+    const SZrFunctionCallSiteCacheEntry *cacheEntry;
+    const SZrFunctionMemberEntry *memberEntry;
+    const SZrFunctionTypedLocalBinding *binding;
+    const SZrFunctionTypedTypeRef *receiverTypeRef = ZR_NULL;
+    const SZrTypeValue *callableValue;
+    const SZrMemberDescriptor *descriptor = ZR_NULL;
+    SZrObjectPrototype *prototype;
+    SZrFunction *resolvedFunction;
+    SZrFunctionTypedTypeRef recoveredReceiverType;
+    TZrUInt32 cacheIndex;
+    TZrUInt32 receiverSlot;
+
+    if (outSlotKind != ZR_NULL) {
+        *outSlotKind = ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+    }
+    if (outProvenance != ZR_NULL) {
+        *outProvenance = ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    if (state == ZR_NULL || function == ZR_NULL || writer == ZR_NULL ||
+        (EZrInstructionCode)writer->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)) {
+        return ZR_NULL;
+    }
+
+    cacheIndex = (TZrUInt32)writer->instruction.operand.operand1[1];
+    resolvedFunction = compiler_quickening_resolve_bound_member_callable_metadata_function_from_cache(
+            state,
+            function,
+            cacheIndex,
+            outSlotKind);
+    if (resolvedFunction != ZR_NULL) {
+        if (outProvenance != ZR_NULL) {
+            *outProvenance = ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM;
+        }
+        return resolvedFunction;
+    }
+
+    if (function->callSiteCaches == ZR_NULL || cacheIndex >= function->callSiteCacheLength) {
+        return ZR_NULL;
+    }
+
+    cacheEntry = &function->callSiteCaches[cacheIndex];
+    if (function->memberEntries == ZR_NULL || cacheEntry->memberEntryIndex >= function->memberEntryLength) {
+        return ZR_NULL;
+    }
+
+    memberEntry = &function->memberEntries[cacheEntry->memberEntryIndex];
+    if (memberEntry->entryKind != ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL || memberEntry->symbol == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    receiverSlot = (TZrUInt32)writer->instruction.operand.operand1[0];
+    binding = compiler_quickening_find_active_typed_local_binding(function, receiverSlot, writerIndex);
+    if (binding == ZR_NULL &&
+        (function->localVariableList == ZR_NULL || function->localVariableLength == 0)) {
+        binding = compiler_quickening_find_typed_local_binding(function, receiverSlot);
+    }
+    if (binding != ZR_NULL && binding->type.typeName != ZR_NULL) {
+        receiverTypeRef = &binding->type;
+    } else if (compiler_quickening_resolve_slot_type_ref_before_instruction_in_range(function,
+                                                                                      0,
+                                                                                      writerIndex,
+                                                                                      receiverSlot,
+                                                                                      0u,
+                                                                                      &recoveredReceiverType)) {
+        receiverTypeRef = &recoveredReceiverType;
+    }
+
+    if (receiverTypeRef == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    prototype = compiler_quickening_resolve_type_ref_runtime_prototype(state, receiverTypeRef);
+    if (prototype == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    callableValue = compiler_quickening_resolve_prototype_member_callable_value(
+            state,
+            prototype,
+            memberEntry->symbol,
+            &descriptor);
+    if (outSlotKind != ZR_NULL) {
+        *outSlotKind = compiler_quickening_slot_kind_from_callable_value(state, callableValue);
+    }
+    if (outProvenance != ZR_NULL) {
+        *outProvenance = compiler_quickening_callable_value_provenance(callableValue);
+    }
+
+    resolvedFunction = compiler_quickening_metadata_function_from_callable_value(state, callableValue);
+    if (resolvedFunction != ZR_NULL) {
+        return resolvedFunction;
+    }
+
+    if (descriptor != ZR_NULL && descriptor->getterFunction != ZR_NULL) {
+        if (outSlotKind != ZR_NULL && *outSlotKind == ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN &&
+            descriptor->getterFunction->hasCallableReturnType) {
+            *outSlotKind = compiler_quickening_slot_kind_from_typed_type_ref(
+                    &descriptor->getterFunction->callableReturnType);
+        }
+        if (outProvenance != ZR_NULL &&
+            *outProvenance == ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN) {
+            *outProvenance = ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM;
+        }
+        return descriptor->getterFunction;
+    }
+
+    return ZR_NULL;
+}
+
+static SZrFunction *compiler_quickening_resolve_callable_metadata_function_for_slot_before_instruction(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 slot,
+        TZrUInt32 depth,
+        EZrCompilerQuickeningSlotKind *outSlotKind,
+        EZrCompilerQuickeningCallableProvenanceKind *outProvenance) {
+    const TZrInstruction *writer;
+    TZrUInt32 writerIndex = UINT32_MAX;
+
+    if (outSlotKind != ZR_NULL) {
+        *outSlotKind = ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+    }
+    if (outProvenance != ZR_NULL) {
+        *outProvenance = ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    if (state == ZR_NULL || function == ZR_NULL || function->instructionsList == ZR_NULL ||
+        depth > function->instructionsLength) {
+        return ZR_NULL;
+    }
+
+    writer = compiler_quickening_find_latest_writer_in_range(function, 0, instructionIndex, slot, &writerIndex);
+    if (writer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch ((EZrInstructionCode)writer->instruction.operationCode) {
+        case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION): {
+            TZrUInt32 childIndex = (TZrUInt32)writer->instruction.operand.operand1[0];
+            if (function->childFunctionList == ZR_NULL || childIndex >= function->childFunctionLength) {
+                return ZR_NULL;
+            }
+            if (outSlotKind != ZR_NULL && function->childFunctionList[childIndex].hasCallableReturnType) {
+                *outSlotKind = compiler_quickening_slot_kind_from_typed_type_ref(
+                        &function->childFunctionList[childIndex].callableReturnType);
+            }
+            if (outProvenance != ZR_NULL) {
+                *outProvenance = ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM;
+            }
+            return &function->childFunctionList[childIndex];
+        }
+        case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
+        case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE): {
+            TZrUInt32 constantIndex =
+                    (EZrInstructionCode)writer->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_CONSTANT)
+                            ? (TZrUInt32)writer->instruction.operand.operand2[0]
+                            : (TZrUInt32)writer->instruction.operand.operand1[0];
+            const SZrTypeValue *constantValue;
+            if (function->constantValueList == ZR_NULL || constantIndex >= function->constantValueLength) {
+                return ZR_NULL;
+            }
+            constantValue = &function->constantValueList[constantIndex];
+            if (outSlotKind != ZR_NULL) {
+                *outSlotKind = compiler_quickening_slot_kind_from_callable_value(state, constantValue);
+            }
+            if (outProvenance != ZR_NULL) {
+                *outProvenance = compiler_quickening_callable_value_provenance(constantValue);
+            }
+            return compiler_quickening_metadata_function_from_callable_value(state, constantValue);
+        }
+        case ZR_INSTRUCTION_ENUM(GETUPVAL):
+        case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
+            return compiler_quickening_resolve_owner_callable_metadata_from_closure_capture(
+                    state,
+                    function,
+                    (TZrUInt32)writer->instruction.operand.operand1[0],
+                    depth + 1u,
+                    outSlotKind,
+                    outProvenance);
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
+            return compiler_quickening_resolve_bound_member_callable_metadata_function(
+                    state,
+                    function,
+                    writer,
+                    writerIndex,
+                    outSlotKind,
+                    outProvenance);
+        case ZR_INSTRUCTION_ENUM(GET_STACK):
+        case ZR_INSTRUCTION_ENUM(SET_STACK): {
+            TZrUInt32 sourceSlot = (TZrUInt32)writer->instruction.operand.operand2[0];
+            if (sourceSlot == slot) {
+                return ZR_NULL;
+            }
+            return compiler_quickening_resolve_callable_metadata_function_for_slot_before_instruction(
+                    state,
+                    function,
+                    writerIndex,
+                    sourceSlot,
+                    depth + 1u,
+                    outSlotKind,
+                    outProvenance);
+        }
+        default:
+            return ZR_NULL;
+    }
+}
+
+static EZrCompilerQuickeningSlotKind compiler_quickening_known_call_result_slot_kind(SZrState *state,
+                                                                                      SZrFunction *function,
+                                                                                      TZrUInt32 instructionIndex,
+                                                                                      const TZrInstruction *instruction) {
+    SZrFunction *calleeFunction;
+    EZrCompilerQuickeningSlotKind resolvedSlotKind = ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+    EZrInstructionCode opcode;
+
+    if (state == ZR_NULL || function == ZR_NULL || instruction == ZR_NULL) {
+        return ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+    }
+
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    if (opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)) {
+        calleeFunction = compiler_quickening_resolve_bound_member_callable_metadata_function_from_cache(
+                state,
+                function,
+                (TZrUInt32)instruction->instruction.operand.operand1[0],
+                &resolvedSlotKind);
+    } else {
+        calleeFunction = compiler_quickening_resolve_callable_metadata_function_for_slot_before_instruction(
+                state,
+                function,
+                instructionIndex,
+                (TZrUInt32)instruction->instruction.operand.operand1[0],
+                0,
+                &resolvedSlotKind,
+                ZR_NULL);
+    }
+    if (calleeFunction != ZR_NULL && calleeFunction->hasCallableReturnType) {
+        return compiler_quickening_slot_kind_from_typed_type_ref(&calleeFunction->callableReturnType);
+    }
+
+    return resolvedSlotKind;
 }
 
 static TZrBool compiler_quickening_resolve_index_access_int_constant(const SZrFunction *function,
@@ -1395,19 +2323,20 @@ static const SZrFunctionTypedLocalBinding *compiler_quickening_resolve_named_bin
     return binding != ZR_NULL && binding->type.typeName != ZR_NULL ? binding : ZR_NULL;
 }
 
-static TZrBool compiler_quickening_binding_supports_static_member_slots(
-        const SZrFunctionTypedLocalBinding *binding) {
+static TZrBool compiler_quickening_type_ref_supports_static_member_slots(
+        const SZrFunctionTypedTypeRef *typeRef) {
     const TZrChar *typeNameText;
 
-    if (binding == ZR_NULL || binding->type.typeName == ZR_NULL) {
+    if (typeRef == ZR_NULL || typeRef->typeName == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    if (binding->type.baseType != ZR_VALUE_TYPE_OBJECT) {
+    if (typeRef->baseType != ZR_VALUE_TYPE_OBJECT &&
+        typeRef->baseType != ZR_VALUE_TYPE_ARRAY) {
         return ZR_FALSE;
     }
 
-    typeNameText = compiler_quickening_type_name_text(binding->type.typeName);
+    typeNameText = compiler_quickening_type_name_text(typeRef->typeName);
     if (typeNameText == ZR_NULL || typeNameText[0] == '\0') {
         return ZR_FALSE;
     }
@@ -2930,6 +3859,8 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
             }
             return ZR_FALSE;
         }
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+            return slot >= (TZrUInt32)instruction->instruction.operandExtra;
         case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):
@@ -4730,7 +5661,7 @@ static TZrBool compiler_quickening_try_fold_super_array_fill_int4_const_loop(SZr
     return ZR_TRUE;
 }
 
-static TZrBool compiler_quicken_array_int_index_accesses(SZrFunction *function) {
+static TZrBool compiler_quicken_array_int_index_accesses(SZrState *state, SZrFunction *function) {
     ZrCompilerQuickeningSlotAlias *aliases = ZR_NULL;
     EZrCompilerQuickeningSlotKind *slotKinds = ZR_NULL;
     TZrBool *blockStarts = ZR_NULL;
@@ -5027,6 +5958,18 @@ static TZrBool compiler_quicken_array_int_index_accesses(SZrFunction *function) 
                 case ZR_INSTRUCTION_ENUM(ADD_STRING):
                     slotKinds[destinationSlot] = ZR_COMPILER_QUICKENING_SLOT_KIND_STRING;
                     break;
+                case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL):
+                case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
+                case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
+                case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
+                case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+                case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS):
+                case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS):
+                    slotKinds[destinationSlot] =
+                            compiler_quickening_known_call_result_slot_kind(state, function, index, instruction);
+                    break;
                 case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
                 case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
                 case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL):
@@ -5229,7 +6172,7 @@ static TZrUInt32 compiler_quickening_find_deopt_id(const SZrFunction *function, 
     return ZR_RUNTIME_SEMIR_DEOPT_ID_NONE;
 }
 
-static TZrBool compiler_quicken_known_calls(SZrFunction *function) {
+static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *function) {
     TZrBool *blockStarts = ZR_NULL;
     TZrUInt32 index;
     TZrBool success = ZR_FALSE;
@@ -5258,6 +6201,7 @@ static TZrBool compiler_quicken_known_calls(SZrFunction *function) {
         }
 
         provenance = compiler_quickening_resolve_callable_provenance_before_instruction(
+                state,
                 function,
                 blockStarts,
                 index,
@@ -5513,10 +6457,29 @@ static TZrBool compiler_quicken_member_slot_accesses(SZrState *state, SZrFunctio
                                                                        aliasCount,
                                                                        index,
                                                                        instruction->instruction.operand.operand1[0]);
+            const SZrFunctionTypedTypeRef *receiverTypeRef = ZR_NULL;
             TZrUInt32 memberEntryIndex = instruction->instruction.operand.operand1[1];
+            TZrUInt32 blockStartIndex = index;
             TZrUInt16 cacheIndex;
+            SZrFunctionTypedTypeRef recoveredReceiverType;
 
-            if (compiler_quickening_binding_supports_static_member_slots(binding) &&
+            if (binding != ZR_NULL) {
+                receiverTypeRef = &binding->type;
+            } else {
+                while (blockStartIndex > 0 && !blockStarts[blockStartIndex]) {
+                    blockStartIndex--;
+                }
+                if (compiler_quickening_resolve_slot_type_ref_before_instruction_in_range(function,
+                                                                                          blockStartIndex,
+                                                                                          index,
+                                                                                          instruction->instruction.operand.operand1[0],
+                                                                                          0u,
+                                                                                          &recoveredReceiverType)) {
+                    receiverTypeRef = &recoveredReceiverType;
+                }
+            }
+
+            if (compiler_quickening_type_ref_supports_static_member_slots(receiverTypeRef) &&
                 compiler_quickening_member_entry_symbol_text(function, (TZrUInt16)memberEntryIndex) != ZR_NULL) {
                 if (!compiler_quickening_append_callsite_cache(
                             state,
@@ -5749,12 +6712,18 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
         return ZR_TRUE;
     }
 
+    if (function->childFunctionList != ZR_NULL) {
+        for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+            function->childFunctionList[childIndex].ownerFunction = function;
+        }
+    }
+
     ZR_QUICKENING_RUN_PASS("meta_access", compiler_quicken_meta_access(state, function));
-    ZR_QUICKENING_RUN_PASS("known_calls", compiler_quicken_known_calls(function));
+    ZR_QUICKENING_RUN_PASS("known_calls", compiler_quicken_known_calls(state, function));
     ZR_QUICKENING_RUN_PASS("cached_calls", compiler_quicken_cached_calls(state, function));
     ZR_QUICKENING_RUN_PASS("dynamic_iter_loop_guards", compiler_quicken_dynamic_iter_loop_guards(function));
     ZR_QUICKENING_RUN_PASS("zero_arg_calls", compiler_quicken_zero_arg_calls(function));
-    ZR_QUICKENING_RUN_PASS("array_int_index_accesses", compiler_quicken_array_int_index_accesses(function));
+    ZR_QUICKENING_RUN_PASS("array_int_index_accesses", compiler_quicken_array_int_index_accesses(state, function));
     ZR_QUICKENING_RUN_PASS("member_slot_accesses", compiler_quicken_member_slot_accesses(state, function));
     ZR_QUICKENING_RUN_PASS("compact_nops_1", compiler_quickening_compact_nops(state, function));
     ZR_QUICKENING_RUN_PASS("fold_super_array_add_int4_bursts",
@@ -5800,8 +6769,17 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
      * Re-run known call lowering on the stabilized stream so loop-local callable
      * copies such as exported child functions do not stay generic.
      */
-    ZR_QUICKENING_RUN_PASS("known_calls_late", compiler_quicken_known_calls(function));
+    ZR_QUICKENING_RUN_PASS("known_calls_late", compiler_quicken_known_calls(state, function));
     ZR_QUICKENING_RUN_PASS("zero_arg_calls_late", compiler_quicken_zero_arg_calls(function));
+    /*
+     * member_slot_accesses and late known-call lowering can expose typed call
+     * results that the first array_int_index_accesses pass could not see yet.
+     * Re-run the slot-kind-driven specialization pass on the stabilized stream
+     * so arithmetic/equality consumers of KNOWN_*_CALL results do not stay
+     * generic.
+     */
+    ZR_QUICKENING_RUN_PASS("array_int_index_accesses_late",
+                           compiler_quicken_array_int_index_accesses(state, function));
 
     if (recurseChildren && !function->childFunctionGraphIsBorrowed) {
         for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {

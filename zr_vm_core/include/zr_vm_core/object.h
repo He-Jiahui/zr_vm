@@ -9,6 +9,7 @@
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/meta.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/object_known_native_dispatch.h"
 #include "zr_vm_common/zr_contract_conf.h"
 struct SZrState;
 struct SZrGlobalState;
@@ -61,6 +62,12 @@ typedef struct SZrIndexContract {
     struct SZrFunction *setByIndexFunction;
     struct SZrFunction *containsKeyFunction;
     struct SZrFunction *getLengthFunction;
+    struct SZrRawObject *getByIndexKnownNativeCallable;
+    struct SZrRawObject *setByIndexKnownNativeCallable;
+    FZrNativeFunction getByIndexKnownNativeFunction;
+    FZrNativeFunction setByIndexKnownNativeFunction;
+    SZrObjectKnownNativeDirectDispatch getByIndexKnownNativeDirectDispatch;
+    SZrObjectKnownNativeDirectDispatch setByIndexKnownNativeDirectDispatch;
 } SZrIndexContract;
 
 typedef struct SZrIterableContract {
@@ -183,6 +190,11 @@ ZR_CORE_API TZrBool ZrCore_Object_CompareWithAddress(struct SZrState *state, SZr
 
 ZR_CORE_API void ZrCore_Object_SetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key,
                                   const SZrTypeValue *value);
+
+ZR_CORE_API void ZrCore_Object_SetExistingPairValueUnchecked(struct SZrState *state,
+                                                             SZrObject *object,
+                                                             SZrHashKeyValuePair *pair,
+                                                             const SZrTypeValue *value);
 
 ZR_CORE_API const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key);
 

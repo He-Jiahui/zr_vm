@@ -850,6 +850,145 @@ if (run_incremental_cleanup)
     endif()
 endif()
 
+cli_case_matches_tier("core;stress" run_compile_run_incremental_binary_parity)
+if (run_compile_run_incremental_binary_parity)
+    message("---- compile_run_incremental_binary_parity")
+    cli_copy_fixture("import_basic" compile_run_incremental_dir)
+    file(REMOVE_RECURSE "${compile_run_incremental_dir}/bin")
+
+    cli_run("compile_run_incremental_first"
+            compile_run_incremental_first_output
+            compile_run_incremental_first_result
+            "${CLI_EXE}"
+            "--compile"
+            "${compile_run_incremental_dir}/import_basic.zrp"
+            "--run"
+            "--incremental"
+            "--emit-executed-via")
+    cli_assert_success("compile_run_incremental_first"
+                       compile_run_incremental_first_result
+                       compile_run_incremental_first_output)
+    cli_assert_contains("compile_run_incremental_first"
+                        compile_run_incremental_first_output
+                        "compile summary: compiled=2 skipped=0 removed=0")
+    cli_assert_contains("compile_run_incremental_first"
+                        compile_run_incremental_first_output
+                        "hello from import")
+    cli_assert_contains("compile_run_incremental_first"
+                        compile_run_incremental_first_output
+                        "executed_via=binary")
+
+    cli_write_file("${compile_run_incremental_dir}/src/greet.zr"
+                   "pub var greet = () => {\n    return \"hello from import v2\";\n};\n")
+    cli_run("compile_run_incremental_changed_dependency"
+            compile_run_incremental_changed_output
+            compile_run_incremental_changed_result
+            "${CLI_EXE}"
+            "--compile"
+            "${compile_run_incremental_dir}/import_basic.zrp"
+            "--run"
+            "--incremental"
+            "--emit-executed-via")
+    cli_assert_success("compile_run_incremental_changed_dependency"
+                       compile_run_incremental_changed_result
+                       compile_run_incremental_changed_output)
+    cli_assert_contains("compile_run_incremental_changed_dependency"
+                        compile_run_incremental_changed_output
+                        "compile summary: compiled=2 skipped=0 removed=0")
+    cli_assert_contains("compile_run_incremental_changed_dependency"
+                        compile_run_incremental_changed_output
+                        "hello from import v2")
+    cli_assert_contains("compile_run_incremental_changed_dependency"
+                        compile_run_incremental_changed_output
+                        "executed_via=binary")
+
+    cli_run("compile_run_incremental_noop"
+            compile_run_incremental_noop_output
+            compile_run_incremental_noop_result
+            "${CLI_EXE}"
+            "--compile"
+            "${compile_run_incremental_dir}/import_basic.zrp"
+            "--run"
+            "--incremental"
+            "--emit-executed-via")
+    cli_assert_success("compile_run_incremental_noop"
+                       compile_run_incremental_noop_result
+                       compile_run_incremental_noop_output)
+    cli_assert_contains("compile_run_incremental_noop"
+                        compile_run_incremental_noop_output
+                        "compile summary: compiled=0 skipped=2 removed=0")
+    cli_assert_contains("compile_run_incremental_noop"
+                        compile_run_incremental_noop_output
+                        "hello from import v2")
+    cli_assert_contains("compile_run_incremental_noop"
+                        compile_run_incremental_noop_output
+                        "executed_via=binary")
+endif()
+
+cli_case_matches_tier("core;stress" run_compile_run_incremental_intermediate_toggle_cleanup)
+if (run_compile_run_incremental_intermediate_toggle_cleanup)
+    message("---- compile_run_incremental_intermediate_toggle_cleanup")
+    cli_copy_fixture("import_basic" compile_run_incremental_intermediate_dir)
+    file(REMOVE_RECURSE "${compile_run_incremental_intermediate_dir}/bin")
+
+    cli_run("compile_run_incremental_intermediate_first"
+            compile_run_incremental_intermediate_first_output
+            compile_run_incremental_intermediate_first_result
+            "${CLI_EXE}"
+            "--compile"
+            "${compile_run_incremental_intermediate_dir}/import_basic.zrp"
+            "--run"
+            "--incremental"
+            "--intermediate"
+            "--emit-executed-via")
+    cli_assert_success("compile_run_incremental_intermediate_first"
+                       compile_run_incremental_intermediate_first_result
+                       compile_run_incremental_intermediate_first_output)
+    cli_assert_contains("compile_run_incremental_intermediate_first"
+                        compile_run_incremental_intermediate_first_output
+                        "compile summary: compiled=2 skipped=0 removed=0")
+    cli_assert_contains("compile_run_incremental_intermediate_first"
+                        compile_run_incremental_intermediate_first_output
+                        "hello from import")
+    cli_assert_contains("compile_run_incremental_intermediate_first"
+                        compile_run_incremental_intermediate_first_output
+                        "executed_via=binary")
+    if (NOT EXISTS "${compile_run_incremental_intermediate_dir}/bin/main.zri")
+        message(FATAL_ERROR "compile_run_incremental_intermediate_first did not create main.zri")
+    endif()
+    if (NOT EXISTS "${compile_run_incremental_intermediate_dir}/bin/greet.zri")
+        message(FATAL_ERROR "compile_run_incremental_intermediate_first did not create greet.zri")
+    endif()
+
+    cli_run("compile_run_incremental_intermediate_second"
+            compile_run_incremental_intermediate_second_output
+            compile_run_incremental_intermediate_second_result
+            "${CLI_EXE}"
+            "--compile"
+            "${compile_run_incremental_intermediate_dir}/import_basic.zrp"
+            "--run"
+            "--incremental"
+            "--emit-executed-via")
+    cli_assert_success("compile_run_incremental_intermediate_second"
+                       compile_run_incremental_intermediate_second_result
+                       compile_run_incremental_intermediate_second_output)
+    cli_assert_contains("compile_run_incremental_intermediate_second"
+                        compile_run_incremental_intermediate_second_output
+                        "compile summary: compiled=0 skipped=2 removed=0")
+    cli_assert_contains("compile_run_incremental_intermediate_second"
+                        compile_run_incremental_intermediate_second_output
+                        "hello from import")
+    cli_assert_contains("compile_run_incremental_intermediate_second"
+                        compile_run_incremental_intermediate_second_output
+                        "executed_via=binary")
+    if (EXISTS "${compile_run_incremental_intermediate_dir}/bin/main.zri")
+        message(FATAL_ERROR "compile_run_incremental_intermediate_second did not remove stale main.zri")
+    endif()
+    if (EXISTS "${compile_run_incremental_intermediate_dir}/bin/greet.zri")
+        message(FATAL_ERROR "compile_run_incremental_intermediate_second did not remove stale greet.zri")
+    endif()
+endif()
+
 cli_case_matches_tier("smoke;core" run_repl)
 if (run_repl)
     message("---- repl")

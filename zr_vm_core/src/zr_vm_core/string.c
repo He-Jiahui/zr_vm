@@ -19,8 +19,170 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#if defined(ZR_DEBUG)
 static TZrBool string_trace_enabled(void);
 static void string_trace(const TZrChar *format, ...);
+#else
+#define string_trace(...) ((void)0)
+#endif
+static SZrString *string_create_short(SZrState *state, TZrNativeString string, TZrSize length);
+
+static ZR_FORCE_INLINE TZrSize string_concat_pair_cache_bucket_index(const SZrString *left, const SZrString *right) {
+    TZrUInt64 leftHash;
+    TZrUInt64 rightHash;
+    TZrUInt64 mixedHash;
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return 0u;
+    }
+
+    leftHash = left->super.hash;
+    rightHash = right->super.hash;
+    mixedHash = (leftHash * 1315423911u) ^ (rightHash + (leftHash << 7u) + (rightHash >> 3u));
+    return (TZrSize)(mixedHash % ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_COUNT);
+}
+
+static ZR_FORCE_INLINE SZrString *string_concat_pair_cache_lookup(SZrState *state,
+                                                                  const SZrString *left,
+                                                                  const SZrString *right) {
+    SZrGlobalState *global;
+    TZrSize bucketIndex;
+    ZrStringConcatPairCacheEntry *bucket;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || left == ZR_NULL || right == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    global = state->global;
+    bucketIndex = string_concat_pair_cache_bucket_index(left, right);
+    bucket = global->stringConcatPairCache[bucketIndex];
+    if (bucket[0].left == left && bucket[0].right == right) {
+        return bucket[0].result;
+    }
+
+#if ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH == 2U
+    if (bucket[1].left == left && bucket[1].right == right) {
+        ZrStringConcatPairCacheEntry hitEntry = bucket[1];
+
+        bucket[1] = bucket[0];
+        bucket[0] = hitEntry;
+        return hitEntry.result;
+    }
+#else
+    for (TZrSize depthIndex = 1; depthIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH; depthIndex++) {
+        if (bucket[depthIndex].left == left && bucket[depthIndex].right == right) {
+            ZrStringConcatPairCacheEntry hitEntry = bucket[depthIndex];
+
+            for (; depthIndex > 0; depthIndex--) {
+                bucket[depthIndex] = bucket[depthIndex - 1u];
+            }
+            bucket[0] = hitEntry;
+            return hitEntry.result;
+        }
+    }
+#endif
+
+    return ZR_NULL;
+}
+
+static ZR_FORCE_INLINE void string_concat_pair_cache_store(SZrState *state,
+                                                           const SZrString *left,
+                                                           const SZrString *right,
+                                                           SZrString *result) {
+    SZrGlobalState *global;
+    TZrSize bucketIndex;
+    ZrStringConcatPairCacheEntry *bucket;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || left == ZR_NULL || right == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+
+    global = state->global;
+    bucketIndex = string_concat_pair_cache_bucket_index(left, right);
+    bucket = global->stringConcatPairCache[bucketIndex];
+
+    for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH; depthIndex++) {
+        if (bucket[depthIndex].left == left && bucket[depthIndex].right == right) {
+            ZrStringConcatPairCacheEntry hitEntry = bucket[depthIndex];
+
+            hitEntry.result = result;
+            for (; depthIndex > 0; depthIndex--) {
+                bucket[depthIndex] = bucket[depthIndex - 1u];
+            }
+            bucket[0] = hitEntry;
+            return;
+        }
+    }
+
+    for (TZrSize depthIndex = ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH - 1u; depthIndex > 0; depthIndex--) {
+        bucket[depthIndex] = bucket[depthIndex - 1u];
+    }
+
+    bucket[0].left = (SZrString *)left;
+    bucket[0].right = (SZrString *)right;
+    bucket[0].result = result;
+}
+
+static SZrString *string_create_native_concat_segments(SZrState *state,
+                                                       TZrNativeString leftNative,
+                                                       TZrSize leftLength,
+                                                       TZrNativeString rightNative,
+                                                       TZrSize rightLength) {
+    TZrSize totalLength;
+
+    if (state == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    totalLength = leftLength + rightLength;
+    if (totalLength <= ZR_VM_SHORT_STRING_MAX) {
+        TZrChar stackBuffer[ZR_VM_SHORT_STRING_MAX + 1];
+
+        if (leftLength > 0 && leftNative != ZR_NULL) {
+            memcpy(stackBuffer, leftNative, leftLength);
+        }
+        if (rightLength > 0 && rightNative != ZR_NULL) {
+            memcpy(stackBuffer + leftLength, rightNative, rightLength);
+        }
+        stackBuffer[totalLength] = '\0';
+        return string_create_short(state, stackBuffer, totalLength);
+    }
+
+    {
+        SZrGlobalState *global = state->global;
+        TZrNativeString buffer = ZR_CAST(TZrNativeString,
+                                         ZrCore_Memory_RawMallocWithType(global,
+                                                                         totalLength + 1,
+                                                                         ZR_MEMORY_NATIVE_TYPE_STRING));
+        SZrString *result;
+        TZrNativeString *pointer;
+        TZrSize totalSize = sizeof(SZrString) + sizeof(TZrNativeString);
+
+        if (buffer == ZR_NULL) {
+            return ZR_NULL;
+        }
+        if (leftLength > 0 && leftNative != ZR_NULL) {
+            memcpy(buffer, leftNative, leftLength);
+        }
+        if (rightLength > 0 && rightNative != ZR_NULL) {
+            memcpy(buffer + leftLength, rightNative, rightLength);
+        }
+        buffer[totalLength] = '\0';
+
+        result = (SZrString *)ZrCore_RawObject_New(state, ZR_VALUE_TYPE_STRING, totalSize, ZR_TRUE);
+        if (result == ZR_NULL) {
+            ZrCore_Memory_RawFreeWithType(global, buffer, totalLength + 1, ZR_MEMORY_NATIVE_TYPE_STRING);
+            return ZR_NULL;
+        }
+
+        pointer = (TZrNativeString *)&(result->stringDataExtend);
+        *pointer = buffer;
+        result->shortStringLength = ZR_VM_LONG_STRING_FLAG;
+        result->longStringLength = totalLength;
+        ZrCore_RawObject_InitHash(ZR_CAST_RAW_OBJECT_AS_SUPER(result), ZrCore_Hash_Create(global, buffer, totalLength));
+        return result;
+    }
+}
 
 static void native_string_push_string_to_stack(SZrNativeStringFormatBuffer *buffer, TZrNativeString string, TZrSize length) {
     SZrState *state = buffer->state;
@@ -477,6 +639,88 @@ static ZR_FORCE_INLINE SZrString *string_create_long(SZrState *state, TZrNativeS
     return newString;
 }
 
+SZrString *ZrCore_String_ConcatPair(SZrState *state, const SZrString *left, const SZrString *right) {
+    SZrGlobalState *global;
+    TZrSize leftLength;
+    TZrSize rightLength;
+    TZrSize totalLength;
+    TZrNativeString leftNative;
+    TZrNativeString rightNative;
+    SZrString *cachedResult;
+
+    if (state == ZR_NULL || left == ZR_NULL || right == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cachedResult = string_concat_pair_cache_lookup(state, left, right);
+    if (cachedResult != ZR_NULL) {
+        return cachedResult;
+    }
+
+    leftLength = ZrCore_String_GetByteLength(left);
+    rightLength = ZrCore_String_GetByteLength(right);
+    totalLength = leftLength + rightLength;
+    leftNative = ZrCore_String_GetNativeString(left);
+    rightNative = ZrCore_String_GetNativeString(right);
+
+    if (totalLength <= ZR_VM_SHORT_STRING_MAX) {
+        TZrChar stackBuffer[ZR_VM_SHORT_STRING_MAX + 1];
+        SZrString *result;
+
+        if (leftLength > 0 && leftNative != ZR_NULL) {
+            memcpy(stackBuffer, leftNative, leftLength);
+        }
+        if (rightLength > 0 && rightNative != ZR_NULL) {
+            memcpy(stackBuffer + leftLength, rightNative, rightLength);
+        }
+        stackBuffer[totalLength] = '\0';
+        result = string_create_short(state, stackBuffer, totalLength);
+        string_concat_pair_cache_store(state, left, right, result);
+        return result;
+    }
+
+    global = state->global;
+    {
+        TZrNativeString buffer =
+                (TZrNativeString)ZrCore_Memory_RawMallocWithType(global, totalLength + 1, ZR_MEMORY_NATIVE_TYPE_STRING);
+        SZrString *result;
+
+        if (buffer == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        if (leftLength > 0 && leftNative != ZR_NULL) {
+            memcpy(buffer, leftNative, leftLength);
+        }
+        if (rightLength > 0 && rightNative != ZR_NULL) {
+            memcpy(buffer + leftLength, rightNative, rightLength);
+        }
+        buffer[totalLength] = '\0';
+
+        result = string_create_long(state, buffer, totalLength);
+        ZrCore_Memory_RawFreeWithType(global, buffer, totalLength + 1, ZR_MEMORY_NATIVE_TYPE_STRING);
+        return result;
+    }
+}
+
+SZrString *ZrCore_String_ConcatStringAndNative(SZrState *state,
+                                               const SZrString *stringValue,
+                                               TZrNativeString nativeString,
+                                               TZrSize nativeLength,
+                                               TZrBool stringOnLeft) {
+    TZrNativeString stringNative;
+    TZrSize stringLength;
+
+    if (state == ZR_NULL || stringValue == ZR_NULL || (nativeString == ZR_NULL && nativeLength > 0)) {
+        return ZR_NULL;
+    }
+
+    stringNative = ZrCore_String_GetNativeString(stringValue);
+    stringLength = ZrCore_String_GetByteLength(stringValue);
+    return stringOnLeft ? string_create_native_concat_segments(state, stringNative, stringLength, nativeString, nativeLength)
+                        : string_create_native_concat_segments(state, nativeString, nativeLength, stringNative, stringLength);
+}
+
 
 SZrString *ZrCore_String_Create(SZrState *state, TZrNativeString string, TZrSize length) {
     string_trace("string create dispatch length=%llu text=%p", (unsigned long long)length, (const void *)string);
@@ -489,6 +733,7 @@ SZrString *ZrCore_String_Create(SZrState *state, TZrNativeString string, TZrSize
     }
 }
 
+#if defined(ZR_DEBUG)
 static TZrBool string_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;
@@ -516,6 +761,7 @@ static void string_trace(const TZrChar *format, ...) {
     fflush(stderr);
     va_end(arguments);
 }
+#endif
 
 SZrString *ZrCore_String_CreateTryHitCache(SZrState *state, TZrNativeString string) {
     SZrGlobalState *global = state->global;

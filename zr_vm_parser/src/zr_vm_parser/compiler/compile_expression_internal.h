@@ -35,6 +35,7 @@ void compile_import_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_type_query_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_type_literal_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_primary_expression(SZrCompilerState *cs, SZrAstNode *node);
+TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
 void compile_prototype_reference_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_construct_expression(SZrCompilerState *cs, SZrAstNode *node);
 void compile_array_literal(SZrCompilerState *cs, SZrAstNode *node);
@@ -74,6 +75,15 @@ TZrBool emit_member_slot_get(SZrCompilerState *cs,
                              TZrUInt32 receiverSlot,
                              TZrUInt32 memberEntryIndex,
                              SZrFileRange location);
+TZrBool reserve_member_slot_get_cache(SZrCompilerState *cs,
+                                      TZrUInt32 memberEntryIndex,
+                                      TZrUInt32 argumentCount,
+                                      TZrUInt16 *outCacheIndex,
+                                      SZrFileRange location);
+TZrBool emit_known_vm_member_call_cached(SZrCompilerState *cs,
+                                         TZrUInt32 destinationSlot,
+                                         TZrUInt16 cacheIndex,
+                                         SZrFileRange location);
 TZrBool emit_member_slot_set(SZrCompilerState *cs,
                              TZrUInt32 valueSlot,
                              TZrUInt32 receiverSlot,
@@ -188,7 +198,8 @@ void compile_primary_member_chain(SZrCompilerState *cs,
                                   TZrBool *ioRootIsTypeReference,
                                   EZrOwnershipQualifier *ioRootOwnershipQualifier,
                                   TZrBool rootUsesSuperLookup,
-                                  TZrUInt32 superReceiverSlot);
+                                  TZrUInt32 superReceiverSlot,
+                                  TZrUInt32 preferredDirectMemberCallResultSlot);
 
 SZrAstNode *find_function_declaration(SZrCompilerState *cs, SZrString *funcName);
 SZrAstNodeArray *match_named_arguments(SZrCompilerState *cs,

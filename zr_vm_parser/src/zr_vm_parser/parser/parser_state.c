@@ -410,6 +410,7 @@ void get_string_view_for_length(SZrString *value, const TZrChar **text, TZrSize 
 SZrFilePosition get_file_position_from_offset(SZrLexState *lexer, TZrSize offset) {
     TZrInt32 line = 1;
     TZrSize lineStart = 0;
+    TZrSize index = 0;
 
     if (lexer == ZR_NULL || lexer->source == ZR_NULL) {
         return ZrParser_FilePosition_Create(offset, 1, 1);
@@ -419,14 +420,63 @@ SZrFilePosition get_file_position_from_offset(SZrLexState *lexer, TZrSize offset
         offset = lexer->sourceLength;
     }
 
-    for (TZrSize index = 0; index < offset; index++) {
+    if (lexer->filePositionCacheOffset <= offset) {
+        index = lexer->filePositionCacheOffset;
+        line = lexer->filePositionCacheLine > 0 ? lexer->filePositionCacheLine : 1;
+        lineStart = lexer->filePositionCacheLineStart;
+    }
+
+    for (; index < offset; index++) {
         if (lexer->source[index] == '\n') {
             line++;
             lineStart = index + 1;
         }
     }
 
+    lexer->filePositionCacheOffset = offset;
+    lexer->filePositionCacheLineStart = lineStart;
+    lexer->filePositionCacheLine = line;
+
     return ZrParser_FilePosition_Create(offset, line, (TZrInt32) (offset - lineStart + 1));
+}
+
+static ZR_FORCE_INLINE SZrFilePosition file_position_create_from_cached_line(TZrSize offset,
+                                                                             TZrInt32 line,
+                                                                             TZrSize lineStart) {
+    TZrInt32 resolvedLine = line > 0 ? line : 1;
+    TZrSize resolvedLineStart = lineStart <= offset ? lineStart : offset;
+    return ZrParser_FilePosition_Create(offset,
+                                        resolvedLine,
+                                        (TZrInt32)(offset - resolvedLineStart + 1));
+}
+
+static SZrFilePosition file_position_advance_over_span(SZrLexState *lexer,
+                                                       TZrSize startOffset,
+                                                       TZrSize endOffset,
+                                                       TZrInt32 startLine,
+                                                       TZrSize startLineStart) {
+    TZrInt32 line = startLine > 0 ? startLine : 1;
+    TZrSize lineStart = startLineStart <= startOffset ? startLineStart : startOffset;
+
+    if (lexer == ZR_NULL || lexer->source == ZR_NULL) {
+        return file_position_create_from_cached_line(endOffset, line, lineStart);
+    }
+
+    if (startOffset > lexer->sourceLength) {
+        startOffset = lexer->sourceLength;
+    }
+    if (endOffset > lexer->sourceLength) {
+        endOffset = lexer->sourceLength;
+    }
+
+    for (TZrSize index = startOffset; index < endOffset; index++) {
+        if (lexer->source[index] == '\n') {
+            line++;
+            lineStart = index + 1;
+        }
+    }
+
+    return file_position_create_from_cached_line(endOffset, line, lineStart);
 }
 
 TZrSize get_current_token_length(SZrParserState *ps) {
@@ -461,7 +511,6 @@ TZrSize get_current_token_length(SZrParserState *ps) {
 }
 
 SZrFileRange get_current_token_location(SZrParserState *ps) {
-    TZrSize tokenLength;
     TZrSize endOffset;
     TZrSize startOffset;
     SZrFilePosition start;
@@ -472,7 +521,6 @@ SZrFileRange get_current_token_location(SZrParserState *ps) {
         return ZrParser_FileRange_Create(zero, zero, ZR_NULL);
     }
 
-    tokenLength = get_current_token_length(ps);
     endOffset = ps->lexer->currentChar == ZR_PARSER_LEXER_EOZ ? ps->lexer->currentPos
                                                               : (ps->lexer->currentPos > 0
                                                                          ? ps->lexer->currentPos - 1
@@ -480,10 +528,19 @@ SZrFileRange get_current_token_location(SZrParserState *ps) {
     if (endOffset > ps->lexer->sourceLength) {
         endOffset = ps->lexer->sourceLength;
     }
-    startOffset = endOffset >= tokenLength ? endOffset - tokenLength : 0;
+    startOffset = ps->lexer->tokenStartOffset;
+    if (startOffset > endOffset) {
+        startOffset = endOffset;
+    }
 
-    start = get_file_position_from_offset(ps->lexer, startOffset);
-    end = get_file_position_from_offset(ps->lexer, endOffset);
+    start = file_position_create_from_cached_line(startOffset,
+                                                  ps->lexer->tokenStartLine,
+                                                  ps->lexer->tokenStartLineStart);
+    end = file_position_advance_over_span(ps->lexer,
+                                          startOffset,
+                                          endOffset,
+                                          ps->lexer->tokenStartLine,
+                                          ps->lexer->tokenStartLineStart);
     return ZrParser_FileRange_Create(start, end, ps->lexer->sourceName);
 }
 

@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "tests/harness/runtime_support.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/profile.h"
 #include "zr_vm_core/string.h"
@@ -118,6 +119,54 @@ static void init_member_access_fixture(SZrState *state, SZrMemberAccessFixture *
     fixture->cacheEntry.picSlots[0].cachedReceiverVersion = fixture->prototype->super.memberVersion;
     fixture->cacheEntry.picSlots[0].cachedOwnerVersion = fixture->prototype->super.memberVersion;
     fixture->cacheEntry.picSlots[0].cachedDescriptorIndex = 0;
+}
+
+static void init_shared_name_member_access_variant(SZrState *state,
+                                                   SZrString *memberName,
+                                                   TZrNativeString typeNameNative,
+                                                   TZrInt64 storedValue,
+                                                   SZrObjectPrototype **outPrototype,
+                                                   SZrObject **outInstance,
+                                                   SZrTypeValue *outReceiverValue) {
+    SZrString *typeName;
+    SZrMemberDescriptor descriptor;
+    SZrTypeValue key;
+    SZrTypeValue value;
+    SZrObjectPrototype *prototype;
+    SZrObject *instance;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(memberName);
+    TEST_ASSERT_NOT_NULL(typeNameNative);
+    TEST_ASSERT_NOT_NULL(outPrototype);
+    TEST_ASSERT_NOT_NULL(outInstance);
+    TEST_ASSERT_NOT_NULL(outReceiverValue);
+
+    typeName = ZrCore_String_CreateFromNative(state, typeNameNative);
+    TEST_ASSERT_NOT_NULL(typeName);
+
+    prototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    TEST_ASSERT_NOT_NULL(prototype);
+
+    memset(&descriptor, 0, sizeof(descriptor));
+    descriptor.name = memberName;
+    descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_FIELD;
+    descriptor.isWritable = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, prototype, &descriptor));
+
+    instance = ZrCore_Object_New(state, prototype);
+    TEST_ASSERT_NOT_NULL(instance);
+    ZrCore_Object_Init(state, instance);
+
+    init_string_key(state, memberName, &key);
+    ZrCore_Value_InitAsInt(state, &value, storedValue);
+    ZrCore_Object_SetValue(state, instance, &key, &value);
+
+    ZrCore_Value_InitAsRawObject(state, outReceiverValue, ZR_CAST_RAW_OBJECT_AS_SUPER(instance));
+    outReceiverValue->type = ZR_VALUE_TYPE_OBJECT;
+
+    *outPrototype = prototype;
+    *outInstance = instance;
 }
 
 static void init_callable_member_access_fixture(SZrState *state, SZrMemberAccessFixture *fixture) {
@@ -413,9 +462,10 @@ static void test_member_get_cached_refresh_stores_receiver_object_for_callable_m
 
     TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
     TEST_ASSERT_EQUAL_PTR(fixture.instance, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
-    TEST_ASSERT_EQUAL_PTR(fixture.instance->nodeMap.buckets, fixture.cacheEntry.picSlots[0].cachedReceiverBuckets);
-    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)fixture.instance->nodeMap.elementCount,
-                             fixture.cacheEntry.picSlots[0].cachedReceiverElementCount);
+    TEST_ASSERT_EQUAL_UINT32(fixture.prototype->super.memberVersion,
+                             fixture.cacheEntry.picSlots[0].cachedReceiverVersion);
+    TEST_ASSERT_EQUAL_UINT32(fixture.prototype->super.memberVersion,
+                             fixture.cacheEntry.picSlots[0].cachedOwnerVersion);
 
     detach_runtime_fixture_function(runtimeFunction);
     ZrTests_Runtime_State_Destroy(state);
@@ -539,9 +589,9 @@ static void test_member_get_cached_refresh_stores_receiver_pair_for_instance_fie
     ZrCore_Value_ResetAsNull(&result);
 
     TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
-    TEST_ASSERT_EQUAL_PTR(fixture.instance->nodeMap.buckets, fixture.cacheEntry.picSlots[0].cachedReceiverBuckets);
-    TEST_ASSERT_EQUAL_UINT32((TZrUInt32)fixture.instance->nodeMap.elementCount,
-                             fixture.cacheEntry.picSlots[0].cachedReceiverElementCount);
+    TEST_ASSERT_EQUAL_PTR(fixture.instance, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_UINT32(fixture.prototype->super.memberVersion,
+                             fixture.cacheEntry.picSlots[0].cachedReceiverVersion);
     TEST_ASSERT_NOT_NULL(fixture.cacheEntry.picSlots[0].cachedReceiverPair);
 
     detach_runtime_fixture_function(runtimeFunction);
@@ -632,8 +682,7 @@ static void test_member_get_cached_instance_field_pair_hit_does_not_require_desc
     TEST_ASSERT_NOT_NULL(state);
     init_member_access_fixture(state, &fixture, 73);
     fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
-    fixture.cacheEntry.picSlots[0].cachedReceiverBuckets = fixture.instance->nodeMap.buckets;
-    fixture.cacheEntry.picSlots[0].cachedReceiverElementCount = (TZrUInt32)fixture.instance->nodeMap.elementCount;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
     fixture.cacheEntry.picSlots[0].cachedReceiverPair = fixture.instance->cachedStringLookupPair;
     fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
     fixture.cacheEntry.picSlots[0].cachedMemberName = ZR_NULL;
@@ -661,8 +710,6 @@ static void test_member_get_cached_instance_field_pair_receiver_object_hit_does_
     init_member_access_fixture(state, &fixture, 73);
     fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
     fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
-    fixture.cacheEntry.picSlots[0].cachedReceiverBuckets = ZR_NULL;
-    fixture.cacheEntry.picSlots[0].cachedReceiverElementCount = 0u;
     fixture.cacheEntry.picSlots[0].cachedReceiverPair = fixture.instance->cachedStringLookupPair;
     fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
     fixture.cacheEntry.picSlots[0].cachedMemberName = ZR_NULL;
@@ -709,6 +756,38 @@ static void test_member_get_cached_exact_receiver_object_hit_uses_member_name_wh
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_member_get_cached_exact_receiver_object_hit_uses_cached_member_name_without_owner_metadata(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *runtimeFunction;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    runtimeFunction = create_runtime_fixture_function(state, &fixture);
+    fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPair = ZR_NULL;
+    fixture.cacheEntry.picSlots[0].cachedMemberName = fixture.memberName;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPrototype = ZR_NULL;
+    fixture.cacheEntry.picSlots[0].cachedOwnerPrototype = ZR_NULL;
+    fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
+    runtimeFunction->memberEntries = ZR_NULL;
+    runtimeFunction->memberEntryLength = 0;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(73, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    detach_runtime_fixture_function(runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_member_get_cached_exact_receiver_object_backfills_cached_member_name_for_symbolless_followup(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -738,6 +817,115 @@ static void test_member_get_cached_exact_receiver_object_backfills_cached_member
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
     TEST_ASSERT_EQUAL_INT64(73, result.value.nativeObject.nativeInt64);
     TEST_ASSERT_EQUAL_UINT32(2u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    detach_runtime_fixture_function(runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_get_cached_multi_slot_exact_receiver_object_version_mismatch_clears_slot_and_falls_back(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *runtimeFunction;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    runtimeFunction = create_runtime_fixture_function(state, &fixture);
+    fixture.cacheEntry.picSlotCount = 2;
+    memset(&fixture.cacheEntry.picSlots[0], 0, sizeof(fixture.cacheEntry.picSlots[0]));
+    fixture.cacheEntry.picSlots[1].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[1].cachedOwnerPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[1].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPair = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedDescriptorIndex = 0u;
+    fixture.cacheEntry.picSlots[1].cachedMemberName = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedReceiverVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[1].cachedOwnerVersion = fixture.prototype->super.memberVersion;
+    fixture.prototype->memberDescriptors[0].name = ZR_NULL;
+    fixture.prototype->super.memberVersion++;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(73, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeMissCount);
+
+    detach_runtime_fixture_function(runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_get_cached_multi_slot_exact_receiver_object_hit_uses_member_name_when_descriptor_name_is_missing(
+        void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *runtimeFunction;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    runtimeFunction = create_runtime_fixture_function(state, &fixture);
+    fixture.cacheEntry.picSlotCount = 2;
+    memset(&fixture.cacheEntry.picSlots[0], 0, sizeof(fixture.cacheEntry.picSlots[0]));
+    fixture.cacheEntry.picSlots[1].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[1].cachedOwnerPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[1].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPair = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedDescriptorIndex = 0u;
+    fixture.cacheEntry.picSlots[1].cachedMemberName = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedReceiverVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[1].cachedOwnerVersion = fixture.prototype->super.memberVersion;
+    fixture.prototype->memberDescriptors[0].name = ZR_NULL;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(73, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_PTR(fixture.memberName, fixture.cacheEntry.picSlots[1].cachedMemberName);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    detach_runtime_fixture_function(runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_get_cached_multi_slot_exact_receiver_object_hit_uses_cached_member_name_without_owner_metadata(
+        void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *runtimeFunction;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    runtimeFunction = create_runtime_fixture_function(state, &fixture);
+    fixture.cacheEntry.picSlotCount = 2;
+    memset(&fixture.cacheEntry.picSlots[0], 0, sizeof(fixture.cacheEntry.picSlots[0]));
+    fixture.cacheEntry.picSlots[1].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[1].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPair = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedMemberName = fixture.memberName;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPrototype = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedOwnerPrototype = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
+    runtimeFunction->memberEntries = ZR_NULL;
+    runtimeFunction->memberEntryLength = 0;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(73, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
     TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
 
     detach_runtime_fixture_function(runtimeFunction);
@@ -805,6 +993,45 @@ static void test_member_set_cached_exact_receiver_object_hit_uses_member_name_wh
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_member_set_cached_exact_receiver_object_hit_uses_cached_member_name_without_owner_metadata(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *runtimeFunction;
+    SZrTypeValue assignedValue;
+    SZrTypeValue result;
+    TZrUInt32 initialMemberVersion;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    runtimeFunction = create_runtime_fixture_function(state, &fixture);
+    fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+    fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPair = ZR_NULL;
+    fixture.cacheEntry.picSlots[0].cachedMemberName = fixture.memberName;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPrototype = ZR_NULL;
+    fixture.cacheEntry.picSlots[0].cachedOwnerPrototype = ZR_NULL;
+    fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
+    runtimeFunction->memberEntries = ZR_NULL;
+    runtimeFunction->memberEntryLength = 0;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    initialMemberVersion = fixture.instance->memberVersion;
+    ZrCore_Value_InitAsInt(state, &assignedValue, 105);
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(execution_member_set_cached(
+            state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(105, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(initialMemberVersion, fixture.instance->memberVersion);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    detach_runtime_fixture_function(runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_member_set_cached_exact_receiver_object_backfills_cached_member_name_for_symbolless_followup(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -848,6 +1075,133 @@ static void test_member_set_cached_exact_receiver_object_backfills_cached_member
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_member_set_cached_multi_slot_exact_receiver_object_hit_uses_member_name_when_descriptor_name_is_missing(
+        void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *runtimeFunction;
+    SZrTypeValue assignedValue;
+    SZrTypeValue result;
+    TZrUInt32 initialMemberVersion;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    runtimeFunction = create_runtime_fixture_function(state, &fixture);
+    fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+    fixture.cacheEntry.picSlotCount = 2;
+    memset(&fixture.cacheEntry.picSlots[0], 0, sizeof(fixture.cacheEntry.picSlots[0]));
+    fixture.cacheEntry.picSlots[1].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[1].cachedOwnerPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[1].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPair = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedDescriptorIndex = 0u;
+    fixture.cacheEntry.picSlots[1].cachedMemberName = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedReceiverVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[1].cachedOwnerVersion = fixture.prototype->super.memberVersion;
+    fixture.prototype->memberDescriptors[0].name = ZR_NULL;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    initialMemberVersion = fixture.instance->memberVersion;
+    ZrCore_Value_InitAsInt(state, &assignedValue, 105);
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(execution_member_set_cached(
+            state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(105, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_PTR(fixture.memberName, fixture.cacheEntry.picSlots[1].cachedMemberName);
+    TEST_ASSERT_EQUAL_UINT32(initialMemberVersion, fixture.instance->memberVersion);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    detach_runtime_fixture_function(runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_set_cached_multi_slot_exact_receiver_object_hit_uses_cached_member_name_without_owner_metadata(
+        void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *runtimeFunction;
+    SZrTypeValue assignedValue;
+    SZrTypeValue result;
+    TZrUInt32 initialMemberVersion;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    runtimeFunction = create_runtime_fixture_function(state, &fixture);
+    fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+    fixture.cacheEntry.picSlotCount = 2;
+    memset(&fixture.cacheEntry.picSlots[0], 0, sizeof(fixture.cacheEntry.picSlots[0]));
+    fixture.cacheEntry.picSlots[1].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[1].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPair = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedMemberName = fixture.memberName;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPrototype = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedOwnerPrototype = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
+    runtimeFunction->memberEntries = ZR_NULL;
+    runtimeFunction->memberEntryLength = 0;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    initialMemberVersion = fixture.instance->memberVersion;
+    ZrCore_Value_InitAsInt(state, &assignedValue, 105);
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(execution_member_set_cached(
+            state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(105, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(initialMemberVersion, fixture.instance->memberVersion);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    detach_runtime_fixture_function(runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_set_cached_multi_slot_exact_receiver_object_version_mismatch_clears_slot_and_falls_back(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *runtimeFunction;
+    SZrTypeValue assignedValue;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    runtimeFunction = create_runtime_fixture_function(state, &fixture);
+    fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+    fixture.cacheEntry.picSlotCount = 2;
+    memset(&fixture.cacheEntry.picSlots[0], 0, sizeof(fixture.cacheEntry.picSlots[0]));
+    fixture.cacheEntry.picSlots[1].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[1].cachedOwnerPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[1].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[1].cachedReceiverPair = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedDescriptorIndex = 0u;
+    fixture.cacheEntry.picSlots[1].cachedMemberName = ZR_NULL;
+    fixture.cacheEntry.picSlots[1].cachedReceiverVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[1].cachedOwnerVersion = fixture.prototype->super.memberVersion;
+    fixture.prototype->memberDescriptors[0].name = ZR_NULL;
+    fixture.prototype->super.memberVersion++;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    ZrCore_Value_InitAsInt(state, &assignedValue, 105);
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(execution_member_set_cached(
+            state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(105, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeMissCount);
+
+    detach_runtime_fixture_function(runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_member_set_cached_instance_field_pair_receiver_object_hit_does_not_require_receiver_shape_cache(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -859,8 +1213,6 @@ static void test_member_set_cached_instance_field_pair_receiver_object_hit_does_
     fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
     fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
     fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
-    fixture.cacheEntry.picSlots[0].cachedReceiverBuckets = ZR_NULL;
-    fixture.cacheEntry.picSlots[0].cachedReceiverElementCount = 0u;
     fixture.cacheEntry.picSlots[0].cachedReceiverPair = fixture.instance->cachedStringLookupPair;
     fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
     fixture.cacheEntry.picSlots[0].cachedMemberName = ZR_NULL;
@@ -891,8 +1243,7 @@ static void test_member_set_cached_instance_field_pair_hit_does_not_require_desc
     init_member_access_fixture(state, &fixture, 73);
     fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
     fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
-    fixture.cacheEntry.picSlots[0].cachedReceiverBuckets = fixture.instance->nodeMap.buckets;
-    fixture.cacheEntry.picSlots[0].cachedReceiverElementCount = (TZrUInt32)fixture.instance->nodeMap.elementCount;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
     fixture.cacheEntry.picSlots[0].cachedReceiverPair = fixture.instance->cachedStringLookupPair;
     fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
     fixture.cacheEntry.picSlots[0].cachedMemberName = ZR_NULL;
@@ -923,8 +1274,7 @@ static void test_member_set_cached_instance_field_pair_hit_does_not_bump_receive
     init_member_access_fixture(state, &fixture, 73);
     fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
     fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
-    fixture.cacheEntry.picSlots[0].cachedReceiverBuckets = fixture.instance->nodeMap.buckets;
-    fixture.cacheEntry.picSlots[0].cachedReceiverElementCount = (TZrUInt32)fixture.instance->nodeMap.elementCount;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
     fixture.cacheEntry.picSlots[0].cachedReceiverPair = fixture.instance->cachedStringLookupPair;
     fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
     fixture.cacheEntry.picSlots[0].cachedMemberName = ZR_NULL;
@@ -1050,6 +1400,187 @@ static void test_member_set_cached_exact_receiver_pair_hit_records_helpers_from_
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_dispatch_exact_receiver_pair_get_hot_fast_hits_and_records_helpers(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrProfileRuntime profileRuntime;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPair = fixture.instance->cachedStringLookupPair;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    ZrCore_Value_ResetAsNull(&result);
+    reset_profile_counters_from_state_only(state, &profileRuntime);
+
+    TEST_ASSERT_TRUE(execution_member_try_dispatch_exact_receiver_pair_get_hot_fast(
+            state, &fixture.function, 0, &fixture.receiverValue, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(73, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]);
+    TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]);
+
+    clear_profile_counters(state);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_dispatch_exact_receiver_pair_get_hot_fast_ignores_cached_version_mismatch(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPair = fixture.instance->cachedStringLookupPair;
+    fixture.cacheEntry.picSlots[0].cachedReceiverVersion = fixture.prototype->super.memberVersion + 1u;
+    fixture.cacheEntry.picSlots[0].cachedOwnerVersion = fixture.prototype->super.memberVersion + 1u;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(execution_member_try_dispatch_exact_receiver_pair_get_hot_fast(
+            state, &fixture.function, 0, &fixture.receiverValue, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(73, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_dispatch_exact_receiver_pair_set_hot_fast_hits_and_records_helpers(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrProfileRuntime profileRuntime;
+    SZrTypeValue assignedValue;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+    fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPair = fixture.instance->cachedStringLookupPair;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    ZrCore_Value_InitAsInt(state, &assignedValue, 105);
+    ZrCore_Value_ResetAsNull(&result);
+    reset_profile_counters_from_state_only(state, &profileRuntime);
+
+    TEST_ASSERT_TRUE(execution_member_try_dispatch_exact_receiver_pair_set_hot_fast(
+            state, &fixture.function, 0, &fixture.receiverValue, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(105, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_SET_MEMBER]);
+    TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]);
+
+    clear_profile_counters(state);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_set_cached_refresh_replaces_oldest_pic_slot_when_capacity_is_full(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *runtimeFunction;
+    SZrObjectPrototype *prototypeB;
+    SZrObjectPrototype *prototypeC;
+    SZrObject *instanceB;
+    SZrObject *instanceC;
+    SZrTypeValue receiverValueB;
+    SZrTypeValue receiverValueC;
+    SZrTypeValue assignedValue;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 11);
+    init_shared_name_member_access_variant(
+            state, fixture.memberName, "HotPathMemberSetBoxB", 22, &prototypeB, &instanceB, &receiverValueB);
+    init_shared_name_member_access_variant(
+            state, fixture.memberName, "HotPathMemberSetBoxC", 33, &prototypeC, &instanceC, &receiverValueC);
+    runtimeFunction = create_runtime_fixture_function(state, &fixture);
+    fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+    fixture.cacheEntry.picSlotCount = 0;
+    fixture.cacheEntry.picNextInsertIndex = 0;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    memset(fixture.cacheEntry.picSlots, 0, sizeof(fixture.cacheEntry.picSlots));
+    ZrCore_Value_ResetAsNull(&result);
+
+    ZrCore_Value_InitAsInt(state, &assignedValue, 101);
+    TEST_ASSERT_TRUE(execution_member_set_cached(
+            state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(101, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(fixture.prototype, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(fixture.instance, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_PTR(fixture.instance->cachedStringLookupPair, fixture.cacheEntry.picSlots[0].cachedReceiverPair);
+
+    ZrCore_Value_InitAsInt(state, &assignedValue, 202);
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_set_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueB, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &receiverValueB, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(202, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(fixture.prototype, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceB->cachedStringLookupPair, fixture.cacheEntry.picSlots[1].cachedReceiverPair);
+
+    ZrCore_Value_InitAsInt(state, &assignedValue, 303);
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_set_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueC, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &receiverValueC, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(303, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceC, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceB, fixture.cacheEntry.picSlots[1].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeHitCount);
+
+    ZrCore_Value_InitAsInt(state, &assignedValue, 204);
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_set_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueB, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &receiverValueB, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(204, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
+
+    ZrCore_Value_InitAsInt(state, &assignedValue, 105);
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_set_cached(
+            state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &assignedValue));
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(105, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(4u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceC, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_PTR(fixture.prototype, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(fixture.instance, fixture.cacheEntry.picSlots[1].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_PTR(fixture.instance->cachedStringLookupPair, fixture.cacheEntry.picSlots[1].cachedReceiverPair);
+
+    detach_runtime_fixture_function(runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_object_try_set_existing_pair_plain_value_fast_updates_value_and_lookup_cache(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -1095,6 +1626,87 @@ static void test_object_try_set_existing_pair_plain_value_fast_rejects_hidden_it
     TEST_ASSERT_FALSE(
             object_try_set_existing_pair_plain_value_fast_unchecked(state, fixture.instance, pair, &assignedValue));
     TEST_ASSERT_EQUAL_INT64(73, pair->value.value.nativeObject.nativeInt64);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_object_set_value_existing_pair_updates_value_and_bumps_member_version(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrHashKeyValuePair *pair;
+    SZrTypeValue assignedValue;
+    TZrUInt32 initialMemberVersion;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    pair = fixture.instance->cachedStringLookupPair;
+    TEST_ASSERT_NOT_NULL(pair);
+    initialMemberVersion = fixture.instance->memberVersion;
+    ZrCore_Value_InitAsInt(state, &assignedValue, 105);
+
+    ZrCore_Object_SetValue(state, fixture.instance, &pair->key, &assignedValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, pair->value.type);
+    TEST_ASSERT_EQUAL_INT64(105, pair->value.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_PTR(pair, fixture.instance->cachedStringLookupPair);
+    TEST_ASSERT_EQUAL_UINT32(initialMemberVersion + 1u, fixture.instance->memberVersion);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_object_set_value_equal_long_string_key_reuses_cached_pair_without_extra_managed_memory(void) {
+    static const char *longFieldName = "cached_member_lookup_long_field_name_that_must_stay_beyond_short_string_limit";
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrObject *object;
+    SZrString *memberNameA;
+    SZrString *memberNameB;
+    SZrTypeValue keyA;
+    SZrTypeValue keyB;
+    SZrTypeValue initialValue;
+    SZrTypeValue assignedValue;
+    SZrHashKeyValuePair *pair;
+    SZrGarbageCollectorStatsSnapshot beforeSnapshot;
+    SZrGarbageCollectorStatsSnapshot afterSnapshot;
+    TZrUInt32 initialMemberVersion;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    object = ZrCore_Object_New(state, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(object);
+    ZrCore_Object_Init(state, object);
+
+    memberNameA = ZrCore_String_Create(state, longFieldName, strlen(longFieldName));
+    memberNameB = ZrCore_String_Create(state, longFieldName, strlen(longFieldName));
+    TEST_ASSERT_NOT_NULL(memberNameA);
+    TEST_ASSERT_NOT_NULL(memberNameB);
+    TEST_ASSERT_TRUE(memberNameA != memberNameB);
+    TEST_ASSERT_TRUE(ZrCore_String_Equal(memberNameA, memberNameB));
+
+    init_string_key(state, memberNameA, &keyA);
+    init_string_key(state, memberNameB, &keyB);
+
+    ZrCore_Value_InitAsInt(state, &initialValue, 73);
+    ZrCore_Object_SetValue(state, object, &keyA, &initialValue);
+
+    pair = object->cachedStringLookupPair;
+    TEST_ASSERT_NOT_NULL(pair);
+    TEST_ASSERT_EQUAL_PTR(memberNameA, ZR_CAST_STRING(state, pair->key.value.object));
+
+    ZrCore_Value_InitAsInt(state, &assignedValue, 105);
+    initialMemberVersion = object->memberVersion;
+    memset(&beforeSnapshot, 0, sizeof(beforeSnapshot));
+    memset(&afterSnapshot, 0, sizeof(afterSnapshot));
+    ZrCore_GarbageCollector_GetStatsSnapshot(state->global, &beforeSnapshot);
+
+    ZrCore_Object_SetValue(state, object, &keyB, &assignedValue);
+
+    ZrCore_GarbageCollector_GetStatsSnapshot(state->global, &afterSnapshot);
+    TEST_ASSERT_EQUAL_UINT64(beforeSnapshot.managedMemoryBytes, afterSnapshot.managedMemoryBytes);
+    TEST_ASSERT_EQUAL_PTR(pair, object->cachedStringLookupPair);
+    TEST_ASSERT_EQUAL_PTR(memberNameA, ZR_CAST_STRING(state, pair->key.value.object));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, pair->value.type);
+    TEST_ASSERT_EQUAL_INT64(105, pair->value.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(initialMemberVersion + 1u, object->memberVersion);
 
     ZrTests_Runtime_State_Destroy(state);
 }
@@ -1254,10 +1866,8 @@ static void test_member_get_cached_callable_receiver_hit_does_not_fallback_when_
     fixture.cacheEntry.picSlots[0].cachedOwnerPrototype = fixture.prototype;
     fixture.cacheEntry.picSlots[0].cachedFunction = fixture.callableFunction;
     fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
-    fixture.cacheEntry.picSlots[0].cachedReceiverBuckets = fixture.instance->nodeMap.buckets;
     fixture.cacheEntry.picSlots[0].cachedReceiverVersion = fixture.prototype->super.memberVersion;
     fixture.cacheEntry.picSlots[0].cachedOwnerVersion = fixture.prototype->super.memberVersion;
-    fixture.cacheEntry.picSlots[0].cachedReceiverElementCount = (TZrUInt32)fixture.instance->nodeMap.elementCount;
     fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
     fixture.cacheEntry.runtimeHitCount = 0;
     fixture.cacheEntry.runtimeMissCount = 0;
@@ -1284,10 +1894,8 @@ static void test_member_get_cached_callable_receiver_object_hit_does_not_require
     fixture.cacheEntry.picSlots[1].cachedOwnerPrototype = fixture.prototype;
     fixture.cacheEntry.picSlots[1].cachedFunction = fixture.callableFunction;
     fixture.cacheEntry.picSlots[1].cachedReceiverObject = fixture.instance;
-    fixture.cacheEntry.picSlots[1].cachedReceiverBuckets = ZR_NULL;
     fixture.cacheEntry.picSlots[1].cachedReceiverVersion = fixture.prototype->super.memberVersion;
     fixture.cacheEntry.picSlots[1].cachedOwnerVersion = fixture.prototype->super.memberVersion;
-    fixture.cacheEntry.picSlots[1].cachedReceiverElementCount = 0u;
     fixture.cacheEntry.picSlots[1].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
     fixture.cacheEntry.runtimeHitCount = 0;
     fixture.cacheEntry.runtimeMissCount = 0;
@@ -1301,7 +1909,201 @@ static void test_member_get_cached_callable_receiver_object_hit_does_not_require
     ZrTests_Runtime_State_Destroy(state);
 }
 
-static void test_member_get_cached_refresh_keeps_non_hidden_plain_value_fast_set_flag_clear_for_instance_field(void) {
+static void test_member_cached_known_vm_call_fast_path_resolves_cached_function_without_member_get_helper(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrProfileRuntime profileRuntime;
+    SZrFunction *resolvedFunction = ZR_NULL;
+    TZrUInt32 argumentCount = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_callable_member_access_fixture(state, &fixture);
+    fixture.cacheEntry.picSlotCount = 1;
+    fixture.cacheEntry.argumentCount = 1;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[0].cachedOwnerPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[0].cachedFunction = fixture.callableFunction;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[0].cachedOwnerVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    reset_profile_counters_from_state_only(state, &profileRuntime);
+
+    TEST_ASSERT_TRUE(execution_member_try_resolve_cached_known_vm_function(state,
+                                                                           &fixture.function,
+                                                                           0,
+                                                                           &fixture.receiverValue,
+                                                                           &resolvedFunction,
+                                                                           &argumentCount));
+    TEST_ASSERT_EQUAL_PTR(fixture.callableFunction, resolvedFunction);
+    TEST_ASSERT_EQUAL_UINT32(1u, argumentCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]);
+    TEST_ASSERT_EQUAL_UINT64(0u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]);
+
+    clear_profile_counters(state);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_cached_known_vm_call_entry_fast_path_reuses_checked_cache_entry(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunctionCallSiteCacheEntry *entry;
+    SZrFunction *resolvedFunction = ZR_NULL;
+    TZrUInt32 argumentCount = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_callable_member_access_fixture(state, &fixture);
+    fixture.cacheEntry.picSlotCount = 1;
+    fixture.cacheEntry.argumentCount = 1;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[0].cachedOwnerPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[0].cachedFunction = fixture.callableFunction;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[0].cachedOwnerVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+
+    entry = execution_member_get_cache_entry_fast(&fixture.function, 0, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
+    TEST_ASSERT_EQUAL_PTR(&fixture.cacheEntry, entry);
+    TEST_ASSERT_TRUE(execution_member_try_resolve_cached_known_vm_function_entry(state,
+                                                                                 &fixture.function,
+                                                                                 0,
+                                                                                 entry,
+                                                                                 &fixture.receiverValue,
+                                                                                 &resolvedFunction,
+                                                                                 &argumentCount));
+    TEST_ASSERT_EQUAL_PTR(fixture.callableFunction, resolvedFunction);
+    TEST_ASSERT_EQUAL_UINT32(1u, argumentCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_cached_known_vm_call_entry_fast_path_returns_false_on_exact_receiver_miss(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrObject *otherInstance;
+    SZrTypeValue otherReceiverValue;
+    SZrFunctionCallSiteCacheEntry *entry;
+    SZrFunction *resolvedFunction = ZR_NULL;
+    TZrUInt32 argumentCount = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_callable_member_access_fixture(state, &fixture);
+    fixture.cacheEntry.picSlotCount = 1;
+    fixture.cacheEntry.argumentCount = 1;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[0].cachedOwnerPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[0].cachedFunction = fixture.callableFunction;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[0].cachedOwnerVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+
+    otherInstance = ZrCore_Object_New(state, fixture.prototype);
+    TEST_ASSERT_NOT_NULL(otherInstance);
+    ZrCore_Object_Init(state, otherInstance);
+    ZrCore_Value_InitAsRawObject(state, &otherReceiverValue, ZR_CAST_RAW_OBJECT_AS_SUPER(otherInstance));
+    otherReceiverValue.type = ZR_VALUE_TYPE_OBJECT;
+
+    entry = execution_member_get_cache_entry_fast(&fixture.function, 0, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
+    TEST_ASSERT_EQUAL_PTR(&fixture.cacheEntry, entry);
+    TEST_ASSERT_FALSE(execution_member_try_resolve_cached_known_vm_function_entry(state,
+                                                                                  &fixture.function,
+                                                                                  0,
+                                                                                  entry,
+                                                                                  &otherReceiverValue,
+                                                                                  &resolvedFunction,
+                                                                                  &argumentCount));
+    TEST_ASSERT_NULL(resolvedFunction);
+    TEST_ASSERT_EQUAL_UINT32(1u, argumentCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_cached_known_vm_call_fast_path_rejects_closure_function_on_exact_receiver_hit(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *resolvedFunction = ZR_NULL;
+    TZrUInt32 argumentCount = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_callable_member_access_fixture(state, &fixture);
+    fixture.callableFunction->closureValueLength = 1u;
+    fixture.cacheEntry.picSlotCount = 1;
+    fixture.cacheEntry.argumentCount = 1;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[0].cachedOwnerPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[0].cachedFunction = fixture.callableFunction;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[0].cachedOwnerVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+
+    TEST_ASSERT_FALSE(execution_member_try_resolve_cached_known_vm_function(state,
+                                                                            &fixture.function,
+                                                                            0,
+                                                                            &fixture.receiverValue,
+                                                                            &resolvedFunction,
+                                                                            &argumentCount));
+    TEST_ASSERT_NULL(resolvedFunction);
+    TEST_ASSERT_EQUAL_UINT32(1u, argumentCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_cached_known_vm_call_fast_path_version_mismatch_clears_cache_and_falls_back(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *resolvedFunction = ZR_NULL;
+    TZrUInt32 argumentCount = 0;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_callable_member_access_fixture(state, &fixture);
+    fixture.cacheEntry.picSlotCount = 1;
+    fixture.cacheEntry.argumentCount = 1;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[0].cachedOwnerPrototype = fixture.prototype;
+    fixture.cacheEntry.picSlots[0].cachedFunction = fixture.callableFunction;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[0].cachedOwnerVersion = fixture.prototype->super.memberVersion;
+    fixture.cacheEntry.picSlots[0].cachedDescriptorIndex = ZR_RUNTIME_CALLSITE_CACHE_MEMBER_ENTRY_NONE;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    fixture.prototype->super.memberVersion++;
+
+    TEST_ASSERT_FALSE(execution_member_try_resolve_cached_known_vm_function(state,
+                                                                            &fixture.function,
+                                                                            0,
+                                                                            &fixture.receiverValue,
+                                                                            &resolvedFunction,
+                                                                            &argumentCount));
+    TEST_ASSERT_NULL(resolvedFunction);
+    TEST_ASSERT_EQUAL_UINT32(1u, argumentCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_get_cached_refresh_marks_non_hidden_plain_value_fast_set_flag_for_instance_field(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
     SZrFunction *runtimeFunction;
@@ -1317,8 +2119,87 @@ static void test_member_get_cached_refresh_keeps_non_hidden_plain_value_fast_set
 
     TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
     TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picSlotCount);
-    TEST_ASSERT_TRUE((fixture.cacheEntry.picSlots[0].reserved1 &
-                      ZR_FUNCTION_CALLSITE_PIC_SLOT_FLAG_NON_HIDDEN_STRING_PAIR_FAST_SET) == 0u);
+    TEST_ASSERT_EQUAL_UINT8(0u, fixture.cacheEntry.picSlots[0].reserved1);
+    TEST_ASSERT_TRUE((fixture.cacheEntry.picSlots[0].cachedIsStatic & ZR_TRUE) == 0u);
+    TEST_ASSERT_TRUE((fixture.cacheEntry.picSlots[0].cachedIsStatic &
+                      ZR_FUNCTION_CALLSITE_PIC_SLOT_FLAG_NON_HIDDEN_STRING_PAIR_FAST_SET) != 0u);
+
+    detach_runtime_fixture_function(runtimeFunction);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_member_get_cached_refresh_replaces_oldest_pic_slot_when_capacity_is_full(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrFunction *runtimeFunction;
+    SZrObjectPrototype *prototypeB;
+    SZrObjectPrototype *prototypeC;
+    SZrObject *instanceB;
+    SZrObject *instanceC;
+    SZrTypeValue receiverValueB;
+    SZrTypeValue receiverValueC;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 11);
+    init_shared_name_member_access_variant(
+            state, fixture.memberName, "HotPathMemberBoxB", 22, &prototypeB, &instanceB, &receiverValueB);
+    init_shared_name_member_access_variant(
+            state, fixture.memberName, "HotPathMemberBoxC", 33, &prototypeC, &instanceC, &receiverValueC);
+    runtimeFunction = create_runtime_fixture_function(state, &fixture);
+    fixture.cacheEntry.picSlotCount = 0;
+    fixture.cacheEntry.picNextInsertIndex = 0;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    memset(fixture.cacheEntry.picSlots, 0, sizeof(fixture.cacheEntry.picSlots));
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
+    TEST_ASSERT_EQUAL_INT64(11, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(fixture.prototype, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(fixture.instance, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueB, &result));
+    TEST_ASSERT_EQUAL_INT64(22, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(fixture.prototype, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueC, &result));
+    TEST_ASSERT_EQUAL_INT64(33, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, fixture.cacheEntry.picSlotCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceC, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceB, fixture.cacheEntry.picSlots[1].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeHitCount);
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &receiverValueB, &result));
+    TEST_ASSERT_EQUAL_INT64(22, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(3u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(prototypeB, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
+    TEST_ASSERT_EQUAL_INT64(11, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(4u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.picNextInsertIndex);
+    TEST_ASSERT_EQUAL_PTR(prototypeC, fixture.cacheEntry.picSlots[0].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(instanceC, fixture.cacheEntry.picSlots[0].cachedReceiverObject);
+    TEST_ASSERT_EQUAL_PTR(fixture.prototype, fixture.cacheEntry.picSlots[1].cachedReceiverPrototype);
+    TEST_ASSERT_EQUAL_PTR(fixture.instance, fixture.cacheEntry.picSlots[1].cachedReceiverObject);
 
     detach_runtime_fixture_function(runtimeFunction);
     ZrTests_Runtime_State_Destroy(state);
@@ -1345,10 +2226,18 @@ int main(void) {
     RUN_TEST(test_member_get_cached_instance_field_pair_hit_does_not_require_descriptor_or_member_name);
     RUN_TEST(test_member_get_cached_instance_field_pair_receiver_object_hit_does_not_require_receiver_shape_cache);
     RUN_TEST(test_member_get_cached_exact_receiver_object_hit_uses_member_name_when_descriptor_name_is_missing);
+    RUN_TEST(test_member_get_cached_exact_receiver_object_hit_uses_cached_member_name_without_owner_metadata);
     RUN_TEST(test_member_get_cached_exact_receiver_object_backfills_cached_member_name_for_symbolless_followup);
+    RUN_TEST(test_member_get_cached_multi_slot_exact_receiver_object_version_mismatch_clears_slot_and_falls_back);
+    RUN_TEST(test_member_get_cached_multi_slot_exact_receiver_object_hit_uses_member_name_when_descriptor_name_is_missing);
+    RUN_TEST(test_member_get_cached_multi_slot_exact_receiver_object_hit_uses_cached_member_name_without_owner_metadata);
     RUN_TEST(test_member_set_cached_instance_field_hit_does_not_fallback_when_descriptor_index_is_missing);
     RUN_TEST(test_member_set_cached_exact_receiver_object_hit_uses_member_name_when_descriptor_name_is_missing);
+    RUN_TEST(test_member_set_cached_exact_receiver_object_hit_uses_cached_member_name_without_owner_metadata);
     RUN_TEST(test_member_set_cached_exact_receiver_object_backfills_cached_member_name_for_symbolless_followup);
+    RUN_TEST(test_member_set_cached_multi_slot_exact_receiver_object_hit_uses_member_name_when_descriptor_name_is_missing);
+    RUN_TEST(test_member_set_cached_multi_slot_exact_receiver_object_hit_uses_cached_member_name_without_owner_metadata);
+    RUN_TEST(test_member_set_cached_multi_slot_exact_receiver_object_version_mismatch_clears_slot_and_falls_back);
     RUN_TEST(test_member_set_cached_instance_field_pair_receiver_object_hit_does_not_require_receiver_shape_cache);
     RUN_TEST(test_member_set_cached_instance_field_pair_hit_does_not_require_descriptor_or_member_name);
     RUN_TEST(test_member_set_cached_instance_field_pair_hit_does_not_bump_receiver_member_version);
@@ -1356,8 +2245,14 @@ int main(void) {
     RUN_TEST(test_member_set_cached_exact_receiver_pair_hit_ignores_cached_version_mismatch);
     RUN_TEST(test_member_get_cached_exact_receiver_pair_hit_records_helpers_from_state_without_tls_current);
     RUN_TEST(test_member_set_cached_exact_receiver_pair_hit_records_helpers_from_state_without_tls_current);
+    RUN_TEST(test_dispatch_exact_receiver_pair_get_hot_fast_hits_and_records_helpers);
+    RUN_TEST(test_dispatch_exact_receiver_pair_get_hot_fast_ignores_cached_version_mismatch);
+    RUN_TEST(test_dispatch_exact_receiver_pair_set_hot_fast_hits_and_records_helpers);
+    RUN_TEST(test_member_set_cached_refresh_replaces_oldest_pic_slot_when_capacity_is_full);
     RUN_TEST(test_object_try_set_existing_pair_plain_value_fast_updates_value_and_lookup_cache);
     RUN_TEST(test_object_try_set_existing_pair_plain_value_fast_rejects_hidden_items_cached_state);
+    RUN_TEST(test_object_set_value_existing_pair_updates_value_and_bumps_member_version);
+    RUN_TEST(test_object_set_value_equal_long_string_key_reuses_cached_pair_without_extra_managed_memory);
     RUN_TEST(test_object_try_set_existing_string_pair_plain_value_assume_non_hidden_updates_value_with_hidden_items_cached_state);
     RUN_TEST(test_object_get_member_cached_descriptor_records_helpers_from_state_without_tls_current);
     RUN_TEST(test_object_get_value_populates_own_string_lookup_cache);
@@ -1366,7 +2261,13 @@ int main(void) {
     RUN_TEST(test_object_try_get_member_fast_allows_null_key_for_prototype_method_hit);
     RUN_TEST(test_member_get_cached_callable_receiver_hit_does_not_fallback_when_descriptor_index_is_missing);
     RUN_TEST(test_member_get_cached_callable_receiver_object_hit_does_not_require_receiver_shape_cache);
-    RUN_TEST(test_member_get_cached_refresh_keeps_non_hidden_plain_value_fast_set_flag_clear_for_instance_field);
+    RUN_TEST(test_member_cached_known_vm_call_fast_path_resolves_cached_function_without_member_get_helper);
+    RUN_TEST(test_member_cached_known_vm_call_entry_fast_path_reuses_checked_cache_entry);
+    RUN_TEST(test_member_cached_known_vm_call_entry_fast_path_returns_false_on_exact_receiver_miss);
+    RUN_TEST(test_member_cached_known_vm_call_fast_path_rejects_closure_function_on_exact_receiver_hit);
+    RUN_TEST(test_member_cached_known_vm_call_fast_path_version_mismatch_clears_cache_and_falls_back);
+    RUN_TEST(test_member_get_cached_refresh_marks_non_hidden_plain_value_fast_set_flag_for_instance_field);
+    RUN_TEST(test_member_get_cached_refresh_replaces_oldest_pic_slot_when_capacity_is_full);
 
     return UNITY_END();
 }

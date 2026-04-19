@@ -12,6 +12,7 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_parser/parser.h"
 
@@ -937,6 +938,225 @@ static void test_container_map_runtime_iterator_aggregates_pairs_without_order_a
     TEST_DIVIDER();
 }
 
+static void test_container_map_runtime_repeated_index_access_primes_entries_and_pair_field_caches(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Map Repeated Index Access Primes Entries And Pair Field Caches";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    ZrLibTempValueRoot mapRoot;
+    SZrTypeValue mapValue;
+    SZrObject *mapObject;
+    SZrObject *entriesObject;
+    SZrObject *entryObject;
+    const SZrTypeValue *entrySecondValue;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var map = new container.Map<string, int>();\n"
+            "map[\"aa_slot\"] = 7;\n"
+            "map[\"aa_slot\"] = map[\"aa_slot\"] + 5;\n"
+            "map[\"bb_slot\"] = 3;\n"
+            "if (map[\"aa_slot\"] == null) { return null; }\n"
+            "return map;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+    memset(&mapRoot, 0, sizeof(mapRoot));
+    ZrCore_Value_ResetAsNull(&mapValue);
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_map_cache_priming_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrLib_TempValueRoot_Begin(state, &mapRoot));
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &mapValue));
+    TEST_ASSERT_TRUE(ZrLib_TempValueRoot_SetValue(&mapRoot, &mapValue));
+    TEST_ASSERT_TRUE(mapValue.type == ZR_VALUE_TYPE_OBJECT || mapValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(mapValue.value.object);
+
+    mapObject = ZR_CAST_OBJECT(state, mapValue.value.object);
+    TEST_ASSERT_NOT_NULL(mapObject);
+    TEST_ASSERT_NOT_NULL_MESSAGE(mapObject->cachedHiddenItemsPair,
+                                 "map repeated index access must cache the entries pair");
+    TEST_ASSERT_NOT_NULL_MESSAGE(mapObject->cachedHiddenItemsObject,
+                                 "map repeated index access must cache the entries array");
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_STRING(mapObject->cachedHiddenItemsPair->key.type));
+    TEST_ASSERT_TRUE(ZrContainerTests_StringEqualsCString(ZR_CAST_STRING(state, mapObject->cachedHiddenItemsPair->key.value.object),
+                                                          "__zr_entries"));
+
+    entriesObject = mapObject->cachedHiddenItemsObject;
+    TEST_ASSERT_EQUAL_INT(ZR_OBJECT_INTERNAL_TYPE_ARRAY, entriesObject->internalType);
+    TEST_ASSERT_TRUE(ZrContainerTests_GetArrayLength(entriesObject) >= 2u);
+
+    entryObject = ZrContainerTests_FindNamedEntryInArray(state, entriesObject, "first", "aa_slot");
+    TEST_ASSERT_NOT_NULL(entryObject);
+    TEST_ASSERT_NOT_NULL_MESSAGE(entryObject->cachedLengthPair,
+                                 "entry pair access must cache the first-field pair");
+    TEST_ASSERT_NOT_NULL_MESSAGE(entryObject->cachedCapacityPair,
+                                 "entry pair access must cache the second-field pair");
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_STRING(entryObject->cachedLengthPair->key.type));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_STRING(entryObject->cachedCapacityPair->key.type));
+    TEST_ASSERT_TRUE(ZrContainerTests_StringEqualsCString(ZR_CAST_STRING(state, entryObject->cachedLengthPair->key.value.object),
+                                                          "first"));
+    TEST_ASSERT_TRUE(ZrContainerTests_StringEqualsCString(ZR_CAST_STRING(state, entryObject->cachedCapacityPair->key.value.object),
+                                                          "second"));
+
+    entrySecondValue = ZrContainerTests_GetObjectFieldValue(state, entryObject, "second");
+    TEST_ASSERT_NOT_NULL(entrySecondValue);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(entrySecondValue->type));
+    TEST_ASSERT_EQUAL_INT64(12, entrySecondValue->value.nativeObject.nativeInt64);
+
+    ZrLib_TempValueRoot_End(&mapRoot);
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_map_runtime_repeated_index_access_invalidates_hot_lookup_after_entry_growth(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Map Repeated Index Access Invalidates Hot Lookup After Entry Growth";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var map = new container.Map<string, int>();\n"
+            "map[\"aa_slot\"] = 7;\n"
+            "map[\"bb_slot\"] = 3;\n"
+            "var warm1 = map[\"aa_slot\"];\n"
+            "var warm2 = map[\"aa_slot\"];\n"
+            "map[\"cc_slot\"] = 11;\n"
+            "var afterGrowth = map[\"aa_slot\"];\n"
+            "map[\"aa_slot\"] = afterGrowth + map[\"cc_slot\"];\n"
+            "var finalValue = map[\"aa_slot\"];\n"
+            "return warm1 * 1000 + warm2 * 100 + afterGrowth * 10 + finalValue;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_map_cache_growth_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(7788, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_map_runtime_four_key_concat_cycle_preserves_values(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Map Four Key Concat Cycle Preserves Values";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "labelFor(slot: int): string {\n"
+            "    var normalized = slot % 4;\n"
+            "    if (normalized == 0) { return \"aa\"; }\n"
+            "    if (normalized == 1) { return \"bb\"; }\n"
+            "    if (normalized == 2) { return \"cc\"; }\n"
+            "    return \"dd\";\n"
+            "}\n"
+            "var map = new container.Map<string, int>();\n"
+            "var total = 0;\n"
+            "var index = 0;\n"
+            "while (index <= 7) {\n"
+            "    var key = labelFor(index) + \"_slot\";\n"
+            "    var current = map[key];\n"
+            "    if (current == null) { current = 0; }\n"
+            "    map[key] = current + index + 1;\n"
+            "    total = total + map[key];\n"
+            "    index = index + 1;\n"
+            "}\n"
+            "return total + map[\"aa_slot\"] + map[\"bb_slot\"] + map[\"cc_slot\"] + map[\"dd_slot\"];\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_map_four_key_concat_cycle_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(82, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_map_runtime_stable_concat_keys_avoid_entry_slot_validation_on_hot_lookup(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Stable Concat Keys Avoid Entry Slot Validation On Hot Lookup";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    TZrInt64 result = 0;
+    ZrVmLibContainerDebugHotMapLookupStats stats;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "labelFor(slot: int): string {\n"
+            "    var normalized = slot % 4;\n"
+            "    if (normalized == 0) { return \"aa\"; }\n"
+            "    if (normalized == 1) { return \"bb\"; }\n"
+            "    if (normalized == 2) { return \"cc\"; }\n"
+            "    return \"dd\";\n"
+            "}\n"
+            "var map = new container.Map<string, int>();\n"
+            "map[\"aa_slot\"] = 1;\n"
+            "map[\"bb_slot\"] = 2;\n"
+            "map[\"cc_slot\"] = 3;\n"
+            "map[\"dd_slot\"] = 4;\n"
+            "var total = 0;\n"
+            "var index = 0;\n"
+            "while (index <= 31) {\n"
+            "    var key = labelFor(index) + \"_slot\";\n"
+            "    var value = map[key];\n"
+            "    if (value != null) { total = total + value; }\n"
+            "    index = index + 1;\n"
+            "}\n"
+            "return total;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_map_hot_lookup_member_version_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+
+    ZrVmLibContainer_Debug_ResetHotMapLookupStats();
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
+    TEST_ASSERT_EQUAL_INT64(80, result);
+
+    stats = ZrVmLibContainer_Debug_GetHotMapLookupStats();
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, (TZrUInt32)stats.hotHitCount);
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, (TZrUInt32)stats.memberVersionHitCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, stats.entryValidationReadCount);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 static void test_container_set_runtime_enforces_pair_uniqueness(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Set Enforces Pair Uniqueness";
@@ -1768,6 +1988,10 @@ int main(void) {
     RUN_TEST(test_container_map_runtime_supports_pair_keys_and_value_overwrite);
     RUN_TEST(test_container_map_runtime_computed_access_beats_prototype_method_names);
     RUN_TEST(test_container_map_runtime_iterator_aggregates_pairs_without_order_assumptions);
+    RUN_TEST(test_container_map_runtime_repeated_index_access_primes_entries_and_pair_field_caches);
+    RUN_TEST(test_container_map_runtime_repeated_index_access_invalidates_hot_lookup_after_entry_growth);
+    RUN_TEST(test_container_map_runtime_four_key_concat_cycle_preserves_values);
+    RUN_TEST(test_container_map_runtime_stable_concat_keys_avoid_entry_slot_validation_on_hot_lookup);
     RUN_TEST(test_container_set_runtime_enforces_pair_uniqueness);
     RUN_TEST(test_container_pair_runtime_exposes_value_semantics);
     RUN_TEST(test_container_linked_list_runtime_detaches_removed_and_cleared_nodes);

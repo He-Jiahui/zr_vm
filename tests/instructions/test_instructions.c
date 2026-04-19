@@ -196,6 +196,171 @@ static const SZrTypeValue *get_object_field_cstring(SZrState *state,
     return ZrCore_Object_GetValue(state, object, &key);
 }
 
+static TZrUInt32 count_remembered_object_occurrences(SZrGarbageCollector *gc, SZrRawObject *target) {
+    TZrUInt32 count = 0u;
+
+    if (gc == ZR_NULL || target == ZR_NULL || gc->rememberedObjects == ZR_NULL) {
+        return 0u;
+    }
+
+    for (TZrSize index = 0; index < gc->rememberedObjectCount; index++) {
+        if (gc->rememberedObjects[index] == target) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static TZrBool add_named_fields_until_object_rehashes(SZrState *state,
+                                                      SZrObject *object,
+                                                      const TZrChar *prefix,
+                                                      TZrUInt32 startingValue,
+                                                      TZrUInt32 maxFields) {
+    SZrHashKeyValuePair **originalBuckets;
+
+    if (state == ZR_NULL || object == ZR_NULL || prefix == ZR_NULL || maxFields == 0u) {
+        return ZR_FALSE;
+    }
+
+    originalBuckets = object->nodeMap.buckets;
+    for (TZrUInt32 index = 0; index < maxFields; index++) {
+        TZrChar fieldName[64];
+        SZrTypeValue value;
+
+        snprintf(fieldName, sizeof(fieldName), "%s_%u", prefix, index);
+        ZrCore_Value_InitAsInt(state, &value, (TZrInt64)(startingValue + index));
+        set_object_field_cstring(state, object, fieldName, &value);
+        if (object->nodeMap.buckets != originalBuckets) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void init_object_constant_with_shared_field(SZrState *state,
+                                                   const TZrChar *typeNameNative,
+                                                   SZrString *memberName,
+                                                   TZrInt64 storedValue,
+                                                   SZrObjectPrototype **outPrototype,
+                                                   SZrObject **outInstance,
+                                                   SZrTypeValue *outConstantValue) {
+    SZrString *typeName;
+    SZrMemberDescriptor descriptor;
+    SZrObject *instance;
+    SZrTypeValue key;
+    SZrTypeValue value;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(typeNameNative);
+    TEST_ASSERT_NOT_NULL(memberName);
+    TEST_ASSERT_NOT_NULL(outPrototype);
+    TEST_ASSERT_NOT_NULL(outInstance);
+    TEST_ASSERT_NOT_NULL(outConstantValue);
+
+    typeName = ZrCore_String_CreateFromNative(state, (TZrNativeString)typeNameNative);
+    TEST_ASSERT_NOT_NULL(typeName);
+
+    *outPrototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    TEST_ASSERT_NOT_NULL(*outPrototype);
+
+    memset(&descriptor, 0, sizeof(descriptor));
+    descriptor.name = memberName;
+    descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_FIELD;
+    descriptor.isWritable = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, *outPrototype, &descriptor));
+
+    instance = ZrCore_Object_New(state, *outPrototype);
+    TEST_ASSERT_NOT_NULL(instance);
+    ZrCore_Object_Init(state, instance);
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Value_InitAsInt(state, &value, storedValue);
+    ZrCore_Object_SetValue(state, instance, &key, &value);
+
+    ZrCore_Value_InitAsRawObject(state, outConstantValue, ZR_CAST_RAW_OBJECT_AS_SUPER(instance));
+    outConstantValue->type = ZR_VALUE_TYPE_OBJECT;
+
+    *outInstance = instance;
+}
+
+static void init_object_constant_with_existing_field_prototype(SZrState *state,
+                                                               SZrObjectPrototype *prototype,
+                                                               SZrString *memberName,
+                                                               TZrInt64 storedValue,
+                                                               SZrObject **outInstance,
+                                                               SZrTypeValue *outConstantValue) {
+    SZrObject *instance;
+    SZrTypeValue key;
+    SZrTypeValue value;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(prototype);
+    TEST_ASSERT_NOT_NULL(memberName);
+    TEST_ASSERT_NOT_NULL(outInstance);
+    TEST_ASSERT_NOT_NULL(outConstantValue);
+
+    instance = ZrCore_Object_New(state, prototype);
+    TEST_ASSERT_NOT_NULL(instance);
+    ZrCore_Object_Init(state, instance);
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Value_InitAsInt(state, &value, storedValue);
+    ZrCore_Object_SetValue(state, instance, &key, &value);
+
+    ZrCore_Value_InitAsRawObject(state, outConstantValue, ZR_CAST_RAW_OBJECT_AS_SUPER(instance));
+    outConstantValue->type = ZR_VALUE_TYPE_OBJECT;
+
+    *outInstance = instance;
+}
+
+static void init_static_method_prototype_constant(SZrState *state,
+                                                  const TZrChar *typeNameNative,
+                                                  SZrString *memberName,
+                                                  FZrNativeFunction nativeFunction,
+                                                  SZrObjectPrototype **outPrototype,
+                                                  SZrFunction **outCallable,
+                                                  SZrTypeValue *outConstantValue) {
+    SZrString *typeName;
+    SZrMemberDescriptor descriptor;
+    SZrTypeValue key;
+    SZrTypeValue functionValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(typeNameNative);
+    TEST_ASSERT_NOT_NULL(memberName);
+    TEST_ASSERT_NOT_NULL(nativeFunction);
+    TEST_ASSERT_NOT_NULL(outPrototype);
+    TEST_ASSERT_NOT_NULL(outCallable);
+    TEST_ASSERT_NOT_NULL(outConstantValue);
+
+    typeName = ZrCore_String_CreateFromNative(state, (TZrNativeString)typeNameNative);
+    TEST_ASSERT_NOT_NULL(typeName);
+
+    *outPrototype = ZrCore_ObjectPrototype_New(state, typeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    TEST_ASSERT_NOT_NULL(*outPrototype);
+
+    memset(&descriptor, 0, sizeof(descriptor));
+    descriptor.name = memberName;
+    descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_METHOD;
+    descriptor.isStatic = ZR_TRUE;
+    TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, *outPrototype, &descriptor));
+
+    *outCallable = create_native_callable(state, nativeFunction);
+    TEST_ASSERT_NOT_NULL(*outCallable);
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+    key.type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Value_InitAsRawObject(state, &functionValue, ZR_CAST_RAW_OBJECT_AS_SUPER(*outCallable));
+    ZrCore_Object_SetValue(state, &(*outPrototype)->super, &key, &functionValue);
+
+    ZrCore_Value_InitAsRawObject(state, outConstantValue, ZR_CAST_RAW_OBJECT_AS_SUPER(*outPrototype));
+    outConstantValue->type = ZR_VALUE_TYPE_OBJECT;
+}
+
 static TZrInt64 test_member_property_getter_native(struct SZrState *state) {
     TZrStackValuePointer base;
 
@@ -2723,6 +2888,108 @@ static void test_get_member_slot_instruction_records_remembered_set_for_young_re
     TEST_DIVIDER();
 }
 
+static void test_get_member_slot_instruction_pic_replacement_keeps_single_remembered_entry_for_young_receiver_metadata(
+        void) {
+    TEST_START("GET_MEMBER_SLOT PIC Replacement Remembered Young Metadata");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototypeA;
+        SZrObjectPrototype *prototypeB;
+        SZrObjectPrototype *prototypeC;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrObject *instanceC;
+        SZrTypeValue constants[3];
+        TZrInstruction instructions[6];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrBool success;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+
+        init_object_constant_with_shared_field(
+                state, "RememberedFieldBoxA", memberName, 11, &prototypeA, &instanceA, &constants[0]);
+        init_object_constant_with_shared_field(
+                state, "RememberedFieldBoxB", memberName, 22, &prototypeB, &instanceB, &constants[1]);
+        init_object_constant_with_shared_field(
+                state, "RememberedFieldBoxC", memberName, 33, &prototypeC, &instanceC, &constants[2]);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 1);
+        instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 2);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+
+        function = create_test_function(state, instructions, 6, constants, 3, 2);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[0].cachedMemberName);
+        TEST_ASSERT_EQUAL_PTR(prototypeB, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceB, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[1].cachedMemberName);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT PIC Replacement Remembered Young Metadata");
+    TEST_DIVIDER();
+}
+
 static void test_get_member_slot_instruction_skips_remembered_set_when_cache_only_keeps_permanent_targets(void) {
     TEST_START("GET_MEMBER_SLOT Permanent Cache Targets");
     SZrTestTimer timer;
@@ -2845,6 +3112,2718 @@ static void test_get_member_slot_instruction_skips_remembered_set_when_cache_onl
     destroy_test_state(state);
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT Permanent Cache Targets");
+    TEST_DIVIDER();
+}
+
+static void test_get_member_slot_instruction_pic_replacement_stays_out_of_remembered_set_for_permanent_targets(void) {
+    TEST_START("GET_MEMBER_SLOT PIC Replacement Permanent Targets");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "__get_shared");
+        SZrObjectPrototype *prototypeA;
+        SZrObjectPrototype *prototypeB;
+        SZrObjectPrototype *prototypeC;
+        SZrFunction *callableA;
+        SZrFunction *callableB;
+        SZrFunction *callableC;
+        SZrTypeValue constants[3];
+        TZrInstruction instructions[6];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrBool success;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_static_method_prototype_constant(
+                state, "PermanentMethodBoxA", memberName, test_hidden_meta_static_getter_native, &prototypeA, &callableA, &constants[0]);
+        init_static_method_prototype_constant(
+                state, "PermanentMethodBoxB", memberName, test_hidden_meta_static_getter_native, &prototypeB, &callableB, &constants[1]);
+        init_static_method_prototype_constant(
+                state, "PermanentMethodBoxC", memberName, test_hidden_meta_static_getter_native, &prototypeC, &callableC, &constants[2]);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 1);
+        instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 2);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+
+        function = create_test_function(state, instructions, 6, constants, 3, 2);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(callableC, function->callSiteCaches[0].picSlots[0].cachedFunction);
+        TEST_ASSERT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[0].cachedMemberName);
+        TEST_ASSERT_EQUAL_PTR(prototypeB, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(callableB, function->callSiteCaches[0].picSlots[1].cachedFunction);
+        TEST_ASSERT_NULL(function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[1].cachedMemberName);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT PIC Replacement Permanent Targets");
+    TEST_DIVIDER();
+}
+
+static void test_get_member_slot_instruction_minor_gc_prunes_remembered_set_after_replacing_young_targets_with_permanent_targets(
+        void) {
+    TEST_START("GET_MEMBER_SLOT Remembered Set Prunes After Permanent Replacement");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "shared");
+        SZrObjectPrototype *prototypeA;
+        SZrObjectPrototype *prototypeB;
+        SZrObjectPrototype *prototypeC;
+        SZrObjectPrototype *prototypeD;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrFunction *callableC;
+        SZrFunction *callableD;
+        SZrTypeValue constants[4];
+        TZrInstruction instructions[8];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        TZrBool success;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_object_constant_with_shared_field(
+                state, "RememberedReplaceYoungA", memberName, 11, &prototypeA, &instanceA, &constants[0]);
+        init_object_constant_with_shared_field(
+                state, "RememberedReplaceYoungB", memberName, 22, &prototypeB, &instanceB, &constants[1]);
+        init_static_method_prototype_constant(
+                state, "RememberedReplacePermanentC", memberName, test_hidden_meta_static_getter_native, &prototypeC, &callableC, &constants[2]);
+        init_static_method_prototype_constant(
+                state, "RememberedReplacePermanentD", memberName, test_hidden_meta_static_getter_native, &prototypeD, &callableD, &constants[3]);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 1);
+        instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 2);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 3);
+        instructions[7] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+
+        function = create_test_function(state, instructions, 8, constants, 4, 2);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(callableC, function->callSiteCaches[0].picSlots[0].cachedFunction);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_NULL(function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(callableD, function->callSiteCaches[0].picSlots[1].cachedFunction);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        /*
+         * The remembered entry was recorded when the PIC still held young receiver metadata.
+         * Clear the old young constants so the next minor restart isolates stale-registry pruning.
+         */
+        ZrCore_Value_ResetAsNull(&function->constantValueList[0]);
+        ZrCore_Value_ResetAsNull(&function->constantValueList[1]);
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT Remembered Set Prunes After Permanent Replacement");
+    TEST_DIVIDER();
+}
+
+static void
+test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair_before_permanent_pic_prune(void) {
+    TEST_START("GET_MEMBER_SLOT Minor GC Rewrites Forwarded Young Receiver Pair");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototypeC;
+        SZrObjectPrototype *prototypeD;
+        SZrObjectPrototype *prototypeE;
+        SZrObject *instanceC;
+        SZrObject *instanceD;
+        SZrObject *instanceE;
+        SZrTypeValue permanentReceiverCConstant;
+        SZrTypeValue permanentReceiverDConstant;
+        SZrTypeValue youngReceiverEConstant;
+        SZrTypeValue initialConstants[4];
+        TZrInstruction instructions[8];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        TZrStackValuePointer base;
+        TZrBool success;
+        TZrPtr originalYoungReceiverAddress;
+        SZrObject *forwardedInstanceE;
+        SZrTypeValue *lastResult;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_object_constant_with_shared_field(
+                state, "ForwardedGetPermanentC", memberName, 3, &prototypeC, &instanceC, &permanentReceiverCConstant);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceC));
+        init_object_constant_with_shared_field(
+                state, "ForwardedGetPermanentD", memberName, 4, &prototypeD, &instanceD, &permanentReceiverDConstant);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceD));
+        init_object_constant_with_shared_field(
+                state, "ForwardedGetYoungE", memberName, 5, &prototypeE, &instanceE, &youngReceiverEConstant);
+
+        initialConstants[0] = youngReceiverEConstant;
+        initialConstants[1] = permanentReceiverDConstant;
+        initialConstants[2] = youngReceiverEConstant;
+        initialConstants[3] = permanentReceiverDConstant;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 1);
+        instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 3, 2, 0);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 4, 2);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 5, 4, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 6, 3);
+        instructions[7] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 7, 6, 0);
+
+        function = create_test_function(state, instructions, 8, initialConstants, 4, 8);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        lastResult = ZrCore_Stack_GetValue(base + 8);
+        TEST_ASSERT_NOT_NULL(lastResult);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lastResult->type));
+        TEST_ASSERT_EQUAL_INT64(4, lastResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(0u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeE, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[1].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        originalYoungReceiverAddress = (TZrPtr)instanceE;
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
+        TEST_ASSERT_NOT_NULL(forwardedInstanceE);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, ZR_CAST_OBJECT(state, function->constantValueList[2].value.object));
+        TEST_ASSERT_TRUE((TZrPtr)forwardedInstanceE != originalYoungReceiverAddress);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.storageKind);
+        TEST_ASSERT_TRUE((ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.escapeFlags &
+                          ZR_GARBAGE_COLLECT_ESCAPE_KIND_OLD_REFERENCE) != 0u);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_OLD_REFERENCE,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.promotionReason);
+        TEST_ASSERT_EQUAL_PTR(prototypeE, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(forwardedInstanceE->cachedStringLookupPair);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE->cachedStringLookupPair,
+                              function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        lastResult = ZrCore_Stack_GetValue(base + 8);
+        TEST_ASSERT_NOT_NULL(lastResult);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lastResult->type));
+        TEST_ASSERT_EQUAL_INT64(4, lastResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(6u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE->cachedStringLookupPair,
+                              function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        function->constantValueList[0] = permanentReceiverCConstant;
+        function->constantValueList[1] = permanentReceiverDConstant;
+        function->constantValueList[2] = permanentReceiverCConstant;
+        function->constantValueList[3] = permanentReceiverDConstant;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        lastResult = ZrCore_Stack_GetValue(base + 8);
+        TEST_ASSERT_NOT_NULL(lastResult);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lastResult->type));
+        TEST_ASSERT_EQUAL_INT64(4, lastResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(3u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(9u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[1].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT Minor GC Rewrites Forwarded Young Receiver Pair");
+    TEST_DIVIDER();
+}
+
+static void test_get_member_slot_instruction_exact_pair_hit_survives_receiver_rehash_and_minor_gc_prune(
+        void) {
+    TEST_START("GET_MEMBER_SLOT Exact Pair Hit Survives Rehash And Minor GC Prune");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototypeD;
+        SZrObjectPrototype *prototypeE;
+        SZrObject *instanceD;
+        SZrObject *instanceE;
+        SZrTypeValue permanentReceiverDConstant;
+        SZrTypeValue youngReceiverEConstant;
+        SZrTypeValue initialConstants[4];
+        TZrInstruction instructions[8];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        TZrStackValuePointer base;
+        TZrBool success;
+        SZrHashKeyValuePair *cachedPairBeforeRehash;
+        SZrObject *forwardedInstanceE;
+        SZrTypeValue *firstResult;
+        SZrTypeValue *lastResult;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_object_constant_with_shared_field(
+                state, "RehashGetPermanentD", memberName, 4, &prototypeD, &instanceD, &permanentReceiverDConstant);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceD));
+        init_object_constant_with_shared_field(
+                state, "RehashGetYoungE", memberName, 5, &prototypeE, &instanceE, &youngReceiverEConstant);
+
+        initialConstants[0] = youngReceiverEConstant;
+        initialConstants[1] = permanentReceiverDConstant;
+        initialConstants[2] = youngReceiverEConstant;
+        initialConstants[3] = permanentReceiverDConstant;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 1);
+        instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 3, 2, 0);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 4, 2);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 5, 4, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 6, 3);
+        instructions[7] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 7, 6, 0);
+
+        function = create_test_function(state, instructions, 8, initialConstants, 4, 8);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        firstResult = ZrCore_Stack_GetValue(base + 2);
+        lastResult = ZrCore_Stack_GetValue(base + 8);
+        TEST_ASSERT_NOT_NULL(firstResult);
+        TEST_ASSERT_NOT_NULL(lastResult);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(firstResult->type));
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lastResult->type));
+        TEST_ASSERT_EQUAL_INT64(5, firstResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(4, lastResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_PTR(instanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+
+        cachedPairBeforeRehash = function->callSiteCaches[0].picSlots[0].cachedReceiverPair;
+        TEST_ASSERT_TRUE(add_named_fields_until_object_rehashes(state, instanceE, "rehash_get", 3000u, 32u));
+        TEST_ASSERT_EQUAL_PTR(cachedPairBeforeRehash, function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        firstResult = ZrCore_Stack_GetValue(base + 2);
+        lastResult = ZrCore_Stack_GetValue(base + 8);
+        TEST_ASSERT_NOT_NULL(firstResult);
+        TEST_ASSERT_NOT_NULL(lastResult);
+        TEST_ASSERT_EQUAL_INT64(5, firstResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(4, lastResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(6u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_PTR(cachedPairBeforeRehash, function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
+        TEST_ASSERT_NOT_NULL(forwardedInstanceE);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.storageKind);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(cachedPairBeforeRehash, function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        firstResult = ZrCore_Stack_GetValue(base + 2);
+        lastResult = ZrCore_Stack_GetValue(base + 8);
+        TEST_ASSERT_NOT_NULL(firstResult);
+        TEST_ASSERT_NOT_NULL(lastResult);
+        TEST_ASSERT_EQUAL_INT64(5, firstResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(4, lastResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(10u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        firstResult = ZrCore_Stack_GetValue(base + 2);
+        lastResult = ZrCore_Stack_GetValue(base + 8);
+        TEST_ASSERT_NOT_NULL(firstResult);
+        TEST_ASSERT_NOT_NULL(lastResult);
+        TEST_ASSERT_EQUAL_INT64(5, firstResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(4, lastResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(14u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT Exact Pair Hit Survives Rehash And Minor GC Prune");
+    TEST_DIVIDER();
+}
+
+static void test_get_member_slot_instruction_does_not_reuse_cached_pair_for_different_receiver_same_prototype(
+        void) {
+    TEST_START("GET_MEMBER_SLOT Different Receiver Same Prototype Avoids Pair Reuse");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrString *sharedTypeName = ZrCore_String_CreateFromNative(state, "ShapeOnlyGetSharedBox");
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *sharedPrototype = ZrCore_ObjectPrototype_New(state,
+                                                                         sharedTypeName,
+                                                                         ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrMemberDescriptor descriptor;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrObjectPrototype *otherPrototype;
+        SZrObject *otherInstance;
+        SZrTypeValue receiverAConstant;
+        SZrTypeValue receiverBConstant;
+        SZrTypeValue otherReceiverConstant;
+        SZrTypeValue initialConstants[2];
+        TZrInstruction instructions[4];
+        SZrFunction *function;
+        TZrBool success;
+        TZrStackValuePointer base;
+        SZrTypeValue *firstResult;
+        SZrTypeValue *secondResult;
+
+        TEST_ASSERT_NOT_NULL(sharedTypeName);
+        TEST_ASSERT_NOT_NULL(memberName);
+        TEST_ASSERT_NOT_NULL(sharedPrototype);
+
+        memset(&descriptor, 0, sizeof(descriptor));
+        descriptor.name = memberName;
+        descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_FIELD;
+        descriptor.isWritable = ZR_TRUE;
+        TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, sharedPrototype, &descriptor));
+
+        init_object_constant_with_existing_field_prototype(
+                state, sharedPrototype, memberName, 111, &instanceA, &receiverAConstant);
+        init_object_constant_with_existing_field_prototype(
+                state, sharedPrototype, memberName, 222, &instanceB, &receiverBConstant);
+        init_object_constant_with_shared_field(
+                state, "ShapeOnlyGetOtherBox", memberName, 333, &otherPrototype, &otherInstance, &otherReceiverConstant);
+
+        initialConstants[0] = receiverAConstant;
+        initialConstants[1] = otherReceiverConstant;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+        instructions[2] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 1);
+        instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 3, 2, 0);
+
+        function = create_test_function(state, instructions, 4, initialConstants, 2, 4);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        firstResult = ZrCore_Stack_GetValue(base + 2);
+        secondResult = ZrCore_Stack_GetValue(base + 4);
+        TEST_ASSERT_NOT_NULL(firstResult);
+        TEST_ASSERT_NOT_NULL(secondResult);
+        TEST_ASSERT_EQUAL_INT64(111, firstResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(333, secondResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(0u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(sharedPrototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceA, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(otherPrototype, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        function->constantValueList[0] = receiverBConstant;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        firstResult = ZrCore_Stack_GetValue(base + 2);
+        secondResult = ZrCore_Stack_GetValue(base + 4);
+        TEST_ASSERT_NOT_NULL(firstResult);
+        TEST_ASSERT_NOT_NULL(secondResult);
+        TEST_ASSERT_EQUAL_INT64(222, firstResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(333, secondResult->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT Different Receiver Same Prototype Avoids Pair Reuse");
+    TEST_DIVIDER();
+}
+
+static void
+test_get_member_slot_instruction_same_prototype_safe_hit_refreshes_cached_receiver_before_minor_gc_prune(void) {
+    TEST_START("GET_MEMBER_SLOT Same Prototype Safe Hit Refreshes PIC Receiver");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *sharedTypeName = ZrCore_String_CreateFromNative(state, "ShapeOnlyGetRefreshBox");
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *sharedPrototype = ZrCore_ObjectPrototype_New(state,
+                                                                         sharedTypeName,
+                                                                         ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrMemberDescriptor descriptor;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrTypeValue receiverAConstant;
+        SZrTypeValue receiverBConstant;
+        SZrTypeValue constants[1];
+        TZrInstruction instructions[2];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        TZrBool success;
+        TZrStackValuePointer base;
+        SZrTypeValue *result;
+
+        TEST_ASSERT_NOT_NULL(sharedTypeName);
+        TEST_ASSERT_NOT_NULL(memberName);
+        TEST_ASSERT_NOT_NULL(sharedPrototype);
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        memset(&descriptor, 0, sizeof(descriptor));
+        descriptor.name = memberName;
+        descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_FIELD;
+        descriptor.isWritable = ZR_TRUE;
+        TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, sharedPrototype, &descriptor));
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(sharedPrototype));
+
+        init_object_constant_with_existing_field_prototype(
+                state, sharedPrototype, memberName, 111, &instanceA, &receiverAConstant);
+        init_object_constant_with_existing_field_prototype(
+                state, sharedPrototype, memberName, 222, &instanceB, &receiverBConstant);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceB));
+
+        constants[0] = receiverAConstant;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT), 1, 0, 0);
+
+        function = create_test_function(state, instructions, 2, constants, 1, 2);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET;
+        function->callSiteCaches[0].instructionIndex = 1;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        result = ZrCore_Stack_GetValue(base + 2);
+        TEST_ASSERT_NOT_NULL(result);
+        TEST_ASSERT_EQUAL_INT64(111, result->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(0u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(sharedPrototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceA, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        function->constantValueList[0] = receiverBConstant;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        result = ZrCore_Stack_GetValue(base + 2);
+        TEST_ASSERT_NOT_NULL(result);
+        TEST_ASSERT_EQUAL_INT64(222, result->value.nativeObject.nativeInt64);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        base = state->callInfoList->functionBase.valuePointer;
+        result = ZrCore_Stack_GetValue(base + 2);
+        TEST_ASSERT_NOT_NULL(result);
+        TEST_ASSERT_EQUAL_INT64(222, result->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_PTR(sharedPrototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceB, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(instanceB->cachedStringLookupPair);
+        TEST_ASSERT_EQUAL_PTR(instanceB->cachedStringLookupPair,
+                              function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "GET_MEMBER_SLOT Same Prototype Safe Hit Refreshes PIC Receiver");
+    TEST_DIVIDER();
+}
+
+static void test_set_member_slot_instruction_records_remembered_set_for_young_receiver_metadata_even_with_permanent_owner(
+        void) {
+    TEST_START("SET_MEMBER_SLOT Remembered Young Receiver Metadata");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototype;
+        SZrObject *instance;
+        SZrTypeValue constants[3];
+        TZrInstruction instructions[6];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrBool success;
+        const SZrTypeValue *updatedValue;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+
+        init_object_constant_with_shared_field(
+                state, "RememberedFieldSetBox", memberName, 0, &prototype, &instance, &constants[0]);
+        ZrCore_Value_InitAsInt(state, &constants[1], 13);
+        ZrCore_Value_InitAsInt(state, &constants[2], 21);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 0);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 2);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 3, 2, 1);
+
+        function = create_test_function(state, instructions, 6, constants, 3, 4);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry) * 2,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry) * 2);
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCaches[1].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[1].instructionIndex = 5;
+        function->callSiteCaches[1].memberEntryIndex = 0;
+        function->callSiteCacheLength = 2;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_LARGE_PERSISTENT,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(prototype)->garbageCollectMark.storageKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_PERMANENT,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(prototype)->garbageCollectMark.regionKind);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValue = get_object_field_cstring(state, instance, "value");
+        TEST_ASSERT_NOT_NULL(updatedValue);
+        TEST_ASSERT_EQUAL_INT64(21, updatedValue->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[0].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_EQUAL_PTR(instance, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[0].cachedMemberName);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[1].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[1].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(prototype, function->callSiteCaches[1].picSlots[0].cachedOwnerPrototype);
+        TEST_ASSERT_EQUAL_PTR(instance, function->callSiteCaches[1].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[1].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[1].picSlots[0].cachedMemberName);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT Remembered Young Receiver Metadata");
+    TEST_DIVIDER();
+}
+
+static void test_set_member_slot_instruction_pic_replacement_keeps_single_remembered_entry_for_young_receiver_metadata(
+        void) {
+    TEST_START("SET_MEMBER_SLOT PIC Replacement Remembered Young Metadata");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototypeA;
+        SZrObjectPrototype *prototypeB;
+        SZrObjectPrototype *prototypeC;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrObject *instanceC;
+        SZrTypeValue constants[6];
+        TZrInstruction instructions[9];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrBool success;
+        const SZrTypeValue *updatedValueA;
+        const SZrTypeValue *updatedValueB;
+        const SZrTypeValue *updatedValueC;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+
+        init_object_constant_with_shared_field(
+                state, "RememberedFieldSetBoxA", memberName, 1, &prototypeA, &instanceA, &constants[0]);
+        ZrCore_Value_InitAsInt(state, &constants[1], 101);
+        init_object_constant_with_shared_field(
+                state, "RememberedFieldSetBoxB", memberName, 2, &prototypeB, &instanceB, &constants[2]);
+        ZrCore_Value_InitAsInt(state, &constants[3], 202);
+        init_object_constant_with_shared_field(
+                state, "RememberedFieldSetBoxC", memberName, 3, &prototypeC, &instanceC, &constants[4]);
+        ZrCore_Value_InitAsInt(state, &constants[5], 303);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 3, 2, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 4, 4);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
+
+        function = create_test_function(state, instructions, 9, constants, 6, 6);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueA = get_object_field_cstring(state, instanceA, "value");
+        updatedValueB = get_object_field_cstring(state, instanceB, "value");
+        updatedValueC = get_object_field_cstring(state, instanceC, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueA);
+        TEST_ASSERT_NOT_NULL(updatedValueB);
+        TEST_ASSERT_NOT_NULL(updatedValueC);
+        TEST_ASSERT_EQUAL_INT64(101, updatedValueA->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(202, updatedValueB->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(303, updatedValueC->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[0].cachedMemberName);
+        TEST_ASSERT_EQUAL_PTR(prototypeB, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceB, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[1].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[1].cachedMemberName);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT PIC Replacement Remembered Young Metadata");
+    TEST_DIVIDER();
+}
+
+static void test_set_member_slot_instruction_pic_replacement_records_remembered_set_when_young_receiver_replaces_permanent_receivers(
+        void) {
+    TEST_START("SET_MEMBER_SLOT PIC Replacement Young Replaces Permanent Receivers");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototypeA;
+        SZrObjectPrototype *prototypeB;
+        SZrObjectPrototype *prototypeC;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrObject *instanceC;
+        SZrTypeValue constants[6];
+        TZrInstruction instructions[9];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrBool success;
+        const SZrTypeValue *updatedValueA;
+        const SZrTypeValue *updatedValueB;
+        const SZrTypeValue *updatedValueC;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_object_constant_with_shared_field(
+                state, "PermanentThenYoungSetReceiverA", memberName, 1, &prototypeA, &instanceA, &constants[0]);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceA));
+        ZrCore_Value_InitAsInt(state, &constants[1], 101);
+        init_object_constant_with_shared_field(
+                state, "PermanentThenYoungSetReceiverB", memberName, 2, &prototypeB, &instanceB, &constants[2]);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceB));
+        ZrCore_Value_InitAsInt(state, &constants[3], 202);
+        init_object_constant_with_shared_field(
+                state, "PermanentThenYoungSetReceiverC", memberName, 3, &prototypeC, &instanceC, &constants[4]);
+        ZrCore_Value_InitAsInt(state, &constants[5], 303);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 3, 2, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 4, 4);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
+
+        function = create_test_function(state, instructions, 9, constants, 6, 6);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueA = get_object_field_cstring(state, instanceA, "value");
+        updatedValueB = get_object_field_cstring(state, instanceB, "value");
+        updatedValueC = get_object_field_cstring(state, instanceC, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueA);
+        TEST_ASSERT_NOT_NULL(updatedValueB);
+        TEST_ASSERT_NOT_NULL(updatedValueC);
+        TEST_ASSERT_EQUAL_INT64(101, updatedValueA->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(202, updatedValueB->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(303, updatedValueC->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[0].cachedMemberName);
+        TEST_ASSERT_EQUAL_PTR(prototypeB, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceB, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[1].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[1].cachedMemberName);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT PIC Replacement Young Replaces Permanent Receivers");
+    TEST_DIVIDER();
+}
+
+static void test_set_member_slot_instruction_pic_replacement_stays_out_of_remembered_set_for_permanent_receivers(void) {
+    TEST_START("SET_MEMBER_SLOT PIC Replacement Permanent Receivers");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "shared");
+        SZrObjectPrototype *prototypeA;
+        SZrObjectPrototype *prototypeB;
+        SZrObjectPrototype *prototypeC;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrObject *instanceC;
+        SZrTypeValue constants[6];
+        TZrInstruction instructions[9];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrBool success;
+        const SZrTypeValue *updatedValueA;
+        const SZrTypeValue *updatedValueB;
+        const SZrTypeValue *updatedValueC;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_object_constant_with_shared_field(
+                state, "PermanentSetReceiverA", memberName, 1, &prototypeA, &instanceA, &constants[0]);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceA));
+        ZrCore_Value_InitAsInt(state, &constants[1], 101);
+        init_object_constant_with_shared_field(
+                state, "PermanentSetReceiverB", memberName, 2, &prototypeB, &instanceB, &constants[2]);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceB));
+        ZrCore_Value_InitAsInt(state, &constants[3], 202);
+        init_object_constant_with_shared_field(
+                state, "PermanentSetReceiverC", memberName, 3, &prototypeC, &instanceC, &constants[4]);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceC));
+        ZrCore_Value_InitAsInt(state, &constants[5], 303);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 3, 2, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 4, 4);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
+
+        function = create_test_function(state, instructions, 9, constants, 6, 6);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueA = get_object_field_cstring(state, instanceA, "shared");
+        updatedValueB = get_object_field_cstring(state, instanceB, "shared");
+        updatedValueC = get_object_field_cstring(state, instanceC, "shared");
+        TEST_ASSERT_NOT_NULL(updatedValueA);
+        TEST_ASSERT_NOT_NULL(updatedValueB);
+        TEST_ASSERT_NOT_NULL(updatedValueC);
+        TEST_ASSERT_EQUAL_INT64(101, updatedValueA->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(202, updatedValueB->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(303, updatedValueC->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[0].cachedMemberName);
+        TEST_ASSERT_EQUAL_PTR(prototypeB, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceB, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(memberName, function->callSiteCaches[0].picSlots[1].cachedMemberName);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT PIC Replacement Permanent Receivers");
+    TEST_DIVIDER();
+}
+
+static void test_set_member_slot_instruction_minor_gc_prunes_remembered_set_after_replacing_young_receivers_with_permanent_receivers(
+        void) {
+    TEST_START("SET_MEMBER_SLOT Remembered Set Prunes After Permanent Replacement");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "shared");
+        SZrObjectPrototype *prototypeA;
+        SZrObjectPrototype *prototypeB;
+        SZrObjectPrototype *prototypeC;
+        SZrObjectPrototype *prototypeD;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrObject *instanceC;
+        SZrObject *instanceD;
+        SZrTypeValue constants[8];
+        TZrInstruction instructions[12];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        TZrBool success;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_object_constant_with_shared_field(
+                state, "RememberedSetYoungA", memberName, 1, &prototypeA, &instanceA, &constants[0]);
+        ZrCore_Value_InitAsInt(state, &constants[1], 101);
+        init_object_constant_with_shared_field(
+                state, "RememberedSetYoungB", memberName, 2, &prototypeB, &instanceB, &constants[2]);
+        ZrCore_Value_InitAsInt(state, &constants[3], 202);
+        init_object_constant_with_shared_field(
+                state, "RememberedSetPermanentC", memberName, 3, &prototypeC, &instanceC, &constants[4]);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceC));
+        ZrCore_Value_InitAsInt(state, &constants[5], 303);
+        init_object_constant_with_shared_field(
+                state, "RememberedSetPermanentD", memberName, 4, &prototypeD, &instanceD, &constants[6]);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceD));
+        ZrCore_Value_InitAsInt(state, &constants[7], 404);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 3, 2, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 4, 4);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
+        instructions[9] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 6, 6);
+        instructions[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 7, 7);
+        instructions[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 7, 6, 0);
+
+        function = create_test_function(state, instructions, 12, constants, 8, 8);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+
+        /*
+         * Keep only the stale remembered entry: the PIC now references permanent receivers,
+         * so clear direct young receiver constants before the next minor restart.
+         */
+        ZrCore_Value_ResetAsNull(&function->constantValueList[0]);
+        ZrCore_Value_ResetAsNull(&function->constantValueList[2]);
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT Remembered Set Prunes After Permanent Replacement");
+    TEST_DIVIDER();
+}
+
+static void test_set_member_slot_instruction_minor_gc_readds_and_reprunes_remembered_set_during_permanent_young_pic_oscillation(
+        void) {
+    TEST_START("SET_MEMBER_SLOT Remembered Set Oscillates Across Minor GC");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototypeA;
+        SZrObjectPrototype *prototypeB;
+        SZrObjectPrototype *prototypeC;
+        SZrObjectPrototype *prototypeD;
+        SZrObjectPrototype *prototypeE;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrObject *instanceC;
+        SZrObject *instanceD;
+        SZrObject *instanceE;
+        SZrTypeValue constants[8];
+        SZrTypeValue youngReceiverEConstant;
+        SZrTypeValue value3303;
+        SZrTypeValue value606;
+        SZrTypeValue value4404;
+        SZrTypeValue value7303;
+        SZrTypeValue value8204;
+        SZrTypeValue value9303;
+        SZrTypeValue value10204;
+        TZrInstruction instructions[12];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        TZrBool success;
+        const SZrTypeValue *updatedValueC;
+        const SZrTypeValue *updatedValueD;
+        const SZrTypeValue *updatedValueE;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_object_constant_with_shared_field(
+                state, "OscillationYoungA", memberName, 1, &prototypeA, &instanceA, &constants[0]);
+        ZrCore_Value_InitAsInt(state, &constants[1], 101);
+        init_object_constant_with_shared_field(
+                state, "OscillationYoungB", memberName, 2, &prototypeB, &instanceB, &constants[2]);
+        ZrCore_Value_InitAsInt(state, &constants[3], 202);
+        init_object_constant_with_shared_field(
+                state, "OscillationPermanentC", memberName, 3, &prototypeC, &instanceC, &constants[4]);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceC));
+        ZrCore_Value_InitAsInt(state, &constants[5], 303);
+        init_object_constant_with_shared_field(
+                state, "OscillationPermanentD", memberName, 4, &prototypeD, &instanceD, &constants[6]);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceD));
+        ZrCore_Value_InitAsInt(state, &constants[7], 404);
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 3, 2, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 4, 4);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
+        instructions[9] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 6, 6);
+        instructions[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 7, 7);
+        instructions[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 7, 6, 0);
+
+        function = create_test_function(state, instructions, 12, constants, 8, 8);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(0u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        /*
+         * Phase 1 -> off:
+         * the PIC is permanent-only, so once the old young receiver constants disappear,
+         * the next minor restart should prune the stale remembered entry.
+         */
+        ZrCore_Value_ResetAsNull(&function->constantValueList[0]);
+        ZrCore_Value_ResetAsNull(&function->constantValueList[2]);
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        /*
+         * Phase 2 -> on:
+         * inject a fresh young receiver after the prune and make the full PIC oscillate
+         * from permanent-only to mixed permanent/young again.
+         */
+        init_object_constant_with_shared_field(
+                state, "OscillationYoungE", memberName, 5, &prototypeE, &instanceE, &youngReceiverEConstant);
+        ZrCore_Value_InitAsInt(state, &value3303, 3303);
+        ZrCore_Value_InitAsInt(state, &value606, 606);
+        ZrCore_Value_InitAsInt(state, &value4404, 4404);
+
+        function->constantValueList[0] = constants[4];
+        function->constantValueList[1] = value3303;
+        function->constantValueList[2] = youngReceiverEConstant;
+        function->constantValueList[3] = value606;
+        function->constantValueList[4] = constants[6];
+        function->constantValueList[5] = value4404;
+        function->constantValueList[6] = youngReceiverEConstant;
+        function->constantValueList[7] = value606;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueC = get_object_field_cstring(state, instanceC, "value");
+        updatedValueD = get_object_field_cstring(state, instanceD, "value");
+        updatedValueE = get_object_field_cstring(state, instanceE, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueC);
+        TEST_ASSERT_NOT_NULL(updatedValueD);
+        TEST_ASSERT_NOT_NULL(updatedValueE);
+        TEST_ASSERT_EQUAL_INT64(3303, updatedValueC->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(4404, updatedValueD->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(606, updatedValueE->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeE, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[1].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        /*
+         * Phase 3 -> off again:
+         * switch back to permanent-only receivers, then let minor GC prune the newly stale
+         * remembered entry a second time.
+         */
+        ZrCore_Value_InitAsInt(state, &value7303, 7303);
+        ZrCore_Value_InitAsInt(state, &value8204, 8204);
+        ZrCore_Value_InitAsInt(state, &value9303, 9303);
+        ZrCore_Value_InitAsInt(state, &value10204, 10204);
+
+        function->constantValueList[0] = constants[4];
+        function->constantValueList[1] = value7303;
+        function->constantValueList[2] = constants[6];
+        function->constantValueList[3] = value8204;
+        function->constantValueList[4] = constants[4];
+        function->constantValueList[5] = value9303;
+        function->constantValueList[6] = constants[6];
+        function->constantValueList[7] = value10204;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT Remembered Set Oscillates Across Minor GC");
+    TEST_DIVIDER();
+}
+
+static void
+test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair_before_permanent_pic_prune(void) {
+    TEST_START("SET_MEMBER_SLOT Minor GC Rewrites Forwarded Young Receiver Pair");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototypeC;
+        SZrObjectPrototype *prototypeD;
+        SZrObjectPrototype *prototypeE;
+        SZrObject *instanceC;
+        SZrObject *instanceD;
+        SZrObject *instanceE;
+        SZrTypeValue permanentReceiverCConstant;
+        SZrTypeValue permanentReceiverDConstant;
+        SZrTypeValue youngReceiverEConstant;
+        SZrTypeValue initialConstants[8];
+        SZrTypeValue value101;
+        SZrTypeValue value202;
+        SZrTypeValue value303;
+        SZrTypeValue value404;
+        SZrTypeValue value505;
+        SZrTypeValue value606;
+        SZrTypeValue value707;
+        SZrTypeValue value808;
+        SZrTypeValue value1303;
+        SZrTypeValue value1404;
+        SZrTypeValue value1503;
+        SZrTypeValue value1604;
+        TZrInstruction instructions[12];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        TZrBool success;
+        TZrPtr originalYoungReceiverAddress;
+        SZrObject *forwardedInstanceE;
+        const SZrTypeValue *updatedValueC;
+        const SZrTypeValue *updatedValueD;
+        const SZrTypeValue *updatedValueE;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_object_constant_with_shared_field(
+                state, "ForwardedPermanentC", memberName, 3, &prototypeC, &instanceC, &permanentReceiverCConstant);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceC));
+        init_object_constant_with_shared_field(
+                state, "ForwardedPermanentD", memberName, 4, &prototypeD, &instanceD, &permanentReceiverDConstant);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceD));
+        init_object_constant_with_shared_field(
+                state, "ForwardedYoungE", memberName, 5, &prototypeE, &instanceE, &youngReceiverEConstant);
+
+        ZrCore_Value_InitAsInt(state, &value101, 101);
+        ZrCore_Value_InitAsInt(state, &value202, 202);
+        ZrCore_Value_InitAsInt(state, &value303, 303);
+        ZrCore_Value_InitAsInt(state, &value404, 404);
+        ZrCore_Value_InitAsInt(state, &value505, 505);
+        ZrCore_Value_InitAsInt(state, &value606, 606);
+        ZrCore_Value_InitAsInt(state, &value707, 707);
+        ZrCore_Value_InitAsInt(state, &value808, 808);
+        ZrCore_Value_InitAsInt(state, &value1303, 1303);
+        ZrCore_Value_InitAsInt(state, &value1404, 1404);
+        ZrCore_Value_InitAsInt(state, &value1503, 1503);
+        ZrCore_Value_InitAsInt(state, &value1604, 1604);
+
+        initialConstants[0] = youngReceiverEConstant;
+        initialConstants[1] = value101;
+        initialConstants[2] = permanentReceiverDConstant;
+        initialConstants[3] = value202;
+        initialConstants[4] = youngReceiverEConstant;
+        initialConstants[5] = value303;
+        initialConstants[6] = permanentReceiverDConstant;
+        initialConstants[7] = value404;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 3, 2, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 4, 4);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
+        instructions[9] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 6, 6);
+        instructions[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 7, 7);
+        instructions[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 7, 6, 0);
+
+        function = create_test_function(state, instructions, 12, initialConstants, 8, 8);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueD = get_object_field_cstring(state, instanceD, "value");
+        updatedValueE = get_object_field_cstring(state, instanceE, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueD);
+        TEST_ASSERT_NOT_NULL(updatedValueE);
+        TEST_ASSERT_EQUAL_INT64(404, updatedValueD->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(303, updatedValueE->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_CALLSITE_CACHE_PIC_CAPACITY, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_UINT32(0u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeE, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[1].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        originalYoungReceiverAddress = (TZrPtr)instanceE;
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
+        TEST_ASSERT_NOT_NULL(forwardedInstanceE);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, ZR_CAST_OBJECT(state, function->constantValueList[4].value.object));
+        TEST_ASSERT_TRUE((TZrPtr)forwardedInstanceE != originalYoungReceiverAddress);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.storageKind);
+        TEST_ASSERT_TRUE((ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.escapeFlags &
+                          ZR_GARBAGE_COLLECT_ESCAPE_KIND_OLD_REFERENCE) != 0u);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_OLD_REFERENCE,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.promotionReason);
+        TEST_ASSERT_EQUAL_PTR(prototypeE, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(forwardedInstanceE->cachedStringLookupPair);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE->cachedStringLookupPair,
+                              function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        function->constantValueList[1] = value505;
+        function->constantValueList[3] = value606;
+        function->constantValueList[4] = function->constantValueList[0];
+        function->constantValueList[5] = value707;
+        function->constantValueList[7] = value808;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueD = get_object_field_cstring(state, instanceD, "value");
+        updatedValueE = get_object_field_cstring(state, forwardedInstanceE, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueD);
+        TEST_ASSERT_NOT_NULL(updatedValueE);
+        TEST_ASSERT_EQUAL_INT64(808, updatedValueD->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(707, updatedValueE->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(6u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE->cachedStringLookupPair,
+                              function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        function->constantValueList[0] = permanentReceiverCConstant;
+        function->constantValueList[1] = value1303;
+        function->constantValueList[2] = permanentReceiverDConstant;
+        function->constantValueList[3] = value1404;
+        function->constantValueList[4] = permanentReceiverCConstant;
+        function->constantValueList[5] = value1503;
+        function->constantValueList[6] = permanentReceiverDConstant;
+        function->constantValueList[7] = value1604;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueC = get_object_field_cstring(state, instanceC, "value");
+        updatedValueD = get_object_field_cstring(state, instanceD, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueC);
+        TEST_ASSERT_NOT_NULL(updatedValueD);
+        TEST_ASSERT_EQUAL_INT64(1503, updatedValueC->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(1604, updatedValueD->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(3u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(9u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picNextInsertIndex);
+        TEST_ASSERT_EQUAL_PTR(prototypeC, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceC, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(prototypeD, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceD, function->callSiteCaches[0].picSlots[1].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[1].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT Minor GC Rewrites Forwarded Young Receiver Pair");
+    TEST_DIVIDER();
+}
+
+static void
+test_set_member_slot_instruction_second_minor_gc_prunes_stale_remembered_after_forwarded_receiver_promotes_old(void) {
+    TEST_START("SET_MEMBER_SLOT Second Minor GC Prunes Stale Remembered After Promotion");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototypeD;
+        SZrObjectPrototype *prototypeE;
+        SZrObject *instanceD;
+        SZrObject *instanceE;
+        SZrTypeValue permanentReceiverDConstant;
+        SZrTypeValue youngReceiverEConstant;
+        SZrTypeValue initialConstants[8];
+        SZrTypeValue value101;
+        SZrTypeValue value202;
+        SZrTypeValue value303;
+        SZrTypeValue value404;
+        SZrTypeValue value505;
+        SZrTypeValue value606;
+        SZrTypeValue value707;
+        SZrTypeValue value808;
+        SZrTypeValue value909;
+        SZrTypeValue value1001;
+        SZrTypeValue value1102;
+        SZrTypeValue value1203;
+        TZrInstruction instructions[12];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        TZrBool success;
+        SZrObject *forwardedInstanceE;
+        const SZrTypeValue *updatedValueD;
+        const SZrTypeValue *updatedValueE;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_object_constant_with_shared_field(
+                state, "PromotedPermanentD", memberName, 4, &prototypeD, &instanceD, &permanentReceiverDConstant);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceD));
+        init_object_constant_with_shared_field(
+                state, "PromotedYoungE", memberName, 5, &prototypeE, &instanceE, &youngReceiverEConstant);
+
+        ZrCore_Value_InitAsInt(state, &value101, 101);
+        ZrCore_Value_InitAsInt(state, &value202, 202);
+        ZrCore_Value_InitAsInt(state, &value303, 303);
+        ZrCore_Value_InitAsInt(state, &value404, 404);
+        ZrCore_Value_InitAsInt(state, &value505, 505);
+        ZrCore_Value_InitAsInt(state, &value606, 606);
+        ZrCore_Value_InitAsInt(state, &value707, 707);
+        ZrCore_Value_InitAsInt(state, &value808, 808);
+        ZrCore_Value_InitAsInt(state, &value909, 909);
+        ZrCore_Value_InitAsInt(state, &value1001, 1001);
+        ZrCore_Value_InitAsInt(state, &value1102, 1102);
+        ZrCore_Value_InitAsInt(state, &value1203, 1203);
+
+        initialConstants[0] = youngReceiverEConstant;
+        initialConstants[1] = value101;
+        initialConstants[2] = permanentReceiverDConstant;
+        initialConstants[3] = value202;
+        initialConstants[4] = youngReceiverEConstant;
+        initialConstants[5] = value303;
+        initialConstants[6] = permanentReceiverDConstant;
+        initialConstants[7] = value404;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 3, 2, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 4, 4);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
+        instructions[9] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 6, 6);
+        instructions[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 7, 7);
+        instructions[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 7, 6, 0);
+
+        function = create_test_function(state, instructions, 12, initialConstants, 8, 8);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
+        TEST_ASSERT_NOT_NULL(forwardedInstanceE);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.storageKind);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE->cachedStringLookupPair,
+                              function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        function->constantValueList[1] = value505;
+        function->constantValueList[3] = value606;
+        function->constantValueList[4] = function->constantValueList[0];
+        function->constantValueList[5] = value707;
+        function->constantValueList[7] = value808;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueD = get_object_field_cstring(state, instanceD, "value");
+        updatedValueE = get_object_field_cstring(state, forwardedInstanceE, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueD);
+        TEST_ASSERT_NOT_NULL(updatedValueE);
+        TEST_ASSERT_EQUAL_INT64(808, updatedValueD->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(707, updatedValueE->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(6u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        function->constantValueList[1] = value909;
+        function->constantValueList[3] = value1001;
+        function->constantValueList[4] = function->constantValueList[0];
+        function->constantValueList[5] = value1102;
+        function->constantValueList[7] = value1203;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueD = get_object_field_cstring(state, instanceD, "value");
+        updatedValueE = get_object_field_cstring(state, forwardedInstanceE, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueD);
+        TEST_ASSERT_NOT_NULL(updatedValueE);
+        TEST_ASSERT_EQUAL_INT64(1203, updatedValueD->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(1102, updatedValueE->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(10u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT Second Minor GC Prunes Stale Remembered After Promotion");
+    TEST_DIVIDER();
+}
+
+static void test_set_member_slot_instruction_exact_pair_hit_survives_receiver_rehash_and_minor_gc_prune(
+        void) {
+    TEST_START("SET_MEMBER_SLOT Exact Pair Hit Survives Rehash And Minor GC Prune");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *prototypeD;
+        SZrObjectPrototype *prototypeE;
+        SZrObject *instanceD;
+        SZrObject *instanceE;
+        SZrTypeValue permanentReceiverDConstant;
+        SZrTypeValue youngReceiverEConstant;
+        SZrTypeValue initialConstants[8];
+        SZrTypeValue value101;
+        SZrTypeValue value202;
+        SZrTypeValue value303;
+        SZrTypeValue value404;
+        SZrTypeValue value505;
+        SZrTypeValue value606;
+        SZrTypeValue value707;
+        SZrTypeValue value808;
+        SZrTypeValue value909;
+        SZrTypeValue value1001;
+        SZrTypeValue value1102;
+        SZrTypeValue value1203;
+        TZrInstruction instructions[12];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        TZrBool success;
+        SZrHashKeyValuePair *cachedPairBeforeRehash;
+        SZrObject *forwardedInstanceE;
+        const SZrTypeValue *updatedValueD;
+        const SZrTypeValue *updatedValueE;
+
+        TEST_ASSERT_NOT_NULL(memberName);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        init_object_constant_with_shared_field(
+                state, "RehashPermanentD", memberName, 4, &prototypeD, &instanceD, &permanentReceiverDConstant);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceD));
+        init_object_constant_with_shared_field(
+                state, "RehashYoungE", memberName, 5, &prototypeE, &instanceE, &youngReceiverEConstant);
+
+        ZrCore_Value_InitAsInt(state, &value101, 101);
+        ZrCore_Value_InitAsInt(state, &value202, 202);
+        ZrCore_Value_InitAsInt(state, &value303, 303);
+        ZrCore_Value_InitAsInt(state, &value404, 404);
+        ZrCore_Value_InitAsInt(state, &value505, 505);
+        ZrCore_Value_InitAsInt(state, &value606, 606);
+        ZrCore_Value_InitAsInt(state, &value707, 707);
+        ZrCore_Value_InitAsInt(state, &value808, 808);
+        ZrCore_Value_InitAsInt(state, &value909, 909);
+        ZrCore_Value_InitAsInt(state, &value1001, 1001);
+        ZrCore_Value_InitAsInt(state, &value1102, 1102);
+        ZrCore_Value_InitAsInt(state, &value1203, 1203);
+
+        initialConstants[0] = youngReceiverEConstant;
+        initialConstants[1] = value101;
+        initialConstants[2] = permanentReceiverDConstant;
+        initialConstants[3] = value202;
+        initialConstants[4] = youngReceiverEConstant;
+        initialConstants[5] = value303;
+        initialConstants[6] = permanentReceiverDConstant;
+        initialConstants[7] = value404;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 3, 2, 0);
+        instructions[6] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 4, 4);
+        instructions[7] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 5, 5);
+        instructions[8] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 5, 4, 0);
+        instructions[9] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 6, 6);
+        instructions[10] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 7, 7);
+        instructions[11] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 7, 6, 0);
+
+        function = create_test_function(state, instructions, 12, initialConstants, 8, 8);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_PTR(instanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+
+        cachedPairBeforeRehash = function->callSiteCaches[0].picSlots[0].cachedReceiverPair;
+        TEST_ASSERT_TRUE(add_named_fields_until_object_rehashes(state, instanceE, "rehash", 2000u, 32u));
+        TEST_ASSERT_EQUAL_PTR(cachedPairBeforeRehash, function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        function->constantValueList[1] = value505;
+        function->constantValueList[3] = value606;
+        function->constantValueList[4] = function->constantValueList[0];
+        function->constantValueList[5] = value707;
+        function->constantValueList[7] = value808;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueD = get_object_field_cstring(state, instanceD, "value");
+        updatedValueE = get_object_field_cstring(state, instanceE, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueD);
+        TEST_ASSERT_NOT_NULL(updatedValueE);
+        TEST_ASSERT_EQUAL_INT64(808, updatedValueD->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(707, updatedValueE->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(6u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_PTR(cachedPairBeforeRehash, function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
+        TEST_ASSERT_NOT_NULL(forwardedInstanceE);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.storageKind);
+        TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_EQUAL_PTR(cachedPairBeforeRehash, function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        function->constantValueList[1] = value909;
+        function->constantValueList[3] = value1001;
+        function->constantValueList[4] = function->constantValueList[0];
+        function->constantValueList[5] = value1102;
+        function->constantValueList[7] = value1203;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueD = get_object_field_cstring(state, instanceD, "value");
+        updatedValueE = get_object_field_cstring(state, forwardedInstanceE, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueD);
+        TEST_ASSERT_NOT_NULL(updatedValueE);
+        TEST_ASSERT_EQUAL_INT64(1203, updatedValueD->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(1102, updatedValueE->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(10u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        function->constantValueList[1] = value505;
+        function->constantValueList[3] = value606;
+        function->constantValueList[4] = function->constantValueList[0];
+        function->constantValueList[5] = value707;
+        function->constantValueList[7] = value808;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        updatedValueD = get_object_field_cstring(state, instanceD, "value");
+        updatedValueE = get_object_field_cstring(state, forwardedInstanceE, "value");
+        TEST_ASSERT_NOT_NULL(updatedValueD);
+        TEST_ASSERT_NOT_NULL(updatedValueE);
+        TEST_ASSERT_EQUAL_INT64(808, updatedValueD->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(707, updatedValueE->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(14u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT Exact Pair Hit Survives Rehash And Minor GC Prune");
+    TEST_DIVIDER();
+}
+
+static void test_set_member_slot_instruction_does_not_reuse_cached_pair_for_different_receiver_same_prototype(
+        void) {
+    TEST_START("SET_MEMBER_SLOT Different Receiver Same Prototype Avoids Pair Reuse");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrString *sharedTypeName = ZrCore_String_CreateFromNative(state, "ShapeOnlySetSharedBox");
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *sharedPrototype = ZrCore_ObjectPrototype_New(state,
+                                                                         sharedTypeName,
+                                                                         ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrMemberDescriptor descriptor;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrObjectPrototype *otherPrototype;
+        SZrObject *otherInstance;
+        SZrTypeValue receiverAConstant;
+        SZrTypeValue receiverBConstant;
+        SZrTypeValue otherReceiverConstant;
+        SZrTypeValue initialConstants[4];
+        SZrTypeValue updatedValueA;
+        SZrTypeValue updatedValueD;
+        SZrTypeValue updatedValueB;
+        SZrTypeValue updatedValueOther;
+        TZrInstruction instructions[6];
+        SZrFunction *function;
+        TZrBool success;
+        const SZrTypeValue *currentValueA;
+        const SZrTypeValue *currentValueB;
+        const SZrTypeValue *currentValueOther;
+
+        TEST_ASSERT_NOT_NULL(sharedTypeName);
+        TEST_ASSERT_NOT_NULL(memberName);
+        TEST_ASSERT_NOT_NULL(sharedPrototype);
+
+        memset(&descriptor, 0, sizeof(descriptor));
+        descriptor.name = memberName;
+        descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_FIELD;
+        descriptor.isWritable = ZR_TRUE;
+        TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, sharedPrototype, &descriptor));
+
+        init_object_constant_with_existing_field_prototype(
+                state, sharedPrototype, memberName, 111, &instanceA, &receiverAConstant);
+        init_object_constant_with_existing_field_prototype(
+                state, sharedPrototype, memberName, 222, &instanceB, &receiverBConstant);
+        init_object_constant_with_shared_field(
+                state, "ShapeOnlySetOtherBox", memberName, 333, &otherPrototype, &otherInstance, &otherReceiverConstant);
+
+        ZrCore_Value_InitAsInt(state, &updatedValueA, 501);
+        ZrCore_Value_InitAsInt(state, &updatedValueD, 601);
+        ZrCore_Value_InitAsInt(state, &updatedValueB, 777);
+        ZrCore_Value_InitAsInt(state, &updatedValueOther, 888);
+
+        initialConstants[0] = receiverAConstant;
+        initialConstants[1] = updatedValueA;
+        initialConstants[2] = otherReceiverConstant;
+        initialConstants[3] = updatedValueD;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+        instructions[3] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 2, 2);
+        instructions[4] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 3, 3);
+        instructions[5] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 3, 2, 0);
+
+        function = create_test_function(state, instructions, 6, initialConstants, 4, 4);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        instanceA->cachedStringLookupPair = ZR_NULL;
+        instanceB->cachedStringLookupPair = ZR_NULL;
+        otherInstance->cachedStringLookupPair = ZR_NULL;
+        currentValueA = get_object_field_cstring(state, instanceA, "value");
+        currentValueB = get_object_field_cstring(state, instanceB, "value");
+        currentValueOther = get_object_field_cstring(state, otherInstance, "value");
+        TEST_ASSERT_NOT_NULL(currentValueA);
+        TEST_ASSERT_NOT_NULL(currentValueB);
+        TEST_ASSERT_NOT_NULL(currentValueOther);
+        TEST_ASSERT_EQUAL_INT64(501, currentValueA->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(222, currentValueB->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(601, currentValueOther->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(0u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(sharedPrototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceA, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_EQUAL_PTR(otherPrototype, function->callSiteCaches[0].picSlots[1].cachedReceiverPrototype);
+        function->constantValueList[0] = receiverBConstant;
+        function->constantValueList[1] = updatedValueB;
+        function->constantValueList[3] = updatedValueOther;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        instanceA->cachedStringLookupPair = ZR_NULL;
+        instanceB->cachedStringLookupPair = ZR_NULL;
+        otherInstance->cachedStringLookupPair = ZR_NULL;
+        currentValueA = get_object_field_cstring(state, instanceA, "value");
+        currentValueB = get_object_field_cstring(state, instanceB, "value");
+        currentValueOther = get_object_field_cstring(state, otherInstance, "value");
+        TEST_ASSERT_NOT_NULL(currentValueA);
+        TEST_ASSERT_NOT_NULL(currentValueB);
+        TEST_ASSERT_NOT_NULL(currentValueOther);
+        TEST_ASSERT_EQUAL_INT64(501, currentValueA->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(777, currentValueB->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(888, currentValueOther->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT Different Receiver Same Prototype Avoids Pair Reuse");
+    TEST_DIVIDER();
+}
+
+static void
+test_set_member_slot_instruction_same_prototype_safe_hit_refreshes_cached_receiver_before_minor_gc_prune(void) {
+    TEST_START("SET_MEMBER_SLOT Same Prototype Safe Hit Refreshes PIC Receiver");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *sharedTypeName = ZrCore_String_CreateFromNative(state, "ShapeOnlySetRefreshBox");
+        SZrString *memberName = ZrCore_String_CreateFromNative(state, "value");
+        SZrObjectPrototype *sharedPrototype = ZrCore_ObjectPrototype_New(state,
+                                                                         sharedTypeName,
+                                                                         ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        SZrMemberDescriptor descriptor;
+        SZrObject *instanceA;
+        SZrObject *instanceB;
+        SZrTypeValue receiverAConstant;
+        SZrTypeValue receiverBConstant;
+        SZrTypeValue constants[2];
+        SZrTypeValue updatedValueA;
+        SZrTypeValue updatedValueB;
+        TZrInstruction instructions[3];
+        SZrFunction *function;
+        SZrRawObject *functionObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        TZrBool success;
+        const SZrTypeValue *currentValueA;
+        const SZrTypeValue *currentValueB;
+
+        TEST_ASSERT_NOT_NULL(sharedTypeName);
+        TEST_ASSERT_NOT_NULL(memberName);
+        TEST_ASSERT_NOT_NULL(sharedPrototype);
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+
+        memset(&descriptor, 0, sizeof(descriptor));
+        descriptor.name = memberName;
+        descriptor.kind = ZR_MEMBER_DESCRIPTOR_KIND_FIELD;
+        descriptor.isWritable = ZR_TRUE;
+        TEST_ASSERT_TRUE(ZrCore_ObjectPrototype_AddMemberDescriptor(state, sharedPrototype, &descriptor));
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(sharedPrototype));
+
+        init_object_constant_with_existing_field_prototype(
+                state, sharedPrototype, memberName, 111, &instanceA, &receiverAConstant);
+        init_object_constant_with_existing_field_prototype(
+                state, sharedPrototype, memberName, 222, &instanceB, &receiverBConstant);
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(instanceB));
+
+        ZrCore_Value_InitAsInt(state, &updatedValueA, 501);
+        ZrCore_Value_InitAsInt(state, &updatedValueB, 777);
+        constants[0] = receiverAConstant;
+        constants[1] = updatedValueA;
+
+        instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+        instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+        instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 1, 0, 0);
+
+        function = create_test_function(state, instructions, 3, constants, 2, 2);
+        TEST_ASSERT_NOT_NULL(function);
+
+        function->memberEntries = (SZrFunctionMemberEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionMemberEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->memberEntries);
+        memset(function->memberEntries, 0, sizeof(SZrFunctionMemberEntry));
+        function->memberEntries[0].symbol = memberName;
+        function->memberEntries[0].entryKind = ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL;
+        function->memberEntryLength = 1;
+
+        function->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionCallSiteCacheEntry),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches);
+        memset(function->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+        function->callSiteCaches[0].kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+        function->callSiteCaches[0].instructionIndex = 2;
+        function->callSiteCaches[0].memberEntryIndex = 0;
+        function->callSiteCacheLength = 1;
+
+        functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        ZrCore_RawObject_MarkAsReferenced(functionObject);
+        ZrCore_RawObject_SetStorageKind(functionObject, ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(functionObject, ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        instanceA->cachedStringLookupPair = ZR_NULL;
+        instanceB->cachedStringLookupPair = ZR_NULL;
+        currentValueA = get_object_field_cstring(state, instanceA, "value");
+        currentValueB = get_object_field_cstring(state, instanceB, "value");
+        TEST_ASSERT_NOT_NULL(currentValueA);
+        TEST_ASSERT_NOT_NULL(currentValueB);
+        TEST_ASSERT_EQUAL_INT64(501, currentValueA->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(222, currentValueB->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(0u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].picSlotCount);
+        TEST_ASSERT_EQUAL_PTR(sharedPrototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceA, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        function->constantValueList[0] = receiverBConstant;
+        function->constantValueList[1] = updatedValueB;
+
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+        success = execute_test_function(state, function);
+        TEST_ASSERT_TRUE(success);
+
+        instanceA->cachedStringLookupPair = ZR_NULL;
+        instanceB->cachedStringLookupPair = ZR_NULL;
+        currentValueA = get_object_field_cstring(state, instanceA, "value");
+        currentValueB = get_object_field_cstring(state, instanceB, "value");
+        TEST_ASSERT_NOT_NULL(currentValueA);
+        TEST_ASSERT_NOT_NULL(currentValueB);
+        TEST_ASSERT_EQUAL_INT64(501, currentValueA->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_INT64(777, currentValueB->value.nativeObject.nativeInt64);
+        TEST_ASSERT_EQUAL_UINT32(1u, function->callSiteCaches[0].runtimeMissCount);
+        TEST_ASSERT_EQUAL_UINT32(2u, function->callSiteCaches[0].runtimeHitCount);
+        TEST_ASSERT_EQUAL_PTR(sharedPrototype, function->callSiteCaches[0].picSlots[0].cachedReceiverPrototype);
+        TEST_ASSERT_EQUAL_PTR(instanceB, function->callSiteCaches[0].picSlots[0].cachedReceiverObject);
+        TEST_ASSERT_NOT_NULL(instanceB->cachedStringLookupPair);
+        TEST_ASSERT_EQUAL_PTR(instanceB->cachedStringLookupPair,
+                              function->callSiteCaches[0].picSlots[0].cachedReceiverPair);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
+        TEST_ASSERT_EQUAL_UINT32(0u, count_remembered_object_occurrences(gc, functionObject));
+
+        ZrCore_Function_Free(state, function);
+    }
+
+    destroy_test_state(state);
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "SET_MEMBER_SLOT Same Prototype Safe Hit Refreshes PIC Receiver");
     TEST_DIVIDER();
 }
 
@@ -4123,6 +7102,40 @@ static void test_mul_generic(void) {
     TEST_DIVIDER();
 }
 
+static void test_mul_generic_bool_bool_xor_semantics(void) {
+    TEST_START("MUL Generic Bool XOR Semantics");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    SZrTypeValue constants[2];
+    ZrCore_Value_InitAsBool(state, &constants[0], ZR_TRUE);
+    ZrCore_Value_InitAsBool(state, &constants[1], ZR_FALSE);
+
+    TZrInstruction instructions[3];
+    instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+    instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+    instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(MUL), 2, 0, 1);
+
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
+    TEST_ASSERT_TRUE(success);
+
+    TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, result->type);
+    TEST_ASSERT_TRUE(result->value.nativeObject.nativeBool);
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "MUL Generic Bool XOR Semantics");
+    TEST_DIVIDER();
+}
+
 static void test_div_generic(void) {
     TEST_START("DIV Generic Instruction");
     SZrTestTimer timer;
@@ -4189,6 +7202,40 @@ static void test_mod_generic(void) {
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, "MOD Generic Instruction");
+    TEST_DIVIDER();
+}
+
+static void test_mod_generic_negative_divisor_normalizes_sign(void) {
+    TEST_START("MOD Generic Negative Divisor");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    SZrTypeValue constants[2];
+    ZrCore_Value_InitAsInt(state, &constants[0], 17);
+    ZrCore_Value_InitAsInt(state, &constants[1], -5);
+
+    TZrInstruction instructions[3];
+    instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+    instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+    instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(MOD), 2, 0, 1);
+
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
+    TEST_ASSERT_TRUE(success);
+
+    TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(result->type));
+    TEST_ASSERT_EQUAL_INT64(2, result->value.nativeObject.nativeInt64);
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "MOD Generic Negative Divisor");
     TEST_DIVIDER();
 }
 
@@ -4744,7 +7791,25 @@ int main(void) {
     RUN_TEST(test_super_meta_get_and_meta_set_cached_instructions_fill_and_hit_callsite_cache);
     RUN_TEST(test_get_member_slot_and_set_member_slot_instructions_fill_and_hit_callsite_cache);
     RUN_TEST(test_get_member_slot_instruction_records_remembered_set_for_young_receiver_metadata_even_with_permanent_owner);
+    RUN_TEST(test_get_member_slot_instruction_pic_replacement_keeps_single_remembered_entry_for_young_receiver_metadata);
     RUN_TEST(test_get_member_slot_instruction_skips_remembered_set_when_cache_only_keeps_permanent_targets);
+    RUN_TEST(test_get_member_slot_instruction_pic_replacement_stays_out_of_remembered_set_for_permanent_targets);
+    RUN_TEST(test_get_member_slot_instruction_minor_gc_prunes_remembered_set_after_replacing_young_targets_with_permanent_targets);
+    RUN_TEST(test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair_before_permanent_pic_prune);
+    RUN_TEST(test_get_member_slot_instruction_exact_pair_hit_survives_receiver_rehash_and_minor_gc_prune);
+    RUN_TEST(test_get_member_slot_instruction_does_not_reuse_cached_pair_for_different_receiver_same_prototype);
+    RUN_TEST(test_get_member_slot_instruction_same_prototype_safe_hit_refreshes_cached_receiver_before_minor_gc_prune);
+    RUN_TEST(test_set_member_slot_instruction_records_remembered_set_for_young_receiver_metadata_even_with_permanent_owner);
+    RUN_TEST(test_set_member_slot_instruction_pic_replacement_keeps_single_remembered_entry_for_young_receiver_metadata);
+    RUN_TEST(test_set_member_slot_instruction_pic_replacement_records_remembered_set_when_young_receiver_replaces_permanent_receivers);
+    RUN_TEST(test_set_member_slot_instruction_pic_replacement_stays_out_of_remembered_set_for_permanent_receivers);
+    RUN_TEST(test_set_member_slot_instruction_minor_gc_prunes_remembered_set_after_replacing_young_receivers_with_permanent_receivers);
+    RUN_TEST(test_set_member_slot_instruction_minor_gc_readds_and_reprunes_remembered_set_during_permanent_young_pic_oscillation);
+    RUN_TEST(test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair_before_permanent_pic_prune);
+    RUN_TEST(test_set_member_slot_instruction_second_minor_gc_prunes_stale_remembered_after_forwarded_receiver_promotes_old);
+    RUN_TEST(test_set_member_slot_instruction_exact_pair_hit_survives_receiver_rehash_and_minor_gc_prune);
+    RUN_TEST(test_set_member_slot_instruction_does_not_reuse_cached_pair_for_different_receiver_same_prototype);
+    RUN_TEST(test_set_member_slot_instruction_same_prototype_safe_hit_refreshes_cached_receiver_before_minor_gc_prune);
     RUN_TEST(test_object_invoke_member_omits_receiver_for_static_hidden_accessor);
     RUN_TEST(test_super_meta_get_cached_instruction_populates_two_slot_pic);
     RUN_TEST(test_super_meta_call_cached_instruction_fills_and_hits_callsite_pic);
@@ -4768,8 +7833,10 @@ int main(void) {
     RUN_TEST(test_add_generic);
     RUN_TEST(test_sub_generic);
     RUN_TEST(test_mul_generic);
+    RUN_TEST(test_mul_generic_bool_bool_xor_semantics);
     RUN_TEST(test_div_generic);
     RUN_TEST(test_mod_generic);
+    RUN_TEST(test_mod_generic_negative_divisor_normalizes_sign);
     RUN_TEST(test_pow_generic);
     RUN_TEST(test_neg_generic);
     RUN_TEST(test_shift_left_generic);

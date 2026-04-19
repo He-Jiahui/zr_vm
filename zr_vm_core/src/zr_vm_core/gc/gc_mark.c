@@ -59,6 +59,25 @@ TZrSize garbage_collector_mark_string_roots(SZrState *state) {
         }
     }
 
+    for (TZrSize bucketIndex = 0; bucketIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_COUNT; bucketIndex++) {
+        for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH; depthIndex++) {
+            ZrStringConcatPairCacheEntry *entry = &global->stringConcatPairCache[bucketIndex][depthIndex];
+
+            if (entry->left != ZR_NULL) {
+                garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(entry->left));
+                work++;
+            }
+            if (entry->right != ZR_NULL) {
+                garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(entry->right));
+                work++;
+            }
+            if (entry->result != ZR_NULL) {
+                garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(entry->result));
+                work++;
+            }
+        }
+    }
+
     for (TZrSize metaIndex = 0; metaIndex < ZR_META_ENUM_MAX; metaIndex++) {
         if (global->metaFunctionName[metaIndex] != ZR_NULL) {
             garbage_collector_mark_object(state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->metaFunctionName[metaIndex]));
@@ -997,7 +1016,9 @@ static void garbage_collector_remember_object(SZrGlobalState *global, SZrRawObje
         return;
     }
 
-    global->garbageCollector->rememberedObjects[global->garbageCollector->rememberedObjectCount++] = object;
+    global->garbageCollector->rememberedObjects[global->garbageCollector->rememberedObjectCount] = object;
+    object->garbageCollectMark.rememberedRegistryIndex = global->garbageCollector->rememberedObjectCount;
+    global->garbageCollector->rememberedObjectCount++;
     global->garbageCollector->statsSnapshot.rememberedObjectCount =
             (TZrUInt32)global->garbageCollector->rememberedObjectCount;
 }
