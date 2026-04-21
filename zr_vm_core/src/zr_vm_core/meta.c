@@ -30,6 +30,13 @@
 #define ZR_META_COMPARE_RESULT_EQUAL ((TZrInt64)0)
 #define ZR_META_COMPARE_RESULT_GREATER ((TZrInt64)1)
 
+/*
+ * Native meta methods are internal runtime plumbing. Keep their repeated stack
+ * slot reads off the helper-profile path so stack-growth restore costs are not
+ * inflated by bookkeeping-only unwraps.
+ */
+#define ZrCore_Stack_GetValue ZrCore_Stack_GetValueNoProfile
+
 void ZrCore_Meta_GlobalStaticsInit(SZrState *state) {
     SZrGlobalState *global = state->global;
     for (TZrEnum i = 0; i < ZR_META_ENUM_MAX; i++) {
@@ -1082,4 +1089,3 @@ void ZrCore_Meta_InitBuiltinTypeMetaMethods(SZrState *state, EZrValueType valueT
             break;
     }
 }
-

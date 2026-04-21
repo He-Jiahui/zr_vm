@@ -67,7 +67,7 @@ typedef struct SZrRuntimeDecoratorIgnoredObjectRoot {
 static TZrBool runtime_decorator_ignore_value_object(SZrState *state,
                                                      const SZrTypeValue *value,
                                                      SZrRuntimeDecoratorIgnoredObjectRoot *root) {
-    TZrBool alreadyIgnored;
+    TZrBool addedByCaller;
 
     if (root != ZR_NULL) {
         memset(root, 0, sizeof(*root));
@@ -78,14 +78,16 @@ static TZrBool runtime_decorator_ignore_value_object(SZrState *state,
         return ZR_TRUE;
     }
 
-    alreadyIgnored = ZrCore_GarbageCollector_IsObjectIgnored(state->global, value->value.object);
-    if (!alreadyIgnored && !ZrCore_GarbageCollector_IgnoreObject(state, value->value.object)) {
+    if (!ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state->global,
+                                                          state,
+                                                          value->value.object,
+                                                          &addedByCaller)) {
         return ZR_FALSE;
     }
 
     root->global = state->global;
     root->object = value->value.object;
-    root->owned = alreadyIgnored ? ZR_FALSE : ZR_TRUE;
+    root->owned = addedByCaller;
     return ZR_TRUE;
 }
 

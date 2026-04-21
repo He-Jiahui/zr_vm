@@ -85,6 +85,8 @@ ZR_CORE_API void ZrCore_Value_CopySlow(struct SZrState *state,
                                        SZrTypeValue *destination,
                                        const SZrTypeValue *source);
 
+ZR_CORE_API TZrBool ZrCore_Value_CanFastCopyPlainHeapObject(struct SZrState *state, const SZrTypeValue *source);
+
 static ZR_FORCE_INLINE void ZrCore_Value_ResetAsNullNoProfile(SZrTypeValue *value) {
     ZR_ASSERT(value != ZR_NULL);
     value->type = ZR_VALUE_TYPE_NULL;
@@ -119,7 +121,9 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Value_CanFastCopyPlainValue(const SZrTypeV
 static ZR_FORCE_INLINE TZrBool ZrCore_Value_TryCopyFastNoProfile(struct SZrState *state,
                                                                  SZrTypeValue *destination,
                                                                  const SZrTypeValue *source) {
-    ZR_UNUSED_PARAMETER(state);
+    TZrBool sourceHasNoOwnership;
+    TZrBool destinationHasNoOwnership;
+
     ZR_ASSERT(destination != ZR_NULL);
     ZR_ASSERT(source != ZR_NULL);
 
@@ -127,7 +131,18 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Value_TryCopyFastNoProfile(struct SZrState
         return ZR_TRUE;
     }
 
-    if (ZR_LIKELY(ZrCore_Value_CanFastCopyPlainValue(destination, source))) {
+    sourceHasNoOwnership = ZrCore_Value_HasNormalizedNoOwnership(source);
+    destinationHasNoOwnership = ZrCore_Value_HasNormalizedNoOwnership(destination);
+    if (ZR_UNLIKELY(!(sourceHasNoOwnership && destinationHasNoOwnership))) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_LIKELY(!source->isGarbageCollectable || source->type != ZR_VALUE_TYPE_OBJECT)) {
+        *destination = *source;
+        return ZR_TRUE;
+    }
+
+    if (ZrCore_Value_CanFastCopyPlainHeapObject(state, source)) {
         *destination = *source;
         return ZR_TRUE;
     }

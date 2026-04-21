@@ -248,6 +248,17 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_c
         TZrUInt32 instructionIndex,
         TZrUInt32 slot,
         TZrUInt32 depth);
+static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_typed_slot_callable_provenance_before_instruction(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 slot,
+        TZrUInt32 depth);
+static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_child_parameter_callable_provenance_from_owner_calls(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 slot,
+        TZrUInt32 depth);
 static SZrFunction *compiler_quickening_resolve_owner_callable_metadata_from_closure_capture(
         SZrState *state,
         SZrFunction *function,
@@ -270,6 +281,8 @@ static SZrFunction *compiler_quickening_resolve_bound_member_callable_metadata_f
         TZrUInt32 writerIndex,
         EZrCompilerQuickeningSlotKind *outSlotKind,
         EZrCompilerQuickeningCallableProvenanceKind *outProvenance);
+static SZrFunction *compiler_quickening_find_prototype_owner_function(SZrFunction *function);
+static TZrBool compiler_quickening_function_matches_inline_child(const SZrFunction *left, const SZrFunction *right);
 
 static const TZrChar *compiler_quickening_type_name_text(SZrString *typeName) {
     if (typeName == ZR_NULL) {
@@ -463,8 +476,66 @@ static const SZrTypeValue *compiler_quickening_resolve_prototype_member_callable
     return ZrCore_Object_GetValue(state, &prototype->super, &memberKey);
 }
 
+static SZrObjectPrototype *compiler_quickening_find_owner_runtime_prototype_by_name(
+        SZrState *state,
+        SZrFunction *function,
+        SZrString *typeName) {
+    SZrFunction *prototypeOwner;
+    const TZrChar *targetName;
+    TZrUInt32 prototypeLimit;
+
+    if (state == ZR_NULL || function == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    targetName = compiler_quickening_type_name_text(typeName);
+    if (targetName == ZR_NULL || targetName[0] == '\0') {
+        return ZR_NULL;
+    }
+
+    prototypeOwner = compiler_quickening_find_prototype_owner_function(function);
+    if (prototypeOwner == ZR_NULL || prototypeOwner->prototypeCount == 0) {
+        return ZR_NULL;
+    }
+
+    if (prototypeOwner->prototypeInstances == ZR_NULL ||
+        prototypeOwner->prototypeInstancesLength < prototypeOwner->prototypeCount) {
+        ZrCore_Module_CreatePrototypesFromData(state, ZR_NULL, prototypeOwner);
+    }
+
+    if (prototypeOwner->prototypeInstances == ZR_NULL || prototypeOwner->prototypeInstancesLength == 0) {
+        return ZR_NULL;
+    }
+
+    prototypeLimit = prototypeOwner->prototypeInstancesLength;
+    if (prototypeLimit > prototypeOwner->prototypeCount) {
+        prototypeLimit = prototypeOwner->prototypeCount;
+    }
+
+    for (TZrUInt32 prototypeIndex = 0; prototypeIndex < prototypeLimit; prototypeIndex++) {
+        SZrObjectPrototype *prototype = prototypeOwner->prototypeInstances[prototypeIndex];
+        const TZrChar *prototypeName;
+
+        if (prototype == ZR_NULL || prototype->name == ZR_NULL) {
+            continue;
+        }
+
+        if (prototype->name == typeName) {
+            return prototype;
+        }
+
+        prototypeName = compiler_quickening_type_name_text(prototype->name);
+        if (prototypeName != ZR_NULL && strcmp(targetName, prototypeName) == 0) {
+            return prototype;
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static SZrObjectPrototype *compiler_quickening_resolve_type_ref_runtime_prototype(
         SZrState *state,
+        SZrFunction *function,
         const SZrFunctionTypedTypeRef *typeRef) {
     const TZrChar *typeNameText;
     SZrObjectPrototype *prototype;
@@ -492,15 +563,32 @@ static SZrObjectPrototype *compiler_quickening_resolve_type_ref_runtime_prototyp
         return ZrLib_Type_FindPrototype(state, "zr.container.Array");
     }
 
-    return ZR_NULL;
+    return compiler_quickening_find_owner_runtime_prototype_by_name(state, function, typeRef->typeName);
 }
 
-static SZrObjectPrototype *compiler_quickening_resolve_binding_runtime_prototype(
-        SZrState *state,
-        const SZrFunctionTypedLocalBinding *binding) {
-    return compiler_quickening_resolve_type_ref_runtime_prototype(
-            state,
-            binding != ZR_NULL ? &binding->type : ZR_NULL);
+static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_prototype_meta_call_provenance(
+        const SZrObjectPrototype *prototype,
+        EZrCompilerQuickeningSlotKind *outSlotKind) {
+    const SZrMeta *meta;
+
+    if (outSlotKind != ZR_NULL) {
+        *outSlotKind = ZR_COMPILER_QUICKENING_SLOT_KIND_UNKNOWN;
+    }
+
+    if (prototype == ZR_NULL) {
+        return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    meta = prototype->metaTable.metas[ZR_META_CALL];
+    if (meta == ZR_NULL || meta->function == ZR_NULL) {
+        return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    if (outSlotKind != ZR_NULL && meta->function->hasCallableReturnType) {
+        *outSlotKind = compiler_quickening_slot_kind_from_typed_type_ref(&meta->function->callableReturnType);
+    }
+
+    return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM;
 }
 
 static SZrFunction *compiler_quickening_find_prototype_owner_function(SZrFunction *function) {
@@ -916,6 +1004,44 @@ static TZrBool compiler_quickening_resolve_slot_type_ref_before_instruction_in_r
         default:
             return ZR_FALSE;
     }
+}
+
+static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_typed_slot_callable_provenance_before_instruction(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 instructionIndex,
+        TZrUInt32 slot,
+        TZrUInt32 depth) {
+    SZrFunctionTypedTypeRef recoveredTypeRef;
+    const SZrFunctionTypedLocalBinding *binding;
+    const SZrFunctionTypedTypeRef *typeRef = ZR_NULL;
+    SZrObjectPrototype *prototype;
+
+    if (state == ZR_NULL || function == ZR_NULL || depth > function->stackSize + 8u) {
+        return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    binding = compiler_quickening_find_active_typed_local_binding(function, slot, instructionIndex);
+    if (binding == ZR_NULL &&
+        (function->localVariableList == ZR_NULL || function->localVariableLength == 0)) {
+        binding = compiler_quickening_find_typed_local_binding(function, slot);
+    }
+    if (binding != ZR_NULL && binding->type.typeName != ZR_NULL) {
+        typeRef = &binding->type;
+    } else if (compiler_quickening_resolve_slot_type_ref_before_instruction_in_range(function,
+                                                                                      0,
+                                                                                      instructionIndex,
+                                                                                      slot,
+                                                                                      depth + 1u,
+                                                                                      &recoveredTypeRef)) {
+        typeRef = &recoveredTypeRef;
+    }
+
+    prototype = compiler_quickening_resolve_type_ref_runtime_prototype(
+            state,
+            ZR_CAST(SZrFunction *, function),
+            typeRef);
+    return compiler_quickening_resolve_prototype_meta_call_provenance(prototype, ZR_NULL);
 }
 
 static TZrBool compiler_quickening_binding_is_int(const SZrFunctionTypedLocalBinding *binding) {
@@ -1729,6 +1855,88 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_u
     }
 }
 
+static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_child_parameter_callable_provenance_from_owner_calls(
+        SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 slot,
+        TZrUInt32 depth) {
+    const SZrFunction *ownerFunction;
+    EZrCompilerQuickeningCallableProvenanceKind resolvedProvenance =
+            ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    TZrUInt32 matchedCallCount = 0;
+
+    if (state == ZR_NULL || function == ZR_NULL || function->ownerFunction == ZR_NULL ||
+        function->ownerFunction->instructionsList == ZR_NULL || slot >= function->parameterCount ||
+        depth > function->ownerFunction->instructionsLength + 8u) {
+        return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+    }
+
+    ownerFunction = function->ownerFunction;
+    for (TZrUInt32 instructionIndex = 0; instructionIndex < ownerFunction->instructionsLength; instructionIndex++) {
+        const TZrInstruction *instruction = &ownerFunction->instructionsList[instructionIndex];
+        EZrInstructionCode opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+        TZrUInt32 argumentCount;
+        TZrUInt32 calleeSlot;
+        TZrUInt32 argumentSlot;
+        SZrFunction *resolvedCallee;
+        EZrCompilerQuickeningCallableProvenanceKind argumentProvenance;
+
+        if (!compiler_quickening_opcode_uses_call_argument_slots(opcode)) {
+            continue;
+        }
+
+        argumentCount = compiler_quickening_call_argument_count(ownerFunction, instruction);
+        if (slot >= argumentCount) {
+            continue;
+        }
+
+        calleeSlot = (TZrUInt32)instruction->instruction.operand.operand1[0];
+        resolvedCallee = compiler_quickening_resolve_callable_metadata_function_for_slot_before_instruction(
+                state,
+                ZR_CAST(SZrFunction *, ownerFunction),
+                instructionIndex,
+                calleeSlot,
+                depth + 1u,
+                ZR_NULL,
+                ZR_NULL);
+        if (resolvedCallee != function &&
+            !compiler_quickening_function_matches_inline_child(resolvedCallee, function)) {
+            continue;
+        }
+
+        argumentSlot = calleeSlot + 1u + slot;
+        argumentProvenance = compiler_quickening_resolve_latest_prior_callable_provenance(
+                state,
+                ownerFunction,
+                instructionIndex,
+                argumentSlot,
+                depth + 1u);
+        if (argumentProvenance == ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN) {
+            argumentProvenance = compiler_quickening_resolve_typed_slot_callable_provenance_before_instruction(
+                    state,
+                    ownerFunction,
+                    instructionIndex,
+                    argumentSlot,
+                    depth + 1u);
+        }
+        if (argumentProvenance == ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN) {
+            return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+        }
+
+        if (matchedCallCount == 0u) {
+            resolvedProvenance = argumentProvenance;
+            matchedCallCount = 1u;
+            continue;
+        }
+
+        if (resolvedProvenance != argumentProvenance) {
+            return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+        }
+    }
+
+    return matchedCallCount > 0u ? resolvedProvenance : ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
+}
+
 static TZrBool compiler_quickening_function_constant_read_int64(const SZrFunction *function,
                                                                 TZrUInt32 constantIndex,
                                                                 TZrInt64 *outValue) {
@@ -1912,6 +2120,19 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_c
         }
     }
 
+    {
+        EZrCompilerQuickeningCallableProvenanceKind provenance =
+                compiler_quickening_resolve_typed_slot_callable_provenance_before_instruction(
+                        state,
+                        function,
+                        instructionIndex,
+                        slot,
+                        depth + 1u);
+        if (provenance != ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN) {
+            return provenance;
+        }
+    }
+
     if (compiler_quickening_slot_is_exported_callable_binding(function, slot)) {
         return compiler_quickening_resolve_latest_prior_callable_provenance(
                 state,
@@ -1919,6 +2140,18 @@ static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_c
                 instructionIndex,
                 slot,
                 depth + 1u);
+    }
+
+    if (slot < function->parameterCount) {
+        EZrCompilerQuickeningCallableProvenanceKind provenance =
+                compiler_quickening_resolve_child_parameter_callable_provenance_from_owner_calls(
+                        state,
+                        function,
+                        slot,
+                        depth + 1u);
+        if (provenance != ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN) {
+            return provenance;
+        }
     }
 
     return ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_UNKNOWN;
@@ -2082,7 +2315,7 @@ static SZrFunction *compiler_quickening_resolve_bound_member_callable_metadata_f
         return ZR_NULL;
     }
 
-    prototype = compiler_quickening_resolve_type_ref_runtime_prototype(state, receiverTypeRef);
+    prototype = compiler_quickening_resolve_type_ref_runtime_prototype(state, function, receiverTypeRef);
     if (prototype == ZR_NULL) {
         return ZR_NULL;
     }
@@ -6196,8 +6429,16 @@ static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *functi
         EZrInstructionCode opcode = (EZrInstructionCode)instruction->instruction.operationCode;
         EZrCompilerQuickeningCallableProvenanceKind provenance;
 
-        if (opcode != ZR_INSTRUCTION_ENUM(FUNCTION_CALL) && opcode != ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)) {
-            continue;
+        switch (opcode) {
+            case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+            case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
+            case ZR_INSTRUCTION_ENUM(DYN_CALL):
+            case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL):
+            case ZR_INSTRUCTION_ENUM(META_CALL):
+            case ZR_INSTRUCTION_ENUM(META_TAIL_CALL):
+                break;
+            default:
+                continue;
         }
 
         provenance = compiler_quickening_resolve_callable_provenance_before_instruction(
@@ -6208,13 +6449,16 @@ static TZrBool compiler_quicken_known_calls(SZrState *state, SZrFunction *functi
                 instruction->instruction.operand.operand1[0],
                 0);
         if (provenance == ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_VM) {
-            instruction->instruction.operationCode =
-                    (TZrUInt16)(opcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)
-                                        ? ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)
-                                        : ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL));
+            instruction->instruction.operationCode = (TZrUInt16)((opcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) ||
+                                                                  opcode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL) ||
+                                                                  opcode == ZR_INSTRUCTION_ENUM(META_TAIL_CALL))
+                                                                         ? ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)
+                                                                         : ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL));
         } else if (provenance == ZR_COMPILER_QUICKENING_CALLABLE_PROVENANCE_NATIVE) {
             instruction->instruction.operationCode =
-                    (TZrUInt16)(opcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)
+                    (TZrUInt16)((opcode == ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL) ||
+                                 opcode == ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL) ||
+                                 opcode == ZR_INSTRUCTION_ENUM(META_TAIL_CALL))
                                         ? ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL)
                                         : ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL));
         }

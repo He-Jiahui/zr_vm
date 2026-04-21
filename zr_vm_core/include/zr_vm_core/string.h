@@ -39,6 +39,11 @@ typedef struct SZrString SZrString;
 struct ZR_STRUCT_ALIGN SZrStringTable {
     SZrHashSet stringHashSet;
     TZrBool isValid;
+    TZrUInt8 *minorYoungBucketFlags;
+    TZrSize *minorYoungBucketIndexes;
+    TZrSize minorYoungBucketCapacity;
+    TZrSize minorYoungBucketCount;
+    SZrString *shortStringListHead;
 };
 
 typedef struct SZrStringTable SZrStringTable;
@@ -56,6 +61,56 @@ typedef struct SZrNativeStringFormatBuffer SZrNativeStringFormatBuffer;
 
 ZR_FORCE_INLINE TZrInt32 ZrCore_NativeString_Compare(TZrNativeString string1, TZrNativeString string2) {
     return strcmp(string1, string2);
+}
+
+ZR_FORCE_INLINE TZrBool ZrCore_StringTable_MinorYoungBucketFlagsReady(const SZrStringTable *stringTable) {
+    if (stringTable == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return stringTable->minorYoungBucketCapacity == stringTable->stringHashSet.capacity &&
+           (stringTable->stringHashSet.capacity == 0u ||
+            (stringTable->minorYoungBucketFlags != ZR_NULL && stringTable->minorYoungBucketIndexes != ZR_NULL));
+}
+
+ZR_FORCE_INLINE TZrBool ZrCore_StringTable_RecordMinorYoungBucket(SZrStringTable *stringTable, TZrSize bucketIndex) {
+    if (stringTable == ZR_NULL ||
+        stringTable->minorYoungBucketFlags == ZR_NULL ||
+        stringTable->minorYoungBucketIndexes == ZR_NULL ||
+        bucketIndex >= stringTable->minorYoungBucketCapacity) {
+        return ZR_FALSE;
+    }
+
+    if (stringTable->minorYoungBucketFlags[bucketIndex] == 0u) {
+        ZR_ASSERT(stringTable->minorYoungBucketCount < stringTable->minorYoungBucketCapacity);
+        stringTable->minorYoungBucketFlags[bucketIndex] = 1u;
+        stringTable->minorYoungBucketIndexes[stringTable->minorYoungBucketCount++] = bucketIndex;
+    }
+
+    return ZR_TRUE;
+}
+
+ZR_FORCE_INLINE void ZrCore_StringTable_ClearMinorYoungBucketAt(SZrStringTable *stringTable, TZrSize activeIndex) {
+    TZrSize bucketIndex;
+
+    if (stringTable == ZR_NULL ||
+        stringTable->minorYoungBucketFlags == ZR_NULL ||
+        stringTable->minorYoungBucketIndexes == ZR_NULL ||
+        activeIndex >= stringTable->minorYoungBucketCount) {
+        return;
+    }
+
+    bucketIndex = stringTable->minorYoungBucketIndexes[activeIndex];
+    stringTable->minorYoungBucketFlags[bucketIndex] = 0u;
+    stringTable->minorYoungBucketCount--;
+    if (activeIndex < stringTable->minorYoungBucketCount) {
+        stringTable->minorYoungBucketIndexes[activeIndex] =
+                stringTable->minorYoungBucketIndexes[stringTable->minorYoungBucketCount];
+    }
+}
+
+ZR_FORCE_INLINE TZrBool ZrCore_String_IsShort(const SZrString *string) {
+    return string != ZR_NULL && string->shortStringLength < ZR_VM_LONG_STRING_FLAG;
 }
 
 
@@ -102,6 +157,7 @@ ZR_CORE_API void ZrCore_StringTable_New(struct SZrGlobalState *global);
 ZR_CORE_API void ZrCore_StringTable_Free(struct SZrGlobalState *global, SZrStringTable *stringTable);
 
 ZR_CORE_API void ZrCore_StringTable_Init(struct SZrState *state);
+ZR_CORE_API TZrBool ZrCore_StringTable_SyncMinorYoungBucketFlags(struct SZrGlobalState *global);
 
 
 ZR_CORE_API SZrString *ZrCore_String_Create(struct SZrState *state, TZrNativeString string, TZrSize length);

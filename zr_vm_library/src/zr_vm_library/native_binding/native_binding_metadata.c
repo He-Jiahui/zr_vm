@@ -19,16 +19,11 @@ static TZrBool native_metadata_pin_raw_object(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (ZrCore_GarbageCollector_IsObjectIgnored(state->global, object)) {
-        return ZR_TRUE;
-    }
-
-    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
+    if (!ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state->global, state, object, &pin->addedByCaller)) {
         pin->object = ZR_NULL;
         return ZR_FALSE;
     }
 
-    pin->addedByCaller = ZR_TRUE;
     return ZR_TRUE;
 }
 
@@ -1852,4 +1847,3 @@ void native_registry_resolve_type_relationships(SZrState *state,
         }
     }
 }
-

@@ -88,6 +88,7 @@ typedef struct SZrGarbageCollectRegionDescriptor {
     TZrUInt64 usedBytes;
     TZrUInt64 liveBytes;
     TZrUInt32 liveObjectCount;
+    TZrUInt32 compactionSeenEpoch;
 } SZrGarbageCollectRegionDescriptor;
 
 typedef struct SZrGarbageCollectorStatsSnapshot {
@@ -202,6 +203,7 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
     EZrGarbageCollectCollectionKind scheduledCollectionKind;
     EZrGarbageCollectCollectionPhase collectionPhase;
     TZrUInt32 minorCollectionEpoch;
+    TZrUInt32 oldCompactionScanEpoch;
     SZrGarbageCollectorStatsSnapshot statsSnapshot;
     TZrUInt64 collectionCounts[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX];
     TZrUInt64 collectionTotalDurationUs[ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAX];
@@ -217,6 +219,24 @@ struct ZR_STRUCT_ALIGN SZrGarbageCollector {
 
 typedef struct SZrGarbageCollector SZrGarbageCollector;
 
+ZR_FORCE_INLINE TZrBool ZrCore_GarbageCollector_IsObjectIgnoredFast(struct SZrGlobalState *global,
+                                                                    SZrRawObject *object) {
+    SZrGarbageCollector *collector;
+    TZrSize index;
+
+    if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    collector = global->garbageCollector;
+    if (collector->ignoredObjects == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    index = object->garbageCollectMark.ignoredRegistryIndex;
+    return index < collector->ignoredObjectCount && collector->ignoredObjects[index] == object;
+}
+
 
 ZR_CORE_API void ZrCore_GarbageCollector_New(struct SZrGlobalState *global);
 ZR_CORE_API void ZrCore_GarbageCollector_Free(struct SZrGlobalState *global, SZrGarbageCollector *collector);
@@ -230,6 +250,32 @@ ZR_CORE_API void ZrCore_GarbageCollector_GcStep(struct SZrState *state);
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_IgnoreObject(struct SZrState *state, SZrRawObject *object);
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_UnignoreObject(struct SZrGlobalState *global, SZrRawObject *object);
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_IsObjectIgnored(struct SZrGlobalState *global, SZrRawObject *object);
+
+ZR_FORCE_INLINE TZrBool ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(struct SZrGlobalState *global,
+                                                                          struct SZrState *state,
+                                                                          SZrRawObject *object,
+                                                                          TZrBool *outAddedByCaller) {
+    if (outAddedByCaller != ZR_NULL) {
+        *outAddedByCaller = ZR_FALSE;
+    }
+
+    if (global == ZR_NULL || state == ZR_NULL || object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrCore_GarbageCollector_IsObjectIgnoredFast(global, object)) {
+        return ZR_TRUE;
+    }
+
+    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
+        return ZR_FALSE;
+    }
+
+    if (outAddedByCaller != ZR_NULL) {
+        *outAddedByCaller = ZR_TRUE;
+    }
+    return ZR_TRUE;
+}
 
 ZR_CORE_API TZrBool ZrCore_GarbageCollector_IsInvariant(struct SZrGlobalState *global);
 

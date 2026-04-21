@@ -9,6 +9,7 @@ extern void test_loop_child_function_calls_quicken_to_known_vm_call_family(void)
 extern void test_matrix_add_2d_benchmark_project_compile_quickens_array_add_loop_calls(void);
 extern void test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call(void);
 extern void test_call_chain_polymorphic_benchmark_project_compile_quickens_loop_helper_calls(void);
+extern void test_call_chain_polymorphic_dispatch_callable_parameter_quickens_to_known_vm_call(void);
 
 int main(void) {
     printf("\n");
@@ -25,6 +26,7 @@ int main(void) {
     RUN_TEST(test_matrix_add_2d_benchmark_project_compile_quickens_array_add_loop_calls);
     RUN_TEST(test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call);
     RUN_TEST(test_call_chain_polymorphic_benchmark_project_compile_quickens_loop_helper_calls);
+    RUN_TEST(test_call_chain_polymorphic_dispatch_callable_parameter_quickens_to_known_vm_call);
 
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();

@@ -27,6 +27,128 @@ static void string_trace(const TZrChar *format, ...);
 #endif
 static SZrString *string_create_short(SZrState *state, TZrNativeString string, TZrSize length);
 
+static TZrBool string_table_resize_minor_young_bucket_flags(SZrGlobalState *global,
+                                                            SZrStringTable *stringTable,
+                                                            TZrSize capacity) {
+    TZrSize oldFlagBytes;
+    TZrSize oldIndexBytes;
+    TZrUInt8 *flags = ZR_NULL;
+    TZrSize *indexes = ZR_NULL;
+
+    if (global == ZR_NULL || stringTable == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (capacity > 0u) {
+        flags = (TZrUInt8 *)ZrCore_Memory_RawMallocWithType(global,
+                                                            capacity * sizeof(TZrUInt8),
+                                                            ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET);
+        indexes = (TZrSize *)ZrCore_Memory_RawMallocWithType(global,
+                                                             capacity * sizeof(TZrSize),
+                                                             ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET);
+        if (flags == ZR_NULL || indexes == ZR_NULL) {
+            if (flags != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(global,
+                                              flags,
+                                              capacity * sizeof(TZrUInt8),
+                                              ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET);
+            }
+            if (indexes != ZR_NULL) {
+                ZrCore_Memory_RawFreeWithType(global,
+                                              indexes,
+                                              capacity * sizeof(TZrSize),
+                                              ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET);
+            }
+            return ZR_FALSE;
+        }
+    }
+
+    oldFlagBytes = stringTable->minorYoungBucketCapacity * sizeof(TZrUInt8);
+    oldIndexBytes = stringTable->minorYoungBucketCapacity * sizeof(TZrSize);
+    if (stringTable->minorYoungBucketFlags != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      stringTable->minorYoungBucketFlags,
+                                      oldFlagBytes,
+                                      ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET);
+    }
+    if (stringTable->minorYoungBucketIndexes != ZR_NULL) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      stringTable->minorYoungBucketIndexes,
+                                      oldIndexBytes,
+                                      ZR_MEMORY_NATIVE_TYPE_HASH_BUCKET);
+    }
+
+    stringTable->minorYoungBucketFlags = flags;
+    stringTable->minorYoungBucketIndexes = indexes;
+    stringTable->minorYoungBucketCapacity = capacity;
+    stringTable->minorYoungBucketCount = 0u;
+    return ZR_TRUE;
+}
+
+static TZrBool string_table_rebuild_minor_young_bucket_flags(SZrGlobalState *global, SZrStringTable *stringTable) {
+    const SZrHashSet *set;
+
+    if (global == ZR_NULL || stringTable == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    set = &stringTable->stringHashSet;
+    if (!string_table_resize_minor_young_bucket_flags(global, stringTable, set->capacity)) {
+        return ZR_FALSE;
+    }
+
+    stringTable->minorYoungBucketCount = 0u;
+    if (stringTable->minorYoungBucketFlags == ZR_NULL || set->capacity == 0u) {
+        return ZR_TRUE;
+    }
+
+    ZrCore_Memory_RawSet(stringTable->minorYoungBucketFlags, 0, set->capacity * sizeof(TZrUInt8));
+    if (!set->isValid || set->buckets == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize bucketIndex = 0; bucketIndex < set->capacity; bucketIndex++) {
+        const SZrHashKeyValuePair *pair = set->buckets[bucketIndex];
+
+        while (pair != ZR_NULL) {
+            SZrRawObject *object = pair->key.value.object;
+
+            if (object != ZR_NULL &&
+                object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE) {
+                (void)ZrCore_StringTable_RecordMinorYoungBucket(stringTable, bucketIndex);
+                break;
+            }
+            pair = pair->next;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE void string_table_record_young_short_string(SZrGlobalState *global, const SZrString *stringValue) {
+    SZrStringTable *stringTable;
+    TZrSize bucketIndex;
+
+    if (global == ZR_NULL || global->stringTable == ZR_NULL || stringValue == ZR_NULL ||
+        stringValue->super.garbageCollectMark.storageKind != ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE) {
+        return;
+    }
+
+    stringTable = global->stringTable;
+    if (!ZrCore_StringTable_MinorYoungBucketFlagsReady(stringTable) &&
+        !string_table_rebuild_minor_young_bucket_flags(global, stringTable)) {
+        return;
+    }
+    if (stringTable->minorYoungBucketFlags == ZR_NULL ||
+        stringTable->minorYoungBucketIndexes == ZR_NULL ||
+        stringTable->stringHashSet.capacity == 0u) {
+        return;
+    }
+
+    bucketIndex = ZR_HASH_MOD(stringValue->super.hash, stringTable->stringHashSet.capacity);
+    (void)ZrCore_StringTable_RecordMinorYoungBucket(stringTable, bucketIndex);
+}
+
 static ZR_FORCE_INLINE TZrSize string_concat_pair_cache_bucket_index(const SZrString *left, const SZrString *right) {
     TZrUInt64 leftHash;
     TZrUInt64 rightHash;
@@ -188,7 +310,7 @@ static void native_string_push_string_to_stack(SZrNativeStringFormatBuffer *buff
     SZrState *state = buffer->state;
     SZrString *str = ZrCore_String_Create(state, string, length);
     ZrCore_Stack_SetRawObjectValue(buffer->state, state->stackTop.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(str));
-    ZrCore_Stack_GetValue(state->stackTop.valuePointer)->type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Stack_GetValueNoProfile(state->stackTop.valuePointer)->type = ZR_VALUE_TYPE_STRING;
     state->stackTop.valuePointer += 1;
     if (!buffer->isOnStack) {
         buffer->isOnStack = ZR_TRUE;
@@ -277,9 +399,9 @@ static void zr_string_collapse_stack_window(SZrState *state,
 
     if (result != ZR_NULL) {
         ZrCore_Stack_SetRawObjectValue(state, firstSlot, ZR_CAST_RAW_OBJECT_AS_SUPER(result));
-        ZrCore_Stack_GetValue(firstSlot)->type = ZR_VALUE_TYPE_STRING;
+        ZrCore_Stack_GetValueNoProfile(firstSlot)->type = ZR_VALUE_TYPE_STRING;
     } else {
-        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(firstSlot));
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValueNoProfile(firstSlot));
     }
 
     state->stackTop.valuePointer = firstSlot + 1;
@@ -307,7 +429,7 @@ static void zr_string_concat_stack_values(SZrState *state, TZrSize count, TZrBoo
     firstSlot = state->stackTop.valuePointer - count;
     ZrCore_Function_StackAnchorInit(state, firstSlot, &firstSlotAnchor);
     if (count == 1) {
-        SZrTypeValue *value = ZrCore_Stack_GetValue(firstSlot);
+        SZrTypeValue *value = ZrCore_Stack_GetValueNoProfile(firstSlot);
         SZrString *singleString = ZR_NULL;
 
         if (value == ZR_NULL) {
@@ -340,7 +462,7 @@ static void zr_string_concat_stack_values(SZrState *state, TZrSize count, TZrBoo
     }
 
     for (TZrSize i = 0; i < count; i++) {
-        SZrTypeValue *value = ZrCore_Stack_GetValue(firstSlot + i);
+        SZrTypeValue *value = ZrCore_Stack_GetValueNoProfile(firstSlot + i);
         SZrString *stringValue = ZR_NULL;
 
         if (value == ZR_NULL) {
@@ -513,11 +635,18 @@ void ZrCore_StringTable_New(SZrGlobalState *global) {
     // stringTable->capacity = 0;
     // stringTable->buckets = ZR_NULL;
     ZrCore_HashSet_Construct(&stringTable->stringHashSet);
+    stringTable->isValid = ZR_FALSE;
+    stringTable->minorYoungBucketFlags = ZR_NULL;
+    stringTable->minorYoungBucketIndexes = ZR_NULL;
+    stringTable->minorYoungBucketCapacity = 0u;
+    stringTable->minorYoungBucketCount = 0u;
+    stringTable->shortStringListHead = ZR_NULL;
 }
 
 void ZrCore_StringTable_Free(struct SZrGlobalState *global, SZrStringTable *stringTable) {
     SZrState *mainThread = global->mainThreadState;
 
+    string_table_resize_minor_young_bucket_flags(global, stringTable, 0u);
     ZrCore_HashSet_Deconstruct(mainThread, &stringTable->stringHashSet);
 
     // todo: clear all strings
@@ -535,6 +664,7 @@ void ZrCore_StringTable_Init(SZrState *state) {
                  (void *)stringTable->stringHashSet.buckets,
                  (unsigned long long)stringTable->stringHashSet.capacity,
                  (int)stringTable->stringHashSet.isValid);
+    ZrCore_StringTable_SyncMinorYoungBucketFlags(global);
     // this is the first string we created
     global->memoryErrorMessage = ZR_STRING_LITERAL(state, ZR_ERROR_MESSAGE_NOT_ENOUGH_MEMORY);
     string_trace("string table memoryErrorMessage=%p", (void *)global->memoryErrorMessage);
@@ -547,6 +677,21 @@ void ZrCore_StringTable_Init(SZrState *state) {
     }
     stringTable->isValid = ZR_TRUE;
     string_trace("string table init exit isValid=%d", (int)stringTable->isValid);
+}
+
+TZrBool ZrCore_StringTable_SyncMinorYoungBucketFlags(SZrGlobalState *global) {
+    SZrStringTable *stringTable;
+
+    if (global == ZR_NULL || global->stringTable == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    stringTable = global->stringTable;
+    if (ZrCore_StringTable_MinorYoungBucketFlagsReady(stringTable)) {
+        return ZR_TRUE;
+    }
+
+    return string_table_rebuild_minor_young_bucket_flags(global, stringTable);
 }
 
 
@@ -612,10 +757,13 @@ static SZrString *string_create_short(SZrState *state, TZrNativeString string, T
     {
         // create a new string
         SZrString *newString = string_object_create(state, string, length, hash);
+        TZrSize previousCapacity;
+
         if (newString == ZR_NULL) {
             string_trace("string create short object create failed length=%llu", (unsigned long long)length);
             return ZR_NULL;
         }
+        previousCapacity = stringTable->stringHashSet.capacity;
         string_trace("string create short add raw object start string=%p hash=%llu tableBuckets=%p",
                      (void *)newString,
                      (unsigned long long)hash,
@@ -626,6 +774,12 @@ static SZrString *string_create_short(SZrState *state, TZrNativeString string, T
                          state != ZR_NULL ? (int)state->threadStatus : -1);
             return ZR_NULL;
         }
+        if (previousCapacity != stringTable->stringHashSet.capacity) {
+            (void)string_table_rebuild_minor_young_bucket_flags(global, stringTable);
+        }
+        newString->nextShortString = stringTable->shortStringListHead;
+        stringTable->shortStringListHead = newString;
+        string_table_record_young_short_string(global, newString);
         string_trace("string create short add raw object done string=%p elementCount=%llu",
                      (void *)newString,
                      (unsigned long long)stringTable->stringHashSet.elementCount);
@@ -858,6 +1012,9 @@ TZrBool ZrCore_String_ToByteArray(SZrState *state,
 TZrBool ZrCore_String_Equal(SZrString *string1, SZrString *string2) {
     if (string1 == string2) {
         return ZR_TRUE;
+    }
+    if (string1->super.hash != string2->super.hash) {
+        return ZR_FALSE;
     }
     if (string1->shortStringLength != string2->shortStringLength) {
         return ZR_FALSE;

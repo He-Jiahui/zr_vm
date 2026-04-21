@@ -76,6 +76,8 @@ static TZrUInt32 gReadonlyInlineGetFallbackCallCount = 0;
 static TZrUInt32 gReadonlyInlineSetFastCallCount = 0;
 static TZrUInt32 gReadonlyInlineSetFallbackCallCount = 0;
 static SZrString *gExpectedPrefilledResultString = ZR_NULL;
+static TZrUInt64 gBoundContextSelfStackGetDelta = 0;
+static TZrUInt64 gBoundContextArgumentStackGetDelta = 0;
 
 static TZrBool test_binding_cache_callback(ZrLibCallContext *context, SZrTypeValue *result) {
     TEST_ASSERT_NOT_NULL(context);
@@ -85,8 +87,19 @@ static TZrBool test_binding_cache_callback(ZrLibCallContext *context, SZrTypeVal
 }
 
 static TZrBool test_bound_verify_stack_rooted_receiver_and_argument(ZrLibCallContext *context, SZrTypeValue *result) {
+    SZrProfileRuntime *profileRuntime =
+            (context != ZR_NULL && context->state != ZR_NULL && context->state->global != ZR_NULL)
+                    ? context->state->global->profileRuntime
+                    : ZR_NULL;
+    TZrUInt64 stackGetBefore = profileRuntime != ZR_NULL ? profileRuntime->helperCounts[ZR_PROFILE_HELPER_STACK_GET_VALUE] : 0u;
     SZrTypeValue *receiverValue = ZrLib_CallContext_Self(context);
+    TZrUInt64 stackGetAfterSelf = profileRuntime != ZR_NULL ? profileRuntime->helperCounts[ZR_PROFILE_HELPER_STACK_GET_VALUE] : 0u;
     SZrTypeValue *argumentValue = ZrLib_CallContext_Argument(context, 0);
+    TZrUInt64 stackGetAfterArgument =
+            profileRuntime != ZR_NULL ? profileRuntime->helperCounts[ZR_PROFILE_HELPER_STACK_GET_VALUE] : 0u;
+
+    gBoundContextSelfStackGetDelta = stackGetAfterSelf - stackGetBefore;
+    gBoundContextArgumentStackGetDelta = stackGetAfterArgument - stackGetAfterSelf;
 
     gNativeCallCount++;
     gObservedIgnoredObjectCount = (context != ZR_NULL && context->state != ZR_NULL && context->state->global != ZR_NULL &&
@@ -1278,7 +1291,7 @@ static void test_object_call_known_native_fast_path_restores_stack_rooted_inputs
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
     TEST_ASSERT_FALSE(gObservedCorruption);
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_TRUE(resultValue != movedResultValue);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(movedResultValue->type));
@@ -1364,7 +1377,7 @@ static void test_object_call_known_native_fast_path_restores_outer_frame_bounds_
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
     TEST_ASSERT_FALSE(gObservedCorruption);
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(movedResultValue->type));
     TEST_ASSERT_EQUAL_INT64(4242, movedResultValue->value.nativeObject.nativeInt64);
@@ -1442,7 +1455,7 @@ static void test_object_call_known_native_fast_path_preserves_receiver_when_resu
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
     TEST_ASSERT_FALSE(gObservedCorruption);
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(movedResultValue->type));
     TEST_ASSERT_EQUAL_INT64(4242, movedResultValue->value.nativeObject.nativeInt64);
@@ -1546,7 +1559,7 @@ static void test_object_call_known_native_fast_path_overwrites_prefilled_future_
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
     TEST_ASSERT_FALSE(gObservedCorruption);
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(movedResultValue->type));
     TEST_ASSERT_EQUAL_INT64(4242, movedResultValue->value.nativeObject.nativeInt64);
@@ -1756,7 +1769,7 @@ static void test_object_call_function_with_receiver_one_argument_fast_reuses_sta
                                                                            argumentValue,
                                                                            resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
     TEST_ASSERT_FALSE(gObservedCorruption);
@@ -1858,6 +1871,8 @@ static void test_object_call_native_binding_stack_root_one_argument_fast_bypasse
     gNativeCallCount = 0;
     gObservedCorruption = ZR_FALSE;
     gWrappedCachedStackRootDispatchCount = 0;
+    gBoundContextSelfStackGetDelta = 0;
+    gBoundContextArgumentStackGetDelta = 0;
     ignoredObjectCountBefore = state->global->garbageCollector->ignoredObjectCount;
     gObservedIgnoredObjectCount = ignoredObjectCountBefore;
     reset_profile_counters(state, &profileRuntime);
@@ -1868,11 +1883,13 @@ static void test_object_call_native_binding_stack_root_one_argument_fast_bypasse
                                                                            argumentValue,
                                                                            resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(0u, gWrappedCachedStackRootDispatchCount);
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
     TEST_ASSERT_FALSE(gObservedCorruption);
+    TEST_ASSERT_EQUAL_UINT64(0u, gBoundContextSelfStackGetDelta);
+    TEST_ASSERT_EQUAL_UINT64(0u, gBoundContextArgumentStackGetDelta);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(movedResultValue->type));
     TEST_ASSERT_EQUAL_INT64(4242, movedResultValue->value.nativeObject.nativeInt64);
     UNITY_TEST_ASSERT_EQUAL_UINT64(
@@ -1885,6 +1902,11 @@ static void test_object_call_native_binding_stack_root_one_argument_fast_bypasse
             profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY],
             __LINE__,
             "native-binding stack-root one-arg object-call fast path should stay off helper-profile value-copy paths");
+    UNITY_TEST_ASSERT_EQUAL_UINT64(
+            0u,
+            profileRuntime.helperCounts[ZR_PROFILE_HELPER_STACK_GET_VALUE],
+            __LINE__,
+            "native-binding stack-root one-arg object-call fast path should stay off profiled stack-get helper paths");
     UNITY_TEST_ASSERT_EQUAL_UINT32(
             (TZrUInt32)ignoredObjectCountBefore,
             (TZrUInt32)gObservedIgnoredObjectCount,
@@ -1984,7 +2006,7 @@ static void test_object_call_native_binding_stack_root_one_argument_fast_syncs_r
     TEST_ASSERT_TRUE(originalStackBase != state->stackBase.valuePointer);
     TEST_ASSERT_EQUAL_UINT32(0u, gWrappedCachedStackRootDispatchCount);
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(movedResultValue->type));
     TEST_ASSERT_EQUAL_INT64(1, movedResultValue->value.nativeObject.nativeInt64);
@@ -2168,7 +2190,7 @@ static void test_object_call_known_native_fast_path_reuses_single_nested_call_in
                                                                            argumentValue,
                                                                            resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_FALSE(gObservedCorruption);
     TEST_ASSERT_GREATER_THAN_UINT32(0u, allocatorContext.moveCount);
@@ -2201,7 +2223,7 @@ static void test_object_call_known_native_fast_path_reuses_single_nested_call_in
                                                                            argumentValue,
                                                                            resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_FALSE(gObservedCorruption);
     TEST_ASSERT_EQUAL_UINT32(1u, gNestedGenericOuterNativeCallCount);
@@ -2438,7 +2460,7 @@ static void test_get_by_index_known_native_stack_root_fast_path_caches_direct_di
 
     TEST_ASSERT_TRUE(ZrCore_Object_GetByIndexUnchecked(state, receiverValue, keyValue, resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(0u, gWrappedCachedStackRootDispatchCount);
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
@@ -2576,7 +2598,7 @@ static void test_get_by_index_known_native_cached_direct_dispatch_survives_resol
 
     TEST_ASSERT_TRUE(ZrCore_Object_GetByIndexUnchecked(state, receiverValue, keyValue, resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(2u, gNativeCallCount);
     TEST_ASSERT_EQUAL_UINT32(0u, gWrappedCachedStackRootDispatchCount);
@@ -2682,7 +2704,7 @@ static void test_get_by_index_known_native_stack_root_fast_path_keeps_callable_s
 
     TEST_ASSERT_TRUE(ZrCore_Object_GetByIndexUnchecked(state, receiverValue, keyValue, resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(0u, gWrappedCachedStackRootDispatchCount);
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
@@ -2787,7 +2809,7 @@ static void test_get_by_index_known_native_readonly_inline_fast_path_reuses_inpu
 
     TEST_ASSERT_TRUE(ZrCore_Object_GetByIndexUnchecked(state, receiverValue, keyValue, resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
     TEST_ASSERT_FALSE(gObservedCorruption);
@@ -2899,7 +2921,7 @@ static void test_get_by_index_known_native_stack_operands_readonly_inline_fast_p
 
     TEST_ASSERT_TRUE(ZrCore_Object_GetByIndexUncheckedStackOperands(state, receiverValue, keyValue, resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
     TEST_ASSERT_FALSE(gObservedCorruption);
@@ -3126,7 +3148,7 @@ static void test_get_by_index_known_native_readonly_inline_fast_path_prefers_met
 
     TEST_ASSERT_TRUE(ZrCore_Object_GetByIndexUnchecked(state, receiverValue, keyValue, resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(1u, gReadonlyInlineGetFastCallCount);
     TEST_ASSERT_EQUAL_UINT32(0u, gReadonlyInlineGetFallbackCallCount);
@@ -3266,7 +3288,7 @@ static void test_get_by_index_known_native_readonly_inline_fast_path_keeps_cache
 
     TEST_ASSERT_TRUE(ZrCore_Object_GetByIndexUnchecked(state, receiverValue, keyValue, resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(2u, gReadonlyInlineGetFastCallCount);
     TEST_ASSERT_EQUAL_UINT32(0u, gReadonlyInlineGetFallbackCallCount);
@@ -3447,6 +3469,8 @@ static void test_set_by_index_known_native_stack_root_fast_path_caches_direct_di
     gNativeCallCount = 0;
     gObservedCorruption = ZR_FALSE;
     gWrappedCachedStackRootDispatchTwoArgumentCount = 0;
+    gBoundContextSelfStackGetDelta = 0;
+    gBoundContextArgumentStackGetDelta = 0;
     ignoredObjectCountBefore = state->global->garbageCollector->ignoredObjectCount;
     gObservedIgnoredObjectCount = ignoredObjectCountBefore;
     reset_profile_counters(state, &profileRuntime);
@@ -4699,7 +4723,7 @@ static void test_object_call_function_with_receiver_two_arguments_fast_reuses_st
                                                                             assignedValue,
                                                                             resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
     TEST_ASSERT_FALSE(gObservedCorruption);
@@ -5195,11 +5219,13 @@ static void test_object_call_native_binding_stack_root_two_arguments_fast_bypass
                                                                             assignedValue,
                                                                             resultValue));
 
-    movedResultValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer);
+    movedResultValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer);
     TEST_ASSERT_NOT_NULL(movedResultValue);
     TEST_ASSERT_EQUAL_UINT32(0u, gWrappedCachedStackRootDispatchTwoArgumentCount);
     TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
     TEST_ASSERT_FALSE(gObservedCorruption);
+    TEST_ASSERT_EQUAL_UINT64(0u, gBoundContextSelfStackGetDelta);
+    TEST_ASSERT_EQUAL_UINT64(0u, gBoundContextArgumentStackGetDelta);
     TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(movedResultValue->type));
     TEST_ASSERT_EQUAL_INT64(2024, movedResultValue->value.nativeObject.nativeInt64);
     UNITY_TEST_ASSERT_EQUAL_UINT64(
@@ -5212,6 +5238,11 @@ static void test_object_call_native_binding_stack_root_two_arguments_fast_bypass
             profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY],
             __LINE__,
             "native-binding stack-root two-arg object-call fast path should stay off helper-profile value-copy paths");
+    UNITY_TEST_ASSERT_EQUAL_UINT64(
+            0u,
+            profileRuntime.helperCounts[ZR_PROFILE_HELPER_STACK_GET_VALUE],
+            __LINE__,
+            "native-binding stack-root two-arg object-call fast path should stay off profiled stack-get helper paths");
     UNITY_TEST_ASSERT_EQUAL_UINT32(
             (TZrUInt32)ignoredObjectCountBefore,
             (TZrUInt32)gObservedIgnoredObjectCount,

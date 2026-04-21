@@ -196,6 +196,17 @@ SZrTypeValue *ZrCore_Value_GetStackOffsetValue(SZrState *state, TZrMemoryOffset 
     return &global->nullValue;
 }
 
+TZrBool ZrCore_Value_CanFastCopyPlainHeapObject(struct SZrState *state, const SZrTypeValue *source) {
+    SZrObject *sourceObject;
+
+    if (state == ZR_NULL || source == ZR_NULL || source->type != ZR_VALUE_TYPE_OBJECT || !source->isGarbageCollectable ||
+        source->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    sourceObject = ZR_CAST_OBJECT(state, source->value.object);
+    return (TZrBool)(sourceObject != ZR_NULL && sourceObject->internalType != ZR_OBJECT_INTERNAL_TYPE_STRUCT);
+}
 
 void ZrCore_Value_CopySlow(struct SZrState *state, SZrTypeValue *destination, const SZrTypeValue *source) {
     ZrCore_Ownership_AssignValue(state, destination, source);
@@ -309,7 +320,7 @@ SZrString *ZrCore_Value_ConvertToString(struct SZrState *state, SZrTypeValue *va
         state->stackTop.valuePointer = restoredStackTop;
         state->callInfoList = savedCallInfo;
         if (metaCallSucceeded && metaBase != ZR_NULL) {
-            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
+            SZrTypeValue *returnValue = ZrCore_Stack_GetValueNoProfile(metaBase);
             if (returnValue != ZR_NULL && returnValue->type == ZR_VALUE_TYPE_STRING) {
                 return ZR_CAST_STRING(state, returnValue->value.object);
             }
@@ -478,7 +489,7 @@ TZrBool ZrCore_Value_CallMetaMethod(struct SZrState *state, SZrTypeValue *value,
     TZrBool success = ZR_FALSE;
     if (state->threadStatus == ZR_THREAD_STATUS_FINE) {
         // 获取返回值
-        SZrTypeValue *returnValue = ZrCore_Stack_GetValue(base);
+        SZrTypeValue *returnValue = ZrCore_Stack_GetValueNoProfile(base);
         if (result != ZR_NULL) {
             ZrCore_Value_ResetAsNull(&copiedResult);
             ZrCore_Value_Copy(state, &copiedResult, returnValue);

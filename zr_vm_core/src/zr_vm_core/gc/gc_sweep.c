@@ -22,12 +22,12 @@ SZrRawObject **garbage_collector_sweep_list(SZrState *state, SZrRawObject **list
             break;
         }
 
-        if (ZrCore_RawObject_IsUnreferenced(state, object)) {
+        if (garbage_collector_object_is_unreferenced_fast(global->garbageCollector, object)) {
             SZrRawObject *next = object->next;
-            TZrSize objectSize = garbage_collector_get_object_base_size(state, object);
+            TZrSize objectSize = garbage_collector_get_object_base_size_fast(object);
 
             *current = next;
-            garbage_collector_free_object(state, object);
+            garbage_collector_free_object_sized(state, object, objectSize);
             (*count)++;
 
             TZrMemoryOffset objectDebt = (TZrMemoryOffset)objectSize;

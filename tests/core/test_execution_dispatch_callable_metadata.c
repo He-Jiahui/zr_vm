@@ -9,6 +9,7 @@
 #include "zr_vm_core/debug.h"
 #include "zr_vm_core/execution.h"
 #include "zr_vm_core/function.h"
+#include "zr_vm_core/gc.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/profile.h"
@@ -83,6 +84,20 @@ static SZrFunction *test_create_noop_function_with_signature(SZrState *state, TZ
 
 static SZrFunction *test_create_noop_function(SZrState *state) {
     return test_create_noop_function_with_signature(state, 0u);
+}
+
+static SZrFunction *test_create_native_callable(SZrState *state, FZrNativeFunction nativeFunction) {
+    SZrClosureNative *closure;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(nativeFunction);
+
+    closure = ZrCore_ClosureNative_New(state, 0u);
+    TEST_ASSERT_NOT_NULL(closure);
+
+    closure->nativeFunction = nativeFunction;
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    return ZR_CAST(SZrFunction *, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
 }
 
 static SZrCallInfo *test_prepare_execute_call(SZrState *state,
@@ -392,6 +407,19 @@ static void test_disable_helper_profiling(SZrState *state) {
     }
 }
 
+static TZrInt64 test_super_dyn_call_cached_native_returns_constant(SZrState *state) {
+    TZrStackValuePointer base;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return 0;
+    }
+
+    base = state->callInfoList->functionBase.valuePointer;
+    ZrCore_Value_InitAsInt(state, ZrCore_Stack_GetValueNoProfile(base), 123);
+    state->stackTop.valuePointer = base + 1;
+    return 1;
+}
+
 static TZrUInt64 test_execute_known_vm_call_stack_get_helper_count(SZrState *state,
                                                                    SZrFunction *callerFunction,
                                                                    SZrFunction *calleeFunction,
@@ -431,6 +459,52 @@ static TZrUInt64 test_execute_known_vm_call_stack_get_helper_count(SZrState *sta
     argumentSlotValue->type = ZR_VALUE_TYPE_OBJECT;
     argumentSlotValue->isGarbageCollectable = ZR_TRUE;
     argumentSlotValue->isNative = ZR_FALSE;
+
+    test_enable_helper_profiling(state, profileRuntime);
+    ZrCore_Execute(state, callInfo);
+
+    TEST_ASSERT_EQUAL_INT(ZR_THREAD_STATUS_FINE, state->threadStatus);
+    {
+        TZrUInt64 stackGetCount = profileRuntime->helperCounts[ZR_PROFILE_HELPER_STACK_GET_VALUE];
+        test_disable_helper_profiling(state);
+        return stackGetCount;
+    }
+}
+
+static TZrUInt64 test_execute_super_dyn_call_cached_stack_get_helper_count(
+        SZrState *state,
+        SZrFunction *callerFunction,
+        SZrObject *receiverObject,
+        SZrProfileRuntime *profileRuntime) {
+    SZrCallInfo *callInfo;
+    SZrTypeValue callerCallableValue;
+    SZrTypeValue *callableSlotValue;
+    SZrTypeValue *argumentSlotValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(callerFunction);
+    TEST_ASSERT_NOT_NULL(receiverObject);
+    TEST_ASSERT_NOT_NULL(profileRuntime);
+
+    ZrCore_Value_ResetAsNull(&callerCallableValue);
+    ZrCore_Value_InitAsRawObject(state, &callerCallableValue, ZR_CAST_RAW_OBJECT_AS_SUPER(callerFunction));
+    callerCallableValue.type = ZR_VALUE_TYPE_FUNCTION;
+    callerCallableValue.isGarbageCollectable = ZR_TRUE;
+    callerCallableValue.isNative = ZR_FALSE;
+
+    callInfo = test_prepare_execute_call(state, &callerCallableValue, callerFunction);
+    TEST_ASSERT_NOT_NULL(callInfo);
+
+    callableSlotValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer + 1);
+    argumentSlotValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer + 2);
+    TEST_ASSERT_NOT_NULL(callableSlotValue);
+    TEST_ASSERT_NOT_NULL(argumentSlotValue);
+
+    ZrCore_Value_InitAsRawObject(state, callableSlotValue, ZR_CAST_RAW_OBJECT_AS_SUPER(receiverObject));
+    callableSlotValue->type = ZR_VALUE_TYPE_OBJECT;
+    callableSlotValue->isGarbageCollectable = ZR_TRUE;
+    callableSlotValue->isNative = ZR_FALSE;
+    ZrCore_Value_InitAsInt(state, argumentSlotValue, 7);
 
     test_enable_helper_profiling(state, profileRuntime);
     ZrCore_Execute(state, callInfo);
@@ -503,6 +577,33 @@ static TZrUInt64 test_execute_known_vm_member_call_stack_get_helper_count(
     }
 }
 
+static void test_known_vm_call_direct_path_avoids_dispatch_bookkeeping_stack_get_value_helpers(void) {
+    TZrInstruction knownVmCallInstructions[1];
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *calleeFunction;
+    SZrFunction *callerFunction;
+    SZrProfileRuntime profileRuntime;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    calleeFunction = test_create_noop_function_with_signature(state, 1u);
+    TEST_ASSERT_NOT_NULL(calleeFunction);
+
+    knownVmCallInstructions[0] = test_create_instruction_call_1(ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), 0u, 0u, 1u);
+    callerFunction =
+            test_create_simple_caller_function(state, knownVmCallInstructions, ZR_ARRAY_COUNT(knownVmCallInstructions), 2u);
+    TEST_ASSERT_NOT_NULL(callerFunction);
+
+    TEST_ASSERT_EQUAL_UINT64(0u,
+                             test_execute_known_vm_call_stack_get_helper_count(state,
+                                                                               callerFunction,
+                                                                               calleeFunction,
+                                                                               ZrCore_Object_New(state, ZR_NULL),
+                                                                               &profileRuntime));
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_known_vm_member_call_exact_cache_path_avoids_extra_stack_get_value_helpers(void) {
     TZrInstruction knownVmCallInstructions[1];
     TZrInstruction knownVmMemberCallInstructions[1];
@@ -569,10 +670,68 @@ static void test_known_vm_member_call_exact_cache_path_avoids_extra_stack_get_va
                                                                                         receiverPrototype,
                                                                                         &memberCallProfileRuntime);
 
-    TEST_ASSERT_EQUAL_UINT64(knownVmStackGetCount, memberCallStackGetCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, knownVmStackGetCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, memberCallStackGetCount);
 
     ZrTests_Runtime_State_Destroy(knownVmState);
     ZrTests_Runtime_State_Destroy(memberCallState);
+}
+
+static void test_super_dyn_call_cached_hit_path_avoids_stack_get_value_helpers(void) {
+    TZrInstruction dynCallInstructions[1];
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *cachedCallableFunction;
+    SZrFunction *callerFunction;
+    SZrString *prototypeName;
+    SZrObjectPrototype *receiverPrototype;
+    SZrObject *receiverObject;
+    SZrFunctionCallSiteCacheEntry *cacheEntry;
+    SZrProfileRuntime profileRuntime;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    cachedCallableFunction = test_create_native_callable(state, test_super_dyn_call_cached_native_returns_constant);
+    TEST_ASSERT_NOT_NULL(cachedCallableFunction);
+
+    dynCallInstructions[0] = test_create_instruction_call_1(ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED), 0u, 0u, 0u);
+    callerFunction = test_create_simple_caller_function(state, dynCallInstructions, ZR_ARRAY_COUNT(dynCallInstructions), 2u);
+    TEST_ASSERT_NOT_NULL(callerFunction);
+
+    callerFunction->callSiteCaches = (SZrFunctionCallSiteCacheEntry *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionCallSiteCacheEntry),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(callerFunction->callSiteCaches);
+    memset(callerFunction->callSiteCaches, 0, sizeof(SZrFunctionCallSiteCacheEntry));
+    callerFunction->callSiteCacheLength = 1u;
+
+    prototypeName = ZrCore_String_CreateFromNative(state, "DispatchDynCallableBox");
+    TEST_ASSERT_NOT_NULL(prototypeName);
+    receiverPrototype = ZrCore_ObjectPrototype_New(state, prototypeName, ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    TEST_ASSERT_NOT_NULL(receiverPrototype);
+    receiverObject = ZrCore_Object_New(state, receiverPrototype);
+    TEST_ASSERT_NOT_NULL(receiverObject);
+    ZrCore_Object_Init(state, receiverObject);
+
+    cacheEntry = &callerFunction->callSiteCaches[0];
+    cacheEntry->kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL;
+    cacheEntry->argumentCount = 1u;
+    cacheEntry->picSlotCount = 1u;
+    cacheEntry->picSlots[0].cachedReceiverPrototype = receiverPrototype;
+    cacheEntry->picSlots[0].cachedOwnerPrototype = receiverPrototype;
+    cacheEntry->picSlots[0].cachedFunction = cachedCallableFunction;
+    cacheEntry->picSlots[0].cachedReceiverVersion = receiverPrototype->super.memberVersion;
+    cacheEntry->picSlots[0].cachedOwnerVersion = receiverPrototype->super.memberVersion;
+
+    TEST_ASSERT_EQUAL_UINT64(0u,
+                             test_execute_super_dyn_call_cached_stack_get_helper_count(state,
+                                                                                       callerFunction,
+                                                                                       receiverObject,
+                                                                                       &profileRuntime));
+    TEST_ASSERT_EQUAL_UINT64(1u, cacheEntry->runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, cacheEntry->runtimeMissCount);
+
+    ZrTests_Runtime_State_Destroy(state);
 }
 
 static void test_known_vm_member_call_exact_cache_path_runs_without_member_metadata_fallback(void) {
@@ -615,14 +774,13 @@ static void test_known_vm_member_call_exact_cache_path_runs_without_member_metad
     TEST_ASSERT_NOT_NULL(receiverObject);
     ZrCore_Object_Init(state, receiverObject);
 
-    TEST_ASSERT_GREATER_OR_EQUAL_UINT64(
-            1u,
-            test_execute_known_vm_member_call_stack_get_helper_count(state,
-                                                                     callerFunction,
-                                                                     calleeFunction,
-                                                                     receiverObject,
-                                                                     receiverPrototype,
-                                                                     &profileRuntime));
+    TEST_ASSERT_EQUAL_UINT64(0u,
+                             test_execute_known_vm_member_call_stack_get_helper_count(state,
+                                                                                      callerFunction,
+                                                                                      calleeFunction,
+                                                                                      receiverObject,
+                                                                                      receiverPrototype,
+                                                                                      &profileRuntime));
     TEST_ASSERT_EQUAL_UINT64(0u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]);
     TEST_ASSERT_EQUAL_UINT64(1u, callerFunction->callSiteCaches[0].runtimeHitCount);
     TEST_ASSERT_EQUAL_UINT64(0u, callerFunction->callSiteCaches[0].runtimeMissCount);
@@ -636,7 +794,9 @@ int main(void) {
     RUN_TEST(test_execute_refreshes_forwarded_function_base_value_object);
     RUN_TEST(test_execute_refreshes_forwarded_closure_base_value_object);
     RUN_TEST(test_known_vm_call_refreshes_forwarded_stateless_function_without_materializing_closure);
+    RUN_TEST(test_known_vm_call_direct_path_avoids_dispatch_bookkeeping_stack_get_value_helpers);
     RUN_TEST(test_known_vm_member_call_exact_cache_path_avoids_extra_stack_get_value_helpers);
+    RUN_TEST(test_super_dyn_call_cached_hit_path_avoids_stack_get_value_helpers);
     RUN_TEST(test_known_vm_member_call_exact_cache_path_runs_without_member_metadata_fallback);
 
     return UNITY_END();

@@ -391,13 +391,12 @@ void garbage_collector_run_until_state(SZrState *state, EZrGarbageCollectRunning
 
 void garbage_collector_check_sizes(SZrState *state, SZrGlobalState *global) {
     TZrMemoryOffset actualMemories = 0;
-    SZrRawObject *object = global->garbageCollector->gcObjectList;
+    SZrGarbageCollector *collector = global->garbageCollector;
 
-    while (object != ZR_NULL) {
-        if (!ZrCore_RawObject_IsUnreferenced(state, object)) {
-            actualMemories += garbage_collector_get_object_base_size(state, object);
-        }
-        object = object->next;
+    ZR_UNUSED_PARAMETER(state);
+
+    for (TZrSize regionIndex = 0; regionIndex < collector->regionCount; regionIndex++) {
+        actualMemories += (TZrMemoryOffset)collector->regions[regionIndex].liveBytes;
     }
 
     TZrMemoryOffset estimatedMemories = global->garbageCollector->managedMemories;
@@ -848,7 +847,7 @@ static void garbage_collector_prune_remembered_registry(SZrState *state) {
 
         if (object == ZR_NULL ||
             !garbage_collector_object_is_old_or_pinned_for_remembered(object) ||
-            ZrCore_RawObject_IsUnreferenced(state, object) ||
+            garbage_collector_object_is_unreferenced_fast(collector, object) ||
             object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED ||
             !garbage_collector_object_references_live_young(state, object)) {
             if (object != ZR_NULL) {
@@ -1109,7 +1108,7 @@ static TZrSize garbage_collector_rewrite_raw_object_registry(SZrRawObject **item
 static TZrSize garbage_collector_rewrite_hash_set(SZrHashSet *set) {
     TZrSize work = 0;
 
-    if (set == ZR_NULL || !set->isValid || set->buckets == ZR_NULL) {
+    if (set == ZR_NULL || !set->isValid || set->buckets == ZR_NULL || set->elementCount == 0u) {
         return 0;
     }
 
@@ -1124,6 +1123,92 @@ static TZrSize garbage_collector_rewrite_hash_set(SZrHashSet *set) {
                 work++;
             }
             pair = pair->next;
+        }
+    }
+
+    return work;
+}
+
+static TZrSize garbage_collector_rewrite_string_table_keys(SZrHashSet *set) {
+    TZrSize work = 0;
+
+    if (set == ZR_NULL || !set->isValid || set->buckets == ZR_NULL || set->elementCount == 0u) {
+        return 0;
+    }
+
+    for (TZrSize bucketIndex = 0; bucketIndex < set->capacity; bucketIndex++) {
+        SZrHashKeyValuePair *pair = set->buckets[bucketIndex];
+
+        while (pair != ZR_NULL) {
+            SZrRawObject *forwardedObject;
+
+            if (pair->key.value.object != ZR_NULL) {
+                forwardedObject = (SZrRawObject *)pair->key.value.object->garbageCollectMark.forwardingAddress;
+                if (forwardedObject != ZR_NULL) {
+                    pair->key.value.object = forwardedObject;
+                    pair->key.type = ZR_VALUE_TYPE_STRING;
+                    pair->key.isNative = forwardedObject->isNative;
+                    work++;
+                }
+            }
+            pair = pair->next;
+        }
+    }
+
+    return work;
+}
+
+static TZrSize garbage_collector_rewrite_string_table_keys_minor(SZrGlobalState *global) {
+    SZrStringTable *stringTable;
+    TZrSize work = 0;
+
+    if (global == ZR_NULL || global->stringTable == ZR_NULL) {
+        return 0;
+    }
+
+    stringTable = global->stringTable;
+    if (!stringTable->stringHashSet.isValid ||
+        stringTable->stringHashSet.buckets == ZR_NULL ||
+        stringTable->stringHashSet.elementCount == 0u ||
+        (!ZrCore_StringTable_MinorYoungBucketFlagsReady(stringTable) &&
+         !ZrCore_StringTable_SyncMinorYoungBucketFlags(global)) ||
+        stringTable->minorYoungBucketFlags == ZR_NULL ||
+        stringTable->minorYoungBucketCount == 0u) {
+        return 0;
+    }
+
+    for (TZrSize activeIndex = 0; activeIndex < stringTable->minorYoungBucketCount;) {
+        SZrHashKeyValuePair *pair;
+        TZrBool bucketHasYoungString = ZR_FALSE;
+        TZrSize bucketIndex = stringTable->minorYoungBucketIndexes[activeIndex];
+
+        pair = stringTable->stringHashSet.buckets[bucketIndex];
+        while (pair != ZR_NULL) {
+            SZrRawObject *currentObject = pair->key.value.object;
+            SZrRawObject *forwardedObject;
+
+            if (currentObject != ZR_NULL) {
+                forwardedObject = (SZrRawObject *)currentObject->garbageCollectMark.forwardingAddress;
+                if (forwardedObject != ZR_NULL) {
+                    pair->key.value.object = forwardedObject;
+                    pair->key.type = ZR_VALUE_TYPE_STRING;
+                    pair->key.isNative = forwardedObject->isNative;
+                    currentObject = forwardedObject;
+                    work++;
+                }
+            }
+
+            if (currentObject != ZR_NULL &&
+                currentObject->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE) {
+                bucketHasYoungString = ZR_TRUE;
+            }
+            pair = pair->next;
+        }
+
+        if (!bucketHasYoungString) {
+            ZrCore_StringTable_ClearMinorYoungBucketAt(stringTable, activeIndex);
+        } else {
+            activeIndex++;
         }
     }
 
@@ -1177,6 +1262,10 @@ static TZrSize garbage_collector_rewrite_string_slot(SZrString **slot) {
     }
 
     beforeString = *slot;
+    if (beforeString->super.garbageCollectMark.status ==
+        ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_PERMANENT) {
+        return 0;
+    }
     garbage_collector_rewrite_raw_object_slot((SZrRawObject **)slot);
     return *slot != beforeString ? 1u : 0u;
 }
@@ -1636,15 +1725,14 @@ static TZrSize garbage_collector_rewrite_forwarded_roots(SZrState *state) {
         work++;
     }
 
-    garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&global->memoryErrorMessage);
-    garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&global->errorPrototype);
-    garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&global->stackFramePrototype);
     garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&global->mainThreadState);
 
     for (TZrSize bucketIndex = 0; bucketIndex < ZR_GLOBAL_API_STRING_CACHE_BUCKET_COUNT; bucketIndex++) {
         for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_API_STRING_CACHE_BUCKET_DEPTH; depthIndex++) {
-            garbage_collector_rewrite_raw_object_slot(
-                    (SZrRawObject **)&global->stringHashApiCache[bucketIndex][depthIndex]);
+            if (global->stringHashApiCache[bucketIndex][depthIndex] == global->memoryErrorMessage) {
+                continue;
+            }
+            garbage_collector_rewrite_string_slot(&global->stringHashApiCache[bucketIndex][depthIndex]);
         }
     }
 
@@ -1652,23 +1740,24 @@ static TZrSize garbage_collector_rewrite_forwarded_roots(SZrState *state) {
         for (TZrSize depthIndex = 0; depthIndex < ZR_GLOBAL_CONCAT_PAIR_CACHE_BUCKET_DEPTH; depthIndex++) {
             ZrStringConcatPairCacheEntry *entry = &global->stringConcatPairCache[bucketIndex][depthIndex];
 
-            garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&entry->left);
-            garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&entry->right);
-            garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&entry->result);
+            garbage_collector_rewrite_string_slot(&entry->left);
+            garbage_collector_rewrite_string_slot(&entry->right);
+            garbage_collector_rewrite_string_slot(&entry->result);
         }
     }
 
-    for (TZrSize metaIndex = 0; metaIndex < ZR_META_ENUM_MAX; metaIndex++) {
-        garbage_collector_rewrite_raw_object_slot((SZrRawObject **)&global->metaFunctionName[metaIndex]);
-    }
-
-    for (TZrSize prototypeIndex = 0; prototypeIndex < ZR_VALUE_TYPE_ENUM_MAX; prototypeIndex++) {
-        garbage_collector_rewrite_raw_object_slot(
-                (SZrRawObject **)&global->basicTypeObjectPrototype[prototypeIndex]);
-    }
-
     if (global->stringTable != ZR_NULL) {
-        work += garbage_collector_rewrite_hash_set(&global->stringTable->stringHashSet);
+        /*
+         * Interned short strings now stay at stable addresses across the accepted
+         * minor-promotion and old-compaction paths, so the short-string root list
+         * does not need a forwarding rewrite walk here.
+         */
+        if (global->garbageCollector != ZR_NULL &&
+            global->garbageCollector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_EVACUATE) {
+            work += garbage_collector_rewrite_string_table_keys_minor(global);
+        } else {
+            work += garbage_collector_rewrite_string_table_keys(&global->stringTable->stringHashSet);
+        }
     }
 
     if (global->garbageCollector != ZR_NULL) {
@@ -1680,11 +1769,11 @@ static TZrSize garbage_collector_rewrite_forwarded_roots(SZrState *state) {
                                                               ZR_FALSE);
     }
 
-    work += garbage_collector_rewrite_object_graph(state, ZR_CAST_RAW_OBJECT_AS_SUPER(state));
-    if (global->mainThreadState != ZR_NULL && global->mainThreadState != state) {
-        work += garbage_collector_rewrite_object_graph(
-                state, ZR_CAST_RAW_OBJECT_AS_SUPER(global->mainThreadState));
-    }
+    /*
+     * The caller immediately runs a full gcObjectList rewrite pass after root-slot
+     * forwarding. Both the current state and the main thread live on that list, so
+     * rewriting their interior graphs here just duplicates the thread-frame walk.
+     */
 
     return work;
 }
@@ -1755,19 +1844,42 @@ static TZrBool garbage_collector_object_supports_evacuation(SZrState *state, SZr
     }
 }
 
-static void garbage_collector_apply_minor_target(SZrState *state,
-                                                 SZrRawObject *object,
-                                                 TZrUInt32 regionId,
-                                                 TZrSize regionDescriptorIndex,
-                                                 EZrGarbageCollectRegionKind regionKind,
-                                                 EZrGarbageCollectStorageKind storageKind,
-                                                 EZrGarbageCollectGenerationalObjectStatus generationalStatus,
-                                                 EZrGarbageCollectPromotionReason promotionReason,
-                                                 TZrUInt32 survivalAge) {
-    if (state == ZR_NULL || object == ZR_NULL) {
-        return;
+static ZR_FORCE_INLINE TZrBool garbage_collector_should_reassign_minor_in_place(const SZrRawObject *object) {
+    if (object == ZR_NULL) {
+        return ZR_FALSE;
     }
 
+    switch (object->type) {
+        case ZR_RAW_OBJECT_TYPE_STRING:
+        case ZR_RAW_OBJECT_TYPE_OBJECT:
+        case ZR_RAW_OBJECT_TYPE_ARRAY:
+        case ZR_RAW_OBJECT_TYPE_BUFFER:
+        case ZR_RAW_OBJECT_TYPE_CLOSURE:
+        case ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE:
+        case ZR_RAW_OBJECT_TYPE_NATIVE_DATA:
+            /*
+             * Minor promotion only changes generational/region metadata; these objects
+             * already participate in the post-mark rewrite pass and the promoted-object
+             * remembered-set registration. Because the runtime stores objects as
+             * individually allocated nodes instead of bump-pointer semispaces, keeping
+             * the address stable avoids clone+root-rewrite+from-space-free churn
+             * without removing any required graph rewrite work.
+             */
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static ZR_FORCE_INLINE void garbage_collector_apply_minor_target(SZrGarbageCollector *collector,
+                                                                 SZrRawObject *object,
+                                                                 TZrUInt32 regionId,
+                                                                 TZrSize regionDescriptorIndex,
+                                                                 EZrGarbageCollectRegionKind regionKind,
+                                                                 EZrGarbageCollectStorageKind storageKind,
+                                                                 EZrGarbageCollectGenerationalObjectStatus generationalStatus,
+                                                                 EZrGarbageCollectPromotionReason promotionReason,
+                                                                 TZrUInt32 survivalAge) {
     ZrCore_RawObject_SetStorageKind(object, storageKind);
     ZrCore_RawObject_SetRegionKind(object, regionKind);
     object->garbageCollectMark.regionId = regionId;
@@ -1775,7 +1887,8 @@ static void garbage_collector_apply_minor_target(SZrState *state,
     object->garbageCollectMark.generationalStatus = generationalStatus;
     object->garbageCollectMark.promotionReason = promotionReason;
     object->garbageCollectMark.survivalAge = survivalAge;
-    object->garbageCollectMark.generation = state->global->garbageCollector->gcGeneration;
+    object->garbageCollectMark.generation = collector->gcGeneration;
+    object->garbageCollectMark.minorScanEpoch = collector->minorCollectionEpoch;
 }
 
 static void garbage_collector_reassign_minor_target(SZrState *state,
@@ -1786,17 +1899,37 @@ static void garbage_collector_reassign_minor_target(SZrState *state,
                                                  EZrGarbageCollectPromotionReason promotionReason,
                                                  TZrUInt32 survivalAge,
                                                  TZrSize objectSize) {
+    SZrGarbageCollector *collector = state->global->garbageCollector;
     TZrUInt32 previousRegionId = object->garbageCollectMark.regionId;
     TZrUInt32 regionId;
     TZrSize regionDescriptorIndex;
 
-    regionId = garbage_collector_reassign_region_id_cached(state->global,
+    if (!garbage_collector_try_release_region_allocation_fast(collector,
+                                                              previousRegionId,
+                                                              object->garbageCollectMark.regionDescriptorIndex,
+                                                              objectSize)) {
+        garbage_collector_release_region_allocation_cached(state->global,
                                                            previousRegionId,
                                                            object->garbageCollectMark.regionDescriptorIndex,
-                                                           regionKind,
-                                                           objectSize,
-                                                           &regionDescriptorIndex);
-    garbage_collector_apply_minor_target(state,
+                                                           objectSize);
+    }
+
+    if (regionKind == ZR_GARBAGE_COLLECT_REGION_KIND_OLD) {
+        regionId = garbage_collector_try_allocate_old_region_id_current_fast(
+                collector, objectSize, &regionDescriptorIndex);
+        if (regionId == 0u) {
+            regionId = garbage_collector_allocate_old_region_id_cached(
+                    state->global, objectSize, &regionDescriptorIndex);
+        }
+    } else {
+        regionId = garbage_collector_try_allocate_region_id_current_fast(
+                collector, regionKind, objectSize, &regionDescriptorIndex);
+        if (regionId == 0u) {
+            regionId = garbage_collector_allocate_region_id_cached(
+                    state->global, regionKind, objectSize, &regionDescriptorIndex);
+        }
+    }
+    garbage_collector_apply_minor_target(collector,
                                          object,
                                          regionId,
                                          regionDescriptorIndex,
@@ -1807,49 +1940,128 @@ static void garbage_collector_reassign_minor_target(SZrState *state,
                                          survivalAge);
 }
 
+static ZR_FORCE_INLINE TZrBool garbage_collector_reassign_old_compaction_target(SZrState *state,
+                                                                                 SZrRawObject *object,
+                                                                                 TZrSize objectSize) {
+    SZrGarbageCollector *collector;
+    TZrUInt32 previousRegionId;
+    TZrUInt32 regionId;
+    TZrSize regionDescriptorIndex;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL ||
+        object == ZR_NULL || objectSize == 0u) {
+        return ZR_FALSE;
+    }
+
+    collector = state->global->garbageCollector;
+    previousRegionId = object->garbageCollectMark.regionId;
+    if (!garbage_collector_try_release_region_allocation_fast(collector,
+                                                              previousRegionId,
+                                                              object->garbageCollectMark.regionDescriptorIndex,
+                                                              objectSize)) {
+        garbage_collector_release_region_allocation_cached(state->global,
+                                                           previousRegionId,
+                                                           object->garbageCollectMark.regionDescriptorIndex,
+                                                           objectSize);
+    }
+
+    regionId = garbage_collector_try_allocate_old_region_id_current_fast(
+            collector, objectSize, &regionDescriptorIndex);
+    if (regionId == 0u) {
+        regionId = garbage_collector_allocate_old_region_id_cached(
+                state->global, objectSize, &regionDescriptorIndex);
+    }
+    if (regionId == 0u) {
+        return ZR_FALSE;
+    }
+
+    object->garbageCollectMark.regionId = regionId;
+    object->garbageCollectMark.regionDescriptorIndex = regionDescriptorIndex;
+    object->garbageCollectMark.generation = collector->gcGeneration;
+    object->garbageCollectMark.minorScanEpoch = collector->minorCollectionEpoch;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrPtr garbage_collector_allocate_evacuation_clone_memory(
+        SZrState *state,
+        TZrSize objectSize) {
+    TZrPtr cloneMemory;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || objectSize == 0u) {
+        return ZR_NULL;
+    }
+
+    /*
+     * Evacuation moves an existing live object and frees the from-space copy in the
+     * same collection. Avoid charging GC debt or attempting recursive GC from this
+     * hot internal path; an allocation failure here is terminal anyway.
+     */
+    cloneMemory = ZrCore_Memory_RawMallocWithType(state->global, objectSize, ZR_MEMORY_NATIVE_TYPE_OBJECT);
+    if (ZR_UNLIKELY(cloneMemory == ZR_NULL)) {
+        ZrCore_Exception_Throw(state, ZR_THREAD_STATUS_MEMORY_ERROR);
+    }
+    return cloneMemory;
+}
+
 static SZrRawObject *garbage_collector_clone_for_minor_evacuation(
         SZrState *state,
         SZrRawObject *object,
+        TZrSize objectSize,
         EZrGarbageCollectRegionKind regionKind,
         EZrGarbageCollectStorageKind storageKind,
         EZrGarbageCollectGenerationalObjectStatus generationalStatus,
         EZrGarbageCollectPromotionReason promotionReason,
         TZrUInt32 survivalAge) {
-    TZrSize objectSize;
+    SZrGlobalState *global;
+    SZrGarbageCollector *collector;
+    TZrPtr cloneMemory;
     SZrRawObject *cloneObject;
     SZrRawObject *insertedNext;
     TZrUInt32 cloneRegionId;
     TZrSize cloneRegionDescriptorIndex;
     TZrBool wasClosedClosureValue = ZR_FALSE;
 
-    if (state == ZR_NULL || object == ZR_NULL) {
+    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL || object == ZR_NULL ||
+        objectSize == 0u) {
         return ZR_NULL;
     }
 
+    global = state->global;
+    collector = global->garbageCollector;
     if (object->type == ZR_RAW_OBJECT_TYPE_CLOSURE_VALUE) {
         wasClosedClosureValue = ZrCore_ClosureValue_IsClosed(ZR_CAST_VM_CLOSURE_VALUE(state, object));
     }
 
-    objectSize = garbage_collector_get_object_base_size(state, object);
-    cloneObject = garbage_collector_new_raw_object_in_region(state,
-                                                             (EZrValueType)object->type,
-                                                             objectSize,
-                                                             object->isNative,
-                                                             regionKind,
-                                                             storageKind);
+    cloneMemory = garbage_collector_allocate_evacuation_clone_memory(state, objectSize);
+    cloneObject = ZR_CAST_RAW_OBJECT(cloneMemory);
     if (cloneObject == ZR_NULL) {
         return ZR_NULL;
     }
 
-    cloneRegionId = cloneObject->garbageCollectMark.regionId;
-    cloneRegionDescriptorIndex = cloneObject->garbageCollectMark.regionDescriptorIndex;
-    insertedNext = cloneObject->next;
+    if (regionKind == ZR_GARBAGE_COLLECT_REGION_KIND_OLD &&
+        storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE) {
+        cloneRegionId = garbage_collector_try_allocate_old_region_id_current_fast(
+                collector, objectSize, &cloneRegionDescriptorIndex);
+        if (cloneRegionId == 0u) {
+            cloneRegionId = garbage_collector_allocate_old_region_id_cached(
+                    global, objectSize, &cloneRegionDescriptorIndex);
+        }
+    } else {
+        cloneRegionId = garbage_collector_try_allocate_region_id_current_fast(
+                collector, regionKind, objectSize, &cloneRegionDescriptorIndex);
+        if (cloneRegionId == 0u) {
+            cloneRegionId = garbage_collector_allocate_region_id_cached(
+                    global, regionKind, objectSize, &cloneRegionDescriptorIndex);
+        }
+    }
+    insertedNext = collector->gcObjectList;
     ZrCore_Memory_RawCopy(cloneObject, object, objectSize);
     cloneObject->next = insertedNext;
+    collector->gcObjectList = cloneObject;
     cloneObject->gcList = ZR_NULL;
     cloneObject->garbageCollectMark.forwardingAddress = ZR_NULL;
     cloneObject->garbageCollectMark.forwardingRefLocation = ZR_NULL;
-    garbage_collector_apply_minor_target(state,
+    garbage_collector_apply_minor_target(collector,
                                          cloneObject,
                                          cloneRegionId,
                                          cloneRegionDescriptorIndex,
@@ -1872,28 +2084,26 @@ static SZrRawObject *garbage_collector_clone_for_minor_evacuation(
     return cloneObject;
 }
 
-static TZrBool garbage_collector_object_is_live_after_major(SZrState *state, SZrRawObject *object) {
-    if (state == ZR_NULL || object == ZR_NULL) {
+static ZR_FORCE_INLINE TZrBool garbage_collector_object_is_live_after_major(const SZrGarbageCollector *collector,
+                                                                            const SZrRawObject *object) {
+    if (collector == ZR_NULL || object == ZR_NULL) {
         return ZR_FALSE;
     }
-
     if (object->type >= ZR_RAW_OBJECT_TYPE_CLOSURE_ENUM_MAX ||
         object->type == ZR_RAW_OBJECT_TYPE_INVALID) {
         return ZR_FALSE;
     }
-
-    return !ZrCore_RawObject_IsUnreferenced(state, object) &&
-           object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED;
-}
-
-static TZrBool garbage_collector_object_can_old_compact(SZrState *state, SZrRawObject *object) {
-    SZrGarbageCollector *collector;
-
-    if (!garbage_collector_object_is_live_after_major(state, object)) {
+    if (object->garbageCollectMark.status == ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED) {
         return ZR_FALSE;
     }
 
-    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
+    return !garbage_collector_object_is_unreferenced_fast(collector, object);
+}
+
+static ZR_FORCE_INLINE TZrBool garbage_collector_object_can_old_compact(SZrGarbageCollector *collector,
+                                                                        SZrState *state,
+                                                                        SZrRawObject *object) {
+    if (collector == ZR_NULL || state == ZR_NULL || object == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -1901,8 +2111,10 @@ static TZrBool garbage_collector_object_can_old_compact(SZrState *state, SZrRawO
         object->garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_OLD) {
         return ZR_FALSE;
     }
+    if (!garbage_collector_object_is_live_after_major(collector, object)) {
+        return ZR_FALSE;
+    }
 
-    collector = state->global->garbageCollector;
     if (garbage_collector_ignore_registry_contains(collector, object) ||
         object->ownershipControl != ZR_NULL ||
         object->scanMarkGcFunction != ZR_NULL) {
@@ -1912,14 +2124,65 @@ static TZrBool garbage_collector_object_can_old_compact(SZrState *state, SZrRawO
     return garbage_collector_object_supports_evacuation(state, object);
 }
 
-static TZrBool garbage_collector_old_compactable_region_seen_before(SZrState *state,
+static SZrGarbageCollectRegionDescriptor *garbage_collector_find_old_compaction_region_descriptor(
+        SZrGarbageCollector *collector,
+        SZrRawObject *object) {
+    TZrSize regionDescriptorIndex;
+
+    if (collector == ZR_NULL || collector->regions == ZR_NULL || object == ZR_NULL ||
+        object->garbageCollectMark.regionId == 0u) {
+        return ZR_NULL;
+    }
+
+    regionDescriptorIndex = object->garbageCollectMark.regionDescriptorIndex;
+    if (regionDescriptorIndex < collector->regionCount) {
+        SZrGarbageCollectRegionDescriptor *region = &collector->regions[regionDescriptorIndex];
+
+        if (region->id == object->garbageCollectMark.regionId) {
+            return region;
+        }
+    }
+
+    for (regionDescriptorIndex = 0; regionDescriptorIndex < collector->regionCount; regionDescriptorIndex++) {
+        SZrGarbageCollectRegionDescriptor *region = &collector->regions[regionDescriptorIndex];
+
+        if (region->id == object->garbageCollectMark.regionId) {
+            object->garbageCollectMark.regionDescriptorIndex = regionDescriptorIndex;
+            return region;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrUInt32 garbage_collector_next_old_compaction_scan_epoch(SZrGarbageCollector *collector) {
+    TZrSize index;
+
+    if (collector == ZR_NULL) {
+        return 0u;
+    }
+
+    collector->oldCompactionScanEpoch++;
+    if (collector->oldCompactionScanEpoch != 0u) {
+        return collector->oldCompactionScanEpoch;
+    }
+
+    for (index = 0; index < collector->regionCount; index++) {
+        collector->regions[index].compactionSeenEpoch = 0u;
+    }
+    collector->oldCompactionScanEpoch = 1u;
+    return collector->oldCompactionScanEpoch;
+}
+
+static TZrBool garbage_collector_old_compactable_region_seen_before(SZrGarbageCollector *collector,
+                                                                    SZrState *state,
                                                                     SZrRawObject *head,
                                                                     const SZrRawObject *limit,
                                                                     TZrUInt32 regionId) {
     SZrRawObject *object = head;
 
     while (object != ZR_NULL && object != limit) {
-        if (garbage_collector_object_can_old_compact(state, object) &&
+        if (garbage_collector_object_can_old_compact(collector, state, object) &&
             object->garbageCollectMark.regionId == regionId) {
             return ZR_TRUE;
         }
@@ -1951,6 +2214,7 @@ static TZrBool garbage_collector_should_compact_old_regions(SZrState *state, TZr
     TZrUInt64 capacity;
     TZrUInt64 fragmentationPercent;
     TZrUInt32 liveRegionCount = 0u;
+    TZrUInt32 compactionScanEpoch;
 
     if (forceCompact) {
         return ZR_TRUE;
@@ -1965,16 +2229,31 @@ static TZrBool garbage_collector_should_compact_old_regions(SZrState *state, TZr
         return ZR_FALSE;
     }
 
+    compactionScanEpoch = garbage_collector_next_old_compaction_scan_epoch(collector);
     object = collector->gcObjectList;
     while (object != ZR_NULL) {
-        if (garbage_collector_object_can_old_compact(state, object)) {
-            liveBytes += (TZrUInt64)garbage_collector_get_object_base_size(state, object);
-            if (object->garbageCollectMark.regionId != 0u &&
-                !garbage_collector_old_compactable_region_seen_before(state,
-                                                                      collector->gcObjectList,
-                                                                      object,
-                                                                      object->garbageCollectMark.regionId)) {
-                liveRegionCount++;
+        if (garbage_collector_object_can_old_compact(collector, state, object)) {
+            SZrGarbageCollectRegionDescriptor *region;
+
+            liveBytes += (TZrUInt64)garbage_collector_get_object_base_size_fast(object);
+            if (object->garbageCollectMark.regionId != 0u) {
+                region = garbage_collector_find_old_compaction_region_descriptor(collector, object);
+                if (region != ZR_NULL) {
+                    if (region->compactionSeenEpoch != compactionScanEpoch) {
+                        region->compactionSeenEpoch = compactionScanEpoch;
+                        liveRegionCount++;
+                    }
+                } else if (!garbage_collector_old_compactable_region_seen_before(collector,
+                                                                                 state,
+                                                                                 collector->gcObjectList,
+                                                                                 object,
+                                                                                 object->garbageCollectMark.regionId)) {
+                    /*
+                     * Live objects normally carry a valid region descriptor index. Keep the old prefix-scan
+                     * behavior only as a consistency fallback when legacy/stale metadata cannot be resolved.
+                     */
+                    liveRegionCount++;
+                }
             }
         }
         object = object->next;
@@ -1991,32 +2270,6 @@ static TZrBool garbage_collector_should_compact_old_regions(SZrState *state, TZr
 
     fragmentationPercent = (capacity - liveBytes) * 100u / capacity;
     return fragmentationPercent >= collector->fragmentationCompactThreshold;
-}
-
-static TZrSize garbage_collector_free_old_from_space(SZrState *state) {
-    SZrRawObject **current;
-    TZrSize work = 0;
-
-    if (state == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
-        return 0;
-    }
-
-    current = &state->global->garbageCollector->gcObjectList;
-    while (*current != ZR_NULL) {
-        SZrRawObject *object = *current;
-
-        if (object->garbageCollectMark.storageKind == ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE &&
-            object->garbageCollectMark.forwardingAddress != ZR_NULL) {
-            *current = object->next;
-            garbage_collector_free_object(state, object);
-            work++;
-            continue;
-        }
-
-        current = &object->next;
-    }
-
-    return work;
 }
 
 static TZrSize garbage_collector_run_old_compaction(SZrState *state) {
@@ -2038,39 +2291,19 @@ static TZrSize garbage_collector_run_old_compaction(SZrState *state) {
     while (object != ZR_NULL) {
         SZrRawObject *nextObject = object->next;
 
-        if (garbage_collector_object_can_old_compact(state, object) &&
-            garbage_collector_clone_for_minor_evacuation(state,
-                                                         object,
-                                                         ZR_GARBAGE_COLLECT_REGION_KIND_OLD,
-                                                         ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
-                                                         object->garbageCollectMark.generationalStatus,
-                                                         object->garbageCollectMark.promotionReason,
-                                                         object->garbageCollectMark.survivalAge) != ZR_NULL) {
+        /*
+         * GC objects are individually allocated nodes, not semispace bump ranges.
+         * Old-space compaction only needs to repack logical region bookkeeping, so
+         * compactable objects can keep stable addresses and avoid clone+rewrite+free.
+         */
+        if (garbage_collector_object_can_old_compact(collector, state, object) &&
+            garbage_collector_reassign_old_compaction_target(
+                    state, object, garbage_collector_get_object_base_size_fast(object))) {
             work++;
         }
 
         object = nextObject;
     }
-
-    work += garbage_collector_rewrite_forwarded_roots(state);
-
-    object = collector->gcObjectList;
-    while (object != ZR_NULL) {
-        /*
-         * Keep eligibility aligned with garbage_collector_rewrite_minor_forwarding: rewrite interior slots for any
-         * object that is still linked on the GC list unless it is explicitly unreferenced or released. Using only
-         * garbage_collector_object_is_live_after_major here can skip objects that still carry forwarding edges (for
-         * example INITED objects with a stale generation snapshot) and leave external slots (meta tables, PIC caches)
-         * pointing at stale addresses before old-space reclamation.
-         */
-        if (object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_UNREFERENCED &&
-            object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED) {
-            work += garbage_collector_rewrite_object_graph(state, object);
-        }
-        object = object->next;
-    }
-
-    work += garbage_collector_free_old_from_space(state);
     return work;
 }
 
@@ -2089,7 +2322,7 @@ static TZrSize garbage_collector_run_minor_evacuation(SZrState *state) {
                 EZrGarbageCollectGenerationalObjectStatus generationalStatus;
                 EZrGarbageCollectPromotionReason promotionReason;
                 TZrUInt32 survivalAge;
-                TZrSize objectSize = garbage_collector_get_object_base_size(state, object);
+                TZrSize objectSize = garbage_collector_get_object_base_size_fast(object);
 
                 garbage_collector_minor_target_for_object(collector,
                                                           object,
@@ -2098,9 +2331,11 @@ static TZrSize garbage_collector_run_minor_evacuation(SZrState *state) {
                                                           &generationalStatus,
                                                           &promotionReason,
                                                           &survivalAge);
-                if (garbage_collector_object_supports_evacuation(state, object)) {
+                if (garbage_collector_object_supports_evacuation(state, object) &&
+                    !garbage_collector_should_reassign_minor_in_place(object)) {
                     SZrRawObject *promotedObject = garbage_collector_clone_for_minor_evacuation(state,
                                                                                                  object,
+                                                                                                 objectSize,
                                                                                                  regionKind,
                                                                                                  storageKind,
                                                                                                  generationalStatus,
@@ -2135,6 +2370,7 @@ static TZrSize garbage_collector_run_minor_evacuation(SZrState *state) {
 }
 
 static TZrSize garbage_collector_rewrite_minor_forwarding(SZrState *state) {
+    SZrGarbageCollector *collector;
     SZrRawObject *object;
     TZrSize work = 0;
 
@@ -2142,12 +2378,22 @@ static TZrSize garbage_collector_rewrite_minor_forwarding(SZrState *state) {
         return 0;
     }
 
+    collector = state->global->garbageCollector;
     work += garbage_collector_rewrite_forwarded_roots(state);
 
-    object = state->global->garbageCollector->gcObjectList;
+    object = collector->gcObjectList;
     while (object != ZR_NULL) {
         if (object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_UNREFERENCED &&
-            object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED) {
+            object->garbageCollectMark.status != ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED &&
+            object->garbageCollectMark.forwardingAddress == ZR_NULL &&
+            garbage_collector_object_can_hold_gc_references(object) &&
+            (collector->minorCollectionEpoch == 0u ||
+             object->garbageCollectMark.minorScanEpoch == collector->minorCollectionEpoch)) {
+            /*
+             * After root/registry slots are redirected, forwarded from-space originals are
+             * about to be freed. Only objects reached by the current minor mark/evacuation
+             * pass can still hold stale from-space interior pointers.
+             */
             work += garbage_collector_rewrite_object_graph(state, object);
         }
         object = object->next;
@@ -2235,7 +2481,7 @@ static TZrSize garbage_collector_run_generational_major_collection(SZrState *sta
 
     object = collector->gcObjectList;
     while (object != ZR_NULL) {
-        if (!ZrCore_RawObject_IsUnreferenced(state, object) &&
+        if (!garbage_collector_object_is_unreferenced_fast(collector, object) &&
             object->garbageCollectMark.generationalStatus == ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_NEW) {
             object->garbageCollectMark.generationalStatus = ZR_GARBAGE_COLLECT_GENERATIONAL_OBJECT_STATUS_SURVIVAL;
         }
@@ -2376,8 +2622,15 @@ TZrSize garbage_collector_single_step(SZrState *state) {
             break;
         case ZR_GARBAGE_COLLECT_RUNNING_STATUS_FLAG_PROPAGATION:
             if (global->garbageCollector->waitToScanObjectList == NULL) {
-                global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC;
-                work = 0;
+                if (global->garbageCollector->waitToScanAgainObjectList != ZR_NULL) {
+                    global->garbageCollector->waitToScanObjectList =
+                            global->garbageCollector->waitToScanAgainObjectList;
+                    global->garbageCollector->waitToScanAgainObjectList = ZR_NULL;
+                    work = 0;
+                } else {
+                    global->garbageCollector->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_BEFORE_ATOMIC;
+                    work = 0;
+                }
             } else {
                 work = ZrGarbageCollectorPropagateMark(state);
             }

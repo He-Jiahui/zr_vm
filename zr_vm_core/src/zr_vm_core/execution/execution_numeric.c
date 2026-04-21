@@ -4,6 +4,10 @@
 
 #include "execution/execution_internal.h"
 
+static ZR_FORCE_INLINE SZrTypeValue *execution_stack_get_value_no_profile(TZrStackValuePointer stackPointer) {
+    return stackPointer != ZR_NULL ? ZrCore_Stack_GetValueNoProfile(stackPointer) : ZR_NULL;
+}
+
 static TZrBool execution_value_points_into_stack(const SZrState *state, const SZrTypeValue *value) {
     TZrStackValuePointer stackPointer;
 
@@ -30,7 +34,7 @@ static SZrTypeValue *execution_restore_stack_destination(SZrState *state,
     }
 
     destinationPointer = ZrCore_Function_StackAnchorRestore(state, anchor);
-    return destinationPointer != ZR_NULL ? ZrCore_Stack_GetValue(destinationPointer) : ZR_NULL;
+    return execution_stack_get_value_no_profile(destinationPointer);
 }
 
 static void execution_refresh_forwarded_value_copy(SZrTypeValue *value) {
@@ -223,6 +227,7 @@ static TZrBool execution_try_binary_numeric_float_fallback(EZrExecutionNumericFa
                                                            SZrTypeValue *destination,
                                                            const SZrTypeValue *opA,
                                                            const SZrTypeValue *opB);
+static ZR_FORCE_INLINE TZrBool execution_extract_integral_or_bool_int64(const SZrTypeValue *value, TZrInt64 *outValue);
 
 static TZrBool execution_apply_binary_numeric_float(EZrExecutionNumericFallbackOp operation,
                                                     SZrTypeValue *destination,
@@ -478,11 +483,11 @@ TZrBool concat_values_to_destination(SZrState *state,
 
     if (hasOpAAnchor) {
         TZrStackValuePointer restoredOpA = ZrCore_Function_StackAnchorRestore(state, &opAAnchor);
-        resolvedOpA = restoredOpA != ZR_NULL ? ZrCore_Stack_GetValue(restoredOpA) : ZR_NULL;
+        resolvedOpA = execution_stack_get_value_no_profile(restoredOpA);
     }
     if (hasOpBAnchor) {
         TZrStackValuePointer restoredOpB = ZrCore_Function_StackAnchorRestore(state, &opBAnchor);
-        resolvedOpB = restoredOpB != ZR_NULL ? ZrCore_Stack_GetValue(restoredOpB) : ZR_NULL;
+        resolvedOpB = execution_stack_get_value_no_profile(restoredOpB);
     }
     if (resolvedOpA == ZR_NULL || resolvedOpB == ZR_NULL) {
         return ZR_FALSE;
@@ -528,7 +533,7 @@ TZrBool concat_values_to_destination(SZrState *state,
     }
 
     tempBase = ZrCore_Stack_LoadOffsetToPointer(state, tempBaseOffset);
-    resultValue = ZrCore_Stack_GetValue(tempBase);
+    resultValue = execution_stack_get_value_no_profile(tempBase);
     if (resultValue != ZR_NULL) {
         *outResult = *resultValue;
     }
@@ -580,6 +585,27 @@ TZrBool try_builtin_add(SZrState *state,
         } else {
             ZrCore_Value_InitAsUInt(state, outResult, value_to_uint64(opA) + value_to_uint64(opB));
         }
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_extract_integral_or_bool_int64(const SZrTypeValue *value, TZrInt64 *outValue) {
+    if (value == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+        *outValue = value->value.nativeObject.nativeInt64;
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+        *outValue = (TZrInt64)value->value.nativeObject.nativeUInt64;
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_BOOL(value->type)) {
+        *outValue = value->value.nativeObject.nativeBool ? 1 : 0;
         return ZR_TRUE;
     }
 
@@ -667,6 +693,48 @@ TZrBool execution_try_builtin_div(SZrState *state,
     }
 
     return ZR_FALSE;
+}
+
+TZrBool execution_try_builtin_mul_mixed_numeric_fast(SZrTypeValue *outResult,
+                                                     const SZrTypeValue *opA,
+                                                     const SZrTypeValue *opB) {
+    EZrValueType typeA;
+    EZrValueType typeB;
+    TZrInt64 leftInt64;
+    TZrInt64 rightInt64;
+
+    if (outResult == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typeA = opA->type;
+    typeB = opB->type;
+    if (!(ZR_VALUE_IS_TYPE_NUMBER(typeA) || ZR_VALUE_IS_TYPE_BOOL(typeA)) ||
+        !(ZR_VALUE_IS_TYPE_NUMBER(typeB) || ZR_VALUE_IS_TYPE_BOOL(typeB))) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_BOOL(typeA) && ZR_VALUE_IS_TYPE_BOOL(typeB)) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_FLOAT(typeA) || ZR_VALUE_IS_TYPE_FLOAT(typeB)) {
+        ZR_VALUE_FAST_SET(outResult, nativeDouble, value_to_double(opA) * value_to_double(opB), ZR_VALUE_TYPE_DOUBLE);
+        return ZR_TRUE;
+    }
+
+    if (!(ZR_VALUE_IS_TYPE_SIGNED_INT(typeA) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(typeA) || ZR_VALUE_IS_TYPE_BOOL(typeA)) ||
+        !(ZR_VALUE_IS_TYPE_SIGNED_INT(typeB) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(typeB) || ZR_VALUE_IS_TYPE_BOOL(typeB))) {
+        return ZR_FALSE;
+    }
+
+    if (!execution_extract_integral_or_bool_int64(opA, &leftInt64) ||
+        !execution_extract_integral_or_bool_int64(opB, &rightInt64)) {
+        return ZR_FALSE;
+    }
+
+    ZR_VALUE_FAST_SET(outResult, nativeInt64, leftInt64 * rightInt64, ZR_VALUE_TYPE_INT64);
+    return ZR_TRUE;
 }
 
 TZrBool ZrCore_Execution_Add(SZrState *state,
@@ -762,10 +830,13 @@ TZrBool ZrCore_Execution_Add(SZrState *state,
         return ZR_TRUE;
     }
 
-    if (metaBase != ZR_NULL && ZrCore_Stack_GetValue(metaBase) != ZR_NULL) {
-        ZrCore_Value_Copy(state, destination, ZrCore_Stack_GetValue(metaBase));
-    } else {
-        ZrCore_Value_ResetAsNull(destination);
+    {
+        SZrTypeValue *metaResult = execution_stack_get_value_no_profile(metaBase);
+        if (metaResult != ZR_NULL) {
+            ZrCore_Value_Copy(state, destination, metaResult);
+        } else {
+            ZrCore_Value_ResetAsNull(destination);
+        }
     }
     return ZR_TRUE;
 }

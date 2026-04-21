@@ -20,6 +20,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_common/zr_common_conf.h"
+#include "zr_vm_common/zr_gc_internal_conf.h"
 #include "zr_vm_library/native_binding.h"
 #include "zr_vm_lib_system/gc.h"
 
@@ -93,6 +94,41 @@ static TZrBool gc_test_collector_contains_object(SZrState *state, SZrRawObject *
     }
 
     return ZR_FALSE;
+}
+
+static void gc_test_assert_string_table_minor_bucket_index_list_consistent(const SZrStringTable *stringTable) {
+    TZrSize flaggedCount = 0u;
+
+    TEST_ASSERT_NOT_NULL(stringTable);
+    TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)stringTable->stringHashSet.capacity,
+                             (UNITY_UINT64)stringTable->minorYoungBucketCapacity);
+
+    if (stringTable->stringHashSet.capacity == 0u) {
+        TEST_ASSERT_EQUAL_UINT64(0u, (UNITY_UINT64)stringTable->minorYoungBucketCount);
+        return;
+    }
+
+    TEST_ASSERT_NOT_NULL(stringTable->minorYoungBucketFlags);
+    TEST_ASSERT_NOT_NULL(stringTable->minorYoungBucketIndexes);
+    TEST_ASSERT_TRUE(stringTable->minorYoungBucketCount <= stringTable->stringHashSet.capacity);
+
+    for (TZrSize bucketIndex = 0; bucketIndex < stringTable->stringHashSet.capacity; bucketIndex++) {
+        if (stringTable->minorYoungBucketFlags[bucketIndex] != 0u) {
+            flaggedCount++;
+        }
+    }
+
+    TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)flaggedCount, (UNITY_UINT64)stringTable->minorYoungBucketCount);
+    for (TZrSize activeIndex = 0; activeIndex < stringTable->minorYoungBucketCount; activeIndex++) {
+        TZrSize bucketIndex = stringTable->minorYoungBucketIndexes[activeIndex];
+
+        TEST_ASSERT_TRUE(bucketIndex < stringTable->stringHashSet.capacity);
+        TEST_ASSERT_EQUAL_UINT8(1u, stringTable->minorYoungBucketFlags[bucketIndex]);
+        for (TZrSize verifyIndex = activeIndex + 1u; verifyIndex < stringTable->minorYoungBucketCount; verifyIndex++) {
+            TEST_ASSERT_NOT_EQUAL_UINT64((UNITY_UINT64)bucketIndex,
+                                         (UNITY_UINT64)stringTable->minorYoungBucketIndexes[verifyIndex]);
+        }
+    }
 }
 
 // 测试基础类型
@@ -866,6 +902,41 @@ static void test_gc_ignore_registry_swap_remove_keeps_remaining_object_queryable
     TEST_DIVIDER();
 }
 
+static void test_gc_is_unreferenced_respects_ignore_registry(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC IsUnreferenced Respects Ignore Registry";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Ignore registry keeps nominally unreferenced object live",
+              "An ignored object must not be treated as unreferenced even if its mark status would otherwise qualify");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+
+        TEST_ASSERT_NOT_NULL(object);
+        object->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_UNREFERENCED;
+        object->garbageCollectMark.generation = 0u;
+
+        TEST_ASSERT_TRUE(ZrCore_RawObject_IsUnreferenced(state, object));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IgnoreObject(state, object));
+        TEST_ASSERT_FALSE(ZrCore_RawObject_IsUnreferenced(state, object));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_UnignoreObject(state->global, object));
+        TEST_ASSERT_TRUE(ZrCore_RawObject_IsUnreferenced(state, object));
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_gc_barrier_unignores_escaped_object(void) {
     SZrTestTimer timer;
     const char* testSummary = "GC Barrier Unignores Escaped Object";
@@ -1533,15 +1604,15 @@ static void test_gc_heap_limit_pressure_check_gc_escalates_to_full(void) {
     TEST_DIVIDER();
 }
 
-static void test_gc_full_collection_compacts_old_reference_graph(void) {
+static void test_gc_full_collection_reassigns_old_reference_graph_in_place(void) {
     SZrTestTimer timer;
-    const char *testSummary = "GC Full Collection Compacts Old Reference Graph";
+    const char *testSummary = "GC Full Collection Reassigns Old Reference Graph In Place";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    TEST_INFO("Explicit full compact",
-              "Testing that an explicit full generational collection compacts live old movable objects and rewrites both stack roots and object fields to the relocated addresses");
+    TEST_INFO("Explicit full compact in place",
+              "Testing that an explicit full generational collection compacts live old movable objects by reassigning their old-region bookkeeping without changing stable object addresses");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -1558,6 +1629,10 @@ static void test_gc_full_collection_compacts_old_reference_graph(void) {
         const SZrTypeValue *resolvedChildValue;
         SZrRawObject *oldParent = ZR_CAST_RAW_OBJECT_AS_SUPER(parent);
         SZrRawObject *oldChild = ZR_CAST_RAW_OBJECT_AS_SUPER(child);
+        TZrUInt32 originalParentRegionId = oldParent->garbageCollectMark.regionId;
+        TZrUInt32 originalChildRegionId = oldChild->garbageCollectMark.regionId;
+        TZrSize originalParentRegionDescriptorIndex = oldParent->garbageCollectMark.regionDescriptorIndex;
+        TZrSize originalChildRegionDescriptorIndex = oldChild->garbageCollectMark.regionDescriptorIndex;
         SZrRawObject *newParent;
         SZrRawObject *newChild;
 
@@ -1589,24 +1664,30 @@ static void test_gc_full_collection_compacts_old_reference_graph(void) {
         rootValue = ZrCore_Stack_GetValue(rootSlot);
         TEST_ASSERT_NOT_NULL(rootValue);
         TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
-        TEST_ASSERT_NOT_EQUAL(oldParent, rootValue->value.object);
+        TEST_ASSERT_EQUAL_PTR(oldParent, rootValue->value.object);
 
         newParent = rootValue->value.object;
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
                                  newParent->garbageCollectMark.storageKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD,
                                  newParent->garbageCollectMark.regionKind);
+        TEST_ASSERT_TRUE(newParent->garbageCollectMark.regionId != originalParentRegionId ||
+                         newParent->garbageCollectMark.regionDescriptorIndex != originalParentRegionDescriptorIndex);
+        TEST_ASSERT_NULL(newParent->garbageCollectMark.forwardingAddress);
 
         resolvedChildValue = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, newParent), &memberKey);
         TEST_ASSERT_NOT_NULL(resolvedChildValue);
         TEST_ASSERT_TRUE(resolvedChildValue->isGarbageCollectable);
-        TEST_ASSERT_NOT_EQUAL(oldChild, resolvedChildValue->value.object);
+        TEST_ASSERT_EQUAL_PTR(oldChild, resolvedChildValue->value.object);
 
         newChild = resolvedChildValue->value.object;
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
                                  newChild->garbageCollectMark.storageKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD,
                                  newChild->garbageCollectMark.regionKind);
+        TEST_ASSERT_TRUE(newChild->garbageCollectMark.regionId != originalChildRegionId ||
+                         newChild->garbageCollectMark.regionDescriptorIndex != originalChildRegionDescriptorIndex);
+        TEST_ASSERT_NULL(newChild->garbageCollectMark.forwardingAddress);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_FULL, gc->statsSnapshot.lastCollectionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE, gc->collectionPhase);
     }
@@ -2002,6 +2083,73 @@ static void test_gc_region_allocator_reassigns_pinned_object_region(void) {
     TEST_DIVIDER();
 }
 
+static void test_gc_region_allocator_reassigns_with_stale_descriptor_index(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Region Allocator Reassigns With Stale Descriptor Index";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Stale descriptor index fallback",
+              "Testing that region reassignment still releases the original region when an object carries a stale but in-range descriptor index, so the allocator can safely reuse that region afterward");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        TZrSize objectSize = sizeof(SZrObject);
+        SZrRawObject *object;
+        SZrRawObject *otherObject;
+        SZrRawObject *reusedObject;
+        TZrUInt32 oldRegionId;
+        TZrSize oldRegionIndex;
+        TZrSize staleRegionIndex;
+
+        gc->youngRegionSize = (TZrUInt64)objectSize;
+        gc->currentEdenRegionId = 0u;
+        gc->currentEdenRegionUsedBytes = 0u;
+        gc->currentEdenRegionIndex = ZR_MAX_SIZE;
+
+        object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, objectSize);
+        otherObject = createTestObject(state, ZR_VALUE_TYPE_OBJECT, objectSize);
+        TEST_ASSERT_NOT_NULL(object);
+        TEST_ASSERT_NOT_NULL(otherObject);
+
+        oldRegionId = object->garbageCollectMark.regionId;
+        oldRegionIndex = object->garbageCollectMark.regionDescriptorIndex;
+        staleRegionIndex = otherObject->garbageCollectMark.regionDescriptorIndex;
+
+        TEST_ASSERT_TRUE(oldRegionIndex < gc->regionCount);
+        TEST_ASSERT_TRUE(staleRegionIndex < gc->regionCount);
+        TEST_ASSERT_TRUE(oldRegionIndex != staleRegionIndex);
+        TEST_ASSERT_EQUAL_UINT32(oldRegionId, gc->regions[oldRegionIndex].id);
+        TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)1u, (UNITY_UINT64)gc->regions[oldRegionIndex].liveObjectCount);
+
+        object->garbageCollectMark.regionDescriptorIndex = staleRegionIndex;
+        ZrCore_RawObject_MarkAsPermanent(state, object);
+
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_PERMANENT, object->garbageCollectMark.regionKind);
+        TEST_ASSERT_NOT_EQUAL(oldRegionId, object->garbageCollectMark.regionId);
+        TEST_ASSERT_TRUE(object->garbageCollectMark.regionDescriptorIndex < gc->regionCount);
+        TEST_ASSERT_EQUAL_UINT32(object->garbageCollectMark.regionId,
+                                 gc->regions[object->garbageCollectMark.regionDescriptorIndex].id);
+        TEST_ASSERT_EQUAL_UINT32(oldRegionId, gc->regions[oldRegionIndex].id);
+        TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)0u, (UNITY_UINT64)gc->regions[oldRegionIndex].liveObjectCount);
+        TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)0u, (UNITY_UINT64)gc->regions[oldRegionIndex].usedBytes);
+
+        reusedObject = createTestObject(state, ZR_VALUE_TYPE_OBJECT, objectSize);
+        TEST_ASSERT_NOT_NULL(reusedObject);
+        TEST_ASSERT_EQUAL_UINT32(oldRegionId, reusedObject->garbageCollectMark.regionId);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_function_escape_metadata_defaults(void) {
     SZrTestTimer timer;
     const char *testSummary = "Function Escape Metadata Defaults";
@@ -2233,6 +2381,145 @@ static void test_gc_function_auxiliary_metadata_is_marked_from_root_function(voi
     TEST_DIVIDER();
 }
 
+static void test_gc_released_embedded_child_function_is_not_remarked_from_root_value(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Released Embedded Child Function Is Not Remarked From Root Value";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Released embedded child function stays released",
+              "Testing that a released function carrying ownerFunction provenance is not resurrected when a rooted value still points at it during mark propagation");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrFunction *ownerFunction = ZrCore_Function_New(state);
+        SZrFunction *childFunction = ZrCore_Function_New(state);
+        SZrRawObject *childRawObject;
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+
+        TEST_ASSERT_NOT_NULL(ownerFunction);
+        TEST_ASSERT_NOT_NULL(childFunction);
+
+        childFunction->ownerFunction = ownerFunction;
+        childRawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(childFunction);
+        TEST_ASSERT_NOT_NULL(childRawObject);
+
+        childRawObject->garbageCollectMark.status = ZR_GARBAGE_COLLECT_INCREMENTAL_OBJECT_STATUS_RELEASED;
+        childRawObject->gcList = ZR_NULL;
+        TEST_ASSERT_TRUE(ZrCore_RawObject_IsReleased(childRawObject));
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, childRawObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+
+        ZrGarbageCollectorRestartCollection(state);
+        ZrGarbageCollectorPropagateAll(state);
+
+        TEST_ASSERT_TRUE(ZrCore_RawObject_IsReleased(childRawObject));
+        TEST_ASSERT_FALSE(ZR_GC_IS_REFERENCED(childRawObject));
+        TEST_ASSERT_FALSE(ZR_GC_IS_WAIT_TO_SCAN(childRawObject));
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_propagate_all_drains_large_gray_queue(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC PropagateAll Drains Large Gray Queue";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Large gray queue propagation",
+              "Testing that PropagateAll drains all reachable gray objects instead of clearing the queue early and leaving the tail of a large object graph unscanned");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        const TZrSize chainLength = (TZrSize)ZR_GC_PROPAGATE_ALL_ITERATION_LIMIT + 64u;
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *nextName = ZrCore_String_CreateFromNative(state, "next");
+        SZrString *leafName = ZrCore_String_CreateFromNative(state, "leaf");
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        SZrTypeValue nextKey;
+        SZrTypeValue leafKey;
+        SZrObject *rootParent = ZrCore_Object_New(state, ZR_NULL);
+        SZrObject *currentParent = rootParent;
+        SZrRawObject *tailParent = ZR_NULL;
+        SZrRawObject *tailLeaf = ZR_NULL;
+        TZrSize work;
+
+        TEST_ASSERT_NOT_NULL(nextName);
+        TEST_ASSERT_NOT_NULL(leafName);
+        TEST_ASSERT_NOT_NULL(rootParent);
+
+        ZrCore_Value_InitAsRawObject(state, &nextKey, ZR_CAST_RAW_OBJECT_AS_SUPER(nextName));
+        nextKey.type = ZR_VALUE_TYPE_STRING;
+        ZrCore_Value_InitAsRawObject(state, &leafKey, ZR_CAST_RAW_OBJECT_AS_SUPER(leafName));
+        leafKey.type = ZR_VALUE_TYPE_STRING;
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, ZR_CAST_RAW_OBJECT_AS_SUPER(rootParent));
+        state->stackTop.valuePointer = rootSlot + 1;
+
+        for (TZrSize index = 0; index < chainLength; index++) {
+            SZrObject *leafObject = ZrCore_Object_New(state, ZR_NULL);
+            SZrTypeValue leafValue;
+
+            TEST_ASSERT_NOT_NULL(currentParent);
+            TEST_ASSERT_NOT_NULL(leafObject);
+
+            ZrCore_Value_InitAsRawObject(state, &leafValue, ZR_CAST_RAW_OBJECT_AS_SUPER(leafObject));
+            ZrCore_Object_SetValue(state, currentParent, &leafKey, &leafValue);
+            tailParent = ZR_CAST_RAW_OBJECT_AS_SUPER(currentParent);
+            tailLeaf = ZR_CAST_RAW_OBJECT_AS_SUPER(leafObject);
+
+            if (index + 1u < chainLength) {
+                SZrObject *nextParent = ZrCore_Object_New(state, ZR_NULL);
+                SZrTypeValue nextValue;
+
+                TEST_ASSERT_NOT_NULL(nextParent);
+                ZrCore_Value_InitAsRawObject(state, &nextValue, ZR_CAST_RAW_OBJECT_AS_SUPER(nextParent));
+                ZrCore_Object_SetValue(state, currentParent, &nextKey, &nextValue);
+                currentParent = nextParent;
+            }
+        }
+
+        TEST_ASSERT_NOT_NULL(tailParent);
+        TEST_ASSERT_NOT_NULL(tailLeaf);
+        TEST_ASSERT_FALSE(ZR_GC_IS_REFERENCED(tailParent));
+        TEST_ASSERT_FALSE(ZR_GC_IS_REFERENCED(tailLeaf));
+
+        gc->gcRunningStatus = ZR_GARBAGE_COLLECT_RUNNING_STATUS_PAUSED;
+        ZrGarbageCollectorRestartCollection(state);
+        TEST_ASSERT_NOT_NULL(gc->waitToScanObjectList);
+
+        work = ZrGarbageCollectorPropagateAll(state);
+        TEST_ASSERT_TRUE(work > 0u);
+        TEST_ASSERT_NULL(gc->waitToScanObjectList);
+        TEST_ASSERT_TRUE_MESSAGE(ZR_GC_IS_REFERENCED(tailParent),
+                                 "PropagateAll must scan the tail parent in a large reachable chain");
+        TEST_ASSERT_TRUE_MESSAGE(ZR_GC_IS_REFERENCED(tailLeaf),
+                                 "PropagateAll must mark the tail leaf in a large reachable chain");
+        TEST_ASSERT_FALSE(ZR_GC_IS_WAIT_TO_SCAN(tailParent));
+        TEST_ASSERT_FALSE(ZR_GC_IS_WAIT_TO_SCAN(tailLeaf));
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static SZrFunction *gc_test_create_function_with_return_escape(SZrState *state,
                                                                TZrUInt32 stackSlot,
                                                                TZrUInt32 scopeDepth,
@@ -2376,9 +2663,8 @@ static void test_function_return_escape_promotes_returned_object_during_minor_gc
         rootValue = ZrCore_Stack_GetValue(rootSlot);
         TEST_ASSERT_NOT_NULL(rootValue);
         TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
-        TEST_ASSERT_NOT_EQUAL(oldObject, rootValue->value.object);
-
         newObject = rootValue->value.object;
+        TEST_ASSERT_TRUE(newObject == oldObject || oldObject->garbageCollectMark.forwardingAddress == newObject);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD, newObject->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
                                  newObject->garbageCollectMark.storageKind);
@@ -2557,13 +2843,13 @@ static void test_gc_escaped_closure_propagates_capture_escape_on_close(void) {
 
 static void test_gc_minor_collection_evacuates_stack_root_young_object(void) {
     SZrTestTimer timer;
-    const char *testSummary = "GC Minor Collection Evacuates Stack Root Young Object";
+    const char *testSummary = "GC Minor Collection Promotes Stack Root Young Object";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    TEST_INFO("Stack-rooted young evacuation",
-              "Testing that a stack-rooted young object evacuates into survivor space during minor GC and the root slot is rewritten");
+    TEST_INFO("Stack-rooted young promotion",
+              "Testing that a stack-rooted young object promotes into survivor space during minor GC whether the root stays in place or is rewritten to a clone");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -2592,15 +2878,69 @@ static void test_gc_minor_collection_evacuates_stack_root_young_object(void) {
 
         rootValue = ZrCore_Stack_GetValue(rootSlot);
         TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
-        TEST_ASSERT_NOT_EQUAL(oldObject, rootValue->value.object);
-
         newObject = rootValue->value.object;
+        TEST_ASSERT_TRUE(newObject == oldObject || oldObject->garbageCollectMark.forwardingAddress == newObject);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR, newObject->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
                                  newObject->garbageCollectMark.storageKind);
         TEST_ASSERT_EQUAL_UINT32(1u, newObject->garbageCollectMark.survivalAge);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_SURVIVAL,
                                  newObject->garbageCollectMark.promotionReason);
+        TEST_ASSERT_TRUE(gc->minorCollectionEpoch > 0u);
+        TEST_ASSERT_EQUAL_UINT32(gc->minorCollectionEpoch, newObject->garbageCollectMark.minorScanEpoch);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_minor_collection_reassigns_root_function_and_stamps_minor_scan_epoch(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Minor Collection Reassigns Root Function And Stamps Minor Scan Epoch";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("In-place minor target epoch stamping",
+              "Testing that a rooted young function stays in place during minor GC, is reassigned into survivor space, and records the current minorScanEpoch for the rewrite pass");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrFunction *function = ZrCore_Function_New(state);
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        SZrRawObject *functionObject = ZR_CAST_RAW_OBJECT_AS_SUPER(function);
+        SZrTypeValue *rootValue;
+
+        TEST_ASSERT_NOT_NULL(function);
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
+        state->stackTop.valuePointer = rootSlot + 1;
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_EDEN, functionObject->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
+                                 functionObject->garbageCollectMark.storageKind);
+
+        ZrCore_GarbageCollector_GcStep(state);
+
+        rootValue = ZrCore_Stack_GetValue(rootSlot);
+        TEST_ASSERT_NOT_NULL(rootValue);
+        TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
+        TEST_ASSERT_EQUAL_PTR(functionObject, rootValue->value.object);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR, functionObject->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
+                                 functionObject->garbageCollectMark.storageKind);
+        TEST_ASSERT_EQUAL_UINT32(1u, functionObject->garbageCollectMark.survivalAge);
+        TEST_ASSERT_TRUE(gc->minorCollectionEpoch > 0u);
+        TEST_ASSERT_EQUAL_UINT32(gc->minorCollectionEpoch, functionObject->garbageCollectMark.minorScanEpoch);
     }
 
     destroyTestState(state);
@@ -2617,8 +2957,8 @@ static void test_gc_minor_collection_rewrites_generated_frame_slot_above_stack_t
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    TEST_INFO("Generated-frame root rewrite",
-              "Testing that minor GC rewrites a young object stored in an active frame slot above the current stackTop but below functionTop, matching the slots GC mark already treats as live");
+    TEST_INFO("Generated-frame root promotion",
+              "Testing that minor GC keeps a young object stored in an active frame slot above the current stackTop but below functionTop live, whether the slot stays in place or rewrites to a clone");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -2663,9 +3003,8 @@ static void test_gc_minor_collection_rewrites_generated_frame_slot_above_stack_t
         rootValue = ZrCore_Stack_GetValue(rootSlot);
         TEST_ASSERT_NOT_NULL(rootValue);
         TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
-        TEST_ASSERT_NOT_EQUAL(oldObject, rootValue->value.object);
-
         newObject = rootValue->value.object;
+        TEST_ASSERT_TRUE(newObject == oldObject || oldObject->garbageCollectMark.forwardingAddress == newObject);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR, newObject->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
                                  newObject->garbageCollectMark.storageKind);
@@ -2690,7 +3029,7 @@ static void test_gc_minor_collection_preserves_young_descendant_through_old_stac
     timer.startTime = clock();
 
     TEST_INFO("Old stack-root transitive scan",
-              "Testing that minor GC rescans an old stack-root graph deeply enough to preserve a young descendant reachable only through old intermediate objects");
+              "Testing that minor GC rescans an old stack-root graph deeply enough to preserve a young descendant reachable only through old intermediate objects whether that descendant forwards or promotes in place");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -2747,9 +3086,9 @@ static void test_gc_minor_collection_preserves_young_descendant_through_old_stac
         TEST_ASSERT_TRUE(middleValue->isGarbageCollectable);
         TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(middle), middleValue->value.object);
         TEST_ASSERT_TRUE(middle->valueExtend[0].isGarbageCollectable);
-        TEST_ASSERT_NOT_EQUAL(oldLeaf, middle->valueExtend[0].value.object);
 
         newLeaf = middle->valueExtend[0].value.object;
+        TEST_ASSERT_TRUE(newLeaf == oldLeaf || oldLeaf->garbageCollectMark.forwardingAddress == newLeaf);
         TEST_ASSERT_NOT_NULL(newLeaf);
         TEST_ASSERT_EQUAL_UINT32(ZR_VALUE_TYPE_OBJECT, newLeaf->type);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR, newLeaf->garbageCollectMark.regionKind);
@@ -2891,6 +3230,7 @@ static void test_gc_minor_collection_rewrites_old_reference_to_forwarded_child(v
         SZrRawObject *oldChild = ZR_CAST_RAW_OBJECT_AS_SUPER(child);
         const SZrTypeValue *resolvedChildValue;
         SZrRawObject *newChild;
+        TZrMemoryOffset debtBefore;
 
         TEST_ASSERT_NOT_NULL(parent);
         TEST_ASSERT_NOT_NULL(child);
@@ -2910,12 +3250,14 @@ static void test_gc_minor_collection_rewrites_old_reference_to_forwarded_child(v
         state->stackTop.valuePointer = rootSlot + 1;
         gc->gcDebtSize = 4096;
         gc->gcLastStepWork = 0;
+        debtBefore = gc->gcDebtSize;
 
         resolvedChildValue = ZrCore_Object_GetValue(state, parent, &memberKey);
         TEST_ASSERT_NOT_NULL(resolvedChildValue);
         TEST_ASSERT_EQUAL_PTR(oldChild, resolvedChildValue->value.object);
 
         ZrCore_GarbageCollector_GcStep(state);
+        TEST_ASSERT_EQUAL_INT64(debtBefore, gc->gcDebtSize);
 
         memberName = ZrCore_String_CreateFromNative(state, "child");
         TEST_ASSERT_NOT_NULL(memberName);
@@ -2923,14 +3265,249 @@ static void test_gc_minor_collection_rewrites_old_reference_to_forwarded_child(v
         resolvedChildValue = ZrCore_Object_GetValue(state, parent, &memberKey);
         TEST_ASSERT_NOT_NULL(resolvedChildValue);
         TEST_ASSERT_TRUE(resolvedChildValue->isGarbageCollectable);
-        TEST_ASSERT_NOT_EQUAL(oldChild, resolvedChildValue->value.object);
-
         newChild = resolvedChildValue->value.object;
+        TEST_ASSERT_TRUE(newChild == oldChild || oldChild->garbageCollectMark.forwardingAddress == newChild);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD, newChild->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
                                  newChild->garbageCollectMark.storageKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_OLD_REFERENCE,
                                  newChild->garbageCollectMark.promotionReason);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_minor_collection_preserves_hidden_items_array_on_promoted_parent(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Minor Collection Preserves Hidden Items Array On Promoted Parent";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Promoted parent hidden-items promotion",
+              "Testing that a parent promoted to old space keeps its __zr_items backing array live across successive minor collections whether the parent/array forward to clones or promote in place");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrObject *parent = ZrCore_Object_New(state, ZR_NULL);
+        SZrObject *child = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        SZrTypeValue childValue;
+        SZrTypeValue memberKey;
+        SZrTypeValue *rootValue;
+        const SZrTypeValue *resolvedChildValue;
+        SZrRawObject *oldParent = ZR_CAST_RAW_OBJECT_AS_SUPER(parent);
+        SZrRawObject *newParent;
+        SZrRawObject *firstMinorChild;
+        SZrRawObject *secondMinorChild;
+        SZrString *memberName;
+
+        TEST_ASSERT_NOT_NULL(parent);
+        TEST_ASSERT_NOT_NULL(child);
+
+        memberName = ZrCore_String_CreateFromNative(state, "__zr_items");
+        TEST_ASSERT_NOT_NULL(memberName);
+        ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+        memberKey.type = ZR_VALUE_TYPE_STRING;
+        ZrCore_Value_InitAsRawObject(state, &childValue, ZR_CAST_RAW_OBJECT_AS_SUPER(child));
+        childValue.type = ZR_VALUE_TYPE_ARRAY;
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_Object_SetValue(state, parent, &memberKey, &childValue);
+        TEST_ASSERT_NOT_NULL(parent->cachedHiddenItemsPair);
+        TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(child),
+                              ZR_CAST_RAW_OBJECT_AS_SUPER(parent->cachedHiddenItemsObject));
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, oldParent);
+        state->stackTop.valuePointer = rootSlot + 1;
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+
+        ZrCore_GarbageCollector_MarkRawObjectEscaped(state,
+                                                     oldParent,
+                                                     ZR_GARBAGE_COLLECT_ESCAPE_KIND_GLOBAL_ROOT,
+                                                     oldParent->garbageCollectMark.anchorScopeDepth,
+                                                     ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT);
+
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+
+        ZrCore_GarbageCollector_GcStep(state);
+
+        rootValue = ZrCore_Stack_GetValue(rootSlot);
+        TEST_ASSERT_NOT_NULL(rootValue);
+        TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
+        newParent = rootValue->value.object;
+        TEST_ASSERT_TRUE(newParent == oldParent || oldParent->garbageCollectMark.forwardingAddress == newParent);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD, newParent->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
+                                 newParent->garbageCollectMark.storageKind);
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, newParent));
+
+        memberName = ZrCore_String_CreateFromNative(state, "__zr_items");
+        TEST_ASSERT_NOT_NULL(memberName);
+        ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+        memberKey.type = ZR_VALUE_TYPE_STRING;
+        resolvedChildValue = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, newParent), &memberKey);
+        TEST_ASSERT_NOT_NULL(resolvedChildValue);
+        TEST_ASSERT_TRUE(resolvedChildValue->isGarbageCollectable);
+        TEST_ASSERT_EQUAL_UINT32(ZR_VALUE_TYPE_ARRAY, resolvedChildValue->type);
+        firstMinorChild = resolvedChildValue->value.object;
+        TEST_ASSERT_EQUAL_PTR(firstMinorChild,
+                              ZR_CAST_RAW_OBJECT_AS_SUPER(ZR_CAST_OBJECT(state, newParent)->cachedHiddenItemsObject));
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR,
+                                 firstMinorChild->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
+                                 firstMinorChild->garbageCollectMark.storageKind);
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        memberName = ZrCore_String_CreateFromNative(state, "__zr_items");
+        TEST_ASSERT_NOT_NULL(memberName);
+        ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+        memberKey.type = ZR_VALUE_TYPE_STRING;
+        resolvedChildValue = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, newParent), &memberKey);
+        TEST_ASSERT_NOT_NULL(resolvedChildValue);
+        TEST_ASSERT_TRUE(resolvedChildValue->isGarbageCollectable);
+        TEST_ASSERT_EQUAL_UINT32(ZR_VALUE_TYPE_ARRAY, resolvedChildValue->type);
+        secondMinorChild = resolvedChildValue->value.object;
+        TEST_ASSERT_TRUE(secondMinorChild == firstMinorChild ||
+                         firstMinorChild->garbageCollectMark.forwardingAddress == secondMinorChild);
+        TEST_ASSERT_EQUAL_PTR(secondMinorChild,
+                              ZR_CAST_RAW_OBJECT_AS_SUPER(ZR_CAST_OBJECT(state, newParent)->cachedHiddenItemsObject));
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD,
+                                 secondMinorChild->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
+                                 secondMinorChild->garbageCollectMark.storageKind);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_minor_collection_preserves_replaced_hidden_items_array_on_promoted_parent(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Minor Collection Preserves Replaced Hidden Items Array On Promoted Parent";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Promoted parent hidden-items replacement",
+              "Testing that an old parent keeps a repeatedly replaced __zr_items array alive when the field is updated through the existing cached pair before each minor collection, whether promotion forwards or stays in place");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrObject *parent = ZrCore_Object_New(state, ZR_NULL);
+        SZrObject *initialChild = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        SZrTypeValue childValue;
+        SZrTypeValue memberKey;
+        SZrTypeValue *rootValue;
+        const SZrTypeValue *resolvedChildValue;
+        SZrRawObject *oldParent = ZR_CAST_RAW_OBJECT_AS_SUPER(parent);
+        SZrRawObject *newParent;
+        SZrString *memberName;
+
+        TEST_ASSERT_NOT_NULL(parent);
+        TEST_ASSERT_NOT_NULL(initialChild);
+
+        memberName = ZrCore_String_CreateFromNative(state, "__zr_items");
+        TEST_ASSERT_NOT_NULL(memberName);
+        ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+        memberKey.type = ZR_VALUE_TYPE_STRING;
+        ZrCore_Value_InitAsRawObject(state, &childValue, ZR_CAST_RAW_OBJECT_AS_SUPER(initialChild));
+        childValue.type = ZR_VALUE_TYPE_ARRAY;
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_Object_SetValue(state, parent, &memberKey, &childValue);
+        TEST_ASSERT_NOT_NULL(parent->cachedHiddenItemsPair);
+        TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(initialChild),
+                              ZR_CAST_RAW_OBJECT_AS_SUPER(parent->cachedHiddenItemsObject));
+
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, oldParent);
+        state->stackTop.valuePointer = rootSlot + 1;
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+
+        ZrCore_GarbageCollector_MarkRawObjectEscaped(state,
+                                                     oldParent,
+                                                     ZR_GARBAGE_COLLECT_ESCAPE_KIND_GLOBAL_ROOT,
+                                                     oldParent->garbageCollectMark.anchorScopeDepth,
+                                                     ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT);
+
+        ZrCore_GarbageCollector_GcStep(state);
+
+        rootValue = ZrCore_Stack_GetValue(rootSlot);
+        TEST_ASSERT_NOT_NULL(rootValue);
+        TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
+        newParent = rootValue->value.object;
+        TEST_ASSERT_TRUE(newParent == oldParent || oldParent->garbageCollectMark.forwardingAddress == newParent);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD, newParent->garbageCollectMark.regionKind);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, newParent));
+        TEST_ASSERT_NOT_NULL(ZR_CAST_OBJECT(state, newParent)->cachedHiddenItemsPair);
+
+        for (TZrSize replacementIndex = 0; replacementIndex < 4u; replacementIndex++) {
+            SZrObject *replacementChild =
+                    ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+            SZrTypeValue replacementValue;
+            SZrObject *resolvedChildObject;
+
+            TEST_ASSERT_NOT_NULL(replacementChild);
+            ZrCore_Value_InitAsRawObject(state, &replacementValue, ZR_CAST_RAW_OBJECT_AS_SUPER(replacementChild));
+            replacementValue.type = ZR_VALUE_TYPE_ARRAY;
+
+            ZrCore_Object_SetExistingPairValueUnchecked(state,
+                                                        ZR_CAST_OBJECT(state, newParent),
+                                                        ZR_CAST_OBJECT(state, newParent)->cachedHiddenItemsPair,
+                                                        &replacementValue);
+
+            TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(replacementChild),
+                                  ZR_CAST_RAW_OBJECT_AS_SUPER(ZR_CAST_OBJECT(state, newParent)->cachedHiddenItemsObject));
+            TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, newParent));
+
+            gc->gcDebtSize = 4096;
+            gc->gcLastStepWork = 0;
+            ZrCore_GarbageCollector_GcStep(state);
+
+            rootValue = ZrCore_Stack_GetValue(rootSlot);
+            TEST_ASSERT_NOT_NULL(rootValue);
+            TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
+            newParent = rootValue->value.object;
+
+            memberName = ZrCore_String_CreateFromNative(state, "__zr_items");
+            TEST_ASSERT_NOT_NULL(memberName);
+            ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+            memberKey.type = ZR_VALUE_TYPE_STRING;
+            resolvedChildValue = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, newParent), &memberKey);
+            TEST_ASSERT_NOT_NULL(resolvedChildValue);
+            TEST_ASSERT_TRUE(resolvedChildValue->isGarbageCollectable);
+            TEST_ASSERT_EQUAL_UINT32(ZR_VALUE_TYPE_ARRAY, resolvedChildValue->type);
+            TEST_ASSERT_NOT_NULL(resolvedChildValue->value.object);
+            resolvedChildObject = ZR_CAST_OBJECT(state, resolvedChildValue->value.object);
+            TEST_ASSERT_NOT_NULL(resolvedChildObject);
+            TEST_ASSERT_EQUAL_UINT32(ZR_OBJECT_INTERNAL_TYPE_ARRAY, resolvedChildObject->internalType);
+            TEST_ASSERT_EQUAL_PTR(resolvedChildValue->value.object,
+                                  ZR_CAST_RAW_OBJECT_AS_SUPER(ZR_CAST_OBJECT(state, newParent)->cachedHiddenItemsObject));
+            TEST_ASSERT_EQUAL_PTR(resolvedChildValue->value.object,
+                                  ZR_CAST_OBJECT(state, newParent)->cachedHiddenItemsPair->value.value.object);
+            TEST_ASSERT_TRUE(gc_test_collector_contains_object(state, resolvedChildValue->value.object));
+            TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, newParent));
+        }
     }
 
     destroyTestState(state);
@@ -2948,7 +3525,7 @@ static void test_gc_minor_collection_remembers_promoted_parent_holding_young_chi
     timer.startTime = clock();
 
     TEST_INFO("Promoted-parent remembered set registration",
-              "Testing that a young parent promoted to old during minor GC is inserted into the remembered set before the next minor when it still holds a surviving young child");
+              "Testing that a young parent promoted to old during minor GC is inserted into the remembered set before the next minor when it still holds a surviving young child, whether the parent/child forward or stay in place");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -2996,9 +3573,8 @@ static void test_gc_minor_collection_remembers_promoted_parent_holding_young_chi
         rootValue = ZrCore_Stack_GetValue(rootSlot);
         TEST_ASSERT_NOT_NULL(rootValue);
         TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
-        TEST_ASSERT_NOT_EQUAL(oldParent, rootValue->value.object);
-
         newParent = rootValue->value.object;
+        TEST_ASSERT_TRUE(newParent == oldParent || oldParent->garbageCollectMark.forwardingAddress == newParent);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD, newParent->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
                                  newParent->garbageCollectMark.storageKind);
@@ -3031,7 +3607,8 @@ static void test_gc_minor_collection_remembers_promoted_parent_holding_young_chi
         TEST_ASSERT_NOT_NULL(resolvedChildValue);
         TEST_ASSERT_TRUE(resolvedChildValue->isGarbageCollectable);
         secondMinorChild = resolvedChildValue->value.object;
-        TEST_ASSERT_NOT_EQUAL(firstMinorChild, secondMinorChild);
+        TEST_ASSERT_TRUE(secondMinorChild == firstMinorChild ||
+                         firstMinorChild->garbageCollectMark.forwardingAddress == secondMinorChild);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD,
                                  secondMinorChild->garbageCollectMark.regionKind);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
@@ -3171,6 +3748,130 @@ static void test_gc_repeated_minor_collections_do_not_churn_region_ids_without_n
     TEST_DIVIDER();
 }
 
+static void test_gc_major_collection_deduplicates_shared_old_region_in_compaction_decision(void) {
+    SZrTestTimer timer;
+    const char *testSummary =
+            "GC Major Collection Deduplicates Shared Old Region In Compaction Decision";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Shared old-region compaction gating",
+              "Testing that a scheduled major collection does not trigger non-forced old-space compaction when multiple live objects already share the same old region");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrObject *parent = ZrCore_Object_New(state, ZR_NULL);
+        SZrObject *child = ZrCore_Object_New(state, ZR_NULL);
+        TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
+        SZrTypeValue childValue;
+        SZrTypeValue memberKey;
+        SZrTypeValue *rootValue;
+        const SZrTypeValue *resolvedChildValue;
+        SZrRawObject *oldParent = ZR_CAST_RAW_OBJECT_AS_SUPER(parent);
+        SZrRawObject *stableParent;
+        SZrRawObject *stableChild;
+        SZrRawObject *currentParent;
+        SZrString *memberName;
+
+        TEST_ASSERT_NOT_NULL(parent);
+        TEST_ASSERT_NOT_NULL(child);
+
+        memberName = ZrCore_String_CreateFromNative(state, "child");
+        TEST_ASSERT_NOT_NULL(memberName);
+        ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+        ZrCore_Value_InitAsRawObject(state, &childValue, ZR_CAST_RAW_OBJECT_AS_SUPER(child));
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        ZrCore_Object_SetValue(state, parent, &memberKey, &childValue);
+        ZrCore_Stack_SetRawObjectValue(state, rootSlot, oldParent);
+        state->stackTop.valuePointer = rootSlot + 1;
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+
+        ZrCore_GarbageCollector_MarkRawObjectEscaped(state,
+                                                     oldParent,
+                                                     ZR_GARBAGE_COLLECT_ESCAPE_KIND_GLOBAL_ROOT,
+                                                     oldParent->garbageCollectMark.anchorScopeDepth,
+                                                     ZR_GARBAGE_COLLECT_PROMOTION_REASON_GLOBAL_ROOT);
+
+        ZrCore_GarbageCollector_GcStep(state);
+
+        rootValue = ZrCore_Stack_GetValue(rootSlot);
+        TEST_ASSERT_NOT_NULL(rootValue);
+        TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
+        stableParent = rootValue->value.object;
+        TEST_ASSERT_NOT_NULL(stableParent);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD, stableParent->garbageCollectMark.regionKind);
+
+        memberName = ZrCore_String_CreateFromNative(state, "child");
+        TEST_ASSERT_NOT_NULL(memberName);
+        ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+        resolvedChildValue = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, stableParent), &memberKey);
+        TEST_ASSERT_NOT_NULL(resolvedChildValue);
+        TEST_ASSERT_TRUE(resolvedChildValue->isGarbageCollectable);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR,
+                                 resolvedChildValue->value.object->garbageCollectMark.regionKind);
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        memberName = ZrCore_String_CreateFromNative(state, "child");
+        TEST_ASSERT_NOT_NULL(memberName);
+        ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+        resolvedChildValue = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, stableParent), &memberKey);
+        TEST_ASSERT_NOT_NULL(resolvedChildValue);
+        TEST_ASSERT_TRUE(resolvedChildValue->isGarbageCollectable);
+        stableChild = resolvedChildValue->value.object;
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD,
+                                 stableChild->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(stableParent->garbageCollectMark.regionId,
+                                 stableChild->garbageCollectMark.regionId);
+        TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)stableParent->garbageCollectMark.regionDescriptorIndex,
+                                 (UNITY_UINT64)stableChild->garbageCollectMark.regionDescriptorIndex);
+
+        gc->fragmentationCompactThreshold = 1u;
+        gc->gcLastStepWork = 0;
+        gc->statsSnapshot.lastCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+        gc->statsSnapshot.lastRequestedCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
+
+        ZrCore_GarbageCollector_ScheduleCollection(state->global, ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR);
+        TEST_ASSERT_TRUE(gc->gcDebtSize > 0);
+
+        ZrCore_GarbageCollector_CheckGc(state);
+
+        TEST_ASSERT_TRUE(gc->gcLastStepWork > 0);
+        rootValue = ZrCore_Stack_GetValue(rootSlot);
+        TEST_ASSERT_NOT_NULL(rootValue);
+        TEST_ASSERT_TRUE(rootValue->isGarbageCollectable);
+        currentParent = rootValue->value.object;
+        TEST_ASSERT_EQUAL_PTR(stableParent, currentParent);
+
+        memberName = ZrCore_String_CreateFromNative(state, "child");
+        TEST_ASSERT_NOT_NULL(memberName);
+        ZrCore_Value_InitAsRawObject(state, &memberKey, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+        resolvedChildValue = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, currentParent), &memberKey);
+        TEST_ASSERT_NOT_NULL(resolvedChildValue);
+        TEST_ASSERT_TRUE(resolvedChildValue->isGarbageCollectable);
+        TEST_ASSERT_EQUAL_PTR(stableChild, resolvedChildValue->value.object);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR, gc->scheduledCollectionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR, gc->statsSnapshot.lastCollectionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_KIND_MAJOR,
+                                 gc->statsSnapshot.lastRequestedCollectionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE, gc->collectionPhase);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_gc_current_region_cache_tracks_descriptor_index_across_registry_growth(void) {
     SZrTestTimer timer;
     const char *testSummary = "GC Current Region Cache Tracks Descriptor Index Across Registry Growth";
@@ -3277,15 +3978,65 @@ static const ZrStringConcatPairCacheEntry *gc_test_find_concat_pair_cache_entry(
     return ZR_NULL;
 }
 
+static const SZrHashKeyValuePair *gc_test_find_string_table_entry(SZrGlobalState *global,
+                                                                  const SZrString *stringValue) {
+    const SZrHashSet *set;
+
+    if (global == ZR_NULL || global->stringTable == ZR_NULL || stringValue == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    set = &global->stringTable->stringHashSet;
+    if (!set->isValid || set->buckets == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize bucketIndex = 0; bucketIndex < set->capacity; bucketIndex++) {
+        const SZrHashKeyValuePair *pair = set->buckets[bucketIndex];
+
+        while (pair != ZR_NULL) {
+            if (pair->key.type == ZR_VALUE_TYPE_STRING &&
+                pair->key.value.object == ZR_CAST_RAW_OBJECT_AS_SUPER((SZrString *)stringValue)) {
+                return pair;
+            }
+            pair = pair->next;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool gc_test_short_string_list_contains(const SZrStringTable *stringTable, const SZrString *stringValue) {
+    const SZrString *current;
+    TZrSize remaining;
+
+    if (stringTable == ZR_NULL || stringValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    current = stringTable->shortStringListHead;
+    remaining = stringTable->stringHashSet.elementCount + 1u;
+    while (current != ZR_NULL && remaining > 0u) {
+        if (current == stringValue) {
+            return ZR_TRUE;
+        }
+
+        current = current->nextShortString;
+        remaining--;
+    }
+
+    return ZR_FALSE;
+}
+
 static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
     SZrTestTimer timer;
-    const char *testSummary = "GC Short Concat Pair Cache Rewrites Forwarded Entries";
+    const char *testSummary = "GC Short Concat Pair Cache Keeps Minor-Promoted Entries Reachable";
 
     TEST_START(testSummary);
     timer.startTime = clock();
 
-    TEST_INFO("Short concat pair cache forwarding rewrite",
-              "Testing that the exact short-string concat cache keeps left/right/result rooted during minor GC and rewrites the cache slots to the forwarded objects");
+    TEST_INFO("Short concat pair cache minor promotion",
+              "Testing that the exact short-string concat cache keeps left/right/result rooted during minor GC whether the strings forward to clones or promote in place");
     SZrState *state = createTestState();
     TEST_ASSERT_NOT_NULL(state);
     TEST_ASSERT_NOT_NULL(state->global);
@@ -3329,13 +4080,203 @@ static void test_gc_short_concat_pair_cache_rewrites_forwarded_entries(void) {
         TEST_ASSERT_NOT_NULL(currentLeft);
         TEST_ASSERT_NOT_NULL(currentRight);
         TEST_ASSERT_NOT_NULL(currentResult);
-        TEST_ASSERT_TRUE(left != currentLeft || right != currentRight || result != currentResult);
+        TEST_ASSERT_TRUE(currentLeft->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
+        TEST_ASSERT_TRUE(currentRight->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
+        TEST_ASSERT_TRUE(currentResult->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
 
         entry = gc_test_find_concat_pair_cache_entry(state->global, currentLeft, currentRight);
         TEST_ASSERT_NOT_NULL(entry);
         TEST_ASSERT_EQUAL_PTR(currentLeft, entry->left);
         TEST_ASSERT_EQUAL_PTR(currentRight, entry->right);
         TEST_ASSERT_EQUAL_PTR(currentResult, entry->result);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_string_table_rewrites_forwarded_interned_entry(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC String Table Keeps Interned Entry Reachable Across Minor Promotion";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("String table minor promotion",
+              "Testing that a young interned short string stays rooted by the string table during minor GC whether the entry rewrites to a clone or the string promotes in place");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *original;
+        SZrString *current;
+        const SZrHashKeyValuePair *entry;
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        gc->youngRegionSize = (TZrUInt64)(sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX + 32u);
+
+        original = ZrCore_String_CreateFromNative(state, "gc_table_forward");
+        TEST_ASSERT_NOT_NULL(original);
+
+        entry = gc_test_find_string_table_entry(state->global, original);
+        TEST_ASSERT_NOT_NULL(entry);
+        TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(original), entry->key.value.object);
+        TEST_ASSERT_TRUE(state->global->stringTable->minorYoungBucketCount > 0u);
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        current = ZrCore_String_CreateFromNative(state, "gc_table_forward");
+        TEST_ASSERT_NOT_NULL(current);
+        TEST_ASSERT_TRUE(current->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
+
+        entry = gc_test_find_string_table_entry(state->global, current);
+        TEST_ASSERT_NOT_NULL(entry);
+        TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(current), entry->key.value.object);
+        TEST_ASSERT_TRUE(current == original || gc_test_find_string_table_entry(state->global, original) == ZR_NULL);
+        TEST_ASSERT_TRUE(state->global->stringTable->minorYoungBucketCount > 0u);
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        current = ZrCore_String_CreateFromNative(state, "gc_table_forward");
+        TEST_ASSERT_NOT_NULL(current);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_OLD,
+                                 current->super.garbageCollectMark.regionKind);
+        entry = gc_test_find_string_table_entry(state->global, current);
+        TEST_ASSERT_NOT_NULL(entry);
+        TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(current), entry->key.value.object);
+        TEST_ASSERT_EQUAL_UINT64(0u, (UNITY_UINT64)state->global->stringTable->minorYoungBucketCount);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_short_string_list_keeps_interned_entries_reachable_across_minor_then_full_gc(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Short String List Keeps Interned Entries Reachable Across Minor Then Full GC";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Short-string root list forwarding",
+              "Testing that the string-table short-string root list keeps interned short strings reachable after minor promotion and the subsequent full collection uses that rewritten list to keep them alive");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->garbageCollector);
+
+    {
+        static const char *const names[] = {
+                "gc_list_alpha",
+                "gc_list_beta",
+                "gc_list_gamma",
+                "gc_list_delta",
+                "gc_list_epsilon",
+                "gc_list_zeta",
+        };
+        const TZrSize nameCount = sizeof(names) / sizeof(names[0]);
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrString *currentStrings[sizeof(names) / sizeof(names[0])];
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        gc->youngRegionSize = (TZrUInt64)(sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX + 32u);
+
+        for (TZrSize index = 0; index < nameCount; index++) {
+            currentStrings[index] = ZrCore_String_CreateFromNative(state, names[index]);
+            TEST_ASSERT_NOT_NULL(currentStrings[index]);
+            TEST_ASSERT_TRUE(gc_test_short_string_list_contains(state->global->stringTable, currentStrings[index]));
+            TEST_ASSERT_NOT_NULL(gc_test_find_string_table_entry(state->global, currentStrings[index]));
+        }
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+
+        for (TZrSize index = 0; index < nameCount; index++) {
+            currentStrings[index] = ZrCore_String_CreateFromNative(state, names[index]);
+            TEST_ASSERT_NOT_NULL(currentStrings[index]);
+            TEST_ASSERT_TRUE(currentStrings[index]->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
+            TEST_ASSERT_TRUE(gc_test_short_string_list_contains(state->global->stringTable, currentStrings[index]));
+            TEST_ASSERT_NOT_NULL(gc_test_find_string_table_entry(state->global, currentStrings[index]));
+        }
+
+        ZrCore_GarbageCollector_GcFull(state, ZR_FALSE);
+
+        for (TZrSize index = 0; index < nameCount; index++) {
+            currentStrings[index] = ZrCore_String_CreateFromNative(state, names[index]);
+            TEST_ASSERT_NOT_NULL(currentStrings[index]);
+            TEST_ASSERT_TRUE(currentStrings[index]->super.garbageCollectMark.regionKind != ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
+            TEST_ASSERT_TRUE(gc_test_short_string_list_contains(state->global->stringTable, currentStrings[index]));
+            TEST_ASSERT_NOT_NULL(gc_test_find_string_table_entry(state->global, currentStrings[index]));
+        }
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_string_table_minor_bucket_flags_rebuild_after_rehash(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC String Table Minor Bucket Flags Rebuild After Rehash";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("String table bucket-flag rehash maintenance",
+              "Testing that the minor young-bucket metadata stays aligned with the string-table hash capacity after interned short-string growth triggers a rehash");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->global->stringTable);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrStringTable *stringTable = state->global->stringTable;
+        TZrSize initialCapacity = stringTable->stringHashSet.capacity;
+        TZrSize guard = initialCapacity + 32u;
+        TZrSize index;
+
+        TEST_ASSERT_TRUE(initialCapacity > 0u);
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        gc->youngRegionSize = (TZrUInt64)(sizeof(SZrString) + ZR_VM_SHORT_STRING_MAX + 32u);
+        for (index = 0; index < guard && stringTable->stringHashSet.capacity == initialCapacity; index++) {
+            char buffer[48];
+            SZrString *stringValue;
+
+            snprintf(buffer, sizeof(buffer), "gc_rehash_bucket_%llu", (unsigned long long)index);
+            stringValue = ZrCore_String_CreateFromNative(state, buffer);
+            TEST_ASSERT_NOT_NULL(stringValue);
+        }
+
+        TEST_ASSERT_TRUE_MESSAGE(stringTable->stringHashSet.capacity > initialCapacity,
+                                 "interning enough unique short strings should force the string table to rehash");
+        TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)stringTable->stringHashSet.capacity,
+                                 (UNITY_UINT64)stringTable->minorYoungBucketCapacity);
+        TEST_ASSERT_NOT_NULL(stringTable->minorYoungBucketFlags);
+        TEST_ASSERT_TRUE(stringTable->minorYoungBucketCount > 0u);
+        TEST_ASSERT_TRUE(ZrCore_StringTable_MinorYoungBucketFlagsReady(stringTable));
+        gc_test_assert_string_table_minor_bucket_index_list_consistent(stringTable);
+
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+        ZrCore_GarbageCollector_GcStep(state);
+        gc_test_assert_string_table_minor_bucket_index_list_consistent(stringTable);
     }
 
     destroyTestState(state);
@@ -3387,6 +4328,7 @@ int main(void) {
     RUN_TEST(test_gc_sweep_slice_budget_limits_single_step_sweep);
     RUN_TEST(test_gc_ignore_registry_and_phase_metadata);
     RUN_TEST(test_gc_ignore_registry_swap_remove_keeps_remaining_object_queryable);
+    RUN_TEST(test_gc_is_unreferenced_respects_ignore_registry);
     RUN_TEST(test_gc_barrier_unignores_escaped_object);
     RUN_TEST(test_gc_region_configuration_defaults);
     RUN_TEST(test_gc_control_plane_updates_snapshot);
@@ -3395,7 +4337,7 @@ int main(void) {
     RUN_TEST(test_gc_snapshot_reports_region_pressure_shape);
     RUN_TEST(test_gc_scheduled_collection_check_gc_runs_major_without_forced_compact);
     RUN_TEST(test_gc_heap_limit_pressure_check_gc_escalates_to_full);
-    RUN_TEST(test_gc_full_collection_compacts_old_reference_graph);
+    RUN_TEST(test_gc_full_collection_reassigns_old_reference_graph_in_place);
     RUN_TEST(test_gc_barrier_records_old_to_young_remembered_escape);
     RUN_TEST(test_gc_barrier_records_permanent_to_young_remembered_escape);
     RUN_TEST(test_gc_object_set_value_records_old_to_young_remembered_escape_from_inited_parent);
@@ -3403,21 +4345,31 @@ int main(void) {
     RUN_TEST(test_gc_region_allocator_reuses_emptied_eden_region_after_permanent_transition);
     RUN_TEST(test_gc_permanent_transition_accepts_referenced_interned_string_without_unlinking_gc_list);
     RUN_TEST(test_gc_region_allocator_reassigns_pinned_object_region);
+    RUN_TEST(test_gc_region_allocator_reassigns_with_stale_descriptor_index);
     RUN_TEST(test_function_escape_metadata_defaults);
     RUN_TEST(test_gc_function_auxiliary_metadata_is_marked_from_root_function);
+    RUN_TEST(test_gc_released_embedded_child_function_is_not_remarked_from_root_value);
+    RUN_TEST(test_gc_propagate_all_drains_large_gray_queue);
     RUN_TEST(test_function_return_escape_promotes_returned_object_during_minor_gc);
     RUN_TEST(test_module_export_marks_exported_object_as_module_root);
     RUN_TEST(test_gc_object_base_size_tracks_custom_object_layouts);
     RUN_TEST(test_gc_escaped_closure_propagates_capture_escape_on_close);
     RUN_TEST(test_gc_minor_collection_evacuates_stack_root_young_object);
+    RUN_TEST(test_gc_minor_collection_reassigns_root_function_and_stamps_minor_scan_epoch);
     RUN_TEST(test_gc_minor_collection_rewrites_generated_frame_slot_above_stack_top);
     RUN_TEST(test_gc_minor_collection_preserves_young_descendant_through_old_stack_root_chain);
     RUN_TEST(test_gc_minor_collection_preserves_closed_callable_captures);
     RUN_TEST(test_gc_minor_collection_rewrites_old_reference_to_forwarded_child);
+    RUN_TEST(test_gc_minor_collection_preserves_hidden_items_array_on_promoted_parent);
+    RUN_TEST(test_gc_minor_collection_preserves_replaced_hidden_items_array_on_promoted_parent);
     RUN_TEST(test_gc_minor_collection_remembers_promoted_parent_holding_young_child);
     RUN_TEST(test_gc_repeated_minor_collections_do_not_churn_region_ids_without_new_young_allocations);
+    RUN_TEST(test_gc_major_collection_deduplicates_shared_old_region_in_compaction_decision);
     RUN_TEST(test_gc_current_region_cache_tracks_descriptor_index_across_registry_growth);
     RUN_TEST(test_gc_short_concat_pair_cache_rewrites_forwarded_entries);
+    RUN_TEST(test_gc_string_table_rewrites_forwarded_interned_entry);
+    RUN_TEST(test_gc_short_string_list_keeps_interned_entries_reachable_across_minor_then_full_gc);
+    RUN_TEST(test_gc_string_table_minor_bucket_flags_rebuild_after_rehash);
     RUN_TEST(test_ownership_shared_refcount_and_weak_null_on_release);
     RUN_TEST(test_ownership_unique_can_return_to_gc_control);
     RUN_TEST(test_ownership_weak_expires_when_returned_object_is_released);

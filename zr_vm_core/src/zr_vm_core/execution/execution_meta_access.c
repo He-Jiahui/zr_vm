@@ -478,10 +478,10 @@ static void execution_meta_shift_arguments_and_store_callable(SZrState *state,
     }
 
     for (p = state->stackTop.valuePointer; p > stackPointer; p--) {
-        ZrCore_Stack_CopyValue(state, p, ZrCore_Stack_GetValue(p - 1));
+        ZrCore_Stack_CopyValue(state, p, ZrCore_Stack_GetValueNoProfile(p - 1));
     }
     state->stackTop.valuePointer++;
-    value = ZrCore_Stack_GetValue(stackPointer);
+    value = ZrCore_Stack_GetValueNoProfile(stackPointer);
     ZrCore_Value_InitAsRawObject(state, value, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
 }
 
@@ -625,7 +625,7 @@ static TZrBool execution_meta_prepare_cached_call_target_internal(SZrState *stat
         return ZR_FALSE;
     }
 
-    receiver = ZrCore_Stack_GetValue(stackPointer);
+    receiver = ZrCore_Stack_GetValueNoProfile(stackPointer);
     if (receiver == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -697,7 +697,7 @@ TZrBool execution_try_prepare_dyn_call_target_cached(SZrState *state,
         return ZR_FALSE;
     }
 
-    callable = ZrCore_Stack_GetValue(stackPointer);
+    callable = ZrCore_Stack_GetValueNoProfile(stackPointer);
     if (callable == ZR_NULL ||
         (callable->type != ZR_VALUE_TYPE_OBJECT && callable->type != ZR_VALUE_TYPE_ARRAY)) {
         return ZR_FALSE;

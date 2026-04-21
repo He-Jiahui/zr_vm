@@ -137,7 +137,6 @@ static ZR_FORCE_INLINE void object_stack_copy_value_no_profile(struct SZrState *
                                                                TZrStackValuePointer destination,
                                                                const SZrTypeValue *source) {
     SZrTypeValue *destinationValue;
-    SZrObject *sourceObject;
 
     if (destination == ZR_NULL || source == ZR_NULL) {
         return;
@@ -150,23 +149,6 @@ static ZR_FORCE_INLINE void object_stack_copy_value_no_profile(struct SZrState *
 
     if (ZR_LIKELY(ZrCore_Value_TryCopyFastNoProfile(state, destinationValue, source))) {
         return;
-    }
-
-    if (destinationValue->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
-        destinationValue->ownershipControl == ZR_NULL &&
-        destinationValue->ownershipWeakRef == ZR_NULL &&
-        source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE &&
-        source->ownershipControl == ZR_NULL &&
-        source->ownershipWeakRef == ZR_NULL &&
-        source->isGarbageCollectable &&
-        source->type == ZR_VALUE_TYPE_OBJECT &&
-        source->value.object != ZR_NULL) {
-        sourceObject = ZR_CAST_OBJECT(state, source->value.object);
-        if (sourceObject != ZR_NULL && sourceObject->internalType != ZR_OBJECT_INTERNAL_TYPE_STRUCT) {
-            *destinationValue = *source;
-            ZrCore_Gc_ValueStaticAssertIsAlive(state, destinationValue);
-            return;
-        }
     }
 
     ZrCore_Value_CopySlow(state, destinationValue, source);
@@ -214,18 +196,7 @@ static TZrBool object_pin_value_object(SZrState *state, const SZrTypeValue *valu
         return ZR_TRUE;
     }
 
-    if (ZrCore_GarbageCollector_IsObjectIgnored(state->global, object)) {
-        return ZR_TRUE;
-    }
-
-    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
-        return ZR_FALSE;
-    }
-
-    if (addedByCaller != ZR_NULL) {
-        *addedByCaller = ZR_TRUE;
-    }
-    return ZR_TRUE;
+    return ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state->global, state, object, addedByCaller);
 }
 
 static void object_unpin_value_object(SZrGlobalState *global, const SZrTypeValue *value, TZrBool addedByCaller) {
@@ -931,7 +902,7 @@ static ZR_FORCE_INLINE TZrBool object_stage_known_native_fast_scratch_raw_callab
     }
 
     object_prepare_fast_scratch_destination(base);
-    callableValue = ZrCore_Stack_GetValue(base);
+    callableValue = ZrCore_Stack_GetValueNoProfile(base);
     if (callableValue == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1113,7 +1084,7 @@ static ZR_FORCE_INLINE void object_init_direct_binding_stack_root_context(
     context->stackBasePointer = state->stackBase.valuePointer;
     context->stackLayoutAnchored = ZR_TRUE;
 
-    context->selfValue = dispatch->rawArgumentCount > 0 ? ZrCore_Stack_GetValue(functionBase + 1) : ZR_NULL;
+    context->selfValue = dispatch->rawArgumentCount > 0 ? ZrCore_Stack_GetValueNoProfile(functionBase + 1) : ZR_NULL;
     context->argumentBase = dispatch->rawArgumentCount > 0 ? functionBase + 2 : functionBase + 1;
     context->argumentCount = dispatch->rawArgumentCount > 0 ? dispatch->rawArgumentCount - 1u : 0u;
 }
@@ -1207,7 +1178,7 @@ static ZR_FORCE_INLINE void object_refresh_direct_binding_stack_root_context(ZrL
         return;
     }
 
-    context->selfValue = context->rawArgumentCount > 0 ? ZrCore_Stack_GetValue(functionBase + 1) : ZR_NULL;
+    context->selfValue = context->rawArgumentCount > 0 ? ZrCore_Stack_GetValueNoProfile(functionBase + 1) : ZR_NULL;
     context->argumentBase = context->rawArgumentCount > 0 ? functionBase + 2 : functionBase + 1;
     context->argumentCount = context->rawArgumentCount > 0 ? context->rawArgumentCount - 1u : 0u;
 }
@@ -1237,10 +1208,10 @@ static ZR_FORCE_INLINE void object_sync_direct_binding_self_to_stack_slot(
 
     object_refresh_direct_binding_stack_root_context(context);
     if (syncedSelfUsesOldStackAnchor && stackBaseBefore != state->stackBase.valuePointer) {
-        syncedSelf = ZrCore_Stack_GetValue(object_restore_stack_pointer_offset(state, syncedSelfOffset));
+        syncedSelf = ZrCore_Stack_GetValueNoProfile(object_restore_stack_pointer_offset(state, syncedSelfOffset));
     }
 
-    stackSelf = context->functionBase != ZR_NULL ? ZrCore_Stack_GetValue(context->functionBase + 1) : ZR_NULL;
+    stackSelf = context->functionBase != ZR_NULL ? ZrCore_Stack_GetValueNoProfile(context->functionBase + 1) : ZR_NULL;
     if (stackSelf != ZR_NULL) {
         if (stackSelf != syncedSelf) {
             ZrCore_Value_Copy(state, stackSelf, syncedSelf);
@@ -1299,7 +1270,7 @@ static ZR_FORCE_INLINE TZrBool object_complete_known_native_fast_direct_binding_
         savedCallInfo->functionTop.valuePointer = object_restore_stack_pointer_offset(state, originalCallInfoTopOffset);
     }
     if (hasResultAnchor) {
-        result = ZrCore_Stack_GetValue(object_restore_stack_pointer_offset(state, resultOffset));
+        result = ZrCore_Stack_GetValueNoProfile(object_restore_stack_pointer_offset(state, resultOffset));
     }
 
     if (state->threadStatus == ZR_THREAD_STATUS_FINE && success && callbackResult != result) {
@@ -1713,7 +1684,7 @@ static ZR_FORCE_INLINE TZrBool object_complete_known_native_fast_direct_binding_
         savedCallInfo->functionTop.valuePointer = object_restore_stack_pointer_offset(state, originalCallInfoTopOffset);
     }
     if (hasResultAnchor) {
-        result = ZrCore_Stack_GetValue(object_restore_stack_pointer_offset(state, resultOffset));
+        result = ZrCore_Stack_GetValueNoProfile(object_restore_stack_pointer_offset(state, resultOffset));
     }
 
     if (state->threadStatus == ZR_THREAD_STATUS_FINE && success && callbackResult != result) {

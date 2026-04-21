@@ -252,26 +252,10 @@ static void reflection_init_object_value(SZrState *state,
 }
 
 static TZrBool reflection_pin_raw_object(SZrState *state, SZrRawObject *object, TZrBool *addedByCaller) {
-    if (addedByCaller != ZR_NULL) {
-        *addedByCaller = ZR_FALSE;
-    }
-
-    if (state == ZR_NULL || state->global == ZR_NULL || object == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (ZrCore_GarbageCollector_IsObjectIgnored(state->global, object)) {
-        return ZR_TRUE;
-    }
-
-    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
-        return ZR_FALSE;
-    }
-
-    if (addedByCaller != ZR_NULL) {
-        *addedByCaller = ZR_TRUE;
-    }
-    return ZR_TRUE;
+    return ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state != ZR_NULL ? state->global : ZR_NULL,
+                                                            state,
+                                                            object,
+                                                            addedByCaller);
 }
 
 static void reflection_unpin_raw_object(SZrGlobalState *global, SZrRawObject *object, TZrBool addedByCaller) {

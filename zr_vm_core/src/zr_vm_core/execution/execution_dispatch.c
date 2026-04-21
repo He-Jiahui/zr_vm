@@ -40,7 +40,7 @@ static ZR_FORCE_INLINE TZrBool execution_can_copy_stack_value_by_bits(const SZrT
 }
 
 static ZR_FORCE_INLINE void execution_copy_value_to_ret_fast_no_profile(SZrTypeValue *destination,
-                                                                        const SZrTypeValue *source) {
+                                                                         const SZrTypeValue *source) {
     ZR_ASSERT(destination != ZR_NULL);
     ZR_ASSERT(source != ZR_NULL);
     *destination = *source;
@@ -145,7 +145,6 @@ static ZR_FORCE_INLINE void execution_copy_value_fast(SZrState *state,
         profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
     }
 
-    ZR_UNUSED_PARAMETER(state);
     if (destination == source) {
         return;
     }
@@ -1898,7 +1897,7 @@ LZrStart:
     recordHelpers = (profileRuntime != ZR_NULL && profileRuntime->recordHelpers) ? ZR_TRUE : ZR_FALSE;
     UPDATE_FAST_DISPATCH_MODE();
 LZrReturning: {
-        SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
+        SZrTypeValue *functionBaseValue = ZrCore_Stack_GetValueNoProfile(callInfo->functionBase.valuePointer);
         SZrFunction *function = execution_try_resolve_vm_metadata_function_fast(state,
                                                                                 functionBaseValue,
                                                                                 &frameCallableObject);
@@ -1936,7 +1935,7 @@ LZrReturning: {
          */
         if (callInfo != ZR_NULL && callInfo->functionBase.valuePointer != ZR_NULL) {
             currentFunctionBase = callInfo->functionBase.valuePointer;
-            currentFunctionBaseValue = ZrCore_Stack_GetValue(currentFunctionBase);
+            currentFunctionBaseValue = ZrCore_Stack_GetValueNoProfile(currentFunctionBase);
             if (currentFunctionBaseValue != ZR_NULL) {
                 currentCallableObject = currentFunctionBaseValue->value.object;
             }
@@ -2856,6 +2855,8 @@ LZrFastInstruction_SUB_UNSIGNED_CONST_PLAIN_DEST: {
                 opB = &BASE(B1(instruction))->value;
                 if (execution_try_builtin_mul_exact_numeric_fast(destination, opA, opB)) {
                     // Exact numeric pairs stay on the inline steady-state path.
+                } else if (execution_try_builtin_mul_mixed_numeric_fast(destination, opA, opB)) {
+                    // Mixed numeric integral/bool pairs stay off the meta fallback path.
                 } else {
                     SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_MUL);
                     if (meta != ZR_NULL && meta->function != ZR_NULL) {

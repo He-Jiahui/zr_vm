@@ -233,6 +233,9 @@ TZrBool try_builtin_add(SZrState *state,
                         SZrTypeValue *outResult,
                         const SZrTypeValue *opA,
                         const SZrTypeValue *opB);
+TZrBool execution_try_builtin_mul_mixed_numeric_fast(SZrTypeValue *outResult,
+                                                     const SZrTypeValue *opA,
+                                                     const SZrTypeValue *opB);
 static ZR_FORCE_INLINE TZrSize execution_concat_pair_cache_bucket_index(const SZrString *left, const SZrString *right) {
     TZrUInt64 leftHash;
     TZrUInt64 rightHash;

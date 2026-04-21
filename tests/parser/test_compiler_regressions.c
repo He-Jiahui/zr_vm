@@ -4677,6 +4677,263 @@ void test_call_chain_polymorphic_benchmark_project_compile_quickens_loop_helper_
     ZR_TEST_DIVIDER();
 }
 
+void test_call_chain_polymorphic_dispatch_callable_parameter_quickens_to_known_vm_call(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Call Chain Polymorphic Dispatch Callable Parameter Quickens To Known VM Call";
+    ZrCallChainPolymorphicCompileFixture fixture;
+    const SZrFunction *dispatchFunction = ZR_NULL;
+    TZrUInt32 knownVmTailCallCount;
+    TZrUInt32 genericTailCallCount;
+    TZrUInt32 dynTailCallCount;
+    TZrUInt32 metaTailCallCount;
+    char genericTailWindow[1024];
+    char dynTailWindow[1024];
+    char metaTailWindow[1024];
+    char knownVmTailWindow[1024];
+    char superDynTailCachedWindow[1024];
+    char firstSuperDynTailCachedWindow[1024];
+    char genericTailHits[1024];
+    char dynTailHits[1024];
+    char metaTailHits[1024];
+    char knownVmTailHits[1024];
+    char superDynTailCachedHits[1024];
+    char line79KnownVmWindow[1024];
+    char ownerCallsiteSlotSummary[1024];
+    char secondKnownVmCallSlotSummary[1024];
+    char firstKnownVmCallWindow[1024];
+    char secondKnownVmCallWindow[1024];
+    char thirdKnownVmCallWindow[1024];
+    char fourthKnownVmCallWindow[1024];
+    char rootKnownVmCallHits[1024];
+    char failureMessage[4096];
+    const SZrFunction *ownerKnownVmFunction = ZR_NULL;
+    TZrUInt32 ownerKnownVmInstructionIndex = 0;
+    const SZrFunction *secondKnownVmFunction = ZR_NULL;
+    TZrUInt32 secondKnownVmInstructionIndex = 0;
+    TZrUInt32 seenKnownVmCount = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("benchmark dispatch callable-parameter provenance tail-call lowering",
+                 "Testing that the real call_chain_polymorphic project compile path keeps VM callable provenance "
+                 "inside dispatch(callable, ...) so the hot tail call site no longer stays on the generic "
+                 "FUNCTION_TAIL_CALL / DYN_TAIL_CALL / META_TAIL_CALL families.");
+
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_PrepareCallChainPolymorphicCompileFixture(&fixture, "dispatch_callable_parameter_known_vm_call"),
+            "Failed to prepare fresh call_chain_polymorphic compile fixture");
+
+    dispatchFunction = find_child_function_by_name_recursive(fixture.function, "dispatch", 0);
+    TEST_ASSERT_NOT_NULL_MESSAGE(dispatchFunction, "call_chain_polymorphic fixture must retain child function dispatch");
+
+    knownVmTailCallCount =
+            count_opcode_recursive(dispatchFunction, ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL), 0) +
+            count_opcode_recursive(dispatchFunction, ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS), 0);
+    genericTailCallCount =
+            count_opcode_recursive(dispatchFunction, ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL), 0) +
+            count_opcode_recursive(dispatchFunction, ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS), 0);
+    dynTailCallCount = count_opcode_recursive(dispatchFunction, ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL), 0) +
+                       count_opcode_recursive(dispatchFunction, ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS), 0) +
+                       count_opcode_recursive(dispatchFunction, ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED), 0);
+    metaTailCallCount =
+            count_opcode_recursive(dispatchFunction, ZR_INSTRUCTION_ENUM(META_TAIL_CALL), 0) +
+            count_opcode_recursive(dispatchFunction, ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS), 0) +
+            count_opcode_recursive(dispatchFunction, ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED), 0);
+
+    build_opcode_window_message_for_source_line(dispatchFunction,
+                                                ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL),
+                                                63u,
+                                                genericTailWindow,
+                                                sizeof(genericTailWindow));
+    build_opcode_window_message_for_source_line(dispatchFunction,
+                                                ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL),
+                                                63u,
+                                                dynTailWindow,
+                                                sizeof(dynTailWindow));
+    build_opcode_window_message_for_source_line(dispatchFunction,
+                                                ZR_INSTRUCTION_ENUM(META_TAIL_CALL),
+                                                63u,
+                                                metaTailWindow,
+                                                sizeof(metaTailWindow));
+    build_opcode_window_message_for_source_line(dispatchFunction,
+                                                ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL),
+                                                63u,
+                                                knownVmTailWindow,
+                                                sizeof(knownVmTailWindow));
+    build_opcode_window_message_for_source_line(dispatchFunction,
+                                                ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED),
+                                                63u,
+                                                superDynTailCachedWindow,
+                                                sizeof(superDynTailCachedWindow));
+    build_nth_opcode_window_message(dispatchFunction,
+                                    ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED),
+                                    1u,
+                                    firstSuperDynTailCachedWindow,
+                                    sizeof(firstSuperDynTailCachedWindow));
+    build_opcode_window_message_for_source_line(fixture.function,
+                                                ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                                                79u,
+                                                line79KnownVmWindow,
+                                                sizeof(line79KnownVmWindow));
+    build_nth_opcode_window_message(fixture.function,
+                                    ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                                    1u,
+                                    firstKnownVmCallWindow,
+                                    sizeof(firstKnownVmCallWindow));
+    build_nth_opcode_window_message(fixture.function,
+                                    ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                                    2u,
+                                    secondKnownVmCallWindow,
+                                    sizeof(secondKnownVmCallWindow));
+    build_nth_opcode_window_message(fixture.function,
+                                    ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                                    3u,
+                                    thirdKnownVmCallWindow,
+                                    sizeof(thirdKnownVmCallWindow));
+    build_nth_opcode_window_message(fixture.function,
+                                    ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                                    4u,
+                                    fourthKnownVmCallWindow,
+                                    sizeof(fourthKnownVmCallWindow));
+    build_opcode_hits_message(dispatchFunction,
+                              ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL),
+                              genericTailHits,
+                              sizeof(genericTailHits));
+    build_opcode_hits_message(dispatchFunction,
+                              ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL),
+                              dynTailHits,
+                              sizeof(dynTailHits));
+    build_opcode_hits_message(dispatchFunction,
+                              ZR_INSTRUCTION_ENUM(META_TAIL_CALL),
+                              metaTailHits,
+                              sizeof(metaTailHits));
+    build_opcode_hits_message(dispatchFunction,
+                              ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL),
+                              knownVmTailHits,
+                              sizeof(knownVmTailHits));
+    build_opcode_hits_message(dispatchFunction,
+                              ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED),
+                              superDynTailCachedHits,
+                              sizeof(superDynTailCachedHits));
+    build_opcode_hits_message(fixture.function,
+                              ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                              rootKnownVmCallHits,
+                              sizeof(rootKnownVmCallHits));
+    ownerCallsiteSlotSummary[0] = '\0';
+    if (find_first_opcode_on_source_line_recursive(fixture.function,
+                                                   ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                                                   79u,
+                                                   0,
+                                                   &ownerKnownVmFunction,
+                                                   &ownerKnownVmInstructionIndex) &&
+        ownerKnownVmFunction != ZR_NULL) {
+        const TZrInstruction *ownerKnownVmInstruction =
+                &ownerKnownVmFunction->instructionsList[ownerKnownVmInstructionIndex];
+        size_t ownerSummaryLength = 0;
+        TZrUInt32 calleeSlot = (TZrUInt32)ownerKnownVmInstruction->instruction.operand.operand1[0];
+        append_slot_metadata(ownerCallsiteSlotSummary,
+                             sizeof(ownerCallsiteSlotSummary),
+                             &ownerSummaryLength,
+                             ownerKnownVmFunction,
+                             ownerKnownVmInstructionIndex,
+                             calleeSlot);
+        append_slot_metadata(ownerCallsiteSlotSummary,
+                             sizeof(ownerCallsiteSlotSummary),
+                             &ownerSummaryLength,
+                             ownerKnownVmFunction,
+                             ownerKnownVmInstructionIndex,
+                             calleeSlot + 1u);
+    }
+    secondKnownVmCallSlotSummary[0] = '\0';
+    seenKnownVmCount = 0;
+    if (find_nth_opcode_recursive(fixture.function,
+                                  ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL),
+                                  2u,
+                                  0,
+                                  &secondKnownVmFunction,
+                                  &secondKnownVmInstructionIndex,
+                                  &seenKnownVmCount) &&
+        secondKnownVmFunction != ZR_NULL) {
+        const TZrInstruction *secondKnownVmInstruction =
+                &secondKnownVmFunction->instructionsList[secondKnownVmInstructionIndex];
+        size_t secondSummaryLength = 0;
+        TZrUInt32 calleeSlot = (TZrUInt32)secondKnownVmInstruction->instruction.operand.operand1[0];
+        TZrUInt32 callableTempSlot = calleeSlot + 1u;
+        append_slot_metadata(secondKnownVmCallSlotSummary,
+                             sizeof(secondKnownVmCallSlotSummary),
+                             &secondSummaryLength,
+                             secondKnownVmFunction,
+                             secondKnownVmInstructionIndex,
+                             calleeSlot);
+        append_slot_metadata(secondKnownVmCallSlotSummary,
+                             sizeof(secondKnownVmCallSlotSummary),
+                             &secondSummaryLength,
+                             secondKnownVmFunction,
+                             secondKnownVmInstructionIndex,
+                             callableTempSlot);
+        if (callableTempSlot < secondKnownVmInstruction->instruction.operandExtra &&
+            callableTempSlot < secondKnownVmFunction->instructionsLength) {
+            /* no-op guard; source slot is recovered from the GET_STACK writer below */
+        }
+        if (secondKnownVmInstructionIndex > 0) {
+            const TZrInstruction *callableTempWriter =
+                    &secondKnownVmFunction->instructionsList[secondKnownVmInstructionIndex - 1u];
+            if ((EZrInstructionCode)callableTempWriter->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_STACK) &&
+                callableTempWriter->instruction.operandExtra == callableTempSlot) {
+                append_slot_metadata(secondKnownVmCallSlotSummary,
+                                     sizeof(secondKnownVmCallSlotSummary),
+                                     &secondSummaryLength,
+                                     secondKnownVmFunction,
+                                     secondKnownVmInstructionIndex,
+                                     (TZrUInt32)callableTempWriter->instruction.operand.operand2[0]);
+            }
+        }
+    }
+
+    snprintf(failureMessage,
+             sizeof(failureMessage),
+             "dispatch child tail-call counts: known-vm=%u generic=%u dyn=%u meta=%u | known-vm-hits: %s | "
+             "generic-hits: %s | dyn-hits: %s | meta-hits: %s | super-dyn-tail-cached-hits: %s | "
+             "line63-known-vm: %s | line63-generic: %s | line63-dyn: %s | line63-meta: %s | "
+             "line63-super-dyn-tail-cached: %s | first-super-dyn-tail-cached: %s | "
+             "line79-known-vm-window: %s | owner-callsite-slots: %s | root-known-vm-hits: %s | "
+             "known-vm#1: %s | known-vm#2: %s | known-vm#3: %s | known-vm#4: %s | "
+             "known-vm#2-slots: %s",
+             (unsigned int)knownVmTailCallCount,
+             (unsigned int)genericTailCallCount,
+             (unsigned int)dynTailCallCount,
+             (unsigned int)metaTailCallCount,
+             knownVmTailHits,
+             genericTailHits,
+             dynTailHits,
+             metaTailHits,
+             superDynTailCachedHits,
+             knownVmTailWindow,
+             genericTailWindow,
+             dynTailWindow,
+             metaTailWindow,
+             superDynTailCachedWindow,
+             firstSuperDynTailCachedWindow,
+             line79KnownVmWindow,
+             ownerCallsiteSlotSummary,
+             rootKnownVmCallHits,
+             firstKnownVmCallWindow,
+             secondKnownVmCallWindow,
+             thirdKnownVmCallWindow,
+             fourthKnownVmCallWindow,
+             secondKnownVmCallSlotSummary);
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0u, knownVmTailCallCount, failureMessage);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, genericTailCallCount, failureMessage);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, dynTailCallCount, failureMessage);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, metaTailCallCount, failureMessage);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_FreeCallChainPolymorphicCompileFixture(&fixture);
+    ZR_TEST_DIVIDER();
+}
+
 void test_repeated_constructor_string_arguments_survive_quickening_across_calls(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Repeated Constructor String Arguments Survive Quickening Across Calls";

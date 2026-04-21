@@ -191,48 +191,6 @@ static TZrUInt32 garbage_collector_merge_scope_depth(TZrUInt32 currentScopeDepth
     return currentScopeDepth < incomingScopeDepth ? currentScopeDepth : incomingScopeDepth;
 }
 
-static TZrBool garbage_collector_collection_is_marking_roots(const SZrGlobalState *global,
-                                                             const SZrGarbageCollector *collector) {
-    if (global == ZR_NULL || collector == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE ||
-        collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_SWEEP ||
-        collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_COMPACT) {
-        return ZR_FALSE;
-    }
-
-    return ZrCore_GarbageCollector_IsInvariant((SZrGlobalState *)global) ||
-           collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_MARK ||
-           collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MINOR_EVACUATE ||
-           collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_MARK_CONCURRENT ||
-           collector->collectionPhase == ZR_GARBAGE_COLLECT_COLLECTION_PHASE_MAJOR_REMARK;
-}
-
-static void garbage_collector_mark_ignored_root_if_needed(SZrState *state, SZrRawObject *object) {
-    SZrGlobalState *global;
-    SZrGarbageCollector *collector;
-
-    if (state == ZR_NULL || object == ZR_NULL || state->global == ZR_NULL || state->global->garbageCollector == ZR_NULL) {
-        return;
-    }
-
-    global = state->global;
-    collector = global->garbageCollector;
-    if (!garbage_collector_collection_is_marking_roots(global, collector)) {
-        return;
-    }
-
-    if (object->type >= ZR_RAW_OBJECT_TYPE_CLOSURE_ENUM_MAX ||
-        object->type == ZR_RAW_OBJECT_TYPE_INVALID ||
-        ZrCore_RawObject_IsReleased(object)) {
-        return;
-    }
-
-    garbage_collector_mark_object(state, object);
-}
-
 static EZrGarbageCollectPromotionReason garbage_collector_promotion_reason_from_escape_flags(
         TZrUInt32 escapeFlags,
         EZrGarbageCollectPromotionReason promotionReason) {
@@ -277,7 +235,7 @@ static void garbage_collector_mark_raw_object_escaped_internal(SZrState *state,
         return;
     }
 
-    if (ZrCore_GarbageCollector_IsObjectIgnored(state->global, object)) {
+    if (object->garbageCollectMark.ignoredRegistryIndex != ZR_MAX_SIZE) {
         ZrCore_GarbageCollector_UnignoreObject(state->global, object);
     }
 
@@ -395,6 +353,7 @@ void ZrCore_GarbageCollector_New(SZrGlobalState *global) {
     gc->scheduledCollectionKind = ZR_GARBAGE_COLLECT_COLLECTION_KIND_MINOR;
     gc->collectionPhase = ZR_GARBAGE_COLLECT_COLLECTION_PHASE_IDLE;
     gc->minorCollectionEpoch = 0u;
+    gc->oldCompactionScanEpoch = 0u;
     gc->statsSnapshot.heapLimitBytes = gc->heapLimitBytes;
     gc->statsSnapshot.managedMemoryBytes = 0u;
     gc->statsSnapshot.gcDebtBytes = 0;
@@ -543,19 +502,21 @@ TZrBool ZrCore_GarbageCollector_IgnoreObject(SZrState *state, SZrRawObject *obje
         return ZR_FALSE;
     }
 
-    if (garbage_collector_ignore_registry_contains(collector, object)) {
-        garbage_collector_mark_ignored_root_if_needed(state, object);
+    if (object->garbageCollectMark.ignoredRegistryIndex != ZR_MAX_SIZE &&
+        garbage_collector_ignore_registry_contains(collector, object)) {
+        garbage_collector_mark_ignored_root_if_needed_fast(state, object);
         return ZR_TRUE;
     }
 
-    if (!garbage_collector_ensure_ignore_registry_capacity(state->global, collector->ignoredObjectCount + 1)) {
+    if (collector->ignoredObjectCount >= collector->ignoredObjectCapacity &&
+        !garbage_collector_ensure_ignore_registry_capacity(state->global, collector->ignoredObjectCount + 1)) {
         return ZR_FALSE;
     }
 
     collector->ignoredObjects[collector->ignoredObjectCount] = object;
     object->garbageCollectMark.ignoredRegistryIndex = collector->ignoredObjectCount;
     collector->ignoredObjectCount++;
-    garbage_collector_mark_ignored_root_if_needed(state, object);
+    garbage_collector_mark_ignored_root_if_needed_fast(state, object);
     return ZR_TRUE;
 }
 
@@ -566,6 +527,10 @@ TZrBool ZrCore_GarbageCollector_UnignoreObject(SZrGlobalState *global, SZrRawObj
     SZrRawObject *movedObject;
 
     if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (object->garbageCollectMark.ignoredRegistryIndex == ZR_MAX_SIZE) {
         return ZR_FALSE;
     }
 
@@ -593,11 +558,7 @@ TZrBool ZrCore_GarbageCollector_UnignoreObject(SZrGlobalState *global, SZrRawObj
 }
 
 TZrBool ZrCore_GarbageCollector_IsObjectIgnored(SZrGlobalState *global, SZrRawObject *object) {
-    if (global == ZR_NULL || global->garbageCollector == ZR_NULL || object == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    return garbage_collector_ignore_registry_contains(global->garbageCollector, object);
+    return ZrCore_GarbageCollector_IsObjectIgnoredFast(global, object);
 }
 
 void ZrCore_GarbageCollector_GcFull(SZrState *state, TZrBool isImmediate) {
@@ -850,7 +811,7 @@ void ZrCore_GarbageCollector_PinObject(SZrState *state,
         return;
     }
 
-    objectSize = garbage_collector_get_object_base_size(state, object);
+    objectSize = garbage_collector_get_object_base_size_fast(object);
     previousRegionId = object->garbageCollectMark.regionId;
     object->garbageCollectMark.pinFlags |= (TZrUInt32)pinKind;
     if ((pinKind & ZR_GARBAGE_COLLECT_PIN_KIND_HOST_HANDLE) != 0) {

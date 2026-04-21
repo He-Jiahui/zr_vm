@@ -189,9 +189,6 @@ static ZR_FORCE_INLINE SZrTypeValue *native_binding_temp_root_value_slot(ZrLibTe
 static ZR_FORCE_INLINE TZrBool native_binding_pin_raw_object(SZrState *state,
                                                              SZrRawObject *object,
                                                              TZrBool *addedByCaller) {
-    SZrGarbageCollector *collector;
-    TZrSize ignoredCountBefore;
-
     if (addedByCaller != ZR_NULL) {
         *addedByCaller = ZR_FALSE;
     }
@@ -203,16 +200,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_pin_raw_object(SZrState *state,
         return ZR_TRUE;
     }
 
-    collector = state->global->garbageCollector;
-    ignoredCountBefore = collector != ZR_NULL ? collector->ignoredObjectCount : 0u;
-    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
-        return ZR_FALSE;
-    }
-
-    if (addedByCaller != ZR_NULL) {
-        *addedByCaller = collector != ZR_NULL && collector->ignoredObjectCount != ignoredCountBefore;
-    }
-    return ZR_TRUE;
+    return ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state->global, state, object, addedByCaller);
 }
 
 static ZR_FORCE_INLINE void native_binding_unpin_raw_object(SZrGlobalState *global,
@@ -708,7 +696,7 @@ SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSiz
     if (mutableContext->argumentValuePointers != ZR_NULL) {
         return mutableContext->argumentValuePointers[index];
     }
-    return ZrCore_Stack_GetValue(mutableContext->argumentBase + index);
+    return ZrCore_Stack_GetValueNoProfile(mutableContext->argumentBase + index);
 }
 
 SZrObjectPrototype *ZrLib_CallContext_OwnerPrototype(const ZrLibCallContext *context) {

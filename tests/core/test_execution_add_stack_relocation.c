@@ -197,12 +197,79 @@ static void test_execution_add_restores_stack_destination_after_generic_string_c
     TEST_ASSERT_GREATER_THAN_UINT32(0u, allocatorContext.moveCount);
     TEST_ASSERT_TRUE(originalStackBase != state->stackBase.valuePointer);
 
-    movedDestinationValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer + 3);
+    movedDestinationValue = ZrCore_Stack_GetValueNoProfile(state->callInfoList->functionBase.valuePointer + 3);
     TEST_ASSERT_NOT_NULL(movedDestinationValue);
     TEST_ASSERT_TRUE(destinationValue != movedDestinationValue);
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, movedDestinationValue->type);
     TEST_ASSERT_EQUAL_STRING("left[object type=0]", string_value_native(state, movedDestinationValue));
 
+    ZrCore_GlobalState_Free(state->global);
+}
+
+static void test_execution_add_generic_string_concat_growth_avoids_stack_get_value_helper(void) {
+    TestMovingAllocatorContext allocatorContext = {0};
+    SZrState *state = test_create_state_with_moving_allocator(&allocatorContext);
+    SZrString *leftString;
+    SZrObject *rightObject;
+    SZrProfileRuntime profileRuntime;
+    TZrStackValuePointer originalStackBase;
+    TZrStackValuePointer functionBase;
+    SZrTypeValue *leftValue;
+    SZrTypeValue *rightValue;
+    SZrTypeValue *destinationValue;
+    SZrTypeValue *movedDestinationValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    leftString = ZrCore_String_CreateFromNative(state, "left");
+    rightObject = ZrCore_Object_New(state, ZR_NULL);
+    TEST_ASSERT_NOT_NULL(leftString);
+    TEST_ASSERT_NOT_NULL(rightObject);
+    ZrCore_Object_Init(state, rightObject);
+
+    functionBase = state->stackTail.valuePointer - 4;
+    TEST_ASSERT_TRUE(functionBase >= state->stackBase.valuePointer);
+
+    ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(functionBase));
+    leftValue = ZrCore_Stack_GetValue(functionBase + 1);
+    rightValue = ZrCore_Stack_GetValue(functionBase + 2);
+    destinationValue = ZrCore_Stack_GetValue(functionBase + 3);
+    TEST_ASSERT_NOT_NULL(leftValue);
+    TEST_ASSERT_NOT_NULL(rightValue);
+    TEST_ASSERT_NOT_NULL(destinationValue);
+
+    ZrCore_Value_InitAsRawObject(state, leftValue, ZR_CAST_RAW_OBJECT_AS_SUPER(leftString));
+    leftValue->type = ZR_VALUE_TYPE_STRING;
+    ZrCore_Value_InitAsRawObject(state, rightValue, ZR_CAST_RAW_OBJECT_AS_SUPER(rightObject));
+    rightValue->type = ZR_VALUE_TYPE_OBJECT;
+    ZrCore_Value_ResetAsNull(destinationValue);
+
+    state->baseCallInfo.functionBase.valuePointer = functionBase;
+    state->baseCallInfo.functionTop.valuePointer = functionBase + 4;
+    state->baseCallInfo.previous = ZR_NULL;
+    state->baseCallInfo.next = ZR_NULL;
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = functionBase + 4;
+
+    allocatorContext.moveCount = 0;
+    originalStackBase = state->stackBase.valuePointer;
+    reset_profile_counters(state, &profileRuntime);
+
+    TEST_ASSERT_TRUE(ZrCore_Execution_Add(state, state->callInfoList, destinationValue, leftValue, rightValue));
+
+    TEST_ASSERT_GREATER_THAN_UINT32(0u, allocatorContext.moveCount);
+    TEST_ASSERT_TRUE(originalStackBase != state->stackBase.valuePointer);
+
+    movedDestinationValue = ZrCore_Stack_GetValue(state->callInfoList->functionBase.valuePointer + 3);
+    TEST_ASSERT_NOT_NULL(movedDestinationValue);
+    TEST_ASSERT_TRUE(destinationValue != movedDestinationValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_STRING, movedDestinationValue->type);
+    TEST_ASSERT_EQUAL_STRING("left[object type=0]", string_value_native(state, movedDestinationValue));
+    TEST_ASSERT_TRUE_MESSAGE(
+            profileRuntime.helperCounts[ZR_PROFILE_HELPER_STACK_GET_VALUE] <= 1u,
+            "generic string concat growth should reduce stack restore bookkeeping to at most one remaining profiled stack_get_value read");
+
+    clear_profile_counters(state);
     ZrCore_GlobalState_Free(state->global);
 }
 
@@ -699,6 +766,82 @@ static void test_execution_add_mixed_string_int_writes_directly_without_value_co
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_try_builtin_add_signed_bool_returns_int64_sum(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrTypeValue leftValue;
+    SZrTypeValue rightValue;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrCore_Value_InitAsInt(state, &leftValue, 7);
+    ZrCore_Value_InitAsBool(state, &rightValue, ZR_TRUE);
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(try_builtin_add(state, &result, &leftValue, &rightValue));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(8, result.value.nativeObject.nativeInt64);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_try_builtin_add_unsigned_bool_returns_int64_sum(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrTypeValue leftValue;
+    SZrTypeValue rightValue;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrCore_Value_InitAsUInt(state, &leftValue, 9u);
+    ZrCore_Value_InitAsBool(state, &rightValue, ZR_TRUE);
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(try_builtin_add(state, &result, &leftValue, &rightValue));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(10, result.value.nativeObject.nativeInt64);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_try_builtin_add_signed_unsigned_returns_int64_sum(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrTypeValue leftValue;
+    SZrTypeValue rightValue;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrCore_Value_InitAsInt(state, &leftValue, -4);
+    ZrCore_Value_InitAsUInt(state, &rightValue, 9u);
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(try_builtin_add(state, &result, &leftValue, &rightValue));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(5, result.value.nativeObject.nativeInt64);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_try_builtin_add_bool_pair_returns_int64_sum(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrTypeValue leftValue;
+    SZrTypeValue rightValue;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrCore_Value_InitAsBool(state, &leftValue, ZR_TRUE);
+    ZrCore_Value_InitAsBool(state, &rightValue, ZR_TRUE);
+    ZrCore_Value_ResetAsNull(&result);
+
+    TEST_ASSERT_TRUE(try_builtin_add(state, &result, &leftValue, &rightValue));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(2, result.value.nativeObject.nativeInt64);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_stack_grow_initializes_newly_exposed_logical_slots(void) {
     TestMovingAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_moving_allocator(&allocatorContext);
@@ -789,6 +932,7 @@ int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_execution_add_restores_stack_destination_after_generic_string_concat_growth);
+    RUN_TEST(test_execution_add_generic_string_concat_growth_avoids_stack_get_value_helper);
     RUN_TEST(test_try_builtin_add_exact_string_pair_avoids_scratch_stack_growth);
     RUN_TEST(test_concat_values_to_destination_exact_string_pair_avoids_scratch_stack_growth);
     RUN_TEST(test_execution_add_exact_string_pair_writes_directly_without_value_copy_helper);
@@ -799,6 +943,10 @@ int main(void) {
     RUN_TEST(test_try_builtin_add_mixed_string_int_stack_inputs_avoid_stack_get_value_helper);
     RUN_TEST(test_try_builtin_add_mixed_string_int_only_allocates_final_result_string);
     RUN_TEST(test_execution_add_mixed_string_int_writes_directly_without_value_copy_helper);
+    RUN_TEST(test_try_builtin_add_signed_bool_returns_int64_sum);
+    RUN_TEST(test_try_builtin_add_unsigned_bool_returns_int64_sum);
+    RUN_TEST(test_try_builtin_add_signed_unsigned_returns_int64_sum);
+    RUN_TEST(test_try_builtin_add_bool_pair_returns_int64_sum);
     RUN_TEST(test_stack_grow_initializes_newly_exposed_logical_slots);
     RUN_TEST(test_state_stack_init_clears_all_initial_logical_slots_and_metadata);
     RUN_TEST(test_stack_grow_initializes_every_new_logical_slot_when_growing_by_multiple_slots);

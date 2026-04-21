@@ -515,7 +515,12 @@ EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result) {
         return library_project_normalize_failure(state, state->threadStatus);
     }
 
-    ignoredFunction = ZrCore_GarbageCollector_IgnoreObject(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    if (!ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state->global,
+                                                          state,
+                                                          ZR_CAST_RAW_OBJECT_AS_SUPER(function),
+                                                          &ignoredFunction)) {
+        return library_project_normalize_failure(state, state->threadStatus);
+    }
 
     SZrObjectModule *projectModule = ZrCore_Module_Create(state);
     zr_library_project_trace("project module=%p", (void *)projectModule);

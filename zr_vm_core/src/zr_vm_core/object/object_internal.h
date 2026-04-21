@@ -2,6 +2,7 @@
 #define ZR_VM_CORE_OBJECT_INTERNAL_H
 
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/gc.h"
 
 static ZR_FORCE_INLINE TZrBool object_node_map_is_ready(const SZrObject *object) {
     return object != ZR_NULL && object->nodeMap.isValid && object->nodeMap.buckets != ZR_NULL &&
@@ -31,6 +32,22 @@ static ZR_FORCE_INLINE void object_make_string_key_cached_unchecked(SZrState *st
     outKey->type = ZR_VALUE_TYPE_STRING;
 }
 
+static ZR_FORCE_INLINE const SZrTypeValue *object_try_get_direct_storage_key_unchecked(const SZrTypeValue *key) {
+    const SZrString *keyString;
+
+    if (key == ZR_NULL || key->type != ZR_VALUE_TYPE_STRING || key->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    keyString = ZR_CAST(const SZrString *, key->value.object);
+    if (!ZrCore_String_IsShort(keyString) ||
+        ZrCore_RawObject_IsReleased(ZR_CAST_RAW_OBJECT_AS_SUPER((SZrString *)keyString))) {
+        return ZR_NULL;
+    }
+
+    return key;
+}
+
 static ZR_FORCE_INLINE const SZrTypeValue *object_try_get_cached_string_value_by_name_pointer_unchecked(
         SZrObject *object,
         struct SZrString *memberName) {
@@ -49,6 +66,62 @@ static ZR_FORCE_INLINE const SZrTypeValue *object_try_get_cached_string_value_by
     return ZR_NULL;
 }
 
+static ZR_FORCE_INLINE SZrHashKeyValuePair *object_try_get_cached_string_pair_by_name_unchecked(
+        SZrState *state,
+        SZrObject *object,
+        struct SZrString *memberName) {
+    SZrHashKeyValuePair *pair;
+    SZrString *cachedKeyString;
+
+    if (state == ZR_NULL || object == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pair = object->cachedStringLookupPair;
+    if (pair == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING || pair->key.value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cachedKeyString = ZR_CAST(SZrString *, pair->key.value.object);
+    if (memberName->shortStringLength < ZR_VM_LONG_STRING_FLAG ||
+        cachedKeyString->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Equal(memberName, cachedKeyString) ? pair : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair *object_try_get_cached_string_pair_unchecked(
+        SZrState *state,
+        SZrObject *object,
+        const SZrTypeValue *key) {
+    SZrHashKeyValuePair *pair;
+    SZrString *keyString;
+    SZrString *cachedKeyString;
+    if (state == ZR_NULL || object == ZR_NULL || key == ZR_NULL || key->type != ZR_VALUE_TYPE_STRING ||
+        key->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pair = object->cachedStringLookupPair;
+    if (pair == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING || pair->key.value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (pair->key.value.object == key->value.object) {
+        return pair;
+    }
+
+    keyString = ZR_CAST(SZrString *, key->value.object);
+    cachedKeyString = ZR_CAST(SZrString *, pair->key.value.object);
+    if (keyString->shortStringLength < ZR_VM_LONG_STRING_FLAG ||
+        cachedKeyString->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Equal(keyString, cachedKeyString) ? pair : ZR_NULL;
+}
+
 static ZR_FORCE_INLINE SZrHashKeyValuePair *object_get_own_string_pair_by_name_cached_unchecked(
         SZrState *state,
         SZrObject *object,
@@ -64,16 +137,16 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_get_own_string_pair_by_name_c
         return ZR_NULL;
     }
 
-    pair = object->cachedStringLookupPair;
-    if (pair != ZR_NULL &&
-        pair->key.type == ZR_VALUE_TYPE_STRING &&
-        pair->key.value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(memberName)) {
+    pair = object_try_get_cached_string_pair_by_name_unchecked(state, object, memberName);
+    if (pair != ZR_NULL) {
         return pair;
     }
 
     object_make_string_key_cached_unchecked(state, memberName, &memberKey);
     pair = ZrCore_HashSet_Find(state, &object->nodeMap, &memberKey);
-    object->cachedStringLookupPair = pair;
+    if (pair != ZR_NULL && pair->key.type == ZR_VALUE_TYPE_STRING && pair->key.value.object != ZR_NULL) {
+        object->cachedStringLookupPair = pair;
+    }
     return pair;
 }
 
@@ -163,10 +236,27 @@ TZrBool ZrCore_Object_SetMemberWithKeyUnchecked(SZrState *state,
                                                 const SZrTypeValue *memberKey,
                                                 const SZrTypeValue *value);
 
+TZrBool ZrCore_Object_SetMemberWithKeyUncheckedStackOperands(SZrState *state,
+                                                             SZrTypeValue *receiver,
+                                                             struct SZrString *memberName,
+                                                             const SZrTypeValue *memberKey,
+                                                             const SZrTypeValue *value);
+
+TZrBool ZrCore_Object_SetMemberCachedDescriptorUncheckedStackOperands(SZrState *state,
+                                                                      SZrTypeValue *receiver,
+                                                                      struct SZrObjectPrototype *ownerPrototype,
+                                                                      TZrUInt32 descriptorIndex,
+                                                                      const SZrTypeValue *value);
+
 void ZrCore_Object_SetExistingPairValueUnchecked(SZrState *state,
                                                  SZrObject *object,
                                                  SZrHashKeyValuePair *pair,
                                                  const SZrTypeValue *value);
+
+void ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(SZrState *state,
+                                                              SZrObject *object,
+                                                              SZrHashKeyValuePair *pair,
+                                                              const SZrTypeValue *value);
 
 TZrBool ZrCore_Object_TrySetMemberWithKeyFastUnchecked(SZrState *state,
                                                        SZrTypeValue *receiver,
@@ -174,6 +264,13 @@ TZrBool ZrCore_Object_TrySetMemberWithKeyFastUnchecked(SZrState *state,
                                                        const SZrTypeValue *memberKey,
                                                        const SZrTypeValue *value,
                                                        TZrBool *outHandled);
+
+TZrBool ZrCore_Object_TrySetMemberWithKeyFastUncheckedStackOperands(SZrState *state,
+                                                                    SZrTypeValue *receiver,
+                                                                    struct SZrString *memberName,
+                                                                    const SZrTypeValue *memberKey,
+                                                                    const SZrTypeValue *value,
+                                                                    TZrBool *outHandled);
 
 ZR_CORE_API TZrBool ZrCore_Object_GetByIndexUnchecked(SZrState *state,
                                                       SZrTypeValue *receiver,

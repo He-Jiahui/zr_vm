@@ -28,9 +28,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_value_has_detached_gc_ownership_in
 static ZR_FORCE_INLINE TZrBool native_binding_pin_value_object_inline(SZrState *state,
                                                                       const SZrTypeValue *value,
                                                                       TZrBool *addedByCaller) {
-    SZrGarbageCollector *collector;
     SZrRawObject *object;
-    TZrSize ignoredCountBefore;
 
     if (addedByCaller != ZR_NULL) {
         *addedByCaller = ZR_FALSE;
@@ -49,16 +47,7 @@ static ZR_FORCE_INLINE TZrBool native_binding_pin_value_object_inline(SZrState *
         return ZR_TRUE;
     }
 
-    collector = state->global->garbageCollector;
-    ignoredCountBefore = collector != ZR_NULL ? collector->ignoredObjectCount : 0u;
-    if (!ZrCore_GarbageCollector_IgnoreObject(state, object)) {
-        return ZR_FALSE;
-    }
-
-    if (addedByCaller != ZR_NULL) {
-        *addedByCaller = collector != ZR_NULL && collector->ignoredObjectCount != ignoredCountBefore;
-    }
-    return ZR_TRUE;
+    return ZrCore_GarbageCollector_IgnoreObjectIfNeededFast(state->global, state, object, addedByCaller);
 }
 
 static ZR_FORCE_INLINE void native_binding_unpin_value_object_inline(SZrGlobalState *global,

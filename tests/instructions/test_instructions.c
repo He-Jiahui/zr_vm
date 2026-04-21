@@ -7136,6 +7136,108 @@ static void test_mul_generic_bool_bool_xor_semantics(void) {
     TEST_DIVIDER();
 }
 
+static void test_mul_generic_signed_bool_returns_int64_product(void) {
+    TEST_START("MUL Generic Signed Bool Product");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    SZrTypeValue constants[2];
+    ZrCore_Value_InitAsInt(state, &constants[0], 6);
+    ZrCore_Value_InitAsBool(state, &constants[1], ZR_TRUE);
+
+    TZrInstruction instructions[3];
+    instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+    instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+    instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(MUL), 2, 0, 1);
+
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
+    TEST_ASSERT_TRUE(success);
+
+    TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result->type);
+    TEST_ASSERT_EQUAL_INT64(6, result->value.nativeObject.nativeInt64);
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "MUL Generic Signed Bool Product");
+    TEST_DIVIDER();
+}
+
+static void test_mul_generic_unsigned_bool_returns_int64_product(void) {
+    TEST_START("MUL Generic Unsigned Bool Product");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    SZrTypeValue constants[2];
+    ZrCore_Value_InitAsUInt(state, &constants[0], 9u);
+    ZrCore_Value_InitAsBool(state, &constants[1], ZR_TRUE);
+
+    TZrInstruction instructions[3];
+    instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+    instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+    instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(MUL), 2, 0, 1);
+
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
+    TEST_ASSERT_TRUE(success);
+
+    TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result->type);
+    TEST_ASSERT_EQUAL_INT64(9, result->value.nativeObject.nativeInt64);
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "MUL Generic Unsigned Bool Product");
+    TEST_DIVIDER();
+}
+
+static void test_mul_generic_signed_unsigned_returns_int64_product(void) {
+    TEST_START("MUL Generic Signed Unsigned Product");
+    SZrTestTimer timer;
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    SZrTypeValue constants[2];
+    ZrCore_Value_InitAsInt(state, &constants[0], -4);
+    ZrCore_Value_InitAsUInt(state, &constants[1], 9u);
+
+    TZrInstruction instructions[3];
+    instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 0, 0);
+    instructions[1] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT), 1, 1);
+    instructions[2] = create_instruction_2(ZR_INSTRUCTION_ENUM(MUL), 2, 0, 1);
+
+    SZrFunction *function = create_test_function(state, instructions, 3, constants, 2, 4);
+    TZrBool success = execute_test_function(state, function);
+    TEST_ASSERT_TRUE(success);
+
+    TZrStackValuePointer base = state->callInfoList->functionBase.valuePointer;
+    SZrTypeValue *result = ZrCore_Stack_GetValue(base + 3);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result->type);
+    TEST_ASSERT_EQUAL_INT64(-36, result->value.nativeObject.nativeInt64);
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "MUL Generic Signed Unsigned Product");
+    TEST_DIVIDER();
+}
+
 static void test_div_generic(void) {
     TEST_START("DIV Generic Instruction");
     SZrTestTimer timer;
@@ -7834,6 +7936,9 @@ int main(void) {
     RUN_TEST(test_sub_generic);
     RUN_TEST(test_mul_generic);
     RUN_TEST(test_mul_generic_bool_bool_xor_semantics);
+    RUN_TEST(test_mul_generic_signed_bool_returns_int64_product);
+    RUN_TEST(test_mul_generic_unsigned_bool_returns_int64_product);
+    RUN_TEST(test_mul_generic_signed_unsigned_returns_int64_product);
     RUN_TEST(test_div_generic);
     RUN_TEST(test_mod_generic);
     RUN_TEST(test_mod_generic_negative_divisor_normalizes_sign);
