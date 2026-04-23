@@ -126,17 +126,38 @@ static TZrBool function_contains_get_member_name(const SZrFunction *function, co
         const TZrInstruction *instruction = &function->instructionsList[index];
         TZrUInt16 memberEntryIndex;
         SZrString *symbol;
+        EZrInstructionCode opcode;
 
-        if ((EZrInstructionCode)instruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_MEMBER)) {
+        opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+        if (opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER)) {
+            memberEntryIndex = instruction->instruction.operand.operand1[1];
+            if (memberEntryIndex >= function->memberEntryLength) {
+                continue;
+            }
+
+            symbol = function->memberEntries[memberEntryIndex].symbol;
+            if (symbol != ZR_NULL && strcmp(ZrCore_String_GetNativeString(symbol), memberName) == 0) {
+                return ZR_TRUE;
+            }
+
+            continue;
+        }
+
+        if (opcode != ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT) || function->callSiteCaches == ZR_NULL) {
             continue;
         }
 
         memberEntryIndex = instruction->instruction.operand.operand1[1];
-        if (memberEntryIndex >= function->memberEntryLength) {
+        if (memberEntryIndex >= function->callSiteCacheLength) {
             continue;
         }
 
-        symbol = function->memberEntries[memberEntryIndex].symbol;
+        if (function->callSiteCaches[memberEntryIndex].kind != ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET ||
+            function->callSiteCaches[memberEntryIndex].memberEntryIndex >= function->memberEntryLength) {
+            continue;
+        }
+
+        symbol = function->memberEntries[function->callSiteCaches[memberEntryIndex].memberEntryIndex].symbol;
         if (symbol != ZR_NULL && strcmp(ZrCore_String_GetNativeString(symbol), memberName) == 0) {
             return ZR_TRUE;
         }
@@ -7293,7 +7314,8 @@ static void test_source_module_class_boxed_construction_preserves_field_access(v
         TEST_ASSERT_TRUE(function_contains_opcode(entryFunction, ZR_INSTRUCTION_ENUM(CREATE_OBJECT)));
         TEST_ASSERT_TRUE(function_contains_to_object_type_name(entryFunction, "Box"));
         TEST_ASSERT_TRUE(function_contains_get_member_name(entryFunction, "__constructor"));
-        TEST_ASSERT_TRUE(function_contains_opcode(entryFunction, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)));
+        TEST_ASSERT_TRUE(function_contains_opcode(entryFunction, ZR_INSTRUCTION_ENUM(FUNCTION_CALL)) ||
+                         function_contains_opcode(entryFunction, ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)));
 
         runtimeSucceeded = ZrTests_Runtime_Function_Execute(state, entryFunction, &result);
         TEST_ASSERT_TRUE(runtimeSucceeded);

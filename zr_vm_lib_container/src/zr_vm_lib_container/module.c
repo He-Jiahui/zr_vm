@@ -1550,7 +1550,10 @@ static TZrBool zr_container_map_find_index(SZrState *state,
             {
                 SZrString *entryString = ZR_CAST_STRING(state, entryKey->value.object);
 
-                if (entryString != ZR_NULL && ZrCore_String_Equal(entryString, wantedString)) {
+                if (entryString != ZR_NULL &&
+                    !ZrCore_String_IsShort(entryString) &&
+                    !ZrCore_String_IsShort(wantedString) &&
+                    ZrCore_String_Equal(entryString, wantedString)) {
                     if (outIndex != ZR_NULL) {
                         *outIndex = index;
                     }
@@ -1651,7 +1654,10 @@ static ZR_FORCE_INLINE SZrObject *zr_container_map_find_entry_object_fast(SZrSta
             {
                 SZrString *entryString = ZR_CAST_STRING(state, entryKey->value.object);
 
-                if (entryString != ZR_NULL && ZrCore_String_Equal(entryString, wantedString)) {
+                if (entryString != ZR_NULL &&
+                    !ZrCore_String_IsShort(entryString) &&
+                    !ZrCore_String_IsShort(wantedString) &&
+                    ZrCore_String_Equal(entryString, wantedString)) {
                     zr_container_update_hot_map_lookup_cache(state, entries, wantedRawObject, index, entryObject);
                     return entryObject;
                 }

@@ -19,6 +19,21 @@ static ZR_FORCE_INLINE SZrFunction *execution_try_resolve_stateless_vm_function_
 static ZR_FORCE_INLINE SZrFunction *execution_try_resolve_vm_metadata_function_fast(SZrState *state,
                                                                                      SZrTypeValue *value,
                                                                                      SZrRawObject **outCallableObject);
+static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_fast(SZrState *state,
+                                                                     TZrStackValuePointer stackPointer,
+                                                                     SZrTypeValue *callableValue,
+                                                                     TZrSize argumentsCount,
+                                                                     TZrSize resultCount,
+                                                                     TZrStackValuePointer returnDestination,
+                                                                     SZrProfileRuntime *profileRuntime,
+                                                                     TZrBool recordHelpers);
+static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_native_fast(SZrState *state,
+                                                                         TZrStackValuePointer stackPointer,
+                                                                         SZrTypeValue *callableValue,
+                                                                         TZrSize resultCount,
+                                                                         TZrStackValuePointer returnDestination,
+                                                                         SZrProfileRuntime *profileRuntime,
+                                                                         TZrBool recordHelpers);
 static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_prepared_resolved_vm_fast(
         SZrState *state,
         TZrStackValuePointer stackPointer,
@@ -171,17 +186,22 @@ static ZR_FORCE_INLINE SZrTypeValue *execution_stack_get_value_fast(SZrTypeValue
     return ZrCore_Stack_GetValueNoProfile(valueOnStack);
 }
 
-static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_fast(SZrState *state,
-                                                            TZrStackValuePointer stackPointer,
-                                                            SZrTypeValue *callableValue,
-                                                            TZrSize resultCount,
-                                                            TZrStackValuePointer returnDestination,
-                                                            SZrProfileRuntime *profileRuntime,
-                                                            TZrBool recordHelpers) {
-    if (ZR_UNLIKELY(recordHelpers)) {
-        profileRuntime->helperCounts[ZR_PROFILE_HELPER_PRECALL]++;
+static ZR_FORCE_INLINE SZrClosure *execution_get_current_vm_closure_no_profile(SZrState *state,
+                                                                               TZrStackValuePointer base) {
+    SZrTypeValue *callableValue = ZrCore_Stack_GetValueNoProfile(base - 1);
+    return callableValue != ZR_NULL ? ZR_CAST_VM_CLOSURE(state, callableValue->value.object) : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrTypeValue *execution_get_closure_value_no_profile(SZrClosureValue *closureValue) {
+    if (closureValue == ZR_NULL) {
+        return ZR_NULL;
     }
-    return ZrCore_Function_PreCallKnownValue(state, stackPointer, callableValue, resultCount, returnDestination);
+
+    if (ZrCore_ClosureValue_IsClosed(closureValue)) {
+        return &closureValue->link.closedValue;
+    }
+
+    return ZrCore_Stack_GetValueNoProfile(closureValue->value.valuePointer);
 }
 
 static ZR_FORCE_INLINE SZrCallInfo *execution_pre_call_known_vm_fast(SZrState *state,
@@ -1008,14 +1028,6 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define ZrCore_Value_Copy(STATE, DESTINATION, SOURCE)                                                                  \
     execution_copy_value_fast((STATE), (DESTINATION), (SOURCE), profileRuntime, recordHelpers)
 #define ZrCore_Stack_GetValue(VALUE_ON_STACK) execution_stack_get_value_fast((VALUE_ON_STACK), profileRuntime, recordHelpers)
-#define ZrCore_Function_PreCall(STATE, STACK_POINTER, RESULT_COUNT, RETURN_DESTINATION)                                \
-    execution_pre_call_fast((STATE),                                                                                   \
-                            (STACK_POINTER),                                                                           \
-                            &((STACK_POINTER)->value),                                                                 \
-                            (RESULT_COUNT),                                                                            \
-                            (RETURN_DESTINATION),                                                                      \
-                            profileRuntime,                                                                            \
-                            recordHelpers)
 
 #define EXECUTION_STORE_PLAIN_REUSE(REGION, DATA, TYPE)                                                                \
     do {                                                                                                               \
@@ -3183,17 +3195,23 @@ LZrFastInstruction_DIV_UNSIGNED_CONST_PLAIN_DEST: {
                             ZrCore_Debug_RunError(state, "modulo by zero");
                         }
                     } else if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {
+                        TZrInt64 dividend;
                         TZrInt64 divisor;
 
                         SAVE_STATE(state, callInfo); // error: modulo by zero
-                        divisor = value_to_int64(opB);
+                        dividend = ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)
+                                           ? opA->value.nativeObject.nativeInt64
+                                           : (TZrInt64)opA->value.nativeObject.nativeUInt64;
+                        divisor = ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type)
+                                          ? opB->value.nativeObject.nativeInt64
+                                          : (TZrInt64)opB->value.nativeObject.nativeUInt64;
                         if (ZR_UNLIKELY(divisor == 0)) {
                             ZrCore_Debug_RunError(state, "modulo by zero");
                         }
                         if (ZR_UNLIKELY(divisor < 0)) {
                             divisor = -divisor;
                         }
-                        ZrCore_Value_InitAsInt(state, destination, value_to_int64(opA) % divisor);
+                        ZrCore_Value_InitAsInt(state, destination, dividend % divisor);
                     } else {
                         execution_try_binary_numeric_float_fallback_or_raise(
                                 state, ZR_EXEC_NUMERIC_FALLBACK_MOD, destination, opA, opB, "MOD");
@@ -3965,7 +3983,8 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 
                 // save 下一条指令的地址：fetch 使用 *(PC+=1)，当前 programCounter 指向本指令，故保存 programCounter+1
                 callInfo->context.context.programCounter = programCounter + 1;
-                SZrCallInfo *nextCallInfo = ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
+                SZrCallInfo *nextCallInfo =
+                        ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     // NULL means native call
                     RESUME_AFTER_NATIVE_CALL(state, callInfo);
@@ -4448,7 +4467,8 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                     goto LZrStart;
                 }
                 // 调用函数（expectedReturnCount=1，与 FUNCTION_CALL 一致）；返回值写入 BASE(E(instruction))
-                SZrCallInfo *nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
+                SZrCallInfo *nextCallInfo =
+                        ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
                 if (nextCallInfo == ZR_NULL) {
                     // Native调用，清除尾调用标志
                     callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
@@ -4600,7 +4620,7 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 // operand1[0] (A1) = upvalue index
                 // operand1[1] (B1) = 未使用
                 TZrSize upvalueIndex = A1(instruction);
-                SZrClosure *currentClosure = ZR_CAST_VM_CLOSURE(state, ZrCore_Stack_GetValue(base - 1)->value.object);
+                SZrClosure *currentClosure = execution_get_current_vm_closure_no_profile(state, base);
                 if (ZR_UNLIKELY(upvalueIndex >= currentClosure->closureValueCount)) {
                     ZrCore_Debug_RunError(state, "upvalue index out of range");
                 }
@@ -4610,7 +4630,7 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                     // 注意：这不应该发生在正常执行中，但为了测试的兼容性，我们允许这种情况
                     ZrCore_Debug_RunError(state, "upvalue is null - closure values may not be initialized");
                 }
-                ZrCore_Value_Copy(state, destination, ZrCore_ClosureValue_GetValue(closureValue));
+                ZrCore_Value_Copy(state, destination, execution_get_closure_value_no_profile(closureValue));
             }
             DONE(1);
 
@@ -4620,7 +4640,7 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 // operand1[0] (A1) = upvalue index
                 // operand1[1] (B1) = 未使用
                 TZrSize upvalueIndex = A1(instruction);
-                SZrClosure *currentClosure = ZR_CAST_VM_CLOSURE(state, ZrCore_Stack_GetValue(base - 1)->value.object);
+                SZrClosure *currentClosure = execution_get_current_vm_closure_no_profile(state, base);
                 if (ZR_UNLIKELY(upvalueIndex >= currentClosure->closureValueCount)) {
                     ZrCore_Debug_RunError(state, "upvalue index out of range");
                 }
@@ -4628,7 +4648,7 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 if (ZR_UNLIKELY(closureValue == ZR_NULL)) {
                     ZrCore_Debug_RunError(state, "upvalue is null");
                 }
-                SZrTypeValue *target = ZrCore_ClosureValue_GetValue(closureValue);
+                SZrTypeValue *target = execution_get_closure_value_no_profile(closureValue);
                 ZrCore_Value_Copy(state, target, destination);
                 ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(currentClosure->closureValuesExtend[upvalueIndex]),
                                destination);

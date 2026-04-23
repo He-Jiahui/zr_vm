@@ -229,6 +229,10 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/tests/core/test_execution_add_stack_relocation.c
     )
     zr_vm_add_unity_test_target(
+            zr_vm_execution_numeric_fast_paths_test
+            ${CMAKE_SOURCE_DIR}/tests/core/test_execution_numeric_fast_paths.c
+    )
+    zr_vm_add_unity_test_target(
             zr_vm_stateless_function_closure_cache_test
             ${CMAKE_SOURCE_DIR}/tests/core/test_stateless_function_closure_cache.c
     )
@@ -284,6 +288,11 @@ if (TARGET zr_vm_core_shared OR TARGET zr_vm_core_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
     )
     zr_vm_link_core(zr_vm_execution_add_stack_relocation_test)
+    target_include_directories(zr_vm_execution_numeric_fast_paths_test PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+    )
+    zr_vm_link_core(zr_vm_execution_numeric_fast_paths_test)
     target_include_directories(zr_vm_stateless_function_closure_cache_test PRIVATE
             ${CMAKE_SOURCE_DIR}
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include

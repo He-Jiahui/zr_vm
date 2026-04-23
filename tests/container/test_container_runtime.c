@@ -1145,8 +1145,13 @@ static void test_container_map_runtime_stable_concat_keys_avoid_entry_slot_valid
     TEST_ASSERT_EQUAL_INT64(80, result);
 
     stats = ZrVmLibContainer_Debug_GetHotMapLookupStats();
+#if defined(ZR_DEBUG)
     TEST_ASSERT_GREATER_THAN_UINT32(0u, (TZrUInt32)stats.hotHitCount);
     TEST_ASSERT_GREATER_THAN_UINT32(0u, (TZrUInt32)stats.memberVersionHitCount);
+#else
+    TEST_ASSERT_EQUAL_UINT64(0u, stats.hotHitCount);
+    TEST_ASSERT_EQUAL_UINT64(0u, stats.memberVersionHitCount);
+#endif
     TEST_ASSERT_EQUAL_UINT64(0u, stats.entryValidationReadCount);
 
     ZrCore_Function_Free(state, entryFunction);
@@ -1578,7 +1583,8 @@ static void test_reference_object_member_vs_string_index_fixture_separates_membe
 
     entryFunction = compile_test_script(state, "reference_member_vs_string_index_split.zr", source);
     TEST_ASSERT_NOT_NULL(entryFunction);
-    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)) >= 1);
+    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)) >= 1 ||
+                     count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)) >= 1);
     TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)) >= 1);
     TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(SET_BY_INDEX)) >= 1);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));

@@ -724,6 +724,14 @@ TZrUInt32 compile_primary_expression_into_slot(SZrCompilerState *cs, SZrAstNode 
     }
 
     primary = &node->data.primaryExpression;
+    if (try_emit_compile_time_function_call(cs, node)) {
+        return normalize_top_result_to_slot(cs, targetSlot);
+    }
+
+    if (cs->hasError) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
     usePreferredDirectMemberCallLayout =
             primary->property != ZR_NULL &&
             !compiler_is_super_identifier_node(primary->property) &&

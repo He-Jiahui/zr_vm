@@ -227,7 +227,10 @@ static TZrBool execution_try_binary_numeric_float_fallback(EZrExecutionNumericFa
                                                            SZrTypeValue *destination,
                                                            const SZrTypeValue *opA,
                                                            const SZrTypeValue *opB);
-static ZR_FORCE_INLINE TZrBool execution_extract_integral_or_bool_int64(const SZrTypeValue *value, TZrInt64 *outValue);
+static ZR_FORCE_INLINE TZrInt64 execution_value_to_int64_known_integral_or_bool_type(const SZrTypeValue *value,
+                                                                                      EZrValueType type);
+static ZR_FORCE_INLINE TZrDouble execution_value_to_double_known_numeric_or_bool_type(const SZrTypeValue *value,
+                                                                                       EZrValueType type);
 
 static TZrBool execution_apply_binary_numeric_float(EZrExecutionNumericFallbackOp operation,
                                                     SZrTypeValue *destination,
@@ -551,6 +554,8 @@ TZrBool try_builtin_add(SZrState *state,
                         const SZrTypeValue *opB) {
     EZrValueType typeA;
     EZrValueType typeB;
+    TZrBool numericOrBoolA;
+    TZrBool numericOrBoolB;
 
     if (state == ZR_NULL || outResult == ZR_NULL || opA == ZR_NULL || opB == ZR_NULL) {
         return ZR_FALSE;
@@ -575,15 +580,24 @@ TZrBool try_builtin_add(SZrState *state,
         return concat_values_to_destination(state, outResult, opA, opB, ZR_TRUE);
     }
 
-    if ((ZR_VALUE_IS_TYPE_NUMBER(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opA->type)) &&
-        (ZR_VALUE_IS_TYPE_NUMBER(opB->type) || ZR_VALUE_IS_TYPE_BOOL(opB->type))) {
-        if (ZR_VALUE_IS_TYPE_FLOAT(opA->type) || ZR_VALUE_IS_TYPE_FLOAT(opB->type)) {
-            ZrCore_Value_InitAsFloat(state, outResult, value_to_double(opA) + value_to_double(opB));
-        } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) || ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type) ||
-                   ZR_VALUE_IS_TYPE_BOOL(opA->type) || ZR_VALUE_IS_TYPE_BOOL(opB->type)) {
-            ZrCore_Value_InitAsInt(state, outResult, value_to_int64(opA) + value_to_int64(opB));
+    numericOrBoolA = (TZrBool)(ZR_VALUE_IS_TYPE_NUMBER(typeA) || ZR_VALUE_IS_TYPE_BOOL(typeA));
+    numericOrBoolB = (TZrBool)(ZR_VALUE_IS_TYPE_NUMBER(typeB) || ZR_VALUE_IS_TYPE_BOOL(typeB));
+    if (numericOrBoolA && numericOrBoolB) {
+        if (ZR_VALUE_IS_TYPE_FLOAT(typeA) || ZR_VALUE_IS_TYPE_FLOAT(typeB)) {
+            ZrCore_Value_InitAsFloat(state,
+                                     outResult,
+                                     execution_value_to_double_known_numeric_or_bool_type(opA, typeA) +
+                                             execution_value_to_double_known_numeric_or_bool_type(opB, typeB));
+        } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(typeA) || ZR_VALUE_IS_TYPE_SIGNED_INT(typeB) ||
+                   ZR_VALUE_IS_TYPE_BOOL(typeA) || ZR_VALUE_IS_TYPE_BOOL(typeB)) {
+            ZrCore_Value_InitAsInt(state,
+                                   outResult,
+                                   execution_value_to_int64_known_integral_or_bool_type(opA, typeA) +
+                                           execution_value_to_int64_known_integral_or_bool_type(opB, typeB));
         } else {
-            ZrCore_Value_InitAsUInt(state, outResult, value_to_uint64(opA) + value_to_uint64(opB));
+            ZrCore_Value_InitAsUInt(state,
+                                    outResult,
+                                    opA->value.nativeObject.nativeUInt64 + opB->value.nativeObject.nativeUInt64);
         }
         return ZR_TRUE;
     }
@@ -591,25 +605,37 @@ TZrBool try_builtin_add(SZrState *state,
     return ZR_FALSE;
 }
 
-static ZR_FORCE_INLINE TZrBool execution_extract_integral_or_bool_int64(const SZrTypeValue *value, TZrInt64 *outValue) {
-    if (value == ZR_NULL || outValue == ZR_NULL) {
-        return ZR_FALSE;
+static ZR_FORCE_INLINE TZrInt64 execution_value_to_int64_known_integral_or_bool_type(const SZrTypeValue *value,
+                                                                                      EZrValueType type) {
+    ZR_ASSERT(value != ZR_NULL);
+
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(type)) {
+        return value->value.nativeObject.nativeInt64;
+    }
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(type)) {
+        return (TZrInt64)value->value.nativeObject.nativeUInt64;
     }
 
-    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
-        *outValue = value->value.nativeObject.nativeInt64;
-        return ZR_TRUE;
+    ZR_ASSERT(ZR_VALUE_IS_TYPE_BOOL(type));
+    return value->value.nativeObject.nativeBool ? 1 : 0;
+}
+
+static ZR_FORCE_INLINE TZrDouble execution_value_to_double_known_numeric_or_bool_type(const SZrTypeValue *value,
+                                                                                       EZrValueType type) {
+    ZR_ASSERT(value != ZR_NULL);
+
+    if (ZR_VALUE_IS_TYPE_FLOAT(type)) {
+        return value->value.nativeObject.nativeDouble;
     }
-    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
-        *outValue = (TZrInt64)value->value.nativeObject.nativeUInt64;
-        return ZR_TRUE;
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(type)) {
+        return (TZrDouble)value->value.nativeObject.nativeInt64;
     }
-    if (ZR_VALUE_IS_TYPE_BOOL(value->type)) {
-        *outValue = value->value.nativeObject.nativeBool ? 1 : 0;
-        return ZR_TRUE;
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(type)) {
+        return (TZrDouble)value->value.nativeObject.nativeUInt64;
     }
 
-    return ZR_FALSE;
+    ZR_ASSERT(ZR_VALUE_IS_TYPE_BOOL(type));
+    return value->value.nativeObject.nativeBool ? 1.0 : 0.0;
 }
 
 TZrBool execution_try_builtin_sub(SZrState *state,
@@ -700,6 +726,8 @@ TZrBool execution_try_builtin_mul_mixed_numeric_fast(SZrTypeValue *outResult,
                                                      const SZrTypeValue *opB) {
     EZrValueType typeA;
     EZrValueType typeB;
+    TZrBool integralOrBoolA;
+    TZrBool integralOrBoolB;
     TZrInt64 leftInt64;
     TZrInt64 rightInt64;
 
@@ -719,20 +747,24 @@ TZrBool execution_try_builtin_mul_mixed_numeric_fast(SZrTypeValue *outResult,
     }
 
     if (ZR_VALUE_IS_TYPE_FLOAT(typeA) || ZR_VALUE_IS_TYPE_FLOAT(typeB)) {
-        ZR_VALUE_FAST_SET(outResult, nativeDouble, value_to_double(opA) * value_to_double(opB), ZR_VALUE_TYPE_DOUBLE);
+        ZR_VALUE_FAST_SET(outResult,
+                          nativeDouble,
+                          execution_value_to_double_known_numeric_or_bool_type(opA, typeA) *
+                                  execution_value_to_double_known_numeric_or_bool_type(opB, typeB),
+                          ZR_VALUE_TYPE_DOUBLE);
         return ZR_TRUE;
     }
 
-    if (!(ZR_VALUE_IS_TYPE_SIGNED_INT(typeA) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(typeA) || ZR_VALUE_IS_TYPE_BOOL(typeA)) ||
-        !(ZR_VALUE_IS_TYPE_SIGNED_INT(typeB) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(typeB) || ZR_VALUE_IS_TYPE_BOOL(typeB))) {
+    integralOrBoolA =
+            (TZrBool)(ZR_VALUE_IS_TYPE_SIGNED_INT(typeA) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(typeA) || ZR_VALUE_IS_TYPE_BOOL(typeA));
+    integralOrBoolB =
+            (TZrBool)(ZR_VALUE_IS_TYPE_SIGNED_INT(typeB) || ZR_VALUE_IS_TYPE_UNSIGNED_INT(typeB) || ZR_VALUE_IS_TYPE_BOOL(typeB));
+    if (!integralOrBoolA || !integralOrBoolB) {
         return ZR_FALSE;
     }
 
-    if (!execution_extract_integral_or_bool_int64(opA, &leftInt64) ||
-        !execution_extract_integral_or_bool_int64(opB, &rightInt64)) {
-        return ZR_FALSE;
-    }
-
+    leftInt64 = execution_value_to_int64_known_integral_or_bool_type(opA, typeA);
+    rightInt64 = execution_value_to_int64_known_integral_or_bool_type(opB, typeB);
     ZR_VALUE_FAST_SET(outResult, nativeInt64, leftInt64 * rightInt64, ZR_VALUE_TYPE_INT64);
     return ZR_TRUE;
 }

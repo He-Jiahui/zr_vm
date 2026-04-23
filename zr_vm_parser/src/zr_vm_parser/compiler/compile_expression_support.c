@@ -1047,7 +1047,43 @@ static TZrBool import_expression_targets_module(SZrAstNode *rootNode, const TZrC
            zr_string_equals_cstr_local(modulePathNode->data.stringLiteral.value, moduleName);
 }
 
+static SZrAstNode *compile_time_projection_root_node(SZrAstNode *node) {
+    while (node != ZR_NULL && node->type == ZR_AST_PRIMARY_EXPRESSION) {
+        SZrPrimaryExpression *primary = &node->data.primaryExpression;
+
+        if (primary->property == ZR_NULL) {
+            return ZR_NULL;
+        }
+
+        node = primary->property;
+    }
+
+    return node;
+}
+
+static TZrBool primary_expression_contains_function_call_member(SZrAstNode *node) {
+    SZrPrimaryExpression *primary;
+
+    if (node == ZR_NULL || node->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    primary = &node->data.primaryExpression;
+    if (primary->members != ZR_NULL) {
+        for (TZrSize index = 0; index < primary->members->count; index++) {
+            SZrAstNode *memberNode = primary->members->nodes[index];
+
+            if (memberNode != ZR_NULL && memberNode->type == ZR_AST_FUNCTION_CALL) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return primary_expression_contains_function_call_member(primary->property);
+}
+
 static TZrBool primary_root_is_compile_time_projection_candidate(SZrCompilerState *cs, SZrAstNode *rootNode) {
+    rootNode = compile_time_projection_root_node(rootNode);
     if (rootNode == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1080,13 +1116,7 @@ TZrBool try_emit_compile_time_function_call(SZrCompilerState *cs, SZrAstNode *no
         return ZR_FALSE;
     }
 
-    if (primary->property->type == ZR_AST_IMPORT_EXPRESSION) {
-        SZrAstNode *tailMember = primary->members->nodes[primary->members->count - 1];
-        if (primary->members->count < 2 || tailMember == ZR_NULL ||
-            tailMember->type != ZR_AST_FUNCTION_CALL) {
-            return ZR_FALSE;
-        }
-    } else if (primary->property->type != ZR_AST_IDENTIFIER_LITERAL) {
+    if (!primary_expression_contains_function_call_member(node)) {
         return ZR_FALSE;
     }
 

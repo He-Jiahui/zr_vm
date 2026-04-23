@@ -203,12 +203,45 @@ static void test_object_field_cstring_helpers_restore_existing_function_top_with
     ZrContainerTests_DestroyState(state);
 }
 
+static void test_object_field_cstring_helpers_accept_distinct_long_field_name_buffers(void) {
+    static char firstFieldName[] =
+            "captured_long_member_name_that_must_stay_beyond_the_short_string_threshold_segment_a";
+    static char secondFieldName[] =
+            "captured_long_member_name_that_must_stay_beyond_the_short_string_threshold_segment_a";
+    SZrState *state = ZrContainerTests_CreateState();
+    SZrObject *firstObject;
+    SZrObject *secondObject;
+    SZrTypeValue firstValue;
+    SZrTypeValue secondValue;
+    const SZrTypeValue *capturedValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    firstObject = ZrLib_Object_New(state);
+    secondObject = ZrLib_Object_New(state);
+    TEST_ASSERT_NOT_NULL(firstObject);
+    TEST_ASSERT_NOT_NULL(secondObject);
+
+    ZrCore_Value_InitAsInt(state, &firstValue, 73);
+    ZrCore_Value_InitAsInt(state, &secondValue, 74);
+    ZrLib_Object_SetFieldCString(state, firstObject, firstFieldName, &firstValue);
+    ZrLib_Object_SetFieldCString(state, secondObject, secondFieldName, &secondValue);
+
+    capturedValue = ZrLib_Object_GetFieldCString(state, firstObject, secondFieldName);
+    TEST_ASSERT_NOT_NULL(capturedValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, capturedValue->type);
+    TEST_ASSERT_EQUAL_INT64(73, capturedValue->value.nativeObject.nativeInt64);
+
+    ZrContainerTests_DestroyState(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_temp_value_root_restores_existing_function_top_without_growth);
     RUN_TEST(test_object_invoke_member_restores_existing_function_top_without_growth);
     RUN_TEST(test_object_field_cstring_helpers_restore_existing_function_top_without_growth);
+    RUN_TEST(test_object_field_cstring_helpers_accept_distinct_long_field_name_buffers);
 
     return UNITY_END();
 }

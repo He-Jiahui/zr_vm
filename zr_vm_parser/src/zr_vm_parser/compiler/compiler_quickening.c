@@ -549,11 +549,6 @@ static SZrObjectPrototype *compiler_quickening_resolve_type_ref_runtime_prototyp
         return ZR_NULL;
     }
 
-    prototype = ZrLib_Type_FindPrototype(state, typeNameText);
-    if (prototype != ZR_NULL) {
-        return prototype;
-    }
-
     if (typeRef->baseType == ZR_VALUE_TYPE_ARRAY) {
         prototype = ZrLib_Type_FindPrototype(state, "Array");
         if (prototype != ZR_NULL) {
@@ -563,7 +558,12 @@ static SZrObjectPrototype *compiler_quickening_resolve_type_ref_runtime_prototyp
         return ZrLib_Type_FindPrototype(state, "zr.container.Array");
     }
 
-    return compiler_quickening_find_owner_runtime_prototype_by_name(state, function, typeRef->typeName);
+    prototype = compiler_quickening_find_owner_runtime_prototype_by_name(state, function, typeRef->typeName);
+    if (prototype != ZR_NULL) {
+        return prototype;
+    }
+
+    return ZrLib_Type_FindPrototype(state, typeNameText);
 }
 
 static EZrCompilerQuickeningCallableProvenanceKind compiler_quickening_resolve_prototype_meta_call_provenance(
@@ -7046,7 +7046,12 @@ TZrBool compiler_quicken_execbc_function(SZrState *state, SZrFunction *function)
         return ZR_FALSE;
     }
 
-    return compiler_quicken_child_functions(state, function, ZR_TRUE);
+    if (!compiler_quicken_child_functions(state, function, ZR_TRUE)) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Function_ClearChildOwnerLinks(function);
+    return ZR_TRUE;
 }
 
 TZrBool compiler_quicken_execbc_function_shallow(SZrState *state, SZrFunction *function) {
@@ -7054,7 +7059,12 @@ TZrBool compiler_quicken_execbc_function_shallow(SZrState *state, SZrFunction *f
         return ZR_FALSE;
     }
 
-    return compiler_quicken_child_functions(state, function, ZR_FALSE);
+    if (!compiler_quicken_child_functions(state, function, ZR_FALSE)) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Function_ClearChildOwnerLinks(function);
+    return ZR_TRUE;
 }
 
 #undef ZR_QUICKENING_RUN_PASS

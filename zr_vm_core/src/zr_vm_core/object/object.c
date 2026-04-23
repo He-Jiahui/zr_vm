@@ -139,7 +139,19 @@ static ZR_FORCE_INLINE TZrBool object_key_matches_known_field(SZrState *state,
     }
 
     keyString = ZR_CAST_STRING(state, key->value.object);
-    return keyString != ZR_NULL && ZrCore_String_Equal(keyString, knownField);
+    if (keyString == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    /*
+     * Short strings are interned by content, so a pointer miss already proves
+     * they cannot match the cached known-field literal.
+     */
+    if (ZrCore_String_IsShort(keyString) || ZrCore_String_IsShort(knownField)) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_String_Equal(keyString, knownField);
 }
 
 static ZR_FORCE_INLINE TZrBool object_key_is_hidden_items_field(SZrState *state, const SZrTypeValue *key) {
@@ -1433,6 +1445,7 @@ static void object_trace(const TZrChar *format, ...) {
 
 const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *object, const SZrTypeValue *key) {
     const SZrTypeValue *resolvedValue;
+    SZrObjectPrototype *prototype;
 
     ZR_ASSERT(object != ZR_NULL);
     if (key == ZR_NULL) {
@@ -1443,16 +1456,18 @@ const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *ob
         return ZR_NULL;
     }
 
-    resolvedValue = object_get_own_value(state, object, key);
-    if (resolvedValue != ZR_NULL) {
-        return resolvedValue;
+    if (object_node_map_is_ready(object)) {
+        resolvedValue = object_get_own_value_unchecked(state, object, key);
+        if (resolvedValue != ZR_NULL) {
+            return resolvedValue;
+        }
     }
 
-    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
-        return object_get_prototype_value_unchecked(state, ((SZrObjectPrototype *)object)->superPrototype, key, ZR_TRUE);
-    }
+    prototype = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE
+                        ? ((SZrObjectPrototype *)object)->superPrototype
+                        : object->prototype;
 
-    return object_get_prototype_value_unchecked(state, object->prototype, key, ZR_TRUE);
+    return object_get_prototype_value_unchecked(state, prototype, key, ZR_TRUE);
 }
 
 // 创建基础 ObjectPrototype
@@ -1809,7 +1824,6 @@ TZrBool ZrCore_Object_TryGetMemberWithKeyFastUnchecked(struct SZrState *state,
     const SZrTypeValue *resolvedValue;
     const SZrMemberDescriptor *descriptor;
     TZrBool isPrototypeReceiver;
-    SZrTypeValue localMemberKey;
     const SZrTypeValue *effectiveMemberKey = memberKey;
 
     ZR_ASSERT(state != ZR_NULL);
@@ -1837,10 +1851,6 @@ TZrBool ZrCore_Object_TryGetMemberWithKeyFastUnchecked(struct SZrState *state,
         *outHandled = ZR_TRUE;
         return ZR_TRUE;
     }
-    if (effectiveMemberKey == ZR_NULL) {
-        object_make_string_key_cached_unchecked(state, memberName, &localMemberKey);
-        effectiveMemberKey = &localMemberKey;
-    }
 
     prototype = object->internalType == ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE
                          ? (SZrObjectPrototype *)object
@@ -1863,9 +1873,14 @@ TZrBool ZrCore_Object_TryGetMemberWithKeyFastUnchecked(struct SZrState *state,
         }
     }
 
-    resolvedValue = prototype != ZR_NULL
-                            ? object_get_prototype_value_unchecked(state, prototype, effectiveMemberKey, ZR_TRUE)
-                            : ZR_NULL;
+    if (prototype != ZR_NULL) {
+        resolvedValue = effectiveMemberKey != ZR_NULL
+                                ? object_get_prototype_value_unchecked(state, prototype, effectiveMemberKey, ZR_TRUE)
+                                : object_get_prototype_string_value_by_name_cached_unchecked(
+                                          state, prototype, memberName, ZR_TRUE);
+    } else {
+        resolvedValue = ZR_NULL;
+    }
     if (resolvedValue != ZR_NULL) {
         if (descriptor == ZR_NULL || !descriptor->isStatic || isPrototypeReceiver) {
             object_copy_value_profiled(state, result, resolvedValue);
@@ -2040,7 +2055,6 @@ static TZrBool object_get_member_cached_descriptor_unchecked_core(struct SZrStat
                                                                   SZrTypeValue *result) {
     const SZrMemberDescriptor *descriptor;
     const SZrTypeValue *resolvedValue;
-    SZrTypeValue memberKey;
 
     object_record_helper(state, ZR_PROFILE_HELPER_GET_MEMBER);
     ZR_ASSERT(state != ZR_NULL);
@@ -2095,8 +2109,8 @@ static TZrBool object_get_member_cached_descriptor_unchecked_core(struct SZrStat
         return object_get_index_length(state, receiver, result);
     }
 
-    object_make_string_key_unchecked(state, descriptor->name, &memberKey);
-    resolvedValue = object_get_prototype_value_unchecked(state, ownerPrototype, &memberKey, ZR_TRUE);
+    resolvedValue = object_get_prototype_string_value_by_name_cached_unchecked(
+            state, ownerPrototype, descriptor->name, ZR_TRUE);
     if (resolvedValue != ZR_NULL) {
         if (!descriptor->isStatic || isPrototypeReceiver) {
             object_copy_value_profiled(state, result, resolvedValue);

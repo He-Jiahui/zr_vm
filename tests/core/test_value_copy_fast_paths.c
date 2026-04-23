@@ -167,6 +167,31 @@ static void test_value_try_copy_fast_rejects_plain_struct_object(void) {
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_value_try_copy_fast_rejects_null_heap_object_payload(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrTypeValue source;
+    SZrTypeValue destination;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrCore_Value_ResetAsNull(&source);
+    source.type = ZR_VALUE_TYPE_OBJECT;
+    source.isGarbageCollectable = ZR_TRUE;
+    source.isNative = ZR_FALSE;
+    source.value.object = ZR_NULL;
+    ZrCore_Value_ResetAsNull(&destination);
+
+    TEST_ASSERT_FALSE(ZrCore_Value_CanFastCopyPlainHeapObject(state, &source));
+    TEST_ASSERT_FALSE(ZrCore_Value_TryCopyFastNoProfile(state, &destination, &source));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_NULL, destination.type);
+    TEST_ASSERT_FALSE(destination.isGarbageCollectable);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, destination.ownershipKind);
+    TEST_ASSERT_NULL(destination.ownershipControl);
+    TEST_ASSERT_NULL(destination.ownershipWeakRef);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -175,6 +200,7 @@ int main(void) {
     RUN_TEST(test_value_try_copy_fast_reuses_plain_heap_object);
     RUN_TEST(test_value_copy_clones_plain_struct_object);
     RUN_TEST(test_value_try_copy_fast_rejects_plain_struct_object);
+    RUN_TEST(test_value_try_copy_fast_rejects_null_heap_object_payload);
 
     return UNITY_END();
 }

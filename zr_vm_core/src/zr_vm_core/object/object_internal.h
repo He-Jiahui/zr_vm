@@ -160,6 +160,30 @@ static ZR_FORCE_INLINE const SZrTypeValue *object_get_own_string_value_by_name_c
     return pair != ZR_NULL ? &pair->value : ZR_NULL;
 }
 
+static ZR_FORCE_INLINE const SZrTypeValue *object_get_prototype_string_value_by_name_cached_unchecked(
+        SZrState *state,
+        SZrObjectPrototype *prototype,
+        struct SZrString *memberName,
+        TZrBool includeInherited) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(memberName != ZR_NULL);
+
+    while (prototype != ZR_NULL) {
+        const SZrTypeValue *value =
+                object_get_own_string_value_by_name_cached_unchecked(state, &prototype->super, memberName);
+
+        if (value != ZR_NULL) {
+            return value;
+        }
+        if (!includeInherited) {
+            break;
+        }
+        prototype = prototype->superPrototype;
+    }
+
+    return ZR_NULL;
+}
+
 static ZR_FORCE_INLINE TZrBool object_try_set_existing_string_pair_plain_value_assume_non_hidden_unchecked(
         SZrState *state,
         SZrObject *object,

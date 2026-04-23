@@ -1341,6 +1341,21 @@ static SZrString *native_binding_extract_open_generic_base_name(SZrState *state,
     return ZrCore_String_Create(state, (TZrNativeString)typeName, (TZrSize)(genericStart - typeName));
 }
 
+static SZrObjectPrototype *native_binding_value_as_object_prototype(SZrState *state, const SZrTypeValue *value) {
+    SZrObject *object;
+
+    if (state == ZR_NULL || value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT || value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    object = ZR_CAST_OBJECT(state, value->value.object);
+    if (object == ZR_NULL || object->internalType != ZR_OBJECT_INTERNAL_TYPE_OBJECT_PROTOTYPE) {
+        return ZR_NULL;
+    }
+
+    return (SZrObjectPrototype *)object;
+}
+
 static SZrObjectPrototype *native_binding_find_qualified_module_export_prototype(SZrState *state, const TZrChar *typeName) {
     const TZrChar *genericStart;
     const TZrChar *lastDot;
@@ -1386,11 +1401,7 @@ static SZrObjectPrototype *native_binding_find_qualified_module_export_prototype
     }
 
     exportedValue = ZrLib_Module_GetExport(state, moduleNameBuffer, exportNameBuffer);
-    if (exportedValue == ZR_NULL || exportedValue->type != ZR_VALUE_TYPE_OBJECT || exportedValue->value.object == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    return (SZrObjectPrototype *)ZR_CAST_OBJECT(state, exportedValue->value.object);
+    return native_binding_value_as_object_prototype(state, exportedValue);
 }
 
 SZrObjectPrototype *ZrLib_Type_FindPrototype(SZrState *state, const TZrChar *typeName) {
@@ -1417,7 +1428,8 @@ SZrObjectPrototype *ZrLib_Type_FindPrototype(SZrState *state, const TZrChar *typ
     ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(typeString));
     key.type = ZR_VALUE_TYPE_STRING;
     value = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, state->global->zrObject.value.object), &key);
-    if (value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT) {
+    qualifiedPrototype = native_binding_value_as_object_prototype(state, value);
+    if (qualifiedPrototype == ZR_NULL) {
         SZrString *openBaseName = native_binding_extract_open_generic_base_name(state, typeName);
         if (openBaseName == ZR_NULL) {
             return ZR_NULL;
@@ -1426,12 +1438,10 @@ SZrObjectPrototype *ZrLib_Type_FindPrototype(SZrState *state, const TZrChar *typ
         ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(openBaseName));
         key.type = ZR_VALUE_TYPE_STRING;
         value = ZrCore_Object_GetValue(state, ZR_CAST_OBJECT(state, state->global->zrObject.value.object), &key);
-        if (value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT) {
-            return ZR_NULL;
-        }
+        qualifiedPrototype = native_binding_value_as_object_prototype(state, value);
     }
 
-    return (SZrObjectPrototype *)ZR_CAST_OBJECT(state, value->value.object);
+    return qualifiedPrototype;
 }
 
 SZrObject *ZrLib_Type_NewInstance(SZrState *state, const TZrChar *typeName) {

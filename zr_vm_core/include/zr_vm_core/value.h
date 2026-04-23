@@ -46,7 +46,6 @@ struct ZR_STRUCT_ALIGN SZrTypeValue {
 
 typedef struct SZrTypeValue SZrTypeValue;
 
-
 ZR_CORE_API void ZrCore_Value_Barrier(struct SZrState *state, SZrRawObject *object, SZrTypeValue *value);
 
 ZR_CORE_API void ZrCore_Value_ResetAsNull(SZrTypeValue *value);
@@ -121,19 +120,19 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Value_CanFastCopyPlainValue(const SZrTypeV
 static ZR_FORCE_INLINE TZrBool ZrCore_Value_TryCopyFastNoProfile(struct SZrState *state,
                                                                  SZrTypeValue *destination,
                                                                  const SZrTypeValue *source) {
-    TZrBool sourceHasNoOwnership;
-    TZrBool destinationHasNoOwnership;
-
     ZR_ASSERT(destination != ZR_NULL);
     ZR_ASSERT(source != ZR_NULL);
+    ZR_ASSERT(source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+              (source->ownershipControl == ZR_NULL && source->ownershipWeakRef == ZR_NULL));
+    ZR_ASSERT(destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+              (destination->ownershipControl == ZR_NULL && destination->ownershipWeakRef == ZR_NULL));
 
     if (destination == source) {
         return ZR_TRUE;
     }
 
-    sourceHasNoOwnership = ZrCore_Value_HasNormalizedNoOwnership(source);
-    destinationHasNoOwnership = ZrCore_Value_HasNormalizedNoOwnership(destination);
-    if (ZR_UNLIKELY(!(sourceHasNoOwnership && destinationHasNoOwnership))) {
+    if (ZR_UNLIKELY(source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+                    destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE)) {
         return ZR_FALSE;
     }
 
@@ -193,6 +192,23 @@ static ZR_FORCE_INLINE void ZrCore_Value_AssignMaterializedStackValueNoProfile(s
     ZR_ASSERT(source != ZR_NULL);
 
     if (destination == source) {
+        return;
+    }
+
+    if (ZR_LIKELY(source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE)) {
+        if (ZR_LIKELY(destination->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE)) {
+            if (ZR_LIKELY(!source->isGarbageCollectable || source->type != ZR_VALUE_TYPE_OBJECT)) {
+                *destination = *source;
+                return;
+            }
+
+            if (ZrCore_Value_CanFastCopyPlainHeapObject(state, source)) {
+                *destination = *source;
+                return;
+            }
+        }
+
+        ZrCore_Value_CopyNoProfile(state, destination, source);
         return;
     }
 
