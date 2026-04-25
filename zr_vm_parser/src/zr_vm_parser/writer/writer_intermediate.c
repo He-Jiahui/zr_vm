@@ -829,6 +829,12 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST): fprintf(file, "ADD_SIGNED_PLAIN_DEST"); break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST): fprintf(file, "ADD_SIGNED_CONST"); break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST): fprintf(file, "ADD_SIGNED_CONST_PLAIN_DEST"); break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST): fprintf(file, "ADD_SIGNED_LOAD_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST): fprintf(file, "ADD_SIGNED_LOAD_STACK_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK): fprintf(file, "ADD_SIGNED_LOAD_STACK"); break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST): fprintf(file, "ADD_SIGNED_LOAD_STACK_LOAD_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST): fprintf(file, "SUB_SIGNED_LOAD_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST): fprintf(file, "SUB_SIGNED_LOAD_STACK_CONST"); break;
             case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED): fprintf(file, "ADD_UNSIGNED"); break;
             case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST): fprintf(file, "ADD_UNSIGNED_PLAIN_DEST"); break;
             case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST): fprintf(file, "ADD_UNSIGNED_CONST"); break;
@@ -849,17 +855,23 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST): fprintf(file, "MUL_SIGNED_PLAIN_DEST"); break;
             case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST): fprintf(file, "MUL_SIGNED_CONST"); break;
             case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST): fprintf(file, "MUL_SIGNED_CONST_PLAIN_DEST"); break;
+            case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST): fprintf(file, "MUL_SIGNED_LOAD_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST): fprintf(file, "MUL_SIGNED_LOAD_STACK_CONST"); break;
             case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_PLAIN_DEST): fprintf(file, "MUL_UNSIGNED_PLAIN_DEST"); break;
             case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST): fprintf(file, "MUL_UNSIGNED_CONST"); break;
             case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST_PLAIN_DEST): fprintf(file, "MUL_UNSIGNED_CONST_PLAIN_DEST"); break;
             case ZR_INSTRUCTION_ENUM(DIV_SIGNED): fprintf(file, "DIV_SIGNED"); break;
             case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST): fprintf(file, "DIV_SIGNED_CONST"); break;
             case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST): fprintf(file, "DIV_SIGNED_CONST_PLAIN_DEST"); break;
+            case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST): fprintf(file, "DIV_SIGNED_LOAD_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST): fprintf(file, "DIV_SIGNED_LOAD_STACK_CONST"); break;
             case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST): fprintf(file, "DIV_UNSIGNED_CONST"); break;
             case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST): fprintf(file, "DIV_UNSIGNED_CONST_PLAIN_DEST"); break;
             case ZR_INSTRUCTION_ENUM(MOD_SIGNED): fprintf(file, "MOD_SIGNED"); break;
             case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST): fprintf(file, "MOD_SIGNED_CONST"); break;
             case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST): fprintf(file, "MOD_SIGNED_CONST_PLAIN_DEST"); break;
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST): fprintf(file, "MOD_SIGNED_LOAD_CONST"); break;
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST): fprintf(file, "MOD_SIGNED_LOAD_STACK_CONST"); break;
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST): fprintf(file, "MOD_UNSIGNED_CONST"); break;
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST): fprintf(file, "MOD_UNSIGNED_CONST_PLAIN_DEST"); break;
             case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN): fprintf(file, "FUNCTION_RETURN"); break;
@@ -914,6 +926,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL): fprintf(file, "LOGICAL_EQUAL_BOOL"); break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_BOOL): fprintf(file, "LOGICAL_NOT_EQUAL_BOOL"); break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED): fprintf(file, "LOGICAL_EQUAL_SIGNED"); break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST): fprintf(file, "LOGICAL_EQUAL_SIGNED_CONST"); break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED): fprintf(file, "LOGICAL_NOT_EQUAL_SIGNED"); break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_UNSIGNED): fprintf(file, "LOGICAL_EQUAL_UNSIGNED"); break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_UNSIGNED): fprintf(file, "LOGICAL_NOT_EQUAL_UNSIGNED"); break;
@@ -926,6 +939,12 @@ static void writer_intermediate_write_nested_function(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
                 fprintf(file, "JUMP_IF_GREATER_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+                fprintf(file, "JUMP_IF_NOT_EQUAL_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+                fprintf(file, "JUMP_IF_NOT_EQUAL_SIGNED_CONST");
                 break;
             case ZR_INSTRUCTION_ENUM(NOP):
                 fprintf(file, "NOP");
@@ -957,6 +976,20 @@ static void writer_intermediate_write_nested_function(FILE *file,
                         inst->instruction.operand.operand1[0],
                         (TZrInt16)inst->instruction.operand.operand1[1]);
                 break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+                fprintf(file,
+                        ", left_slot=%u, right_slot=%u, jump_offset=%d",
+                        inst->instruction.operandExtra,
+                        inst->instruction.operand.operand1[0],
+                        (TZrInt16)inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+                fprintf(file,
+                        ", left_slot=%u, constant_index=%u, jump_offset=%d",
+                        inst->instruction.operandExtra,
+                        inst->instruction.operand.operand1[0],
+                        (TZrInt16)inst->instruction.operand.operand1[1]);
+                break;
 
             case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
             case ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST):
@@ -982,10 +1015,52 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST):
                 fprintf(file,
                         ", left_slot=%u, constant_index=%u",
                         inst->instruction.operand.operand1[0],
                         inst->instruction.operand.operand1[1]);
+                break;
+
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+            case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+            case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+            case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+                fprintf(file,
+                        ", left_slot=%u, materialized_slot=%u, constant_index=%u",
+                        inst->instruction.operand.operand0[0],
+                        inst->instruction.operand.operand0[1],
+                        inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+            case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+            case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+            case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+                fprintf(file,
+                        ", source_slot=%u, materialized_slot=%u, constant_index=%u",
+                        inst->instruction.operand.operand0[0],
+                        inst->instruction.operand.operand0[1],
+                        inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+                fprintf(file,
+                        ", source_slot=%u, materialized_stack_slot=%u, materialized_constant_slot=%u, constant_index=%u",
+                        inst->instruction.operand.operand0[0],
+                        inst->instruction.operand.operand0[1],
+                        inst->instruction.operand.operand0[2],
+                        inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+                fprintf(file,
+                        ", source_slot=%u, right_slot=%u",
+                        inst->instruction.operand.operand0[0],
+                        inst->instruction.operand.operand0[1]);
+                break;
+
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
+                fprintf(file, ", receiver_slot=%d", inst->instruction.operand.operand2[0]);
                 break;
 
             case ZR_INSTRUCTION_ENUM(ADD_INT):
@@ -1032,8 +1107,11 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4_CONST):
@@ -1297,8 +1375,20 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
                 fprintf(file, "SUPER_ARRAY_GET_INT_PLAIN_DEST");
                 break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
+                fprintf(file, "SUPER_ARRAY_BIND_ITEMS");
+                break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
+                fprintf(file, "SUPER_ARRAY_GET_INT_ITEMS");
+                break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
+                fprintf(file, "SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST");
+                break;
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
                 fprintf(file, "SUPER_ARRAY_SET_INT");
+                break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
+                fprintf(file, "SUPER_ARRAY_SET_INT_ITEMS");
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
                 fprintf(file, "SUPER_ARRAY_ADD_INT");
@@ -1417,6 +1507,24 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
                 fprintf(file, "ADD_SIGNED_CONST_PLAIN_DEST");
                 break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+                fprintf(file, "ADD_SIGNED_LOAD_CONST");
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+                fprintf(file, "ADD_SIGNED_LOAD_STACK_CONST");
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+                fprintf(file, "ADD_SIGNED_LOAD_STACK");
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+                fprintf(file, "ADD_SIGNED_LOAD_STACK_LOAD_CONST");
+                break;
+            case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+                fprintf(file, "SUB_SIGNED_LOAD_CONST");
+                break;
+            case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+                fprintf(file, "SUB_SIGNED_LOAD_STACK_CONST");
+                break;
             case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
                 fprintf(file, "ADD_UNSIGNED");
                 break;
@@ -1492,6 +1600,12 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST):
                 fprintf(file, "MUL_SIGNED_CONST_PLAIN_DEST");
                 break;
+            case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+                fprintf(file, "MUL_SIGNED_LOAD_CONST");
+                break;
+            case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+                fprintf(file, "MUL_SIGNED_LOAD_STACK_CONST");
+                break;
             case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
                 fprintf(file, "MUL_UNSIGNED");
                 break;
@@ -1522,6 +1636,12 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST):
                 fprintf(file, "DIV_SIGNED_CONST_PLAIN_DEST");
                 break;
+            case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+                fprintf(file, "DIV_SIGNED_LOAD_CONST");
+                break;
+            case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+                fprintf(file, "DIV_SIGNED_LOAD_STACK_CONST");
+                break;
             case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
                 fprintf(file, "DIV_UNSIGNED");
                 break;
@@ -1545,6 +1665,12 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                 break;
             case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
                 fprintf(file, "MOD_SIGNED_CONST_PLAIN_DEST");
+                break;
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+                fprintf(file, "MOD_SIGNED_LOAD_CONST");
+                break;
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+                fprintf(file, "MOD_SIGNED_LOAD_STACK_CONST");
                 break;
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
                 fprintf(file, "MOD_UNSIGNED");
@@ -1623,6 +1749,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED):
                 fprintf(file, "LOGICAL_EQUAL_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST):
+                fprintf(file, "LOGICAL_EQUAL_SIGNED_CONST");
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED):
                 fprintf(file, "LOGICAL_NOT_EQUAL_SIGNED");
@@ -1713,6 +1842,12 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                 break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
                 fprintf(file, "JUMP_IF_GREATER_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+                fprintf(file, "JUMP_IF_NOT_EQUAL_SIGNED");
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+                fprintf(file, "JUMP_IF_NOT_EQUAL_SIGNED_CONST");
                 break;
             case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
                 fprintf(file, "CREATE_CLOSURE");
@@ -1824,6 +1959,20 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                         inst->instruction.operand.operand1[0],
                         (TZrInt16)inst->instruction.operand.operand1[1]);
                 break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+                fprintf(file,
+                        ", left_slot=%u, right_slot=%u, jump_offset=%d",
+                        inst->instruction.operandExtra,
+                        inst->instruction.operand.operand1[0],
+                        (TZrInt16)inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+                fprintf(file,
+                        ", left_slot=%u, constant_index=%u, jump_offset=%d",
+                        inst->instruction.operandExtra,
+                        inst->instruction.operand.operand1[0],
+                        (TZrInt16)inst->instruction.operand.operand1[1]);
+                break;
                 
             // 使用 operand1[0] (TZrUInt16) 的指令（单操作数）
             case ZR_INSTRUCTION_ENUM(TO_BOOL):
@@ -1869,10 +2018,52 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST):
                 fprintf(file,
                         ", left_slot=%u, constant_index=%u",
                         inst->instruction.operand.operand1[0],
                         inst->instruction.operand.operand1[1]);
+                break;
+
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+            case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+            case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+            case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+                fprintf(file,
+                        ", left_slot=%u, materialized_slot=%u, constant_index=%u",
+                        inst->instruction.operand.operand0[0],
+                        inst->instruction.operand.operand0[1],
+                        inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+            case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+            case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+            case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+                fprintf(file,
+                        ", source_slot=%u, materialized_slot=%u, constant_index=%u",
+                        inst->instruction.operand.operand0[0],
+                        inst->instruction.operand.operand0[1],
+                        inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+                fprintf(file,
+                        ", source_slot=%u, materialized_stack_slot=%u, materialized_constant_slot=%u, constant_index=%u",
+                        inst->instruction.operand.operand0[0],
+                        inst->instruction.operand.operand0[1],
+                        inst->instruction.operand.operand0[2],
+                        inst->instruction.operand.operand1[1]);
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+                fprintf(file,
+                        ", source_slot=%u, right_slot=%u",
+                        inst->instruction.operand.operand0[0],
+                        inst->instruction.operand.operand0[1]);
+                break;
+
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
+                fprintf(file, ", receiver_slot=%d", inst->instruction.operand.operand2[0]);
                 break;
                 
             // 使用 operand1[0] + operand1[1] (TZrUInt16) 的指令（双操作数）
@@ -1953,8 +2144,11 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4_CONST):

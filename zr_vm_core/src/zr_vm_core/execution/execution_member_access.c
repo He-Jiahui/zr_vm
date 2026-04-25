@@ -1896,18 +1896,15 @@ static ZR_MEMBER_NO_INLINE TZrBool execution_member_try_cached_set(SZrState *sta
                                                                    TZrUInt16 cacheIndex,
                                                                    SZrFunctionCallSiteCacheEntry *entry,
                                                                    SZrTypeValue *receiver,
-                                                                   const SZrTypeValue *assignedValue) {
+                                                                   const SZrTypeValue *assignedValue,
+                                                                   TZrBool stackOperandsGuaranteed) {
     SZrObject *receiverObject;
     SZrObjectPrototype *receiverPrototype;
-    TZrBool stackOperandsGuaranteed;
 
     if (state == ZR_NULL || entry == ZR_NULL || receiver == ZR_NULL || assignedValue == ZR_NULL ||
         entry->picSlotCount == 0) {
         return ZR_FALSE;
     }
-    stackOperandsGuaranteed =
-            execution_member_value_points_into_stack(state, receiver) &&
-            execution_member_value_points_into_stack(state, assignedValue);
     receiverObject = execution_member_resolve_receiver_object(state, receiver);
     if (execution_member_try_cached_single_slot_receiver_fast_set(
                 state, function, cacheIndex, entry, receiverObject, receiver, assignedValue, stackOperandsGuaranteed)) {
@@ -2032,7 +2029,9 @@ TZrBool execution_member_get_by_name(SZrState *state,
         return ZR_FALSE;
     }
 
-    execution_member_refresh_forwarded_value_copy(receiver);
+    if (!execution_member_value_points_into_stack(state, receiver)) {
+        execution_member_refresh_forwarded_value_copy(receiver);
+    }
 
     allowGlobalPrototypeRetry =
             (receiver->type == ZR_VALUE_TYPE_OBJECT &&
@@ -2101,7 +2100,9 @@ TZrBool execution_member_set_by_name(SZrState *state,
         return ZR_FALSE;
     }
 
-    execution_member_refresh_forwarded_value_copy(receiverAndResult);
+    if (!execution_member_value_points_into_stack(state, receiverAndResult)) {
+        execution_member_refresh_forwarded_value_copy(receiverAndResult);
+    }
     stackOperandsGuaranteed =
             execution_member_value_points_into_stack(state, receiverAndResult) &&
             execution_member_value_points_into_stack(state, assignedValue);
@@ -2198,6 +2199,9 @@ TZrBool execution_member_set_cached(SZrState *state,
     SZrString *memberName;
     SZrTypeValue stableAssignedValue;
     const SZrTypeValue *effectiveAssignedValue = assignedValue;
+    TZrBool receiverInStack;
+    TZrBool assignedValueInStack;
+    TZrBool stackOperandsGuaranteed;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(function != ZR_NULL);
@@ -2206,7 +2210,11 @@ TZrBool execution_member_set_cached(SZrState *state,
     ZR_ASSERT(function->callSiteCaches != ZR_NULL);
     ZR_ASSERT(cacheIndex < function->callSiteCacheLength);
 
-    if (!execution_member_value_points_into_stack(state, assignedValue) &&
+    receiverInStack = execution_member_value_points_into_stack(state, receiverAndResult);
+    assignedValueInStack = execution_member_value_points_into_stack(state, assignedValue);
+    stackOperandsGuaranteed = receiverInStack && assignedValueInStack;
+
+    if (!assignedValueInStack &&
         assignedValue->isGarbageCollectable &&
         assignedValue->value.object != ZR_NULL) {
         stableAssignedValue = *assignedValue;
@@ -2225,9 +2233,12 @@ TZrBool execution_member_set_cached(SZrState *state,
         return ZR_TRUE;
     }
 
-    execution_member_refresh_forwarded_value_copy(receiverAndResult);
+    if (!receiverInStack) {
+        execution_member_refresh_forwarded_value_copy(receiverAndResult);
+    }
 
-    if (execution_member_try_cached_set(state, function, cacheIndex, entry, receiverAndResult, effectiveAssignedValue)) {
+    if (execution_member_try_cached_set(
+                state, function, cacheIndex, entry, receiverAndResult, effectiveAssignedValue, stackOperandsGuaranteed)) {
         return ZR_TRUE;
     }
 

@@ -467,11 +467,19 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
             case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(operandA1, &slotCount);
                 function_note_generated_frame_slot(operandB1, &slotCount);
+                break;
+
+            case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
+                function_note_generated_frame_slot((TZrUInt32)instruction->instruction.operand.operand2[0], &slotCount);
                 break;
 
             case ZR_INSTRUCTION_ENUM(ADD):

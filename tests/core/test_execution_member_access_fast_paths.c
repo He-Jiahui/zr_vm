@@ -2417,6 +2417,35 @@ static void test_dispatch_exact_receiver_pair_get_hot_fast_ignores_cached_versio
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_dispatch_exact_receiver_pair_get_checked_object_hot_fast_hits_and_records_helpers(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrProfileRuntime profileRuntime;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPair = fixture.instance->cachedStringLookupPair;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    ZrCore_Value_ResetAsNull(&result);
+    reset_profile_counters_from_state_only(state, &profileRuntime);
+
+    TEST_ASSERT_TRUE(execution_member_try_dispatch_exact_receiver_pair_get_hot_fast_checked_object(
+            state, &fixture.function, 0, &fixture.receiverValue, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(73, result.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]);
+    TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]);
+
+    clear_profile_counters(state);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_dispatch_exact_receiver_pair_set_hot_fast_hits_and_records_helpers(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrMemberAccessFixture fixture;
@@ -2496,6 +2525,38 @@ static void test_dispatch_exact_receiver_pair_set_hot_fast_non_hidden_slow_lane_
 
     TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
     TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(assignedObject), result.value.object);
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_dispatch_exact_receiver_pair_set_checked_object_hot_fast_hits_and_records_helpers(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrProfileRuntime profileRuntime;
+    SZrTypeValue assignedValue;
+    SZrTypeValue result;
+
+    TEST_ASSERT_NOT_NULL(state);
+    init_member_access_fixture(state, &fixture, 73);
+    fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+    fixture.cacheEntry.picSlots[0].cachedAccessKind = ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD;
+    fixture.cacheEntry.picSlots[0].cachedReceiverObject = fixture.instance;
+    fixture.cacheEntry.picSlots[0].cachedReceiverPair = fixture.instance->cachedStringLookupPair;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    ZrCore_Value_InitAsInt(state, &assignedValue, 105);
+    ZrCore_Value_ResetAsNull(&result);
+    reset_profile_counters_from_state_only(state, &profileRuntime);
+
+    TEST_ASSERT_TRUE(execution_member_try_dispatch_exact_receiver_pair_set_hot_fast_checked_object(
+            state, &fixture.function, 0, &fixture.receiverValue, &assignedValue));
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+    TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_SET_MEMBER]);
+    TEST_ASSERT_EQUAL_UINT64(1u, profileRuntime.helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]);
+
+    clear_profile_counters(state);
+    TEST_ASSERT_TRUE(execution_member_get_by_name(state, ZR_NULL, &fixture.receiverValue, fixture.memberName, &result));
+    TEST_ASSERT_EQUAL_INT64(105, result.value.nativeObject.nativeInt64);
     ZrTests_Runtime_State_Destroy(state);
 }
 
@@ -2753,6 +2814,34 @@ static void test_object_direct_storage_key_fast_path_reuses_live_short_string_ke
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_execution_member_get_cached_descriptor_stack_receiver_hits_from_vm_stack_roots(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrTypeValue *stackReceiver;
+    SZrTypeValue *stackResult;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    init_member_access_fixture(state, &fixture, 73);
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+    stackReceiver = ZrCore_Stack_GetValue(state->stackBase.valuePointer + 1);
+    stackResult = ZrCore_Stack_GetValue(state->stackBase.valuePointer + 2);
+    TEST_ASSERT_NOT_NULL(stackReceiver);
+    TEST_ASSERT_NOT_NULL(stackResult);
+    *stackReceiver = fixture.receiverValue;
+    ZrCore_Value_ResetAsNull(stackResult);
+
+    TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, &fixture.function, 0, stackReceiver, stackResult));
+
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, stackResult->type);
+    TEST_ASSERT_EQUAL_INT64(73, stackResult->value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_execution_member_set_cached_descriptor_stack_operands_reuse_vm_stack_roots_without_ignore_registry_growth(
         void) {
     SZrSelectiveAllocatorContext allocatorContext = {0};
@@ -2828,6 +2917,46 @@ static void test_execution_member_set_cached_descriptor_stack_operands_reuse_vm_
     TEST_ASSERT_EQUAL_UINT32((TZrUInt32)ignoredObjectCountBefore, (TZrUInt32)collector->ignoredObjectCount);
 
     ZrCore_GlobalState_Free(state->global);
+}
+
+static void test_execution_member_set_cached_descriptor_missing_pair_slow_lane_inserts_storage(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrMemberAccessFixture fixture;
+    SZrObject *freshInstance;
+    SZrTypeValue assignedValue;
+    SZrTypeValue memberKey;
+    const SZrTypeValue *storedValue;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    init_member_access_fixture(state, &fixture, 73);
+    freshInstance = ZrCore_Object_New(state, fixture.prototype);
+    TEST_ASSERT_NOT_NULL(freshInstance);
+    ZrCore_Object_Init(state, freshInstance);
+    fixture.instance = freshInstance;
+    ZrCore_Value_InitAsRawObject(state, &fixture.receiverValue, ZR_CAST_RAW_OBJECT_AS_SUPER(freshInstance));
+    fixture.receiverValue.type = ZR_VALUE_TYPE_OBJECT;
+    fixture.cacheEntry.kind = ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET;
+    fixture.cacheEntry.runtimeHitCount = 0;
+    fixture.cacheEntry.runtimeMissCount = 0;
+
+    init_string_key(state, fixture.memberName, &memberKey);
+    TEST_ASSERT_NULL(ZrCore_Object_GetValue(state, fixture.instance, &memberKey));
+
+    ZrCore_Value_InitAsInt(state, &assignedValue, 105);
+
+    TEST_ASSERT_TRUE(execution_member_set_cached(
+            state, ZR_NULL, &fixture.function, 0, &fixture.receiverValue, &assignedValue));
+
+    storedValue = ZrCore_Object_GetValue(state, fixture.instance, &memberKey);
+    TEST_ASSERT_NOT_NULL(storedValue);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, storedValue->type);
+    TEST_ASSERT_EQUAL_INT64(105, storedValue->value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.instance->memberVersion);
+    TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.runtimeHitCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, fixture.cacheEntry.runtimeMissCount);
+
+    ZrTests_Runtime_State_Destroy(state);
 }
 
 static void test_execution_member_set_by_name_existing_pair_slow_lane_reuses_existing_storage_without_ignore_registry_growth(
@@ -4202,15 +4331,19 @@ int main(void) {
     RUN_TEST(test_member_set_cached_exact_receiver_pair_hit_records_helpers_from_state_without_tls_current);
     RUN_TEST(test_dispatch_exact_receiver_pair_get_hot_fast_hits_and_records_helpers);
     RUN_TEST(test_dispatch_exact_receiver_pair_get_hot_fast_ignores_cached_version_mismatch);
+    RUN_TEST(test_dispatch_exact_receiver_pair_get_checked_object_hot_fast_hits_and_records_helpers);
     RUN_TEST(test_dispatch_exact_receiver_pair_set_hot_fast_hits_and_records_helpers);
     RUN_TEST(test_dispatch_exact_receiver_pair_set_hot_fast_non_hidden_slow_lane_updates_value_with_hidden_items_cached_state);
+    RUN_TEST(test_dispatch_exact_receiver_pair_set_checked_object_hot_fast_hits_and_records_helpers);
     RUN_TEST(test_member_set_cached_refresh_replaces_oldest_pic_slot_when_capacity_is_full);
     RUN_TEST(test_object_try_set_existing_pair_plain_value_fast_updates_value_and_lookup_cache);
     RUN_TEST(test_object_try_set_existing_pair_plain_value_fast_rejects_hidden_items_cached_state);
     RUN_TEST(test_object_set_value_existing_pair_updates_value_and_bumps_member_version);
     RUN_TEST(test_execution_member_set_by_name_stack_operands_reuse_vm_stack_roots_without_ignore_registry_growth);
     RUN_TEST(test_object_direct_storage_key_fast_path_reuses_live_short_string_key);
+    RUN_TEST(test_execution_member_get_cached_descriptor_stack_receiver_hits_from_vm_stack_roots);
     RUN_TEST(test_execution_member_set_cached_descriptor_stack_operands_reuse_vm_stack_roots_without_ignore_registry_growth);
+    RUN_TEST(test_execution_member_set_cached_descriptor_missing_pair_slow_lane_inserts_storage);
     RUN_TEST(test_execution_member_set_by_name_existing_pair_slow_lane_reuses_existing_storage_without_ignore_registry_growth);
     RUN_TEST(test_execution_member_set_cached_descriptor_existing_pair_slow_lane_reuses_existing_storage_without_ignore_registry_growth);
     RUN_TEST(test_object_direct_storage_key_fast_path_rejects_released_short_string_key);

@@ -107,6 +107,10 @@ struct ZR_STRUCT_ALIGN SZrObject {
     SZrHashKeyValuePair *cachedLengthPair;
     SZrHashKeyValuePair *cachedCapacityPair;
     SZrHashKeyValuePair *cachedStringLookupPair;
+    TZrInt64 *superArrayRawIntData;
+    TZrSize superArrayRawIntLength;
+    TZrSize superArrayRawIntCapacity;
+    TZrBool superArrayRawIntDirty;
 
     // SZrRawObject *gcList;
 };

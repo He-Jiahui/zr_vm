@@ -34,15 +34,20 @@ doc_type: category-index
     - `execution_dispatch.c:1752` clang 断言的真实根因与恢复方式
     - `Release + -O3 -DNDEBUG` 构建口径
     - 14-case 语言定位和热点摘要
+- `vm-performance-instruction-optimization-w1.md`
+  - 记录二阶段 VM 性能计划中 W1 runtime-body 优化的 live continuation
+  - 覆盖 readonly-inline stack-operands index 快路、dispatch-local helper 计数、
+    receiver 类型门槛去重，以及相邻 rejected probe
 
 ## 阅读顺序
 
 1. 先看 `wsl-profile-benchmark-validation-report.md`，获取当前 Release benchmark 事实、语言相对位置和热点结论。
-2. 需要了解 suite 如何生成报表时，再看 `../testing-and-validation/ctest-performance-reporting.md`。
-3. 需要追查 clang 断言恢复证据时，再看：
+2. 需要追二阶段 W1 runtime-body 优化证据时，看 `vm-performance-instruction-optimization-w1.md`。
+3. 需要了解 suite 如何生成报表时，再看 `../testing-and-validation/ctest-performance-reporting.md`。
+4. 需要追查 clang 断言恢复证据时，再看：
    - `../../tests/acceptance/2026-04-09-wsl-clang-performance-report-rebuild.md`
    - `../../tests/core/gdb_clang_execution_dispatch_assert.gdb`
-4. 需要追 Java 接入和语言对比切片时，再看：
+5. 需要追 Java 接入和语言对比切片时，再看：
    - `../../tests/acceptance/2026-04-09-java-benchmark-integration.md`
    - `../../tests/acceptance/2026-04-09-language-benchmark-positioning.md`
 

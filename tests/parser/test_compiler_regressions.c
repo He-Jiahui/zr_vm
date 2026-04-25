@@ -717,7 +717,14 @@ static void build_nth_opcode_window_message(const SZrFunction *rootFunction,
 
 static TZrBool opcode_is_super_array_get_int_family(EZrInstructionCode opcode) {
     return opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT) ||
-           opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST);
+           opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST) ||
+           opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS) ||
+           opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST);
+}
+
+static TZrBool opcode_is_super_array_set_int_family(EZrInstructionCode opcode) {
+    return opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT) ||
+           opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS);
 }
 
 static void assert_super_array_int_ops_do_not_reload_adjacent_temp_slots(const SZrFunction *function, TZrUInt32 depth) {
@@ -735,7 +742,7 @@ static void assert_super_array_int_ops_do_not_reload_adjacent_temp_slots(const S
         if (opcode_is_super_array_get_int_family(opcode)) {
             readSlots[readCount++] = instruction->instruction.operand.operand1[0];
             readSlots[readCount++] = instruction->instruction.operand.operand1[1];
-        } else if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)) {
+        } else if (opcode_is_super_array_set_int_family(opcode)) {
             readSlots[readCount++] = instruction->instruction.operandExtra;
             readSlots[readCount++] = instruction->instruction.operand.operand1[0];
             readSlots[readCount++] = instruction->instruction.operand.operand1[1];
@@ -757,7 +764,7 @@ static void assert_super_array_int_ops_do_not_reload_adjacent_temp_slots(const S
                          function_name_or_anonymous(function),
                          (unsigned int)previous->instruction.operandExtra,
                          opcode_is_super_array_get_int_family(opcode) ? "SUPER_ARRAY_GET_INT family"
-                                                                       : "SUPER_ARRAY_SET_INT",
+                                                                       : "SUPER_ARRAY_SET_INT family",
                          (unsigned int)index);
                 TEST_ASSERT_NOT_EQUAL_MESSAGE((int)previous->instruction.operandExtra,
                                               (int)readSlots[readIndex],
@@ -1552,12 +1559,18 @@ static TZrBool test_instruction_supports_get_stack_copy_forward_rewrite(const TZ
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT):
             readsSlot = instruction->instruction.operand.operand1[0] == oldSlot ||
                         instruction->instruction.operand.operand1[1] == oldSlot;
             break;
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
+            readsSlot = (TZrUInt32)instruction->instruction.operand.operand2[0] == oldSlot;
+            break;
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
             readsSlot = instruction->instruction.operandExtra == oldSlot ||
                         instruction->instruction.operand.operand1[0] == oldSlot ||
                         instruction->instruction.operand.operand1[1] == oldSlot;
@@ -1596,9 +1609,13 @@ static TZrBool test_instruction_writes_slot(const TZrInstruction *instruction, T
         case ZR_INSTRUCTION_ENUM(SET_MEMBER):
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
         case ZR_INSTRUCTION_ENUM(TO_BOOL):
         case ZR_INSTRUCTION_ENUM(TO_INT):
         case ZR_INSTRUCTION_ENUM(TO_UINT):
@@ -3174,10 +3191,13 @@ void test_matrix_add_2d_compile_eliminates_generic_array_int_index_opcodes(void)
     genericGetCount = count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(GET_BY_INDEX), 0);
     genericSetCount = count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(SET_BY_INDEX), 0);
     plainFastGetCount =
-            count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST), 0);
+            count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST), 0) +
+            count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST), 0);
     fastGetCount = count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT), 0) +
+                   count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS), 0) +
                    plainFastGetCount;
-    fastSetCount = count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT), 0);
+    fastSetCount = count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT), 0) +
+                   count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS), 0);
 
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
@@ -3186,11 +3206,11 @@ void test_matrix_add_2d_compile_eliminates_generic_array_int_index_opcodes(void)
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
             fastSetCount,
-            "matrix_add_2d should emit SUPER_ARRAY_SET_INT for typed Array<int> writes");
+            "matrix_add_2d should emit SUPER_ARRAY_SET_INT-family opcodes for typed Array<int> writes");
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
             plainFastGetCount,
-            "matrix_add_2d should emit SUPER_ARRAY_GET_INT_PLAIN_DEST for plain int temporaries on its hot read path");
+            "matrix_add_2d should emit SUPER_ARRAY_GET_INT_PLAIN_DEST-family opcodes for plain int temporaries on its hot read path");
     if (fastGetCount > 5u) {
         TEST_FAIL_MESSAGE("matrix_add_2d should forward immediate super-array read-after-write pairs and keep its hot fast get count at 5 or below");
     }
@@ -3303,6 +3323,9 @@ static TZrUInt32 count_typed_signed_plain_destination_family_recursive(const SZr
 
     return count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST), depth) +
+           count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK), depth) +
+           count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST), depth) +
+           count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST), depth) +
            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST), depth);
 }

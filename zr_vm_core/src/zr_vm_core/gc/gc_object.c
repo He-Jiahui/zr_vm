@@ -989,6 +989,22 @@ static ZR_FORCE_INLINE void garbage_collector_free_object_known_size(
         object->scanMarkGcFunction(state, object);
     }
 
+    if ((object->type == ZR_RAW_OBJECT_TYPE_ARRAY || object->type == ZR_RAW_OBJECT_TYPE_OBJECT) &&
+        objectSize >= sizeof(SZrObject)) {
+        SZrObject *coreObject = ZR_CAST(SZrObject *, object);
+        if (coreObject->superArrayRawIntData != ZR_NULL &&
+            coreObject->superArrayRawIntCapacity > 0) {
+            ZrCore_Memory_RawFreeWithType(global,
+                                          coreObject->superArrayRawIntData,
+                                          coreObject->superArrayRawIntCapacity * sizeof(TZrInt64),
+                                          ZR_MEMORY_NATIVE_TYPE_ARRAY);
+            coreObject->superArrayRawIntData = ZR_NULL;
+            coreObject->superArrayRawIntLength = 0;
+            coreObject->superArrayRawIntCapacity = 0;
+            coreObject->superArrayRawIntDirty = ZR_FALSE;
+        }
+    }
+
     ZrCore_Memory_RawFreeWithType(global, object, objectSize, ZR_MEMORY_NATIVE_TYPE_OBJECT);
 }
 

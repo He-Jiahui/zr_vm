@@ -261,126 +261,7 @@ static int handle_did_save(SZrStdioServer *server, const cJSON *params) {
     return 1;
 }
 
-static TZrBool watched_string_ends_with(SZrString *value, const TZrChar *suffix) {
-    TZrNativeString text;
-    TZrSize length;
-    TZrSize suffixLength;
-
-    if (value == ZR_NULL || suffix == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
-        text = ZrCore_String_GetNativeStringShort(value);
-        length = value->shortStringLength;
-    } else {
-        text = ZrCore_String_GetNativeString(value);
-        length = value->longStringLength;
-    }
-
-    suffixLength = strlen(suffix);
-    return text != ZR_NULL && length >= suffixLength &&
-           memcmp(text + length - suffixLength, suffix, suffixLength) == 0;
-}
-
-static TZrBool watched_uri_has_metadata_extension(SZrString *uri) {
-    return watched_string_ends_with(uri, ZR_VM_BINARY_MODULE_FILE_EXTENSION) ||
-           watched_string_ends_with(uri, ".dll") ||
-           watched_string_ends_with(uri, ".so") ||
-           watched_string_ends_with(uri, ".dylib");
-}
-
-static int handle_single_watched_file_change(SZrStdioServer *server, SZrString *uri, TZrSize changeType) {
-    if (server == ZR_NULL || uri == ZR_NULL) {
-        return 0;
-    }
-
-    if (changeType == 3) {
-        if (watched_string_ends_with(uri, ".zrp")) {
-            ZrLanguageServer_LspProject_RemoveProjectByProjectUri(server->state, server->context, uri);
-            publish_empty_diagnostics(server, uri);
-            return 1;
-        }
-
-        if (watched_string_ends_with(uri, ".zr")) {
-            ZrLanguageServer_LspProject_RemoveFileRecordByUri(server->state, server->context, uri);
-            publish_empty_diagnostics(server, uri);
-            return 1;
-        }
-
-        if (watched_uri_has_metadata_extension(uri)) {
-            return ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(server->state,
-                                                                                server->context,
-                                                                                uri)
-                       ? 1
-                       : 0;
-        }
-
-        return 1;
-    }
-
-    if (watched_string_ends_with(uri, ".zrp") || watched_string_ends_with(uri, ".zr")) {
-        return update_document_contents_from_disk(server, uri);
-    }
-
-    if (watched_uri_has_metadata_extension(uri)) {
-        return ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(server->state,
-                                                                            server->context,
-                                                                            uri)
-                   ? 1
-                   : 0;
-    }
-
-    return 1;
-}
-
-static int handle_did_change_watched_files(SZrStdioServer *server, const cJSON *params) {
-    const cJSON *changes;
-    int handledAny = 0;
-
-    if (server == ZR_NULL || params == NULL) {
-        return 0;
-    }
-
-    changes = get_object_item(params, ZR_LSP_FIELD_CHANGES);
-    if (!cJSON_IsArray((cJSON *)changes)) {
-        return 0;
-    }
-
-    for (int index = 0; index < cJSON_GetArraySize((cJSON *)changes); index++) {
-        const cJSON *change = cJSON_GetArrayItem((cJSON *)changes, index);
-        const cJSON *uriJson = get_object_item(change, ZR_LSP_FIELD_URI);
-        const cJSON *typeJson = get_object_item(change, ZR_LSP_FIELD_TYPE);
-        const char *uriText;
-        SZrString *uri;
-        TZrSize changeType;
-
-        if (!cJSON_IsString((cJSON *)uriJson) || !cJSON_IsNumber((cJSON *)typeJson)) {
-            continue;
-        }
-
-        uriText = cJSON_GetStringValue((cJSON *)uriJson);
-        if (uriText == NULL) {
-            continue;
-        }
-
-        uri = server_get_cached_uri(server, uriText);
-        if (uri == ZR_NULL) {
-            continue;
-        }
-
-        changeType = parse_size_value(typeJson, 0);
-        if (changeType == 0) {
-            continue;
-        }
-
-        handledAny = handle_single_watched_file_change(server, uri, changeType) || handledAny;
-    }
-
-    return handledAny;
-}
-
-static cJSON *handle_completion_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_completion_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray completions = {0};
     SZrLspPosition position;
     const char *uriText;
@@ -396,11 +277,30 @@ static cJSON *handle_completion_request(SZrStdioServer *server, const cJSON *par
     }
 
     result = serialize_completion_items_array(&completions);
+    if (cJSON_IsArray(result)) {
+        int count = cJSON_GetArraySize(result);
+        for (int index = 0; index < count; index++) {
+            cJSON *item = cJSON_GetArrayItem(result, index);
+            cJSON *data;
+
+            if (!cJSON_IsObject(item)) {
+                continue;
+            }
+
+            data = cJSON_CreateObject();
+            if (data == NULL) {
+                continue;
+            }
+            cJSON_AddStringToObject(data, ZR_LSP_FIELD_URI, uriText);
+            cJSON_AddItemToObject(data, ZR_LSP_FIELD_POSITION, serialize_position(position));
+            cJSON_AddItemToObject(item, ZR_LSP_FIELD_DATA, data);
+        }
+    }
     free_completion_items_array(server->state, &completions);
     return result;
 }
 
-static cJSON *handle_hover_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_hover_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
     SZrString *uri;
@@ -420,7 +320,7 @@ static cJSON *handle_hover_request(SZrStdioServer *server, const cJSON *params) 
     return result != NULL ? result : cJSON_CreateNull();
 }
 
-static cJSON *handle_rich_hover_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_rich_hover_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
     SZrString *uri;
@@ -441,7 +341,7 @@ static cJSON *handle_rich_hover_request(SZrStdioServer *server, const cJSON *par
     return result != NULL ? result : cJSON_CreateNull();
 }
 
-static cJSON *handle_signature_help_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_signature_help_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
     SZrString *uri;
@@ -462,7 +362,7 @@ static cJSON *handle_signature_help_request(SZrStdioServer *server, const cJSON 
     return result != NULL ? result : cJSON_CreateNull();
 }
 
-static cJSON *handle_inlay_hint_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_inlay_hint_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *rangeJson;
     const char *uriText;
     SZrString *uri;
@@ -488,7 +388,12 @@ static cJSON *handle_inlay_hint_request(SZrStdioServer *server, const cJSON *par
     return result;
 }
 
-static cJSON *handle_definition_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_inlay_hint_resolve_request(SZrStdioServer *server, const cJSON *params) {
+    ZR_UNUSED_PARAMETER(server);
+    return params != NULL ? cJSON_Duplicate((cJSON *)params, 1) : cJSON_CreateObject();
+}
+
+cJSON *handle_definition_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrLspPosition position;
     const char *uriText;
@@ -508,7 +413,7 @@ static cJSON *handle_definition_request(SZrStdioServer *server, const cJSON *par
     return result;
 }
 
-static cJSON *handle_native_declaration_document_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_native_declaration_document_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *uriJson;
     const char *uriText;
     SZrString *uri;
@@ -543,7 +448,7 @@ static cJSON *handle_native_declaration_document_request(SZrStdioServer *server,
     return result;
 }
 
-static cJSON *handle_project_modules_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_project_modules_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *uriJson;
     const char *uriText;
     SZrString *projectUri;
@@ -580,7 +485,7 @@ static cJSON *handle_project_modules_request(SZrStdioServer *server, const cJSON
     return result;
 }
 
-static cJSON *handle_references_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_references_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrLspPosition position;
     const cJSON *contextJson;
@@ -615,7 +520,7 @@ static cJSON *handle_references_request(SZrStdioServer *server, const cJSON *par
     return result;
 }
 
-static cJSON *handle_document_symbols_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_document_symbols_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray symbols = {0};
     const char *uriText;
     SZrString *uri;
@@ -634,7 +539,7 @@ static cJSON *handle_document_symbols_request(SZrStdioServer *server, const cJSO
     return result;
 }
 
-static cJSON *handle_workspace_symbols_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_workspace_symbols_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray symbols = {0};
     const cJSON *queryJson;
     const char *queryText = "";
@@ -667,7 +572,12 @@ static cJSON *handle_workspace_symbols_request(SZrStdioServer *server, const cJS
     return result;
 }
 
-static cJSON *handle_document_highlights_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_workspace_symbol_resolve_request(SZrStdioServer *server, const cJSON *params) {
+    ZR_UNUSED_PARAMETER(server);
+    return params != NULL ? cJSON_Duplicate((cJSON *)params, 1) : cJSON_CreateObject();
+}
+
+cJSON *handle_document_highlights_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray highlights = {0};
     SZrLspPosition position;
     const char *uriText;
@@ -687,73 +597,7 @@ static cJSON *handle_document_highlights_request(SZrStdioServer *server, const c
     return result;
 }
 
-static cJSON *create_semantic_token_legend_json(void) {
-    cJSON *legend = cJSON_CreateObject();
-    cJSON *types = cJSON_CreateArray();
-    cJSON *modifiers = cJSON_CreateArray();
-
-    if (legend == NULL || types == NULL || modifiers == NULL) {
-        cJSON_Delete(legend);
-        cJSON_Delete(types);
-        cJSON_Delete(modifiers);
-        return NULL;
-    }
-
-    for (TZrSize index = 0; index < ZrLanguageServer_Lsp_SemanticTokenTypeCount(); index++) {
-        const TZrChar *typeName = ZrLanguageServer_Lsp_SemanticTokenTypeName(index);
-        if (typeName != ZR_NULL) {
-            cJSON_AddItemToArray(types, cJSON_CreateString(typeName));
-        }
-    }
-
-    cJSON_AddItemToObject(legend, ZR_LSP_FIELD_TOKEN_TYPES, types);
-    cJSON_AddItemToObject(legend, ZR_LSP_FIELD_TOKEN_MODIFIERS, modifiers);
-    return legend;
-}
-
-static cJSON *serialize_semantic_tokens_result(SZrArray *tokens) {
-    cJSON *result = cJSON_CreateObject();
-    cJSON *data = cJSON_CreateArray();
-
-    if (result == NULL || data == NULL) {
-        cJSON_Delete(result);
-        cJSON_Delete(data);
-        return NULL;
-    }
-
-    for (TZrSize index = 0; tokens != ZR_NULL && index < tokens->length; index++) {
-        TZrUInt32 *valuePtr = (TZrUInt32 *)ZrCore_Array_Get(tokens, index);
-        if (valuePtr != ZR_NULL) {
-            cJSON_AddItemToArray(data, cJSON_CreateNumber((double)(*valuePtr)));
-        }
-    }
-
-    cJSON_AddItemToObject(result, ZR_LSP_FIELD_DATA, data);
-    return result;
-}
-
-static cJSON *handle_semantic_tokens_full_request(SZrStdioServer *server, const cJSON *params) {
-    const char *uriText;
-    SZrString *uri;
-    SZrArray tokens = {0};
-    cJSON *result;
-
-    if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
-        return NULL;
-    }
-
-    ZrCore_Array_Init(server->state, &tokens, sizeof(TZrUInt32), ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
-    if (!ZrLanguageServer_Lsp_GetSemanticTokens(server->state, server->context, uri, &tokens)) {
-        ZrCore_Array_Free(server->state, &tokens);
-        return cJSON_CreateNull();
-    }
-
-    result = serialize_semantic_tokens_result(&tokens);
-    ZrCore_Array_Free(server->state, &tokens);
-    return result != NULL ? result : cJSON_CreateNull();
-}
-
-static cJSON *handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspPosition position;
     const char *uriText;
     SZrString *uri;
@@ -788,7 +632,7 @@ static cJSON *handle_prepare_rename_request(SZrStdioServer *server, const cJSON 
     return result;
 }
 
-static cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
+cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray locations = {0};
     SZrLspPosition position;
     const cJSON *newNameJson;
@@ -915,10 +759,13 @@ static cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *par
     cJSON *completionProvider = cJSON_CreateObject();
     cJSON *signatureHelpProvider = cJSON_CreateObject();
     cJSON *renameProvider = cJSON_CreateObject();
+    cJSON *workspaceSymbolProvider = cJSON_CreateObject();
+    cJSON *inlayHintProvider = cJSON_CreateObject();
     cJSON *saveOptions = cJSON_CreateObject();
     cJSON *triggerCharacters = cJSON_CreateArray();
     cJSON *signatureTriggerCharacters = cJSON_CreateArray();
     cJSON *semanticTokensProvider = cJSON_CreateObject();
+    cJSON *semanticTokensFullProvider = cJSON_CreateObject();
     cJSON *serverInfo = cJSON_CreateObject();
     cJSON *workspace = cJSON_CreateObject();
     cJSON *workspaceFolders = cJSON_CreateObject();
@@ -926,7 +773,8 @@ static cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *par
 
     if (result == NULL || capabilities == NULL || textDocumentSync == NULL ||
         completionProvider == NULL || signatureHelpProvider == NULL || renameProvider == NULL || saveOptions == NULL ||
-        triggerCharacters == NULL || signatureTriggerCharacters == NULL || semanticTokensProvider == NULL ||
+        workspaceSymbolProvider == NULL || inlayHintProvider == NULL || triggerCharacters == NULL ||
+        signatureTriggerCharacters == NULL || semanticTokensProvider == NULL || semanticTokensFullProvider == NULL ||
         serverInfo == NULL || workspace == NULL || workspaceFolders == NULL) {
         cJSON_Delete(result);
         cJSON_Delete(capabilities);
@@ -934,10 +782,13 @@ static cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *par
         cJSON_Delete(completionProvider);
         cJSON_Delete(signatureHelpProvider);
         cJSON_Delete(renameProvider);
+        cJSON_Delete(workspaceSymbolProvider);
+        cJSON_Delete(inlayHintProvider);
         cJSON_Delete(saveOptions);
         cJSON_Delete(triggerCharacters);
         cJSON_Delete(signatureTriggerCharacters);
         cJSON_Delete(semanticTokensProvider);
+        cJSON_Delete(semanticTokensFullProvider);
         cJSON_Delete(serverInfo);
         cJSON_Delete(workspace);
         cJSON_Delete(workspaceFolders);
@@ -952,10 +803,13 @@ static cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *par
         cJSON_Delete(completionProvider);
         cJSON_Delete(signatureHelpProvider);
         cJSON_Delete(renameProvider);
+        cJSON_Delete(workspaceSymbolProvider);
+        cJSON_Delete(inlayHintProvider);
         cJSON_Delete(saveOptions);
         cJSON_Delete(triggerCharacters);
         cJSON_Delete(signatureTriggerCharacters);
         cJSON_Delete(semanticTokensProvider);
+        cJSON_Delete(semanticTokensFullProvider);
         cJSON_Delete(serverInfo);
         cJSON_Delete(workspace);
         cJSON_Delete(workspaceFolders);
@@ -964,6 +818,8 @@ static cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *par
 
     cJSON_AddBoolToObject(textDocumentSync, ZR_LSP_FIELD_OPEN_CLOSE, 1);
     cJSON_AddNumberToObject(textDocumentSync, ZR_LSP_FIELD_CHANGE, ZR_LSP_TEXT_DOCUMENT_SYNC_KIND_INCREMENTAL);
+    cJSON_AddBoolToObject(textDocumentSync, ZR_LSP_FIELD_WILL_SAVE, 1);
+    cJSON_AddBoolToObject(textDocumentSync, ZR_LSP_FIELD_WILL_SAVE_WAIT_UNTIL, 1);
     cJSON_AddBoolToObject(saveOptions, ZR_LSP_FIELD_INCLUDE_TEXT, 0);
     cJSON_AddItemToObject(textDocumentSync, ZR_LSP_FIELD_SAVE, saveOptions);
 
@@ -975,7 +831,7 @@ static cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *par
         triggerCharacters,
         cJSON_CreateString(ZR_LSP_COMPLETION_TRIGGER_CHARACTER_NAMESPACE_ACCESS)
     );
-    cJSON_AddBoolToObject(completionProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 0);
+    cJSON_AddBoolToObject(completionProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
     cJSON_AddItemToObject(completionProvider, ZR_LSP_FIELD_TRIGGER_CHARACTERS, triggerCharacters);
     cJSON_AddItemToArray(
         signatureTriggerCharacters,
@@ -988,6 +844,8 @@ static cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *par
     cJSON_AddItemToObject(signatureHelpProvider, ZR_LSP_FIELD_TRIGGER_CHARACTERS, signatureTriggerCharacters);
 
     cJSON_AddBoolToObject(renameProvider, ZR_LSP_FIELD_PREPARE_PROVIDER, 1);
+    cJSON_AddBoolToObject(workspaceSymbolProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
+    cJSON_AddBoolToObject(inlayHintProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
 
     cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_TEXT_DOCUMENT_SYNC, textDocumentSync);
     cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_COMPLETION_PROVIDER, completionProvider);
@@ -997,15 +855,19 @@ static cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *par
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_REFERENCES_PROVIDER, 1);
     cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_RENAME_PROVIDER, renameProvider);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_SYMBOL_PROVIDER, 1);
-    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_WORKSPACE_SYMBOL_PROVIDER, 1);
+    cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_WORKSPACE_SYMBOL_PROVIDER, workspaceSymbolProvider);
     cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_DOCUMENT_HIGHLIGHT_PROVIDER, 1);
-    cJSON_AddBoolToObject(capabilities, ZR_LSP_FIELD_INLAY_HINT_PROVIDER, 1);
+    cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_INLAY_HINT_PROVIDER, inlayHintProvider);
     cJSON_AddItemToObject(semanticTokensProvider, ZR_LSP_FIELD_LEGEND, semanticLegend);
-    cJSON_AddBoolToObject(semanticTokensProvider, ZR_LSP_FIELD_FULL, 1);
+    cJSON_AddBoolToObject(semanticTokensFullProvider, ZR_LSP_FIELD_DELTA, 1);
+    cJSON_AddItemToObject(semanticTokensProvider, ZR_LSP_FIELD_FULL, semanticTokensFullProvider);
+    cJSON_AddBoolToObject(semanticTokensProvider, ZR_LSP_FIELD_RANGE, 1);
     cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_SEMANTIC_TOKENS_PROVIDER, semanticTokensProvider);
+    add_advanced_editor_capabilities(capabilities);
     cJSON_AddBoolToObject(workspaceFolders, ZR_LSP_FIELD_SUPPORTED, 1);
     cJSON_AddBoolToObject(workspaceFolders, ZR_LSP_FIELD_CHANGE_NOTIFICATIONS, 1);
     cJSON_AddItemToObject(workspace, ZR_LSP_FIELD_WORKSPACE_FOLDERS, workspaceFolders);
+    add_workspace_file_operation_capabilities(workspace);
     cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_WORKSPACE, workspace);
 
     cJSON_AddStringToObject(serverInfo, ZR_LSP_FIELD_NAME, ZR_LSP_SERVER_NAME);
@@ -1041,37 +903,7 @@ void handle_request_message(SZrStdioServer *server,
         return;
     }
 
-    if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_COMPLETION) == 0) {
-        result = handle_completion_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_HOVER) == 0) {
-        result = handle_hover_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_ZR_RICH_HOVER) == 0) {
-        result = handle_rich_hover_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SIGNATURE_HELP) == 0) {
-        result = handle_signature_help_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_INLAY_HINT) == 0) {
-        result = handle_inlay_hint_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DEFINITION) == 0) {
-        result = handle_definition_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_REFERENCES) == 0) {
-        result = handle_references_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_SYMBOL) == 0) {
-        result = handle_document_symbols_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_SYMBOL) == 0) {
-        result = handle_workspace_symbols_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_DOCUMENT_HIGHLIGHT) == 0) {
-        result = handle_document_highlights_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_SEMANTIC_TOKENS_FULL) == 0) {
-        result = handle_semantic_tokens_full_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_PREPARE_RENAME) == 0) {
-        result = handle_prepare_rename_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_TEXT_DOCUMENT_RENAME) == 0) {
-        result = handle_rename_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_ZR_NATIVE_DECLARATION_DOCUMENT) == 0) {
-        result = handle_native_declaration_document_request(server, params);
-    } else if (strcmp(method, ZR_LSP_METHOD_ZR_PROJECT_MODULES) == 0) {
-        result = handle_project_modules_request(server, params);
-    } else {
+    if (!dispatch_request_method(server, method, params, &result)) {
         send_error_response(id, ZR_LSP_JSON_RPC_METHOD_NOT_FOUND_CODE, "Method not found");
         return;
     }
@@ -1121,6 +953,12 @@ void handle_notification_message(SZrStdioServer *server,
         handle_did_save(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CHANGE_WATCHED_FILES) == 0) {
         handle_did_change_watched_files(server, params);
+    } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_CREATE_FILES) == 0) {
+        handle_did_create_files(server, params);
+    } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_RENAME_FILES) == 0) {
+        handle_did_rename_files(server, params);
+    } else if (strcmp(method, ZR_LSP_METHOD_WORKSPACE_DID_DELETE_FILES) == 0) {
+        handle_did_delete_files(server, params);
     } else if (strcmp(method, ZR_LSP_METHOD_EXIT) == 0) {
         if (outShouldExit != NULL) {
             *outShouldExit = 1;

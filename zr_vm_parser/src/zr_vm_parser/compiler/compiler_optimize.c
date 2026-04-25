@@ -177,6 +177,10 @@ static void optimizer_classify_instruction(const SZrFunction *function,
         case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             return;
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
+            optimizer_info_add_read(info, (TZrUInt16)instruction->instruction.operand.operand2[0]);
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            return;
         case ZR_INSTRUCTION_ENUM(SET_CONSTANT):
         case ZR_INSTRUCTION_ENUM(SET_CLOSURE):
         case ZR_INSTRUCTION_ENUM(SETUPVAL):
@@ -237,7 +241,9 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             return;
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD):
         case ZR_INSTRUCTION_ENUM(ADD_INT):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
@@ -315,6 +321,18 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             info->hasRelativeJump = ZR_TRUE;
             info->conditionalJump = ZR_TRUE;
             return;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+            optimizer_info_add_read(info, instruction->instruction.operandExtra);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
+            info->hasRelativeJump = ZR_TRUE;
+            info->conditionalJump = ZR_TRUE;
+            return;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            info->operand1Index1IsSlot = ZR_FALSE;
+            optimizer_info_add_read(info, instruction->instruction.operandExtra);
+            info->hasRelativeJump = ZR_TRUE;
+            info->conditionalJump = ZR_TRUE;
+            return;
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
@@ -329,12 +347,40 @@ static void optimizer_classify_instruction(const SZrFunction *function,
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST):
             info->operand1Index1IsSlot = ZR_FALSE;
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             return;
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+            info->operand1Index1IsSlot = ZR_FALSE;
+            optimizer_info_add_read(info, instruction->instruction.operand.operand0[0]);
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            optimizer_info_add_write(info, instruction->instruction.operand.operand0[1]);
+            if ((EZrInstructionCode)instruction->instruction.operationCode ==
+                ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST)) {
+                optimizer_info_add_write(info, instruction->instruction.operand.operand0[2]);
+            }
+            return;
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+            info->operand1Index1IsSlot = ZR_FALSE;
+            optimizer_info_add_read(info, instruction->instruction.operand.operand0[0]);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand0[1]);
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            return;
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
             optimizer_info_add_read(info, instruction->instruction.operandExtra);
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[1]);
@@ -486,7 +532,9 @@ static TZrInt32 optimizer_relative_jump_offset(const TZrInstruction *instruction
 
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
     if (opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
-        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED)) {
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST)) {
         return (TZrInt16)instruction->instruction.operand.operand1[1];
     }
 
@@ -502,7 +550,9 @@ static void optimizer_store_relative_jump_offset(TZrInstruction *instruction, TZ
 
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
     if (opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
-        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED)) {
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST)) {
         instruction->instruction.operand.operand1[1] = (TZrUInt16)(TZrInt16)offset;
         return;
     }
@@ -785,9 +835,60 @@ static TZrBool optimizer_rewrite_instruction_read_slot(TZrInstruction *instructi
                 changed = ZR_TRUE;
             }
             return changed;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+            if (instruction->instruction.operandExtra == fromSlot) {
+                instruction->instruction.operandExtra = toSlot;
+                changed = ZR_TRUE;
+            }
+            if (instruction->instruction.operand.operand1[0] == fromSlot) {
+                instruction->instruction.operand.operand1[0] = toSlot;
+                changed = ZR_TRUE;
+            }
+            return changed;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            if (instruction->instruction.operandExtra == fromSlot) {
+                instruction->instruction.operandExtra = toSlot;
+                changed = ZR_TRUE;
+            }
+            return changed;
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             if (instruction->instruction.operand.operand1[0] == fromSlot) {
                 instruction->instruction.operand.operand1[0] = toSlot;
+                changed = ZR_TRUE;
+            }
+            return changed;
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+            if (instruction->instruction.operand.operand0[0] == fromSlot) {
+                if (toSlot > UINT8_MAX) {
+                    return ZR_FALSE;
+                }
+                instruction->instruction.operand.operand0[0] = (TZrUInt8)toSlot;
+                changed = ZR_TRUE;
+            }
+            return changed;
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+            if (instruction->instruction.operand.operand0[0] == fromSlot) {
+                if (toSlot > UINT8_MAX) {
+                    return ZR_FALSE;
+                }
+                instruction->instruction.operand.operand0[0] = (TZrUInt8)toSlot;
+                changed = ZR_TRUE;
+            }
+            if (instruction->instruction.operand.operand0[1] == fromSlot) {
+                if (toSlot > UINT8_MAX) {
+                    return ZR_FALSE;
+                }
+                instruction->instruction.operand.operand0[1] = (TZrUInt8)toSlot;
                 changed = ZR_TRUE;
             }
             return changed;
@@ -842,6 +943,8 @@ static TZrBool optimizer_opcode_supports_adjacent_get_stack_forwarding(EZrInstru
          */
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(TO_BOOL):
@@ -870,9 +973,13 @@ static TZrBool optimizer_opcode_supports_adjacent_get_stack_forwarding(EZrInstru
         case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS):
         case ZR_INSTRUCTION_ENUM(ADD):
         case ZR_INSTRUCTION_ENUM(ADD_INT):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
@@ -1140,9 +1247,44 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
             return;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
+            return;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            return;
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
+            return;
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            if ((TZrSize)instruction->instruction.operand.operand0[0] < slotCount) {
+                instruction->instruction.operand.operand0[0] =
+                        (TZrUInt8)slotMap[(TZrSize)instruction->instruction.operand.operand0[0]];
+            }
+            if ((TZrSize)instruction->instruction.operand.operand0[1] < slotCount) {
+                instruction->instruction.operand.operand0[1] =
+                        (TZrUInt8)slotMap[(TZrSize)instruction->instruction.operand.operand0[1]];
+            }
+            if ((EZrInstructionCode)instruction->instruction.operationCode ==
+                        ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST) &&
+                (TZrSize)instruction->instruction.operand.operand0[2] < slotCount) {
+                instruction->instruction.operand.operand0[2] =
+                        (TZrUInt8)slotMap[(TZrSize)instruction->instruction.operand.operand0[2]];
+            }
             return;
         default:
             break;

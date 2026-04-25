@@ -29,9 +29,13 @@
     Z(SET_MEMBER)                                                                                                      \
     Z(GET_BY_INDEX)                                                                                                    \
     Z(SET_BY_INDEX)                                                                                                    \
+    Z(SUPER_ARRAY_BIND_ITEMS)                                                                                          \
     Z(SUPER_ARRAY_GET_INT)                                                                                             \
+    Z(SUPER_ARRAY_GET_INT_ITEMS)                                                                                       \
     Z(SUPER_ARRAY_GET_INT_PLAIN_DEST)                                                                                  \
+    Z(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST)                                                                            \
     Z(SUPER_ARRAY_SET_INT)                                                                                             \
+    Z(SUPER_ARRAY_SET_INT_ITEMS)                                                                                       \
     Z(SUPER_ARRAY_ADD_INT)                                                                                             \
     Z(SUPER_ARRAY_ADD_INT4)                                                                                            \
     Z(SUPER_ARRAY_ADD_INT4_CONST)                                                                                      \
@@ -64,6 +68,8 @@
     Z(MUL_SIGNED_PLAIN_DEST)                                                                                           \
     Z(MUL_SIGNED_CONST)                                                                                                \
     Z(MUL_SIGNED_CONST_PLAIN_DEST)                                                                                     \
+    Z(MUL_SIGNED_LOAD_CONST)                                                                                           \
+    Z(MUL_SIGNED_LOAD_STACK_CONST)                                                                                     \
     Z(MUL_UNSIGNED)                                                                                                    \
     Z(MUL_FLOAT)                                                                                                       \
     Z(NEG)                                                                                                             \
@@ -71,12 +77,16 @@
     Z(DIV_SIGNED)                                                                                                      \
     Z(DIV_SIGNED_CONST)                                                                                                \
     Z(DIV_SIGNED_CONST_PLAIN_DEST)                                                                                     \
+    Z(DIV_SIGNED_LOAD_CONST)                                                                                           \
+    Z(DIV_SIGNED_LOAD_STACK_CONST)                                                                                     \
     Z(DIV_UNSIGNED)                                                                                                    \
     Z(DIV_FLOAT)                                                                                                       \
     Z(MOD)                                                                                                             \
     Z(MOD_SIGNED)                                                                                                      \
     Z(MOD_SIGNED_CONST)                                                                                                \
     Z(MOD_SIGNED_CONST_PLAIN_DEST)                                                                                     \
+    Z(MOD_SIGNED_LOAD_CONST)                                                                                           \
+    Z(MOD_SIGNED_LOAD_STACK_CONST)                                                                                     \
     Z(MOD_UNSIGNED)                                                                                                    \
     Z(MOD_FLOAT)                                                                                                       \
     Z(POW)                                                                                                             \
@@ -118,6 +128,8 @@
     Z(JUMP)                                                                                                            \
     Z(JUMP_IF)                                                                                                         \
     Z(JUMP_IF_GREATER_SIGNED)                                                                                          \
+    Z(JUMP_IF_NOT_EQUAL_SIGNED)                                                                                        \
+    Z(JUMP_IF_NOT_EQUAL_SIGNED_CONST)                                                                                  \
     Z(CREATE_CLOSURE)                                                                                                  \
     Z(CREATE_OBJECT)                                                                                                   \
     Z(CREATE_ARRAY)                                                                                                    \
@@ -168,6 +180,10 @@
     Z(ADD_SIGNED_PLAIN_DEST)                                                                                           \
     Z(ADD_SIGNED_CONST)                                                                                                \
     Z(ADD_SIGNED_CONST_PLAIN_DEST)                                                                                     \
+    Z(ADD_SIGNED_LOAD_CONST)                                                                                           \
+    Z(ADD_SIGNED_LOAD_STACK_CONST)                                                                                     \
+    Z(ADD_SIGNED_LOAD_STACK)                                                                                           \
+    Z(ADD_SIGNED_LOAD_STACK_LOAD_CONST)                                                                                \
     Z(ADD_UNSIGNED)                                                                                                    \
     Z(ADD_UNSIGNED_PLAIN_DEST)                                                                                         \
     Z(ADD_UNSIGNED_CONST)                                                                                              \
@@ -176,6 +192,8 @@
     Z(SUB_SIGNED_PLAIN_DEST)                                                                                           \
     Z(SUB_SIGNED_CONST)                                                                                                \
     Z(SUB_SIGNED_CONST_PLAIN_DEST)                                                                                     \
+    Z(SUB_SIGNED_LOAD_CONST)                                                                                           \
+    Z(SUB_SIGNED_LOAD_STACK_CONST)                                                                                     \
     Z(SUB_UNSIGNED)                                                                                                    \
     Z(SUB_UNSIGNED_PLAIN_DEST)                                                                                         \
     Z(SUB_UNSIGNED_CONST)                                                                                              \
@@ -190,6 +208,7 @@
     Z(LOGICAL_EQUAL_BOOL)                                                                                              \
     Z(LOGICAL_NOT_EQUAL_BOOL)                                                                                          \
     Z(LOGICAL_EQUAL_SIGNED)                                                                                            \
+    Z(LOGICAL_EQUAL_SIGNED_CONST)                                                                                      \
     Z(LOGICAL_NOT_EQUAL_SIGNED)                                                                                        \
     Z(LOGICAL_EQUAL_UNSIGNED)                                                                                          \
     Z(LOGICAL_NOT_EQUAL_UNSIGNED)                                                                                      \

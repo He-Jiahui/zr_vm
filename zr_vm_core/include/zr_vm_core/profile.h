@@ -40,6 +40,12 @@ typedef enum EZrProfileSlowPathKind {
     ZR_PROFILE_SLOWPATH_ENUM_MAX
 } EZrProfileSlowPathKind;
 
+typedef enum EZrProfileQuickeningProbeKind {
+    ZR_PROFILE_QUICKENING_PROBE_GET_STACK_TYPED_ARITHMETIC = 0,
+    ZR_PROFILE_QUICKENING_PROBE_GET_CONSTANT_TYPED_ARITHMETIC,
+    ZR_PROFILE_QUICKENING_PROBE_ENUM_MAX
+} EZrProfileQuickeningProbeKind;
+
 typedef struct SZrProfileRuntime {
     TZrBool recordInstructions;
     TZrBool recordSlowPaths;
@@ -50,6 +56,7 @@ typedef struct SZrProfileRuntime {
     TZrUInt64 instructionCounts[ZR_INSTRUCTION_ENUM(ENUM_MAX)];
     TZrUInt64 helperCounts[ZR_PROFILE_HELPER_ENUM_MAX];
     TZrUInt64 slowPathCounts[ZR_PROFILE_SLOWPATH_ENUM_MAX];
+    TZrUInt64 quickeningProbeCounts[ZR_PROFILE_QUICKENING_PROBE_ENUM_MAX];
     TZrChar *outputPath;
     TZrChar *caseName;
     TZrChar *modeName;
@@ -68,6 +75,7 @@ ZR_CORE_API SZrProfileRuntime *ZrCore_Profile_Current(void);
 ZR_CORE_API SZrProfileRuntime *ZrCore_Profile_FromState(struct SZrState *state);
 ZR_CORE_API const TZrChar *ZrCore_Profile_HelperKindName(EZrProfileHelperKind kind);
 ZR_CORE_API const TZrChar *ZrCore_Profile_SlowPathKindName(EZrProfileSlowPathKind kind);
+ZR_CORE_API const TZrChar *ZrCore_Profile_QuickeningProbeKindName(EZrProfileQuickeningProbeKind kind);
 ZR_CORE_API const TZrChar *ZrCore_Profile_InstructionName(EZrInstructionCode opcode);
 
 static ZR_FORCE_INLINE void ZrCore_Profile_RecordHelperCurrent(EZrProfileHelperKind kind) {

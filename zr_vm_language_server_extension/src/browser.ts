@@ -13,6 +13,7 @@ import {
 import { registerWebDebugSupportUnavailable } from './debug/webSupport';
 import { setLanguageClientRequestClient } from './languageClientRequests';
 import { registerWebProjectActionsUnavailable } from './projectActionsWeb';
+import { registerReferenceCodeLensCommand } from './referenceCodeLens';
 import { registerRichHoverSupport, type ZrRichHoverController } from './richHover';
 import { registerZrStructureViews, ZrStructureController } from './structure';
 import { registerVirtualDocumentSupport } from './virtualDocuments';
@@ -45,6 +46,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(registerZrpJsonSupport());
     context.subscriptions.push(...registerWebDebugSupportUnavailable());
     context.subscriptions.push(...registerWebProjectActionsUnavailable(context));
+    context.subscriptions.push(registerReferenceCodeLensCommand());
     context.subscriptions.push(registerVirtualDocumentSupport());
     structureController = registerZrStructureViews(context);
     context.subscriptions.push(structureController);

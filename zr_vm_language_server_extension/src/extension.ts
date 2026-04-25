@@ -17,6 +17,7 @@ import { registerDesktopDebugSupport } from './debug/configProvider';
 import { setLanguageClientRequestClient } from './languageClientRequests';
 import { LANGUAGE_SERVER_CONFIG_SECTION, resolveNativeLanguageServerPath } from './nativeAssets';
 import { registerDesktopProjectActions } from './projectActions';
+import { registerReferenceCodeLensCommand } from './referenceCodeLens';
 import { registerRichHoverSupport, type ZrRichHoverController } from './richHover';
 import { sendZrSelectedProjectToLanguageServer } from './selectedProjectSync';
 import { registerZrStructureViews, ZrStructureController } from './structure';
@@ -47,6 +48,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(registerZrpJsonSupport());
     context.subscriptions.push(...registerDesktopDebugSupport(context));
     context.subscriptions.push(...registerDesktopProjectActions(context));
+    context.subscriptions.push(registerReferenceCodeLensCommand());
     context.subscriptions.push(registerVirtualDocumentSupport());
     structureController = registerZrStructureViews(context);
     context.subscriptions.push(structureController);

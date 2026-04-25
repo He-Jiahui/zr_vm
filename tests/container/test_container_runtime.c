@@ -438,6 +438,138 @@ static void test_container_array_runtime_constructor_populates_hidden_items_cach
     TEST_DIVIDER();
 }
 
+static void test_container_array_runtime_tracks_raw_int_storage_for_typed_add_and_set(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Array Tracks Raw Int Storage For Typed Add And Set";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue resultValue;
+    SZrObject *arrayObject;
+    SZrObject *itemsObject;
+    SZrHashKeyValuePair *secondPair;
+    SZrHashKeyValuePair *thirdPair;
+    SZrTypeValue key;
+    const SZrTypeValue *materializedValue;
+    SZrTypeValue nullValue;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var xs = new container.Array<int>();\n"
+            "xs.add(1);\n"
+            "xs.add(2);\n"
+            "xs[1] = 7;\n"
+            "xs.add(9);\n"
+            "return xs;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_array_raw_int_storage_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &resultValue));
+    TEST_ASSERT_TRUE(resultValue.type == ZR_VALUE_TYPE_OBJECT || resultValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(resultValue.value.object);
+
+    arrayObject = ZR_CAST_OBJECT(state, resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(arrayObject);
+    itemsObject = arrayObject->cachedHiddenItemsObject;
+    TEST_ASSERT_NOT_NULL(itemsObject);
+    TEST_ASSERT_NOT_NULL(itemsObject->superArrayRawIntData);
+    TEST_ASSERT_EQUAL_UINT64(3, (UNITY_UINT64)itemsObject->superArrayRawIntLength);
+    TEST_ASSERT_TRUE(itemsObject->superArrayRawIntCapacity >= 3);
+    TEST_ASSERT_EQUAL_INT64(1, itemsObject->superArrayRawIntData[0]);
+    TEST_ASSERT_EQUAL_INT64(7, itemsObject->superArrayRawIntData[1]);
+    TEST_ASSERT_EQUAL_INT64(9, itemsObject->superArrayRawIntData[2]);
+    TEST_ASSERT_TRUE(itemsObject->superArrayRawIntDirty);
+
+    secondPair = itemsObject->nodeMap.buckets[1];
+    TEST_ASSERT_NOT_NULL(secondPair);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(secondPair->value.type));
+    TEST_ASSERT_EQUAL_INT64(2, secondPair->value.value.nativeObject.nativeInt64);
+    thirdPair = itemsObject->nodeMap.buckets[2];
+    TEST_ASSERT_NOT_NULL(thirdPair);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(thirdPair->value.type));
+    TEST_ASSERT_EQUAL_INT64(9, thirdPair->value.value.nativeObject.nativeInt64);
+
+    ZrCore_Value_InitAsInt(state, &key, 1);
+    materializedValue = ZrCore_Object_GetValue(state, itemsObject, &key);
+    TEST_ASSERT_NOT_NULL(materializedValue);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(materializedValue->type));
+    TEST_ASSERT_EQUAL_INT64(7, materializedValue->value.nativeObject.nativeInt64);
+    TEST_ASSERT_FALSE(itemsObject->superArrayRawIntDirty);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(secondPair->value.type));
+    TEST_ASSERT_EQUAL_INT64(7, secondPair->value.value.nativeObject.nativeInt64);
+
+    ZrCore_Value_InitAsInt(state, &key, 0);
+    ZrCore_Value_ResetAsNull(&nullValue);
+    ZrCore_Object_SetValue(state, itemsObject, &key, &nullValue);
+    TEST_ASSERT_NULL(itemsObject->superArrayRawIntData);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_array_runtime_raw_int_dirty_set_is_visible_to_iterator(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Array Raw Int Dirty Set Is Visible To Iterator";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue resultValue;
+    SZrObject *arrayObject;
+    SZrObject *itemsObject;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var xs = new container.Array<int>();\n"
+            "xs.add(1);\n"
+            "xs.add(2);\n"
+            "xs.add(3);\n"
+            "xs[1] = 7;\n"
+            "var sum = 0;\n"
+            "for (var x in xs) {\n"
+            "    sum = sum + x;\n"
+            "}\n"
+            "xs.add(sum);\n"
+            "return xs;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_array_raw_int_dirty_iterator_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &resultValue));
+    TEST_ASSERT_TRUE(resultValue.type == ZR_VALUE_TYPE_OBJECT || resultValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(resultValue.value.object);
+
+    arrayObject = ZR_CAST_OBJECT(state, resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(arrayObject);
+    itemsObject = arrayObject->cachedHiddenItemsObject;
+    TEST_ASSERT_NOT_NULL(itemsObject);
+    TEST_ASSERT_NOT_NULL(itemsObject->superArrayRawIntData);
+    TEST_ASSERT_TRUE(itemsObject->superArrayRawIntDirty);
+    TEST_ASSERT_EQUAL_UINT64(4, (UNITY_UINT64)itemsObject->superArrayRawIntLength);
+    TEST_ASSERT_TRUE(itemsObject->superArrayRawIntCapacity >= 4);
+    TEST_ASSERT_EQUAL_INT64(1, itemsObject->superArrayRawIntData[0]);
+    TEST_ASSERT_EQUAL_INT64(7, itemsObject->superArrayRawIntData[1]);
+    TEST_ASSERT_EQUAL_INT64(3, itemsObject->superArrayRawIntData[2]);
+    TEST_ASSERT_EQUAL_INT64(11, itemsObject->superArrayRawIntData[3]);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 static void test_container_array_runtime_bulk_super_array_helpers_preserve_existing_prefixes(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Bulk Super Array Helpers Preserve Existing Prefixes";
@@ -1986,6 +2118,8 @@ int main(void) {
     RUN_TEST(test_container_fixed_array_runtime_preserves_numeric_items_across_helper_calls);
     RUN_TEST(test_container_array_runtime_supports_capacity_growth_and_structural_equality);
     RUN_TEST(test_container_array_runtime_constructor_populates_hidden_items_cache_for_direct_execution);
+    RUN_TEST(test_container_array_runtime_tracks_raw_int_storage_for_typed_add_and_set);
+    RUN_TEST(test_container_array_runtime_raw_int_dirty_set_is_visible_to_iterator);
     RUN_TEST(test_container_array_runtime_clear_preserves_capacity_and_missing_item_returns_null);
     RUN_TEST(test_container_array_runtime_set_item_preserves_object_payloads);
     RUN_TEST(test_container_array_runtime_accepts_unary_negation_in_constructor_arguments);

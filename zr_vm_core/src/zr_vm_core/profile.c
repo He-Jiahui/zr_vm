@@ -35,6 +35,11 @@ static const TZrChar *const CZrProfileSlowPathNames[ZR_PROFILE_SLOWPATH_ENUM_MAX
         "meta_call_prepare"
 };
 
+static const TZrChar *const CZrProfileQuickeningProbeNames[ZR_PROFILE_QUICKENING_PROBE_ENUM_MAX] = {
+        "get_stack_typed_arithmetic",
+        "get_constant_typed_arithmetic"
+};
+
 #define ZR_PROFILE_INSTRUCTION_NAME_DECLARE(OPCODE) #OPCODE,
 static const TZrChar *const CZrProfileInstructionNames[ZR_INSTRUCTION_ENUM(ENUM_MAX)] = {
         ZR_INSTRUCTION_DECLARE(ZR_PROFILE_INSTRUCTION_NAME_DECLARE)
@@ -103,6 +108,10 @@ static const TZrChar *profile_slow_path_name_getter(TZrUInt32 index) {
     return ZrCore_Profile_SlowPathKindName((EZrProfileSlowPathKind)index);
 }
 
+static const TZrChar *profile_quickening_probe_name_getter(TZrUInt32 index) {
+    return ZrCore_Profile_QuickeningProbeKindName((EZrProfileQuickeningProbeKind)index);
+}
+
 static const TZrChar *profile_instruction_name_getter(TZrUInt32 index) {
     return ZrCore_Profile_InstructionName((EZrInstructionCode)index);
 }
@@ -146,6 +155,12 @@ static void profile_write_report(const SZrProfileRuntime *runtime) {
                          ZR_PROFILE_SLOWPATH_ENUM_MAX,
                          profile_slow_path_name_getter,
                          runtime->slowPathCounts);
+    fputs(",\n", file);
+    profile_write_counts(file,
+                         "quickening_probes",
+                         ZR_PROFILE_QUICKENING_PROBE_ENUM_MAX,
+                         profile_quickening_probe_name_getter,
+                         runtime->quickeningProbeCounts);
     fputs("\n}\n", file);
     fclose(file);
 }
@@ -228,6 +243,11 @@ const TZrChar *ZrCore_Profile_HelperKindName(EZrProfileHelperKind kind) {
 
 const TZrChar *ZrCore_Profile_SlowPathKindName(EZrProfileSlowPathKind kind) {
     return (kind >= 0 && kind < ZR_PROFILE_SLOWPATH_ENUM_MAX) ? CZrProfileSlowPathNames[kind] : "unknown";
+}
+
+const TZrChar *ZrCore_Profile_QuickeningProbeKindName(EZrProfileQuickeningProbeKind kind) {
+    return (kind >= 0 && kind < ZR_PROFILE_QUICKENING_PROBE_ENUM_MAX) ? CZrProfileQuickeningProbeNames[kind]
+                                                                      : "unknown";
 }
 
 const TZrChar *ZrCore_Profile_InstructionName(EZrInstructionCode opcode) {

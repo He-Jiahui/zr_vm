@@ -337,6 +337,9 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_add_int_int_pair_assuming_abs
 
     ZR_VALUE_FAST_SET(&pair->key, nativeInt64, indexValue, ZR_VALUE_TYPE_INT64);
     ZR_VALUE_FAST_SET(&pair->value, nativeInt64, value, ZR_VALUE_TYPE_INT64);
+    if (indexValue >= 0) {
+        zr_super_array_raw_int_append_range_optional(state, object, (TZrSize)indexValue, 1, value);
+    }
     return pair;
 }
 
@@ -410,6 +413,7 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_add_int_int_pair_assuming_abs
     ZR_VALUE_FAST_SET(&pair->value, nativeInt64, value, ZR_VALUE_TYPE_INT64);
     nodeMap->buckets[(TZrSize)indexValue] = pair;
     nodeMap->elementCount++;
+    zr_super_array_raw_int_append_range_optional(state, object, (TZrSize)indexValue, 1, value);
     return pair;
 }
 
@@ -443,6 +447,7 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_add_int_int_pair_assuming_abs
     ZR_VALUE_FAST_SET(&pair->value, nativeInt64, value, ZR_VALUE_TYPE_INT64);
     nodeMap->buckets[(TZrSize)indexValue] = pair;
     nodeMap->elementCount++;
+    zr_super_array_raw_int_append_range_optional(state, object, (TZrSize)indexValue, 1, value);
     return pair;
 }
 
@@ -509,6 +514,7 @@ static ZR_FORCE_INLINE TZrBool object_add_int_int_pairs_assuming_absent_dense_re
                 pairCount,
                 &pairTemplate);
         nodeMap->elementCount += pairCount;
+        zr_super_array_raw_int_append_range_optional(state, object, startIndex, pairCount, value);
         return ZR_TRUE;
     }
 
@@ -538,6 +544,8 @@ static ZR_FORCE_INLINE TZrBool object_add_int_int_pairs_assuming_absent_dense_re
                 spanCount,
                 &pairTemplate);
         nodeMap->elementCount += spanCount;
+        zr_super_array_raw_int_append_range_optional(
+                state, object, (TZrSize)cursor.currentIndexValue, spanCount, value);
         cursor.bucketCursor += spanCount;
         cursor.currentIndexValue += (TZrInt64)spanCount;
         remaining -= spanCount;
@@ -1275,7 +1283,7 @@ static ZR_FORCE_INLINE TZrBool object_super_array_prepare_append_plan_assume_fas
         return ZR_FALSE;
     }
 
-    length = itemsObject->nodeMap.elementCount;
+    length = zr_super_array_raw_int_length_or_node_count(itemsObject);
     if ((TZrUInt64)appendCount > (TZrUInt64)((TZrSize)-1) - (TZrUInt64)length) {
         return ZR_FALSE;
     }
@@ -1330,7 +1338,7 @@ static ZR_FORCE_INLINE TZrBool object_super_array_try_prepare_append_plans4_cach
             return ZR_TRUE;
         }
 
-        length = itemsObject->nodeMap.elementCount;
+        length = zr_super_array_raw_int_length_or_node_count(itemsObject);
         if ((TZrUInt64)appendCount > (TZrUInt64)((TZrSize)-1) - (TZrUInt64)length) {
             return ZR_FALSE;
         }
@@ -1454,6 +1462,8 @@ static ZR_FORCE_INLINE TZrBool object_add_int_int_pairs4_assuming_absent_dense_r
                                                                       pairCount,
                                                                       &pairTemplate);
                 nodeMap->elementCount += pairCount;
+                zr_super_array_raw_int_append_range_optional(
+                        state, plans[index].itemsObject, plans[index].length, pairCount, value);
             }
             return ZR_TRUE;
         }
@@ -1496,6 +1506,11 @@ static ZR_FORCE_INLINE TZrBool object_add_int_int_pairs4_assuming_absent_dense_r
                                                                   spanCount,
                                                                   &pairTemplate);
             cursors[index].nodeMap->elementCount += spanCount;
+            zr_super_array_raw_int_append_range_optional(state,
+                                                         plans[index].itemsObject,
+                                                         (TZrSize)cursors[index].currentIndexValue,
+                                                         spanCount,
+                                                         value);
             cursors[index].bucketCursor += spanCount;
             cursors[index].currentIndexValue += (TZrInt64)spanCount;
         }
@@ -1678,6 +1693,7 @@ TZrBool ZrCore_Object_SuperArrayTryGetIntFast(SZrState *state,
     SZrObject *itemsObject = ZR_NULL;
     TZrInt64 indexValue = 0;
     SZrHashKeyValuePair *pair;
+    TZrInt64 rawValue;
 
     if (outApplicable != ZR_NULL) {
         *outApplicable = ZR_FALSE;
@@ -1693,7 +1709,13 @@ TZrBool ZrCore_Object_SuperArrayTryGetIntFast(SZrState *state,
         return ZR_TRUE;
     }
 
-    if (indexValue < 0 || (TZrUInt64)indexValue >= (TZrUInt64)itemsObject->nodeMap.elementCount) {
+    if (zr_super_array_raw_int_try_load(itemsObject, (TZrUInt64)indexValue, &rawValue)) {
+        object_assign_int_value_or_copy(state, result, rawValue);
+        return ZR_TRUE;
+    }
+
+    if (indexValue < 0 ||
+        (TZrUInt64)indexValue >= (TZrUInt64)zr_super_array_raw_int_length_or_node_count(itemsObject)) {
         ZrCore_Value_ResetAsNull(result);
         return ZR_TRUE;
     }
@@ -1737,7 +1759,7 @@ static TZrBool object_try_super_array_add_int_fast(SZrState *state,
     }
 
     ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(value->type));
-    length = itemsObject->nodeMap.elementCount;
+    length = zr_super_array_raw_int_length_or_node_count(itemsObject);
     if (!object_try_super_array_ensure_capacity_for_append(state,
                                                            receiverObject,
                                                            itemsObject,
@@ -1790,19 +1812,51 @@ TZrBool ZrCore_Object_SuperArrayTrySetIntFast(SZrState *state,
         return ZR_TRUE;
     }
 
-    if (indexValue < 0 || (TZrUInt64)indexValue >= (TZrUInt64)itemsObject->nodeMap.elementCount) {
-        ZrCore_Debug_RunError(state, "Array index out of range");
-    }
-
-    pair = object_find_or_add_int_key_pair(state, itemsObject, indexValue);
-    if (pair == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
     if (object_value_is_plain_primitive(value)) {
+        if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type) &&
+            zr_super_array_raw_int_store_existing_dirty_optional(itemsObject,
+                                                                 indexValue,
+                                                                 value->value.nativeObject.nativeInt64)) {
+            return ZR_TRUE;
+        }
+        if (indexValue < 0 ||
+            (TZrUInt64)indexValue >= (TZrUInt64)zr_super_array_raw_int_length_or_node_count(itemsObject)) {
+            ZrCore_Debug_RunError(state, "Array index out of range");
+            return ZR_TRUE;
+        }
+        if (!zr_super_array_raw_int_materialize_dirty(state, itemsObject)) {
+            return ZR_FALSE;
+        }
+        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+            zr_super_array_raw_int_disable(state, itemsObject);
+        }
+        pair = object_find_or_add_int_key_pair(state, itemsObject, indexValue);
+        if (pair == ZR_NULL) {
+            return ZR_FALSE;
+        }
         object_assign_primitive_value_or_copy(state, &pair->value, value);
     } else {
+        if (indexValue < 0 ||
+            (TZrUInt64)indexValue >= (TZrUInt64)zr_super_array_raw_int_length_or_node_count(itemsObject)) {
+            ZrCore_Debug_RunError(state, "Array index out of range");
+            return ZR_TRUE;
+        }
+        if (!zr_super_array_raw_int_materialize_dirty(state, itemsObject)) {
+            return ZR_FALSE;
+        }
+        zr_super_array_raw_int_disable(state, itemsObject);
+        pair = object_find_or_add_int_key_pair(state, itemsObject, indexValue);
+        if (pair == ZR_NULL) {
+            return ZR_FALSE;
+        }
         ZrCore_Value_Copy(state, &pair->value, value);
+    }
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+        zr_super_array_raw_int_store_existing_optional(itemsObject,
+                                                       indexValue,
+                                                       value->value.nativeObject.nativeInt64);
+    } else {
+        zr_super_array_raw_int_disable(state, itemsObject);
     }
     return ZR_TRUE;
 }

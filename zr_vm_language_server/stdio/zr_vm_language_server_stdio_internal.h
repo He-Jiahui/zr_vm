@@ -92,6 +92,12 @@ void publish_diagnostics(SZrStdioServer *server, SZrString *uri);
 void publish_empty_diagnostics(SZrStdioServer *server, SZrString *uri);
 const cJSON *get_object_item(const cJSON *json, const char *key);
 TZrSize parse_size_value(const cJSON *json, TZrSize fallback);
+cJSON *handle_inlay_hint_resolve_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_workspace_symbol_resolve_request(SZrStdioServer *server, const cJSON *params);
+cJSON *create_semantic_token_legend_json(void);
+cJSON *handle_semantic_tokens_full_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_semantic_tokens_range_request(SZrStdioServer *server, const cJSON *params);
 int get_uri_from_text_document(SZrStdioServer *server,
                                const cJSON *params,
                                const char **outUriText,
@@ -107,15 +113,74 @@ int update_document_contents(SZrStdioServer *server,
                              size_t contentLength,
                              TZrSize version);
 int update_document_contents_from_disk(SZrStdioServer *server, SZrString *uri);
+void add_workspace_file_operation_capabilities(cJSON *workspace);
+int handle_did_change_watched_files(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_will_create_files_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_will_rename_files_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_will_delete_files_request(SZrStdioServer *server, const cJSON *params);
+int handle_did_create_files(SZrStdioServer *server, const cJSON *params);
+int handle_did_delete_files(SZrStdioServer *server, const cJSON *params);
+int handle_did_rename_files(SZrStdioServer *server, const cJSON *params);
 
 void handle_request_message(SZrStdioServer *server,
                             const cJSON *id,
                             const char *method,
                             const cJSON *params);
+int dispatch_request_method(SZrStdioServer *server,
+                            const char *method,
+                            const cJSON *params,
+                            cJSON **outResult);
 void handle_notification_message(SZrStdioServer *server,
                                  const char *method,
                                  const cJSON *params,
                                  int *outShouldExit,
                                  int *outExitCode);
+
+void add_advanced_editor_capabilities(cJSON *capabilities);
+cJSON *handle_completion_item_resolve_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_completion_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_hover_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_rich_hover_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_signature_help_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_inlay_hint_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_definition_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_references_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_document_symbols_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_workspace_symbols_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_document_highlights_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_prepare_rename_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_rename_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_native_declaration_document_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_project_modules_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_formatting_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_range_formatting_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_ranges_formatting_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_on_type_formatting_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_code_action_resolve_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_folding_range_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_selection_range_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_linked_editing_range_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_color_presentation_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_document_link_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_document_link_resolve_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_declaration_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_type_definition_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_implementation_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_code_lens_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_code_lens_resolve_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_execute_command_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_prepare_call_hierarchy_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_call_hierarchy_incoming_calls_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_call_hierarchy_outgoing_calls_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_prepare_type_hierarchy_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_type_hierarchy_supertypes_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_type_hierarchy_subtypes_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_text_document_diagnostic_request(SZrStdioServer *server, const cJSON *params);
+cJSON *handle_workspace_diagnostic_request(SZrStdioServer *server, const cJSON *params);
 
 #endif

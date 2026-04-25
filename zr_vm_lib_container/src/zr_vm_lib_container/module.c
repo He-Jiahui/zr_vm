@@ -658,6 +658,25 @@ static void zr_container_set_object_field(SZrState *state,
     ZrLib_Object_SetFieldCString(state, object, fieldName, &fieldValue);
 }
 
+static TZrBool zr_container_set_object_field_fast(SZrState *state,
+                                                  SZrObject *object,
+                                                  const TZrChar *fieldName,
+                                                  SZrObject *valueObject,
+                                                  EZrValueType valueType) {
+    SZrTypeValue fieldValue;
+
+    if (state == ZR_NULL || object == ZR_NULL || fieldName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (valueObject == ZR_NULL) {
+        ZrLib_Value_SetNull(&fieldValue);
+    } else {
+        ZrLib_Value_SetObject(state, &fieldValue, valueObject, valueType);
+    }
+    return zr_container_set_value_field_fast(state, object, fieldName, &fieldValue);
+}
+
 static const SZrTypeValue *zr_container_get_field_value(SZrState *state,
                                                         SZrObject *object,
                                                         const TZrChar *fieldName) {
@@ -1104,7 +1123,10 @@ static ZR_FORCE_INLINE TZrSize zr_container_array_length_fast(SZrObject *array) 
         return 0u;
     }
 
-    return array->nodeMap.elementCount;
+    return (array->superArrayRawIntData != ZR_NULL &&
+            array->superArrayRawIntLength <= array->superArrayRawIntCapacity)
+                   ? array->superArrayRawIntLength
+                   : array->nodeMap.elementCount;
 }
 
 static ZR_FORCE_INLINE SZrObject *zr_container_array_get_object_fast(SZrState *state,
@@ -1763,7 +1785,6 @@ static SZrObject *zr_container_iterator_make(SZrState *state,
                                              FZrNativeFunction moveNextFunction) {
     SZrObject *iterator;
     SZrObjectPrototype *iteratorPrototype;
-    SZrTypeValue sourceValue;
 
     if (state == ZR_NULL || moveNextFunction == ZR_NULL) {
         return ZR_NULL;
@@ -1780,15 +1801,26 @@ static SZrObject *zr_container_iterator_make(SZrState *state,
     }
     ZrCore_Object_Init(state, iterator);
 
-    zr_container_set_null_field(state, iterator, "current");
-    if (source != ZR_NULL) {
-        ZrLib_Value_SetObject(state, &sourceValue, source, sourceType);
-        ZrLib_Object_SetFieldCString(state, iterator, kContainerSourceField, &sourceValue);
-    } else {
-        zr_container_set_null_field(state, iterator, kContainerSourceField);
+    if (!zr_container_set_null_field_fast(state, iterator, kContainerCurrentField)) {
+        return ZR_NULL;
     }
-    zr_container_set_int_field(state, iterator, kContainerIndexField, indexValue);
-    zr_container_set_object_field(state, iterator, kContainerNextNodeField, nextNode);
+    if (source != ZR_NULL) {
+        if (!zr_container_set_object_field_fast(state, iterator, kContainerSourceField, source, sourceType)) {
+            return ZR_NULL;
+        }
+    } else {
+        if (!zr_container_set_null_field_fast(state, iterator, kContainerSourceField)) {
+            return ZR_NULL;
+        }
+    }
+    if (!zr_container_set_int_field_fast(state, iterator, kContainerIndexField, indexValue) ||
+        !zr_container_set_object_field_fast(state,
+                                            iterator,
+                                            kContainerNextNodeField,
+                                            nextNode,
+                                            zr_container_value_type_for_object(nextNode))) {
+        return ZR_NULL;
+    }
     return iterator;
 }
 
@@ -1828,6 +1860,7 @@ static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state) {
     SZrObject *source;
     TZrInt64 index;
     const SZrTypeValue *current;
+    SZrTypeValue currentRawInt;
 
     if (iterator == ZR_NULL) {
         return zr_container_iterator_finish_move_next(state, ZR_FALSE);
@@ -1835,14 +1868,36 @@ static TZrInt64 zr_container_array_iterator_move_next_native(SZrState *state) {
 
     source = zr_container_get_object_field(state, iterator, kContainerSourceField);
     index = zr_container_get_int_field(state, iterator, kContainerIndexField, 0);
+    if (source != ZR_NULL &&
+        source->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+        source->superArrayRawIntData != ZR_NULL &&
+        source->superArrayRawIntLength <= source->superArrayRawIntCapacity) {
+        if (index < 0 || (TZrUInt64)index >= (TZrUInt64)source->superArrayRawIntLength) {
+            if (!zr_container_set_null_field_fast(state, iterator, kContainerCurrentField)) {
+                return zr_container_iterator_finish_move_next(state, ZR_FALSE);
+            }
+            return zr_container_iterator_finish_move_next(state, ZR_FALSE);
+        }
+        ZrCore_Value_InitAsInt(state, &currentRawInt, source->superArrayRawIntData[(TZrSize)index]);
+        if (!zr_container_set_value_field_fast(state, iterator, kContainerCurrentField, &currentRawInt) ||
+            !zr_container_set_int_field_fast(state, iterator, kContainerIndexField, index + 1)) {
+            return zr_container_iterator_finish_move_next(state, ZR_FALSE);
+        }
+        return zr_container_iterator_finish_move_next(state, ZR_TRUE);
+    }
+
     current = (source != ZR_NULL && index >= 0) ? ZrLib_Array_Get(state, source, (TZrSize)index) : ZR_NULL;
     if (current == ZR_NULL) {
-        zr_container_set_null_field(state, iterator, "current");
+        if (!zr_container_set_null_field_fast(state, iterator, kContainerCurrentField)) {
+            return zr_container_iterator_finish_move_next(state, ZR_FALSE);
+        }
         return zr_container_iterator_finish_move_next(state, ZR_FALSE);
     }
 
-    zr_container_set_value_field(state, iterator, "current", current);
-    zr_container_set_int_field(state, iterator, kContainerIndexField, index + 1);
+    if (!zr_container_set_value_field_fast(state, iterator, kContainerCurrentField, current) ||
+        !zr_container_set_int_field_fast(state, iterator, kContainerIndexField, index + 1)) {
+        return zr_container_iterator_finish_move_next(state, ZR_FALSE);
+    }
     return zr_container_iterator_finish_move_next(state, ZR_TRUE);
 }
 
@@ -1857,17 +1912,29 @@ static TZrInt64 zr_container_linked_list_iterator_move_next_native(SZrState *sta
 
     node = zr_container_get_object_field(state, iterator, kContainerNextNodeField);
     if (node == ZR_NULL) {
-        zr_container_set_null_field(state, iterator, "current");
+        if (!zr_container_set_null_field_fast(state, iterator, kContainerCurrentField)) {
+            return zr_container_iterator_finish_move_next(state, ZR_FALSE);
+        }
         return zr_container_iterator_finish_move_next(state, ZR_FALSE);
     }
 
-    value = zr_container_get_field_value(state, node, "value");
+    value = zr_container_get_field_value(state, node, kContainerValueField);
     if (value != ZR_NULL) {
-        zr_container_set_value_field(state, iterator, "current", value);
+        if (!zr_container_set_value_field_fast(state, iterator, kContainerCurrentField, value)) {
+            return zr_container_iterator_finish_move_next(state, ZR_FALSE);
+        }
     } else {
-        zr_container_set_null_field(state, iterator, "current");
+        if (!zr_container_set_null_field_fast(state, iterator, kContainerCurrentField)) {
+            return zr_container_iterator_finish_move_next(state, ZR_FALSE);
+        }
     }
-    zr_container_set_object_field(state, iterator, kContainerNextNodeField, zr_container_get_object_field(state, node, "next"));
+    if (!zr_container_set_object_field_fast(state,
+                                            iterator,
+                                            kContainerNextNodeField,
+                                            zr_container_get_object_field(state, node, kContainerNextField),
+                                            ZR_VALUE_TYPE_OBJECT)) {
+        return zr_container_iterator_finish_move_next(state, ZR_FALSE);
+    }
     return zr_container_iterator_finish_move_next(state, ZR_TRUE);
 }
 

@@ -95,6 +95,8 @@ extern void test_map_object_access_benchmark_project_compile_quickens_labelFor_l
 extern void test_repeated_constructor_string_arguments_survive_quickening_across_calls(void);
 extern void test_initializer_bound_local_is_visible_on_next_source_line(void);
 extern void test_logical_short_circuit_runtime_preserves_side_effect_boundaries(void);
+extern void test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths(void);
+extern void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void);
 
 int main(void) {
     printf("\n");
@@ -223,6 +225,8 @@ int main(void) {
     RUN_TEST(test_repeated_constructor_string_arguments_survive_quickening_across_calls);
     RUN_TEST(test_initializer_bound_local_is_visible_on_next_source_line);
     RUN_TEST(test_logical_short_circuit_runtime_preserves_side_effect_boundaries);
+    RUN_TEST(test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths);
+    RUN_TEST(test_w2_load_typed_arithmetic_probe_reports_residual_candidates);
 
     printf("\n");
     ZR_TEST_MODULE_DIVIDER();

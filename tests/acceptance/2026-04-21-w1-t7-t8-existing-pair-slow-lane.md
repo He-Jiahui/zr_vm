@@ -3143,12 +3143,1315 @@ Validation after revert:
   - `build-wsl-gcc/bin/zr_vm_value_copy_fast_paths_test`
   - `build-wsl-gcc/bin/zr_vm_execution_member_access_fast_paths_test`
   - `build-wsl-gcc/bin/zr_vm_precall_frame_slot_reset_test`
-- WSL clang direct binaries pass:
+  - WSL clang direct binaries pass:
   - `build-wsl-clang/bin/zr_vm_execution_numeric_fast_paths_test`
   - `build-wsl-clang/bin/zr_vm_execution_dispatch_callable_metadata_test`
   - `build-wsl-clang/bin/zr_vm_value_copy_fast_paths_test`
   - `build-wsl-clang/bin/zr_vm_execution_member_access_fast_paths_test`
   - `build-wsl-clang/bin/zr_vm_precall_frame_slot_reset_test`
+
+### Accepted dispatch member exact-pair checked-object entry
+
+Decision:
+
+- accepted
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_member_exact_pair_checked_object_20260424-continue`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_member_exact_pair_checked_object_confirm_20260424-continue`
+
+Production change:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_internal.h`
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+
+Reason:
+
+- `GET_MEMBER_SLOT` / `SET_MEMBER_SLOT` already reject non-object receivers
+  before attempting the dispatch-local exact receiver-pair fast path
+- the new checked-object helpers keep the existing generic helpers for direct
+  unit-test coverage and non-dispatch callers, but let the opcode arm skip the
+  duplicate object/array type guard after the opcode receiver gate
+- string `GET_MEMBER_SLOT` receivers are preserved by gating the checked helper
+  call and falling through to `execution_member_get_cached(...)`
+- representative totals relative to live
+  `performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`:
+  - first:
+    - `numeric_loops`: `255,466,030 -> 255,449,599` (`-16,431`)
+    - `dispatch_loops`: `349,798,765 -> 347,095,401` (`-2,703,364`)
+    - `matrix_add_2d`: `12,008,069 -> 12,052,569` (`+44,500`)
+    - `map_object_access`: `21,699,329 -> 21,743,373` (`+44,044`)
+  - confirm:
+    - `numeric_loops`: `255,466,030 -> 255,450,339` (`-15,691`)
+    - `dispatch_loops`: `349,798,765 -> 347,092,198` (`-2,706,567`)
+    - `matrix_add_2d`: `12,008,069 -> 12,026,781` (`+18,712`)
+    - `map_object_access`: `21,699,329 -> 21,745,969` (`+46,640`)
+- the four checked cases kept identical instruction/helper/slowpath signatures;
+  the small matrix/map layout cost is accepted because the target
+  `dispatch_loops` case repeatedly drops about 2.7M Ir
+
+Validation:
+
+- WSL gcc:
+  - `zr_vm_execution_member_access_fast_paths_test`: `102 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `17 Tests 0 Failures`
+- WSL clang:
+  - `zr_vm_execution_member_access_fast_paths_test`: `102 Tests 0 Failures`
+  - `zr_vm_execution_dispatch_callable_metadata_test`: `17 Tests 0 Failures`
+
+### Rejected `GET_MEMBER_SLOT` non-string checked-object gate probe
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_rejected_get_member_slot_non_string_checked_gate_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+
+Reason:
+
+- this probe tried to replace the accepted checked-object `(object || array)`
+  dispatch gate with `opA->type != ZR_VALUE_TYPE_STRING`, relying on the outer
+  opcode receiver gate to have already rejected every other type
+- the four checked tracked non-GC cases kept identical
+  `instructions/helpers/slowpaths` signatures versus accepted checked-object
+  confirm live
+- representative totals versus
+  `performance_profile_tracked_non_gc_after_dispatch_member_exact_pair_checked_object_confirm_20260424-continue`:
+  - `numeric_loops`: `255,450,339 -> 255,438,995` (`-11,344`)
+  - `dispatch_loops`: `347,092,198 -> 348,660,382` (`+1,568,184`)
+  - `matrix_add_2d`: `12,026,781 -> 12,018,735` (`-8,046`)
+  - `map_object_access`: `21,745,969 -> 21,742,780` (`-3,189`)
+- because the target `dispatch_loops` workload regressed by about 1.57M Ir
+  without semantic signature movement, this is classified as a
+  branch-shape/layout regression
+
+After revert:
+
+- `tests_generated/performance/` was restored to accepted checked-object live:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_member_exact_pair_checked_object_confirm_20260424-continue`
+
+### Rejected dispatch exact-pair set `AfterFastMiss` fallback probe
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_rejected_dispatch_exact_pair_set_after_fast_miss_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_internal.h`
+- `tests/core/test_execution_member_access_fast_paths.c`
+
+Reason:
+
+- this probe tried to call
+  `ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(...)` after the
+  dispatch exact receiver-pair set helper's own plain-value fast set attempts
+  had already missed, avoiding the wrapper-level repeat check in
+  `ZrCore_Object_SetExistingPairValueUnchecked(...)`
+- a checked-object slow-lane test covered hidden-items cached state plus unique
+  ownership assignment during the probe
+- focused validation passed before the perf rerun:
+  - WSL gcc:
+    - `zr_vm_execution_member_access_fast_paths_test`: `103 Tests 0 Failures`
+    - `zr_vm_execution_dispatch_callable_metadata_test`: `17 Tests 0 Failures`
+  - WSL clang:
+    - `zr_vm_execution_member_access_fast_paths_test`: `103 Tests 0 Failures`
+    - `zr_vm_execution_dispatch_callable_metadata_test`: `17 Tests 0 Failures`
+- tracked non-GC signatures stayed identical versus accepted checked-object
+  confirm live, but all representative totals regressed:
+  - `numeric_loops`: `255,450,339 -> 255,452,070` (`+1,731`)
+  - `dispatch_loops`: `347,092,198 -> 347,098,416` (`+6,218`)
+  - `matrix_add_2d`: `12,026,781 -> 12,035,300` (`+8,519`)
+  - `map_object_access`: `21,745,969 -> 21,756,786` (`+10,817`)
+- conclusion: even though the source-level path removes a duplicate
+  fast-miss attempt, the representative runtime body got slightly worse, so the
+  probe was not kept
+
+After revert:
+
+- `tests_generated/performance/` was restored to accepted checked-object live:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_member_exact_pair_checked_object_confirm_20260424-continue`
+
+### Rejected `KNOWN_VM_MEMBER_CALL` cached receiver object direct-use probe
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_rejected_known_vm_member_cached_receiver_object_direct_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+
+Reason:
+
+- `execution_try_resolve_known_vm_member_exact_single_slot_fast(...)` already
+  checks that the receiver raw pointer exactly equals
+  `slot->cachedReceiverObject`
+- the probe used `slot->cachedReceiverObject` directly after that pointer match,
+  skipping `ZR_CAST_OBJECT(ZR_NULL, receiverValue->value.object)` and the
+  following null check while keeping the module/prototype/version/closure gates
+- `execution_dispatch.c` was not split for this probe because the file is
+  already large but the change only replaced one expression inside an existing
+  dispatch helper and did not add a responsibility
+- focused validation passed before perf:
+  - WSL gcc:
+    - `zr_vm_execution_dispatch_callable_metadata_test`: `17 Tests 0 Failures`
+    - `zr_vm_execution_member_access_fast_paths_test`: `102 Tests 0 Failures`
+  - WSL clang:
+    - `zr_vm_execution_dispatch_callable_metadata_test`: `17 Tests 0 Failures`
+    - `zr_vm_execution_member_access_fast_paths_test`: `102 Tests 0 Failures`
+- tracked non-GC signatures stayed identical versus accepted checked-object
+  confirm live, but representative totals did not hold:
+  - `numeric_loops`: `255,450,339 -> 255,487,713` (`+37,374`)
+  - `dispatch_loops`: `347,092,198 -> 347,102,397` (`+10,199`)
+  - `matrix_add_2d`: `12,026,781 -> 12,029,056` (`+2,275`)
+  - `map_object_access`: `21,745,969 -> 21,744,804` (`-1,165`)
+- conclusion: target `dispatch_loops` and `numeric_loops` both regressed, and
+  the small `map_object_access` drop is not enough to keep the change
+
+After revert:
+
+- `tests_generated/performance/` was restored to accepted checked-object live:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_member_exact_pair_checked_object_confirm_20260424-continue`
+
+### Rejected Map readonly-inline get callback plain-value direct-copy probe
+
+Decision:
+
+- rejected and reverted
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_map_get_plain_value_direct_copy_20260424-continue`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_map_get_plain_value_direct_copy_confirm_20260424-continue`
+
+Production probe:
+
+- `zr_vm_lib_container/src/zr_vm_lib_container/module.c`
+
+Reason:
+
+- the probe tried to bypass `ZrCore_Value_CopyNoProfile(...)` inside
+  `zr_container_map_get_item_readonly_inline_fast(...)` for none-ownership
+  non-GC-object mapped values
+- both reruns kept checked tracked non-GC `instructions/helpers/slowpaths`
+  signatures identical to current live
+  `performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`
+- relative to that current live evidence:
+  - first rerun:
+    - `numeric_loops`: `255,466,030 -> 255,412,571` (`-53,459`)
+    - `dispatch_loops`: `349,798,765 -> 349,806,573` (`+7,808`)
+    - `matrix_add_2d`: `12,008,069 -> 11,998,284` (`-9,785`)
+    - `map_object_access`: `21,699,329 -> 21,705,231` (`+5,902`)
+  - confirm rerun:
+    - `numeric_loops`: `255,466,030 -> 255,434,387` (`-31,643`)
+    - `dispatch_loops`: `349,798,765 -> 349,836,205` (`+37,440`)
+    - `matrix_add_2d`: `12,008,069 -> 11,999,303` (`-8,766`)
+    - `map_object_access`: `21,699,329 -> 21,702,667` (`+3,338`)
+- function-level annotate showed the local callback body got smaller:
+  - `zr_container_map_get_item_readonly_inline_fast`: `871,617 -> 863,430` Ir
+- because `map_object_access` total still regressed in both runs and
+  `dispatch_loops` moved the wrong way, the local direct-copy branch is treated
+  as another runtime-body/code-layout regression rather than a retained W1 cut
+
+### Rejected object-local `value_reset_null` profile-counting probe
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_object_reset_null_local_profile_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- the probe replaced object-local `ZrCore_Value_ResetAsNull(...)` calls with
+  state-local helper counting plus `ZrCore_Value_ResetAsNullNoProfile(...)`
+- the intent was to mirror the dispatch-local helper-counting style and avoid
+  TLS current-profile lookup without changing helper totals
+- checked tracked non-GC `instructions/helpers/slowpaths` signatures stayed
+  identical to current live
+  `performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`
+- relative to that current live evidence:
+  - `numeric_loops`: `255,466,030 -> 255,416,386` (`-49,644`)
+  - `dispatch_loops`: `349,798,765 -> 349,816,294` (`+17,529`)
+  - `matrix_add_2d`: `12,008,069 -> 11,991,207` (`-16,862`)
+  - `map_object_access`: `21,699,329 -> 21,697,762` (`-1,567`)
+- the intended reset hotspot did not move:
+  - `dispatch_loops` top helper stayed `ZrCore_Value_ResetAsNull = 139,740` Ir
+  - `object_set_value_core`: `843,728 -> 844,463` Ir
+- because the hottest representative dispatch case regressed and the target
+  symbol did not shrink, the probe was reverted without a confirm rerun
+
+### Rejected `GET_STACK` / `GET_CONSTANT` profile-mode offset-copy probe
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_stack_constant_profile_offset_copy_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+
+Reason:
+
+- the probe changed `EXECUTE_GET_STACK_BODY_FAST` and
+  `EXECUTE_GET_CONSTANT_BODY_FAST` only on the `recordHelpers` path
+- it counted `ZR_PROFILE_HELPER_VALUE_COPY` directly and used the destination
+  offset to copy to stack/ret, instead of preparing `destination` and calling
+  `execution_copy_value_fast(...)`
+- checked tracked non-GC `instructions/helpers/slowpaths` signatures stayed
+  identical to current live
+  `performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`
+- relative to that current live evidence:
+  - `numeric_loops`: `255,466,030 -> 255,409,667` (`-56,363`)
+  - `dispatch_loops`: `349,798,765 -> 349,819,223` (`+20,458`)
+  - `matrix_add_2d`: `12,008,069 -> 11,999,457` (`-8,612`)
+  - `map_object_access`: `21,699,329 -> 21,708,824` (`+9,495`)
+- `dispatch_loops` did not show a real interpreter-body win:
+  - `ZrCore_Execute`: unchanged at `332,568,516` Ir
+  - `object_set_value_core`: `843,728 -> 846,456` Ir
+- the probe was therefore classified as runtime-body/layout churn and reverted
+  without a confirm rerun
+
+### Rejected dispatch-side KnownObject index fast-entry follow-up
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_index_known_object_fast_probe_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+- `zr_vm_core/src/zr_vm_core/object/object_internal.h`
+
+Reason:
+
+- this probe moved the object payload cast from the readonly-inline
+  stack-operands helper into the `GET_BY_INDEX` / `SET_BY_INDEX` dispatch
+  branches, then called new `ZrCore_Object_Try*ByIndexReadonlyInlineFastStackOperandsKnownObject(...)`
+  entry points
+- the goal was to avoid reloading `receiver->value.object` in the object helper
+  after dispatch had already established the receiver type
+- focused WSL gcc/clang guards passed before profiling, and checked tracked
+  non-GC profile signatures stayed identical to the current live receiver-type
+  guard-skip baseline
+- representative totals relative to current live
+  `performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`:
+  - `numeric_loops`: `255,466,030 -> 255,433,283` (`-32,747`)
+  - `dispatch_loops`: `349,798,765 -> 349,829,906` (`+31,141`)
+  - `matrix_add_2d`: `12,008,069 -> 12,006,235` (`-1,834`)
+  - `map_object_access`: `21,699,329 -> 21,802,724` (`+103,395`)
+- annotate also showed the target helper got heavier instead of lighter:
+  - `ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperandsKnownObject`: `385,197` Ir
+    versus the current live helper's `368,811` Ir
+  - `ZrCore_Object_TrySetByIndexReadonlyInlineFastStackOperandsKnownObject`: `188,591` Ir
+    versus the current live helper's `159,894` Ir
+  - `ZrCore_Execute`: `9,026,536` Ir versus current live `8,981,450` Ir
+- because both the target `map_object_access` and hottest dispatch body moved
+  the wrong way, and the new direct helpers were larger, this was rejected
+  without a confirm rerun
+
+Validation after revert:
+
+- restored `tests_generated/performance/` to current live evidence:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`
+- WSL gcc direct binaries pass:
+  - `build/codex-wsl-gcc-debug/bin/zr_vm_object_call_known_native_fast_path_test` (`57 Tests 0 Failures`)
+  - `build/codex-wsl-gcc-debug/bin/zr_vm_container_runtime_test` (`39 Tests 0 Failures`)
+  - `build/codex-wsl-gcc-debug/bin/zr_vm_execution_dispatch_callable_metadata_test` (`17 Tests 0 Failures`)
+- WSL clang direct binaries pass:
+  - `build/codex-wsl-clang-debug/bin/zr_vm_object_call_known_native_fast_path_test` (`57 Tests 0 Failures`)
+  - `build/codex-wsl-clang-debug/bin/zr_vm_container_runtime_test` (`39 Tests 0 Failures`)
+  - `build/codex-wsl-clang-debug/bin/zr_vm_execution_dispatch_callable_metadata_test` (`17 Tests 0 Failures`)
+
+### Accepted stack-operands readonly-inline receiver type guard skip
+
+Decision:
+
+- keep as current live continuation
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_20260424-continue`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`
+
+Production change:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- `GET_BY_INDEX` / `SET_BY_INDEX` dispatch checks the stack receiver type before
+  entering the internal readonly-inline stack-operands helpers
+- the helper null/value guards still reject missing `state`, `receiver`, `key`,
+  `result`/`value`, missing receiver object payload, and integer keys, but no
+  longer repeat the object/array receiver type gate
+- both first and confirm reruns kept the checked tracked non-GC
+  `instructions/helpers/slowpaths` signatures identical to the current live
+  baseline:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_index_profile_runtime_local_rerun_20260424-continue`
+- first rerun totals versus current live:
+  - `numeric_loops`: `255,453,211 -> 255,439,209` (`-14,002`)
+  - `dispatch_loops`: `349,834,504 -> 349,813,549` (`-20,955`)
+  - `matrix_add_2d`: `12,000,740 -> 11,992,115` (`-8,625`)
+  - `map_object_access`: `21,766,383 -> 21,739,637` (`-26,746`)
+- confirm rerun totals versus current live:
+  - `numeric_loops`: `255,453,211 -> 255,466,030` (`+12,819`)
+  - `dispatch_loops`: `349,834,504 -> 349,798,765` (`-35,739`)
+  - `matrix_add_2d`: `12,000,740 -> 12,008,069` (`+7,329`)
+  - `map_object_access`: `21,766,383 -> 21,699,329` (`-67,054`)
+- the target helper itself stayed lower in annotate:
+  - `ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands`:
+    `401,595 -> 368,811` Ir
+- conclusion:
+  - the target `map_object_access` improvement repeated, `dispatch_loops`
+    improved in both guard-skip runs, and profile signatures stayed stable
+  - bounded non-target numeric/matrix movement is accepted as run-to-run noise
+    for this narrow index helper body cleanup
+
+Validation:
+
+- WSL gcc direct binaries passed before the perf reruns:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-gcc/bin/zr_vm_container_runtime_test`
+  - `build-wsl-gcc/bin/zr_vm_execution_dispatch_callable_metadata_test`
+- WSL clang direct binaries passed before the perf reruns:
+  - `build-wsl-clang/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-clang/bin/zr_vm_container_runtime_test`
+  - `build-wsl-clang/bin/zr_vm_execution_dispatch_callable_metadata_test`
+- Windows MSVC CLI smoke passed after retaining the probe:
+  - `cmake --build build/codex-msvc-cli-debug --config Debug --target zr_vm_cli_executable`
+  - `build/codex-msvc-cli-debug/bin/Debug/zr_vm_cli.exe tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output: `hello world`
+
+### Rejected stack-operands readonly-inline null guard assertion
+
+Decision:
+
+- rejected and reverted
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_index_stack_null_guard_assert_20260424-continue`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_index_stack_null_guard_assert_confirm_20260424-continue`
+- tie-break rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_index_stack_null_guard_assert_rerun_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- this probe followed the accepted receiver-type guard skip by changing the
+  remaining stack-operands helper argument null checks to `ZR_ASSERT(...)`
+  preconditions
+- the runtime branch still kept the checks that can change normal dispatch
+  behavior:
+  - missing `receiver->value.object`
+  - integer keys that should stay on the super-array/direct-index lane
+- WSL gcc and clang focused object/container binaries passed before profiling
+- all three reruns kept the checked tracked non-GC
+  `instructions/helpers/slowpaths` signatures identical to the receiver-type
+  guard-skip live baseline
+- relative to
+  `performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`,
+  the totals were:
+  - first:
+    - `numeric_loops`: `255,466,030 -> 255,442,905` (`-23,125`)
+    - `dispatch_loops`: `349,798,765 -> 349,841,450` (`+42,685`)
+    - `matrix_add_2d`: `12,008,069 -> 11,991,642` (`-16,427`)
+    - `map_object_access`: `21,699,329 -> 21,637,175` (`-62,154`)
+  - confirm:
+    - `numeric_loops`: `255,466,030 -> 255,428,957` (`-37,073`)
+    - `dispatch_loops`: `349,798,765 -> 349,821,732` (`+22,967`)
+    - `matrix_add_2d`: `12,008,069 -> 12,003,239` (`-4,830`)
+    - `map_object_access`: `21,699,329 -> 21,650,751` (`-48,578`)
+  - tie-break:
+    - `numeric_loops`: `255,466,030 -> 255,412,572` (`-53,458`)
+    - `dispatch_loops`: `349,798,765 -> 349,810,385` (`+11,620`)
+    - `matrix_add_2d`: `12,008,069 -> 12,010,146` (`+2,077`)
+    - `map_object_access`: `21,699,329 -> 21,661,273` (`-38,056`)
+- although `map_object_access` and the direct stack-operands helper body
+  improved, `dispatch_loops` regressed in all three runs
+- conclusion:
+  - reject and revert
+  - do not retry this null-guard assertion variant while W1 keeps repeated
+    `dispatch_loops`回吐 as a rejection signal
+
+Validation after revert:
+
+- restored `tests_generated/performance/` to:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`
+- WSL gcc direct binaries pass after revert:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-gcc/bin/zr_vm_container_runtime_test`
+- WSL clang direct binaries pass after revert:
+  - `build-wsl-clang/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-clang/bin/zr_vm_container_runtime_test`
+- Windows MSVC CLI smoke passes after revert:
+  - `cmake --build build/codex-msvc-cli-debug --config Debug --target zr_vm_cli_executable`
+  - `build/codex-msvc-cli-debug/bin/Debug/zr_vm_cli.exe tests/fixtures/projects/hello_world/hello_world.zrp`
+  - output: `hello world`
+
+### Rejected Map readonly-inline callback receiver type guard skip
+
+Decision:
+
+- rejected and reverted
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_map_readonly_inline_callback_type_guard_skip_20260424-continue`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_map_readonly_inline_callback_type_guard_skip_confirm_20260424-continue`
+- tie-break rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_map_readonly_inline_callback_type_guard_skip_rerun_20260424-continue`
+
+Production probe:
+
+- `zr_vm_lib_container/src/zr_vm_lib_container/module.c`
+
+Reason:
+
+- this probe removed the duplicate object/array `selfValue` type check inside
+  the Map readonly-inline get/set callbacks:
+  - `zr_container_map_get_item_readonly_inline_fast(...)`
+  - `zr_container_map_set_item_readonly_inline_no_result_fast(...)`
+- the outer index dispatch and object stack-operands helper already check the
+  receiver type before entering the callback on the hot path
+- WSL gcc and clang focused object/container binaries passed before profiling
+- all checked tracked non-GC `instructions/helpers/slowpaths` signatures stayed
+  identical to current live
+  `performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`
+- relative to current live, totals were:
+  - first:
+    - `numeric_loops`: `255,466,030 -> 255,439,019` (`-27,011`)
+    - `dispatch_loops`: `349,798,765 -> 349,795,746` (`-3,019`)
+    - `matrix_add_2d`: `12,008,069 -> 12,009,328` (`+1,259`)
+    - `map_object_access`: `21,699,329 -> 21,657,936` (`-41,393`)
+  - confirm:
+    - `numeric_loops`: `255,466,030 -> 255,443,009` (`-23,021`)
+    - `dispatch_loops`: `349,798,765 -> 349,870,134` (`+71,369`)
+    - `matrix_add_2d`: `12,008,069 -> 11,997,240` (`-10,829`)
+    - `map_object_access`: `21,699,329 -> 21,657,387` (`-41,942`)
+  - tie-break:
+    - `numeric_loops`: `255,466,030 -> 255,425,568` (`-40,462`)
+    - `dispatch_loops`: `349,798,765 -> 349,829,923` (`+31,158`)
+    - `matrix_add_2d`: `12,008,069 -> 12,010,752` (`+2,683`)
+    - `map_object_access`: `21,699,329 -> 21,654,060` (`-45,269`)
+- the direct callback body stayed lower:
+  - `zr_container_map_get_item_readonly_inline_fast`: `871,617 -> 822,455` Ir
+- however the confirm and tie-break runs both regressed `dispatch_loops`
+- conclusion:
+  - reject and revert
+  - keep the Map callback-local receiver type guard while W1 is still using
+    repeated `dispatch_loops`回吐 as a rejection signal
+
+Validation after revert:
+
+- restored `tests_generated/performance/` to:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_index_stack_receiver_type_guard_skip_confirm_20260424-continue`
+- WSL gcc direct binary passes after revert:
+  - `build-wsl-gcc/bin/zr_vm_container_runtime_test`
+- WSL clang direct binary passes after revert:
+  - `build-wsl-clang/bin/zr_vm_container_runtime_test`
+
+### Accepted dispatch-local readonly-index profile helper count
+
+Decision:
+
+- accepted as the current live continuation
+- not promoted to a new accepted W1 checkpoint by itself
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_index_profile_runtime_local_20260424-continue`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_index_profile_runtime_local_confirm_20260424-continue`
+- tie-break rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_index_profile_runtime_local_rerun_20260424-continue`
+
+Production change:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+
+Reason:
+
+- the `GET_BY_INDEX` / `SET_BY_INDEX` readonly-inline stack-operands hit path
+  already executes inside a dispatch loop that has cached `profileRuntime` and
+  `recordHelpers`
+- the previous hit path still called
+  `ZrCore_Profile_RecordHelperFromState(...)`, which reloaded
+  `state->global->profileRuntime` through the exported
+  `ZrCore_Profile_FromState(...)` helper
+- this cut records the same helper counts through the dispatch-local runtime
+  pointer:
+  - `ZR_PROFILE_HELPER_GET_BY_INDEX`
+  - `ZR_PROFILE_HELPER_SET_BY_INDEX`
+- all three reruns stayed bit-for-bit identical to kept live
+  `performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+  across the eight tracked non-GC `instructions/helpers/slowpaths`, so the
+  change is a pure runtime-body/profile-counting use-site cleanup
+- representative totals versus kept live `162914` were:
+  - first rerun:
+    - `numeric_loops`: `255,428,731 -> 255,424,772` (`-3,959`)
+    - `dispatch_loops`: `349,832,789 -> 349,833,727` (`+938`)
+    - `matrix_add_2d`: `12,009,340 -> 12,008,362` (`-978`)
+    - `map_object_access`: `21,881,343 -> 21,795,581` (`-85,762`)
+  - confirm rerun:
+    - `numeric_loops`: `255,428,731 -> 255,427,864` (`-867`)
+    - `dispatch_loops`: `349,832,789 -> 349,856,055` (`+23,266`)
+    - `matrix_add_2d`: `12,009,340 -> 12,005,608` (`-3,732`)
+    - `map_object_access`: `21,881,343 -> 21,748,105` (`-133,238`)
+  - tie-break rerun:
+    - `numeric_loops`: `255,428,731 -> 255,453,211` (`+24,480`)
+    - `dispatch_loops`: `349,832,789 -> 349,834,504` (`+1,715`)
+    - `matrix_add_2d`: `12,009,340 -> 12,000,740` (`-8,600`)
+    - `map_object_access`: `21,881,343 -> 21,766,383` (`-114,960`)
+- the target readonly-index benchmark improved on all three reruns, while the
+  hottest `dispatch_loops` movement was mixed and small enough to keep this as
+  a live continuation rather than reject it
+- `map_object_access` Callgrind no longer lists `ZrCore_Profile_FromState`
+  after the cut:
+  - before: `98,352 Ir`
+  - after tie-break: absent from the annotate top list
+
+Validation on the kept tree:
+
+- WSL gcc direct binaries pass:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-gcc/bin/zr_vm_container_runtime_test`
+  - `build-wsl-gcc/bin/zr_vm_execution_dispatch_callable_metadata_test`
+- WSL clang direct binaries pass:
+  - `build-wsl-clang/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-clang/bin/zr_vm_container_runtime_test`
+  - `build-wsl-clang/bin/zr_vm_execution_dispatch_callable_metadata_test`
+- Windows MSVC CLI smoke passes:
+  - `cmake --build build/codex-msvc-cli-debug --config Debug --target zr_vm_cli_executable`
+  - `build/codex-msvc-cli-debug/bin/Debug/zr_vm_cli.exe tests/fixtures/projects/hello_world/hello_world.zrp`
+    prints `hello world`
+- `tests_generated/performance/` now reflects kept live tie-break evidence:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_index_profile_runtime_local_rerun_20260424-continue`
+
+### Rejected dispatch-local GET_BY_INDEX stable-result reset count
+
+Decision:
+
+- rejected and reverted without confirm
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_get_index_reset_local_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+
+Reason:
+
+- this follow-up changed only the `GET_BY_INDEX` dispatch-local
+  `stableResult` initialization:
+  - record `ZR_PROFILE_HELPER_VALUE_RESET_NULL` through the dispatch-local
+    `profileRuntime`
+  - call `ZrCore_Value_ResetAsNullNoProfile(&stableResult)`
+- WSL gcc and clang focused binaries passed before profiling:
+  - `zr_vm_object_call_known_native_fast_path_test`: 57/57
+  - `zr_vm_container_runtime_test`: 39/39
+  - `zr_vm_execution_dispatch_callable_metadata_test`: 17/17
+- the first tracked rerun improved the representative Callgrind totals versus
+  kept dispatch-local live
+  `performance_profile_tracked_non_gc_after_dispatch_index_profile_runtime_local_rerun_20260424-continue`:
+  - `numeric_loops`: `255,453,211 -> 255,416,043` (`-37,168`)
+  - `dispatch_loops`: `349,834,504 -> 349,811,548` (`-22,956`)
+  - `matrix_add_2d`: `12,000,740 -> 11,999,644` (`-1,096`)
+  - `map_object_access`: `21,766,383 -> 21,758,407` (`-7,976`)
+- however the tracked helper signatures changed:
+  - `map_object_access/value_reset_null`: `4,601 -> 12,797` (`+8,196`)
+  - `string_build/value_reset_null`: `6,734 -> 6,897` (`+163`)
+- because the current W1 line is constrained to runtime-body cuts that preserve
+  the tracked profile signature, this profile-counting change was discarded
+  despite the favorable first Callgrind totals
+
+Validation after revert:
+
+- restored `tests_generated/performance/` to kept dispatch-local live evidence:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_dispatch_index_profile_runtime_local_rerun_20260424-continue`
+- WSL gcc focused direct binaries pass after revert:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-gcc/bin/zr_vm_container_runtime_test`
+  - `build-wsl-gcc/bin/zr_vm_execution_dispatch_callable_metadata_test`
+
+### Rejected get readonly-inline fast callback early-return cleanup
+
+Decision:
+
+- rejected and reverted
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_return_early_20260424-continue`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_return_early_confirm_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- this probe only changed the get readonly-inline fast callback result handling
+  in two stack-oriented helpers:
+  - `object_try_call_hot_cached_known_native_get_by_index_readonly_inline_stack_operands(...)`
+  - `object_try_call_cached_known_native_get_by_index_readonly_inline_stack_operands(...)`
+- the semantics were unchanged: a callback miss with fine thread status still
+  reset the result to null and succeeded; a non-fine thread status still failed
+- WSL gcc and clang focused tests passed before profiling:
+  - `zr_vm_object_call_known_native_fast_path_test`: 57/57
+  - `zr_vm_execution_member_access_fast_paths_test`: 100/100
+- all eight tracked non-GC profile signatures stayed bit-for-bit identical in
+  `instructions/helpers/slowpaths`
+- the local helper body improved consistently, but the target case regressed:
+  - `ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands`:
+    `401,595 -> 393,398` (`-8,197`)
+- representative totals versus kept get-side live
+  `performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`:
+  - first rerun:
+    - `numeric_loops`: `255,428,731 -> 255,422,034` (`-6,697`)
+    - `dispatch_loops`: `349,832,789 -> 349,821,424` (`-11,365`)
+    - `matrix_add_2d`: `12,009,340 -> 11,993,722` (`-15,618`)
+    - `map_object_access`: `21,881,343 -> 21,892,549` (`+11,206`)
+  - confirm rerun:
+    - `numeric_loops`: `255,428,731 -> 255,418,495` (`-10,236`)
+    - `dispatch_loops`: `349,832,789 -> 349,834,811` (`+2,022`)
+    - `matrix_add_2d`: `12,009,340 -> 11,990,405` (`-18,935`)
+    - `map_object_access`: `21,881,343 -> 21,906,998` (`+25,655`)
+- because `map_object_access` regressed on both reruns and got worse on confirm,
+  the cleanup was discarded despite the smaller local helper body
+
+Validation after revert:
+
+- restored `tests_generated/performance/` to kept get-side live evidence:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+
+### Rejected hot get readonly-inline fast callback early-return cleanup
+
+Decision:
+
+- rejected and reverted without confirm
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_hot_get_return_early_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- this narrower follow-up changed only
+  `object_try_call_hot_cached_known_native_get_by_index_readonly_inline_stack_operands(...)`
+  to return early from the callback miss branch
+- WSL gcc and clang focused tests passed before profiling:
+  - `zr_vm_object_call_known_native_fast_path_test`: 57/57
+  - `zr_vm_execution_member_access_fast_paths_test`: 100/100
+- all eight tracked non-GC profile signatures stayed bit-for-bit identical in
+  `instructions/helpers/slowpaths`
+- the local exported helper body again improved:
+  - `ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands`:
+    `401,595 -> 393,398` (`-8,197`)
+- representative totals versus kept get-side live
+  `performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`:
+  - `numeric_loops`: `255,428,731 -> 255,423,556` (`-5,175`)
+  - `dispatch_loops`: `349,832,789 -> 349,813,275` (`-19,514`)
+  - `matrix_add_2d`: `12,009,340 -> 12,002,899` (`-6,441`)
+  - `map_object_access`: `21,881,343 -> 21,913,227` (`+31,884`)
+- because the target `map_object_access` regression was larger than the prior
+  two-helper probe, the narrower version was discarded without spending a
+  confirm run
+
+### Rejected reset-null static value assignment
+
+Decision:
+
+- rejected and reverted without confirm
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_reset_null_static_value_assign_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/include/zr_vm_core/value.h`
+
+Reason:
+
+- this probe changed `ZrCore_Value_ResetAsNullNoProfile(...)` from explicit
+  field stores to assigning a static `SZrTypeValue` null template
+- WSL gcc and clang focused builds/tests passed before profiling:
+  - `zr_vm_value_copy_fast_paths_test`
+  - `zr_vm_execution_numeric_fast_paths_test`
+  - `zr_vm_execution_member_access_fast_paths_test`
+  - `zr_vm_object_call_known_native_fast_path_test`
+- all eight tracked non-GC profile signatures stayed bit-for-bit identical in
+  `instructions/helpers/slowpaths`
+- the exported reset helper did not improve in representative Callgrind:
+  - `numeric_loops`: `ZrCore_Value_ResetAsNull` stayed `135,830`
+  - `dispatch_loops`: stayed `139,740`
+  - `matrix_add_2d`: stayed `77,418`
+  - `map_object_access`: stayed `78,234`
+- representative totals versus kept get-side live
+  `performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`:
+  - `numeric_loops`: `255,428,731 -> 255,432,570` (`+3,839`)
+  - `dispatch_loops`: `349,832,789 -> 349,859,712` (`+26,923`)
+  - `matrix_add_2d`: `12,009,340 -> 12,000,405` (`-8,935`)
+  - `map_object_access`: `21,881,343 -> 21,901,805` (`+20,462`)
+- because the reset helper body did not shrink and the two hottest target
+  totals regressed, the template assignment shape was discarded
+
+### Rejected map readonly-inline cached-pair get callback inline
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_map_get_cached_pair_inline_20260424-171624`
+
+Production probe:
+
+- `zr_vm_lib_container/src/zr_vm_lib_container/module.c`
+
+Reason:
+
+- this probe only touched the `Map` readonly-inline get callback:
+  - when `entryObject->cachedCapacityPair` was already available,
+    `zr_container_map_get_item_readonly_inline_fast(...)` copied
+    `cachedPair->value` directly and returned
+  - uncached entries still used `zr_container_pair_get_second_fast(...)`
+- the goal was to remove the tiny
+  `zr_container_map_entry_get_second_value_fast(...)` helper boundary from the
+  hottest `map_object_access` library callback
+- all eight tracked non-GC cases stayed bit-for-bit identical relative to kept
+  live `162914` in `instructions/helpers/slowpaths`, so this was another pure
+  runtime-body/code-layout probe rather than a quickening or opcode-mix change
+- relative to kept live
+  `performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`,
+  the representative totals were:
+  - `numeric_loops`: `255,428,731 -> 255,412,391` (`-16,340`)
+  - `dispatch_loops`: `349,832,789 -> 349,832,761` (`-28`)
+  - `matrix_add_2d`: `12,009,340 -> 12,000,083` (`-9,257`)
+  - `map_object_access`: `21,881,343 -> 21,913,019` (`+31,676`)
+- the target function did not improve:
+  - `zr_container_map_get_item_readonly_inline_fast`: `871,617 -> 871,624`
+  - `ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands` stayed
+    `401,595`
+- because the only targeted representative case regressed materially while the
+  callback itself did not shrink, the probe was discarded
+
+Validation after revert:
+
+- restored `tests_generated/performance/` to kept live evidence:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+- WSL gcc direct binaries pass after revert:
+  - `build-wsl-gcc/bin/zr_vm_container_runtime_test` (`39 Tests 0 Failures`)
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+    (`57 Tests 0 Failures`)
+
+### Rejected map readonly-inline cached-pair set callback inline
+
+Decision:
+
+- rejected and reverted
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_map_set_cached_pair_inline_20260424-172039`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_map_set_cached_pair_inline_confirm_20260424-172300`
+
+Production probe:
+
+- `zr_vm_lib_container/src/zr_vm_lib_container/module.c`
+
+Reason:
+
+- this probe only touched the `Map` readonly-inline set no-result callback:
+  - when an existing entry already had `entryObject->cachedCapacityPair`, the
+    callback called `ZrCore_Object_SetExistingPairValueUnchecked(...)` directly
+    and updated `memberVersion` / `cachedStringLookupPair`
+  - uncached entries still used `zr_container_pair_set_second_fast(...)`
+- all eight tracked non-GC cases stayed bit-for-bit identical relative to kept
+  live `162914` in `instructions/helpers/slowpaths`, so this was again a pure
+  runtime-body/code-layout probe
+- relative to kept live
+  `performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`,
+  the representative totals were:
+  - first rerun:
+    - `numeric_loops`: `255,428,731 -> 255,420,250` (`-8,481`)
+    - `dispatch_loops`: `349,832,789 -> 349,810,917` (`-21,872`)
+    - `matrix_add_2d`: `12,009,340 -> 12,000,234` (`-9,106`)
+    - `map_object_access`: `21,881,343 -> 21,887,641` (`+6,298`)
+  - confirm rerun:
+    - `numeric_loops`: `255,428,731 -> 255,426,375` (`-2,356`)
+    - `dispatch_loops`: `349,832,789 -> 349,824,089` (`-8,700`)
+    - `matrix_add_2d`: `12,009,340 -> 12,005,744` (`-3,596`)
+    - `map_object_access`: `21,881,343 -> 21,905,180` (`+23,837`)
+- because the target `map_object_access` regression worsened on confirm and
+  the slice only bought smaller broad-case wins by making the Map callback body
+  larger, it was discarded rather than carried as a mixed live continuation
+
+Validation after revert:
+
+- restored `tests_generated/performance/` to kept live evidence:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+- WSL gcc direct binaries pass after revert:
+  - `build-wsl-gcc/bin/zr_vm_container_runtime_test` (`39 Tests 0 Failures`)
+  - `build-wsl-gcc/bin/zr_vm_container_temp_value_root_test`
+    (`4 Tests 0 Failures`)
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+    (`57 Tests 0 Failures`)
+
+### Rejected cached get/set stack-root receiver refresh skip
+
+Decision:
+
+- rejected and partially reverted
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_cached_stack_root_receiver_refresh_skip_20260424-012934`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_cached_stack_root_receiver_refresh_skip_confirm_20260424-012934`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_member_access.c`
+
+Reason:
+
+- this probe tried to skip the unconditional entry-level forwarded refresh in
+  both `execution_member_get_cached(...)` and `execution_member_set_cached(...)`
+  when the receiver already lived in VM stack roots
+- both reruns stayed bit-for-bit identical to live
+  `performance_profile_tracked_non_gc_after_getupval_setupval_stack_get_no_profile_reapply_confirm_20260423-094444`
+  across all eight tracked non-GC `instructions/helpers/slowpaths`, so the
+  change stayed a pure runtime-body/code-layout probe
+- representative totals versus live `094444` were:
+  - first rerun:
+    - `numeric_loops`: `255,466,835 -> 255,453,237` (`-13,598`)
+    - `dispatch_loops`: `349,859,645 -> 349,858,215` (`-1,430`)
+    - `matrix_add_2d`: `12,028,686 -> 12,032,132` (`+3,446`)
+    - `map_object_access`: `21,928,034 -> 21,933,695` (`+5,661`)
+  - confirm rerun:
+    - `numeric_loops`: `255,466,835 -> 255,454,920` (`-11,915`)
+    - `dispatch_loops`: `349,859,645 -> 349,882,750` (`+23,105`)
+    - `matrix_add_2d`: `12,028,686 -> 12,030,601` (`+1,915`)
+    - `map_object_access`: `21,928,034 -> 21,924,735` (`-3,299`)
+- because the confirm rerun still gave back hottest `dispatch_loops` on the
+  same tracked signature, the wider get+set version was discarded instead of
+  being kept as another ambiguous runtime-body cut
+
+### Kept set-only stack-root operand gate
+
+Decision:
+
+- kept as the next live continuation
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_set_cached_stack_root_operand_gate_20260424-013904`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_set_cached_stack_root_operand_gate_confirm_20260424-013904`
+- corroborating rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_set_cached_stack_root_operand_gate_rerun_20260424-013904`
+
+Production change:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_member_access.c`
+- `tests/core/test_execution_member_access_fast_paths.c`
+
+Reason:
+
+- this narrower follow-up keeps `execution_member_get_cached(...)` fully at live
+  `094444`, and only changes the set side:
+  - `execution_member_set_cached(...)` now skips the receiver forwarded refresh
+    only when the receiver already points into VM stack roots
+  - `stackOperandsGuaranteed` is computed once in
+    `execution_member_set_cached(...)` and threaded into
+    `execution_member_try_cached_set(...)` instead of rechecking the same stack
+    ranges inside the callee
+- a new stack-root guard test stays in tree:
+  - `test_execution_member_get_cached_descriptor_stack_receiver_hits_from_vm_stack_roots`
+- first, confirm, and rerun all stayed bit-for-bit identical to live
+  `094444` across all eight tracked non-GC `instructions/helpers/slowpaths`
+- representative totals versus live `094444` were:
+  - first rerun:
+    - `numeric_loops`: `255,466,835 -> 255,437,108` (`-29,727`)
+    - `dispatch_loops`: `349,859,645 -> 349,887,202` (`+27,557`)
+    - `matrix_add_2d`: `12,028,686 -> 12,032,985` (`+4,299`)
+    - `map_object_access`: `21,928,034 -> 21,938,998` (`+10,964`)
+  - confirm rerun:
+    - `numeric_loops`: `255,466,835 -> 255,454,255` (`-12,580`)
+    - `dispatch_loops`: `349,859,645 -> 349,855,756` (`-3,889`)
+    - `matrix_add_2d`: `12,028,686 -> 12,038,163` (`+9,477`)
+    - `map_object_access`: `21,928,034 -> 21,912,838` (`-15,196`)
+  - corroborating rerun:
+    - `numeric_loops`: `255,466,835 -> 255,451,585` (`-15,250`)
+    - `dispatch_loops`: `349,859,645 -> 349,852,445` (`-7,200`)
+    - `matrix_add_2d`: `12,028,686 -> 12,033,185` (`+4,499`)
+    - `map_object_access`: `21,928,034 -> 21,925,898` (`-2,136`)
+- function-level Callgrind on the targeted write path also moved in the keep
+  direction for the two follow-up reruns:
+  - `dispatch_loops` `object_set_value_core`: `847,834 -> 847,350 -> 845,875`
+  - `map_object_access` `object_set_value_core`: `475,950 -> 474,121 -> 475,949`
+- because the confirm and corroborating rerun both improved hottest
+  `dispatch_loops` while staying on the same tracked signature, this narrower
+  set-only cut is worth keeping as the next live continuation
+- because `matrix_add_2d` still regresses and the first rerun stayed mixed, this
+  cut is not strong enough to replace the accepted W1 checkpoint
+
+Validation on the kept tree:
+
+- WSL gcc focused direct binaries pass:
+  - `build-wsl-gcc/bin/zr_vm_execution_member_access_fast_paths_test`
+  - `build-wsl-gcc/bin/zr_vm_value_copy_fast_paths_test`
+  - `build-wsl-gcc/bin/zr_vm_execution_dispatch_callable_metadata_test`
+- WSL clang focused direct binaries pass:
+  - `build-wsl-clang/bin/zr_vm_execution_member_access_fast_paths_test`
+  - `build-wsl-clang/bin/zr_vm_value_copy_fast_paths_test`
+  - `build-wsl-clang/bin/zr_vm_execution_dispatch_callable_metadata_test`
+- WSL gcc tracked non-GC reruns pass:
+  - `wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build/benchmark-gcc-release --parallel 16 && ZR_VM_TEST_TIER=profile ZR_VM_PERF_CALLGRIND_COUNTING=1 ZR_VM_PERF_ONLY_IMPLEMENTATIONS=zr_interp ZR_VM_PERF_ONLY_CASES=numeric_loops,dispatch_loops,container_pipeline,matrix_add_2d,map_object_access,string_build,call_chain_polymorphic,mixed_service_loop cmake --build build/benchmark-gcc-release --target run_performance_suite --parallel 1"`
+
+Current live evidence:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_set_cached_stack_root_operand_gate_rerun_20260424-013904`
+
+### Rejected known-missing direct-key add lane for member set slow paths
+
+Decision:
+
+- rejected and reverted
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_member_set_direct_key_known_missing_add_20260424-020407`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_member_set_direct_key_known_missing_add_confirm_20260424-020634`
+- tie-break rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_member_set_direct_key_known_missing_add_rerun_20260424-020819`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Guard test kept:
+
+- `tests/core/test_execution_member_access_fast_paths.c`
+  - `test_execution_member_set_cached_descriptor_missing_pair_slow_lane_inserts_storage`
+
+Reason:
+
+- this probe introduced a new direct-key add helper for callers that had
+  already proved the receiver-side pair was missing, and initially wired it into
+  three member-set slow lanes:
+  - cached descriptor set
+  - set-by-name unchecked
+  - set-by-name fast
+- all three reruns stayed bit-for-bit identical to live
+  `performance_profile_tracked_non_gc_after_set_cached_stack_root_operand_gate_rerun_20260424-013904`
+  across the eight tracked non-GC `instructions/helpers/slowpaths`, so this was
+  again a pure runtime-body/code-layout probe
+- representative totals versus live `013904` were:
+  - first rerun:
+    - `numeric_loops`: `255,451,585 -> 255,475,519` (`+23,934`)
+    - `dispatch_loops`: `349,852,445 -> 349,847,845` (`-4,600`)
+    - `matrix_add_2d`: `12,033,185 -> 12,026,799` (`-6,386`)
+    - `map_object_access`: `21,925,898 -> 21,921,872` (`-4,026`)
+  - confirm rerun:
+    - `numeric_loops`: `255,451,585 -> 255,469,958` (`+18,373`)
+    - `dispatch_loops`: `349,852,445 -> 349,843,147` (`-9,298`)
+    - `matrix_add_2d`: `12,033,185 -> 12,029,545` (`-3,640`)
+    - `map_object_access`: `21,925,898 -> 21,925,194` (`-704`)
+  - tie-break rerun:
+    - `numeric_loops`: `255,451,585 -> 255,464,870` (`+13,285`)
+    - `dispatch_loops`: `349,852,445 -> 349,862,071` (`+9,626`)
+    - `matrix_add_2d`: `12,033,185 -> 12,031,365` (`-1,820`)
+    - `map_object_access`: `21,925,898 -> 21,944,876` (`+18,978`)
+- function-level movement also failed to stabilize on the hottest target path:
+  - `dispatch_loops` `object_set_value_core`: `845,875 -> 844,882 -> 844,347 -> 846,648`
+  - `map_object_access` `object_set_value_core`: `475,949 -> 475,213 -> 475,190`
+  - `dispatch_loops` `ZrCore_String_Equal`: `476,948 -> 475,076 -> 479,436`
+- because the tie-break rerun gave back both hottest `dispatch_loops` and
+  `map_object_access` on the same tracked signature, the broader three-caller
+  version was discarded instead of being kept as an ambiguous live continuation
+
+### Rejected cached-descriptor-only direct-key add retry
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_cached_descriptor_direct_key_known_missing_add_20260424-021236`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- this narrower retry kept the same helper idea, but only on
+  `object_set_member_cached_descriptor_unchecked_core(...)` so the probe stayed
+  strictly on the user-prioritized cached descriptor set slow lane
+- the first rerun still stayed bit-for-bit identical to live `013904` across
+  tracked non-GC `instructions/helpers/slowpaths`
+- representative totals versus live `013904` were already mixed:
+  - `numeric_loops`: `255,451,585 -> 255,476,286` (`+24,701`)
+  - `dispatch_loops`: `349,852,445 -> 349,849,021` (`-3,424`)
+  - `matrix_add_2d`: `12,033,185 -> 12,029,067` (`-4,118`)
+  - `map_object_access`: `21,925,898 -> 21,941,370` (`+15,472`)
+- because the very first rerun still materially regressed
+  `map_object_access` while only shaving a small amount from `dispatch_loops`,
+  the narrower retry was rejected without spending more reruns on another weak
+  runtime-body variant
+
+Validation after revert:
+
+- WSL gcc focused direct binaries pass:
+  - `build-wsl-gcc/bin/zr_vm_execution_member_access_fast_paths_test`
+  - `build-wsl-gcc/bin/zr_vm_value_copy_fast_paths_test`
+  - `build-wsl-gcc/bin/zr_vm_execution_dispatch_callable_metadata_test`
+- WSL clang focused direct binaries pass:
+  - `build-wsl-clang/bin/zr_vm_execution_member_access_fast_paths_test`
+  - `build-wsl-clang/bin/zr_vm_value_copy_fast_paths_test`
+  - `build-wsl-clang/bin/zr_vm_execution_dispatch_callable_metadata_test`
+- `tests_generated/performance/` was restored to live
+  `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_set_cached_stack_root_operand_gate_rerun_20260424-013904`
+
+### Rejected `GET_BY_INDEX` readonly-inline direct-result write
+
+Decision:
+
+- rejected and reverted
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+
+Reason:
+
+- this probe tried to let the dispatch-local `GET_BY_INDEX` readonly-inline
+  fast hit write directly into the destination slot when the destination did
+  not alias the receiver/key operands and had no ownership payload
+- the focused WSL gcc/clang guard binaries passed after the probe:
+  - `zr_vm_execution_member_access_fast_paths_test`
+  - `zr_vm_value_copy_fast_paths_test`
+  - `zr_vm_execution_dispatch_callable_metadata_test`
+  - `zr_vm_object_call_known_native_fast_path_test`
+- the tracked non-GC profile run then failed correctness on the real
+  `map_object_access` benchmark:
+  - `MOD_SIGNED_CONST requires numeric operands`
+  - generated source location:
+    `build/benchmark-gcc-release/tests_generated/performance_suite/cases/map_object_access/zr/src/main.zr:35`
+- because this changed benchmark semantics instead of merely shifting runtime
+  body cost, the probe was immediately reverted
+
+Validation after revert:
+
+- WSL gcc `map_object_access` profile/callgrind single-case rerun passes:
+  - `ZR_VM_TEST_TIER=profile ZR_VM_PERF_CALLGRIND_COUNTING=1 ZR_VM_PERF_ONLY_IMPLEMENTATIONS=zr_interp ZR_VM_PERF_ONLY_CASES=map_object_access cmake --build build/benchmark-gcc-release --target run_performance_suite --parallel 1`
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c` has no remaining
+  diff after the revert
+
+### Rejected `GET_BY_INDEX` stable-result reset removal
+
+Decision:
+
+- rejected and reverted
+
+Snapshots:
+
+- fresh live baseline:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_live_before_get_by_index_stable_result_reset_20260424-155848`
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_by_index_stable_result_reset_cut_20260424-160302`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_by_index_stable_result_reset_cut_confirm_20260424-160659`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+
+Reason:
+
+- this probe removed the dispatch-local `ZrCore_Value_ResetAsNull(&stableResult)`
+  before `GET_BY_INDEX` calls into the readonly-inline fast path or the protected
+  slow object path
+- all eight tracked non-GC `instructions/helpers/slowpaths` stayed bit-for-bit
+  identical to fresh live baseline, so the probe was pure runtime-body/code
+  layout movement rather than quickening or helper-signature movement
+- representative Callgrind totals versus fresh live baseline were:
+  - first rerun:
+    - `numeric_loops`: `255,421,443 -> 255,470,201` (`+48,758`)
+    - `dispatch_loops`: `349,859,320 -> 349,846,258` (`-13,062`)
+    - `matrix_add_2d`: `12,024,576 -> 12,026,420` (`+1,844`)
+    - `map_object_access`: `21,916,776 -> 21,858,980` (`-57,796`)
+  - confirm rerun:
+    - `numeric_loops`: `255,421,443 -> 255,478,576` (`+57,133`)
+    - `dispatch_loops`: `349,859,320 -> 349,848,388` (`-10,932`)
+    - `matrix_add_2d`: `12,024,576 -> 12,027,409` (`+2,833`)
+    - `map_object_access`: `21,916,776 -> 21,900,043` (`-16,733`)
+- because `numeric_loops` and `matrix_add_2d` regressed in both reruns while
+  the win on `map_object_access` shrank sharply on confirm, this was rejected
+  instead of retained as an ambiguous runtime-body cut
+
+Validation after revert:
+
+- WSL gcc focused binaries pass:
+  - `build-wsl-gcc/bin/zr_vm_execution_dispatch_callable_metadata_test`
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+- WSL gcc `map_object_access` profile/callgrind single-case rerun passes:
+  - `ZR_VM_TEST_TIER=profile ZR_VM_PERF_CALLGRIND_COUNTING=1 ZR_VM_PERF_ONLY_IMPLEMENTATIONS=zr_interp ZR_VM_PERF_ONLY_CASES=map_object_access cmake --build build/benchmark-gcc-release --target run_performance_suite --parallel 1`
+- `tests_generated/performance/` was restored to the fresh live baseline
+  `performance_profile_tracked_non_gc_live_before_get_by_index_stable_result_reset_20260424-155848`
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c` has no remaining
+  diff after the revert
+
+### Rejected get-index readonly-inline callback success early-return reshaping
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_fast_callback_success_early_return_20260424-161259`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- this probe kept the same `GET_BY_INDEX` protocol but reshaped
+  `object_try_call_hot_cached_known_native_get_by_index_readonly_inline_stack_operands(...)`
+  so callback failure/status handling returned early instead of keeping the
+  final `state->threadStatus == FINE && success` expression
+- WSL gcc/clang focused guard binaries passed:
+  - `zr_vm_object_call_known_native_fast_path_test`
+  - `zr_vm_execution_member_access_fast_paths_test`
+- the tracked non-GC profile signature stayed bit-for-bit identical to fresh
+  live baseline across all eight cases
+- representative Callgrind totals versus fresh live baseline were:
+  - `numeric_loops`: `255,421,443 -> 255,429,715` (`+8,272`)
+  - `dispatch_loops`: `349,859,320 -> 349,855,991` (`-3,329`)
+  - `matrix_add_2d`: `12,024,576 -> 12,024,439` (`-137`)
+  - `map_object_access`: `21,916,776 -> 21,942,157` (`+25,381`)
+- because the target `map_object_access` path regressed materially while the
+  hottest improvement was very small, the probe was rejected after the first
+  rerun rather than promoted to confirm
+
+Validation after revert:
+
+- WSL gcc focused binary passes:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+- `tests_generated/performance/` was restored to the fresh live baseline
+  `performance_profile_tracked_non_gc_live_before_get_by_index_stable_result_reset_20260424-155848`
+- `zr_vm_core/src/zr_vm_core/object/object.c` has no remaining diff after the
+  revert
+
+### Rejected get-index readonly-inline hot-helper branch hints
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_hot_helper_unlikely_guards_20260424-161740`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- this probe only wrapped the cold guard branches in
+  `object_try_call_hot_cached_known_native_get_by_index_readonly_inline_stack_operands(...)`
+  with `ZR_UNLIKELY(...)`
+- WSL gcc/clang focused guard binaries passed:
+  - `zr_vm_object_call_known_native_fast_path_test`
+  - `zr_vm_execution_member_access_fast_paths_test`
+- the tracked non-GC profile signature stayed bit-for-bit identical to fresh
+  live baseline across all eight cases
+- representative Callgrind totals versus fresh live baseline were:
+  - `numeric_loops`: `255,421,443 -> 255,439,884` (`+18,441`)
+  - `dispatch_loops`: `349,859,320 -> 349,849,702` (`-9,618`)
+  - `matrix_add_2d`: `12,024,576 -> 12,017,913` (`-6,663`)
+  - `map_object_access`: `21,916,776 -> 21,952,284` (`+35,508`)
+- because the target readonly-index benchmark regressed materially, this pure
+  branch-layout probe was rejected after the first rerun
+
+Validation after revert:
+
+- WSL gcc focused binary passes:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+- `zr_vm_core/src/zr_vm_core/object/object.c` has no remaining diff after the
+  revert
 
 ### Retained re-applied `GETUPVAL` / `SETUPVAL` dispatch-local `stack_get_value` cut on live `085734`
 
@@ -3818,6 +5121,214 @@ Validation after revert:
   - `build-wsl-clang/bin/zr_vm_container_runtime_test`
   - `build-wsl-clang/bin/zr_vm_container_temp_value_root_test`
 
+### Accepted get-index stack readonly-inline helper split live continuation
+
+Decision:
+
+- accepted as the current live continuation
+- not promoted to a new accepted W1 checkpoint by itself
+
+Snapshots:
+
+- first rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_20260424-162649`
+- confirm rerun:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+
+Production change:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- this cut keeps the non-stack readonly-inline get path on the existing shared
+  mode helper, but expands the stack-operands wrapper into its own fast body
+  so the hottest `ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands`
+  path no longer carries the non-stack residency branch shape through the
+  shared mode helper
+- behavior stays unchanged:
+  - debug hook, callback readiness, shape fallback, null-result-on-fine-miss,
+    and thread-status handling are identical to the previous stack-operands
+    mode
+  - non-stack `object_try_call_cached_known_native_get_by_index_readonly_inline`
+    still uses the existing `object_value_resides_on_vm_stack(...)` guard
+- both reruns kept all eight tracked non-GC `instructions/helpers/slowpaths`
+  profile signatures bit-for-bit identical to the fresh live baseline
+  `performance_profile_tracked_non_gc_live_before_get_by_index_stable_result_reset_20260424-155848`
+  after excluding the two GC fragment cases, so this is still a bounded
+  runtime-body/code-layout cut rather than opcode-mix or quickening drift
+- representative totals versus fresh live baseline `155848`:
+  - first rerun:
+    - `numeric_loops`: `255,421,443 -> 255,423,155` (`+1,712`)
+    - `dispatch_loops`: `349,859,320 -> 349,818,305` (`-41,015`)
+    - `matrix_add_2d`: `12,024,576 -> 12,015,169` (`-9,407`)
+    - `map_object_access`: `21,916,776 -> 21,906,366` (`-10,410`)
+  - confirm rerun:
+    - `numeric_loops`: `255,421,443 -> 255,428,731` (`+7,288`)
+    - `dispatch_loops`: `349,859,320 -> 349,832,789` (`-26,531`)
+    - `matrix_add_2d`: `12,024,576 -> 12,009,340` (`-15,236`)
+    - `map_object_access`: `21,916,776 -> 21,881,343` (`-35,433`)
+- the target helper remains the top profiled helper for `map_object_access`,
+  but the total case body moved down on both reruns:
+  - first: `21,916,776 -> 21,906,366`
+  - confirm: `21,916,776 -> 21,881,343`
+- relative to accepted `055330`, the confirm rerun stays lower on all four
+  representative cases:
+  - `numeric_loops`: `255,474,138 -> 255,428,731` (`-45,407`)
+  - `dispatch_loops`: `350,330,462 -> 349,832,789` (`-497,673`)
+  - `matrix_add_2d`: `12,053,512 -> 12,009,340` (`-44,172`)
+  - `map_object_access`: `21,931,485 -> 21,881,343` (`-50,142`)
+
+Validation on the kept tree:
+
+- benchmark gcc release direct binaries pass:
+  - `build/benchmark-gcc-release/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build/benchmark-gcc-release/bin/zr_vm_execution_member_access_fast_paths_test`
+- WSL gcc direct binaries pass:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-gcc/bin/zr_vm_execution_member_access_fast_paths_test`
+- WSL clang direct binaries pass:
+  - `build-wsl-clang/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-clang/bin/zr_vm_execution_member_access_fast_paths_test`
+- Windows MSVC CLI smoke passes:
+  - configure/build `build/codex-msvc-cli-debug` with `BUILD_TESTS=OFF`
+  - `build/codex-msvc-cli-debug/bin/Debug/zr_vm_cli.exe tests/fixtures/projects/hello_world/hello_world.zrp`
+    prints `hello world`
+- `tests_generated/performance/` now reflects kept live confirm:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+
+### Rejected set-index stack readonly-inline helper split follow-up
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_set_index_stack_readonly_inline_split_20260424-163541`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- this probe tried the symmetric set-side version of the kept get-side split:
+  `object_try_call_cached_known_native_set_by_index_readonly_inline_stack_operands(...)`
+  was expanded into a stack-operands-only body instead of calling the shared
+  mode helper with `ZR_TRUE`
+- the focused correctness guard accepted the probe, but the first tracked
+  non-GC Callgrind rerun regressed both the hottest dispatch case and the
+  target map case relative to the kept get-side live continuation
+  `performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+- representative totals versus kept get-side live:
+  - `numeric_loops`: `255,428,731 -> 255,420,645` (`-8,086`)
+  - `dispatch_loops`: `349,832,789 -> 349,836,098` (`+3,309`)
+  - `matrix_add_2d`: `12,009,340 -> 11,989,753` (`-19,587`)
+  - `map_object_access`: `21,881,343 -> 21,901,174` (`+19,831`)
+- because W1 is still prioritizing hottest `dispatch_loops` and the readonly
+  index target `map_object_access`, this was not worth confirming; it was
+  removed after the first rerun
+
+Validation around the rejected probe:
+
+- WSL gcc direct binaries passed before the perf rerun:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-gcc/bin/zr_vm_execution_member_access_fast_paths_test`
+- WSL clang direct binaries passed before the perf rerun:
+  - `build-wsl-clang/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-clang/bin/zr_vm_execution_member_access_fast_paths_test`
+- after revert, `tests_generated/performance/` was restored to kept get-side
+  live evidence:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+
+### Rejected get-index stack raw object cast follow-up
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_stack_raw_object_cast_20260424-164038`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- this probe tried to narrow the kept get-side stack readonly-inline entry:
+  `object_try_get_by_index_readonly_inline_fast_stack_operands(...)` used
+  `ZR_CAST(SZrObject *, receiver->value.object)` after the local receiver type
+  and null guards, instead of the checked `ZR_CAST_OBJECT(...)`
+- focused WSL gcc/clang readonly-index/native-fast-path guards passed, but the
+  first tracked non-GC Callgrind rerun regressed both hottest dispatch and the
+  target map case relative to the kept get-side live continuation
+  `performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+- representative totals versus kept get-side live:
+  - `numeric_loops`: `255,428,731 -> 255,430,562` (`+1,831`)
+  - `dispatch_loops`: `349,832,789 -> 349,838,800` (`+6,011`)
+  - `matrix_add_2d`: `12,009,340 -> 11,999,555` (`-9,785`)
+  - `map_object_access`: `21,881,343 -> 21,903,393` (`+22,050`)
+- because this was another two-regression / one-target-regression layout probe,
+  it was removed without a confirm run
+
+Validation around the rejected probe:
+
+- WSL gcc direct binary passed before the perf rerun:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+- WSL clang direct binary passed before the perf rerun:
+  - `build-wsl-clang/bin/zr_vm_object_call_known_native_fast_path_test`
+- after revert, `tests_generated/performance/` was restored to kept get-side
+  live evidence:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+
+### Rejected get-index direct-miss state-based reset follow-up
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_direct_miss_state_reset_20260424-164549`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/object/object.c`
+
+Reason:
+
+- this probe tried to keep the `value_reset_null` helper count stable while
+  avoiding the exported `ZrCore_Value_ResetAsNull(...)` call at the
+  `object_get_by_index_unchecked_core(...)` direct-index miss site:
+  a file-local helper recorded `ZR_PROFILE_HELPER_VALUE_RESET_NULL` from
+  `state` and then called `ZrCore_Value_ResetAsNullNoProfile(...)`
+- focused WSL gcc/clang object/member fast-path guards passed, but the first
+  tracked non-GC Callgrind rerun regressed the target map case and slightly
+  regressed matrix while only improving `dispatch_loops`
+- representative totals versus kept get-side live
+  `performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`:
+  - `numeric_loops`: `255,428,731 -> 255,441,570` (`+12,839`)
+  - `dispatch_loops`: `349,832,789 -> 349,800,215` (`-32,574`)
+  - `matrix_add_2d`: `12,009,340 -> 12,010,141` (`+801`)
+  - `map_object_access`: `21,881,343 -> 21,896,605` (`+15,262`)
+- the target `map_object_access` regression makes this unsuitable for the
+  current W1 order, so it was removed without a confirm run
+
+Validation around the rejected probe:
+
+- WSL gcc direct binaries passed before the perf rerun:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-gcc/bin/zr_vm_execution_member_access_fast_paths_test`
+- WSL clang direct binaries passed before the perf rerun:
+  - `build-wsl-clang/bin/zr_vm_object_call_known_native_fast_path_test`
+  - `build-wsl-clang/bin/zr_vm_execution_member_access_fast_paths_test`
+- after revert, `tests_generated/performance/` was restored to kept get-side
+  live evidence:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_index_stack_readonly_inline_split_confirm_20260424-162914`
+
 ### Rejected prepared-resolved direct-VM-function `precall` steady-state dedup
 
 Decision:
@@ -3885,3 +5396,116 @@ Validation after revert:
   - `build-wsl-clang/bin/zr_vm_value_copy_fast_paths_test`
   - `build-wsl-clang/bin/zr_vm_execution_member_access_fast_paths_test`
   - `build-wsl-clang/bin/zr_vm_precall_frame_slot_reset_test`
+
+### Kept GET_BY_INDEX fast result dispatch-copy writeback
+
+Decision:
+
+- kept as bounded live continuation
+
+Snapshots:
+
+- first:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_by_index_fast_result_dispatch_copy_20260424-continue`
+- confirm:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_by_index_fast_result_dispatch_copy_confirm_20260424-continue`
+- final live restore point:
+  - `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_by_index_fast_result_dispatch_copy_final_20260424-continue`
+
+Production change:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+
+Reason:
+
+- this probe changes only the `GET_BY_INDEX` opcode tail after a resolved
+  `stableResult`
+- the final writeback uses the dispatch-local profile state:
+  `execution_copy_value_fast(state, destination, &stableResult, profileRuntime,
+  recordHelpers)`
+- this replaces `ZrCore_Value_Copy(...)`, avoiding another TLS current-profile
+  helper record while preserving the `value_copy` helper count through
+  `execution_copy_value_fast(...)`
+- `execution_dispatch.c` remains oversized, but this probe only replaces an
+  existing statement inside one opcode arm and does not add a new helper,
+  protocol, or responsibility
+
+Representative totals versus accepted checked-object confirm
+`performance_profile_tracked_non_gc_after_dispatch_member_exact_pair_checked_object_confirm_20260424-continue`:
+
+| run | `numeric_loops` delta | `dispatch_loops` delta | `matrix_add_2d` delta | `map_object_access` delta |
+| --- | ---: | ---: | ---: | ---: |
+| first | +6,788 | -5,106 | -4,671 | -8,231 |
+| confirm | -13,892 | -16,130 | -17,473 | -113 |
+| tie-break | -2,916 | -7,278 | +8,340 | +18,715 |
+| final | -1,328 | +505 | -2,263 | -5,922 |
+
+All four checked tracked non-GC runs kept `instructions/helpers/slowpaths`
+signatures identical to the accepted checked-object confirm baseline. The
+effect is deliberately classified as small runtime-body/layout movement: most
+representative cells improve, but the tie-break and final runs still show
+bounded noise. It is therefore kept as live continuation, not promoted as a new
+headline W1 checkpoint.
+
+Validation before performance reruns:
+
+- WSL gcc direct binaries passed:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`: 57 tests, 0 failures
+  - `build-wsl-gcc/bin/zr_vm_container_runtime_test`: 39 tests, 0 failures
+  - `build-wsl-gcc/bin/zr_vm_execution_dispatch_callable_metadata_test`: 17 tests, 0 failures
+- WSL clang direct binaries passed:
+  - `build-wsl-clang/bin/zr_vm_object_call_known_native_fast_path_test`: 57 tests, 0 failures
+  - `build-wsl-clang/bin/zr_vm_container_runtime_test`: 39 tests, 0 failures
+  - `build-wsl-clang/bin/zr_vm_execution_dispatch_callable_metadata_test`: 17 tests, 0 failures
+
+### Rejected SET_BY_INDEX fast-hit destination reload skip
+
+Decision:
+
+- rejected and reverted
+
+Snapshot:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_rejected_set_by_index_fast_hit_destination_reload_skip_20260424-continue`
+
+Production probe:
+
+- `zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c`
+
+Reason:
+
+- this probe removed the `destination = E(instruction) == ...` reload from the
+  `SET_BY_INDEX` readonly-inline fast-hit branch
+- it kept `UPDATE_BASE(callInfo)`, because the callback can still require base
+  refresh before the next dispatch
+- the opcode success path does not read `destination` again before `DONE(1)`,
+  so this looked like a narrow dead-tail cleanup
+- `execution_dispatch.c` remains oversized, but this was a one-line probe in an
+  existing opcode arm and did not add a responsibility
+
+Representative totals versus current live
+`performance_profile_tracked_non_gc_after_get_by_index_fast_result_dispatch_copy_final_20260424-continue`:
+
+| run | `numeric_loops` delta | `dispatch_loops` delta | `matrix_add_2d` delta | `map_object_access` delta |
+| --- | ---: | ---: | ---: | ---: |
+| first | +19,815 | -22,895 | +5,217 | -15,121 |
+| confirm | +49,713 | +2,346 | +10,804 | -34,801 |
+
+Both checked tracked non-GC runs kept `instructions/helpers/slowpaths`
+signatures identical to current live. The map target improved in both runs,
+but the hottest dispatch case failed to confirm and the numeric/matrix
+regressions were too large. The probe was reverted, and
+`tests_generated/performance/` was restored to:
+
+- `build/benchmark-gcc-release/tests_generated/performance_profile_tracked_non_gc_after_get_by_index_fast_result_dispatch_copy_final_20260424-continue`
+
+Validation around the rejected probe:
+
+- WSL gcc direct binaries passed before perf:
+  - `build-wsl-gcc/bin/zr_vm_object_call_known_native_fast_path_test`: 57 tests, 0 failures
+  - `build-wsl-gcc/bin/zr_vm_container_runtime_test`: 39 tests, 0 failures
+  - `build-wsl-gcc/bin/zr_vm_execution_dispatch_callable_metadata_test`: 17 tests, 0 failures
+- WSL clang direct binaries passed before perf:
+  - `build-wsl-clang/bin/zr_vm_object_call_known_native_fast_path_test`: 57 tests, 0 failures
+  - `build-wsl-clang/bin/zr_vm_container_runtime_test`: 39 tests, 0 failures
+  - `build-wsl-clang/bin/zr_vm_execution_dispatch_callable_metadata_test`: 17 tests, 0 failures

@@ -29,6 +29,17 @@ function diagnosticRelatedUriMatches(expectedUri, actualUri) {
     }
 }
 
+async function waitForDiagnosticsUri(client, uri, message) {
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+        const diagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+        if (diagnosticRelatedUriMatches(uri, diagnostics.uri)) {
+            return diagnostics;
+        }
+    }
+
+    throw new Error(message);
+}
+
 function copyPathSync(sourcePath, targetPath) {
     const stats = fs.statSync(sourcePath);
 
@@ -261,6 +272,7 @@ function cleanupPath(targetPath) {
 let watchedFixtureRootToCleanup = null;
 let watchedBinaryFixtureRootToCleanup = null;
 let importDiagnosticsFixtureRootToCleanup = null;
+let fileOperationsFixtureRootToCleanup = null;
 
 class LspClient {
     constructor(serverPath) {
@@ -491,15 +503,31 @@ async function main() {
     const watchedFixture = createWatchedProjectFixture();
     const watchedBinaryFixture = createWatchedBinaryMetadataFixture(serverPath, cliPathOptional);
     const importDiagnosticsFixture = createImportDiagnosticsFixture();
+    const fileOperationsFixture = createWatchedProjectFixture();
     watchedFixtureRootToCleanup = watchedFixture.rootPath;
     watchedBinaryFixtureRootToCleanup = watchedBinaryFixture.rootPath;
     importDiagnosticsFixtureRootToCleanup = importDiagnosticsFixture.rootPath;
+    fileOperationsFixtureRootToCleanup = fileOperationsFixture.rootPath;
 
     const client = new LspClient(serverPath);
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
     const docsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr';
     const genericUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr';
+    const formatEditUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-format-edit.zr';
+    const noopFormatUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-format-noop.zr';
+    const importFoldingUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-import-folding.zr';
+    const moduleImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-module-imports.zr';
+    const colorUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-colors.zr';
+    const inlineCompletionUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-completion.zr';
     const initialText = 'var x = 10; var y = x;';
+    const colorText = 'var accent = "#336699";';
+    const inlineCompletionText = [
+        'func main(): int {',
+        '    ret',
+        '}',
+        '',
+    ].join('\n');
     const documentationText = [
         'module "documentation";',
         '',
@@ -543,6 +571,46 @@ async function main() {
         '}',
         '',
     ].join('\n');
+    const noopFormatText = [
+        'class Sample {',
+        '    pub func run(value: int): int {',
+        '        return value;',
+        '    }',
+        '}',
+        '',
+    ].join('\n');
+    const formatEditText = [
+        'class Sample {',
+        'pub func run(value: int): int {',
+        'return value;',
+        '}',
+        '}',
+        '',
+    ].join('\n');
+    const importFoldingText = [
+        '%import("zr.system");',
+        '%import("zr.math");',
+        '%import("zr.container");',
+        '',
+        '// first note',
+        '// second note',
+        '',
+        '//#region setup',
+        'func main(): int {',
+        '    return 0;',
+        '}',
+        '//#endregion',
+        '',
+    ].join('\n');
+    const moduleImportsText = [
+        'module "stdio";',
+        '',
+        '%import("zr.system");',
+        '%import("zr.math");',
+        '',
+        'func main(): int { return 0; }',
+        '',
+    ].join('\n');
 
     const initializeResult = await client.request('initialize', {
         processId: null,
@@ -566,9 +634,17 @@ async function main() {
         'definitionProvider must be enabled');
     assert(initializeResult.capabilities.renameProvider.prepareProvider === true,
         'renameProvider.prepareProvider must be enabled');
+    assert(initializeResult.capabilities.documentSymbolProvider === true,
+        'documentSymbolProvider must be enabled');
+    assert(initializeResult.capabilities.workspaceSymbolProvider &&
+        initializeResult.capabilities.workspaceSymbolProvider.resolveProvider === true,
+        'workspaceSymbolProvider resolveProvider must be enabled');
     assert(initializeResult.capabilities.semanticTokensProvider &&
-        initializeResult.capabilities.semanticTokensProvider.full === true,
-        'semanticTokensProvider.full must be enabled');
+        initializeResult.capabilities.semanticTokensProvider.full &&
+        initializeResult.capabilities.semanticTokensProvider.full.delta === true,
+        'semanticTokensProvider.full.delta must be enabled');
+    assert(initializeResult.capabilities.semanticTokensProvider.range === true,
+        'semanticTokensProvider.range must be enabled');
     const semanticTokensProvider = initializeResult.capabilities.semanticTokensProvider;
     const semanticTokenTypes = semanticTokensProvider &&
         semanticTokensProvider.legend &&
@@ -576,9 +652,77 @@ async function main() {
     assert(Array.isArray(semanticTokenTypes) &&
         semanticTokenTypes.includes('keyword'),
         'semantic token legend must include keyword');
-    assert(initializeResult.capabilities.inlayHintProvider === true ||
-        typeof initializeResult.capabilities.inlayHintProvider === 'object',
-        'inlayHintProvider must be enabled');
+    assert(initializeResult.capabilities.inlayHintProvider &&
+        initializeResult.capabilities.inlayHintProvider.resolveProvider === true,
+        'inlayHintProvider resolveProvider must be enabled');
+    assert(initializeResult.capabilities.codeActionProvider &&
+        Array.isArray(initializeResult.capabilities.codeActionProvider.codeActionKinds) &&
+        initializeResult.capabilities.codeActionProvider.codeActionKinds.includes('source.organizeImports'),
+        'codeActionProvider must advertise organize imports');
+    assert(initializeResult.capabilities.codeActionProvider.resolveProvider === true,
+        'codeActionProvider resolveProvider must be enabled');
+    assert(initializeResult.capabilities.codeActionProvider.codeActionKinds.includes('quickfix'),
+        'codeActionProvider must advertise quick fixes');
+    assert(initializeResult.capabilities.documentFormattingProvider === true,
+        'documentFormattingProvider must be enabled');
+    assert(initializeResult.capabilities.documentRangeFormattingProvider === true,
+        'documentRangeFormattingProvider must be enabled');
+    assert(initializeResult.capabilities.textDocumentSync &&
+        initializeResult.capabilities.textDocumentSync.willSaveWaitUntil === true,
+        'textDocumentSync.willSaveWaitUntil must be enabled');
+    assert(initializeResult.capabilities.documentOnTypeFormattingProvider &&
+        initializeResult.capabilities.documentOnTypeFormattingProvider.firstTriggerCharacter === '}',
+        'documentOnTypeFormattingProvider must be enabled');
+    assert(initializeResult.capabilities.foldingRangeProvider === true,
+        'foldingRangeProvider must be enabled');
+    assert(initializeResult.capabilities.selectionRangeProvider === true,
+        'selectionRangeProvider must be enabled');
+    assert(initializeResult.capabilities.linkedEditingRangeProvider === true,
+        'linkedEditingRangeProvider must be enabled');
+    assert(initializeResult.capabilities.monikerProvider === true,
+        'monikerProvider must be enabled');
+    assert(initializeResult.capabilities.inlineValueProvider === true,
+        'inlineValueProvider must be enabled');
+    assert(initializeResult.capabilities.colorProvider === true,
+        'colorProvider must be enabled');
+    assert(initializeResult.capabilities.inlineCompletionProvider === true,
+        'inlineCompletionProvider must be enabled');
+    assert(initializeResult.capabilities.documentLinkProvider &&
+        initializeResult.capabilities.documentLinkProvider.resolveProvider === true,
+        'documentLinkProvider resolveProvider must be enabled');
+    assert(initializeResult.capabilities.declarationProvider === true,
+        'declarationProvider must be enabled');
+    assert(initializeResult.capabilities.typeDefinitionProvider === true,
+        'typeDefinitionProvider must be enabled');
+    assert(initializeResult.capabilities.implementationProvider === true,
+        'implementationProvider must be enabled');
+    assert(initializeResult.capabilities.codeLensProvider &&
+        initializeResult.capabilities.codeLensProvider.resolveProvider === true,
+        'codeLensProvider resolveProvider must be enabled');
+    assert(initializeResult.capabilities.executeCommandProvider &&
+        Array.isArray(initializeResult.capabilities.executeCommandProvider.commands) &&
+        initializeResult.capabilities.executeCommandProvider.commands.includes('zr.runCurrentProject') &&
+        initializeResult.capabilities.executeCommandProvider.commands.includes('zr.showReferences'),
+        'executeCommandProvider must advertise server-visible ZR commands');
+    assert(initializeResult.capabilities.callHierarchyProvider === true,
+        'callHierarchyProvider must be enabled');
+    assert(initializeResult.capabilities.typeHierarchyProvider === true,
+        'typeHierarchyProvider must be enabled');
+    assert(initializeResult.capabilities.diagnosticProvider &&
+        initializeResult.capabilities.diagnosticProvider.workspaceDiagnostics === true,
+        'diagnosticProvider must support workspace diagnostics');
+    assert(initializeResult.capabilities.completionProvider.resolveProvider === true,
+        'completionProvider.resolveProvider must be enabled');
+    assert(initializeResult.capabilities.workspace &&
+        initializeResult.capabilities.workspace.fileOperations &&
+        initializeResult.capabilities.workspace.fileOperations.willCreate &&
+        initializeResult.capabilities.workspace.fileOperations.didCreate &&
+        initializeResult.capabilities.workspace.fileOperations.willRename &&
+        initializeResult.capabilities.workspace.fileOperations.didRename &&
+        initializeResult.capabilities.workspace.fileOperations.willDelete &&
+        initializeResult.capabilities.workspace.fileOperations.didDelete &&
+        initializeResult.capabilities.workspace.fileOperations.didRename,
+    'workspace.fileOperations must advertise create/delete/rename requests and notifications');
 
     client.notify('initialized', {});
     client.notify('textDocument/didOpen', {
@@ -626,6 +770,127 @@ async function main() {
         context: { includeDeclaration: true },
     });
     assert(Array.isArray(references) && references.length > 0, 'references must return at least one location');
+    const linkedEditing = await client.request('textDocument/linkedEditingRange', {
+        textDocument: { uri: documentUri },
+        position: { line: 0, character: 4 },
+    });
+    assert(linkedEditing &&
+        Array.isArray(linkedEditing.ranges) &&
+        linkedEditing.ranges.some((range) =>
+            range && range.start && range.start.line === 0 && range.start.character === 4) &&
+        linkedEditing.ranges.some((range) =>
+            range && range.start && range.start.line === 0 && range.start.character === 20) &&
+        linkedEditing.wordPattern,
+    'linkedEditingRange must return same-document ranges for the edited symbol');
+    const monikers = await client.request('textDocument/moniker', {
+        textDocument: { uri: documentUri },
+        position: { line: 0, character: 4 },
+    });
+    assert(Array.isArray(monikers) &&
+        monikers.some((moniker) =>
+            moniker &&
+            moniker.scheme === 'zr' &&
+            moniker.identifier.endsWith('#x') &&
+            moniker.unique === 'document' &&
+            moniker.kind === 'local'),
+    'textDocument/moniker must return a document-scoped symbol identity');
+    const inlineValues = await client.request('textDocument/inlineValue', {
+        textDocument: { uri: documentUri },
+        range: {
+            start: { line: 0, character: 0 },
+            end: { line: 0, character: initialText.length },
+        },
+        context: {
+            frameId: 1,
+            stoppedLocation: {
+                start: { line: 0, character: 0 },
+                end: { line: 0, character: initialText.length },
+            },
+        },
+    });
+    assert(Array.isArray(inlineValues) &&
+        inlineValues.some((value) =>
+            value &&
+            value.variableName === 'x' &&
+            value.caseSensitiveLookup === true &&
+            value.range &&
+            value.range.start.line === 0 &&
+            value.range.start.character === 4) &&
+        inlineValues.some((value) =>
+            value &&
+            value.variableName === 'y' &&
+            value.caseSensitiveLookup === true &&
+            value.range &&
+            value.range.start.line === 0 &&
+            value.range.start.character === 16),
+    'textDocument/inlineValue must expose local variable lookups in the requested range');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: colorUri,
+            languageId: 'zr',
+            version: 1,
+            text: colorText,
+        },
+    });
+    const colorDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(colorDiagnostics.uri === colorUri, 'color didOpen diagnostics uri mismatch');
+    const documentColors = await client.request('textDocument/documentColor', {
+        textDocument: { uri: colorUri },
+    });
+    assert(Array.isArray(documentColors) &&
+        documentColors.some((entry) =>
+            entry &&
+            entry.range &&
+            entry.range.start.line === 0 &&
+            entry.range.start.character === 14 &&
+            Math.abs(entry.color.red - 0.2) < 0.001 &&
+            Math.abs(entry.color.green - 0.4) < 0.001 &&
+            Math.abs(entry.color.blue - 0.6) < 0.001 &&
+            entry.color.alpha === 1),
+    'textDocument/documentColor must expose hex color literals');
+    const colorPresentation = await client.request('textDocument/colorPresentation', {
+        textDocument: { uri: colorUri },
+        color: { red: 0.2, green: 0.4, blue: 0.6, alpha: 1 },
+        range: {
+            start: { line: 0, character: 14 },
+            end: { line: 0, character: 21 },
+        },
+    });
+    assert(Array.isArray(colorPresentation) &&
+        colorPresentation.some((presentation) =>
+            presentation &&
+            presentation.label === '#336699' &&
+            presentation.textEdit &&
+            presentation.textEdit.newText === '#336699'),
+    'textDocument/colorPresentation must format the selected color as a hex edit');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: inlineCompletionUri,
+            languageId: 'zr',
+            version: 1,
+            text: inlineCompletionText,
+        },
+    });
+    const inlineCompletionDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(inlineCompletionDiagnostics.uri === inlineCompletionUri,
+        'inline completion didOpen diagnostics uri mismatch');
+    const inlineCompletions = await client.request('textDocument/inlineCompletion', {
+        textDocument: { uri: inlineCompletionUri },
+        position: { line: 1, character: 7 },
+        context: {
+            triggerKind: 1,
+            selectedCompletionInfo: null,
+        },
+    });
+    assert(Array.isArray(inlineCompletions) &&
+        inlineCompletions.some((item) =>
+            item &&
+            item.insertText === 'return ' &&
+            item.range &&
+            item.range.start.line === 1 &&
+            item.range.start.character === 4 &&
+            item.range.end.character === 7),
+    'textDocument/inlineCompletion must expand statement prefixes');
 
     const hover = await client.request('textDocument/hover', {
         textDocument: { uri: documentUri },
@@ -650,6 +915,12 @@ async function main() {
     });
     assert(Array.isArray(workspaceSymbols) && workspaceSymbols.length > 0,
         'workspace/symbol must return at least one symbol');
+    const resolvedWorkspaceSymbol = await client.request('workspaceSymbol/resolve', workspaceSymbols[0]);
+    assert(resolvedWorkspaceSymbol &&
+        resolvedWorkspaceSymbol.name === workspaceSymbols[0].name &&
+        resolvedWorkspaceSymbol.location &&
+        resolvedWorkspaceSymbol.location.uri === workspaceSymbols[0].location.uri,
+    'workspaceSymbol/resolve must preserve resolved workspace symbols');
 
     const highlights = await client.request('textDocument/documentHighlight', {
         textDocument: { uri: documentUri },
@@ -715,6 +986,43 @@ async function main() {
     assert(typeof bonusCompletion.documentation.value === 'string' &&
         bonusCompletion.documentation.value.includes('Shared bonus exposed through get/set.'),
         'completion documentation should include the leading property comment');
+    assert(bonusCompletion.data && bonusCompletion.data.uri === docsUri && bonusCompletion.data.position,
+        'completion items must include resolve data');
+    const resolvedBonusCompletion = await client.request('completionItem/resolve', {
+        label: bonusCompletion.label,
+        kind: bonusCompletion.kind,
+        insertText: bonusCompletion.insertText,
+        insertTextFormat: bonusCompletion.insertTextFormat,
+        data: bonusCompletion.data,
+    });
+    assert(resolvedBonusCompletion &&
+        resolvedBonusCompletion.documentation &&
+        resolvedBonusCompletion.documentation.kind === 'markdown' &&
+        resolvedBonusCompletion.documentation.value.includes('Shared bonus exposed through get/set.'),
+    'completionItem/resolve must restore markdown documentation from resolve data');
+
+    const docsCodeLens = await client.request('textDocument/codeLens', {
+        textDocument: { uri: docsUri },
+    });
+    assert(Array.isArray(docsCodeLens) && docsCodeLens.some((lens) =>
+        lens &&
+        lens.command &&
+        lens.command.command === 'zr.runCurrentProject'),
+        'textDocument/codeLens must expose a run command for %test blocks');
+    const resolvedDocsCodeLens = await client.request('codeLens/resolve', docsCodeLens[0]);
+    assert(resolvedDocsCodeLens &&
+        resolvedDocsCodeLens.command &&
+        resolvedDocsCodeLens.command.command === docsCodeLens[0].command.command &&
+        resolvedDocsCodeLens.range &&
+        resolvedDocsCodeLens.range.start &&
+        resolvedDocsCodeLens.range.start.line === docsCodeLens[0].range.start.line,
+    'codeLens/resolve must preserve resolved command lenses');
+    const runCommandResult = await client.request('workspace/executeCommand', {
+        command: 'zr.runCurrentProject',
+        arguments: [docsUri],
+    });
+    assert(runCommandResult === null,
+        'workspace/executeCommand must acknowledge advertised run commands');
 
     const importDiagnosticsText = fs.readFileSync(importDiagnosticsFixture.mainPath, 'utf8');
     client.notify('textDocument/didOpen', {
@@ -820,6 +1128,480 @@ async function main() {
         'inlay hints should include the normalized exact inferred closed generic type for m');
     assert(genericInlayHints.some((hint) => hint && hint.label === ': int'),
         'inlay hints should include the exact inferred return type for inferNumber');
+    const boxInlayHint = genericInlayHints.find((hint) => hint && hint.label === ': Box<int>');
+    const resolvedBoxInlayHint = await client.request('inlayHint/resolve', boxInlayHint);
+    assert(resolvedBoxInlayHint &&
+        resolvedBoxInlayHint.label === boxInlayHint.label &&
+        resolvedBoxInlayHint.position &&
+        resolvedBoxInlayHint.position.line === boxInlayHint.position.line,
+    'inlayHint/resolve must preserve resolved hints');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: formatEditUri,
+            languageId: 'zr',
+            version: 1,
+            text: formatEditText,
+        },
+    });
+    await waitForDiagnosticsUri(client, formatEditUri, 'format edit diagnostics uri mismatch');
+    const formatted = await client.request('textDocument/formatting', {
+        textDocument: { uri: formatEditUri },
+        options: { tabSize: 4, insertSpaces: true },
+    });
+    assert(Array.isArray(formatted) && formatted.length === 1 &&
+        formatted[0].newText.includes('    pub func run') &&
+        formatted[0].newText.includes('        return value;'),
+        'textDocument/formatting must return a full-document indented edit');
+    const willSaveEdits = await client.request('textDocument/willSaveWaitUntil', {
+        textDocument: { uri: formatEditUri },
+        reason: 1,
+    });
+    assert(Array.isArray(willSaveEdits) && willSaveEdits.length === 1 &&
+        willSaveEdits[0].newText.includes('    pub func run') &&
+        willSaveEdits[0].newText.includes('        return value;'),
+        'textDocument/willSaveWaitUntil must return save-time formatting edits');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: noopFormatUri,
+            languageId: 'zr',
+            version: 1,
+            text: noopFormatText,
+        },
+    });
+    await waitForDiagnosticsUri(client, noopFormatUri, 'noop formatting diagnostics uri mismatch');
+    const noopFormatted = await client.request('textDocument/formatting', {
+        textDocument: { uri: noopFormatUri },
+        options: { tabSize: 4, insertSpaces: true },
+    });
+    assert(Array.isArray(noopFormatted) && noopFormatted.length === 0,
+        'textDocument/formatting must skip already formatted documents');
+    const noopRangeFormatted = await client.request('textDocument/rangeFormatting', {
+        textDocument: { uri: noopFormatUri },
+        range: { start: { line: 1, character: 0 }, end: { line: 3, character: 0 } },
+        options: { tabSize: 4, insertSpaces: true },
+    });
+    assert(Array.isArray(noopRangeFormatted) && noopRangeFormatted.length === 0,
+        'textDocument/rangeFormatting must skip already formatted ranges');
+    const noopRangesFormatted = await client.request('textDocument/rangesFormatting', {
+        textDocument: { uri: noopFormatUri },
+        ranges: [
+            { start: { line: 1, character: 0 }, end: { line: 2, character: 0 } },
+            { start: { line: 2, character: 0 }, end: { line: 3, character: 0 } },
+        ],
+        options: { tabSize: 4, insertSpaces: true },
+    });
+    assert(Array.isArray(noopRangesFormatted) && noopRangesFormatted.length === 0,
+        'textDocument/rangesFormatting must return aggregated range edits');
+
+    const onTypeFormatted = await client.request('textDocument/onTypeFormatting', {
+        textDocument: { uri: genericUri },
+        position: { line: 8, character: 1 },
+        ch: '}',
+        options: { tabSize: 4, insertSpaces: true },
+    });
+    assert(Array.isArray(onTypeFormatted),
+        'textDocument/onTypeFormatting must return an edit array');
+
+    const folds = await client.request('textDocument/foldingRange', {
+        textDocument: { uri: genericUri },
+    });
+    assert(Array.isArray(folds) && folds.length > 0,
+        'textDocument/foldingRange must return structural ranges');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: importFoldingUri,
+            languageId: 'zr',
+            version: 1,
+            text: importFoldingText,
+        },
+    });
+    await waitForDiagnosticsUri(client, importFoldingUri, 'import folding diagnostics uri mismatch');
+    const importFolds = await client.request('textDocument/foldingRange', {
+        textDocument: { uri: importFoldingUri },
+    });
+    assert(Array.isArray(importFolds) && importFolds.some((range) =>
+        range &&
+        range.kind === 'imports' &&
+        range.startLine === 0 &&
+        range.endLine === 2) &&
+        importFolds.some((range) =>
+            range &&
+        range.kind === 'comment' &&
+        range.startLine === 4 &&
+        range.endLine === 5) &&
+        importFolds.some((range) =>
+            range &&
+            range.kind === 'region' &&
+            range.startLine === 7 &&
+            range.endLine === 11),
+    'textDocument/foldingRange must include import, comment, and explicit marker regions');
+
+    const selections = await client.request('textDocument/selectionRange', {
+        textDocument: { uri: genericUri },
+        positions: [genericDefinitionPosition],
+    });
+    assert(Array.isArray(selections) &&
+        selections.length === 1 &&
+        selections[0].range &&
+        selections[0].parent &&
+        selections[0].parent.parent,
+    'textDocument/selectionRange must return word, line, and block parent ranges');
+
+    const importLinks = await client.request('textDocument/documentLink', {
+        textDocument: { uri: genericUri },
+    });
+    assert(Array.isArray(importLinks),
+        'textDocument/documentLink must return an array');
+
+    const zrpLinksPath = path.join(watchedFixture.rootPath, 'linked_paths.zrp');
+    const zrpLinksUri = pathToFileURL(zrpLinksPath).toString();
+    const zrpLinksText = [
+        '{',
+        '  "name": "linked_paths",',
+        '  "source": "src",',
+        '  "binary": "bin",',
+        '  "entry": "main",',
+        '  "dependency": "deps",',
+        '  "local": "local_modules"',
+        '}',
+        '',
+    ].join('\n');
+    fs.writeFileSync(zrpLinksPath, zrpLinksText);
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: zrpLinksUri,
+            languageId: 'json',
+            version: 1,
+            text: zrpLinksText,
+        },
+    });
+    await waitForDiagnosticsUri(client, zrpLinksUri, 'zrp documentLink diagnostics uri mismatch');
+    const zrpLinks = await client.request('textDocument/documentLink', {
+        textDocument: { uri: zrpLinksUri },
+    });
+    assert(Array.isArray(zrpLinks) &&
+        zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/src')) &&
+        zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/bin')) &&
+        zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/src/main.zr')) &&
+        zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/deps')) &&
+        zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/local_modules')),
+    'textDocument/documentLink must expose all zrp project path fields');
+    const resolvedZrpLink = await client.request('documentLink/resolve', zrpLinks[0]);
+    assert(resolvedZrpLink &&
+        resolvedZrpLink.target === zrpLinks[0].target &&
+        resolvedZrpLink.range &&
+        resolvedZrpLink.range.start &&
+        resolvedZrpLink.range.start.line === zrpLinks[0].range.start.line,
+    'documentLink/resolve must preserve resolved target links');
+
+    const virtualNetworkUri = 'zr-decompiled:/zr.network.zr';
+    const virtualNetworkText = await client.request('zr/nativeDeclarationDocument', {
+        uri: virtualNetworkUri,
+    });
+    assert(typeof virtualNetworkText === 'string' && virtualNetworkText.includes('pub module tcp: zr.network.tcp;'),
+        'zr/nativeDeclarationDocument must render native module links');
+    const virtualNetworkLinks = await client.request('textDocument/documentLink', {
+        textDocument: { uri: virtualNetworkUri },
+    });
+    assert(Array.isArray(virtualNetworkLinks) && virtualNetworkLinks.some((link) =>
+        link && link.target === 'zr-decompiled:/zr.network.tcp.zr'),
+    'textDocument/documentLink must expose virtual native module links');
+
+    const codeActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: genericUri },
+        range: { start: { line: 0, character: 0 }, end: { line: genericText.split('\n').length, character: 0 } },
+        context: { diagnostics: [], only: ['source.organizeImports'] },
+    });
+    assert(Array.isArray(codeActions),
+        'textDocument/codeAction must return an array');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: moduleImportsUri,
+            languageId: 'zr',
+            version: 1,
+            text: moduleImportsText,
+        },
+    });
+    await waitForDiagnosticsUri(client, moduleImportsUri, 'module imports diagnostics uri mismatch');
+    const moduleImportActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: moduleImportsUri },
+        range: { start: { line: 0, character: 0 }, end: { line: moduleImportsText.split('\n').length, character: 0 } },
+        context: { diagnostics: [], only: ['source.organizeImports'] },
+    });
+    assert(Array.isArray(moduleImportActions) && moduleImportActions.some((action) =>
+        action &&
+        action.kind === 'source.organizeImports' &&
+        action.edit &&
+        action.edit.changes &&
+        Array.isArray(action.edit.changes[moduleImportsUri]) &&
+        action.edit.changes[moduleImportsUri].some((edit) =>
+            edit.newText.includes('%import("zr.math");\n%import("zr.system");'))),
+    'textDocument/codeAction must organize imports after module declarations');
+    const organizeImportAction = moduleImportActions.find((action) =>
+        action && action.kind === 'source.organizeImports' && action.edit);
+    const resolvedOrganizeImportAction = await client.request('codeAction/resolve', organizeImportAction);
+    assert(resolvedOrganizeImportAction &&
+        resolvedOrganizeImportAction.title === organizeImportAction.title &&
+        resolvedOrganizeImportAction.edit &&
+        resolvedOrganizeImportAction.edit.changes &&
+        Array.isArray(resolvedOrganizeImportAction.edit.changes[moduleImportsUri]),
+    'codeAction/resolve must preserve resolved edits');
+
+    const semicolonFixturePath = path.join(watchedFixture.rootPath, 'semicolon_action.zr');
+    const semicolonFixtureUri = pathToFileURL(semicolonFixturePath).toString();
+    const semicolonFixtureText = 'var answer = 42\n';
+    fs.writeFileSync(semicolonFixturePath, semicolonFixtureText);
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: semicolonFixtureUri,
+            languageId: 'zr',
+            version: 1,
+            text: semicolonFixtureText,
+        },
+    });
+    await waitForDiagnosticsUri(client, semicolonFixtureUri, 'semicolon quickfix diagnostics uri mismatch');
+
+    const quickFixActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: semicolonFixtureUri },
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+        context: { diagnostics: [], only: ['quickfix'] },
+    });
+    assert(Array.isArray(quickFixActions) && quickFixActions.some((action) =>
+        action &&
+        action.kind === 'quickfix' &&
+        action.edit &&
+        action.edit.changes &&
+        Array.isArray(action.edit.changes[semicolonFixtureUri]) &&
+        action.edit.changes[semicolonFixtureUri].some((edit) => edit.newText === ';')),
+    'textDocument/codeAction must return a semicolon quickfix edit');
+
+    const sourceOnlyActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: semicolonFixtureUri },
+        range: { start: { line: 0, character: 0 }, end: { line: 0, character: 0 } },
+        context: { diagnostics: [], only: ['source.organizeImports'] },
+    });
+    assert(Array.isArray(sourceOnlyActions) &&
+        !sourceOnlyActions.some((action) => action && action.kind === 'quickfix'),
+    'textDocument/codeAction must honor context.only filters');
+
+    const declaration = await client.request('textDocument/declaration', {
+        textDocument: { uri: genericUri },
+        position: genericDefinitionPosition,
+    });
+    assert(Array.isArray(declaration),
+        'textDocument/declaration must return an array');
+
+    const callHierarchyItems = await client.request('textDocument/prepareCallHierarchy', {
+        textDocument: { uri: genericUri },
+        position: genericCallPosition,
+    });
+    assert(Array.isArray(callHierarchyItems),
+        'textDocument/prepareCallHierarchy must return an array');
+    const outgoingCalls = await client.request('callHierarchy/outgoingCalls', {
+        item: callHierarchyItems[0] || {
+            name: 'shape',
+            kind: 6,
+            uri: genericUri,
+            range: { start: genericCallPosition, end: genericCallPosition },
+            selectionRange: { start: genericCallPosition, end: genericCallPosition },
+        },
+    });
+    assert(Array.isArray(outgoingCalls),
+        'callHierarchy/outgoingCalls must return an array');
+    const incomingCalls = await client.request('callHierarchy/incomingCalls', {
+        item: callHierarchyItems[0] || {
+            name: 'shape',
+            kind: 6,
+            uri: genericUri,
+            range: { start: genericCallPosition, end: genericCallPosition },
+            selectionRange: { start: genericCallPosition, end: genericCallPosition },
+        },
+    });
+    assert(Array.isArray(incomingCalls),
+        'callHierarchy/incomingCalls must return an array');
+
+    const hierarchyFixturePath = path.join(watchedFixture.rootPath, 'src', 'call_hierarchy.zr');
+    const hierarchyFixtureUri = pathToFileURL(hierarchyFixturePath).toString();
+    const hierarchyFixtureText = [
+        'func helper(value: int): int {',
+        '    return value;',
+        '}',
+        '',
+        'func run(value: int): int {',
+        '    return helper(value);',
+        '}',
+        '',
+    ].join('\n');
+    fs.writeFileSync(hierarchyFixturePath, hierarchyFixtureText);
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: hierarchyFixtureUri,
+            languageId: 'zr',
+            version: 1,
+            text: hierarchyFixtureText,
+        },
+    });
+    await waitForDiagnosticsUri(client, hierarchyFixtureUri, 'call hierarchy fixture diagnostics uri mismatch');
+    const hierarchyCodeLens = await client.request('textDocument/codeLens', {
+        textDocument: { uri: hierarchyFixtureUri },
+    });
+    assert(Array.isArray(hierarchyCodeLens) && hierarchyCodeLens.some((lens) =>
+        lens &&
+        lens.command &&
+        lens.command.title === '1 reference' &&
+        lens.command.command === 'zr.showReferences' &&
+        Array.isArray(lens.command.arguments) &&
+        lens.command.arguments[0] === hierarchyFixtureUri &&
+        lens.command.arguments[1] &&
+        lens.command.arguments[1].line === 0 &&
+        lens.command.arguments[1].character === 5),
+    'textDocument/codeLens must expose callable reference counts with a reference command');
+    const hierarchyRunPosition = findPosition(hierarchyFixtureText, 'run(value', 0, 1);
+    const preparedRunItems = await client.request('textDocument/prepareCallHierarchy', {
+        textDocument: { uri: hierarchyFixtureUri },
+        position: hierarchyRunPosition,
+    });
+    assert(Array.isArray(preparedRunItems),
+        'textDocument/prepareCallHierarchy must return an array in the call fixture');
+    const preparedRunOutgoing = await client.request('callHierarchy/outgoingCalls', {
+        item: preparedRunItems[0] || {
+            name: 'run',
+            kind: 12,
+            uri: hierarchyFixtureUri,
+            range: {
+                start: { line: 4, character: 0 },
+                end: { line: 6, character: 1 },
+            },
+            selectionRange: {
+                start: { line: 4, character: 5 },
+                end: { line: 4, character: 8 },
+            },
+        },
+    });
+    assert(Array.isArray(preparedRunOutgoing) && preparedRunOutgoing.some((call) =>
+        call &&
+        call.to &&
+        call.to.name === 'helper' &&
+        Array.isArray(call.fromRanges) &&
+        call.fromRanges.length > 0),
+    'callHierarchy/outgoingCalls must return direct helper() calls over stdio');
+
+    const hierarchyHelperPosition = findPosition(hierarchyFixtureText, 'helper(value', 0, 1);
+    const preparedHelperItems = await client.request('textDocument/prepareCallHierarchy', {
+        textDocument: { uri: hierarchyFixtureUri },
+        position: hierarchyHelperPosition,
+    });
+    assert(Array.isArray(preparedHelperItems),
+        'textDocument/prepareCallHierarchy must return helper in the call fixture');
+    const preparedHelperIncoming = await client.request('callHierarchy/incomingCalls', {
+        item: preparedHelperItems[0] || {
+            name: 'helper',
+            kind: 12,
+            uri: hierarchyFixtureUri,
+            range: {
+                start: { line: 0, character: 0 },
+                end: { line: 2, character: 1 },
+            },
+            selectionRange: {
+                start: { line: 0, character: 5 },
+                end: { line: 0, character: 11 },
+            },
+        },
+    });
+    assert(Array.isArray(preparedHelperIncoming) && preparedHelperIncoming.some((call) =>
+        call &&
+        call.from &&
+        call.from.name === 'run' &&
+        Array.isArray(call.fromRanges) &&
+        call.fromRanges.length > 0),
+    'callHierarchy/incomingCalls must return direct run() callers over stdio');
+
+    const typeHierarchyItems = await client.request('textDocument/prepareTypeHierarchy', {
+        textDocument: { uri: genericUri },
+        position: genericDefinitionPosition,
+    });
+    assert(Array.isArray(typeHierarchyItems),
+        'textDocument/prepareTypeHierarchy must return an array');
+    const supertypes = await client.request('typeHierarchy/supertypes', {
+        item: typeHierarchyItems[0] || {
+            name: 'Derived',
+            kind: 5,
+            uri: genericUri,
+            range: { start: genericDefinitionPosition, end: genericDefinitionPosition },
+            selectionRange: { start: genericDefinitionPosition, end: genericDefinitionPosition },
+        },
+    });
+    assert(Array.isArray(supertypes),
+        'typeHierarchy/supertypes must return an array');
+    const subtypes = await client.request('typeHierarchy/subtypes', {
+        item: typeHierarchyItems[0] || {
+            name: 'Derived',
+            kind: 5,
+            uri: genericUri,
+            range: { start: genericDefinitionPosition, end: genericDefinitionPosition },
+            selectionRange: { start: genericDefinitionPosition, end: genericDefinitionPosition },
+        },
+    });
+    assert(Array.isArray(subtypes),
+        'typeHierarchy/subtypes must return an array');
+
+    const pullDiagnostics = await client.request('textDocument/diagnostic', {
+        textDocument: { uri: genericUri },
+    });
+    assert(pullDiagnostics &&
+        pullDiagnostics.kind === 'full' &&
+        Array.isArray(pullDiagnostics.items) &&
+        typeof pullDiagnostics.resultId === 'string' &&
+        pullDiagnostics.resultId.length > 0,
+    'textDocument/diagnostic must return a full diagnostic report with resultId');
+    const unchangedDiagnostics = await client.request('textDocument/diagnostic', {
+        textDocument: { uri: genericUri },
+        previousResultId: pullDiagnostics.resultId,
+    });
+    assert(unchangedDiagnostics &&
+        unchangedDiagnostics.kind === 'unchanged' &&
+        unchangedDiagnostics.resultId === pullDiagnostics.resultId &&
+        !Object.prototype.hasOwnProperty.call(unchangedDiagnostics, 'items'),
+    'textDocument/diagnostic must return unchanged reports for matching previousResultId');
+
+    const workspaceDiagnostics = await client.request('workspace/diagnostic', {});
+    assert(workspaceDiagnostics && Array.isArray(workspaceDiagnostics.items),
+        'workspace/diagnostic must return a workspace diagnostic report');
+    assert(workspaceDiagnostics.items.some((report) =>
+        report &&
+        report.kind === 'full' &&
+        report.version === 1 &&
+        typeof report.resultId === 'string' &&
+        report.resultId.length > 0 &&
+        diagnosticRelatedUriMatches(genericUri, report.uri) &&
+        Array.isArray(report.items)),
+    'workspace/diagnostic must include opened document diagnostic reports');
+    const genericWorkspaceReport = workspaceDiagnostics.items.find((report) =>
+        report &&
+        report.kind === 'full' &&
+        diagnosticRelatedUriMatches(genericUri, report.uri) &&
+        typeof report.resultId === 'string');
+    assert(genericWorkspaceReport && genericWorkspaceReport.version === 1,
+        'workspace/diagnostic full reports must include the document version');
+    const unchangedWorkspaceDiagnostics = await client.request('workspace/diagnostic', {
+        previousResultIds: [
+            { uri: genericWorkspaceReport.uri, value: genericWorkspaceReport.resultId },
+        ],
+    });
+    assert(unchangedWorkspaceDiagnostics &&
+        Array.isArray(unchangedWorkspaceDiagnostics.items) &&
+        unchangedWorkspaceDiagnostics.items.some((report) =>
+            report &&
+            report.uri === genericWorkspaceReport.uri &&
+            report.kind === 'unchanged' &&
+            report.version === genericWorkspaceReport.version &&
+            report.resultId === genericWorkspaceReport.resultId &&
+            !Object.prototype.hasOwnProperty.call(report, 'items')),
+    'workspace/diagnostic must return unchanged reports for matching previousResultIds');
 
     client.notify('workspace/didChangeWatchedFiles', {
         changes: [
@@ -850,8 +1632,9 @@ async function main() {
         },
     });
 
-    const watchedBinaryDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(diagnosticRelatedUriMatches(watchedBinaryFixture.mainUri, watchedBinaryDiagnostics.uri),
+    const watchedBinaryDiagnostics = await waitForDiagnosticsUri(
+        client,
+        watchedBinaryFixture.mainUri,
         'binary watched metadata diagnostics uri mismatch');
     assert(Array.isArray(watchedBinaryDiagnostics.diagnostics) && watchedBinaryDiagnostics.diagnostics.length === 0,
         'binary watched metadata fixture should open without diagnostics');
@@ -983,8 +1766,9 @@ async function main() {
         ],
     });
 
-    const watchedChangeDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(diagnosticRelatedUriMatches(watchedFixture.mainUri, watchedChangeDiagnostics.uri),
+    const watchedChangeDiagnostics = await waitForDiagnosticsUri(
+        client,
+        watchedFixture.mainUri,
         'workspace/didChangeWatchedFiles source change diagnostics uri mismatch');
     assert(Array.isArray(watchedChangeDiagnostics.diagnostics) && watchedChangeDiagnostics.diagnostics.length === 0,
         'workspace/didChangeWatchedFiles source change should publish empty diagnostics');
@@ -1012,8 +1796,9 @@ async function main() {
         ],
     });
 
-    const watchedDeleteDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
-    assert(diagnosticRelatedUriMatches(watchedFixture.projectUri, watchedDeleteDiagnostics.uri),
+    const watchedDeleteDiagnostics = await waitForDiagnosticsUri(
+        client,
+        watchedFixture.projectUri,
         'workspace/didChangeWatchedFiles project delete diagnostics uri mismatch');
     assert(Array.isArray(watchedDeleteDiagnostics.diagnostics) && watchedDeleteDiagnostics.diagnostics.length === 0,
         'workspace/didChangeWatchedFiles project delete must clear diagnostics');
@@ -1024,11 +1809,101 @@ async function main() {
     assert(Array.isArray(watchedDeletedSymbols) && watchedDeletedSymbols.length === 0,
         'workspace/didChangeWatchedFiles delete must clear the removed project index');
 
+    const willCreateFiles = await client.request('workspace/willCreateFiles', {
+        files: [
+            { uri: fileOperationsFixture.projectUri },
+        ],
+    });
+    assert(willCreateFiles === null, 'workspace/willCreateFiles must return null when no edits are needed');
+    client.notify('workspace/didCreateFiles', {
+        files: [
+            { uri: fileOperationsFixture.projectUri },
+        ],
+    });
+    const fileOperationCreateDiagnostics = await waitForDiagnosticsUri(
+        client,
+        fileOperationsFixture.projectUri,
+        'workspace/didCreateFiles project diagnostics uri mismatch');
+    assert(Array.isArray(fileOperationCreateDiagnostics.diagnostics),
+        'workspace/didCreateFiles must publish project diagnostics');
+    const fileOperationCreateSymbols = await client.request('workspace/symbol', {
+        query: 'watched_before_refresh',
+    });
+    assert(Array.isArray(fileOperationCreateSymbols) && fileOperationCreateSymbols.some((item) =>
+        item &&
+        item.location &&
+        diagnosticRelatedUriMatches(fileOperationsFixture.mainUri, item.location.uri) &&
+        item.name === 'watched_before_refresh'),
+    'workspace/didCreateFiles must index newly created unopened project sources');
+
+    const willRenameFiles = await client.request('workspace/willRenameFiles', {
+        files: [
+            {
+                oldUri: fileOperationsFixture.mainUri,
+                newUri: fileOperationsFixture.mainUri,
+            },
+        ],
+    });
+    assert(willRenameFiles === null, 'workspace/willRenameFiles must return null when no edits are needed');
+    const willDeleteFiles = await client.request('workspace/willDeleteFiles', {
+        files: [
+            { uri: fileOperationsFixture.projectUri },
+        ],
+    });
+    assert(willDeleteFiles === null, 'workspace/willDeleteFiles must return null when no edits are needed');
+    fs.unlinkSync(fileOperationsFixture.projectPath);
+    client.notify('workspace/didDeleteFiles', {
+        files: [
+            { uri: fileOperationsFixture.projectUri },
+        ],
+    });
+    const fileOperationDeleteDiagnostics = await waitForDiagnosticsUri(
+        client,
+        fileOperationsFixture.projectUri,
+        'workspace/didDeleteFiles project delete diagnostics uri mismatch');
+    assert(Array.isArray(fileOperationDeleteDiagnostics.diagnostics) &&
+        fileOperationDeleteDiagnostics.diagnostics.length === 0,
+    'workspace/didDeleteFiles must clear diagnostics for deleted projects');
+    const fileOperationDeletedSymbols = await client.request('workspace/symbol', {
+        query: 'watched_before_refresh',
+    });
+    assert(Array.isArray(fileOperationDeletedSymbols) && fileOperationDeletedSymbols.length === 0,
+        'workspace/didDeleteFiles must clear deleted project indexes');
+
     const semanticTokens = await client.request('textDocument/semanticTokens/full', {
         textDocument: { uri: docsUri },
     });
-    assert(semanticTokens && Array.isArray(semanticTokens.data),
-        'semanticTokens/full must return a data array');
+    assert(semanticTokens &&
+        Array.isArray(semanticTokens.data) &&
+        typeof semanticTokens.resultId === 'string' &&
+        semanticTokens.resultId.length > 0,
+    'semanticTokens/full must return a data array with a resultId');
+    const semanticDeltaTokens = await client.request('textDocument/semanticTokens/full/delta', {
+        textDocument: { uri: docsUri },
+        previousResultId: semanticTokens.resultId,
+    });
+    assert(semanticDeltaTokens &&
+        typeof semanticDeltaTokens.resultId === 'string' &&
+        Array.isArray(semanticDeltaTokens.edits) &&
+        semanticDeltaTokens.edits.some((edit) =>
+            edit &&
+            edit.start === 0 &&
+            edit.deleteCount === semanticTokens.data.length &&
+            Array.isArray(edit.data) &&
+            edit.data.length === semanticTokens.data.length),
+    'semanticTokens/full/delta must return a full replacement delta edit');
+    const semanticRangeTokens = await client.request('textDocument/semanticTokens/range', {
+        textDocument: { uri: docsUri },
+        range: {
+            start: { line: 0, character: 0 },
+            end: { line: 6, character: 0 },
+        },
+    });
+    assert(semanticRangeTokens &&
+        Array.isArray(semanticRangeTokens.data) &&
+        semanticRangeTokens.data.length > 0 &&
+        semanticRangeTokens.data.length <= semanticTokens.data.length,
+    'semanticTokens/range must return filtered semantic token data');
 
     client.notify('textDocument/didClose', {
         textDocument: {
@@ -1048,10 +1923,24 @@ async function main() {
         },
     });
 
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: colorUri,
+        },
+    });
+
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: inlineCompletionUri,
+        },
+    });
+
     const expectedClosedUris = new Set([
         watchedBinaryFixture.mainUri,
         documentUri,
         docsUri,
+        colorUri,
+        inlineCompletionUri,
         importDiagnosticsFixture.mainUri,
     ]);
     let clearedCloseCount = 0;
@@ -1075,18 +1964,22 @@ async function main() {
     cleanupPath(watchedFixtureRootToCleanup);
     cleanupPath(watchedBinaryFixtureRootToCleanup);
     cleanupPath(importDiagnosticsFixtureRootToCleanup);
+    cleanupPath(fileOperationsFixtureRootToCleanup);
     watchedFixtureRootToCleanup = null;
     watchedBinaryFixtureRootToCleanup = null;
     importDiagnosticsFixtureRootToCleanup = null;
+    fileOperationsFixtureRootToCleanup = null;
 }
 
 main().catch((error) => {
     cleanupPath(watchedFixtureRootToCleanup);
     cleanupPath(watchedBinaryFixtureRootToCleanup);
     cleanupPath(importDiagnosticsFixtureRootToCleanup);
+    cleanupPath(fileOperationsFixtureRootToCleanup);
     watchedFixtureRootToCleanup = null;
     watchedBinaryFixtureRootToCleanup = null;
     importDiagnosticsFixtureRootToCleanup = null;
+    fileOperationsFixtureRootToCleanup = null;
     console.error(error.stack || String(error));
     process.exit(1);
 });

@@ -2003,6 +2003,55 @@ static ZR_FORCE_INLINE TZrPtr garbage_collector_allocate_evacuation_clone_memory
     return cloneMemory;
 }
 
+static ZR_FORCE_INLINE void garbage_collector_clone_object_raw_int_storage(
+        SZrState *state,
+        SZrRawObject *sourceObject,
+        SZrRawObject *cloneObject,
+        TZrSize objectSize) {
+    SZrObject *sourceCoreObject;
+    SZrObject *cloneCoreObject;
+    TZrSize rawBytes;
+    TZrInt64 *cloneData;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || sourceObject == ZR_NULL || cloneObject == ZR_NULL ||
+        objectSize < sizeof(SZrObject) ||
+        (sourceObject->type != ZR_RAW_OBJECT_TYPE_ARRAY && sourceObject->type != ZR_RAW_OBJECT_TYPE_OBJECT)) {
+        return;
+    }
+
+    sourceCoreObject = ZR_CAST(SZrObject *, sourceObject);
+    cloneCoreObject = ZR_CAST(SZrObject *, cloneObject);
+    if (sourceCoreObject->superArrayRawIntData == ZR_NULL ||
+        sourceCoreObject->superArrayRawIntCapacity == 0 ||
+        sourceCoreObject->superArrayRawIntCapacity > (ZR_MAX_SIZE / sizeof(TZrInt64))) {
+        cloneCoreObject->superArrayRawIntData = ZR_NULL;
+        cloneCoreObject->superArrayRawIntLength = 0;
+        cloneCoreObject->superArrayRawIntCapacity = 0;
+        cloneCoreObject->superArrayRawIntDirty = ZR_FALSE;
+        return;
+    }
+
+    rawBytes = sourceCoreObject->superArrayRawIntCapacity * sizeof(TZrInt64);
+    cloneData = (TZrInt64 *)ZrCore_Memory_RawMallocWithType(state->global, rawBytes, ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    if (cloneData == ZR_NULL) {
+        cloneCoreObject->superArrayRawIntData = ZR_NULL;
+        cloneCoreObject->superArrayRawIntLength = 0;
+        cloneCoreObject->superArrayRawIntCapacity = 0;
+        cloneCoreObject->superArrayRawIntDirty = ZR_FALSE;
+        return;
+    }
+
+    if (sourceCoreObject->superArrayRawIntLength > 0) {
+        ZrCore_Memory_RawCopy(cloneData,
+                              sourceCoreObject->superArrayRawIntData,
+                              sourceCoreObject->superArrayRawIntLength * sizeof(TZrInt64));
+    }
+    cloneCoreObject->superArrayRawIntData = cloneData;
+    cloneCoreObject->superArrayRawIntLength = sourceCoreObject->superArrayRawIntLength;
+    cloneCoreObject->superArrayRawIntCapacity = sourceCoreObject->superArrayRawIntCapacity;
+    cloneCoreObject->superArrayRawIntDirty = sourceCoreObject->superArrayRawIntDirty;
+}
+
 static SZrRawObject *garbage_collector_clone_for_minor_evacuation(
         SZrState *state,
         SZrRawObject *object,
@@ -2056,6 +2105,7 @@ static SZrRawObject *garbage_collector_clone_for_minor_evacuation(
     }
     insertedNext = collector->gcObjectList;
     ZrCore_Memory_RawCopy(cloneObject, object, objectSize);
+    garbage_collector_clone_object_raw_int_storage(state, object, cloneObject, objectSize);
     cloneObject->next = insertedNext;
     collector->gcObjectList = cloneObject;
     cloneObject->gcList = ZR_NULL;

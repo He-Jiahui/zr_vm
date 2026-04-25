@@ -66,6 +66,17 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_transport.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_json.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_documents.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_editing.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_editor_features.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_linked_editing.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_document_color.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_completion.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_value.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_moniker.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_semantic_tokens.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_workspace_files.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_workspace_commands.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_request_dispatch.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_requests.c
     )
 

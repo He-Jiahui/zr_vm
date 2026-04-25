@@ -489,11 +489,12 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
 
     zr_vm_add_unity_test_target(
             zr_vm_compiler_integration_test
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_features.c
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_regressions.c
-            ${CMAKE_SOURCE_DIR}/tests/parser/test_escape_metadata_pipeline.c
-            ${CMAKE_SOURCE_DIR}/tests/parser/call_chain_polymorphic_compile_fixture.c
-            ${CMAKE_SOURCE_DIR}/tests/parser/matrix_add_2d_compile_fixture.c
+             ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_features.c
+             ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_regressions.c
+             ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_w2_performance_quickening.c
+             ${CMAKE_SOURCE_DIR}/tests/parser/test_escape_metadata_pipeline.c
+             ${CMAKE_SOURCE_DIR}/tests/parser/call_chain_polymorphic_compile_fixture.c
+             ${CMAKE_SOURCE_DIR}/tests/parser/matrix_add_2d_compile_fixture.c
             ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_integration_main.c
     )
     target_include_directories(zr_vm_compiler_integration_test PRIVATE
@@ -531,6 +532,50 @@ if ((TARGET zr_vm_parser_shared OR TARGET zr_vm_parser_static) AND
         target_link_libraries(zr_vm_compiler_integration_test PRIVATE zr_vm_lib_network_shared)
     elseif (TARGET zr_vm_lib_network_static)
         target_link_libraries(zr_vm_compiler_integration_test PRIVATE zr_vm_lib_network_static)
+    endif ()
+
+    zr_vm_add_unity_test_target(
+            zr_vm_compiler_w2_performance_quickening_test
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_w2_performance_quickening.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/matrix_add_2d_compile_fixture.c
+            ${CMAKE_SOURCE_DIR}/tests/parser/test_compiler_w2_performance_quickening_main.c
+            ${CMAKE_SOURCE_DIR}/tests/unity_lifecycle_noop.c
+    )
+    target_include_directories(zr_vm_compiler_w2_performance_quickening_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_container/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_network/include
+    )
+    zr_vm_link_parser_core_plus_library(zr_vm_compiler_w2_performance_quickening_test)
+    if (TARGET zr_vm_lib_math_shared)
+        target_link_libraries(zr_vm_compiler_w2_performance_quickening_test PRIVATE zr_vm_lib_math_shared)
+    elseif (TARGET zr_vm_lib_math_static)
+        target_link_libraries(zr_vm_compiler_w2_performance_quickening_test PRIVATE zr_vm_lib_math_static)
+    endif ()
+    if (TARGET zr_vm_lib_system_shared)
+        target_link_libraries(zr_vm_compiler_w2_performance_quickening_test PRIVATE zr_vm_lib_system_shared)
+    elseif (TARGET zr_vm_lib_system_static)
+        target_link_libraries(zr_vm_compiler_w2_performance_quickening_test PRIVATE zr_vm_lib_system_static)
+    endif ()
+    if (TARGET zr_vm_lib_container_shared)
+        target_link_libraries(zr_vm_compiler_w2_performance_quickening_test PRIVATE zr_vm_lib_container_shared)
+    elseif (TARGET zr_vm_lib_container_static)
+        target_link_libraries(zr_vm_compiler_w2_performance_quickening_test PRIVATE zr_vm_lib_container_static)
+    endif ()
+    if (TARGET zr_vm_lib_ffi_shared)
+        target_link_libraries(zr_vm_compiler_w2_performance_quickening_test PRIVATE zr_vm_lib_ffi_shared)
+    elseif (TARGET zr_vm_lib_ffi_static)
+        target_link_libraries(zr_vm_compiler_w2_performance_quickening_test PRIVATE zr_vm_lib_ffi_static)
+    endif ()
+    if (TARGET zr_vm_lib_network_shared)
+        target_link_libraries(zr_vm_compiler_w2_performance_quickening_test PRIVATE zr_vm_lib_network_shared)
+    elseif (TARGET zr_vm_lib_network_static)
+        target_link_libraries(zr_vm_compiler_w2_performance_quickening_test PRIVATE zr_vm_lib_network_static)
     endif ()
 
     zr_vm_add_unity_test_target(
@@ -876,6 +921,10 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_project_features.c
     )
     zr_vm_add_support_target(
+            zr_vm_language_server_lsp_advanced_editor_features_test
+            ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_advanced_editor_features.c
+    )
+    zr_vm_add_support_target(
             zr_vm_language_server_lsp_language_feature_matrix_test
             ${CMAKE_SOURCE_DIR}/tests/language_server/test_lsp_language_feature_matrix.c
     )
@@ -887,6 +936,7 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             zr_vm_language_server_incremental_parser_test
             zr_vm_language_server_lsp_interface_test
             zr_vm_language_server_lsp_project_features_test
+            zr_vm_language_server_lsp_advanced_editor_features_test
             zr_vm_language_server_lsp_language_feature_matrix_test)
         target_include_directories(${language_server_target} PRIVATE
                 ${CMAKE_SOURCE_DIR}/zr_vm_language_server/include
@@ -911,6 +961,12 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
     )
     target_include_directories(zr_vm_language_server_lsp_project_features_test PRIVATE
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
+    )
+    target_include_directories(zr_vm_language_server_lsp_advanced_editor_features_test PRIVATE
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_math/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
@@ -955,6 +1011,13 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
                 zr_vm_lib_system_shared
                 zr_vm_lib_ffi_shared
         )
+        target_link_libraries(zr_vm_language_server_lsp_advanced_editor_features_test PRIVATE
+                zr_vm_library_shared
+                zr_vm_lib_math_shared
+                zr_vm_lib_container_shared
+                zr_vm_lib_system_shared
+                zr_vm_lib_ffi_shared
+        )
         target_link_libraries(zr_vm_language_server_lsp_language_feature_matrix_test PRIVATE
                 zr_vm_library_shared
                 zr_vm_lib_math_shared
@@ -976,6 +1039,13 @@ if ((TARGET zr_vm_language_server_shared OR TARGET zr_vm_language_server_static)
                 zr_vm_lib_ffi_static
         )
         target_link_libraries(zr_vm_language_server_lsp_project_features_test PRIVATE
+                zr_vm_library_static
+                zr_vm_lib_math_static
+                zr_vm_lib_container_static
+                zr_vm_lib_system_static
+                zr_vm_lib_ffi_static
+        )
+        target_link_libraries(zr_vm_language_server_lsp_advanced_editor_features_test PRIVATE
                 zr_vm_library_static
                 zr_vm_lib_math_static
                 zr_vm_lib_container_static
@@ -1299,9 +1369,10 @@ if (TARGET zr_vm_language_server_symbol_table_test AND
         TARGET zr_vm_language_server_semantic_analyzer_test AND
         TARGET zr_vm_language_server_incremental_parser_test AND
         TARGET zr_vm_language_server_lsp_interface_test AND
-        TARGET zr_vm_language_server_lsp_project_features_test)
+        TARGET zr_vm_language_server_lsp_project_features_test AND
+        TARGET zr_vm_language_server_lsp_advanced_editor_features_test)
     set(language_server_executables
-            "$<TARGET_FILE:zr_vm_language_server_symbol_table_test>;$<TARGET_FILE:zr_vm_language_server_reference_tracker_test>;$<TARGET_FILE:zr_vm_language_server_semantic_analyzer_test>;$<TARGET_FILE:zr_vm_language_server_incremental_parser_test>;$<TARGET_FILE:zr_vm_language_server_lsp_interface_test>;$<TARGET_FILE:zr_vm_language_server_lsp_project_features_test>"
+            "$<TARGET_FILE:zr_vm_language_server_symbol_table_test>;$<TARGET_FILE:zr_vm_language_server_reference_tracker_test>;$<TARGET_FILE:zr_vm_language_server_semantic_analyzer_test>;$<TARGET_FILE:zr_vm_language_server_incremental_parser_test>;$<TARGET_FILE:zr_vm_language_server_lsp_interface_test>;$<TARGET_FILE:zr_vm_language_server_lsp_project_features_test>;$<TARGET_FILE:zr_vm_language_server_lsp_advanced_editor_features_test>"
     )
     add_test(
             NAME language_server
@@ -1331,6 +1402,12 @@ if (TARGET zr_vm_language_server_stdio AND ZR_VM_NODE_EXECUTABLE)
                         $<TARGET_FILE:zr_vm_language_server_stdio>
         )
     endif ()
+    add_test(
+            NAME language_server_stdio_type_hierarchy_smoke
+            COMMAND ${ZR_VM_NODE_EXECUTABLE}
+                    ${CMAKE_SOURCE_DIR}/tests/language_server/stdio_type_hierarchy_smoke.js
+                    $<TARGET_FILE:zr_vm_language_server_stdio>
+    )
 endif ()
 
 if (TARGET zr_vm_cli_executable)
@@ -1563,6 +1640,7 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.16")
             containers
             language_server
             language_server_stdio_smoke
+            language_server_stdio_type_hierarchy_smoke
             projects
             cli_args
             cli_project_incremental

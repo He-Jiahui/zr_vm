@@ -205,6 +205,19 @@ static ZR_FORCE_INLINE void object_record_helper(SZrState *state, EZrProfileHelp
     }
 }
 
+static ZR_FORCE_INLINE TZrBool object_disable_raw_int_storage_for_generic_array_write(SZrState *state,
+                                                                                      SZrObject *object) {
+    if (object != ZR_NULL &&
+        object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+        object->superArrayRawIntData != ZR_NULL) {
+        if (!zr_super_array_raw_int_materialize_dirty(state, object)) {
+            return ZR_FALSE;
+        }
+        zr_super_array_raw_int_disable(state, object);
+    }
+    return ZR_TRUE;
+}
+
 static ZR_FORCE_INLINE void object_copy_value_profiled(SZrState *state,
                                                        SZrTypeValue *destination,
                                                        const SZrTypeValue *source) {
@@ -681,7 +694,6 @@ static ZR_FORCE_INLINE TZrBool object_try_get_by_index_readonly_inline_fast_stac
     SZrObject *object;
 
     if (state == ZR_NULL || receiver == ZR_NULL || key == ZR_NULL || result == ZR_NULL ||
-        (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
         receiver->value.object == ZR_NULL ||
         ZR_VALUE_IS_TYPE_INT(key->type)) {
         return ZR_FALSE;
@@ -704,7 +716,6 @@ static ZR_FORCE_INLINE TZrBool object_try_set_by_index_readonly_inline_fast_stac
     SZrObject *object;
 
     if (state == ZR_NULL || receiver == ZR_NULL || key == ZR_NULL || value == ZR_NULL ||
-        (receiver->type != ZR_VALUE_TYPE_OBJECT && receiver->type != ZR_VALUE_TYPE_ARRAY) ||
         receiver->value.object == ZR_NULL ||
         ZR_VALUE_IS_TYPE_INT(key->type)) {
         return ZR_FALSE;
@@ -806,8 +817,35 @@ static ZR_FORCE_INLINE TZrBool object_try_call_cached_known_native_get_by_index_
         const SZrTypeValue *receiver,
         const SZrTypeValue *key,
         SZrTypeValue *result) {
-    return object_try_call_cached_known_native_get_by_index_readonly_inline_mode(
-            state, directDispatch, receiver, key, result, ZR_TRUE);
+    FZrObjectKnownNativeReadonlyInlineGetFastCallback fastCallback;
+    TZrBool success = ZR_FALSE;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(directDispatch != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(key != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+
+    if (state->debugHookSignal != 0u) {
+        return ZR_FALSE;
+    }
+
+    fastCallback = directDispatch->readonlyInlineGetFastCallback;
+    if (fastCallback == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if ((directDispatch->reserved1 & ZR_OBJECT_KNOWN_NATIVE_DIRECT_DISPATCH_HOT_FLAG_READONLY_INLINE_GET_FAST_READY) ==
+            0u &&
+        !object_cached_readonly_inline_get_fast_shape_matches(directDispatch)) {
+        return ZR_FALSE;
+    }
+    success = fastCallback(state, receiver, key, result);
+    if (!success && state->threadStatus == ZR_THREAD_STATUS_FINE) {
+        ZrCore_Value_ResetAsNullNoProfile(result);
+        success = ZR_TRUE;
+    }
+
+    return state->threadStatus == ZR_THREAD_STATUS_FINE && success;
 }
 
 static ZR_FORCE_INLINE TZrBool object_try_call_cached_known_native_set_by_index_readonly_inline_mode(
@@ -1319,6 +1357,12 @@ static void object_set_value_core(SZrState *state,
         return;
     }
 
+    if (!object_disable_raw_int_storage_for_generic_array_write(state, object)) {
+        object_unpin_value_object(state->global, value, valuePinned);
+        object_unpin_raw_object(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(object), objectPinned);
+        return;
+    }
+
     nodeMap = &object->nodeMap;
     pair = ZrCore_HashSet_Find(state, nodeMap, storageKey);
     if (pair != ZR_NULL) {
@@ -1364,6 +1408,10 @@ void ZrCore_Object_SetExistingPairValueUnchecked(SZrState *state,
                                                  SZrHashKeyValuePair *pair,
                                                  const SZrTypeValue *value) {
     if (state == ZR_NULL || object == ZR_NULL || pair == ZR_NULL || value == ZR_NULL) {
+        return;
+    }
+
+    if (!object_disable_raw_int_storage_for_generic_array_write(state, object)) {
         return;
     }
 
@@ -1453,6 +1501,12 @@ const SZrTypeValue *ZrCore_Object_GetValue(struct SZrState *state, SZrObject *ob
         return ZR_NULL;
     }
     if (state == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (object->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY &&
+        object->superArrayRawIntData != ZR_NULL &&
+        !zr_super_array_raw_int_materialize_dirty(state, object)) {
         return ZR_NULL;
     }
 

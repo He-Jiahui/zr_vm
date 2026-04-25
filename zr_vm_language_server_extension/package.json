@@ -21,6 +21,7 @@
     "onCommand:zr.structure.refresh",
     "onCommand:zr.selectProject",
     "onCommand:zr.runCurrentProject",
+    "onCommand:zr.showReferences",
     "onCommand:zr.runSelectedProject",
     "onCommand:zr.debugCurrentProject",
     "onCommand:zr.debugSelectedProject",
@@ -82,6 +83,11 @@
       {
         "command": "zr.restartLanguageServer",
         "title": "Restart Language Server",
+        "category": "Zr"
+      },
+      {
+        "command": "zr.showReferences",
+        "title": "Show References",
         "category": "Zr"
       },
       {

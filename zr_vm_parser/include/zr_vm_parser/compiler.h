@@ -375,6 +375,13 @@ typedef struct SZrConstantReference {
     EZrValueType type;          // 常量类型记录
 } SZrConstantReference;
 
+typedef struct SZrQuickeningLoadTypedArithmeticProbeStats {
+    TZrUInt32 getStackTypedArithmeticPairs;
+    TZrUInt32 getConstantTypedArithmeticPairs;
+    TZrUInt32 safeFusionCandidates;
+    TZrUInt32 materializedLoadCandidates;
+} SZrQuickeningLoadTypedArithmeticProbeStats;
+
 // 初始化编译器状态
 ZR_PARSER_API void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state);
 
@@ -402,6 +409,10 @@ ZR_PARSER_API void ZrParser_Compiler_CompileExternBlock(SZrCompilerState *cs, SZ
 // 编译 AST 为函数和测试函数列表（新接口）
 // 返回编译结果结构体，调用者需要调用 ZrParser_CompileResult_Free 来释放资源
 ZR_PARSER_API TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZrCompileResult *result);
+
+ZR_PARSER_API TZrBool ZrParser_Quickening_CollectLoadTypedArithmeticProbeStats(
+        const SZrFunction *function,
+        SZrQuickeningLoadTypedArithmeticProbeStats *outStats);
 
 // 释放编译结果（释放测试函数数组，但不释放函数对象本身，函数对象由GC管理）
 ZR_PARSER_API void ZrParser_CompileResult_Free(SZrState *state, SZrCompileResult *result);

@@ -121,6 +121,63 @@ typedef struct SZrLspDocumentHighlight {
     TZrInt32 kind;                    // DocumentHighlightKind
 } SZrLspDocumentHighlight;
 
+typedef struct SZrLspTextEdit {
+    SZrLspRange range;
+    SZrString *newText;
+} SZrLspTextEdit;
+
+typedef struct SZrLspCodeAction {
+    SZrString *title;
+    SZrString *kind;
+    SZrArray edits;                   // SZrLspTextEdit*
+    TZrBool isPreferred;
+} SZrLspCodeAction;
+
+typedef struct SZrLspFoldingRange {
+    TZrInt32 startLine;
+    TZrInt32 startCharacter;
+    TZrInt32 endLine;
+    TZrInt32 endCharacter;
+    SZrString *kind;
+} SZrLspFoldingRange;
+
+typedef struct SZrLspSelectionRange {
+    SZrLspRange range;
+    TZrBool hasParent;
+    SZrLspRange parentRange;
+    TZrBool hasGrandParent;
+    SZrLspRange grandParentRange;
+} SZrLspSelectionRange;
+
+typedef struct SZrLspDocumentLink {
+    SZrLspRange range;
+    SZrString *target;
+    SZrString *tooltip;
+} SZrLspDocumentLink;
+
+typedef struct SZrLspCodeLens {
+    SZrLspRange range;
+    SZrString *commandTitle;
+    SZrString *command;
+    SZrString *argument;
+    TZrBool hasPositionArgument;
+    SZrLspPosition positionArgument;
+} SZrLspCodeLens;
+
+typedef struct SZrLspHierarchyItem {
+    SZrString *name;
+    SZrString *detail;
+    TZrInt32 kind;
+    SZrString *uri;
+    SZrLspRange range;
+    SZrLspRange selectionRange;
+} SZrLspHierarchyItem;
+
+typedef struct SZrLspHierarchyCall {
+    SZrLspHierarchyItem *item;
+    SZrArray fromRanges;              // SZrLspRange
+} SZrLspHierarchyCall;
+
 // LSP 接口上下文
 typedef struct SZrLspContext {
     SZrState *state;
@@ -255,6 +312,104 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *
                                                                       SZrArray *result);
 ZR_LANGUAGE_SERVER_API TZrSize ZrLanguageServer_Lsp_SemanticTokenTypeCount(void);
 ZR_LANGUAGE_SERVER_API const TZrChar *ZrLanguageServer_Lsp_SemanticTokenTypeName(TZrSize index);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetFormatting(SZrState *state,
+                                                                  SZrLspContext *context,
+                                                                  SZrString *uri,
+                                                                  SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetRangeFormatting(SZrState *state,
+                                                                       SZrLspContext *context,
+                                                                       SZrString *uri,
+                                                                       SZrLspRange range,
+                                                                       SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetCodeActions(SZrState *state,
+                                                                   SZrLspContext *context,
+                                                                   SZrString *uri,
+                                                                   SZrLspRange range,
+                                                                   SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetFoldingRanges(SZrState *state,
+                                                                     SZrLspContext *context,
+                                                                     SZrString *uri,
+                                                                     SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetSelectionRanges(SZrState *state,
+                                                                       SZrLspContext *context,
+                                                                       SZrString *uri,
+                                                                       const SZrLspPosition *positions,
+                                                                       TZrSize positionCount,
+                                                                       SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
+                                                                     SZrLspContext *context,
+                                                                     SZrString *uri,
+                                                                     SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
+                                                                SZrLspContext *context,
+                                                                SZrString *uri,
+                                                                SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetDeclaration(SZrState *state,
+                                                                   SZrLspContext *context,
+                                                                   SZrString *uri,
+                                                                   SZrLspPosition position,
+                                                                   SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetTypeDefinition(SZrState *state,
+                                                                      SZrLspContext *context,
+                                                                      SZrString *uri,
+                                                                      SZrLspPosition position,
+                                                                      SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetImplementation(SZrState *state,
+                                                                      SZrLspContext *context,
+                                                                      SZrString *uri,
+                                                                      SZrLspPosition position,
+                                                                      SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_PrepareCallHierarchy(SZrState *state,
+                                                                         SZrLspContext *context,
+                                                                         SZrString *uri,
+                                                                         SZrLspPosition position,
+                                                                         SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(SZrState *state,
+                                                                                  SZrLspContext *context,
+                                                                                  const SZrLspHierarchyItem *item,
+                                                                                  SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(SZrState *state,
+                                                                                  SZrLspContext *context,
+                                                                                  const SZrLspHierarchyItem *item,
+                                                                                  SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_PrepareTypeHierarchy(SZrState *state,
+                                                                         SZrLspContext *context,
+                                                                         SZrString *uri,
+                                                                         SZrLspPosition position,
+                                                                         SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySupertypes(SZrState *state,
+                                                                               SZrLspContext *context,
+                                                                               const SZrLspHierarchyItem *item,
+                                                                               SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_GetTypeHierarchySubtypes(SZrState *state,
+                                                                             SZrLspContext *context,
+                                                                             const SZrLspHierarchyItem *item,
+                                                                             SZrArray *result);
+
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeTextEdits(SZrState *state, SZrArray *result);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeCodeActions(SZrState *state, SZrArray *result);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeFoldingRanges(SZrState *state, SZrArray *result);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeSelectionRanges(SZrState *state, SZrArray *result);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeDocumentLinks(SZrState *state, SZrArray *result);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeCodeLens(SZrState *state, SZrArray *result);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeHierarchyItems(SZrState *state, SZrArray *result);
+ZR_LANGUAGE_SERVER_API void ZrLanguageServer_Lsp_FreeHierarchyCalls(SZrState *state, SZrArray *result);
 
 // 预检查是否可重命名
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Lsp_PrepareRename(SZrState *state,

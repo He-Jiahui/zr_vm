@@ -1025,14 +1025,23 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
     }
 
     if (lsp_string_ends_with_native(uri, ".zrp")) {
-        return allowProjectRefresh
-                   ? ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
-                                                                            context,
-                                                                            uri,
-                                                                            content,
-                                                                            contentLength,
-                                                                            ZR_TRUE)
-                   : ZR_TRUE;
+        if (!ZrLanguageServer_IncrementalParser_UpdateFile(state,
+                                                           context->parser,
+                                                           uri,
+                                                           content,
+                                                           contentLength,
+                                                           version)) {
+            return ZR_FALSE;
+        }
+        if (allowProjectRefresh) {
+            (void)ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
+                                                                        context,
+                                                                        uri,
+                                                                        content,
+                                                                        contentLength,
+                                                                        ZR_TRUE);
+        }
+        return ZR_TRUE;
     }
     
     // 更新文件
