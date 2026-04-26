@@ -487,7 +487,8 @@ static TZrBool metadata_provider_uri_to_native_path(SZrString *uri, TZrChar *buf
 }
 
 static TZrBool metadata_provider_file_range_contains_position(SZrFileRange range, SZrFileRange position) {
-    if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source)) {
+    if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
+        range.source != ZR_NULL && position.source != ZR_NULL) {
         return ZR_FALSE;
     }
 

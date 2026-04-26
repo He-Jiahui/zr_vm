@@ -1042,6 +1042,133 @@ static void test_lsp_type_hierarchy_subtypes_returns_direct_derived(SZrState *st
     }
 }
 
+static void test_lsp_advanced_editor_features_return_empty_for_empty_document(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP advanced editor features return empty results for empty documents";
+    const TZrChar *content = "";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray formatting = {0};
+    SZrArray rangeFormatting = {0};
+    SZrArray codeActions = {0};
+    SZrArray foldingRanges = {0};
+    SZrArray selectionRanges = {0};
+    SZrArray documentLinks = {0};
+    SZrArray codeLens = {0};
+    SZrArray callHierarchy = {0};
+    SZrArray typeHierarchy = {0};
+    SZrLspRange emptyRange = {{0, 0}, {0, 0}};
+    SZrLspPosition positions[1] = {{0, 0}};
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_empty_advanced_features.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &formatting) ||
+        !ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, emptyRange, &rangeFormatting) ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, emptyRange, &codeActions) ||
+        !ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &foldingRanges) ||
+        !ZrLanguageServer_Lsp_GetSelectionRanges(state, context, uri, positions, 0, &selectionRanges) ||
+        !ZrLanguageServer_Lsp_GetDocumentLinks(state, context, uri, &documentLinks) ||
+        !ZrLanguageServer_Lsp_GetCodeLens(state, context, uri, &codeLens) ||
+        !ZrLanguageServer_Lsp_PrepareCallHierarchy(state, context, uri, positions[0], &callHierarchy) ||
+        !ZrLanguageServer_Lsp_PrepareTypeHierarchy(state, context, uri, positions[0], &typeHierarchy)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "one or more providers failed instead of returning an empty result");
+    } else if (formatting.length != 0 ||
+               rangeFormatting.length != 0 ||
+               codeActions.length != 0 ||
+               foldingRanges.length != 0 ||
+               selectionRanges.length != 0 ||
+               documentLinks.length != 0 ||
+               codeLens.length != 0 ||
+               callHierarchy.length != 0 ||
+               typeHierarchy.length != 0) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "empty document produced non-empty advanced editor feature results");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &formatting);
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &rangeFormatting);
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &codeActions);
+    ZrLanguageServer_Lsp_FreeFoldingRanges(state, &foldingRanges);
+    ZrLanguageServer_Lsp_FreeSelectionRanges(state, &selectionRanges);
+    ZrLanguageServer_Lsp_FreeDocumentLinks(state, &documentLinks);
+    ZrLanguageServer_Lsp_FreeCodeLens(state, &codeLens);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &callHierarchy);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &typeHierarchy);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_advanced_editor_features_return_empty_for_unopened_documents(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP advanced editor features return empty results for unopened documents";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrArray formatting = {0};
+    SZrArray rangeFormatting = {0};
+    SZrArray codeActions = {0};
+    SZrArray foldingRanges = {0};
+    SZrArray selectionRanges = {0};
+    SZrArray documentLinks = {0};
+    SZrArray codeLens = {0};
+    SZrArray callHierarchy = {0};
+    SZrArray typeHierarchy = {0};
+    SZrLspRange range = {{0, 0}, {0, 0}};
+    SZrLspPosition position = {0, 0};
+
+    TEST_START(summary);
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state,
+                               (TZrNativeString)"file:///tmp/zr_lsp_unopened_advanced_features.zr",
+                               strlen("file:///tmp/zr_lsp_unopened_advanced_features.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "failed to allocate test context");
+    } else {
+        (void)ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &formatting);
+        (void)ZrLanguageServer_Lsp_GetRangeFormatting(state, context, uri, range, &rangeFormatting);
+        (void)ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &codeActions);
+        (void)ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &foldingRanges);
+        (void)ZrLanguageServer_Lsp_GetSelectionRanges(state, context, uri, &position, 1, &selectionRanges);
+        (void)ZrLanguageServer_Lsp_GetDocumentLinks(state, context, uri, &documentLinks);
+        (void)ZrLanguageServer_Lsp_GetCodeLens(state, context, uri, &codeLens);
+        (void)ZrLanguageServer_Lsp_PrepareCallHierarchy(state, context, uri, position, &callHierarchy);
+        (void)ZrLanguageServer_Lsp_PrepareTypeHierarchy(state, context, uri, position, &typeHierarchy);
+
+        if (formatting.length != 0 ||
+            rangeFormatting.length != 0 ||
+            codeActions.length != 0 ||
+            foldingRanges.length != 0 ||
+            selectionRanges.length != 0 ||
+            documentLinks.length != 0 ||
+            codeLens.length != 0 ||
+            callHierarchy.length != 0 ||
+            typeHierarchy.length != 0) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "unopened documents produced advanced editor feature results");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &formatting);
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &rangeFormatting);
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &codeActions);
+    ZrLanguageServer_Lsp_FreeFoldingRanges(state, &foldingRanges);
+    ZrLanguageServer_Lsp_FreeSelectionRanges(state, &selectionRanges);
+    ZrLanguageServer_Lsp_FreeDocumentLinks(state, &documentLinks);
+    ZrLanguageServer_Lsp_FreeCodeLens(state, &codeLens);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &callHierarchy);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &typeHierarchy);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;
@@ -1080,6 +1207,8 @@ int main(void) {
     test_lsp_type_hierarchy_prepare_returns_type_item(state, &failures);
     test_lsp_type_hierarchy_supertypes_returns_direct_base(state, &failures);
     test_lsp_type_hierarchy_subtypes_returns_direct_derived(state, &failures);
+    test_lsp_advanced_editor_features_return_empty_for_empty_document(state, &failures);
+    test_lsp_advanced_editor_features_return_empty_for_unopened_documents(state, &failures);
 
     ZrCore_GlobalState_Free(global);
 

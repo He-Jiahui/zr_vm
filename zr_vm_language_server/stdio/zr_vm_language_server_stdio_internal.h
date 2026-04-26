@@ -30,11 +30,25 @@ typedef struct SZrUriCache {
     size_t capacity;
 } SZrUriCache;
 
+typedef struct SZrSemanticTokenSnapshot {
+    char *uriText;
+    char resultId[64];
+    TZrUInt32 *data;
+    TZrSize length;
+} SZrSemanticTokenSnapshot;
+
+typedef struct SZrSemanticTokenCache {
+    SZrSemanticTokenSnapshot *items;
+    size_t count;
+    size_t capacity;
+} SZrSemanticTokenCache;
+
 typedef struct SZrStdioServer {
     SZrGlobalState *global;
     SZrState *state;
     SZrLspContext *context;
     SZrUriCache uriCache;
+    SZrSemanticTokenCache semanticTokenCache;
     TZrBool shutdownRequested;
 } SZrStdioServer;
 
@@ -57,6 +71,7 @@ cJSON *serialize_range(SZrLspRange range);
 cJSON *serialize_location(const SZrLspLocation *location);
 cJSON *serialize_symbol_information(const SZrLspSymbolInformation *info);
 cJSON *serialize_diagnostic(const SZrLspDiagnostic *diagnostic);
+cJSON *create_completion_commit_characters_array(void);
 cJSON *serialize_completion_item(const SZrLspCompletionItem *item);
 cJSON *serialize_hover(const SZrLspHover *hover);
 cJSON *serialize_rich_hover(const SZrLspRichHover *hover);
@@ -66,8 +81,22 @@ cJSON *serialize_document_highlight(const SZrLspDocumentHighlight *highlight);
 cJSON *serialize_locations_array(SZrArray *locations);
 cJSON *serialize_symbols_array(SZrArray *symbols);
 cJSON *serialize_diagnostics_array(SZrArray *diagnostics);
+cJSON *serialize_diagnostics_array_for_uri(SZrArray *diagnostics, const char *uriText);
 cJSON *serialize_completion_items_array(SZrArray *items);
 cJSON *serialize_highlights_array(SZrArray *highlights);
+cJSON *serialize_folding_ranges_array(SZrArray *ranges);
+cJSON *serialize_selection_ranges_array(SZrArray *ranges);
+cJSON *serialize_document_links_array(SZrArray *links);
+cJSON *serialize_code_lens_array(SZrArray *lenses);
+cJSON *serialize_hierarchy_items_array(SZrArray *items);
+cJSON *serialize_hierarchy_calls_array(SZrArray *calls, TZrBool outgoing);
+cJSON *serialize_text_edit(const SZrLspTextEdit *edit);
+cJSON *serialize_text_edits_array(SZrArray *edits);
+cJSON *serialize_code_actions_array(const char *uriText,
+                                    TZrBool hasVersion,
+                                    TZrSize version,
+                                    SZrArray *actions,
+                                    const cJSON *params);
 
 void free_locations_array(SZrState *state, SZrArray *locations);
 void free_symbols_array(SZrState *state, SZrArray *symbols);
@@ -83,6 +112,7 @@ int parse_position(const cJSON *json, SZrLspPosition *outPosition);
 int parse_range(const cJSON *json, SZrLspRange *outRange);
 
 SZrFileVersion *get_file_version_for_uri(SZrStdioServer *server, SZrString *uri);
+char *read_document_text_from_uri(SZrString *uri, size_t *outLength);
 char *apply_content_changes(SZrString *uri,
                             const char *original,
                             size_t originalLength,
@@ -95,6 +125,22 @@ TZrSize parse_size_value(const cJSON *json, TZrSize fallback);
 cJSON *handle_inlay_hint_resolve_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_workspace_symbol_resolve_request(SZrStdioServer *server, const cJSON *params);
 cJSON *create_semantic_token_legend_json(void);
+void format_semantic_tokens_result_id(SZrArray *tokens, char *buffer, size_t bufferLength);
+TZrUInt32 semantic_tokens_value_at(SZrArray *tokens, TZrSize index);
+SZrSemanticTokenSnapshot *find_semantic_token_snapshot(SZrStdioServer *server, const char *uriText);
+TZrBool upsert_semantic_token_snapshot(SZrStdioServer *server,
+                                       const char *uriText,
+                                       const char *resultId,
+                                       SZrArray *tokens);
+void remove_semantic_token_cache_for_uri(SZrStdioServer *server, const char *uriText);
+cJSON *serialize_semantic_tokens_result(SZrArray *tokens, const char *resultId);
+TZrSize semantic_tokens_previous_result_length(const cJSON *params);
+cJSON *serialize_semantic_tokens_delta_result(SZrArray *tokens,
+                                              TZrSize previousLength,
+                                              const char *previousResultId,
+                                              const SZrSemanticTokenSnapshot *previousSnapshot,
+                                              const char *resultId);
+cJSON *serialize_semantic_tokens_range_result(SZrArray *tokens, SZrLspRange range);
 cJSON *handle_semantic_tokens_full_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_semantic_tokens_full_delta_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_semantic_tokens_range_request(SZrStdioServer *server, const cJSON *params);
@@ -113,6 +159,10 @@ int update_document_contents(SZrStdioServer *server,
                              size_t contentLength,
                              TZrSize version);
 int update_document_contents_from_disk(SZrStdioServer *server, SZrString *uri);
+int handle_did_open(SZrStdioServer *server, const cJSON *params);
+int handle_did_change(SZrStdioServer *server, const cJSON *params);
+int handle_did_close(SZrStdioServer *server, const cJSON *params);
+int handle_did_save(SZrStdioServer *server, const cJSON *params);
 void add_workspace_file_operation_capabilities(cJSON *workspace);
 int handle_did_change_watched_files(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_will_create_files_request(SZrStdioServer *server, const cJSON *params);
@@ -126,6 +176,9 @@ void handle_request_message(SZrStdioServer *server,
                             const cJSON *id,
                             const char *method,
                             const cJSON *params);
+cJSON *handle_initialize_request(SZrStdioServer *server, const cJSON *params);
+void add_advanced_editor_capabilities(cJSON *capabilities);
+void handle_zr_selected_project_notification(SZrStdioServer *server, const cJSON *params);
 int dispatch_request_method(SZrStdioServer *server,
                             const char *method,
                             const cJSON *params,
@@ -136,7 +189,6 @@ void handle_notification_message(SZrStdioServer *server,
                                  int *outShouldExit,
                                  int *outExitCode);
 
-void add_advanced_editor_capabilities(cJSON *capabilities);
 cJSON *handle_completion_item_resolve_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_completion_request(SZrStdioServer *server, const cJSON *params);
 cJSON *handle_hover_request(SZrStdioServer *server, const cJSON *params);

@@ -1,8 +1,7 @@
-import { NotificationType } from 'vscode-languageserver-protocol';
 import * as vscode from 'vscode';
 import { activeWorkspaceFolder, resolveSelectedProjectUri } from './workspaceProjects';
 
-export const ZrSelectedProjectUriNotification = new NotificationType<{ uri: string | null }>('zr/selectedProject');
+const ZR_SELECTED_PROJECT_NOTIFICATION_METHOD = 'zr/selectedProject';
 
 export async function sendZrSelectedProjectToLanguageServer(
     context: vscode.ExtensionContext,
@@ -12,5 +11,5 @@ export async function sendZrSelectedProjectToLanguageServer(
         return;
     }
     const uri = await resolveSelectedProjectUri(context, activeWorkspaceFolder(), false);
-    await client.sendNotification(ZrSelectedProjectUriNotification, { uri: uri?.toString() ?? null });
+    await client.sendNotification(ZR_SELECTED_PROJECT_NOTIFICATION_METHOD, { uri: uri?.toString() ?? null });
 }

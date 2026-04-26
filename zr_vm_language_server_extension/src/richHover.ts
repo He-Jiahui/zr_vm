@@ -317,9 +317,13 @@ function appendCommandLinkToHover(baseHover: vscode.Hover | null | undefined, ta
 
 async function fetchRichHoverPayload(target: RichHoverTarget): Promise<RichHoverPayloadWithRange | undefined> {
     const result = await sendLanguageServerRequest<RichHoverPayloadWithRange | null>(ZR_RICH_HOVER_REQUEST, {
-        uri: target.uri.toString(),
-        line: target.line,
-        character: target.character,
+        textDocument: {
+            uri: target.uri.toString(),
+        },
+        position: {
+            line: target.line,
+            character: target.character,
+        },
     });
 
     if (!result || typeof result !== 'object') {

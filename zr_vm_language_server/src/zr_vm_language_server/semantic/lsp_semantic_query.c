@@ -62,6 +62,106 @@ static void semantic_query_copy_resolved_member_type(SZrState *state,
     }
 }
 
+static TZrBool semantic_query_is_identifier_char(TZrChar value) {
+    return isalnum((unsigned char)value) || value == '_';
+}
+
+static SZrString *semantic_query_extract_identifier_at_offset(SZrState *state,
+                                                              const TZrChar *content,
+                                                              TZrSize contentLength,
+                                                              TZrSize offset) {
+    TZrSize start;
+    TZrSize end;
+
+    if (state == ZR_NULL || content == ZR_NULL || contentLength == 0) {
+        return ZR_NULL;
+    }
+
+    if (offset >= contentLength) {
+        offset = contentLength - 1;
+    }
+    if (!semantic_query_is_identifier_char(content[offset]) &&
+        offset > 0 &&
+        semantic_query_is_identifier_char(content[offset - 1])) {
+        offset--;
+    }
+    if (!semantic_query_is_identifier_char(content[offset])) {
+        return ZR_NULL;
+    }
+
+    start = offset;
+    while (start > 0 && semantic_query_is_identifier_char(content[start - 1])) {
+        start--;
+    }
+
+    end = offset + 1;
+    while (end < contentLength && semantic_query_is_identifier_char(content[end])) {
+        end++;
+    }
+
+    if (end <= start) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(state, (TZrNativeString)(content + start), end - start);
+}
+
+static TZrSize semantic_query_lsp_offset_from_position(const TZrChar *content,
+                                                       TZrSize contentLength,
+                                                       SZrLspPosition position) {
+    TZrSize offset = 0;
+    TZrInt32 line = 0;
+    TZrInt32 character = 0;
+
+    if (content == ZR_NULL || position.line < 0 || position.character < 0) {
+        return 0;
+    }
+
+    while (offset < contentLength && line < position.line) {
+        if (content[offset] == '\n') {
+            line++;
+        }
+        offset++;
+    }
+
+    while (offset < contentLength && character < position.character &&
+           content[offset] != '\n' && content[offset] != '\r') {
+        offset++;
+        character++;
+    }
+
+    return offset < contentLength ? offset : contentLength > 0 ? contentLength - 1 : 0;
+}
+
+static SZrSymbol *semantic_query_lookup_identifier_at_position(SZrState *state,
+                                                               SZrLspContext *context,
+                                                               SZrSemanticAnalyzer *analyzer,
+                                                               SZrString *uri,
+                                                               SZrFileRange position) {
+    SZrFileVersion *fileVersion;
+    SZrString *name;
+
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL ||
+        analyzer->symbolTable == ZR_NULL || uri == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    name = semantic_query_extract_identifier_at_offset(state,
+                                                       fileVersion->content,
+                                                       fileVersion->contentLength,
+                                                       position.start.offset);
+    if (name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, name, position);
+}
+
 static TZrBool semantic_query_append_location(SZrState *state,
                                               SZrArray *result,
                                               SZrString *uri,
@@ -613,7 +713,8 @@ static TZrSize semantic_query_file_offset_from_range_start(const TZrChar *conten
 }
 
 static TZrBool semantic_query_file_ranges_equal(SZrFileRange left, SZrFileRange right) {
-    return ZrLanguageServer_Lsp_StringsEqual(left.source, right.source) &&
+    return (ZrLanguageServer_Lsp_StringsEqual(left.source, right.source) ||
+            left.source == ZR_NULL || right.source == ZR_NULL) &&
            left.start.line == right.start.line &&
            left.start.column == right.start.column &&
            left.end.line == right.end.line &&
@@ -621,7 +722,8 @@ static TZrBool semantic_query_file_ranges_equal(SZrFileRange left, SZrFileRange 
 }
 
 static TZrBool semantic_query_range_contains_position(SZrFileRange range, SZrFileRange position) {
-    if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source)) {
+    if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
+        range.source != ZR_NULL && position.source != ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -1927,26 +2029,18 @@ static TZrBool semantic_query_resolve_external_metadata_type_member_declaration_
     return ZR_TRUE;
 }
 
-static TZrBool semantic_query_resolve_import_binding_target(SZrState *state,
-                                                            SZrLspContext *context,
-                                                            SZrLspProjectIndex *projectIndex,
-                                                            SZrSemanticAnalyzer *analyzer,
-                                                            SZrArray *bindings,
-                                                            SZrFileRange queryRange,
-                                                            SZrLspSemanticQuery *query) {
-    SZrLspImportBinding *binding = ZR_NULL;
-    SZrFileRange bindingRange;
+static TZrBool semantic_query_resolve_import_binding_module_target(SZrState *state,
+                                                                   SZrLspContext *context,
+                                                                   SZrLspProjectIndex *projectIndex,
+                                                                   SZrSemanticAnalyzer *analyzer,
+                                                                   SZrLspImportBinding *binding,
+                                                                   SZrFileRange bindingRange,
+                                                                   SZrLspSemanticQuery *query) {
     SZrLspMetadataProvider provider;
     SZrLspResolvedImportedModuleEntry moduleEntry;
 
-    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL || bindings == ZR_NULL || query == ZR_NULL ||
-        (!semantic_query_find_import_binding_hit(bindings, queryRange, &binding, &bindingRange) &&
-         !ZrLanguageServer_LspProject_FindImportBindingHit(analyzer->ast,
-                                                          bindings,
-                                                          queryRange,
-                                                          &binding,
-                                                          &bindingRange)) ||
-        binding == ZR_NULL || binding->moduleName == ZR_NULL) {
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL || binding == ZR_NULL ||
+        binding->moduleName == ZR_NULL || query == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -1979,6 +2073,141 @@ static TZrBool semantic_query_resolve_import_binding_target(SZrState *state,
     query->resolvedMember.declarationRange = moduleEntry.declarationRange;
     query->resolvedMember.hasDeclaration = moduleEntry.hasDeclaration;
     return ZR_TRUE;
+}
+
+static TZrBool semantic_query_resolve_import_binding_target(SZrState *state,
+                                                            SZrLspContext *context,
+                                                            SZrLspProjectIndex *projectIndex,
+                                                            SZrSemanticAnalyzer *analyzer,
+                                                            SZrArray *bindings,
+                                                            SZrFileRange queryRange,
+                                                            SZrLspSemanticQuery *query) {
+    SZrLspImportBinding *binding = ZR_NULL;
+    SZrFileRange bindingRange;
+
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL || bindings == ZR_NULL || query == ZR_NULL ||
+        (!semantic_query_find_import_binding_hit(bindings, queryRange, &binding, &bindingRange) &&
+         !ZrLanguageServer_LspProject_FindImportBindingHit(analyzer->ast,
+                                                          bindings,
+                                                          queryRange,
+                                                          &binding,
+                                                          &bindingRange))) {
+        return ZR_FALSE;
+    }
+
+    return semantic_query_resolve_import_binding_module_target(state,
+                                                              context,
+                                                              projectIndex,
+                                                              analyzer,
+                                                              binding,
+                                                              bindingRange,
+                                                              query);
+}
+
+static TZrBool semantic_query_symbol_matches_import_binding(SZrSymbol *symbol, SZrLspImportBinding *binding) {
+    if (symbol == ZR_NULL || binding == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (symbol->name != ZR_NULL && binding->aliasName != ZR_NULL &&
+        ZrLanguageServer_Lsp_StringsEqual(symbol->name, binding->aliasName)) {
+        return ZR_TRUE;
+    }
+
+    return semantic_query_file_ranges_equal(symbol->selectionRange, binding->aliasLocation) ||
+           semantic_query_file_ranges_equal(symbol->location, binding->aliasLocation);
+}
+
+static TZrBool semantic_query_resolve_import_alias_symbol_target(SZrState *state,
+                                                                 SZrLspContext *context,
+                                                                 SZrLspProjectIndex *projectIndex,
+                                                                 SZrSemanticAnalyzer *analyzer,
+                                                                 SZrSymbol *symbol,
+                                                                 SZrLspSemanticQuery *query) {
+    SZrArray bindings;
+    TZrBool resolved = ZR_FALSE;
+
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL || analyzer->ast == ZR_NULL ||
+        symbol == ZR_NULL || query == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
+    for (TZrSize index = 0; index < bindings.length && !resolved; index++) {
+        SZrLspImportBinding **bindingPtr =
+            (SZrLspImportBinding **)ZrCore_Array_Get(&bindings, index);
+        if (bindingPtr == ZR_NULL || *bindingPtr == ZR_NULL ||
+            !semantic_query_symbol_matches_import_binding(symbol, *bindingPtr)) {
+            continue;
+        }
+
+        resolved = semantic_query_resolve_import_binding_module_target(state,
+                                                                       context,
+                                                                       projectIndex,
+                                                                       analyzer,
+                                                                       *bindingPtr,
+                                                                       (*bindingPtr)->aliasLocation,
+                                                                       query);
+    }
+    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+    return resolved;
+}
+
+static TZrBool semantic_query_resolve_import_alias_token_target(SZrState *state,
+                                                                SZrLspContext *context,
+                                                                SZrLspProjectIndex *projectIndex,
+                                                                SZrSemanticAnalyzer *analyzer,
+                                                                SZrString *uri,
+                                                                SZrLspSemanticQuery *query) {
+    SZrFileVersion *fileVersion;
+    SZrString *name;
+    SZrSymbol *symbol;
+    SZrArray bindings;
+    TZrBool resolved = ZR_FALSE;
+
+    if (state == ZR_NULL || context == ZR_NULL || analyzer == ZR_NULL || analyzer->ast == ZR_NULL ||
+        uri == ZR_NULL || query == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    name = semantic_query_extract_identifier_at_offset(state,
+                                                       fileVersion->content,
+                                                       fileVersion->contentLength,
+                                                       semantic_query_lsp_offset_from_position(fileVersion->content,
+                                                                                                fileVersion->contentLength,
+                                                                                                query->position));
+    if (name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    symbol = ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(analyzer, query->queryRange);
+
+    ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
+    for (TZrSize index = 0; index < bindings.length && !resolved; index++) {
+        SZrLspImportBinding **bindingPtr =
+            (SZrLspImportBinding **)ZrCore_Array_Get(&bindings, index);
+        if (bindingPtr == ZR_NULL || *bindingPtr == ZR_NULL || (*bindingPtr)->aliasName == ZR_NULL ||
+            (!ZrLanguageServer_Lsp_StringsEqual((*bindingPtr)->aliasName, name) &&
+             !semantic_query_symbol_matches_import_binding(symbol, *bindingPtr))) {
+            continue;
+        }
+
+        resolved = semantic_query_resolve_import_binding_module_target(state,
+                                                                       context,
+                                                                       projectIndex,
+                                                                       analyzer,
+                                                                       *bindingPtr,
+                                                                       query->queryRange,
+                                                                       query);
+    }
+    ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
+    return resolved;
 }
 
 void ZrLanguageServer_LspSemanticQuery_Init(SZrLspSemanticQuery *query) {
@@ -2104,6 +2333,10 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     }
     ZrLanguageServer_LspProject_FreeImportBindings(state, &bindings);
 
+    if (semantic_query_resolve_import_alias_token_target(state, context, projectIndex, analyzer, uri, query)) {
+        return ZR_TRUE;
+    }
+
     if (semantic_query_resolve_external_metadata_type_member_declaration_target(state, context, uri, position, query)) {
         return ZR_TRUE;
     }
@@ -2122,7 +2355,56 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
 
     query->symbol = ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(analyzer, query->queryRange);
     if (query->symbol == ZR_NULL) {
+        query->symbol = semantic_query_lookup_identifier_at_position(state,
+                                                                     context,
+                                                                     analyzer,
+                                                                     uri,
+                                                                     query->queryRange);
+    }
+    if (query->symbol == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    {
+        SZrArray symbolBindings;
+        SZrFileRange symbolRange = ZrLanguageServer_Lsp_GetSymbolLookupRange(query->symbol);
+
+        ZrCore_Array_Init(state, &symbolBindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+        ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &symbolBindings);
+        if (semantic_query_resolve_import_binding_target(state,
+                                                         context,
+                                                         projectIndex,
+                                                         analyzer,
+                                                         &symbolBindings,
+                                                         symbolRange,
+                                                         query) ||
+            semantic_query_resolve_import_binding_target(state,
+                                                         context,
+                                                         projectIndex,
+                                                         analyzer,
+                                                         &symbolBindings,
+                                                         query->symbol->selectionRange,
+                                                         query) ||
+            semantic_query_resolve_import_binding_target(state,
+                                                         context,
+                                                         projectIndex,
+                                                         analyzer,
+                                                         &symbolBindings,
+                                                         query->symbol->location,
+                                                         query)) {
+            ZrLanguageServer_LspProject_FreeImportBindings(state, &symbolBindings);
+            return ZR_TRUE;
+        }
+        ZrLanguageServer_LspProject_FreeImportBindings(state, &symbolBindings);
+    }
+
+    if (semantic_query_resolve_import_alias_symbol_target(state,
+                                                          context,
+                                                          projectIndex,
+                                                          analyzer,
+                                                          query->symbol,
+                                                          query)) {
+        return ZR_TRUE;
     }
 
     query->kind = ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL;

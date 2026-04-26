@@ -1,146 +1,5 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
-static cJSON *serialize_text_edit(const SZrLspTextEdit *edit) {
-    cJSON *json;
-    char *text;
-
-    if (edit == NULL) {
-        return cJSON_CreateNull();
-    }
-
-    json = cJSON_CreateObject();
-    if (json == NULL) {
-        return NULL;
-    }
-
-    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_range(edit->range));
-    text = zr_string_to_c_string(edit->newText);
-    cJSON_AddStringToObject(json, ZR_LSP_FIELD_NEW_TEXT, text != NULL ? text : "");
-    free(text);
-    return json;
-}
-
-static cJSON *serialize_text_edits_array(SZrArray *edits) {
-    cJSON *json = cJSON_CreateArray();
-
-    if (json == NULL || edits == NULL) {
-        return json;
-    }
-
-    for (TZrSize index = 0; index < edits->length; index++) {
-        SZrLspTextEdit **editPtr = (SZrLspTextEdit **)ZrCore_Array_Get(edits, index);
-        if (editPtr != ZR_NULL && *editPtr != ZR_NULL) {
-            cJSON_AddItemToArray(json, serialize_text_edit(*editPtr));
-        }
-    }
-
-    return json;
-}
-
-static cJSON *serialize_workspace_edit(const char *uriText, SZrArray *edits) {
-    cJSON *json = cJSON_CreateObject();
-    cJSON *changes = cJSON_CreateObject();
-
-    if (json == NULL || changes == NULL) {
-        cJSON_Delete(json);
-        cJSON_Delete(changes);
-        return NULL;
-    }
-
-    cJSON_AddItemToObject(changes, uriText != NULL ? uriText : "", serialize_text_edits_array(edits));
-    cJSON_AddItemToObject(json, ZR_LSP_FIELD_CHANGES, changes);
-    return json;
-}
-
-static cJSON *serialize_code_action(const char *uriText, const SZrLspCodeAction *action) {
-    cJSON *json;
-    char *titleText;
-    char *kindText;
-
-    if (action == NULL) {
-        return cJSON_CreateNull();
-    }
-
-    json = cJSON_CreateObject();
-    if (json == NULL) {
-        return NULL;
-    }
-
-    titleText = zr_string_to_c_string(action->title);
-    kindText = zr_string_to_c_string(action->kind);
-    cJSON_AddStringToObject(json, ZR_LSP_FIELD_TITLE, titleText != NULL ? titleText : "");
-    if (kindText != NULL) {
-        cJSON_AddStringToObject(json, ZR_LSP_FIELD_KIND, kindText);
-    }
-    cJSON_AddBoolToObject(json, ZR_LSP_FIELD_IS_PREFERRED, action->isPreferred ? 1 : 0);
-    cJSON_AddItemToObject(json, ZR_LSP_FIELD_EDIT, serialize_workspace_edit(uriText, (SZrArray *)&action->edits));
-
-    free(titleText);
-    free(kindText);
-    return json;
-}
-
-static int code_action_kind_matches_filter(const char *actionKind, const char *requestedKind) {
-    size_t requestedLength;
-
-    if (actionKind == NULL || requestedKind == NULL) {
-        return 0;
-    }
-    if (strcmp(actionKind, requestedKind) == 0) {
-        return 1;
-    }
-
-    requestedLength = strlen(requestedKind);
-    return strncmp(actionKind, requestedKind, requestedLength) == 0 &&
-           actionKind[requestedLength] == '.';
-}
-
-static int code_action_allowed_by_context_only(const SZrLspCodeAction *action, const cJSON *params) {
-    const cJSON *context;
-    const cJSON *only;
-    const cJSON *requestedKind;
-    char *kindText;
-    int allowed = 0;
-
-    context = get_object_item(params, ZR_LSP_FIELD_CONTEXT);
-    only = get_object_item(context, ZR_LSP_FIELD_ONLY);
-    if (!cJSON_IsArray(only) || cJSON_GetArraySize(only) == 0) {
-        return 1;
-    }
-
-    kindText = zr_string_to_c_string(action != NULL ? action->kind : ZR_NULL);
-    cJSON_ArrayForEach(requestedKind, only) {
-        if (cJSON_IsString(requestedKind) &&
-            code_action_kind_matches_filter(kindText, requestedKind->valuestring)) {
-            allowed = 1;
-            break;
-        }
-    }
-    free(kindText);
-    return allowed;
-}
-
-static cJSON *serialize_code_actions_array(const char *uriText,
-                                           SZrArray *actions,
-                                           const cJSON *params) {
-    cJSON *json = cJSON_CreateArray();
-
-    if (json == NULL || actions == NULL) {
-        return json;
-    }
-
-    for (TZrSize index = 0; index < actions->length; index++) {
-        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(actions, index);
-        if (actionPtr != ZR_NULL &&
-            *actionPtr != ZR_NULL &&
-            code_action_allowed_by_context_only(*actionPtr, params)) {
-            cJSON_AddItemToArray(json, serialize_code_action(uriText, *actionPtr));
-        }
-    }
-
-    return json;
-}
-
 cJSON *handle_formatting_request(SZrStdioServer *server, const cJSON *params) {
     SZrArray edits = {0};
     const char *uriText;
@@ -269,6 +128,7 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
     SZrLspRange range = {{0, 0}, {0, 0}};
     const char *uriText;
     SZrString *uri;
+    SZrFileVersion *fileVersion;
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
@@ -282,7 +142,12 @@ cJSON *handle_code_action_request(SZrStdioServer *server, const cJSON *params) {
         return cJSON_CreateArray();
     }
 
-    result = serialize_code_actions_array(uriText, &actions, params);
+    fileVersion = get_file_version_for_uri(server, uri);
+    result = serialize_code_actions_array(uriText,
+                                          fileVersion != ZR_NULL ? ZR_TRUE : ZR_FALSE,
+                                          fileVersion != ZR_NULL ? fileVersion->version : 0,
+                                          &actions,
+                                          params);
     ZrLanguageServer_Lsp_FreeCodeActions(server->state, &actions);
     return result;
 }

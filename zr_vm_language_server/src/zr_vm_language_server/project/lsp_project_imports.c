@@ -594,7 +594,8 @@ static TZrBool variable_declaration_get_import_binding_hit(SZrAstNode *node,
 }
 
 static TZrBool file_range_contains_position(SZrFileRange range, SZrFileRange position) {
-    if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source)) {
+    if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
+        range.source != ZR_NULL && position.source != ZR_NULL) {
         return ZR_FALSE;
     }
 

@@ -65,15 +65,34 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/zr_vm_language_server_stdio.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_transport.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_json.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_lsp_memory.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_lsp_parse.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_document_file.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_document_content.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_documents.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_completion.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_completion_json.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_editing.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_editing_json.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_editor_features.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_editor_features_json.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_diagnostics.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_diagnostic_json.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_initialize.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_initialize_capabilities.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_navigation.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_navigation_json.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_project.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_rename.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_hierarchy.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_linked_editing.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_document_color.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_completion.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_value.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_moniker.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_semantic_tokens_cache.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_semantic_tokens.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_semantic_tokens_json.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_workspace_files.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_workspace_commands.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_request_dispatch.c

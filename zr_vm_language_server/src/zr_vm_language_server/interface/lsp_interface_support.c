@@ -4572,12 +4572,13 @@ static TZrBool file_position_is_in_range(SZrFileRange position, SZrFileRange tar
 }
 
 SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyzer *analyzer, SZrFileRange position) {
-    SZrSymbolScope *globalScope;
-    TZrSize symbolIndex;
+    SZrSymbolTable *symbolTable;
+    TZrSize scopeIndex;
 
     if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
         return ZR_NULL;
     }
+    symbolTable = analyzer->symbolTable;
 
     {
         SZrSymbol *definition = ZrLanguageServer_SemanticAnalyzer_GetSymbolAt(analyzer, position);
@@ -4586,25 +4587,36 @@ SZrSymbol *ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(SZrSemanticAnalyze
         }
     }
 
-    globalScope = analyzer->symbolTable->globalScope;
-    if (globalScope == ZR_NULL) {
-        return ZR_NULL;
-    }
+    for (scopeIndex = 0; scopeIndex < symbolTable->allScopes.length; scopeIndex++) {
+        SZrSymbolScope **scopePtr = (SZrSymbolScope **)ZrCore_Array_Get(&symbolTable->allScopes, scopeIndex);
+        SZrSymbolScope *scope = scopePtr != ZR_NULL ? *scopePtr : ZR_NULL;
+        TZrSize symbolIndex;
 
-    for (symbolIndex = 0; symbolIndex < globalScope->symbols.length; symbolIndex++) {
-        SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&globalScope->symbols, symbolIndex);
-        if (symbolPtr != ZR_NULL && *symbolPtr != ZR_NULL) {
-            SZrSymbol *symbol = *symbolPtr;
+        if (scope == ZR_NULL) {
+            continue;
+        }
+
+        for (symbolIndex = 0; symbolIndex < scope->symbols.length; symbolIndex++) {
+            SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&scope->symbols, symbolIndex);
             TZrSize referenceIndex;
-            if (file_position_is_in_range(position, ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol))) {
-                return symbol;
+
+            if (symbolPtr == ZR_NULL || *symbolPtr == ZR_NULL) {
+                continue;
             }
 
-            for (referenceIndex = 0; referenceIndex < symbol->references.length; referenceIndex++) {
-                SZrFileRange *referenceRange =
-                    (SZrFileRange *)ZrCore_Array_Get(&symbol->references, referenceIndex);
-                if (referenceRange != ZR_NULL && file_position_is_in_range(position, *referenceRange)) {
+            {
+                SZrSymbol *symbol = *symbolPtr;
+
+                if (file_position_is_in_range(position, ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol))) {
                     return symbol;
+                }
+
+                for (referenceIndex = 0; referenceIndex < symbol->references.length; referenceIndex++) {
+                    SZrFileRange *referenceRange =
+                        (SZrFileRange *)ZrCore_Array_Get(&symbol->references, referenceIndex);
+                    if (referenceRange != ZR_NULL && file_position_is_in_range(position, *referenceRange)) {
+                        return symbol;
+                    }
                 }
             }
         }

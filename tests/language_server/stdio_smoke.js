@@ -517,6 +517,7 @@ async function main() {
     const noopFormatUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-format-noop.zr';
     const importFoldingUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-import-folding.zr';
     const moduleImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-module-imports.zr';
+    const semanticDeltaUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-semantic-delta.zr';
     const colorUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-colors.zr';
     const inlineCompletionUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-completion.zr';
@@ -611,6 +612,20 @@ async function main() {
         'func main(): int { return 0; }',
         '',
     ].join('\n');
+    const semanticDeltaText = [
+        'func alpha(): int {',
+        '    var value = 1;',
+        '    return value;',
+        '}',
+        '',
+        'func omega(): int {',
+        '    return alpha();',
+        '}',
+        '',
+    ].join('\n');
+    const semanticDeltaUpdatedText = semanticDeltaText
+        .replace('value = 1', 'valueName = 1')
+        .replace('return value;', 'return valueName;');
 
     const initializeResult = await client.request('initialize', {
         processId: null,
@@ -699,11 +714,11 @@ async function main() {
     assert(initializeResult.capabilities.codeLensProvider &&
         initializeResult.capabilities.codeLensProvider.resolveProvider === true,
         'codeLensProvider resolveProvider must be enabled');
-    assert(initializeResult.capabilities.executeCommandProvider &&
-        Array.isArray(initializeResult.capabilities.executeCommandProvider.commands) &&
-        initializeResult.capabilities.executeCommandProvider.commands.includes('zr.runCurrentProject') &&
-        initializeResult.capabilities.executeCommandProvider.commands.includes('zr.showReferences'),
-        'executeCommandProvider must advertise server-visible ZR commands');
+    assert(!initializeResult.capabilities.executeCommandProvider ||
+        !Array.isArray(initializeResult.capabilities.executeCommandProvider.commands) ||
+        (!initializeResult.capabilities.executeCommandProvider.commands.includes('zr.runCurrentProject') &&
+            !initializeResult.capabilities.executeCommandProvider.commands.includes('zr.showReferences')),
+    'executeCommandProvider must not advertise client-owned ZR commands');
     assert(initializeResult.capabilities.callHierarchyProvider === true,
         'callHierarchyProvider must be enabled');
     assert(initializeResult.capabilities.typeHierarchyProvider === true,
@@ -713,6 +728,12 @@ async function main() {
         'diagnosticProvider must support workspace diagnostics');
     assert(initializeResult.capabilities.completionProvider.resolveProvider === true,
         'completionProvider.resolveProvider must be enabled');
+    assert(Array.isArray(initializeResult.capabilities.completionProvider.allCommitCharacters) &&
+        initializeResult.capabilities.completionProvider.allCommitCharacters.includes(';') &&
+        initializeResult.capabilities.completionProvider.allCommitCharacters.includes(',') &&
+        initializeResult.capabilities.completionProvider.allCommitCharacters.includes('.') &&
+        initializeResult.capabilities.completionProvider.allCommitCharacters.includes('('),
+    'completionProvider must advertise all commit characters');
     assert(initializeResult.capabilities.workspace &&
         initializeResult.capabilities.workspace.fileOperations &&
         initializeResult.capabilities.workspace.fileOperations.willCreate &&
@@ -763,6 +784,12 @@ async function main() {
         position: { line: 0, character: 4 },
     });
     assert(Array.isArray(definition) && definition.length > 0, 'definition must return at least one location');
+    const usageDefinition = await client.request('textDocument/definition', {
+        textDocument: { uri: documentUri },
+        position: { line: 0, character: 20 },
+    });
+    assert(Array.isArray(usageDefinition) && usageDefinition.length > 0,
+        'definition must resolve local identifier usages');
 
     const references = await client.request('textDocument/references', {
         textDocument: { uri: documentUri },
@@ -886,11 +913,45 @@ async function main() {
         inlineCompletions.some((item) =>
             item &&
             item.insertText === 'return ' &&
+            item.filterText === 'return' &&
             item.range &&
             item.range.start.line === 1 &&
             item.range.start.character === 4 &&
             item.range.end.character === 7),
-    'textDocument/inlineCompletion must expand statement prefixes');
+    'textDocument/inlineCompletion must expand statement prefixes with filter text');
+    const inlineCompletionUpdatedText = inlineCompletionText.replace('    ret', '    retu');
+    client.notify('textDocument/didChange', {
+        textDocument: {
+            uri: inlineCompletionUri,
+            version: 2,
+        },
+        contentChanges: [
+            {
+                text: inlineCompletionUpdatedText,
+            },
+        ],
+    });
+    const inlineCompletionChangeDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(inlineCompletionChangeDiagnostics.uri === inlineCompletionUri,
+        'inline completion didChange diagnostics uri mismatch');
+    const extendedInlineCompletions = await client.request('textDocument/inlineCompletion', {
+        textDocument: { uri: inlineCompletionUri },
+        position: { line: 1, character: 8 },
+        context: {
+            triggerKind: 1,
+            selectedCompletionInfo: null,
+        },
+    });
+    assert(Array.isArray(extendedInlineCompletions) &&
+        extendedInlineCompletions.some((item) =>
+            item &&
+            item.insertText === 'return ' &&
+            item.filterText === 'return' &&
+            item.range &&
+            item.range.start.line === 1 &&
+            item.range.start.character === 4 &&
+            item.range.end.character === 8),
+    'textDocument/inlineCompletion must keep keyword completions active for longer typed prefixes');
 
     const hover = await client.request('textDocument/hover', {
         textDocument: { uri: documentUri },
@@ -936,14 +997,55 @@ async function main() {
     assert(prepareRename && prepareRename.range && prepareRename.placeholder === 'x',
         'prepareRename must return range and placeholder');
 
+    const usagePrepareRename = await client.request('textDocument/prepareRename', {
+        textDocument: { uri: documentUri },
+        position: { line: 0, character: 20 },
+    });
+    assert(usagePrepareRename &&
+        usagePrepareRename.range &&
+        usagePrepareRename.placeholder === 'x' &&
+        usagePrepareRename.range.start.line === 0 &&
+        usagePrepareRename.range.start.character === 20 &&
+        usagePrepareRename.range.end.character === 21,
+    'prepareRename must resolve local identifier usages');
+
     const rename = await client.request('textDocument/rename', {
         textDocument: { uri: documentUri },
         position: { line: 0, character: 4 },
         newName: 'renamedX',
     });
     assert(rename && rename.changes && Array.isArray(rename.changes[documentUri]) &&
-        rename.changes[documentUri].length > 0,
-        'rename must return workspace edits for the document');
+        rename.changes[documentUri].length > 0 &&
+        Array.isArray(rename.documentChanges) &&
+        rename.documentChanges.some((documentChange) =>
+            documentChange &&
+            documentChange.textDocument &&
+            documentChange.textDocument.uri === documentUri &&
+            documentChange.textDocument.version === 2 &&
+            Array.isArray(documentChange.edits) &&
+            documentChange.edits.length > 0),
+        'rename must return versioned workspace edits for the document');
+
+    const usageRename = await client.request('textDocument/rename', {
+        textDocument: { uri: documentUri },
+        position: { line: 0, character: 20 },
+        newName: 'renamedFromUsageX',
+    });
+    assert(usageRename && usageRename.changes && Array.isArray(usageRename.changes[documentUri]) &&
+        usageRename.changes[documentUri].length > 0 &&
+        usageRename.changes[documentUri].some((edit) =>
+            edit &&
+            edit.range &&
+            edit.range.start &&
+            edit.range.start.line === 0 &&
+            edit.range.start.character === 4) &&
+        usageRename.changes[documentUri].some((edit) =>
+            edit &&
+            edit.range &&
+            edit.range.start &&
+            edit.range.start.line === 0 &&
+            edit.range.start.character === 20),
+        'rename must resolve local identifier usages and include declaration plus usage edits');
 
     client.notify('textDocument/didOpen', {
         textDocument: {
@@ -986,6 +1088,21 @@ async function main() {
     assert(typeof bonusCompletion.documentation.value === 'string' &&
         bonusCompletion.documentation.value.includes('Shared bonus exposed through get/set.'),
         'completion documentation should include the leading property comment');
+    assert(bonusCompletion.filterText === 'bonus' && bonusCompletion.sortText === 'bonus',
+        'completion items must expose stable filterText and sortText');
+    assert(Array.isArray(bonusCompletion.commitCharacters) &&
+        bonusCompletion.commitCharacters.includes(';') &&
+        bonusCompletion.commitCharacters.includes(',') &&
+        bonusCompletion.commitCharacters.includes('.'),
+    'completion items must expose common commit characters');
+    assert(bonusCompletion.textEdit &&
+        bonusCompletion.textEdit.newText === 'bonus' &&
+        bonusCompletion.textEdit.range &&
+        bonusCompletion.textEdit.range.start.line === docsCompletionPosition.line &&
+        bonusCompletion.textEdit.range.start.character === docsCompletionPosition.character &&
+        bonusCompletion.textEdit.range.end.line === docsCompletionPosition.line &&
+        bonusCompletion.textEdit.range.end.character === docsCompletionPosition.character,
+    'completion items must expose a stable textEdit insertion range');
     assert(bonusCompletion.data && bonusCompletion.data.uri === docsUri && bonusCompletion.data.position,
         'completion items must include resolve data');
     const resolvedBonusCompletion = await client.request('completionItem/resolve', {
@@ -1007,8 +1124,11 @@ async function main() {
     assert(Array.isArray(docsCodeLens) && docsCodeLens.some((lens) =>
         lens &&
         lens.command &&
-        lens.command.command === 'zr.runCurrentProject'),
-        'textDocument/codeLens must expose a run command for %test blocks');
+        lens.command.command === 'zr.runCurrentProject' &&
+        lens.data &&
+        lens.data.command === lens.command.command &&
+        lens.data.range),
+        'textDocument/codeLens must expose a run command with resolve data for %test blocks');
     const resolvedDocsCodeLens = await client.request('codeLens/resolve', docsCodeLens[0]);
     assert(resolvedDocsCodeLens &&
         resolvedDocsCodeLens.command &&
@@ -1022,7 +1142,7 @@ async function main() {
         arguments: [docsUri],
     });
     assert(runCommandResult === null,
-        'workspace/executeCommand must acknowledge advertised run commands');
+        'workspace/executeCommand must acknowledge legacy run command requests');
 
     const importDiagnosticsText = fs.readFileSync(importDiagnosticsFixture.mainPath, 'utf8');
     client.notify('textDocument/didOpen', {
@@ -1045,6 +1165,13 @@ async function main() {
         diagnostic.message.includes("Import member 'greet.missing' could not be resolved"));
     assert(missingImportDiagnostic,
         'import diagnostics fixture should publish the missing imported member diagnostic');
+    assert(missingImportDiagnostic.data &&
+        diagnosticRelatedUriMatches(importDiagnosticsFixture.mainUri, missingImportDiagnostic.data.uri) &&
+        missingImportDiagnostic.data.range &&
+        missingImportDiagnostic.data.range.start &&
+        missingImportDiagnostic.data.range.start.line === missingImportDiagnostic.range.start.line &&
+        (!missingImportDiagnostic.code || missingImportDiagnostic.data.code === missingImportDiagnostic.code),
+    'diagnostics must carry stable uri/range/code data for follow-up actions');
     assert(Array.isArray(missingImportDiagnostic.relatedInformation) &&
         missingImportDiagnostic.relatedInformation.some((item) =>
             item &&
@@ -1083,6 +1210,10 @@ async function main() {
     assert(derivedCompletion && typeof derivedCompletion.detail === 'string' &&
         derivedCompletion.detail.includes('Resolved Type: Derived<Item, 4>'),
         'generic completion detail should include the normalized closed instantiation');
+    assert(derivedCompletion.labelDetails &&
+        typeof derivedCompletion.labelDetails.detail === 'string' &&
+        derivedCompletion.labelDetails.detail.includes('Resolved Type: Derived<Item, 4>'),
+    'completion items with detail must expose labelDetails for modern completion UIs');
 
     const genericDefinition = await client.request('textDocument/definition', {
         textDocument: { uri: genericUri },
@@ -1251,10 +1382,13 @@ async function main() {
     'textDocument/selectionRange must return word, line, and block parent ranges');
 
     const importLinks = await client.request('textDocument/documentLink', {
-        textDocument: { uri: genericUri },
+        textDocument: { uri: importFoldingUri },
     });
     assert(Array.isArray(importLinks),
         'textDocument/documentLink must return an array');
+    assert(importLinks.some((link) =>
+        link && link.target === 'zr-decompiled:/zr.system.zr'),
+    'textDocument/documentLink must expose native import virtual declaration links');
 
     const zrpLinksPath = path.join(watchedFixture.rootPath, 'linked_paths.zrp');
     const zrpLinksUri = pathToFileURL(zrpLinksPath).toString();
@@ -1283,7 +1417,13 @@ async function main() {
         textDocument: { uri: zrpLinksUri },
     });
     assert(Array.isArray(zrpLinks) &&
-        zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/src')) &&
+        zrpLinks.some((link) =>
+            link &&
+            typeof link.target === 'string' &&
+            link.target.endsWith('/src') &&
+            link.data &&
+            link.data.target === link.target &&
+            link.data.range) &&
         zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/bin')) &&
         zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/src/main.zr')) &&
         zrpLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/deps')) &&
@@ -1339,16 +1479,33 @@ async function main() {
         action.edit.changes &&
         Array.isArray(action.edit.changes[moduleImportsUri]) &&
         action.edit.changes[moduleImportsUri].some((edit) =>
-            edit.newText.includes('%import("zr.math");\n%import("zr.system");'))),
-    'textDocument/codeAction must organize imports after module declarations');
+            edit.newText.includes('%import("zr.math");\n%import("zr.system");')) &&
+        Array.isArray(action.edit.documentChanges) &&
+        action.edit.documentChanges.some((documentChange) =>
+            documentChange &&
+            documentChange.textDocument &&
+            documentChange.textDocument.uri === moduleImportsUri &&
+            documentChange.textDocument.version === 1 &&
+            Array.isArray(documentChange.edits) &&
+            documentChange.edits.some((edit) =>
+                edit.newText.includes('%import("zr.math");\n%import("zr.system");')))),
+    'textDocument/codeAction must organize imports with versioned document changes');
     const organizeImportAction = moduleImportActions.find((action) =>
         action && action.kind === 'source.organizeImports' && action.edit);
+    assert(organizeImportAction &&
+        organizeImportAction.data &&
+        organizeImportAction.data.uri === moduleImportsUri &&
+        organizeImportAction.data.kind === organizeImportAction.kind &&
+        organizeImportAction.data.title === organizeImportAction.title,
+    'textDocument/codeAction must attach stable resolve data');
     const resolvedOrganizeImportAction = await client.request('codeAction/resolve', organizeImportAction);
     assert(resolvedOrganizeImportAction &&
         resolvedOrganizeImportAction.title === organizeImportAction.title &&
         resolvedOrganizeImportAction.edit &&
         resolvedOrganizeImportAction.edit.changes &&
-        Array.isArray(resolvedOrganizeImportAction.edit.changes[moduleImportsUri]),
+        Array.isArray(resolvedOrganizeImportAction.edit.changes[moduleImportsUri]) &&
+        resolvedOrganizeImportAction.data &&
+        resolvedOrganizeImportAction.data.uri === moduleImportsUri,
     'codeAction/resolve must preserve resolved edits');
 
     const semicolonFixturePath = path.join(watchedFixture.rootPath, 'semicolon_action.zr');
@@ -1878,9 +2035,10 @@ async function main() {
         typeof semanticTokens.resultId === 'string' &&
         semanticTokens.resultId.length > 0,
     'semanticTokens/full must return a data array with a resultId');
+    const staleSemanticResultId = `zr-semantic:${semanticTokens.data.length}:stale`;
     const semanticDeltaTokens = await client.request('textDocument/semanticTokens/full/delta', {
         textDocument: { uri: docsUri },
-        previousResultId: semanticTokens.resultId,
+        previousResultId: staleSemanticResultId,
     });
     assert(semanticDeltaTokens &&
         typeof semanticDeltaTokens.resultId === 'string' &&
@@ -1892,6 +2050,15 @@ async function main() {
             Array.isArray(edit.data) &&
             edit.data.length === semanticTokens.data.length),
     'semanticTokens/full/delta must return a full replacement delta edit');
+    const unchangedSemanticDeltaTokens = await client.request('textDocument/semanticTokens/full/delta', {
+        textDocument: { uri: docsUri },
+        previousResultId: semanticDeltaTokens.resultId,
+    });
+    assert(unchangedSemanticDeltaTokens &&
+        unchangedSemanticDeltaTokens.resultId === semanticDeltaTokens.resultId &&
+        Array.isArray(unchangedSemanticDeltaTokens.edits) &&
+        unchangedSemanticDeltaTokens.edits.length === 0,
+    'semanticTokens/full/delta must return empty edits when the token result is unchanged');
     const semanticRangeTokens = await client.request('textDocument/semanticTokens/range', {
         textDocument: { uri: docsUri },
         range: {
@@ -1904,6 +2071,47 @@ async function main() {
         semanticRangeTokens.data.length > 0 &&
         semanticRangeTokens.data.length <= semanticTokens.data.length,
     'semanticTokens/range must return filtered semantic token data');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: semanticDeltaUri,
+            languageId: 'zr',
+            version: 1,
+            text: semanticDeltaText,
+        },
+    });
+    const semanticDeltaDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(semanticDeltaDiagnostics.uri === semanticDeltaUri,
+        'semantic delta didOpen diagnostics uri mismatch');
+    const semanticDeltaBaseline = await client.request('textDocument/semanticTokens/full', {
+        textDocument: { uri: semanticDeltaUri },
+    });
+    client.notify('textDocument/didChange', {
+        textDocument: {
+            uri: semanticDeltaUri,
+            version: 2,
+        },
+        contentChanges: [
+            {
+                text: semanticDeltaUpdatedText,
+            },
+        ],
+    });
+    const semanticDeltaChangeDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(semanticDeltaChangeDiagnostics.uri === semanticDeltaUri,
+        'semantic delta didChange diagnostics uri mismatch');
+    const minimalSemanticDelta = await client.request('textDocument/semanticTokens/full/delta', {
+        textDocument: { uri: semanticDeltaUri },
+        previousResultId: semanticDeltaBaseline.resultId,
+    });
+    assert(minimalSemanticDelta &&
+        minimalSemanticDelta.resultId !== semanticDeltaBaseline.resultId &&
+        Array.isArray(minimalSemanticDelta.edits) &&
+        minimalSemanticDelta.edits.length === 1 &&
+        minimalSemanticDelta.edits[0].start > 0 &&
+        minimalSemanticDelta.edits[0].deleteCount < semanticDeltaBaseline.data.length &&
+        Array.isArray(minimalSemanticDelta.edits[0].data) &&
+        minimalSemanticDelta.edits[0].data.length < semanticDeltaBaseline.data.length,
+    'semanticTokens/full/delta must return a minimal cached edit for changed token data');
 
     client.notify('textDocument/didClose', {
         textDocument: {
@@ -1920,6 +2128,11 @@ async function main() {
     client.notify('textDocument/didClose', {
         textDocument: {
             uri: docsUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: semanticDeltaUri,
         },
     });
 

@@ -1,14 +1,14 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
 typedef struct SZrInlineCompletionKeyword {
-    const char *prefix;
+    const char *keyword;
     const char *insertText;
 } SZrInlineCompletionKeyword;
 
 static const SZrInlineCompletionKeyword ZR_INLINE_COMPLETION_KEYWORDS[] = {
-    {"ret", "return "},
-    {"fun", "func "},
-    {"cla", "class "},
+    {"return", "return "},
+    {"func", "func "},
+    {"class", "class "},
     {"pub", "pub "},
     {"pri", "pri "},
     {"sta", "static "},
@@ -53,11 +53,12 @@ static int inline_completion_is_identifier_part(char ch) {
 
 static cJSON *inline_completion_create_item(SZrLspPosition position,
                                             TZrInt32 prefixLength,
+                                            const char *filterText,
                                             const char *insertText) {
     cJSON *item;
     SZrLspRange range;
 
-    if (insertText == NULL || prefixLength <= 0) {
+    if (filterText == NULL || insertText == NULL || prefixLength <= 0) {
         return NULL;
     }
 
@@ -70,6 +71,7 @@ static cJSON *inline_completion_create_item(SZrLspPosition position,
     range.start.character = position.character - prefixLength;
     range.end = position;
     cJSON_AddStringToObject(item, ZR_LSP_FIELD_INSERT_TEXT, insertText);
+    cJSON_AddStringToObject(item, ZR_LSP_FIELD_FILTER_TEXT, filterText);
     cJSON_AddItemToObject(item, ZR_LSP_FIELD_RANGE, serialize_range(range));
     return item;
 }
@@ -120,12 +122,13 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
          index < sizeof(ZR_INLINE_COMPLETION_KEYWORDS) / sizeof(ZR_INLINE_COMPLETION_KEYWORDS[0]);
          index++) {
         const SZrInlineCompletionKeyword *keyword = &ZR_INLINE_COMPLETION_KEYWORDS[index];
-        size_t keywordPrefixLength = strlen(keyword->prefix);
+        size_t keywordLength = strlen(keyword->keyword);
 
-        if (prefixLength == keywordPrefixLength &&
-            strncmp(content + prefixStart, keyword->prefix, keywordPrefixLength) == 0) {
+        if (prefixLength > 0 && prefixLength <= keywordLength &&
+            strncmp(content + prefixStart, keyword->keyword, prefixLength) == 0) {
             cJSON *item = inline_completion_create_item(position,
                                                         (TZrInt32)prefixLength,
+                                                        keyword->keyword,
                                                         keyword->insertText);
             if (item != NULL) {
                 cJSON_AddItemToArray(result, item);
