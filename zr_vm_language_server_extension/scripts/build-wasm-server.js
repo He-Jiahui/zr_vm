@@ -12,6 +12,7 @@ const buildDir = layout.wasm.buildDir;
 const target = process.env.ZR_WASM_BUILD_TARGET || 'zr_vm_language_server_wasm';
 const jobs = process.env.ZR_WASM_BUILD_JOBS || process.env.ZR_BUILD_JOBS || '8';
 const wasmBuildType = process.env.ZR_WASM_BUILD_TYPE || 'Release';
+const wslEmsdkEnvPath = process.env.ZR_WASM_EMSDK_ENV_WSL || '/mnt/e/Git/emsdk/emsdk_env.sh';
 
 ensureWasmBuildDirectory();
 
@@ -23,7 +24,11 @@ if (process.platform === 'win32') {
     result = spawnSync('wsl', [
         'bash',
         '-lc',
-        `cd '${repositoryRootWsl}' && cmake --build '${buildPathInCommand}' --target '${target}' -j${jobs}`,
+        [
+            sourceWslEmsdkEnvironmentCommand(),
+            `cd '${repositoryRootWsl}'`,
+            `cmake --build '${buildPathInCommand}' --target '${target}' -j${jobs}`,
+        ].join(' && '),
     ], {
         cwd: repositoryRoot,
         stdio: 'inherit',
@@ -67,6 +72,7 @@ function ensureWasmBuildDirectory() {
             'bash',
             '-lc',
             [
+                sourceWslEmsdkEnvironmentCommand(),
                 `cd '${repositoryRootWsl}'`,
                 `emcmake cmake -S . -B '${buildPathInCommand}' -G Ninja -DCMAKE_BUILD_TYPE=${wasmBuildType} -DBUILD_TESTS=OFF -DBUILD_WASM=ON -DBUILD_LANGUAGE_SERVER_EXTENSION=OFF`,
             ].join(' && '),
@@ -106,7 +112,7 @@ function ensureWasmToolchainAvailable() {
         const result = spawnSync('wsl', [
             'bash',
             '-lc',
-            'command -v emcmake >/dev/null 2>&1',
+            `${sourceWslEmsdkEnvironmentCommand()} && command -v emcmake >/dev/null 2>&1`,
         ], {
             cwd: repositoryRoot,
             stdio: 'ignore',
@@ -137,6 +143,10 @@ function ensureWasmToolchainAvailable() {
         `Expected one of: ${layout.wasm.sourceCandidates.join(', ')}`,
     ].join('\n'));
     process.exit(1);
+}
+
+function sourceWslEmsdkEnvironmentCommand() {
+    return `export EMSDK_QUIET=1; if ! command -v emcmake >/dev/null 2>&1 && [ -f '${wslEmsdkEnvPath}' ]; then . '${wslEmsdkEnvPath}' >/dev/null; fi`;
 }
 
 function toWslPath(nativePath) {

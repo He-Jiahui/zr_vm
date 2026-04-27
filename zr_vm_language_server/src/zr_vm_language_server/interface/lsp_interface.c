@@ -1280,15 +1280,20 @@ TZrBool ZrLanguageServer_Lsp_UpdateDocumentCore(SZrState *state,
                            : ZrLanguageServer_LspProject_FindProjectForUri(context, uri);
         if (allowProjectRefresh && projectIndex != ZR_NULL) {
             TZrBool refreshed = ZrLanguageServer_Lsp_ProjectRefreshForUpdatedDocument(state,
-                                                                                      context,
-                                                                                      uri,
-                                                                                      content,
-                                                                                      contentLength,
-                                                                                      ZR_FALSE);
+                                                                                       context,
+                                                                                       uri,
+                                                                                       content,
+                                                                                       contentLength,
+                                                                                       ZR_FALSE);
             if (!refreshed) {
                 ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
+                return ZR_FALSE;
             }
-            return refreshed;
+            analyzeSuccess = ZrLanguageServer_Lsp_ProjectAnalyzeDocument(state, context, uri, analyzer, ast);
+            if (!analyzeSuccess) {
+                ZrLanguageServer_Lsp_RemoveAnalyzer(state, context, uri);
+            }
+            return analyzeSuccess;
         }
 
         analyzeSuccess = projectIndex != ZR_NULL

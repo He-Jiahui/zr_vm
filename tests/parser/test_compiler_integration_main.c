@@ -84,6 +84,8 @@ extern void test_matrix_add_2d_compile_emits_plain_destination_int_arithmetic_op
 extern void test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_opcodes(void);
 extern void test_typed_quickening_promotes_const_and_plain_destination_variants(void);
 extern void test_known_native_calls_quicken_to_dedicated_call_family(void);
+extern void test_known_native_member_calls_quicken_to_dedicated_member_call_opcode(void);
+extern void test_known_vm_member_call_load1_quickening_fuses_receiver_and_argument_loads(void);
 extern void test_typed_member_calls_quicken_to_known_vm_call_family(void);
 extern void test_typed_member_call_initializers_bind_directly_into_local_slots(void);
 extern void test_typed_member_call_binary_operands_bind_directly_into_operand_slots(void);
@@ -94,6 +96,7 @@ extern void test_loop_child_function_calls_quicken_to_known_vm_call_family(void)
 extern void test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call(void);
 extern void test_repeated_constructor_string_arguments_survive_quickening_across_calls(void);
 extern void test_initializer_bound_local_is_visible_on_next_source_line(void);
+extern void test_noop_primitive_casts_do_not_emit_conversion_opcodes(void);
 extern void test_logical_short_circuit_runtime_preserves_side_effect_boundaries(void);
 extern void test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths(void);
 extern void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void);
@@ -214,6 +217,8 @@ int main(void) {
     RUN_TEST(test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_opcodes);
     RUN_TEST(test_typed_quickening_promotes_const_and_plain_destination_variants);
     RUN_TEST(test_known_native_calls_quicken_to_dedicated_call_family);
+    RUN_TEST(test_known_native_member_calls_quicken_to_dedicated_member_call_opcode);
+    RUN_TEST(test_known_vm_member_call_load1_quickening_fuses_receiver_and_argument_loads);
     RUN_TEST(test_typed_member_calls_quicken_to_known_vm_call_family);
     RUN_TEST(test_typed_member_call_initializers_bind_directly_into_local_slots);
     RUN_TEST(test_typed_member_call_binary_operands_bind_directly_into_operand_slots);
@@ -224,6 +229,7 @@ int main(void) {
     RUN_TEST(test_map_object_access_benchmark_project_compile_quickens_labelFor_loop_call);
     RUN_TEST(test_repeated_constructor_string_arguments_survive_quickening_across_calls);
     RUN_TEST(test_initializer_bound_local_is_visible_on_next_source_line);
+    RUN_TEST(test_noop_primitive_casts_do_not_emit_conversion_opcodes);
     RUN_TEST(test_logical_short_circuit_runtime_preserves_side_effect_boundaries);
     RUN_TEST(test_matrix_add_2d_compile_binds_super_array_items_for_hot_typed_int_paths);
     RUN_TEST(test_w2_load_typed_arithmetic_probe_reports_residual_candidates);

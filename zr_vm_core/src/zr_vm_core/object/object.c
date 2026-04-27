@@ -154,8 +154,229 @@ static ZR_FORCE_INLINE TZrBool object_key_matches_known_field(SZrState *state,
     return ZrCore_String_Equal(keyString, knownField);
 }
 
+static ZR_FORCE_INLINE TZrBool object_key_matches_string(SZrState *state,
+                                                         const SZrTypeValue *key,
+                                                         SZrString *expected) {
+    SZrString *keyString;
+
+    if (state == ZR_NULL || key == ZR_NULL || expected == ZR_NULL || key->type != ZR_VALUE_TYPE_STRING ||
+        key->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (key->value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(expected)) {
+        return ZR_TRUE;
+    }
+
+    keyString = ZR_CAST_STRING(state, key->value.object);
+    if (keyString == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrCore_String_IsShort(keyString) || ZrCore_String_IsShort(expected)) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_String_Equal(keyString, expected);
+}
+
 static ZR_FORCE_INLINE TZrBool object_key_is_hidden_items_field(SZrState *state, const SZrTypeValue *key) {
     return object_key_matches_known_field(state, key, ZR_OBJECT_HIDDEN_ITEMS_FIELD);
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *object_try_get_cached_iterator_current_value(
+        SZrState *state,
+        SZrObject *iteratorObject,
+        SZrString *currentMemberName) {
+    SZrHashKeyValuePair *pair;
+
+    if (iteratorObject == ZR_NULL || currentMemberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pair = iteratorObject->cachedIteratorCurrentPair;
+    if (pair == ZR_NULL || !object_key_matches_string(state, &pair->key, currentMemberName)) {
+        return ZR_NULL;
+    }
+
+    return &pair->value;
+}
+
+static ZR_FORCE_INLINE SZrObject *object_try_get_cached_iterator_source_object(SZrState *state,
+                                                                               SZrObject *iteratorObject) {
+    SZrHashKeyValuePair *pair;
+    SZrTypeValue *value;
+
+    if (state == ZR_NULL || iteratorObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pair = iteratorObject->cachedIteratorSourcePair;
+    if (pair == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING || pair->key.value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    value = &pair->value;
+    if ((value->type != ZR_VALUE_TYPE_OBJECT && value->type != ZR_VALUE_TYPE_ARRAY) || value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_OBJECT(state, value->value.object);
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_get_cached_iterator_index(SZrObject *iteratorObject,
+                                                                    TZrInt64 *outIndex) {
+    SZrHashKeyValuePair *pair;
+    SZrTypeValue *value;
+
+    if (iteratorObject == ZR_NULL || outIndex == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pair = iteratorObject->cachedIteratorIndexPair;
+    if (pair == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING || pair->key.value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    value = &pair->value;
+    if (ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)) {
+        *outIndex = value->value.nativeObject.nativeInt64;
+        return ZR_TRUE;
+    }
+    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(value->type)) {
+        *outIndex = (TZrInt64)value->value.nativeObject.nativeUInt64;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_set_cached_iterator_int_pair(SZrObject *iteratorObject,
+                                                                       SZrHashKeyValuePair *pair,
+                                                                       TZrInt64 value) {
+    if (iteratorObject == ZR_NULL || pair == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING ||
+        pair->key.value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZR_VALUE_FAST_SET(&pair->value, nativeInt64, value, ZR_VALUE_TYPE_INT64);
+    iteratorObject->memberVersion++;
+    iteratorObject->cachedStringLookupPair = pair;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_set_cached_iterator_current_null(SZrObject *iteratorObject) {
+    SZrHashKeyValuePair *pair;
+
+    if (iteratorObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pair = iteratorObject->cachedIteratorCurrentPair;
+    if (pair == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING || pair->key.value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_ResetAsNullNoProfile(&pair->value);
+    iteratorObject->memberVersion++;
+    iteratorObject->cachedStringLookupPair = pair;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_move_next_cached_raw_int_array_iterator(SZrState *state,
+                                                                                  SZrObject *iteratorObject,
+                                                                                  TZrBool *outMoved) {
+    SZrObject *source;
+    TZrInt64 index;
+
+    if (outMoved != ZR_NULL) {
+        *outMoved = ZR_FALSE;
+    }
+    if (state == ZR_NULL || iteratorObject == ZR_NULL || outMoved == ZR_NULL ||
+        iteratorObject->cachedIteratorCurrentPair == ZR_NULL ||
+        iteratorObject->cachedIteratorIndexPair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    source = object_try_get_cached_iterator_source_object(state, iteratorObject);
+    if (source == ZR_NULL || source->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        source->superArrayRawIntData == ZR_NULL ||
+        source->superArrayRawIntLength > source->superArrayRawIntCapacity ||
+        !object_try_get_cached_iterator_index(iteratorObject, &index) ||
+        index < 0) {
+        return ZR_FALSE;
+    }
+
+    if ((TZrUInt64)index >= (TZrUInt64)source->superArrayRawIntLength) {
+        if (!object_try_set_cached_iterator_current_null(iteratorObject)) {
+            return ZR_FALSE;
+        }
+        *outMoved = ZR_FALSE;
+        return ZR_TRUE;
+    }
+
+    if (!object_try_set_cached_iterator_int_pair(iteratorObject,
+                                                 iteratorObject->cachedIteratorCurrentPair,
+                                                 source->superArrayRawIntData[(TZrSize)index]) ||
+        !object_try_set_cached_iterator_int_pair(iteratorObject,
+                                                 iteratorObject->cachedIteratorIndexPair,
+                                                 index + 1)) {
+        return ZR_FALSE;
+    }
+    *outMoved = ZR_TRUE;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool object_try_move_next_cached_int_array_iterator(SZrState *state,
+                                                                              SZrObject *iteratorObject,
+                                                                              TZrBool *outMoved) {
+    SZrObject *source;
+    TZrInt64 index;
+    SZrTypeValue indexValue;
+    const SZrTypeValue *current;
+
+    if (outMoved != ZR_NULL) {
+        *outMoved = ZR_FALSE;
+    }
+    if (state == ZR_NULL || iteratorObject == ZR_NULL || outMoved == ZR_NULL ||
+        iteratorObject->cachedIteratorCurrentPair == ZR_NULL ||
+        iteratorObject->cachedIteratorIndexPair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (object_try_move_next_cached_raw_int_array_iterator(state, iteratorObject, outMoved)) {
+        return ZR_TRUE;
+    }
+
+    source = object_try_get_cached_iterator_source_object(state, iteratorObject);
+    if (source == ZR_NULL || source->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        !object_try_get_cached_iterator_index(iteratorObject, &index) || index < 0) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsInt(state, &indexValue, index);
+    current = ZrCore_Object_GetValue(state, source, &indexValue);
+    if (current == ZR_NULL) {
+        if (!object_try_set_cached_iterator_current_null(iteratorObject)) {
+            return ZR_FALSE;
+        }
+        *outMoved = ZR_FALSE;
+        return ZR_TRUE;
+    }
+    if (!ZR_VALUE_IS_TYPE_SIGNED_INT(current->type)) {
+        return ZR_FALSE;
+    }
+
+    if (!object_try_set_cached_iterator_int_pair(iteratorObject,
+                                                 iteratorObject->cachedIteratorCurrentPair,
+                                                 current->value.nativeObject.nativeInt64) ||
+        !object_try_set_cached_iterator_int_pair(iteratorObject,
+                                                 iteratorObject->cachedIteratorIndexPair,
+                                                 index + 1)) {
+        return ZR_FALSE;
+    }
+    *outMoved = ZR_TRUE;
+    return ZR_TRUE;
 }
 
 static void object_refresh_hidden_items_object_cache(SZrState *state,
@@ -302,7 +523,7 @@ static ZR_FORCE_INLINE void object_refresh_cached_string_lookup_pair(SZrObject *
         return;
     }
 
-    object->cachedStringLookupPair = pair;
+    object_cache_string_lookup_pair_mru(object, pair);
 }
 
 static TZrBool ensure_managed_field_capacity(SZrState *state, SZrObjectPrototype *prototype, TZrUInt32 minimumCapacity) {
@@ -3164,6 +3385,7 @@ TZrBool ZrCore_Object_IterMoveNext(struct SZrState *state,
     SZrTypeValue hasCurrentValue;
     const SZrTypeValue *resolvedValue;
     SZrObject *sourceObject;
+    TZrBool fastMoved = ZR_FALSE;
 
     if (state == ZR_NULL || iteratorValue == ZR_NULL || result == ZR_NULL ||
         iteratorValue->type != ZR_VALUE_TYPE_OBJECT) {
@@ -3176,6 +3398,11 @@ TZrBool ZrCore_Object_IterMoveNext(struct SZrState *state,
     }
     prototype = object_value_resolve_prototype(state, iteratorValue);
     if (prototype != ZR_NULL && prototype->iteratorContract.moveNextFunction != ZR_NULL) {
+        if (object_try_move_next_cached_int_array_iterator(state, iteratorObject, &fastMoved)) {
+            ZrCore_Value_InitAsBool(state, result, fastMoved);
+            return ZR_TRUE;
+        }
+
         if (ZrCore_Object_CallFunctionWithReceiver(state,
                                                    prototype->iteratorContract.moveNextFunction,
                                                    iteratorValue,
@@ -3218,6 +3445,71 @@ TZrBool ZrCore_Object_IterMoveNext(struct SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(struct SZrState *state,
+                                                           const SZrTypeValue *iteratorValue,
+                                                           SZrTypeValue *result) {
+    SZrObject *iteratorObject;
+    SZrObjectPrototype *prototype;
+    TZrBool moved = ZR_FALSE;
+
+    if (state == ZR_NULL || iteratorValue == ZR_NULL || result == ZR_NULL ||
+        iteratorValue->type != ZR_VALUE_TYPE_OBJECT || iteratorValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    iteratorObject = ZR_CAST_OBJECT(state, iteratorValue->value.object);
+    if (iteratorObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    prototype = iteratorObject->prototype;
+    if (prototype == ZR_NULL || prototype->iteratorContract.moveNextFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!object_try_move_next_cached_raw_int_array_iterator(state, iteratorObject, &moved)) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsBool(state, result, moved);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Object_TryIterCurrentCachedMemberFast(struct SZrState *state,
+                                                     const SZrTypeValue *iteratorValue,
+                                                     SZrTypeValue *result) {
+    SZrObject *iteratorObject;
+    SZrObjectPrototype *prototype;
+    const SZrTypeValue *cachedCurrent;
+
+    if (state == ZR_NULL || iteratorValue == ZR_NULL || result == ZR_NULL ||
+        iteratorValue->type != ZR_VALUE_TYPE_OBJECT || iteratorValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    iteratorObject = ZR_CAST_OBJECT(state, iteratorValue->value.object);
+    if (iteratorObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    prototype = iteratorObject->prototype;
+    if (prototype == ZR_NULL ||
+        prototype->iteratorContract.currentFunction != ZR_NULL ||
+        prototype->iteratorContract.currentMemberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    cachedCurrent = object_try_get_cached_iterator_current_value(state,
+                                                                 iteratorObject,
+                                                                 prototype->iteratorContract.currentMemberName);
+    if (cachedCurrent == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object_copy_value_profiled(state, result, cachedCurrent);
+    return ZR_TRUE;
+}
+
 TZrBool ZrCore_Object_IterCurrent(struct SZrState *state,
                                   SZrTypeValue *iteratorValue,
                                   SZrTypeValue *result) {
@@ -3235,6 +3527,10 @@ TZrBool ZrCore_Object_IterCurrent(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    if (ZrCore_Object_TryIterCurrentCachedMemberFast(state, iteratorValue, result)) {
+        return ZR_TRUE;
+    }
+
     prototype = object_value_resolve_prototype(state, iteratorValue);
     if (prototype != ZR_NULL) {
         if (prototype->iteratorContract.currentFunction != ZR_NULL) {
@@ -3249,6 +3545,15 @@ TZrBool ZrCore_Object_IterCurrent(struct SZrState *state,
         }
 
         if (prototype->iteratorContract.currentMemberName != ZR_NULL) {
+            const SZrTypeValue *cachedCurrent =
+                    object_try_get_cached_iterator_current_value(state,
+                                                                 iteratorObject,
+                                                                 prototype->iteratorContract.currentMemberName);
+            if (cachedCurrent != ZR_NULL) {
+                object_copy_value_profiled(state, result, cachedCurrent);
+                return ZR_TRUE;
+            }
+
             if (ZrCore_Object_GetMember(state,
                                         iteratorValue,
                                         prototype->iteratorContract.currentMemberName,

@@ -14,8 +14,9 @@ import {
     type TransportAwareLanguageClientLifecycle,
 } from './languageClientLifecycle';
 import { registerDesktopDebugSupport } from './debug/configProvider';
-import { setLanguageClientRequestClient } from './languageClientRequests';
+import { sendLanguageServerRequest, setLanguageClientRequestClient } from './languageClientRequests';
 import { LANGUAGE_SERVER_CONFIG_SECTION, resolveNativeLanguageServerPath } from './nativeAssets';
+import { registerOrganizeImportsCommand } from './organizeImports';
 import { registerDesktopProjectActions } from './projectActions';
 import { registerReferenceCodeLensCommand } from './referenceCodeLens';
 import { registerRichHoverSupport, type ZrRichHoverController } from './richHover';
@@ -49,6 +50,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(...registerDesktopDebugSupport(context));
     context.subscriptions.push(...registerDesktopProjectActions(context));
     context.subscriptions.push(registerReferenceCodeLensCommand());
+    context.subscriptions.push(registerOrganizeImportsCommand());
     context.subscriptions.push(registerVirtualDocumentSupport());
     structureController = registerZrStructureViews(context);
     context.subscriptions.push(structureController);
@@ -59,6 +61,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand(RESTART_COMMAND, async () => {
             await enqueueRestart(context, true);
         }),
+    );
+    context.subscriptions.push(
+        vscode.commands.registerCommand('zr.__sendLanguageServerRequest', async (method: string, params?: unknown) =>
+            sendLanguageServerRequest(method, params)),
     );
 
     context.subscriptions.push(

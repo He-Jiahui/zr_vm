@@ -477,15 +477,64 @@ static TZrBool lsp_document_links_append_virtual_module_links(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrChar *lsp_document_links_read_uri_from_disk(SZrState *state,
+                                                      SZrString *uri,
+                                                      TZrSize *outLength) {
+    TZrChar path[ZR_LIBRARY_MAX_PATH_LENGTH];
+    FILE *file;
+    long fileSize;
+    TZrChar *buffer;
+    size_t readLength;
+
+    if (state == ZR_NULL || uri == ZR_NULL || outLength == ZR_NULL ||
+        !ZrLanguageServer_Lsp_FileUriToNativePath(uri, path, sizeof(path))) {
+        return ZR_NULL;
+    }
+
+    file = fopen(path, "rb");
+    if (file == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+    fileSize = ftell(file);
+    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    buffer = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, (TZrSize)fileSize + 1);
+    if (buffer == ZR_NULL) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    readLength = fileSize > 0 ? fread(buffer, 1, (size_t)fileSize, file) : 0;
+    fclose(file);
+    if (readLength != (size_t)fileSize) {
+        ZrCore_Memory_RawFree(state->global, buffer, (TZrSize)fileSize + 1);
+        return ZR_NULL;
+    }
+
+    buffer[readLength] = '\0';
+    *outLength = (TZrSize)readLength;
+    return buffer;
+}
+
 TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
                                               SZrLspContext *context,
                                               SZrString *uri,
                                               SZrArray *result) {
     SZrFileVersion *fileVersion;
     SZrString *virtualDocumentText = ZR_NULL;
+    TZrChar *diskContent = ZR_NULL;
     const TZrChar *content;
-    TZrSize contentLength;
+    TZrSize contentLength = 0;
     TZrSize cursor = 0;
+    TZrBool success = ZR_FALSE;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -496,23 +545,33 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
 
     fileVersion = lsp_editor_get_file_version(context, uri);
     if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
-        if (!ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(uri) ||
-            !ZrLanguageServer_Lsp_GetNativeDeclarationDocument(state, context, uri, &virtualDocumentText) ||
-            virtualDocumentText == ZR_NULL) {
-            return ZR_FALSE;
+        if (ZrLanguageServer_LspVirtualDocuments_IsDeclarationUri(uri)) {
+            if (!ZrLanguageServer_Lsp_GetNativeDeclarationDocument(state, context, uri, &virtualDocumentText) ||
+                virtualDocumentText == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            content = lsp_document_links_string_text(virtualDocumentText);
+            contentLength = content != ZR_NULL ? strlen(content) : 0;
+            return lsp_document_links_append_virtual_module_links(state, result, uri, content, contentLength);
         }
-        content = lsp_document_links_string_text(virtualDocumentText);
-        contentLength = content != ZR_NULL ? strlen(content) : 0;
-        return lsp_document_links_append_virtual_module_links(state, result, uri, content, contentLength);
     }
 
-    content = fileVersion->content;
-    contentLength = fileVersion->contentLength;
+    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
+        content = fileVersion->content;
+        contentLength = fileVersion->contentLength;
+    } else {
+        diskContent = lsp_document_links_read_uri_from_disk(state, uri, &contentLength);
+        if (diskContent == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        content = diskContent;
+    }
+
     if (!lsp_document_links_append_zrp_links(state, result, uri, content, contentLength)) {
-        return ZR_FALSE;
+        goto cleanup;
     }
     if (!lsp_document_links_append_virtual_module_links(state, result, uri, content, contentLength)) {
-        return ZR_FALSE;
+        goto cleanup;
     }
 
     while (cursor + 8 < contentLength) {
@@ -554,7 +613,7 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
             if (locationPtr != ZR_NULL && *locationPtr != ZR_NULL && (*locationPtr)->uri != ZR_NULL) {
                 if (!lsp_document_links_append(state, result, linkRange, (*locationPtr)->uri)) {
                     lsp_document_links_free_locations(state, &definitions);
-                    return ZR_FALSE;
+                    goto cleanup;
                 }
                 appendedDefinition = ZR_TRUE;
             }
@@ -567,10 +626,16 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
                                                      quoteOffset + 1,
                                                      closeOffset,
                                                      linkRange)) {
-            return ZR_FALSE;
+            goto cleanup;
         }
         cursor = closeOffset + 1;
     }
 
-    return ZR_TRUE;
+    success = ZR_TRUE;
+
+cleanup:
+    if (diskContent != ZR_NULL) {
+        ZrCore_Memory_RawFree(state->global, diskContent, contentLength + 1);
+    }
+    return success;
 }

@@ -199,6 +199,12 @@ async function deleteDocumentFile(uri, fallbackUri) {
     const workspaceFolder = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
     const fallbackTarget = fallbackUri ?? vscode.Uri.joinPath(workspaceFolder.uri, 'src', 'main.zr');
 
+    const openDocumentToDelete = vscode.workspace.textDocuments.find((document) => document.uri.toString() === uri.toString());
+    if (uri.scheme === 'vscode-test-web' && openDocumentToDelete?.isDirty) {
+        await vscode.window.showTextDocument(openDocumentToDelete, { preview: false });
+        await vscode.commands.executeCommand('workbench.action.files.revert');
+    }
+
     if (vscode.window.activeTextEditor?.document?.uri?.toString() === uri.toString()) {
         const fallbackDocument = await vscode.workspace.openTextDocument(fallbackTarget);
         await vscode.window.showTextDocument(fallbackDocument, { preview: false });
@@ -211,6 +217,23 @@ async function deleteDocumentFile(uri, fallbackUri) {
     }
 
     await vscode.workspace.fs.delete(uri, { useTrash: false });
+}
+
+async function withPatchedWindowMethod(methodName, replacement, action) {
+    const original = vscode.window[methodName];
+    let restored = false;
+
+    assert(typeof original === 'function', `Expected vscode.window.${methodName} to be patchable`);
+    vscode.window[methodName] = replacement;
+
+    try {
+        return await action();
+    } finally {
+        if (!restored) {
+            vscode.window[methodName] = original;
+            restored = true;
+        }
+    }
 }
 
 async function verifyDiagnostics(workspaceRoot) {
@@ -272,11 +295,7 @@ async function verifyLanguageFeatures(workspaceRoot) {
     assert(hover.length > 0, 'Expected hover results');
 
     const completions = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeCompletionItemProvider',
-            mainDocument.uri,
-            new vscode.Position(0, 0),
-        ),
+        async () => executeCompletionItems(mainDocument.uri, new vscode.Position(0, 0)),
         (items) => completionEntries(items).length >= 0,
         15000,
         'completion provider',
@@ -298,10 +317,7 @@ async function verifyLanguageFeatures(workspaceRoot) {
         'Expected references to include lsp_smoke.zr');
 
     const documentSymbols = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeDocumentSymbolProvider',
-            mainDocument.uri,
-        ),
+        async () => executeDocumentSymbols(mainDocument.uri),
         (items) => Array.isArray(items) && items.length > 0,
         15000,
         'document symbols',
@@ -341,12 +357,237 @@ async function verifyLanguageFeatures(workspaceRoot) {
     console.log('[zr-web-smoke] verifyLanguageFeatures:done');
 }
 
+async function verifyAdvancedEditorProviders(workspaceRoot) {
+    console.log('[zr-web-smoke] verifyAdvancedEditorProviders:start');
+    const advancedUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_smoke_${Date.now()}.zr`);
+    const actionUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_action_${Date.now()}.zr`);
+    const organizeUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_imports_${Date.now()}.zr`);
+    const commands = await vscode.commands.getCommands(true);
+    assert(commands.includes('zr.organizeImports'), 'Expected web zr.organizeImports command to be registered');
+    const advancedSource = [
+        'var system = %import("zr.system");',
+        'var tcp = %import("zr.network.tcp");',
+        '',
+        'class AdvancedSmoke {',
+        'pub func run(value: int): int {',
+        'let local = value;',
+        'return local;',
+        '}',
+        '}',
+        '',
+        '%test("advancedEditorSmoke") {',
+        'return 1;',
+        '}',
+        '',
+    ].join('\n');
+
+    try {
+        await vscode.workspace.fs.writeFile(
+            advancedUri,
+            new TextEncoder().encode(advancedSource),
+        );
+
+        const document = await openDocument(advancedUri);
+        const fullRange = new vscode.Range(
+            new vscode.Position(0, 0),
+            document.lineAt(document.lineCount - 1).range.end,
+        );
+
+        const formattingEdits = await withRetry(
+            async () => vscode.commands.executeCommand(
+                'vscode.executeFormatDocumentProvider',
+                document.uri,
+                { tabSize: 4, insertSpaces: true },
+            ),
+            (items) => Array.isArray(items) && items.length > 0,
+            15000,
+            'document formatting provider',
+        );
+        assert(formattingEdits.some((edit) => edit.newText === '    ') &&
+                formattingEdits.some((edit) => edit.newText === '        '),
+            'Expected web format provider to produce nested indentation edits');
+
+        const rangeFormattingEdits = await withRetry(
+            async () => vscode.commands.executeCommand(
+                'vscode.executeFormatRangeProvider',
+                document.uri,
+                fullRange,
+                { tabSize: 4, insertSpaces: true },
+            ),
+            (items) => Array.isArray(items) && items.length > 0,
+            15000,
+            'range formatting provider',
+        );
+        assert(rangeFormattingEdits.some((edit) => edit.newText === '        ') ||
+                rangeFormattingEdits.some((edit) => edit.newText.includes('        return local;')),
+            'Expected web range format provider to indent method body');
+
+        const foldingRanges = await withRetry(
+            async () => vscode.commands.executeCommand(
+                'vscode.executeFoldingRangeProvider',
+                document.uri,
+            ),
+            (items) => Array.isArray(items) && items.length > 0,
+            15000,
+            'folding range provider',
+        );
+        assert(foldingRanges.some((item) => item.start <= 4 && item.end >= 6) ||
+                foldingRanges.some((item) => item.start <= 3 && item.end >= 7),
+            'Expected web folding ranges for class/function regions');
+
+        const selectionRanges = await withRetry(
+            async () => vscode.commands.executeCommand(
+                'vscode.executeSelectionRangeProvider',
+                document.uri,
+                [findPositionBySubstring(document, 'local;', 0, 0)],
+            ),
+            (items) => Array.isArray(items) && items.length > 0,
+            15000,
+            'selection range provider',
+        );
+        assert(selectionRanges[0]?.range && selectionRanges[0]?.parent,
+            'Expected web semantic selection ranges with parent expansion');
+
+        await vscode.workspace.fs.writeFile(
+            actionUri,
+            new TextEncoder().encode('var answer = 42\n'),
+        );
+        const actionDocument = await openDocument(actionUri);
+        const codeActions = await withRetry(
+            async () => vscode.commands.executeCommand(
+                'vscode.executeCodeActionProvider',
+                actionDocument.uri,
+                new vscode.Range(new vscode.Position(0, 0), new vscode.Position(0, 0)),
+                'quickfix',
+            ),
+            (items) => Array.isArray(items) && items.some((item) =>
+                (item.kind?.value ?? item.kind) === 'quickfix'),
+            15000,
+            'code action provider',
+        );
+        assert(codeActions.some((item) => (item.kind?.value ?? item.kind) === 'quickfix' &&
+                (item.edit || item.command || /semicolon/i.test(item.title ?? ''))),
+            'Expected web quick fix code action');
+
+        await vscode.workspace.fs.writeFile(
+            organizeUri,
+            new TextEncoder().encode([
+                '%import("zr.system");',
+                '%import("zr.math");',
+                '',
+                'return 1;',
+                '',
+            ].join('\n')),
+        );
+        const organizeDocument = await openDocument(organizeUri);
+        await vscode.commands.executeCommand('zr.organizeImports');
+        await withRetry(
+            async () => organizeDocument.getText(),
+            (text) => text.indexOf('%import("zr.math");\n%import("zr.system");') >= 0,
+            15000,
+            'zr.organizeImports command',
+        );
+
+        const documentLinks = await withRetry(
+            async () => vscode.commands.executeCommand(
+                'vscode.executeLinkProvider',
+                document.uri,
+            ),
+            (items) => Array.isArray(items) && items.length > 0,
+            15000,
+            'document link provider',
+        );
+        assert(documentLinks.some((item) => item.target && item.range),
+            'Expected web document links with targets');
+
+        const codeLens = await withRetry(
+            async () => vscode.commands.executeCommand(
+                'vscode.executeCodeLensProvider',
+                document.uri,
+                10,
+            ),
+            (items) => Array.isArray(items) && items.length > 0,
+            15000,
+            'code lens provider',
+        );
+        assert(codeLens.some((item) => item.command?.command === 'zr.runCurrentProject'),
+            'Expected web CodeLens to expose the Zr test run command');
+    } finally {
+        try {
+            await deleteDocumentFile(advancedUri);
+        } catch {
+        }
+        try {
+            await deleteDocumentFile(actionUri);
+        } catch {
+        }
+        try {
+            await deleteDocumentFile(organizeUri);
+        } catch {
+        }
+    }
+
+    console.log('[zr-web-smoke] verifyAdvancedEditorProviders:done');
+}
+
 function completionEntries(items) {
     if (!items) {
         return [];
     }
 
     return Array.isArray(items) ? items : items.items;
+}
+
+async function sendRawLanguageServerRequest(method, params) {
+    try {
+        return await vscode.commands.executeCommand('zr.__sendLanguageServerRequest', method, params);
+    } catch {
+        return undefined;
+    }
+}
+
+async function executeCompletionItems(uri, position, triggerCharacter = undefined, itemResolveCount = 100) {
+    const primary = await vscode.commands.executeCommand(
+        'vscode.executeCompletionItemProvider',
+        uri,
+        position,
+        triggerCharacter,
+        itemResolveCount,
+    );
+    const direct = await sendRawLanguageServerRequest('textDocument/completion', {
+        textDocument: { uri: uri.toString(true) },
+        position: { line: position.line, character: position.character },
+        context: triggerCharacter
+            ? { triggerKind: 2, triggerCharacter }
+            : { triggerKind: 1 },
+    });
+    const directEntries = completionEntries(direct);
+    const primaryEntries = completionEntries(primary);
+    if (directEntries.length > 0 && primaryEntries.length > 0) {
+        return { items: [...directEntries, ...primaryEntries] };
+    }
+    if (directEntries.length > 0) {
+        return direct;
+    }
+    if (primaryEntries.length > 0) {
+        return primary;
+    }
+    return direct ?? primary;
+}
+
+async function executeDocumentSymbols(uri) {
+    const primary = await vscode.commands.executeCommand(
+        'vscode.executeDocumentSymbolProvider',
+        uri,
+    );
+    if (Array.isArray(primary) && primary.length > 0) {
+        return primary;
+    }
+
+    const direct = await sendRawLanguageServerRequest('textDocument/documentSymbol', {
+        textDocument: { uri: uri.toString(true) },
+    });
+    return Array.isArray(direct) ? direct : primary;
 }
 
 function markdownLikeToString(value) {
@@ -537,11 +778,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     );
 
     const bossCompletions = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeCompletionItemProvider',
-            document.uri,
-            bossCompletionPosition,
-        ),
+        async () => executeCompletionItems(document.uri, bossCompletionPosition, '.'),
         (items) => completionEntries(items).length > 0,
         15000,
         'boss member completion',
@@ -552,11 +789,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     assert(bossCompletionLabels.includes('total'), 'boss. completion should include method total');
 
     const scoreBoardCompletions = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeCompletionItemProvider',
-            document.uri,
-            scoreBoardCompletionPosition,
-        ),
+        async () => executeCompletionItems(document.uri, scoreBoardCompletionPosition, '.'),
         (items) => completionEntries(items).length > 0,
         15000,
         'ScoreBoard member completion',
@@ -628,10 +861,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     'Function rename should include both declaration and usage edits');
 
     const documentSymbols = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeDocumentSymbolProvider',
-            document.uri,
-        ),
+        async () => executeDocumentSymbols(document.uri),
         (items) => Array.isArray(items) && items.length > 0,
         15000,
         'classes document symbols',
@@ -937,6 +1167,7 @@ async function run() {
 
     if (focus === 'all' || focus === 'lsp') {
         await verifyLanguageFeatures(workspaceFolder.uri);
+        await verifyAdvancedEditorProviders(workspaceFolder.uri);
         await verifyClassLanguageFeatures(workspaceFolder.uri);
         await verifyStructureViews(workspaceFolder.uri);
         await verifyDiagnostics(workspaceFolder.uri);

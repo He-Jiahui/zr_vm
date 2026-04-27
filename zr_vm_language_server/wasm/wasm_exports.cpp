@@ -568,6 +568,317 @@ static cJSON* serialize_highlights(SZrArray *highlights) {
     return json;
 }
 
+static cJSON *serialize_text_edit(SZrState *state, const SZrLspTextEdit *edit) {
+    cJSON *json;
+    const char *newText;
+
+    if (edit == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    if (json == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_lsp_range(edit->range));
+    newText = string_to_cstr(state, edit->newText);
+    cJSON_AddStringToObject(json, ZR_LSP_FIELD_NEW_TEXT, newText != ZR_NULL ? newText : "");
+    if (newText != ZR_NULL) {
+        free_cstr(state, newText);
+    }
+    return json;
+}
+
+static cJSON *serialize_text_edits(SZrState *state, SZrArray *edits) {
+    cJSON *json = cJSON_CreateArray();
+
+    if (json == ZR_NULL || edits == ZR_NULL) {
+        return json;
+    }
+
+    for (TZrSize i = 0; i < edits->length; i++) {
+        SZrLspTextEdit **editPtr = (SZrLspTextEdit **)ZrCore_Array_Get(edits, i);
+        if (editPtr != ZR_NULL && *editPtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_text_edit(state, *editPtr));
+        }
+    }
+
+    return json;
+}
+
+static cJSON *serialize_workspace_edit(SZrState *state, const char *uri, SZrArray *edits) {
+    cJSON *json = cJSON_CreateObject();
+    cJSON *changes = cJSON_CreateObject();
+
+    if (json == ZR_NULL || changes == ZR_NULL) {
+        cJSON_Delete(json);
+        cJSON_Delete(changes);
+        return ZR_NULL;
+    }
+
+    cJSON_AddItemToObject(changes, uri != ZR_NULL ? uri : "", serialize_text_edits(state, edits));
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_CHANGES, changes);
+    return json;
+}
+
+static cJSON *serialize_code_action(SZrState *state, const char *uri, const SZrLspCodeAction *action) {
+    cJSON *json;
+    const char *titleText;
+    const char *kindText;
+
+    if (action == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    if (json == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    titleText = string_to_cstr(state, action->title);
+    kindText = string_to_cstr(state, action->kind);
+    cJSON_AddStringToObject(json, ZR_LSP_FIELD_TITLE, titleText != ZR_NULL ? titleText : "");
+    if (kindText != ZR_NULL) {
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_KIND, kindText);
+    }
+    cJSON_AddBoolToObject(json, ZR_LSP_FIELD_IS_PREFERRED, action->isPreferred ? 1 : 0);
+    cJSON_AddItemToObject(json,
+                          ZR_LSP_FIELD_EDIT,
+                          serialize_workspace_edit(state, uri, (SZrArray *)&action->edits));
+
+    if (titleText != ZR_NULL) {
+        free_cstr(state, titleText);
+    }
+    if (kindText != ZR_NULL) {
+        free_cstr(state, kindText);
+    }
+    return json;
+}
+
+static cJSON *serialize_code_actions(SZrState *state, const char *uri, SZrArray *actions) {
+    cJSON *json = cJSON_CreateArray();
+
+    if (json == ZR_NULL || actions == ZR_NULL) {
+        return json;
+    }
+
+    for (TZrSize i = 0; i < actions->length; i++) {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(actions, i);
+        if (actionPtr != ZR_NULL && *actionPtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_code_action(state, uri, *actionPtr));
+        }
+    }
+
+    return json;
+}
+
+static cJSON *serialize_folding_range(SZrState *state, const SZrLspFoldingRange *range) {
+    cJSON *json;
+    const char *kindText;
+
+    if (range == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    if (json == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_START_LINE, range->startLine);
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_START_CHARACTER, range->startCharacter);
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_END_LINE, range->endLine);
+    cJSON_AddNumberToObject(json, ZR_LSP_FIELD_END_CHARACTER, range->endCharacter);
+    kindText = string_to_cstr(state, range->kind);
+    if (kindText != ZR_NULL) {
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_KIND, kindText);
+        free_cstr(state, kindText);
+    }
+    return json;
+}
+
+static cJSON *serialize_folding_ranges(SZrState *state, SZrArray *ranges) {
+    cJSON *json = cJSON_CreateArray();
+
+    if (json == ZR_NULL || ranges == ZR_NULL) {
+        return json;
+    }
+
+    for (TZrSize i = 0; i < ranges->length; i++) {
+        SZrLspFoldingRange **rangePtr = (SZrLspFoldingRange **)ZrCore_Array_Get(ranges, i);
+        if (rangePtr != ZR_NULL && *rangePtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_folding_range(state, *rangePtr));
+        }
+    }
+
+    return json;
+}
+
+static cJSON *serialize_selection_range(const SZrLspSelectionRange *range) {
+    cJSON *json;
+
+    if (range == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    if (json == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_lsp_range(range->range));
+    if (range->hasParent) {
+        cJSON *parent = cJSON_CreateObject();
+        if (parent != ZR_NULL) {
+            cJSON_AddItemToObject(parent, ZR_LSP_FIELD_RANGE, serialize_lsp_range(range->parentRange));
+            if (range->hasGrandParent) {
+                cJSON *grandParent = cJSON_CreateObject();
+                if (grandParent != ZR_NULL) {
+                    cJSON_AddItemToObject(grandParent,
+                                          ZR_LSP_FIELD_RANGE,
+                                          serialize_lsp_range(range->grandParentRange));
+                    cJSON_AddItemToObject(parent, ZR_LSP_FIELD_PARENT, grandParent);
+                }
+            }
+            cJSON_AddItemToObject(json, ZR_LSP_FIELD_PARENT, parent);
+        }
+    }
+    return json;
+}
+
+static cJSON *serialize_selection_ranges(SZrArray *ranges) {
+    cJSON *json = cJSON_CreateArray();
+
+    if (json == ZR_NULL || ranges == ZR_NULL) {
+        return json;
+    }
+
+    for (TZrSize i = 0; i < ranges->length; i++) {
+        SZrLspSelectionRange **rangePtr = (SZrLspSelectionRange **)ZrCore_Array_Get(ranges, i);
+        if (rangePtr != ZR_NULL && *rangePtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_selection_range(*rangePtr));
+        }
+    }
+
+    return json;
+}
+
+static cJSON *serialize_document_link(SZrState *state, const SZrLspDocumentLink *link) {
+    cJSON *json;
+    const char *targetText;
+    const char *tooltipText;
+
+    if (link == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    if (json == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_lsp_range(link->range));
+    targetText = string_to_cstr(state, link->target);
+    tooltipText = string_to_cstr(state, link->tooltip);
+    if (targetText != ZR_NULL) {
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_TARGET, targetText);
+    }
+    if (tooltipText != ZR_NULL) {
+        cJSON_AddStringToObject(json, ZR_LSP_FIELD_TOOLTIP, tooltipText);
+    }
+    if (targetText != ZR_NULL) {
+        free_cstr(state, targetText);
+    }
+    if (tooltipText != ZR_NULL) {
+        free_cstr(state, tooltipText);
+    }
+    return json;
+}
+
+static cJSON *serialize_document_links(SZrState *state, SZrArray *links) {
+    cJSON *json = cJSON_CreateArray();
+
+    if (json == ZR_NULL || links == ZR_NULL) {
+        return json;
+    }
+
+    for (TZrSize i = 0; i < links->length; i++) {
+        SZrLspDocumentLink **linkPtr = (SZrLspDocumentLink **)ZrCore_Array_Get(links, i);
+        if (linkPtr != ZR_NULL && *linkPtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_document_link(state, *linkPtr));
+        }
+    }
+
+    return json;
+}
+
+static cJSON *serialize_code_lens(SZrState *state, const SZrLspCodeLens *lens) {
+    cJSON *json;
+    cJSON *command;
+    cJSON *arguments;
+    const char *titleText;
+    const char *commandText;
+    const char *argumentText;
+
+    if (lens == ZR_NULL) {
+        return cJSON_CreateNull();
+    }
+
+    json = cJSON_CreateObject();
+    command = cJSON_CreateObject();
+    arguments = cJSON_CreateArray();
+    if (json == ZR_NULL || command == ZR_NULL || arguments == ZR_NULL) {
+        cJSON_Delete(json);
+        cJSON_Delete(command);
+        cJSON_Delete(arguments);
+        return ZR_NULL;
+    }
+
+    titleText = string_to_cstr(state, lens->commandTitle);
+    commandText = string_to_cstr(state, lens->command);
+    argumentText = string_to_cstr(state, lens->argument);
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_RANGE, serialize_lsp_range(lens->range));
+    cJSON_AddStringToObject(command, ZR_LSP_FIELD_TITLE, titleText != ZR_NULL ? titleText : "");
+    cJSON_AddStringToObject(command, ZR_LSP_FIELD_COMMAND, commandText != ZR_NULL ? commandText : "");
+    if (argumentText != ZR_NULL) {
+        cJSON_AddItemToArray(arguments, cJSON_CreateString(argumentText));
+    }
+    if (lens->hasPositionArgument) {
+        cJSON_AddItemToArray(arguments, serialize_lsp_position(lens->positionArgument));
+    }
+    cJSON_AddItemToObject(command, ZR_LSP_FIELD_ARGUMENTS, arguments);
+    cJSON_AddItemToObject(json, ZR_LSP_FIELD_COMMAND, command);
+
+    if (titleText != ZR_NULL) {
+        free_cstr(state, titleText);
+    }
+    if (commandText != ZR_NULL) {
+        free_cstr(state, commandText);
+    }
+    if (argumentText != ZR_NULL) {
+        free_cstr(state, argumentText);
+    }
+    return json;
+}
+
+static cJSON *serialize_code_lenses(SZrState *state, SZrArray *lenses) {
+    cJSON *json = cJSON_CreateArray();
+
+    if (json == ZR_NULL || lenses == ZR_NULL) {
+        return json;
+    }
+
+    for (TZrSize i = 0; i < lenses->length; i++) {
+        SZrLspCodeLens **lensPtr = (SZrLspCodeLens **)ZrCore_Array_Get(lenses, i);
+        if (lensPtr != ZR_NULL && *lensPtr != ZR_NULL) {
+            cJSON_AddItemToArray(json, serialize_code_lens(state, *lensPtr));
+        }
+    }
+
+    return json;
+}
+
 static void remove_document_state(SZrLspContext *context, SZrString *uri) {
     SZrTypeValue key;
     SZrHashKeyValuePair *pair;
@@ -1296,6 +1607,247 @@ const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
     }
 
     return create_success_response(cJSON_CreateNull());
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetFormatting(void* context, const char* uri, int uriLen) {
+    SZrString *uriStr;
+    SZrArray edits;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    ZrCore_Array_Init(g_wasm_state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    if (ZrLanguageServer_Lsp_GetFormatting(g_wasm_state, (SZrLspContext*)context, uriStr, &edits)) {
+        cJSON *data = serialize_text_edits(g_wasm_state, &edits);
+        const char *jsonStr = create_success_response(data);
+        ZrLanguageServer_Lsp_FreeTextEdits(g_wasm_state, &edits);
+        return jsonStr;
+    }
+
+    ZrLanguageServer_Lsp_FreeTextEdits(g_wasm_state, &edits);
+    return create_error_response("Failed to get formatting edits");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetRangeFormatting(void* context,
+                                    const char* uri,
+                                    int uriLen,
+                                    int startLine,
+                                    int startCharacter,
+                                    int endLine,
+                                    int endCharacter) {
+    SZrString *uriStr;
+    SZrLspRange range;
+    SZrArray edits;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    range.start.line = startLine;
+    range.start.character = startCharacter;
+    range.end.line = endLine;
+    range.end.character = endCharacter;
+
+    ZrCore_Array_Init(g_wasm_state, &edits, sizeof(SZrLspTextEdit *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    if (ZrLanguageServer_Lsp_GetRangeFormatting(g_wasm_state,
+                                                (SZrLspContext*)context,
+                                                uriStr,
+                                                range,
+                                                &edits)) {
+        cJSON *data = serialize_text_edits(g_wasm_state, &edits);
+        const char *jsonStr = create_success_response(data);
+        ZrLanguageServer_Lsp_FreeTextEdits(g_wasm_state, &edits);
+        return jsonStr;
+    }
+
+    ZrLanguageServer_Lsp_FreeTextEdits(g_wasm_state, &edits);
+    return create_error_response("Failed to get range formatting edits");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetCodeActions(void* context,
+                                const char* uri,
+                                int uriLen,
+                                int startLine,
+                                int startCharacter,
+                                int endLine,
+                                int endCharacter) {
+    SZrString *uriStr;
+    SZrLspRange range;
+    SZrArray actions;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    range.start.line = startLine;
+    range.start.character = startCharacter;
+    range.end.line = endLine;
+    range.end.character = endCharacter;
+
+    ZrCore_Array_Init(g_wasm_state, &actions, sizeof(SZrLspCodeAction *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    if (ZrLanguageServer_Lsp_GetCodeActions(g_wasm_state,
+                                            (SZrLspContext*)context,
+                                            uriStr,
+                                            range,
+                                            &actions)) {
+        cJSON *data = serialize_code_actions(g_wasm_state, uri, &actions);
+        const char *jsonStr = create_success_response(data);
+        ZrLanguageServer_Lsp_FreeCodeActions(g_wasm_state, &actions);
+        return jsonStr;
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(g_wasm_state, &actions);
+    return create_error_response("Failed to get code actions");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetFoldingRanges(void* context, const char* uri, int uriLen) {
+    SZrString *uriStr;
+    SZrArray ranges;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    ZrCore_Array_Init(g_wasm_state, &ranges, sizeof(SZrLspFoldingRange *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    if (ZrLanguageServer_Lsp_GetFoldingRanges(g_wasm_state, (SZrLspContext*)context, uriStr, &ranges)) {
+        cJSON *data = serialize_folding_ranges(g_wasm_state, &ranges);
+        const char *jsonStr = create_success_response(data);
+        ZrLanguageServer_Lsp_FreeFoldingRanges(g_wasm_state, &ranges);
+        return jsonStr;
+    }
+
+    ZrLanguageServer_Lsp_FreeFoldingRanges(g_wasm_state, &ranges);
+    return create_error_response("Failed to get folding ranges");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetSelectionRange(void* context,
+                                   const char* uri,
+                                   int uriLen,
+                                   int line,
+                                   int character) {
+    SZrString *uriStr;
+    SZrLspPosition position;
+    SZrArray ranges;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    position.line = line;
+    position.character = character;
+
+    ZrCore_Array_Init(g_wasm_state, &ranges, sizeof(SZrLspSelectionRange *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    if (ZrLanguageServer_Lsp_GetSelectionRanges(g_wasm_state,
+                                                (SZrLspContext*)context,
+                                                uriStr,
+                                                &position,
+                                                1,
+                                                &ranges)) {
+        cJSON *data = serialize_selection_ranges(&ranges);
+        const char *jsonStr = create_success_response(data);
+        ZrLanguageServer_Lsp_FreeSelectionRanges(g_wasm_state, &ranges);
+        return jsonStr;
+    }
+
+    ZrLanguageServer_Lsp_FreeSelectionRanges(g_wasm_state, &ranges);
+    return create_error_response("Failed to get selection ranges");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetDocumentLinks(void* context, const char* uri, int uriLen) {
+    SZrString *uriStr;
+    SZrArray links;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    ZrCore_Array_Init(g_wasm_state, &links, sizeof(SZrLspDocumentLink *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    if (ZrLanguageServer_Lsp_GetDocumentLinks(g_wasm_state, (SZrLspContext*)context, uriStr, &links)) {
+        cJSON *data = serialize_document_links(g_wasm_state, &links);
+        const char *jsonStr = create_success_response(data);
+        ZrLanguageServer_Lsp_FreeDocumentLinks(g_wasm_state, &links);
+        return jsonStr;
+    }
+
+    ZrLanguageServer_Lsp_FreeDocumentLinks(g_wasm_state, &links);
+    return create_error_response("Failed to get document links");
+}
+
+#ifdef __EMSCRIPTEN__
+EMSCRIPTEN_KEEPALIVE
+#endif
+const char* wasm_ZrLspGetCodeLens(void* context, const char* uri, int uriLen) {
+    SZrString *uriStr;
+    SZrArray lenses;
+
+    if (g_wasm_state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL) {
+        return create_error_response("Invalid parameters");
+    }
+
+    uriStr = cstr_to_string(g_wasm_state, uri, uriLen);
+    if (uriStr == ZR_NULL) {
+        return create_error_response("Failed to create URI string");
+    }
+
+    ZrCore_Array_Init(g_wasm_state, &lenses, sizeof(SZrLspCodeLens *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
+    if (ZrLanguageServer_Lsp_GetCodeLens(g_wasm_state, (SZrLspContext*)context, uriStr, &lenses)) {
+        cJSON *data = serialize_code_lenses(g_wasm_state, &lenses);
+        const char *jsonStr = create_success_response(data);
+        ZrLanguageServer_Lsp_FreeCodeLens(g_wasm_state, &lenses);
+        return jsonStr;
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeLens(g_wasm_state, &lenses);
+    return create_error_response("Failed to get code lens");
 }
 
 } // extern "C"

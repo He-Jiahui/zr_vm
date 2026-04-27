@@ -107,6 +107,11 @@ struct ZR_STRUCT_ALIGN SZrObject {
     SZrHashKeyValuePair *cachedLengthPair;
     SZrHashKeyValuePair *cachedCapacityPair;
     SZrHashKeyValuePair *cachedStringLookupPair;
+    SZrHashKeyValuePair *cachedStringLookupPair2;
+    SZrHashKeyValuePair *cachedIteratorSourcePair;
+    SZrHashKeyValuePair *cachedIteratorCurrentPair;
+    SZrHashKeyValuePair *cachedIteratorIndexPair;
+    SZrHashKeyValuePair *cachedIteratorNextNodePair;
     TZrInt64 *superArrayRawIntData;
     TZrSize superArrayRawIntLength;
     TZrSize superArrayRawIntCapacity;
@@ -284,6 +289,10 @@ ZR_CORE_API TZrBool ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(struct SZrSt
                                                                     TZrInt64 repeatCount,
                                                                     TZrInt64 value);
 
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayEnsureRawIntCapacity(struct SZrState *state,
+                                                                 SZrObject *itemsObject,
+                                                                 TZrSize requiredCapacity);
+
 ZR_CORE_API TZrBool ZrCore_Object_IterInit(struct SZrState *state,
                                            SZrTypeValue *iterableValue,
                                            SZrTypeValue *result);
@@ -292,9 +301,17 @@ ZR_CORE_API TZrBool ZrCore_Object_IterMoveNext(struct SZrState *state,
                                                SZrTypeValue *iteratorValue,
                                                SZrTypeValue *result);
 
+ZR_CORE_API TZrBool ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(struct SZrState *state,
+                                                                       const SZrTypeValue *iteratorValue,
+                                                                       SZrTypeValue *result);
+
 ZR_CORE_API TZrBool ZrCore_Object_IterCurrent(struct SZrState *state,
                                               SZrTypeValue *iteratorValue,
                                               SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_TryIterCurrentCachedMemberFast(struct SZrState *state,
+                                                                 const SZrTypeValue *iteratorValue,
+                                                                 SZrTypeValue *result);
 
 // Prototype 创建和管理函数
 ZR_CORE_API SZrObjectPrototype *ZrCore_ObjectPrototype_New(struct SZrState *state, SZrString *name, EZrObjectPrototypeType type);

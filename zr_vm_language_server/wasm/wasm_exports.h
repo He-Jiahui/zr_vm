@@ -146,6 +146,43 @@ const char* wasm_ZrLspGetSemanticTokens(void* context, const char* uri, int uriL
 const char* wasm_ZrLspPrepareRename(void* context, const char* uri, int uriLen,
                                int line, int character);
 
+// 获取格式化编辑
+const char* wasm_ZrLspGetFormatting(void* context, const char* uri, int uriLen);
+
+// 获取范围格式化编辑
+const char* wasm_ZrLspGetRangeFormatting(void* context,
+                                    const char* uri,
+                                    int uriLen,
+                                    int startLine,
+                                    int startCharacter,
+                                    int endLine,
+                                    int endCharacter);
+
+// 获取 Code Action
+const char* wasm_ZrLspGetCodeActions(void* context,
+                                const char* uri,
+                                int uriLen,
+                                int startLine,
+                                int startCharacter,
+                                int endLine,
+                                int endCharacter);
+
+// 获取折叠范围
+const char* wasm_ZrLspGetFoldingRanges(void* context, const char* uri, int uriLen);
+
+// 获取单个位置的语义选择范围
+const char* wasm_ZrLspGetSelectionRange(void* context,
+                                   const char* uri,
+                                   int uriLen,
+                                   int line,
+                                   int character);
+
+// 获取文档链接
+const char* wasm_ZrLspGetDocumentLinks(void* context, const char* uri, int uriLen);
+
+// 获取 CodeLens
+const char* wasm_ZrLspGetCodeLens(void* context, const char* uri, int uriLen);
+
 #ifdef __cplusplus
 }
 #endif

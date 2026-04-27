@@ -19,6 +19,28 @@ static ZR_FORCE_INLINE void object_reset_hot_field_pair_cache(SZrObject *object)
     object->cachedLengthPair = ZR_NULL;
     object->cachedCapacityPair = ZR_NULL;
     object->cachedStringLookupPair = ZR_NULL;
+    object->cachedStringLookupPair2 = ZR_NULL;
+    object->cachedIteratorSourcePair = ZR_NULL;
+    object->cachedIteratorCurrentPair = ZR_NULL;
+    object->cachedIteratorIndexPair = ZR_NULL;
+    object->cachedIteratorNextNodePair = ZR_NULL;
+}
+
+static ZR_FORCE_INLINE void object_cache_string_lookup_pair_mru(SZrObject *object, SZrHashKeyValuePair *pair) {
+    if (object == ZR_NULL || pair == ZR_NULL) {
+        return;
+    }
+
+    if (object->cachedStringLookupPair == pair) {
+        return;
+    }
+    if (object->cachedStringLookupPair2 == pair) {
+        object->cachedStringLookupPair2 = object->cachedStringLookupPair;
+        object->cachedStringLookupPair = pair;
+        return;
+    }
+    object->cachedStringLookupPair2 = object->cachedStringLookupPair;
+    object->cachedStringLookupPair = pair;
 }
 
 static ZR_FORCE_INLINE void object_make_string_key_cached_unchecked(SZrState *state,
@@ -63,23 +85,30 @@ static ZR_FORCE_INLINE const SZrTypeValue *object_try_get_cached_string_value_by
         return &pair->value;
     }
 
+    pair = object->cachedStringLookupPair2;
+    if (pair != ZR_NULL &&
+        pair->key.type == ZR_VALUE_TYPE_STRING &&
+        pair->key.value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(memberName)) {
+        object_cache_string_lookup_pair_mru(object, pair);
+        return &pair->value;
+    }
+
     return ZR_NULL;
 }
 
-static ZR_FORCE_INLINE SZrHashKeyValuePair *object_try_get_cached_string_pair_by_name_unchecked(
+static ZR_FORCE_INLINE SZrHashKeyValuePair *object_try_match_cached_string_pair_by_name_unchecked(
         SZrState *state,
-        SZrObject *object,
+        SZrHashKeyValuePair *pair,
         struct SZrString *memberName) {
-    SZrHashKeyValuePair *pair;
     SZrString *cachedKeyString;
 
-    if (state == ZR_NULL || object == ZR_NULL || memberName == ZR_NULL) {
+    if (state == ZR_NULL || pair == ZR_NULL || memberName == ZR_NULL ||
+        pair->key.type != ZR_VALUE_TYPE_STRING || pair->key.value.object == ZR_NULL) {
         return ZR_NULL;
     }
 
-    pair = object->cachedStringLookupPair;
-    if (pair == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING || pair->key.value.object == ZR_NULL) {
-        return ZR_NULL;
+    if (pair->key.value.object == ZR_CAST_RAW_OBJECT_AS_SUPER(memberName)) {
+        return pair;
     }
 
     cachedKeyString = ZR_CAST(SZrString *, pair->key.value.object);
@@ -91,19 +120,43 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_try_get_cached_string_pair_by
     return ZrCore_String_Equal(memberName, cachedKeyString) ? pair : ZR_NULL;
 }
 
-static ZR_FORCE_INLINE SZrHashKeyValuePair *object_try_get_cached_string_pair_unchecked(
+static ZR_FORCE_INLINE SZrHashKeyValuePair *object_try_get_cached_string_pair_by_name_unchecked(
         SZrState *state,
         SZrObject *object,
-        const SZrTypeValue *key) {
+        struct SZrString *memberName) {
     SZrHashKeyValuePair *pair;
-    SZrString *keyString;
-    SZrString *cachedKeyString;
-    if (state == ZR_NULL || object == ZR_NULL || key == ZR_NULL || key->type != ZR_VALUE_TYPE_STRING ||
-        key->value.object == ZR_NULL) {
+
+    if (state == ZR_NULL || object == ZR_NULL || memberName == ZR_NULL) {
         return ZR_NULL;
     }
 
     pair = object->cachedStringLookupPair;
+    pair = object_try_match_cached_string_pair_by_name_unchecked(state, pair, memberName);
+    if (pair != ZR_NULL) {
+        return pair;
+    }
+
+    pair = object->cachedStringLookupPair2;
+    pair = object_try_match_cached_string_pair_by_name_unchecked(state, pair, memberName);
+    if (pair != ZR_NULL) {
+        object_cache_string_lookup_pair_mru(object, pair);
+        return pair;
+    }
+
+    return pair;
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair *object_try_match_cached_string_pair_unchecked(
+        SZrState *state,
+        SZrHashKeyValuePair *pair,
+        const SZrTypeValue *key) {
+    SZrString *keyString;
+    SZrString *cachedKeyString;
+    if (state == ZR_NULL || pair == ZR_NULL || key == ZR_NULL || key->type != ZR_VALUE_TYPE_STRING ||
+        key->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
     if (pair == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING || pair->key.value.object == ZR_NULL) {
         return ZR_NULL;
     }
@@ -120,6 +173,31 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_try_get_cached_string_pair_un
     }
 
     return ZrCore_String_Equal(keyString, cachedKeyString) ? pair : ZR_NULL;
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair *object_try_get_cached_string_pair_unchecked(
+        SZrState *state,
+        SZrObject *object,
+        const SZrTypeValue *key) {
+    SZrHashKeyValuePair *pair;
+
+    if (state == ZR_NULL || object == ZR_NULL || key == ZR_NULL || key->type != ZR_VALUE_TYPE_STRING ||
+        key->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    pair = object_try_match_cached_string_pair_unchecked(state, object->cachedStringLookupPair, key);
+    if (pair != ZR_NULL) {
+        return pair;
+    }
+
+    pair = object_try_match_cached_string_pair_unchecked(state, object->cachedStringLookupPair2, key);
+    if (pair != ZR_NULL) {
+        object_cache_string_lookup_pair_mru(object, pair);
+        return pair;
+    }
+
+    return pair;
 }
 
 static ZR_FORCE_INLINE SZrHashKeyValuePair *object_get_own_string_pair_by_name_cached_unchecked(
@@ -145,7 +223,7 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair *object_get_own_string_pair_by_name_c
     object_make_string_key_cached_unchecked(state, memberName, &memberKey);
     pair = ZrCore_HashSet_Find(state, &object->nodeMap, &memberKey);
     if (pair != ZR_NULL && pair->key.type == ZR_VALUE_TYPE_STRING && pair->key.value.object != ZR_NULL) {
-        object->cachedStringLookupPair = pair;
+        object_cache_string_lookup_pair_mru(object, pair);
     }
     return pair;
 }
@@ -206,7 +284,7 @@ static ZR_FORCE_INLINE TZrBool object_try_set_existing_string_pair_plain_value_a
     if (value->isGarbageCollectable) {
         ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(object), &pair->value);
     }
-    object->cachedStringLookupPair = pair;
+    object_cache_string_lookup_pair_mru(object, pair);
     return ZR_TRUE;
 }
 

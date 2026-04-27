@@ -577,6 +577,22 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
                                                      &slotCount);
                 }
                 break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
+                function_note_generated_frame_slot(instruction->instruction.operand.operand0[1], &slotCount);
+                function_note_generated_frame_slot(instruction->instruction.operand.operand0[2], &slotCount);
+                if (function->callSiteCaches != ZR_NULL &&
+                    instruction->instruction.operand.operand0[0] < function->callSiteCacheLength) {
+                    function_note_generated_call_span(
+                            destinationSlot,
+                            function->callSiteCaches[instruction->instruction.operand.operand0[0]].argumentCount,
+                            &slotCount);
+                }
+                break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
+                function_note_generated_call_span(destinationSlot, operandB1, &slotCount);
+                break;
 
             case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
             case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS):
@@ -592,12 +608,14 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED):
             case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
             case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):
+            case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(operandA1, &slotCount);
                 break;
 
             case ZR_INSTRUCTION_ENUM(JUMP_IF):
+            case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):

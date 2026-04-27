@@ -1329,6 +1329,87 @@ static TZrBool symbol_array_contains_name(SZrArray *symbols, const TZrChar *need
     return ZR_FALSE;
 }
 
+static TZrBool string_ends_with_text(const TZrChar *value, const TZrChar *suffix) {
+    TZrSize valueLength;
+    TZrSize suffixLength;
+
+    if (value == ZR_NULL || suffix == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    valueLength = strlen(value);
+    suffixLength = strlen(suffix);
+    if (suffixLength > valueLength) {
+        return ZR_FALSE;
+    }
+
+    return strcmp(value + valueLength - suffixLength, suffix) == 0;
+}
+
+static TZrBool document_link_array_contains_target_suffix(SZrArray *links, const TZrChar *suffix) {
+    if (links == ZR_NULL || suffix == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < links->length; index++) {
+        SZrLspDocumentLink **linkPtr = (SZrLspDocumentLink **)ZrCore_Array_Get(links, index);
+        const TZrChar *target = (linkPtr != ZR_NULL && *linkPtr != ZR_NULL)
+                                    ? test_string_ptr((*linkPtr)->target)
+                                    : ZR_NULL;
+        if (string_ends_with_text(target, suffix)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool code_lens_array_contains_reference_command(SZrArray *lenses,
+                                                          const TZrChar *title,
+                                                          SZrString *uri) {
+    if (lenses == ZR_NULL || title == ZR_NULL || uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < lenses->length; index++) {
+        SZrLspCodeLens **lensPtr = (SZrLspCodeLens **)ZrCore_Array_Get(lenses, index);
+        SZrLspCodeLens *lens = (lensPtr != ZR_NULL) ? *lensPtr : ZR_NULL;
+        if (lens != ZR_NULL &&
+            lens->commandTitle != ZR_NULL &&
+            lens->command != ZR_NULL &&
+            lens->argument != ZR_NULL &&
+            strcmp(test_string_ptr(lens->commandTitle), title) == 0 &&
+            strcmp(test_string_ptr(lens->command), "zr.showReferences") == 0 &&
+            strcmp(test_string_ptr(lens->argument), test_string_ptr(uri)) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool hierarchy_call_array_contains_item_name(SZrArray *calls, const TZrChar *name) {
+    if (calls == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < calls->length; index++) {
+        SZrLspHierarchyCall **callPtr = (SZrLspHierarchyCall **)ZrCore_Array_Get(calls, index);
+        SZrLspHierarchyCall *call = (callPtr != ZR_NULL) ? *callPtr : ZR_NULL;
+        const TZrChar *candidate =
+            (call != ZR_NULL && call->item != ZR_NULL && call->item->name != ZR_NULL)
+                ? test_string_ptr(call->item->name)
+                : ZR_NULL;
+        if (candidate != ZR_NULL &&
+            strcmp(candidate, name) == 0 &&
+            call->fromRanges.length > 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrInt32 semantic_token_type_index(const TZrChar *typeName) {
     if (typeName == ZR_NULL) {
         return -1;
@@ -1410,6 +1491,7 @@ static void test_lsp_binary_import_document_highlights_cover_all_local_usages(SZ
 static void test_lsp_native_import_member_references_and_highlights(SZrState *state);
 static void test_lsp_watched_binary_metadata_refresh_bootstraps_unopened_projects(SZrState *state);
 static void test_lsp_watched_descriptor_plugin_refresh_bootstraps_unopened_projects(SZrState *state);
+static void test_lsp_watched_project_refresh_surfaces_advanced_editor_features(SZrState *state);
 static void test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_keys(SZrState *state);
 static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(SZrState *state);
 static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents(SZrState *state);
@@ -5057,6 +5139,155 @@ static void test_lsp_watched_descriptor_plugin_refresh_bootstraps_unopened_proje
     TEST_PASS(timer, "LSP Watched Descriptor Plugin Refresh Bootstraps Unopened Projects");
 }
 
+static void test_lsp_watched_project_refresh_surfaces_advanced_editor_features(SZrState *state) {
+    static const TZrChar *summary = "LSP Watched Project Refresh Surfaces Advanced Editor Features";
+    static const TZrChar *openedContent =
+        "func opened_project_helper(value: int): int {\n"
+        "    return value;\n"
+        "}\n"
+        "\n"
+        "pub func opened_project_entry(): int {\n"
+        "    return opened_project_helper(7);\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrGeneratedMultiImportSourceFixture fixture;
+    SZrLspContext *context = ZR_NULL;
+    SZrString *projectUri = ZR_NULL;
+    SZrString *openedUri = ZR_NULL;
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourceRootPath[ZR_TESTS_PATH_MAX];
+    TZrChar openedPath[ZR_TESTS_PATH_MAX];
+    TZrChar *lastSeparator;
+    SZrArray links;
+    SZrArray workspaceSymbols;
+    SZrArray lenses;
+    SZrArray items;
+    SZrArray calls;
+    SZrLspPosition entryPosition;
+    TZrBool success = ZR_FALSE;
+
+    ZrCore_Array_Construct(&links);
+    ZrCore_Array_Construct(&workspaceSymbols);
+    ZrCore_Array_Construct(&lenses);
+    ZrCore_Array_Construct(&items);
+    ZrCore_Array_Construct(&calls);
+
+    TEST_START(summary);
+    TEST_INFO("Watched project advanced features",
+              "A watched .zrp create should expose links, workspace symbols, CodeLens, and call hierarchy across project sources opened afterward");
+
+    if (!prepare_generated_multi_import_source_fixture("project_features_watched_project_advanced",
+                                                       &fixture)) {
+        TEST_FAIL(timer, summary, "Failed to prepare generated multi-import project fixture");
+        return;
+    }
+
+    snprintf(rootPath, sizeof(rootPath), "%s", fixture.projectPath);
+    lastSeparator = find_last_path_separator(rootPath);
+    if (lastSeparator == ZR_NULL) {
+        TEST_FAIL(timer, summary, "Failed to derive fixture root path");
+        return;
+    }
+    *lastSeparator = '\0';
+    ZrLibrary_File_PathJoin(rootPath, "src", sourceRootPath);
+    ZrLibrary_File_PathJoin(sourceRootPath, "opened_after_project.zr", openedPath);
+    if (!write_text_file(openedPath, openedContent, strlen(openedContent))) {
+        TEST_FAIL(timer, summary, "Failed to write opened source fixture");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    projectUri = create_file_uri_from_native_path(state, fixture.projectPath);
+    openedUri = create_file_uri_from_native_path(state, openedPath);
+    if (context == ZR_NULL || projectUri == ZR_NULL || openedUri == ZR_NULL) {
+        TEST_FAIL(timer, summary, "Failed to allocate LSP context or fixture URIs");
+        goto cleanup;
+    }
+
+    if (!ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(state, context, projectUri)) {
+        TEST_FAIL(timer, summary, "Watched project refresh did not load the owning project");
+        goto cleanup;
+    }
+
+    ZrCore_Array_Init(state, &links, sizeof(SZrLspDocumentLink *), 8);
+    if (!ZrLanguageServer_Lsp_GetDocumentLinks(state, context, projectUri, &links) ||
+        !document_link_array_contains_target_suffix(&links, "/src") ||
+        !document_link_array_contains_target_suffix(&links, "/src/main.zr")) {
+        TEST_FAIL(timer, summary, "Unopened watched project should expose zrp path document links");
+        goto cleanup;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             context,
+                                             openedUri,
+                                             openedContent,
+                                             strlen(openedContent),
+                                             1)) {
+        TEST_FAIL(timer, summary, "Failed to open source added to the watched project");
+        goto cleanup;
+    }
+
+    ZrCore_Array_Init(state, &workspaceSymbols, sizeof(SZrLspSymbolInformation *), 8);
+    if (!ZrLanguageServer_Lsp_GetWorkspaceSymbols(state,
+                                                  context,
+                                                  ZrCore_String_Create(state, "opened_project_entry", 20),
+                                                  &workspaceSymbols) ||
+        !symbol_array_contains_name(&workspaceSymbols, "opened_project_entry")) {
+        TEST_FAIL(timer, summary, "Workspace symbols should include project source opened after watched indexing");
+        goto cleanup;
+    }
+
+    ZrCore_Array_Init(state, &lenses, sizeof(SZrLspCodeLens *), 8);
+    if (!ZrLanguageServer_Lsp_GetCodeLens(state, context, openedUri, &lenses) ||
+        !code_lens_array_contains_reference_command(&lenses, "1 reference", openedUri)) {
+        TEST_FAIL(timer, summary, "CodeLens should resolve references for source opened after watched indexing");
+        goto cleanup;
+    }
+
+    if (!lsp_find_position_for_substring(openedContent,
+                                         "opened_project_entry",
+                                         0,
+                                         0,
+                                         &entryPosition)) {
+        TEST_FAIL(timer, summary, "Failed to locate opened project entry function");
+        goto cleanup;
+    }
+
+    ZrCore_Array_Init(state, &items, sizeof(SZrLspHierarchyItem *), 2);
+    if (!ZrLanguageServer_Lsp_PrepareCallHierarchy(state, context, openedUri, entryPosition, &items) ||
+        items.length == 0) {
+        TEST_FAIL(timer, summary, "Call hierarchy prepare should return the opened project entry function");
+        goto cleanup;
+    }
+
+    {
+        SZrLspHierarchyItem **itemPtr = (SZrLspHierarchyItem **)ZrCore_Array_Get(&items, 0);
+        if (itemPtr == ZR_NULL ||
+            *itemPtr == ZR_NULL ||
+            !ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(state, context, *itemPtr, &calls) ||
+            !hierarchy_call_array_contains_item_name(&calls, "opened_project_helper")) {
+            TEST_FAIL(timer, summary, "Outgoing call hierarchy should include helper calls after watched indexing");
+            goto cleanup;
+        }
+    }
+
+    success = ZR_TRUE;
+
+cleanup:
+    ZrLanguageServer_Lsp_FreeHierarchyCalls(state, &calls);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &items);
+    ZrLanguageServer_Lsp_FreeCodeLens(state, &lenses);
+    ZrCore_Array_Free(state, &workspaceSymbols);
+    ZrLanguageServer_Lsp_FreeDocumentLinks(state, &links);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+
+    if (success) {
+        TEST_PASS(timer, summary);
+    }
+}
+
 static void test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_keys(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -6994,6 +7225,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_watched_descriptor_plugin_refresh_bootstraps_unopened_projects(state);
+    TEST_DIVIDER();
+
+    test_lsp_watched_project_refresh_surfaces_advanced_editor_features(state);
     TEST_DIVIDER();
 
     test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_keys(state);

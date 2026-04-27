@@ -84,6 +84,11 @@ TZrBool emit_known_vm_member_call_cached(SZrCompilerState *cs,
                                          TZrUInt32 destinationSlot,
                                          TZrUInt16 cacheIndex,
                                          SZrFileRange location);
+TZrBool emit_known_native_member_call_cached(SZrCompilerState *cs,
+                                             TZrUInt32 destinationSlot,
+                                             TZrUInt16 cacheIndex,
+                                             TZrUInt32 argumentCount,
+                                             SZrFileRange location);
 TZrBool emit_member_slot_set(SZrCompilerState *cs,
                              TZrUInt32 valueSlot,
                              TZrUInt32 receiverSlot,

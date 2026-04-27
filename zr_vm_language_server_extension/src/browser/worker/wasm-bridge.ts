@@ -232,6 +232,74 @@ export class ZrWasmBridge {
         );
     }
 
+    async getFormatting(uri: string): Promise<WasmResponse<unknown[]>> {
+        return this.invoke<unknown[]>(
+            'wasm_ZrLspGetFormatting',
+            ['number', 'string', 'number'],
+            [await this.context(), uri, byteLength(uri)],
+        );
+    }
+
+    async getRangeFormatting(
+        uri: string,
+        startLine: number,
+        startCharacter: number,
+        endLine: number,
+        endCharacter: number,
+    ): Promise<WasmResponse<unknown[]>> {
+        return this.invoke<unknown[]>(
+            'wasm_ZrLspGetRangeFormatting',
+            ['number', 'string', 'number', 'number', 'number', 'number', 'number'],
+            [await this.context(), uri, byteLength(uri), startLine, startCharacter, endLine, endCharacter],
+        );
+    }
+
+    async getCodeActions(
+        uri: string,
+        startLine: number,
+        startCharacter: number,
+        endLine: number,
+        endCharacter: number,
+    ): Promise<WasmResponse<unknown[]>> {
+        return this.invoke<unknown[]>(
+            'wasm_ZrLspGetCodeActions',
+            ['number', 'string', 'number', 'number', 'number', 'number', 'number'],
+            [await this.context(), uri, byteLength(uri), startLine, startCharacter, endLine, endCharacter],
+        );
+    }
+
+    async getFoldingRanges(uri: string): Promise<WasmResponse<unknown[]>> {
+        return this.invoke<unknown[]>(
+            'wasm_ZrLspGetFoldingRanges',
+            ['number', 'string', 'number'],
+            [await this.context(), uri, byteLength(uri)],
+        );
+    }
+
+    async getSelectionRange(uri: string, line: number, character: number): Promise<WasmResponse<unknown[]>> {
+        return this.invoke<unknown[]>(
+            'wasm_ZrLspGetSelectionRange',
+            ['number', 'string', 'number', 'number', 'number'],
+            [await this.context(), uri, byteLength(uri), line, character],
+        );
+    }
+
+    async getDocumentLinks(uri: string): Promise<WasmResponse<unknown[]>> {
+        return this.invoke<unknown[]>(
+            'wasm_ZrLspGetDocumentLinks',
+            ['number', 'string', 'number'],
+            [await this.context(), uri, byteLength(uri)],
+        );
+    }
+
+    async getCodeLens(uri: string): Promise<WasmResponse<unknown[]>> {
+        return this.invoke<unknown[]>(
+            'wasm_ZrLspGetCodeLens',
+            ['number', 'string', 'number'],
+            [await this.context(), uri, byteLength(uri)],
+        );
+    }
+
     private async loadModule(baseUrl: string): Promise<EmscriptenModule> {
         const scriptUrl = new URL('zr_vm_language_server.js', baseUrl).toString();
 

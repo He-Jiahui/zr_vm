@@ -4,16 +4,6 @@
 
 #include "compile_expression_internal.h"
 
-static TZrBool binary_expression_type_is_numeric_like(EZrValueType type) {
-    return (TZrBool)(ZR_VALUE_IS_TYPE_NUMBER(type) || type == ZR_VALUE_TYPE_BOOL);
-}
-
-static TZrBool binary_expression_operands_can_use_numeric_fast_path(EZrValueType leftType,
-                                                                    EZrValueType rightType) {
-    return (TZrBool)(binary_expression_type_is_numeric_like(leftType) &&
-                     binary_expression_type_is_numeric_like(rightType));
-}
-
 static const TZrChar *compound_assignment_base_operator(const TZrChar *op) {
     if (op == ZR_NULL) {
         return ZR_NULL;
@@ -34,6 +24,44 @@ static const TZrChar *compound_assignment_base_operator(const TZrChar *op) {
         return "%";
     }
     return ZR_NULL;
+}
+
+static TZrBool compile_type_cast_source_satisfies(SZrCompilerState *cs,
+                                                  SZrAstNode *expression,
+                                                  TZrBool (*predicate)(EZrValueType)) {
+    SZrInferredType sourceType;
+    TZrBool canReuse = ZR_FALSE;
+
+    if (cs == ZR_NULL || expression == ZR_NULL || predicate == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &sourceType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_ExpressionType_Infer(cs, expression, &sourceType)) {
+        canReuse = predicate(sourceType.baseType);
+    }
+    ZrParser_InferredType_Free(cs->state, &sourceType);
+    return canReuse;
+}
+
+static TZrBool compile_type_cast_is_signed_int(EZrValueType type) {
+    return (TZrBool)ZR_VALUE_IS_TYPE_SIGNED_INT(type);
+}
+
+static TZrBool compile_type_cast_is_unsigned_int(EZrValueType type) {
+    return (TZrBool)ZR_VALUE_IS_TYPE_UNSIGNED_INT(type);
+}
+
+static TZrBool compile_type_cast_is_float(EZrValueType type) {
+    return (TZrBool)ZR_VALUE_IS_TYPE_FLOAT(type);
+}
+
+static TZrBool compile_type_cast_is_bool(EZrValueType type) {
+    return (TZrBool)ZR_VALUE_IS_TYPE_BOOL(type);
+}
+
+static TZrBool compile_type_cast_is_string(EZrValueType type) {
+    return (TZrBool)ZR_VALUE_IS_TYPE_STRING(type);
 }
 
 static EZrInstructionCode compile_assignment_select_compound_opcode(SZrCompilerState *cs,
@@ -163,22 +191,42 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
         
         // 检查基本类型
         if (nameLen == 3 && strncmp(typeNameStr, "int", 3) == 0) {
+            if (compile_type_cast_source_satisfies(cs, expression, compile_type_cast_is_signed_int)) {
+                collapse_stack_to_slot(cs, srcSlot);
+                return;
+            }
             // 转换为 int
             emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT));
             return;
         } else if (nameLen == 4 && strncmp(typeNameStr, "uint", 4) == 0) {
+            if (compile_type_cast_source_satisfies(cs, expression, compile_type_cast_is_unsigned_int)) {
+                collapse_stack_to_slot(cs, srcSlot);
+                return;
+            }
             // 转换为 uint
             emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT));
             return;
         } else if (nameLen == 5 && strncmp(typeNameStr, "float", 5) == 0) {
+            if (compile_type_cast_source_satisfies(cs, expression, compile_type_cast_is_float)) {
+                collapse_stack_to_slot(cs, srcSlot);
+                return;
+            }
             // 转换为 float
             emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
             return;
         } else if (nameLen == 6 && strncmp(typeNameStr, "string", 6) == 0) {
+            if (compile_type_cast_source_satisfies(cs, expression, compile_type_cast_is_string)) {
+                collapse_stack_to_slot(cs, srcSlot);
+                return;
+            }
             // 转换为 string
             emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
             return;
         } else if (nameLen == 4 && strncmp(typeNameStr, "bool", 4) == 0) {
+            if (compile_type_cast_source_satisfies(cs, expression, compile_type_cast_is_bool)) {
+                collapse_stack_to_slot(cs, srcSlot);
+                return;
+            }
             // 转换为 bool
             emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_BOOL));
             return;

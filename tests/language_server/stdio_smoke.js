@@ -1909,6 +1909,81 @@ async function main() {
         item.name === 'watched_before_refresh'),
     'workspace/didChangeWatchedFiles create must index unopened project sources');
 
+    const watchedProjectLinks = await client.request('textDocument/documentLink', {
+        textDocument: { uri: watchedFixture.projectUri },
+    });
+    assert(Array.isArray(watchedProjectLinks) &&
+        watchedProjectLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/src')) &&
+        watchedProjectLinks.some((link) => link && typeof link.target === 'string' && link.target.endsWith('/src/main.zr')),
+    'workspace/didChangeWatchedFiles create must make unopened project document links available');
+
+    const watchedOpenedPath = path.join(watchedFixture.rootPath, 'src', 'opened_after_project.zr');
+    const watchedOpenedUri = pathToFileURL(watchedOpenedPath).toString();
+    const watchedOpenedText = [
+        'module "opened_after_project";',
+        '',
+        'func opened_project_helper(value: int): int {',
+        '    return value;',
+        '}',
+        '',
+        'pub func opened_project_entry(): int {',
+        '    return opened_project_helper(7);',
+        '}',
+        '',
+    ].join('\n');
+    fs.writeFileSync(watchedOpenedPath, watchedOpenedText);
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: watchedOpenedUri,
+            languageId: 'zr',
+            version: 1,
+            text: watchedOpenedText,
+        },
+    });
+    await waitForDiagnosticsUri(
+        client,
+        watchedOpenedUri,
+        'watched project opened source diagnostics uri mismatch');
+    const watchedOpenedSymbols = await client.request('workspace/symbol', {
+        query: 'opened_project_entry',
+    });
+    assert(Array.isArray(watchedOpenedSymbols) && watchedOpenedSymbols.some((item) =>
+        item &&
+        item.location &&
+        diagnosticRelatedUriMatches(watchedOpenedUri, item.location.uri) &&
+        item.name === 'opened_project_entry'),
+    'workspace/symbol must include project source opened after watched project indexing');
+
+    const watchedOpenedCodeLens = await client.request('textDocument/codeLens', {
+        textDocument: { uri: watchedOpenedUri },
+    });
+    assert(Array.isArray(watchedOpenedCodeLens) && watchedOpenedCodeLens.some((lens) =>
+        lens &&
+        lens.command &&
+        lens.command.title === '1 reference' &&
+        lens.command.command === 'zr.showReferences' &&
+        Array.isArray(lens.command.arguments) &&
+        lens.command.arguments[0] === watchedOpenedUri),
+    'textDocument/codeLens must work for project source opened after watched project indexing');
+
+    const watchedOpenedEntryPosition = findPosition(watchedOpenedText, 'opened_project_entry', 0, 1);
+    const watchedOpenedCallItems = await client.request('textDocument/prepareCallHierarchy', {
+        textDocument: { uri: watchedOpenedUri },
+        position: watchedOpenedEntryPosition,
+    });
+    assert(Array.isArray(watchedOpenedCallItems) && watchedOpenedCallItems.length > 0,
+        'textDocument/prepareCallHierarchy must return an item for project source opened after watched project indexing');
+    const watchedOpenedOutgoing = await client.request('callHierarchy/outgoingCalls', {
+        item: watchedOpenedCallItems[0],
+    });
+    assert(Array.isArray(watchedOpenedOutgoing) && watchedOpenedOutgoing.some((call) =>
+        call &&
+        call.to &&
+        call.to.name === 'opened_project_helper' &&
+        Array.isArray(call.fromRanges) &&
+        call.fromRanges.length > 0),
+    'callHierarchy/outgoingCalls must work for project source opened after watched project indexing');
+
     fs.writeFileSync(watchedFixture.mainPath, [
         'module "main";',
         '',

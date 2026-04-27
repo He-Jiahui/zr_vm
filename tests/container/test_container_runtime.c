@@ -90,6 +90,11 @@ static TZrUInt32 count_instruction_opcode_recursive(const SZrFunction *function,
     return count;
 }
 
+static TZrUInt32 count_static_iterator_move_next_contract_opcodes(const SZrFunction *function) {
+    return count_instruction_opcode(function, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) +
+           count_instruction_opcode(function, ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE));
+}
+
 static TZrBool execute_array_factory_and_root(SZrState *state,
                                               SZrFunction *factoryFunction,
                                               ZrLibTempValueRoot *root) {
@@ -446,10 +451,10 @@ static void test_container_array_runtime_tracks_raw_int_storage_for_typed_add_an
     SZrTypeValue resultValue;
     SZrObject *arrayObject;
     SZrObject *itemsObject;
-    SZrHashKeyValuePair *secondPair;
-    SZrHashKeyValuePair *thirdPair;
     SZrTypeValue key;
     const SZrTypeValue *materializedValue;
+    SZrHashKeyValuePair *secondPair;
+    SZrHashKeyValuePair *thirdPair;
     SZrTypeValue nullValue;
     const char *source =
             "var container = %import(\"zr.container\");\n"
@@ -530,6 +535,9 @@ static void test_container_array_runtime_raw_int_dirty_set_is_visible_to_iterato
             "xs.add(2);\n"
             "xs.add(3);\n"
             "xs[1] = 7;\n"
+            "if (!xs.contains(7) || xs.contains(2) || xs.indexOf(7) != 1) {\n"
+            "    return null;\n"
+            "}\n"
             "var sum = 0;\n"
             "for (var x in xs) {\n"
             "    sum = sum + x;\n"
@@ -561,6 +569,179 @@ static void test_container_array_runtime_raw_int_dirty_set_is_visible_to_iterato
     TEST_ASSERT_EQUAL_INT64(7, itemsObject->superArrayRawIntData[1]);
     TEST_ASSERT_EQUAL_INT64(3, itemsObject->superArrayRawIntData[2]);
     TEST_ASSERT_EQUAL_INT64(11, itemsObject->superArrayRawIntData[3]);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_array_runtime_raw_int_dirty_remove_at_shifts_current_values(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Array Raw Int Dirty RemoveAt Shifts Current Values";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue resultValue;
+    SZrObject *arrayObject;
+    SZrObject *itemsObject;
+    SZrTypeValue key;
+    const SZrTypeValue *materializedValue;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var xs = new container.Array<int>();\n"
+            "xs.add(1);\n"
+            "xs.add(2);\n"
+            "xs.add(3);\n"
+            "xs.add(4);\n"
+            "xs[1] = 20;\n"
+            "xs.removeAt(2);\n"
+            "return xs;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_array_raw_int_dirty_remove_at_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &resultValue));
+    TEST_ASSERT_TRUE(resultValue.type == ZR_VALUE_TYPE_OBJECT || resultValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(resultValue.value.object);
+
+    arrayObject = ZR_CAST_OBJECT(state, resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(arrayObject);
+    itemsObject = arrayObject->cachedHiddenItemsObject;
+    TEST_ASSERT_NOT_NULL(itemsObject);
+    TEST_ASSERT_NOT_NULL(itemsObject->superArrayRawIntData);
+    TEST_ASSERT_TRUE(itemsObject->superArrayRawIntDirty);
+    TEST_ASSERT_EQUAL_UINT64(3, (UNITY_UINT64)itemsObject->superArrayRawIntLength);
+    TEST_ASSERT_EQUAL_INT64(1, itemsObject->superArrayRawIntData[0]);
+    TEST_ASSERT_EQUAL_INT64(20, itemsObject->superArrayRawIntData[1]);
+    TEST_ASSERT_EQUAL_INT64(4, itemsObject->superArrayRawIntData[2]);
+
+    ZrCore_Value_InitAsInt(state, &key, 1);
+    materializedValue = ZrCore_Object_GetValue(state, itemsObject, &key);
+    TEST_ASSERT_NOT_NULL(materializedValue);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(materializedValue->type));
+    TEST_ASSERT_EQUAL_INT64(20, materializedValue->value.nativeObject.nativeInt64);
+    TEST_ASSERT_FALSE(itemsObject->superArrayRawIntDirty);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(itemsObject->nodeMap.buckets[1]->value.type));
+    TEST_ASSERT_EQUAL_INT64(20, itemsObject->nodeMap.buckets[1]->value.value.nativeObject.nativeInt64);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(itemsObject->nodeMap.buckets[2]->value.type));
+    TEST_ASSERT_EQUAL_INT64(4, itemsObject->nodeMap.buckets[2]->value.value.nativeObject.nativeInt64);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_array_runtime_raw_int_dirty_insert_shifts_current_values(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Array Raw Int Dirty Insert Shifts Current Values";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue resultValue;
+    SZrObject *arrayObject;
+    SZrObject *itemsObject;
+    SZrTypeValue key;
+    const SZrTypeValue *materializedValue;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var xs = new container.Array<int>();\n"
+            "xs.add(1);\n"
+            "xs.add(2);\n"
+            "xs.add(3);\n"
+            "xs.add(4);\n"
+            "xs[2] = 30;\n"
+            "xs.insert(1, 9);\n"
+            "return xs;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_array_raw_int_dirty_insert_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &resultValue));
+    TEST_ASSERT_TRUE(resultValue.type == ZR_VALUE_TYPE_OBJECT || resultValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(resultValue.value.object);
+
+    arrayObject = ZR_CAST_OBJECT(state, resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(arrayObject);
+    itemsObject = arrayObject->cachedHiddenItemsObject;
+    TEST_ASSERT_NOT_NULL(itemsObject);
+    TEST_ASSERT_NOT_NULL(itemsObject->superArrayRawIntData);
+    TEST_ASSERT_TRUE(itemsObject->superArrayRawIntDirty);
+    TEST_ASSERT_EQUAL_UINT64(5, (UNITY_UINT64)itemsObject->superArrayRawIntLength);
+    TEST_ASSERT_EQUAL_INT64(1, itemsObject->superArrayRawIntData[0]);
+    TEST_ASSERT_EQUAL_INT64(9, itemsObject->superArrayRawIntData[1]);
+    TEST_ASSERT_EQUAL_INT64(2, itemsObject->superArrayRawIntData[2]);
+    TEST_ASSERT_EQUAL_INT64(30, itemsObject->superArrayRawIntData[3]);
+    TEST_ASSERT_EQUAL_INT64(4, itemsObject->superArrayRawIntData[4]);
+
+    ZrCore_Value_InitAsInt(state, &key, 3);
+    materializedValue = ZrCore_Object_GetValue(state, itemsObject, &key);
+    TEST_ASSERT_NOT_NULL(materializedValue);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(materializedValue->type));
+    TEST_ASSERT_EQUAL_INT64(30, materializedValue->value.nativeObject.nativeInt64);
+    TEST_ASSERT_FALSE(itemsObject->superArrayRawIntDirty);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(itemsObject->nodeMap.buckets[3]->value.type));
+    TEST_ASSERT_EQUAL_INT64(30, itemsObject->nodeMap.buckets[3]->value.value.nativeObject.nativeInt64);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_array_runtime_raw_int_clear_reuses_storage(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Array Raw Int Clear Reuses Storage";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue resultValue;
+    SZrObject *arrayObject;
+    SZrObject *itemsObject;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var xs = new container.Array<int>();\n"
+            "xs.add(1);\n"
+            "xs.add(2);\n"
+            "xs[1] = 7;\n"
+            "xs.clear();\n"
+            "return xs;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_array_raw_int_clear_reuse_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &resultValue));
+    TEST_ASSERT_TRUE(resultValue.type == ZR_VALUE_TYPE_OBJECT || resultValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(resultValue.value.object);
+
+    arrayObject = ZR_CAST_OBJECT(state, resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(arrayObject);
+    itemsObject = arrayObject->cachedHiddenItemsObject;
+    TEST_ASSERT_NOT_NULL(itemsObject);
+    TEST_ASSERT_NOT_NULL(itemsObject->superArrayRawIntData);
+    TEST_ASSERT_EQUAL_UINT64(0, (UNITY_UINT64)itemsObject->superArrayRawIntLength);
+    TEST_ASSERT_FALSE(itemsObject->superArrayRawIntDirty);
+    TEST_ASSERT_EQUAL_UINT64(0, (UNITY_UINT64)itemsObject->nodeMap.elementCount);
+    TEST_ASSERT_EQUAL_UINT64(0, (UNITY_UINT64)itemsObject->nodeMap.pairPoolUsed);
 
     ZrCore_Function_Free(state, entryFunction);
     ZrContainerTests_DestroyState(state);
@@ -1294,6 +1475,70 @@ static void test_container_map_runtime_stable_concat_keys_avoid_entry_slot_valid
     TEST_DIVIDER();
 }
 
+static void test_container_map_runtime_clear_reuses_entries_storage(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Map Clear Reuses Entries Storage";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue resultValue;
+    SZrObject *mapObject;
+    const SZrTypeValue *entriesValue;
+    SZrObject *entriesObject;
+    const SZrTypeValue *countValue;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var map = new container.Map<string, int>();\n"
+            "map[\"k0\"] = 0;\n"
+            "map[\"k1\"] = 1;\n"
+            "map[\"k2\"] = 2;\n"
+            "map[\"k3\"] = 3;\n"
+            "map[\"k4\"] = 4;\n"
+            "map[\"k5\"] = 5;\n"
+            "map[\"k6\"] = 6;\n"
+            "map[\"k7\"] = 7;\n"
+            "map.clear();\n"
+            "if (map.count != 0 || map[\"k3\"] != null || map.containsKey(\"k5\")) {\n"
+            "    return null;\n"
+            "}\n"
+            "return map;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_map_clear_reuse_entries_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &resultValue));
+    TEST_ASSERT_TRUE(resultValue.type == ZR_VALUE_TYPE_OBJECT || resultValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(resultValue.value.object);
+
+    mapObject = ZR_CAST_OBJECT(state, resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(mapObject);
+    entriesValue = ZrContainerTests_GetObjectFieldValue(state, mapObject, "__zr_entries");
+    TEST_ASSERT_NOT_NULL(entriesValue);
+    TEST_ASSERT_TRUE(entriesValue->type == ZR_VALUE_TYPE_OBJECT || entriesValue->type == ZR_VALUE_TYPE_ARRAY);
+    entriesObject = ZR_CAST_OBJECT(state, entriesValue->value.object);
+    TEST_ASSERT_NOT_NULL(entriesObject);
+    TEST_ASSERT_EQUAL_PTR(entriesObject, mapObject->cachedHiddenItemsObject);
+    TEST_ASSERT_EQUAL_UINT64(0, (UNITY_UINT64)ZrContainerTests_GetArrayLength(entriesObject));
+    TEST_ASSERT_GREATER_THAN_UINT64(0, (UNITY_UINT64)entriesObject->nodeMap.capacity);
+    TEST_ASSERT_EQUAL_UINT64(0, (UNITY_UINT64)entriesObject->nodeMap.pairPoolUsed);
+
+    countValue = ZrContainerTests_GetObjectFieldValue(state, mapObject, "count");
+    TEST_ASSERT_NOT_NULL(countValue);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(countValue->type));
+    TEST_ASSERT_EQUAL_INT64(0, countValue->value.nativeObject.nativeInt64);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 static void test_container_set_runtime_enforces_pair_uniqueness(void) {
     SZrTestTimer timer = {0};
     const char *summary = "Container Runtime - Set Enforces Pair Uniqueness";
@@ -1323,6 +1568,127 @@ static void test_container_set_runtime_enforces_pair_uniqueness(void) {
     TEST_ASSERT_NOT_NULL(entryFunction);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
     TEST_ASSERT_EQUAL_INT64(263, result);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_set_runtime_clear_reuses_entries_storage(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Set Clear Reuses Entries Storage";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue resultValue;
+    SZrObject *setObject;
+    const SZrTypeValue *entriesValue;
+    SZrObject *entriesObject;
+    const SZrTypeValue *countValue;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var values = new container.Set<int>();\n"
+            "values.add(0);\n"
+            "values.add(1);\n"
+            "values.add(2);\n"
+            "values.add(3);\n"
+            "values.add(4);\n"
+            "values.add(5);\n"
+            "values.add(6);\n"
+            "values.add(7);\n"
+            "values.clear();\n"
+            "if (values.count != 0 || values.contains(3)) {\n"
+            "    return null;\n"
+            "}\n"
+            "return values;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_set_clear_reuse_entries_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &resultValue));
+    TEST_ASSERT_TRUE(resultValue.type == ZR_VALUE_TYPE_OBJECT || resultValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(resultValue.value.object);
+
+    setObject = ZR_CAST_OBJECT(state, resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(setObject);
+    entriesValue = ZrContainerTests_GetObjectFieldValue(state, setObject, "__zr_entries");
+    TEST_ASSERT_NOT_NULL(entriesValue);
+    TEST_ASSERT_TRUE(entriesValue->type == ZR_VALUE_TYPE_OBJECT || entriesValue->type == ZR_VALUE_TYPE_ARRAY);
+    entriesObject = ZR_CAST_OBJECT(state, entriesValue->value.object);
+    TEST_ASSERT_NOT_NULL(entriesObject);
+    TEST_ASSERT_EQUAL_PTR(entriesObject, setObject->cachedHiddenItemsObject);
+    TEST_ASSERT_EQUAL_UINT64(0, (UNITY_UINT64)ZrContainerTests_GetArrayLength(entriesObject));
+    TEST_ASSERT_GREATER_THAN_UINT64(0, (UNITY_UINT64)entriesObject->nodeMap.pairPoolCapacity);
+    TEST_ASSERT_EQUAL_UINT64(0, (UNITY_UINT64)entriesObject->nodeMap.pairPoolUsed);
+    TEST_ASSERT_NOT_NULL(entriesObject->superArrayRawIntData);
+    TEST_ASSERT_EQUAL_UINT64(0, (UNITY_UINT64)entriesObject->superArrayRawIntLength);
+    TEST_ASSERT_GREATER_THAN_UINT64(0, (UNITY_UINT64)entriesObject->superArrayRawIntCapacity);
+    TEST_ASSERT_FALSE(entriesObject->superArrayRawIntDirty);
+
+    countValue = ZrContainerTests_GetObjectFieldValue(state, setObject, "count");
+    TEST_ASSERT_NOT_NULL(countValue);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(countValue->type));
+    TEST_ASSERT_EQUAL_INT64(0, countValue->value.nativeObject.nativeInt64);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_set_runtime_raw_int_contains_and_remove_use_current_storage(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Set Raw Int Contains And Remove Use Current Storage";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue resultValue;
+    SZrObject *setObject;
+    SZrObject *entriesObject;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var values = new container.Set<int>();\n"
+            "values.add(1);\n"
+            "values.add(2);\n"
+            "values.add(3);\n"
+            "var has2 = values.contains(2);\n"
+            "var has9 = values.contains(9);\n"
+            "var removed = values.remove(2);\n"
+            "var has2After = values.contains(2);\n"
+            "if (!has2 || has9 || !removed || has2After || values.count != 2) {\n"
+            "    return null;\n"
+            "}\n"
+            "return values;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_set_raw_int_find_remove_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &resultValue));
+    TEST_ASSERT_TRUE(resultValue.type == ZR_VALUE_TYPE_OBJECT || resultValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(resultValue.value.object);
+
+    setObject = ZR_CAST_OBJECT(state, resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(setObject);
+    entriesObject = setObject->cachedHiddenItemsObject;
+    TEST_ASSERT_NOT_NULL(entriesObject);
+    TEST_ASSERT_NOT_NULL(entriesObject->superArrayRawIntData);
+    TEST_ASSERT_FALSE(entriesObject->superArrayRawIntDirty);
+    TEST_ASSERT_EQUAL_UINT64(2, (UNITY_UINT64)entriesObject->superArrayRawIntLength);
+    TEST_ASSERT_EQUAL_INT64(1, entriesObject->superArrayRawIntData[0]);
+    TEST_ASSERT_EQUAL_INT64(3, entriesObject->superArrayRawIntData[1]);
 
     ZrCore_Function_Free(state, entryFunction);
     ZrContainerTests_DestroyState(state);
@@ -1882,7 +2248,7 @@ static void test_reference_protocols_foreach_fixture_lowers_to_iter_contract_opc
     entryFunction = compile_test_script(state, "reference_foreach_contract_lowering.zr", source);
     TEST_ASSERT_NOT_NULL(entryFunction);
     TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_INIT)) >= 1);
-    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) >= 1);
+    TEST_ASSERT_TRUE(count_static_iterator_move_next_contract_opcodes(entryFunction) >= 1);
     TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_CURRENT)) >= 1);
     TEST_ASSERT_EQUAL_UINT32(0, count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_MEMBER)));
     TEST_ASSERT_EQUAL_UINT32(0, count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(GET_BY_INDEX)));
@@ -1921,7 +2287,7 @@ static void test_reference_protocols_empty_iterator_fixture_keeps_zero_body_exec
     entryFunction = compile_test_script(state, "reference_empty_iterator_boundary.zr", source);
     TEST_ASSERT_NOT_NULL(entryFunction);
     TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_INIT)) >= 1);
-    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) >= 1);
+    TEST_ASSERT_TRUE(count_static_iterator_move_next_contract_opcodes(entryFunction) >= 1);
     TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_CURRENT)) >= 1);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
     TEST_ASSERT_EQUAL_INT64(0, result);
@@ -1958,7 +2324,7 @@ static void test_reference_protocols_singleton_iterator_fixture_yields_once_per_
     entryFunction = compile_test_script(state, "reference_singleton_iterator_boundary.zr", source);
     TEST_ASSERT_NOT_NULL(entryFunction);
     TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_INIT)) >= 2);
-    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) >= 2);
+    TEST_ASSERT_TRUE(count_static_iterator_move_next_contract_opcodes(entryFunction) >= 2);
     TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_CURRENT)) >= 2);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
     TEST_ASSERT_EQUAL_INT64(99, result);
@@ -1995,7 +2361,7 @@ static void test_reference_protocols_nested_foreach_fixture_keeps_iterators_inde
     entryFunction = compile_test_script(state, "reference_nested_foreach_regression.zr", source);
     TEST_ASSERT_NOT_NULL(entryFunction);
     TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_INIT)) >= 2);
-    TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)) >= 2);
+    TEST_ASSERT_TRUE(count_static_iterator_move_next_contract_opcodes(entryFunction) >= 2);
     TEST_ASSERT_TRUE(count_instruction_opcode(entryFunction, ZR_INSTRUCTION_ENUM(ITER_CURRENT)) >= 2);
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, entryFunction, &result));
     TEST_ASSERT_EQUAL_INT64(198, result);
@@ -2120,6 +2486,9 @@ int main(void) {
     RUN_TEST(test_container_array_runtime_constructor_populates_hidden_items_cache_for_direct_execution);
     RUN_TEST(test_container_array_runtime_tracks_raw_int_storage_for_typed_add_and_set);
     RUN_TEST(test_container_array_runtime_raw_int_dirty_set_is_visible_to_iterator);
+    RUN_TEST(test_container_array_runtime_raw_int_dirty_remove_at_shifts_current_values);
+    RUN_TEST(test_container_array_runtime_raw_int_dirty_insert_shifts_current_values);
+    RUN_TEST(test_container_array_runtime_raw_int_clear_reuses_storage);
     RUN_TEST(test_container_array_runtime_clear_preserves_capacity_and_missing_item_returns_null);
     RUN_TEST(test_container_array_runtime_set_item_preserves_object_payloads);
     RUN_TEST(test_container_array_runtime_accepts_unary_negation_in_constructor_arguments);
@@ -2132,7 +2501,10 @@ int main(void) {
     RUN_TEST(test_container_map_runtime_repeated_index_access_invalidates_hot_lookup_after_entry_growth);
     RUN_TEST(test_container_map_runtime_four_key_concat_cycle_preserves_values);
     RUN_TEST(test_container_map_runtime_stable_concat_keys_avoid_entry_slot_validation_on_hot_lookup);
+    RUN_TEST(test_container_map_runtime_clear_reuses_entries_storage);
     RUN_TEST(test_container_set_runtime_enforces_pair_uniqueness);
+    RUN_TEST(test_container_set_runtime_clear_reuses_entries_storage);
+    RUN_TEST(test_container_set_runtime_raw_int_contains_and_remove_use_current_storage);
     RUN_TEST(test_container_pair_runtime_exposes_value_semantics);
     RUN_TEST(test_container_linked_list_runtime_detaches_removed_and_cleared_nodes);
     RUN_TEST(test_container_linked_list_runtime_empty_removals_return_null);

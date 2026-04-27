@@ -234,6 +234,9 @@ static void execution_member_barrier_callsite_target(SZrState *state,
                                                      SZrFunction *function,
                                                      SZrRawObject *target);
 
+static ZR_FORCE_INLINE EZrFunctionCallSitePicHotFieldKind execution_member_resolve_hot_field_kind(
+        SZrString *memberName);
+
 static ZR_FORCE_INLINE SZrString *execution_member_slot_resolve_cached_name(SZrState *state,
                                                                             SZrFunction *function,
                                                                             SZrFunctionCallSitePicSlot *slot,
@@ -251,6 +254,9 @@ static ZR_FORCE_INLINE SZrString *execution_member_slot_resolve_cached_name(SZrS
     memberName = execution_member_cache_resolve_name(function, memberEntryIndex);
     if (slot != ZR_NULL && memberName != ZR_NULL) {
         slot->cachedMemberName = memberName;
+        if (slot->cachedHotFieldKind == ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_NONE) {
+            slot->cachedHotFieldKind = (TZrUInt16)execution_member_resolve_hot_field_kind(memberName);
+        }
         if (state != ZR_NULL && function != ZR_NULL) {
             execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
         }
@@ -560,6 +566,7 @@ static void execution_member_store_pic_slot(SZrState *state,
     SZrHashKeyValuePair *cachedReceiverPair;
     EZrFunctionCallSitePicAccessKind accessKind;
     TZrUInt8 slotFlags;
+    EZrFunctionCallSitePicHotFieldKind hotFieldKind;
     const TZrChar *traceAction;
 
     if (entry == ZR_NULL || receiverPrototype == ZR_NULL || ownerPrototype == ZR_NULL) {
@@ -582,6 +589,7 @@ static void execution_member_store_pic_slot(SZrState *state,
     cachedReceiverObject = ZR_NULL;
     cachedReceiverPair = ZR_NULL;
     slotFlags = 0u;
+    hotFieldKind = ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_NONE;
     if (accessKind == ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD || callableTarget != ZR_NULL) {
         if (descriptor != ZR_NULL && descriptor->name != ZR_NULL) {
             cachedMemberName = execution_member_refresh_forwarded_string(descriptor->name);
@@ -609,6 +617,7 @@ static void execution_member_store_pic_slot(SZrState *state,
     }
     if (accessKind == ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD && receiverObject != ZR_NULL &&
         cachedMemberName != ZR_NULL) {
+        hotFieldKind = execution_member_resolve_hot_field_kind(cachedMemberName);
         cachedReceiverPair = object_get_own_string_pair_by_name_cached_unchecked(state, receiverObject, cachedMemberName);
         if (cachedReceiverPair != ZR_NULL) {
             cachedReceiverObject = receiverObject;
@@ -635,6 +644,7 @@ static void execution_member_store_pic_slot(SZrState *state,
             slot->cachedDescriptorIndex = descriptorIndex;
             slot->cachedIsStatic = (TZrUInt8)((isStatic ? ZR_TRUE : ZR_FALSE) | slotFlags);
             slot->cachedAccessKind = (TZrUInt8)accessKind;
+            slot->cachedHotFieldKind = (TZrUInt16)hotFieldKind;
             slot->cachedFunction = callableTarget;
             slot->cachedMemberName = cachedMemberName;
             execution_member_barrier_callsite_target(state,
@@ -689,6 +699,7 @@ static void execution_member_store_pic_slot(SZrState *state,
     slot->cachedDescriptorIndex = descriptorIndex;
     slot->cachedIsStatic = (TZrUInt8)((isStatic ? ZR_TRUE : ZR_FALSE) | slotFlags);
     slot->cachedAccessKind = (TZrUInt8)accessKind;
+    slot->cachedHotFieldKind = (TZrUInt16)hotFieldKind;
     slot->cachedFunction = callableTarget;
     slot->cachedMemberName = cachedMemberName;
     execution_member_barrier_callsite_target(state, function, ZR_CAST_RAW_OBJECT_AS_SUPER(receiverPrototype));
@@ -789,7 +800,7 @@ static ZR_FORCE_INLINE SZrObject *execution_member_try_exact_cached_receiver_obj
 
 static ZR_FORCE_INLINE TZrBool execution_member_try_cached_instance_field_pair_get(
         SZrState *state,
-        const SZrFunctionCallSitePicSlot *slot,
+        SZrFunctionCallSitePicSlot *slot,
         SZrTypeValue *result) {
     const SZrTypeValue *sourceValue;
     SZrProfileRuntime *runtime;
@@ -821,7 +832,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_cached_instance_field_pair_g
 }
 
 static ZR_FORCE_INLINE TZrBool execution_member_can_use_exact_receiver_pair_hit(
-        const SZrFunctionCallSitePicSlot *slot,
+        SZrFunctionCallSitePicSlot *slot,
         const SZrObject *receiverObject) {
     ZR_ASSERT(slot != ZR_NULL);
 
@@ -844,7 +855,7 @@ static ZR_FORCE_INLINE const SZrMemberDescriptor *execution_member_try_get_cache
 static ZR_FORCE_INLINE TZrBool execution_member_try_cached_instance_field_pair_set(
         SZrState *state,
         SZrObject *receiverObject,
-        const SZrFunctionCallSitePicSlot *slot,
+        SZrFunctionCallSitePicSlot *slot,
         const SZrTypeValue *assignedValue) {
     SZrProfileRuntime *runtime;
     TZrBool recordHelpers;
@@ -886,15 +897,92 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_cached_instance_field_pair_s
 static ZR_FORCE_INLINE TZrBool execution_member_try_cached_instance_field_object_get(
         SZrState *state,
         SZrObject *object,
+        SZrFunctionCallSitePicSlot *slot,
         SZrString *memberName,
         SZrTypeValue *result);
 
 static ZR_FORCE_INLINE TZrBool execution_member_try_cached_instance_field_object_set(
         SZrState *state,
         SZrObject *object,
-        const SZrFunctionCallSitePicSlot *slot,
+        SZrFunctionCallSitePicSlot *slot,
         SZrString *memberName,
         const SZrTypeValue *assignedValue);
+
+static ZR_FORCE_INLINE TZrBool execution_member_string_equals_literal(SZrString *stringValue,
+                                                                      const TZrChar *literal) {
+    const TZrChar *nativeString;
+
+    if (stringValue == ZR_NULL || literal == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nativeString = ZrCore_String_GetNativeString(stringValue);
+    return nativeString != ZR_NULL && strcmp(nativeString, literal) == 0;
+}
+
+static ZR_FORCE_INLINE EZrFunctionCallSitePicHotFieldKind execution_member_resolve_hot_field_kind(
+        SZrString *memberName) {
+    if (execution_member_string_equals_literal(memberName, "__zr_items") ||
+        execution_member_string_equals_literal(memberName, "__zr_entries")) {
+        return ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITEMS;
+    }
+    if (execution_member_string_equals_literal(memberName, "length") ||
+        execution_member_string_equals_literal(memberName, "count") ||
+        execution_member_string_equals_literal(memberName, "first")) {
+        return ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_LENGTH;
+    }
+    if (execution_member_string_equals_literal(memberName, "capacity") ||
+        execution_member_string_equals_literal(memberName, "last") ||
+        execution_member_string_equals_literal(memberName, "second")) {
+        return ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_CAPACITY;
+    }
+    if (execution_member_string_equals_literal(memberName, "__zr_source")) {
+        return ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_SOURCE;
+    }
+    if (execution_member_string_equals_literal(memberName, "current") ||
+        execution_member_string_equals_literal(memberName, "value")) {
+        return ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_CURRENT;
+    }
+    if (execution_member_string_equals_literal(memberName, "__zr_index") ||
+        execution_member_string_equals_literal(memberName, "previous")) {
+        return ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_INDEX;
+    }
+    if (execution_member_string_equals_literal(memberName, "__zr_nextNode") ||
+        execution_member_string_equals_literal(memberName, "next")) {
+        return ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_NEXT_NODE;
+    }
+
+    return ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_NONE;
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair **execution_member_hot_field_pair_slot(
+        SZrObject *object,
+        EZrFunctionCallSitePicHotFieldKind fieldKind) {
+    if (object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (fieldKind) {
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITEMS:
+            return &object->cachedHiddenItemsPair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_LENGTH:
+            return &object->cachedLengthPair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_CAPACITY:
+            return &object->cachedCapacityPair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_SOURCE:
+            return &object->cachedIteratorSourcePair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_CURRENT:
+            return &object->cachedIteratorCurrentPair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_INDEX:
+            return &object->cachedIteratorIndexPair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_NEXT_NODE:
+            return &object->cachedIteratorNextNodePair;
+        default:
+            break;
+    }
+
+    return ZR_NULL;
+}
 
 static ZR_FORCE_INLINE void execution_member_refresh_cached_instance_field_slot(
         SZrState *state,
@@ -903,6 +991,68 @@ static ZR_FORCE_INLINE void execution_member_refresh_cached_instance_field_slot(
         SZrFunctionCallSiteCacheEntry *entry,
         const SZrFunctionCallSitePicSlot *slot,
         SZrObject *receiverObject);
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_cached_same_prototype_instance_field_get(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt16 cacheIndex,
+        SZrFunctionCallSiteCacheEntry *entry,
+        SZrFunctionCallSitePicSlot *slot,
+        SZrObject *receiverObject,
+        SZrTypeValue *result) {
+    SZrString *memberName;
+
+    if (state == ZR_NULL || function == ZR_NULL || entry == ZR_NULL || slot == ZR_NULL ||
+        receiverObject == ZR_NULL || result == ZR_NULL ||
+        (EZrFunctionCallSitePicAccessKind)slot->cachedAccessKind !=
+                ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD ||
+        slot->cachedReceiverPrototype == ZR_NULL ||
+        receiverObject->prototype != slot->cachedReceiverPrototype ||
+        !execution_member_cached_slot_versions_match(slot)) {
+        return ZR_FALSE;
+    }
+
+    memberName = execution_member_slot_resolve_cached_name(state, function, slot, entry->memberEntryIndex);
+    if (memberName == ZR_NULL ||
+        !execution_member_try_cached_instance_field_object_get(state, receiverObject, slot, memberName, result)) {
+        return ZR_FALSE;
+    }
+
+    execution_member_refresh_cached_instance_field_slot(state, function, cacheIndex, entry, slot, receiverObject);
+    entry->runtimeHitCount++;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_cached_same_prototype_instance_field_set(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt16 cacheIndex,
+        SZrFunctionCallSiteCacheEntry *entry,
+        SZrFunctionCallSitePicSlot *slot,
+        SZrObject *receiverObject,
+        const SZrTypeValue *assignedValue) {
+    SZrString *memberName;
+
+    if (state == ZR_NULL || function == ZR_NULL || entry == ZR_NULL || slot == ZR_NULL ||
+        receiverObject == ZR_NULL || assignedValue == ZR_NULL ||
+        (EZrFunctionCallSitePicAccessKind)slot->cachedAccessKind !=
+                ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD ||
+        slot->cachedReceiverPrototype == ZR_NULL ||
+        receiverObject->prototype != slot->cachedReceiverPrototype ||
+        !execution_member_cached_slot_versions_match(slot)) {
+        return ZR_FALSE;
+    }
+
+    memberName = execution_member_slot_resolve_cached_name(state, function, slot, entry->memberEntryIndex);
+    if (memberName == ZR_NULL ||
+        !execution_member_try_cached_instance_field_object_set(state, receiverObject, slot, memberName, assignedValue)) {
+        return ZR_FALSE;
+    }
+
+    execution_member_refresh_cached_instance_field_slot(state, function, cacheIndex, entry, slot, receiverObject);
+    entry->runtimeHitCount++;
+    return ZR_TRUE;
+}
 
 static ZR_FORCE_INLINE TZrBool execution_member_try_single_slot_exact_receiver_pair_get_hot_fast(
         SZrState *state,
@@ -962,19 +1112,35 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_single_slot_exact_receiver_p
 static ZR_FORCE_INLINE TZrBool execution_member_try_cached_instance_field_object_get(
         SZrState *state,
         SZrObject *object,
+        SZrFunctionCallSitePicSlot *slot,
         SZrString *memberName,
         SZrTypeValue *result) {
+    SZrHashKeyValuePair **hotPairSlot;
+    SZrHashKeyValuePair *pair;
     const SZrTypeValue *resolvedValue;
 
     if (state == ZR_NULL || object == ZR_NULL || memberName == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    resolvedValue = object_get_own_string_value_by_name_cached_unchecked(state, object, memberName);
-    if (resolvedValue == ZR_NULL) {
+    hotPairSlot = execution_member_hot_field_pair_slot(
+            object,
+            slot != ZR_NULL ? (EZrFunctionCallSitePicHotFieldKind)slot->cachedHotFieldKind
+                            : ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_NONE);
+    pair = hotPairSlot != ZR_NULL
+                   ? object_try_match_cached_string_pair_by_name_unchecked(state, *hotPairSlot, memberName)
+                   : ZR_NULL;
+    if (pair == ZR_NULL) {
+        pair = object_get_own_string_pair_by_name_cached_unchecked(state, object, memberName);
+        if (pair != ZR_NULL && hotPairSlot != ZR_NULL) {
+            *hotPairSlot = pair;
+        }
+    }
+    if (pair == ZR_NULL) {
         return ZR_FALSE;
     }
 
+    resolvedValue = &pair->value;
     execution_member_record_helper(state, ZR_PROFILE_HELPER_GET_MEMBER);
     execution_member_copy_value_profiled(state, result, resolvedValue);
     return ZR_TRUE;
@@ -983,16 +1149,29 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_cached_instance_field_object
 static ZR_FORCE_INLINE TZrBool execution_member_try_cached_instance_field_object_set(
         SZrState *state,
         SZrObject *object,
-        const SZrFunctionCallSitePicSlot *slot,
+        SZrFunctionCallSitePicSlot *slot,
         SZrString *memberName,
         const SZrTypeValue *assignedValue) {
+    SZrHashKeyValuePair **hotPairSlot;
     SZrHashKeyValuePair *pair;
 
     if (state == ZR_NULL || object == ZR_NULL || memberName == ZR_NULL || assignedValue == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    pair = object_get_own_string_pair_by_name_cached_unchecked(state, object, memberName);
+    hotPairSlot = execution_member_hot_field_pair_slot(
+            object,
+            slot != ZR_NULL ? (EZrFunctionCallSitePicHotFieldKind)slot->cachedHotFieldKind
+                            : ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_NONE);
+    pair = hotPairSlot != ZR_NULL
+                   ? object_try_match_cached_string_pair_by_name_unchecked(state, *hotPairSlot, memberName)
+                   : ZR_NULL;
+    if (pair == ZR_NULL) {
+        pair = object_get_own_string_pair_by_name_cached_unchecked(state, object, memberName);
+        if (pair != ZR_NULL && hotPairSlot != ZR_NULL) {
+            *hotPairSlot = pair;
+        }
+    }
     if (pair == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1231,6 +1410,10 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_cached_single_slot_receiver_
 
     slot = &entry->picSlots[0];
     if (slot->cachedReceiverObject != receiverObject) {
+        if (execution_member_try_cached_same_prototype_instance_field_get(
+                    state, function, cacheIndex, entry, slot, receiverObject, result)) {
+            return ZR_TRUE;
+        }
         return ZR_FALSE;
     }
     if (execution_member_can_use_exact_receiver_pair_hit(slot, receiverObject) &&
@@ -1241,7 +1424,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_cached_single_slot_receiver_
     if ((EZrFunctionCallSitePicAccessKind)slot->cachedAccessKind == ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD) {
         memberName = execution_member_slot_resolve_cached_name(state, function, slot, entry->memberEntryIndex);
         if (memberName != ZR_NULL &&
-            execution_member_try_cached_instance_field_object_get(state, receiverObject, memberName, result)) {
+            execution_member_try_cached_instance_field_object_get(state, receiverObject, slot, memberName, result)) {
             execution_member_refresh_cached_instance_field_slot(
                     state, function, cacheIndex, entry, slot, receiverObject);
             entry->runtimeHitCount++;
@@ -1347,7 +1530,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_cached_multi_slot_exact_rece
                 execution_member_backfill_multi_slot_instance_field_cached_name(state, function, entry, memberName);
             }
             if (memberName != ZR_NULL &&
-                execution_member_try_cached_instance_field_object_get(state, receiverObject, memberName, result)) {
+                execution_member_try_cached_instance_field_object_get(state, receiverObject, slot, memberName, result)) {
                 execution_member_refresh_cached_instance_field_slot(
                         state, function, cacheIndex, entry, slot, receiverObject);
                 entry->runtimeHitCount++;
@@ -1447,7 +1630,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_cached_multi_slot_get(
                 execution_member_backfill_multi_slot_instance_field_cached_name(state, function, entry, memberName);
             }
             if (memberName != ZR_NULL &&
-                execution_member_try_cached_instance_field_object_get(state, receiverObject, memberName, result)) {
+                execution_member_try_cached_instance_field_object_get(state, receiverObject, slot, memberName, result)) {
                 execution_member_refresh_cached_instance_field_slot(
                         state, function, cacheIndex, entry, slot, receiverObject);
                 entry->runtimeHitCount++;
@@ -1538,6 +1721,10 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_cached_single_slot_receiver_
 
     slot = &entry->picSlots[0];
     if (slot->cachedReceiverObject != receiverObject) {
+        if (execution_member_try_cached_same_prototype_instance_field_set(
+                    state, function, cacheIndex, entry, slot, receiverObject, assignedValue)) {
+            return ZR_TRUE;
+        }
         return ZR_FALSE;
     }
     if (execution_member_can_use_exact_receiver_pair_hit(slot, receiverObject) &&
@@ -1816,7 +2003,7 @@ static ZR_MEMBER_NO_INLINE TZrBool execution_member_try_cached_get(SZrState *sta
             ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD) {
             memberName = execution_member_slot_resolve_cached_name(state, function, slot, entry->memberEntryIndex);
             if (memberName != ZR_NULL &&
-                execution_member_try_cached_instance_field_object_get(state, receiverObject, memberName, result)) {
+                execution_member_try_cached_instance_field_object_get(state, receiverObject, slot, memberName, result)) {
                 execution_member_refresh_cached_instance_field_slot(
                         state, function, cacheIndex, entry, slot, receiverObject);
                 entry->runtimeHitCount++;
@@ -2135,16 +2322,18 @@ TZrBool execution_member_set_by_name(SZrState *state,
     return resolved;
 }
 
-TZrBool execution_member_get_cached(SZrState *state,
-                                    const TZrInstruction *programCounter,
-                                    SZrFunction *function,
-                                    TZrUInt16 cacheIndex,
-                                    SZrTypeValue *receiver,
-                                    SZrTypeValue *result) {
+static ZR_FORCE_INLINE TZrBool execution_member_get_cached_impl(SZrState *state,
+                                                                 const TZrInstruction *programCounter,
+                                                                 SZrFunction *function,
+                                                                 TZrUInt16 cacheIndex,
+                                                                 SZrTypeValue *receiver,
+                                                                 SZrTypeValue *result,
+                                                                 TZrBool receiverInStackKnown) {
     SZrFunctionCallSiteCacheEntry *entry;
     SZrString *memberName;
     SZrTypeValue stableReceiver;
     SZrTypeValue *refreshReceiver = receiver;
+    TZrBool receiverInStack;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(function != ZR_NULL);
@@ -2164,7 +2353,10 @@ TZrBool execution_member_get_cached(SZrState *state,
         return ZR_TRUE;
     }
 
-    execution_member_refresh_forwarded_value_copy(receiver);
+    receiverInStack = receiverInStackKnown || execution_member_value_points_into_stack(state, receiver);
+    if (!receiverInStack) {
+        execution_member_refresh_forwarded_value_copy(receiver);
+    }
 
     if (execution_member_try_cached_get(state, function, cacheIndex, entry, receiver, result)) {
         return ZR_TRUE;
@@ -2189,12 +2381,33 @@ TZrBool execution_member_get_cached(SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool execution_member_set_cached(SZrState *state,
+TZrBool execution_member_get_cached(SZrState *state,
                                     const TZrInstruction *programCounter,
                                     SZrFunction *function,
                                     TZrUInt16 cacheIndex,
-                                    SZrTypeValue *receiverAndResult,
-                                    const SZrTypeValue *assignedValue) {
+                                    SZrTypeValue *receiver,
+                                    SZrTypeValue *result) {
+    return execution_member_get_cached_impl(
+            state, programCounter, function, cacheIndex, receiver, result, ZR_FALSE);
+}
+
+TZrBool execution_member_get_cached_stack_receiver(SZrState *state,
+                                                   const TZrInstruction *programCounter,
+                                                   SZrFunction *function,
+                                                   TZrUInt16 cacheIndex,
+                                                   SZrTypeValue *receiver,
+                                                   SZrTypeValue *result) {
+    return execution_member_get_cached_impl(
+            state, programCounter, function, cacheIndex, receiver, result, ZR_TRUE);
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_set_cached_impl(SZrState *state,
+                                                                const TZrInstruction *programCounter,
+                                                                SZrFunction *function,
+                                                                TZrUInt16 cacheIndex,
+                                                                SZrTypeValue *receiverAndResult,
+                                                                const SZrTypeValue *assignedValue,
+                                                                TZrBool receiverInStackKnown) {
     SZrFunctionCallSiteCacheEntry *entry;
     SZrString *memberName;
     SZrTypeValue stableAssignedValue;
@@ -2210,7 +2423,7 @@ TZrBool execution_member_set_cached(SZrState *state,
     ZR_ASSERT(function->callSiteCaches != ZR_NULL);
     ZR_ASSERT(cacheIndex < function->callSiteCacheLength);
 
-    receiverInStack = execution_member_value_points_into_stack(state, receiverAndResult);
+    receiverInStack = receiverInStackKnown || execution_member_value_points_into_stack(state, receiverAndResult);
     assignedValueInStack = execution_member_value_points_into_stack(state, assignedValue);
     stackOperandsGuaranteed = receiverInStack && assignedValueInStack;
 
@@ -2254,4 +2467,24 @@ TZrBool execution_member_set_cached(SZrState *state,
 
     execution_member_refresh_cache(state, function, cacheIndex, entry, receiverAndResult, memberName);
     return ZR_TRUE;
+}
+
+TZrBool execution_member_set_cached(SZrState *state,
+                                    const TZrInstruction *programCounter,
+                                    SZrFunction *function,
+                                    TZrUInt16 cacheIndex,
+                                    SZrTypeValue *receiverAndResult,
+                                    const SZrTypeValue *assignedValue) {
+    return execution_member_set_cached_impl(
+            state, programCounter, function, cacheIndex, receiverAndResult, assignedValue, ZR_FALSE);
+}
+
+TZrBool execution_member_set_cached_stack_receiver(SZrState *state,
+                                                   const TZrInstruction *programCounter,
+                                                   SZrFunction *function,
+                                                   TZrUInt16 cacheIndex,
+                                                   SZrTypeValue *receiverAndResult,
+                                                   const SZrTypeValue *assignedValue) {
+    return execution_member_set_cached_impl(
+            state, programCounter, function, cacheIndex, receiverAndResult, assignedValue, ZR_TRUE);
 }

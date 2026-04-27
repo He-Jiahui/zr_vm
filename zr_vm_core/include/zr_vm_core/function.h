@@ -350,6 +350,17 @@ typedef enum EZrFunctionCallSitePicAccessKind {
 } EZrFunctionCallSitePicAccessKind;
 
 #define ZR_FUNCTION_CALLSITE_PIC_SLOT_FLAG_NON_HIDDEN_STRING_PAIR_FAST_SET ((TZrUInt16)0x0080u)
+typedef enum EZrFunctionCallSitePicHotFieldKind {
+    ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_NONE = 0,
+    ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITEMS = 1,
+    ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_LENGTH = 2,
+    ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_CAPACITY = 3,
+    ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_SOURCE = 4,
+    ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_CURRENT = 5,
+    ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_INDEX = 6,
+    ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_NEXT_NODE = 7
+} EZrFunctionCallSitePicHotFieldKind;
+
 typedef struct SZrFunctionCallSitePicSlot {
     struct SZrObjectPrototype *cachedReceiverPrototype;
     struct SZrObjectPrototype *cachedOwnerPrototype;
@@ -362,7 +373,7 @@ typedef struct SZrFunctionCallSitePicSlot {
     TZrUInt32 cachedDescriptorIndex;
     TZrUInt8 cachedIsStatic;
     TZrUInt8 cachedAccessKind;
-    TZrUInt16 reserved1;
+    TZrUInt16 cachedHotFieldKind;
 } SZrFunctionCallSitePicSlot;
 
 typedef struct SZrFunctionCallSiteCacheEntry {

@@ -881,6 +881,7 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
     SZrFileVersion *fileVersion;
     SZrSemanticAnalyzer *analyzer;
     SZrLspProjectIndex *projectIndex;
+    SZrAstNode *bindingAst;
     SZrArray entries;
     SZrArray bindings;
 
@@ -911,8 +912,11 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
                       ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
     ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
 
+    bindingAst = analyzer != ZR_NULL && analyzer->ast != ZR_NULL ? analyzer->ast : fileVersion->ast;
+    if (bindingAst != ZR_NULL) {
+        ZrLanguageServer_LspProject_CollectImportBindings(state, bindingAst, &bindings);
+    }
     if (analyzer != ZR_NULL && analyzer->ast != ZR_NULL) {
-        ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
         semantic_token_add_symbol_tokens(state, analyzer, uri, &entries);
     }
 

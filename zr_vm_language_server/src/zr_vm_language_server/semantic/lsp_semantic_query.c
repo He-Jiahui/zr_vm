@@ -2535,6 +2535,8 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     TZrBool hasStructuredCompletions = ZR_FALSE;
     SZrString *hoveredSymbolName = ZR_NULL;
     SZrString *resolvedTypeText = ZR_NULL;
+    SZrSemanticAnalyzer *metadataAnalyzer;
+    SZrSemanticAnalyzer *fallbackAnalyzer = ZR_NULL;
     SZrLspSemanticQuery semanticQuery;
     SZrLspMetadataProvider provider;
 
@@ -2546,6 +2548,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     if (analyzer == ZR_NULL) {
         return ZR_FALSE;
     }
+    metadataAnalyzer = analyzer;
 
     filePos = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
@@ -2643,6 +2646,33 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
         return ZR_FALSE;
     }
 
+    if (completions.length == 0 &&
+        fileVersion != ZR_NULL &&
+        fileVersion->content != ZR_NULL &&
+        fileVersion->ast != ZR_NULL) {
+        fallbackAnalyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        if (fallbackAnalyzer != ZR_NULL &&
+            ZrLanguageServer_SemanticAnalyzer_Analyze(state, fallbackAnalyzer, fileVersion->ast)) {
+            metadataAnalyzer = fallbackAnalyzer;
+            hasStructuredCompletions = ZrLanguageServer_Lsp_TryCollectReceiverCompletions(state,
+                                                                                          context,
+                                                                                          ZR_NULL,
+                                                                                          fallbackAnalyzer,
+                                                                                          uri,
+                                                                                          fileVersion->ast,
+                                                                                          fileVersion->content,
+                                                                                          fileVersion->contentLength,
+                                                                                          filePos.offset,
+                                                                                          &completions);
+            if (!hasStructuredCompletions) {
+                (void)ZrLanguageServer_SemanticAnalyzer_GetCompletions(state,
+                                                                       fallbackAnalyzer,
+                                                                       fileRange,
+                                                                       &completions);
+            }
+        }
+    }
+
     for (TZrSize index = 0; index < completions.length; index++) {
         SZrCompletionItem **itemPtr = (SZrCompletionItem **)ZrCore_Array_Get(&completions, index);
         if (itemPtr == ZR_NULL || *itemPtr == ZR_NULL) {
@@ -2651,7 +2681,7 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
 
         if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
             ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(state,
-                                                              analyzer,
+                                                              metadataAnalyzer,
                                                               *itemPtr,
                                                               hoveredSymbolName,
                                                               resolvedTypeText,
@@ -2662,6 +2692,9 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_CollectCompleti
     }
 
     ZrCore_Array_Free(state, &completions);
+    if (fallbackAnalyzer != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_Free(state, fallbackAnalyzer);
+    }
     ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
     return ZR_TRUE;
 }

@@ -95,6 +95,20 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
             documentSymbolProvider: true,
             workspaceSymbolProvider: true,
             documentHighlightProvider: true,
+            documentFormattingProvider: true,
+            documentRangeFormattingProvider: true,
+            codeActionProvider: {
+                codeActionKinds: ['quickfix', 'source.organizeImports'],
+                resolveProvider: false,
+            },
+            foldingRangeProvider: true,
+            selectionRangeProvider: true,
+            documentLinkProvider: {
+                resolveProvider: false,
+            },
+            codeLensProvider: {
+                resolveProvider: false,
+            },
             inlayHintProvider: true,
             semanticTokensProvider: {
                 legend: semanticTokenLegend,
@@ -261,6 +275,82 @@ connection.onRenameRequest(async ({ textDocument, position, newName }) => {
     return buildWorkspaceEdit(locations, newName);
 });
 
+connection.onRequest('textDocument/formatting', async ({ textDocument }: { textDocument: { uri: string } }) => {
+    const response = await bridge.getFormatting(textDocument.uri);
+    return responseData<unknown[]>(response, []);
+});
+
+connection.onRequest('textDocument/rangeFormatting', async ({
+    textDocument,
+    range,
+}: {
+    textDocument: { uri: string };
+    range: Range;
+}) => {
+    const response = await bridge.getRangeFormatting(
+        textDocument.uri,
+        range.start.line,
+        range.start.character,
+        range.end.line,
+        range.end.character,
+    );
+    return responseData<unknown[]>(response, []);
+});
+
+connection.onRequest('textDocument/codeAction', async ({
+    textDocument,
+    range,
+    context,
+}: {
+    textDocument: { uri: string };
+    range: Range;
+    context?: { only?: string[] };
+}) => {
+    const response = await bridge.getCodeActions(
+        textDocument.uri,
+        range.start.line,
+        range.start.character,
+        range.end.line,
+        range.end.character,
+    );
+    return filterCodeActions(responseData<unknown[]>(response, []), context?.only);
+});
+
+connection.onRequest('textDocument/foldingRange', async ({ textDocument }: { textDocument: { uri: string } }) => {
+    const response = await bridge.getFoldingRanges(textDocument.uri);
+    return responseData<unknown[]>(response, []);
+});
+
+connection.onRequest('textDocument/selectionRange', async ({
+    textDocument,
+    positions,
+}: {
+    textDocument: { uri: string };
+    positions: Position[];
+}) => {
+    const ranges: unknown[] = [];
+    for (const position of positions) {
+        const response = await bridge.getSelectionRange(textDocument.uri, position.line, position.character);
+        const data = responseData<unknown[]>(response, []);
+        ranges.push(data[0] ?? null);
+    }
+    return ranges;
+});
+
+connection.onRequest('textDocument/documentLink', async ({ textDocument }: { textDocument: { uri: string } }) => {
+    const response = await bridge.getDocumentLinks(textDocument.uri);
+    return responseData<unknown[]>(response, []);
+});
+
+connection.onRequest('documentLink/resolve', async (link: unknown) => link);
+
+connection.onRequest('textDocument/codeLens', async ({ textDocument }: { textDocument: { uri: string } }) => {
+    const response = await bridge.getCodeLens(textDocument.uri);
+    return responseData<unknown[]>(response, []);
+});
+
+connection.onRequest('codeLens/resolve', async (lens: unknown) => lens);
+
 connection.listen();
 
 function responseData<T>(response: WasmPayload<T>, fallback: T): T {
@@ -312,6 +402,28 @@ function buildWorkspaceEdit(locations: Location[], newName: string): WorkspaceEd
     }
 
     return { changes };
+}
+
+function filterCodeActions(actions: unknown[], only: string[] | undefined): unknown[] {
+    if (!only || only.length === 0) {
+        return actions;
+    }
+
+    return actions.filter((action) => {
+        if (!isObject(action)) {
+            return false;
+        }
+        const kind = action.kind;
+        return typeof kind === 'string' && only.some((requested) => codeActionKindMatches(kind, requested));
+    });
+}
+
+function codeActionKindMatches(actionKind: string, requestedKind: string): boolean {
+    return actionKind === requestedKind || actionKind.startsWith(`${requestedKind}.`);
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
 }
 
 function applyContentChanges(text: string, contentChanges: TextDocumentContentChangeEvent[]): string {

@@ -163,6 +163,27 @@ TZrBool emit_known_vm_member_call_cached(SZrCompilerState *cs,
     return !cs->hasError;
 }
 
+TZrBool emit_known_native_member_call_cached(SZrCompilerState *cs,
+                                             TZrUInt32 destinationSlot,
+                                             TZrUInt16 cacheIndex,
+                                             TZrUInt32 argumentCount,
+                                             SZrFileRange location) {
+    TZrInstruction instruction;
+
+    ZR_UNUSED_PARAMETER(location);
+
+    if (cs == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    instruction = create_instruction_2(ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL),
+                                       ZR_COMPILE_SLOT_U16(destinationSlot),
+                                       cacheIndex,
+                                       ZR_COMPILE_SLOT_U16(argumentCount));
+    emit_instruction(cs, instruction);
+    return !cs->hasError;
+}
+
 TZrBool emit_member_slot_set(SZrCompilerState *cs,
                              TZrUInt32 valueSlot,
                              TZrUInt32 receiverSlot,

@@ -75,6 +75,19 @@ static ZR_FORCE_INLINE void execution_copy_stack_value_to_stack_fast_no_profile(
     ZrCore_Value_CopySlow(state, destination, source);
 }
 
+static ZR_FORCE_INLINE void execution_reset_stack_value_to_null_fast_no_profile(SZrState *state,
+                                                                                SZrTypeValue *destination) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(destination != ZR_NULL);
+    if (ZR_UNLIKELY(destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE)) {
+        ZrCore_Ownership_ReleaseValue(state, destination);
+        return;
+    }
+
+    ZR_ASSERT(destination->ownershipControl == ZR_NULL && destination->ownershipWeakRef == ZR_NULL);
+    ZrCore_Value_ResetAsNullNoProfile(destination);
+}
+
 static ZR_FORCE_INLINE void execution_assign_stack_value_to_stack_fast_no_profile(SZrState *state,
                                                                                   SZrTypeValue *destination,
                                                                                   SZrTypeValue *source) {
@@ -879,6 +892,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(GET_STACK)] = &&LZrFastInstruction_GET_STACK,
             [ZR_INSTRUCTION_ENUM(SET_STACK)] = &&LZrFastInstruction_SET_STACK,
             [ZR_INSTRUCTION_ENUM(GET_CONSTANT)] = &&LZrFastInstruction_GET_CONSTANT,
+            [ZR_INSTRUCTION_ENUM(RESET_STACK_NULL)] = &&LZrFastInstruction_RESET_STACK_NULL,
             [ZR_INSTRUCTION_ENUM(ADD_INT)] = &&LZrFastInstruction_ADD_INT,
             [ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST)] = &&LZrFastInstruction_ADD_INT_PLAIN_DEST,
             [ZR_INSTRUCTION_ENUM(ADD_INT_CONST)] = &&LZrFastInstruction_ADD_INT_CONST,
@@ -955,6 +969,10 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)] = &&LZrFastInstruction_SUPER_ARRAY_SET_INT,
             [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS)] = &&LZrFastInstruction_SUPER_ARRAY_SET_INT_ITEMS,
             [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_FILL_INT4_CONST)] = &&LZrFastInstruction_SUPER_ARRAY_FILL_INT4_CONST,
+            [ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE)] =
+                    &&LZrFastInstruction_SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE,
+            [ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE)] =
+                    &&LZrFastInstruction_SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE,
             [ZR_INSTRUCTION_ENUM(JUMP)] = &&LZrFastInstruction_JUMP,
             [ZR_INSTRUCTION_ENUM(JUMP_IF)] = &&LZrFastInstruction_JUMP_IF,
             [ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED)] = &&LZrFastInstruction_JUMP_IF_GREATER_SIGNED,
@@ -964,10 +982,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(FUNCTION_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
+            [ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
+            [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
+            [ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)] = &&LZrFastInstruction_GET_MEMBER_SLOT,
+            [ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)] = &&LZrFastInstruction_SET_MEMBER_SLOT,
             [ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
             [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
@@ -1213,6 +1235,55 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             *destination = *CONST(A2(instruction));                                                                    \
         } else {                                                                                                       \
             ZrCore_Value_Copy(state, destination, CONST(A2(instruction)));                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_RESET_STACK_NULL_BODY()                                                                                \
+    do {                                                                                                               \
+        if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
+            profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_RESET_NULL]++;                                        \
+        }                                                                                                              \
+        execution_reset_stack_value_to_null_fast_no_profile(state, &BASE(E(instruction))->value);                     \
+    } while (0)
+#define EXECUTE_GET_MEMBER_SLOT_BODY()                                                                                 \
+    do {                                                                                                               \
+        SZrString *memberName__ = ZR_NULL;                                                                             \
+        TZrNativeString memberNativeName__;                                                                            \
+        opA = &BASE(A1(instruction))->value;                                                                           \
+        if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY &&                                  \
+            opA->type != ZR_VALUE_TYPE_STRING) {                                                                       \
+            ZrCore_Debug_RunError(state, "GET_MEMBER: receiver must be an object, array, or string");                \
+        } else if (!(((opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY) &&                      \
+                      execution_member_try_dispatch_exact_receiver_pair_get_hot_fast_checked_object(                   \
+                              state, currentFunction, B1(instruction), opA, destination)) ||                          \
+                     execution_member_get_cached_stack_receiver(                                                        \
+                             state, programCounter, currentFunction, B1(instruction), opA, destination))) {           \
+            memberName__ = execution_resolve_cached_member_symbol(                                                     \
+                    currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);                    \
+            if (memberName__ == ZR_NULL) {                                                                             \
+                ZrCore_Debug_RunError(state, "GET_MEMBER_SLOT: cached member lookup failed");                        \
+            } else {                                                                                                   \
+                memberNativeName__ = ZrCore_String_GetNativeString(memberName__);                                      \
+                ZrCore_Debug_RunError(state,                                                                           \
+                                      "GET_MEMBER: missing member '%s'",                                             \
+                                      memberNativeName__ != ZR_NULL ? memberNativeName__ : "<unknown>");             \
+            }                                                                                                          \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SET_MEMBER_SLOT_BODY()                                                                                 \
+    do {                                                                                                               \
+        opA = &BASE(A1(instruction))->value;                                                                           \
+        if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {                                  \
+            ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");                   \
+        } else if (!(execution_member_try_dispatch_exact_receiver_pair_set_hot_fast_checked_object(                   \
+                             state, currentFunction, B1(instruction), opA, destination) ||                            \
+                     execution_member_set_cached_stack_receiver(                                                       \
+                             state, programCounter, currentFunction, B1(instruction), opA, destination))) {           \
+            if (execution_resolve_cached_member_symbol(                                                                \
+                        currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET) == ZR_NULL) {   \
+                ZrCore_Debug_RunError(state, "SET_MEMBER_SLOT: cached member store failed");                         \
+            } else {                                                                                                   \
+                ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");               \
+            }                                                                                                          \
         }                                                                                                              \
     } while (0)
 #define EXECUTE_GET_STACK_BODY_FAST()                                                                                  \
@@ -2459,6 +2530,16 @@ LZrFastInstruction_GET_CONSTANT: {
                 EXECUTE_GET_CONSTANT_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_RESET_STACK_NULL: {
+                EXECUTE_RESET_STACK_NULL_BODY();
+            }
+            DONE_FAST(1);
+#endif
+            ZR_INSTRUCTION_LABEL(RESET_STACK_NULL) {
+                EXECUTE_RESET_STACK_NULL_BODY();
+            }
+            DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CONSTANT) {
                 // ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(A2(instruction)));
                 //*CONST(ret.value.nativeObject.nativeUInt64) = BASE(B1(instruction))->value;
@@ -2486,76 +2567,83 @@ LZrFastInstruction_GET_CONSTANT: {
             DONE(1);
             ZR_INSTRUCTION_LABEL(TO_BOOL) {
                 opA = &BASE(A1(instruction))->value;
-                SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_TO_BOOL);
-                if (meta != ZR_NULL && meta->function != ZR_NULL) {
-                    // 调用元方法
-                    TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
-                    SZrCallInfo *savedCallInfo = state->callInfoList;
-                    PROTECT_E(state, callInfo, {
-                        TZrStackValuePointer metaBase = ZR_NULL;
-                        TZrStackValuePointer restoredStackTop = savedStackTop;
-                        TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
-                                                                              savedCallInfo,
-                                                                              savedStackTop,
-                                                                              callInfo->functionTop.valuePointer,
-                                                                              meta,
-                                                                              opA,
-                                                                              ZR_NULL,
-                                                                              ZR_META_CALL_UNARY_ARGUMENT_COUNT,
-                                                                              &metaBase,
-                                                                              &restoredStackTop);
-                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                        if (metaCallSucceeded) {
-                            SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
-                            if (returnValue->type == ZR_VALUE_TYPE_BOOL) {
-                                ZrCore_Value_Copy(state, destination, returnValue);
+                if (ZR_VALUE_IS_TYPE_NULL(opA->type)) {
+                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_FALSE, ZR_VALUE_TYPE_BOOL);
+                } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
+                    *destination = *opA;
+                } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {
+                    ZR_VALUE_FAST_SET(destination,
+                                      nativeBool,
+                                      opA->value.nativeObject.nativeInt64 != 0,
+                                      ZR_VALUE_TYPE_BOOL);
+                } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
+                    ZR_VALUE_FAST_SET(destination,
+                                      nativeBool,
+                                      opA->value.nativeObject.nativeUInt64 != 0,
+                                      ZR_VALUE_TYPE_BOOL);
+                } else if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
+                    ZR_VALUE_FAST_SET(destination,
+                                      nativeBool,
+                                      opA->value.nativeObject.nativeDouble != 0.0,
+                                      ZR_VALUE_TYPE_BOOL);
+                } else {
+                    SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_TO_BOOL);
+                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                        // 调用元方法
+                        TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
+                        SZrCallInfo *savedCallInfo = state->callInfoList;
+                        PROTECT_E(state, callInfo, {
+                            TZrStackValuePointer metaBase = ZR_NULL;
+                            TZrStackValuePointer restoredStackTop = savedStackTop;
+                            TZrBool metaCallSucceeded = execution_invoke_meta_call(state,
+                                                                                  savedCallInfo,
+                                                                                  savedStackTop,
+                                                                                  callInfo->functionTop.valuePointer,
+                                                                                  meta,
+                                                                                  opA,
+                                                                                  ZR_NULL,
+                                                                                  ZR_META_CALL_UNARY_ARGUMENT_COUNT,
+                                                                                  &metaBase,
+                                                                                  &restoredStackTop);
+                            RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                            if (metaCallSucceeded) {
+                                SZrTypeValue *returnValue = ZrCore_Stack_GetValue(metaBase);
+                                if (returnValue->type == ZR_VALUE_TYPE_BOOL) {
+                                    ZrCore_Value_Copy(state, destination, returnValue);
+                                } else {
+                                    // 元方法返回类型错误，使用默认转换
+                                    ZR_VALUE_FAST_SET(destination, nativeBool, ZR_TRUE, ZR_VALUE_TYPE_BOOL);
+                                }
                             } else {
-                                // 元方法返回类型错误，使用默认转换
+                                // 调用失败，使用默认转换
                                 ZR_VALUE_FAST_SET(destination, nativeBool, ZR_TRUE, ZR_VALUE_TYPE_BOOL);
                             }
+                            state->stackTop.valuePointer = restoredStackTop;
+                            state->callInfoList = savedCallInfo;
+                        });
+                    } else {
+                        // 无元方法，使用内置转换逻辑
+                        if (ZR_VALUE_IS_TYPE_STRING(opA->type)) {
+                            SZrString *str = ZR_CAST_STRING(state, opA->value.object);
+                            TZrSize len = (str->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str->shortStringLength : str->longStringLength;
+                            ZR_VALUE_FAST_SET(destination, nativeBool, len > 0, ZR_VALUE_TYPE_BOOL);
                         } else {
-                            // 调用失败，使用默认转换
+                            // 对象类型，默认返回 true
                             ZR_VALUE_FAST_SET(destination, nativeBool, ZR_TRUE, ZR_VALUE_TYPE_BOOL);
                         }
-                        state->stackTop.valuePointer = restoredStackTop;
-                        state->callInfoList = savedCallInfo;
-                    });
-                } else {
-                    // 无元方法，使用内置转换逻辑
-                    if (ZR_VALUE_IS_TYPE_NULL(opA->type)) {
-                        ZR_VALUE_FAST_SET(destination, nativeBool, ZR_FALSE, ZR_VALUE_TYPE_BOOL);
-                    } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
-                        *destination = *opA;
-                    } else if (ZR_VALUE_IS_TYPE_INT(opA->type)) {
-                        ZR_VALUE_FAST_SET(destination,
-                                          nativeBool,
-                                          opA->value.nativeObject.nativeInt64 != 0,
-                                          ZR_VALUE_TYPE_BOOL);
-                    } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
-                        ZR_VALUE_FAST_SET(destination,
-                                          nativeBool,
-                                          opA->value.nativeObject.nativeUInt64 != 0,
-                                          ZR_VALUE_TYPE_BOOL);
-                    } else if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
-                        ZR_VALUE_FAST_SET(destination,
-                                          nativeBool,
-                                          opA->value.nativeObject.nativeDouble != 0.0,
-                                          ZR_VALUE_TYPE_BOOL);
-                    } else if (ZR_VALUE_IS_TYPE_STRING(opA->type)) {
-                        SZrString *str = ZR_CAST_STRING(state, opA->value.object);
-                        TZrSize len = (str->shortStringLength < ZR_VM_LONG_STRING_FLAG) ? str->shortStringLength : str->longStringLength;
-                        ZR_VALUE_FAST_SET(destination, nativeBool, len > 0, ZR_VALUE_TYPE_BOOL);
-                    } else {
-                        // 对象类型，默认返回 true
-                        ZR_VALUE_FAST_SET(destination, nativeBool, ZR_TRUE, ZR_VALUE_TYPE_BOOL);
                     }
                 }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TO_INT) {
                 opA = &BASE(A1(instruction))->value;
-                SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_TO_INT);
-                if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {
+                    *destination = *opA;
+                } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
+                    ZrCore_Value_InitAsInt(state, destination, (TZrInt64)opA->value.nativeObject.nativeUInt64);
+                } else {
+                    SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_TO_INT);
+                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
                     // 调用元方法
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
@@ -2588,13 +2676,9 @@ LZrFastInstruction_GET_CONSTANT: {
                         state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
-                } else {
+                    } else {
                     // 无元方法，使用内置转换逻辑
-                    if (ZR_VALUE_IS_TYPE_INT(opA->type)) {
-                        *destination = *opA;
-                    } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
-                        ZrCore_Value_InitAsInt(state, destination, (TZrInt64) opA->value.nativeObject.nativeUInt64);
-                    } else if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
+                    if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
                         ZrCore_Value_InitAsInt(state, destination, (TZrInt64) opA->value.nativeObject.nativeDouble);
                     } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
                         ZrCore_Value_InitAsInt(state, destination, opA->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE);
@@ -2602,13 +2686,19 @@ LZrFastInstruction_GET_CONSTANT: {
                         // 其他类型无法转换，返回 0
                         ZrCore_Value_InitAsInt(state, destination, 0);
                     }
+                    }
                 }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TO_UINT) {
                 opA = &BASE(A1(instruction))->value;
-                SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_TO_UINT);
-                if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
+                    *destination = *opA;
+                } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {
+                    ZrCore_Value_InitAsUInt(state, destination, (TZrUInt64)opA->value.nativeObject.nativeInt64);
+                } else {
+                    SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_TO_UINT);
+                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
                     // 调用元方法
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
@@ -2641,13 +2731,9 @@ LZrFastInstruction_GET_CONSTANT: {
                         state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
-                } else {
+                    } else {
                     // 无元方法，使用内置转换逻辑
-                    if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
-                        *destination = *opA;
-                    } else if (ZR_VALUE_IS_TYPE_INT(opA->type)) {
-                        ZrCore_Value_InitAsUInt(state, destination, (TZrUInt64) opA->value.nativeObject.nativeInt64);
-                    } else if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
+                    if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
                         ZrCore_Value_InitAsUInt(state, destination, (TZrUInt64) opA->value.nativeObject.nativeDouble);
                     } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
                         ZrCore_Value_InitAsUInt(state, destination, opA->value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE);
@@ -2655,13 +2741,21 @@ LZrFastInstruction_GET_CONSTANT: {
                         // 其他类型无法转换，返回 0
                         ZrCore_Value_InitAsUInt(state, destination, 0);
                     }
+                    }
                 }
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(TO_FLOAT) {
                 opA = &BASE(A1(instruction))->value;
-                SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_TO_FLOAT);
-                if (meta != ZR_NULL && meta->function != ZR_NULL) {
+                if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
+                    *destination = *opA;
+                } else if (ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type)) {
+                    ZrCore_Value_InitAsFloat(state, destination, (TZrFloat64)opA->value.nativeObject.nativeInt64);
+                } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
+                    ZrCore_Value_InitAsFloat(state, destination, (TZrFloat64)opA->value.nativeObject.nativeUInt64);
+                } else {
+                    SZrMeta *meta = ZrCore_Value_GetMeta(state, opA, ZR_META_TO_FLOAT);
+                    if (meta != ZR_NULL && meta->function != ZR_NULL) {
                     // 调用元方法
                     TZrStackValuePointer savedStackTop = state->stackTop.valuePointer;
                     SZrCallInfo *savedCallInfo = state->callInfoList;
@@ -2694,19 +2788,14 @@ LZrFastInstruction_GET_CONSTANT: {
                         state->stackTop.valuePointer = restoredStackTop;
                         state->callInfoList = savedCallInfo;
                     });
-                } else {
+                    } else {
                     // 无元方法，使用内置转换逻辑
-                    if (ZR_VALUE_IS_TYPE_FLOAT(opA->type)) {
-                        *destination = *opA;
-                    } else if (ZR_VALUE_IS_TYPE_INT(opA->type)) {
-                        ZrCore_Value_InitAsFloat(state, destination, (TZrFloat64) opA->value.nativeObject.nativeInt64);
-                    } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type)) {
-                        ZrCore_Value_InitAsFloat(state, destination, (TZrFloat64) opA->value.nativeObject.nativeUInt64);
-                    } else if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
+                    if (ZR_VALUE_IS_TYPE_BOOL(opA->type)) {
                         ZrCore_Value_InitAsFloat(state, destination, opA->value.nativeObject.nativeBool ? (TZrFloat64)ZR_TRUE : (TZrFloat64)ZR_FALSE);
                     } else {
                         // 其他类型无法转换，返回 0.0
                         ZrCore_Value_InitAsFloat(state, destination, 0.0);
+                    }
                     }
                 }
             }
@@ -4638,6 +4727,47 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 }
             }
             DONE(1);
+            ZR_INSTRUCTION_LABEL(KNOWN_VM_MEMBER_CALL_LOAD1_U8) {
+                TZrSize resultSlot = E(instruction);
+                TZrUInt16 cacheIndex = (TZrUInt16)instruction.instruction.operand.operand0[0];
+                TZrUInt16 receiverSourceSlot = (TZrUInt16)instruction.instruction.operand.operand0[1];
+                TZrUInt16 argumentSourceSlot = (TZrUInt16)instruction.instruction.operand.operand0[2];
+                SZrFunctionCallSiteCacheEntry *cacheEntry;
+                TZrSize parametersCount = 0u;
+                TZrSize expectedReturnCount = 1;
+                SZrCallInfo *nextCallInfo;
+
+                execution_copy_stack_value_to_stack_fast_no_profile(
+                        state, &BASE(resultSlot + 1u)->value, &BASE(receiverSourceSlot)->value);
+                execution_copy_stack_value_to_stack_fast_no_profile(
+                        state, &BASE(resultSlot + 2u)->value, &BASE(argumentSourceSlot)->value);
+                if (ZR_UNLIKELY(recordHelpers)) {
+                    profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY] += 2u;
+                }
+
+                callInfo->context.context.programCounter = programCounter + 1;
+                cacheEntry = execution_member_get_cache_entry_dispatch_fast(
+                        currentFunction, cacheIndex, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
+                parametersCount = cacheEntry != ZR_NULL ? cacheEntry->argumentCount : 0u;
+                state->stackTop.valuePointer = BASE(resultSlot) + parametersCount + 1;
+                nextCallInfo = execution_pre_call_known_vm_member_fast(state,
+                                                                       programCounter,
+                                                                       currentFunction,
+                                                                       cacheIndex,
+                                                                       cacheEntry,
+                                                                       BASE(resultSlot),
+                                                                       expectedReturnCount,
+                                                                       BASE(resultSlot),
+                                                                       profileRuntime,
+                                                                       recordHelpers);
+                if (nextCallInfo == ZR_NULL) {
+                    ZrCore_Debug_RunError(state, "KNOWN_VM_MEMBER_CALL_LOAD1_U8: invalid cached VM member callable");
+                } else {
+                    callInfo = nextCallInfo;
+                    goto LZrStart;
+                }
+            }
+            DONE(1);
             ZR_INSTRUCTION_LABEL(KNOWN_NATIVE_CALL) {
                 TZrSize functionSlot = A1(instruction);
                 TZrSize parametersCount = B1(instruction);
@@ -4651,6 +4781,33 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 execution_pre_call_known_native_fast(state,
                                                      BASE(functionSlot),
                                                      opA,
+                                                     expectedReturnCount,
+                                                     BASE(E(instruction)),
+                                                     profileRuntime,
+                                                     recordHelpers);
+                RESUME_AFTER_NATIVE_CALL(state, callInfo);
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(KNOWN_NATIVE_MEMBER_CALL) {
+                TZrSize resultSlot = E(instruction);
+                TZrUInt16 cacheIndex = (TZrUInt16)A1(instruction);
+                SZrTypeValue *callableValue;
+                SZrTypeValue *receiverValue;
+                TZrSize parametersCount = B1(instruction);
+                TZrSize expectedReturnCount = 1;
+
+                callInfo->context.context.programCounter = programCounter + 1;
+                state->stackTop.valuePointer = BASE(resultSlot) + parametersCount + 1;
+                callableValue = ZrCore_Stack_GetValueNoProfile(BASE(resultSlot));
+                receiverValue = ZrCore_Stack_GetValueNoProfile(BASE(resultSlot) + 1);
+                if (callableValue == ZR_NULL || receiverValue == ZR_NULL ||
+                    !execution_member_get_cached(
+                            state, programCounter, currentFunction, cacheIndex, receiverValue, callableValue)) {
+                    ZrCore_Debug_RunError(state, "KNOWN_NATIVE_MEMBER_CALL: invalid cached native member callable");
+                }
+                execution_pre_call_known_native_fast(state,
+                                                     BASE(resultSlot),
+                                                     callableValue,
                                                      expectedReturnCount,
                                                      BASE(E(instruction)),
                                                      profileRuntime,
@@ -5381,52 +5538,27 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
             }
             DONE(1);
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_GET_MEMBER_SLOT: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_GET_MEMBER_SLOT_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(GET_MEMBER_SLOT) {
-                SZrString *memberName = ZR_NULL;
-                TZrNativeString memberNativeName;
-                opA = &BASE(A1(instruction))->value;
-                if (opA->type != ZR_VALUE_TYPE_OBJECT &&
-                           opA->type != ZR_VALUE_TYPE_ARRAY &&
-                           opA->type != ZR_VALUE_TYPE_STRING) {
-                    ZrCore_Debug_RunError(state, "GET_MEMBER: receiver must be an object, array, or string");
-                } else if (!(((opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY) &&
-                              execution_member_try_dispatch_exact_receiver_pair_get_hot_fast_checked_object(
-                                     state, currentFunction, B1(instruction), opA, destination)) ||
-                             execution_member_get_cached(
-                                     state, programCounter, currentFunction, B1(instruction), opA, destination))) {
-                    memberName = execution_resolve_cached_member_symbol(
-                            currentFunction,
-                            B1(instruction),
-                            ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
-                    if (memberName == ZR_NULL) {
-                        ZrCore_Debug_RunError(state, "GET_MEMBER_SLOT: cached member lookup failed");
-                    } else {
-                        memberNativeName = ZrCore_String_GetNativeString(memberName);
-                        ZrCore_Debug_RunError(state,
-                                              "GET_MEMBER: missing member '%s'",
-                                              memberNativeName != ZR_NULL ? memberNativeName : "<unknown>");
-                    }
-                }
+                EXECUTE_GET_MEMBER_SLOT_BODY();
             }
             DONE(1);
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SET_MEMBER_SLOT: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_SET_MEMBER_SLOT_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SET_MEMBER_SLOT) {
-                opA = &BASE(A1(instruction))->value;
-                if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {
-                    ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");
-                } else if (!(execution_member_try_dispatch_exact_receiver_pair_set_hot_fast_checked_object(
-                                     state, currentFunction, B1(instruction), opA, destination) ||
-                             execution_member_set_cached(
-                                     state, programCounter, currentFunction, B1(instruction), opA, destination))) {
-                    if (execution_resolve_cached_member_symbol(
-                                currentFunction,
-                                B1(instruction),
-                                ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET) == ZR_NULL) {
-                        ZrCore_Debug_RunError(state, "SET_MEMBER_SLOT: cached member store failed");
-                    } else {
-                        ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");
-                    }
-                }
+                EXECUTE_SET_MEMBER_SLOT_BODY();
             }
             DONE(1);
 
@@ -5689,6 +5821,9 @@ LZrFastInstruction_SUPER_ARRAY_FILL_INT4_CONST: {
                 SZrTypeValue stableResult;
                 TZrBool resolved = ZR_FALSE;
                 opA = &BASE(A1(instruction))->value;
+                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
+                    DONE(1);
+                }
                 stableReceiver = *opA;
                 ZrCore_Value_ResetAsNull(&stableResult);
                 PROTECT_E(state, callInfo, {
@@ -5725,6 +5860,9 @@ LZrFastInstruction_SUPER_ARRAY_FILL_INT4_CONST: {
                 SZrTypeValue stableResult;
                 TZrBool resolved = ZR_FALSE;
                 opA = &BASE(A1(instruction))->value;
+                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
+                    DONE(1);
+                }
                 stableReceiver = *opA;
                 ZrCore_Value_ResetAsNull(&stableResult);
                 PROTECT_E(state, callInfo, {
@@ -5738,6 +5876,114 @@ LZrFastInstruction_SUPER_ARRAY_FILL_INT4_CONST: {
                 }
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
+                FAST_PREPARE_DESTINATION();
+                TZrInt16 jumpOffset = (TZrInt16)B1(instruction);
+                SZrTypeValue stableReceiver;
+                SZrTypeValue stableResult;
+                TZrBool resolved = ZR_FALSE;
+
+                opA = &BASE(A1(instruction))->value;
+                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
+                    if (!execution_is_truthy(state, destination)) {
+                        programCounter += jumpOffset;
+                        UPDATE_TRAP(callInfo);
+                    }
+                    DONE_SKIP(2);
+                }
+                stableReceiver = *opA;
+                ZrCore_Value_ResetAsNull(&stableResult);
+                PROTECT_E(state, callInfo, {
+                    resolved = ZrCore_Object_IterMoveNext(state, &stableReceiver, &stableResult);
+                });
+                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                if (resolved) {
+                    ZrCore_Value_Copy(state, destination, &stableResult);
+                } else {
+                    ZrCore_Debug_RunError(state,
+                                          "SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE: receiver does not satisfy iterator "
+                                          "contract");
+                }
+
+                if (!execution_is_truthy(state, destination)) {
+                    programCounter += jumpOffset;
+                    UPDATE_TRAP(callInfo);
+                }
+            }
+            DONE_SKIP(2);
+#endif
+            ZR_INSTRUCTION_LABEL(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) {
+                TZrInt16 jumpOffset = (TZrInt16)B1(instruction);
+                SZrTypeValue stableReceiver;
+                SZrTypeValue stableResult;
+                TZrBool resolved = ZR_FALSE;
+
+                opA = &BASE(A1(instruction))->value;
+                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
+                    if (!execution_is_truthy(state, destination)) {
+                        programCounter += jumpOffset;
+                        UPDATE_TRAP(callInfo);
+                    }
+                    DONE_SKIP(2);
+                }
+                stableReceiver = *opA;
+                ZrCore_Value_ResetAsNull(&stableResult);
+                PROTECT_E(state, callInfo, {
+                    resolved = ZrCore_Object_IterMoveNext(state, &stableReceiver, &stableResult);
+                });
+                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                if (resolved) {
+                    ZrCore_Value_Copy(state, destination, &stableResult);
+                } else {
+                    ZrCore_Debug_RunError(state,
+                                          "SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE: receiver does not satisfy iterator "
+                                          "contract");
+                }
+
+                if (!execution_is_truthy(state, destination)) {
+                    programCounter += jumpOffset;
+                    UPDATE_TRAP(callInfo);
+                }
+            }
+            DONE_SKIP(2);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
+                FAST_PREPARE_DESTINATION();
+                TZrInt16 jumpOffset = (TZrInt16)B1(instruction);
+                SZrTypeValue stableReceiver;
+                SZrTypeValue stableResult;
+                TZrBool resolved = ZR_FALSE;
+
+                opA = &BASE(A1(instruction))->value;
+                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
+                    if (!execution_is_truthy(state, destination)) {
+                        programCounter += jumpOffset;
+                        UPDATE_TRAP(callInfo);
+                    }
+                    DONE_SKIP(2);
+                }
+                stableReceiver = *opA;
+                ZrCore_Value_ResetAsNull(&stableResult);
+                PROTECT_E(state, callInfo, {
+                    resolved = ZrCore_Object_IterMoveNext(state, &stableReceiver, &stableResult);
+                });
+                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
+                if (resolved) {
+                    ZrCore_Value_Copy(state, destination, &stableResult);
+                } else {
+                    ZrCore_Debug_RunError(state,
+                                          "SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE: receiver does not satisfy dynamic "
+                                          "iterator contract");
+                }
+
+                if (!execution_is_truthy(state, destination)) {
+                    programCounter += jumpOffset;
+                    UPDATE_TRAP(callInfo);
+                }
+            }
+            DONE_SKIP(2);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) {
                 TZrInt16 jumpOffset = (TZrInt16)B1(instruction);
                 SZrTypeValue stableReceiver;
@@ -5745,6 +5991,13 @@ LZrFastInstruction_SUPER_ARRAY_FILL_INT4_CONST: {
                 TZrBool resolved = ZR_FALSE;
 
                 opA = &BASE(A1(instruction))->value;
+                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
+                    if (!execution_is_truthy(state, destination)) {
+                        programCounter += jumpOffset;
+                        UPDATE_TRAP(callInfo);
+                    }
+                    DONE_SKIP(2);
+                }
                 stableReceiver = *opA;
                 ZrCore_Value_ResetAsNull(&stableResult);
                 PROTECT_E(state, callInfo, {
@@ -5771,6 +6024,9 @@ LZrFastInstruction_SUPER_ARRAY_FILL_INT4_CONST: {
                 SZrTypeValue stableResult;
                 TZrBool resolved = ZR_FALSE;
                 opA = &BASE(A1(instruction))->value;
+                if (ZrCore_Object_TryIterCurrentCachedMemberFast(state, opA, destination)) {
+                    DONE(1);
+                }
                 stableReceiver = *opA;
                 ZrCore_Value_ResetAsNull(&stableResult);
                 PROTECT_E(state, callInfo, {
@@ -6198,6 +6454,9 @@ LZrExecutionDone:
 #undef EXECUTE_SET_STACK_BODY_FAST
 #undef EXECUTE_GET_CONSTANT_BODY
 #undef EXECUTE_GET_CONSTANT_BODY_FAST
+#undef EXECUTE_RESET_STACK_NULL_BODY
+#undef EXECUTE_GET_MEMBER_SLOT_BODY
+#undef EXECUTE_SET_MEMBER_SLOT_BODY
 #undef EXECUTE_MATERIALIZE_CONSTANT_SLOT
 #undef EXECUTE_MATERIALIZE_STACK_SLOT
 #undef EXECUTE_ADD_INT_BODY

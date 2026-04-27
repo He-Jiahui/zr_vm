@@ -2295,6 +2295,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             {
                 TZrUInt16 directMemberCallCacheIndex = 0;
                 TZrBool useKnownVmDirectMemberCallOpcode = ZR_FALSE;
+                TZrBool useKnownNativeDirectMemberCallOpcode = ZR_FALSE;
                 TZrBool useResolvedFunctionMetaCallOpcode =
                         activeCallMemberInfo == ZR_NULL &&
                         resolved_function_call_uses_meta_call_opcode(resolvedFunctionType);
@@ -2328,6 +2329,25 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         return;
                     }
                     useKnownVmDirectMemberCallOpcode = ZR_TRUE;
+                } else if (pendingDirectMemberCallMemberEntryIndex != ZR_PARSER_MEMBER_ID_NONE &&
+                           activeCallMemberInfo != ZR_NULL &&
+                           !emitMetaCallOpcode &&
+                           pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
+                           activeCallMemberInfo->compiledFunction == ZR_NULL) {
+                    if (!reserve_member_slot_get_cache(cs,
+                                                       pendingDirectMemberCallMemberEntryIndex,
+                                                       argCount,
+                                                       &directMemberCallCacheIndex,
+                                                       member->location)) {
+                        if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                            ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                        }
+                        free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                        free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                        ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                        return;
+                    }
+                    useKnownNativeDirectMemberCallOpcode = ZR_TRUE;
                 }
                 EZrInstructionCode callOpcode =
                         cs->isInTailCallContext
@@ -2345,14 +2365,20 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                       : (useKnownVmMemberCallOpcode
                                                                  ? ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)
                                                                  : ZR_INSTRUCTION_ENUM(FUNCTION_CALL))));
-                if (useKnownVmDirectMemberCallOpcode) {
+                if (useKnownVmDirectMemberCallOpcode || useKnownNativeDirectMemberCallOpcode) {
                     if (pendingDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE) {
                         callResultSlot = pendingDirectMemberCallResultSlot;
                     }
-                    if (!emit_known_vm_member_call_cached(cs,
-                                                          callResultSlot,
-                                                          directMemberCallCacheIndex,
-                                                          member->location)) {
+                    if (!(useKnownVmDirectMemberCallOpcode
+                                  ? emit_known_vm_member_call_cached(cs,
+                                                                     callResultSlot,
+                                                                     directMemberCallCacheIndex,
+                                                                     member->location)
+                                  : emit_known_native_member_call_cached(cs,
+                                                                         callResultSlot,
+                                                                         directMemberCallCacheIndex,
+                                                                         argCount,
+                                                                         member->location))) {
                         if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
                             ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
                         }

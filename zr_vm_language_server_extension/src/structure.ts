@@ -38,6 +38,7 @@ interface OpenTargetPayload {
     uri: string;
     range?: SerializedRange;
     position?: SerializedPosition;
+    fallbackUri?: string;
     fallbackRange?: SerializedRange;
 }
 
@@ -372,8 +373,11 @@ async function buildProjectRoots(context: vscode.ExtensionContext): Promise<Tree
     const summaries = await sendLanguageServerRequest<ProjectModuleSummaryPayload[]>('zr/projectModules', {
         uri: selectedProject.uri.toString(),
     }) ?? [];
-    const projectModuleNodes = summaries
-        .filter((summary) => isProjectSourceKind(summary.sourceKind))
+    const projectModuleSummaries = ensureManifestProjectEntrySummary(
+        selectedProject,
+        summaries.filter((summary) => isProjectSourceKind(summary.sourceKind)),
+    );
+    const projectModuleNodes = projectModuleSummaries
         .sort(compareProjectModuleSummary)
         .map((summary) => createProjectModuleNode(summary));
     const binaryModuleNodes = summaries
@@ -449,6 +453,7 @@ function createActionNode(
 }
 
 function createImportNode(document: vscode.TextDocument, entry: ImportEntry): TreeNode {
+    const fallbackUri = createWorkspaceImportFallbackUri(document.uri, entry.moduleName);
     return {
         id: `import:${document.uri.toString()}:${entry.moduleName}:${entry.range.start.line}:${entry.range.start.character}`,
         nodeType: 'import',
@@ -458,7 +463,7 @@ function createImportNode(document: vscode.TextDocument, entry: ImportEntry): Tr
         uri: document.uri,
         icon: new vscode.ThemeIcon('package'),
         collapsibleState: vscode.TreeItemCollapsibleState.None,
-        command: createDefinitionCommand(document.uri, entry.moduleLiteralRange.start, entry.range),
+        command: createDefinitionCommand(document.uri, entry.moduleLiteralRange.start, fallbackUri, entry.range),
         children: [],
     };
 }
@@ -504,6 +509,30 @@ function createProjectModuleNode(summary: ProjectModuleSummaryPayload): TreeNode
     };
 }
 
+function ensureManifestProjectEntrySummary(
+    project: WorkspaceProject,
+    summaries: ProjectModuleSummaryPayload[],
+): ProjectModuleSummaryPayload[] {
+    const entryModuleName = project.manifest.entry;
+    if (!entryModuleName || summaries.some((summary) => summary.moduleName === entryModuleName)) {
+        return summaries;
+    }
+
+    const entryUri = vscode.Uri.joinPath(project.uri, '..', project.manifest.source, `${entryModuleName}.zr`);
+    return [
+        {
+            sourceKind: 1,
+            isEntry: true,
+            moduleName: entryModuleName,
+            displayName: entryModuleName,
+            description: 'manifest entry',
+            navigationUri: entryUri.toString(),
+            range: serializeRange(new vscode.Range(0, 0, 0, 0)),
+        },
+        ...summaries,
+    ];
+}
+
 function createRangeCommand(uri: vscode.Uri, range: vscode.Range): vscode.Command {
     return {
         command: ZR_STRUCTURE_OPEN_TARGET_COMMAND,
@@ -521,6 +550,7 @@ function createRangeCommand(uri: vscode.Uri, range: vscode.Range): vscode.Comman
 function createDefinitionCommand(
     uri: vscode.Uri,
     position: vscode.Position,
+    fallbackUri: vscode.Uri | undefined,
     fallbackRange: vscode.Range,
 ): vscode.Command {
     return {
@@ -531,7 +561,8 @@ function createDefinitionCommand(
                 kind: 'definition',
                 uri: uri.toString(),
                 position: serializePosition(position),
-                fallbackRange: serializeRange(fallbackRange),
+                fallbackUri: fallbackUri?.toString(),
+                fallbackRange: serializeRange(fallbackUri ? new vscode.Range(0, 0, 0, 0) : fallbackRange),
             } satisfies OpenTargetPayload,
         ],
     };
@@ -589,6 +620,14 @@ function parseImports(document: vscode.TextDocument): ImportEntry[] {
     return entries;
 }
 
+function createWorkspaceImportFallbackUri(documentUri: vscode.Uri, moduleName: string): vscode.Uri | undefined {
+    if (!moduleName || moduleName.startsWith('zr.') || moduleName.includes('/') || moduleName.includes('\\')) {
+        return undefined;
+    }
+
+    return vscode.Uri.joinPath(documentUri, '..', `${moduleName}.zr`);
+}
+
 async function loadDocumentSymbols(uri: vscode.Uri): Promise<vscode.DocumentSymbol[]> {
     const result = await vscode.commands.executeCommand<(vscode.DocumentSymbol | vscode.SymbolInformation)[] | undefined>(
         'vscode.executeDocumentSymbolProvider',
@@ -635,7 +674,8 @@ async function openTarget(payload: OpenTargetPayload): Promise<void> {
         }
 
         if (payload.fallbackRange) {
-            await revealLocation(uri, deserializeRange(payload.fallbackRange));
+            const fallbackUri = payload.fallbackUri ? vscode.Uri.parse(payload.fallbackUri) : uri;
+            await revealLocation(fallbackUri, deserializeRange(payload.fallbackRange));
             return;
         }
     }

@@ -16,6 +16,7 @@
     "onLanguage:zr",
     "onLanguage:zr-project",
     "onCommand:zr.restartLanguageServer",
+    "onCommand:zr.organizeImports",
     "onCommand:zr.richHover.focus",
     "onCommand:zr.richHover.refresh",
     "onCommand:zr.structure.refresh",
@@ -88,6 +89,11 @@
       {
         "command": "zr.showReferences",
         "title": "Show References",
+        "category": "Zr"
+      },
+      {
+        "command": "zr.organizeImports",
+        "title": "Organize Imports",
         "category": "Zr"
       },
       {
@@ -318,6 +324,13 @@
           "command": "zr.debugSelectedProject",
           "when": "resourceExtname == .zr || resourceExtname == .zrp",
           "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "zr.organizeImports",
+          "when": "editorLangId == zr",
+          "group": "1_modification"
         }
       ]
     },

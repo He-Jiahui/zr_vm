@@ -423,7 +423,9 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             info->hasRelativeJump = ZR_TRUE;
             info->conditionalJump = ZR_TRUE;
             return;
+        case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
+            info->operand1Index1IsSlot = ZR_FALSE;
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             info->hasRelativeJump = ZR_TRUE;
@@ -489,6 +491,23 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             info->allowSlotReuse = ZR_FALSE;
             return;
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
+            optimizer_info_add_read(info, instruction->instruction.operand.operand0[1]);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand0[2]);
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            info->allowSlotReuse = ZR_FALSE;
+            return;
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            return;
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
+            info->operand1Index1IsSlot = ZR_FALSE;
+            info->hasRangeRead = ZR_TRUE;
+            info->rangeReadStart = instruction->instruction.operandExtra;
+            info->rangeReadCount = (TZrUInt16)(instruction->instruction.operand.operand1[1] + 1u);
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            info->allowSlotReuse = ZR_FALSE;
+            return;
         case ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
@@ -531,7 +550,8 @@ static TZrInt32 optimizer_relative_jump_offset(const TZrInstruction *instruction
     }
 
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
-    if (opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+    if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+        opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST)) {
@@ -549,7 +569,8 @@ static void optimizer_store_relative_jump_offset(TZrInstruction *instruction, TZ
     }
 
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
-    if (opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+    if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+        opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST)) {
@@ -851,6 +872,7 @@ static TZrBool optimizer_rewrite_instruction_read_slot(TZrInstruction *instructi
                 changed = ZR_TRUE;
             }
             return changed;
+        case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             if (instruction->instruction.operand.operand1[0] == fromSlot) {
                 instruction->instruction.operand.operand1[0] = toSlot;
@@ -946,6 +968,7 @@ static TZrBool optimizer_opcode_supports_adjacent_get_stack_forwarding(EZrInstru
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
+        case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(TO_BOOL):
         case ZR_INSTRUCTION_ENUM(TO_INT):
@@ -1233,6 +1256,23 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
             optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            return;
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            if ((TZrSize)instruction->instruction.operand.operand0[1] < slotCount &&
+                slotMap[instruction->instruction.operand.operand0[1]] <= 0xFFu) {
+                instruction->instruction.operand.operand0[1] =
+                        (TZrUInt8)slotMap[instruction->instruction.operand.operand0[1]];
+            }
+            if ((TZrSize)instruction->instruction.operand.operand0[2] < slotCount &&
+                slotMap[instruction->instruction.operand.operand0[2]] <= 0xFFu) {
+                instruction->instruction.operand.operand0[2] =
+                        (TZrUInt8)slotMap[instruction->instruction.operand.operand0[2]];
+            }
+            return;
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
@@ -1254,6 +1294,7 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             return;
+        case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);

@@ -217,6 +217,11 @@ if(BUILD_WASM)
             ${CMAKE_CURRENT_SOURCE_DIR}/include
         )
         target_include_directories(${zr_curr_module_name}_wasm PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/zr_vm_language_server
+            ${CMAKE_SOURCE_DIR}/zr_vm_core/src/zr_vm_core
+            ${CMAKE_SOURCE_DIR}/zr_vm_library/src/zr_vm_library
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/src/zr_vm_lib_system
+            ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/src/zr_vm_lib_ffi
             ${CMAKE_SOURCE_DIR}/zr_vm_common/include
             ${CMAKE_SOURCE_DIR}/zr_vm_library/include
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_system/include
@@ -225,12 +230,13 @@ if(BUILD_WASM)
             ${CMAKE_SOURCE_DIR}/zr_vm_lib_ffi/include
             ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
             ${CMAKE_SOURCE_DIR}/zr_vm_core/include
+            ${_zr_vm_ls_parser_private_includes}
         )
         
         # 使用 EMSCRIPTEN_KEEPALIVE + EXPORTED_FUNCTIONS 导出函数
         # 函数已在 wasm_exports.cpp 中使用 EMSCRIPTEN_KEEPALIVE 标记
         # 注意：函数名使用 wasm_ 前缀以避免与原始 LSP 函数冲突
-        set(EXPORTED_FUNCTIONS_JSON "[\"_malloc\",\"_free\",\"_wasm_malloc\",\"_wasm_free\",\"_wasm_ZrLspContextNew\",\"_wasm_ZrLspContextFree\",\"_wasm_ZrLspUpdateDocument\",\"_wasm_ZrLspCloseDocument\",\"_wasm_ZrLspGetDiagnostics\",\"_wasm_ZrLspGetCompletion\",\"_wasm_ZrLspGetHover\",\"_wasm_ZrLspGetDefinition\",\"_wasm_ZrLspFindReferences\",\"_wasm_ZrLspRename\",\"_wasm_ZrLspGetDocumentSymbols\",\"_wasm_ZrLspGetInlayHints\",\"_wasm_ZrLspGetWorkspaceSymbols\",\"_wasm_ZrLspGetNativeDeclarationDocument\",\"_wasm_ZrLspGetProjectModules\",\"_wasm_ZrLspGetDocumentHighlights\",\"_wasm_ZrLspGetSemanticTokens\",\"_wasm_ZrLspPrepareRename\"]")
+        set(EXPORTED_FUNCTIONS_JSON "[\"_malloc\",\"_free\",\"_wasm_malloc\",\"_wasm_free\",\"_wasm_ZrLspContextNew\",\"_wasm_ZrLspContextFree\",\"_wasm_ZrLspUpdateDocument\",\"_wasm_ZrLspCloseDocument\",\"_wasm_ZrLspGetDiagnostics\",\"_wasm_ZrLspGetCompletion\",\"_wasm_ZrLspGetHover\",\"_wasm_ZrLspGetRichHover\",\"_wasm_ZrLspGetDefinition\",\"_wasm_ZrLspFindReferences\",\"_wasm_ZrLspRename\",\"_wasm_ZrLspGetDocumentSymbols\",\"_wasm_ZrLspGetInlayHints\",\"_wasm_ZrLspGetWorkspaceSymbols\",\"_wasm_ZrLspGetNativeDeclarationDocument\",\"_wasm_ZrLspGetProjectModules\",\"_wasm_ZrLspGetDocumentHighlights\",\"_wasm_ZrLspGetSemanticTokens\",\"_wasm_ZrLspPrepareRename\",\"_wasm_ZrLspGetFormatting\",\"_wasm_ZrLspGetRangeFormatting\",\"_wasm_ZrLspGetCodeActions\",\"_wasm_ZrLspGetFoldingRanges\",\"_wasm_ZrLspGetSelectionRange\",\"_wasm_ZrLspGetDocumentLinks\",\"_wasm_ZrLspGetCodeLens\"]")
         
         # 设置 Emscripten 编译选项
         target_compile_options(${zr_curr_module_name}_wasm PRIVATE

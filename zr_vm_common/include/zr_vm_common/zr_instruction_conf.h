@@ -165,6 +165,7 @@
     Z(SUPER_META_TAIL_CALL_NO_ARGS)                                                                                    \
     Z(SUPER_DYN_TAIL_CALL_CACHED)                                                                                      \
     Z(SUPER_META_TAIL_CALL_CACHED)                                                                                     \
+    Z(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE)                                                                              \
     Z(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE)                                                                          \
     Z(SUPER_META_GET_CACHED)                                                                                           \
     Z(SUPER_META_SET_CACHED)                                                                                           \
@@ -220,13 +221,16 @@
     Z(KNOWN_VM_MEMBER_CALL)                                                                                            \
     Z(KNOWN_VM_TAIL_CALL)                                                                                              \
     Z(KNOWN_NATIVE_CALL)                                                                                               \
+    Z(KNOWN_NATIVE_MEMBER_CALL)                                                                                        \
     Z(KNOWN_NATIVE_TAIL_CALL)                                                                                          \
     Z(SUPER_KNOWN_VM_CALL_NO_ARGS)                                                                                     \
     Z(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS)                                                                                \
     Z(SUPER_KNOWN_NATIVE_CALL_NO_ARGS)                                                                                 \
     Z(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS)                                                                            \
     Z(GET_MEMBER_SLOT)                                                                                                 \
-    Z(SET_MEMBER_SLOT)
+    Z(SET_MEMBER_SLOT)                                                                                                 \
+    Z(KNOWN_VM_MEMBER_CALL_LOAD1_U8)                                                                                   \
+    Z(RESET_STACK_NULL)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

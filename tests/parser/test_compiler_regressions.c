@@ -3539,6 +3539,118 @@ void test_known_native_calls_quicken_to_dedicated_call_family(void) {
     ZR_TEST_DIVIDER();
 }
 
+void test_known_native_member_calls_quicken_to_dedicated_member_call_opcode(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Known Native Member Calls Quicken To Dedicated Member Call Opcode";
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var seen = new container.Set<int>();\n"
+            "var score = 0;\n"
+            "if (seen.add(7)) { score = score + 10; }\n"
+            "if (!seen.add(7)) { score = score + 20; }\n"
+            "if (seen.add(11)) { score = score + 30; }\n"
+            "return seen.count * 100 + score;\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("known native member-call quickening",
+                 "Testing that typed native member calls lower directly to KNOWN_NATIVE_MEMBER_CALL instead of keeping GET_MEMBER_SLOT plus KNOWN_NATIVE_CALL.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE_MESSAGE(ZrVmLibContainer_Register(state->global),
+                             "Failed to register zr.container for native member-call test");
+
+    sourceName = ZrCore_String_CreateFromNative(state, "known_native_member_call_quickening_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL), 0),
+            "Set.add calls should quicken to KNOWN_NATIVE_MEMBER_CALL");
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
+    TEST_ASSERT_EQUAL_INT64(260, result);
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_known_vm_member_call_load1_quickening_fuses_receiver_and_argument_loads(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Known VM Member Call Load1 Quickening Fuses Receiver And Argument Loads";
+    char projectPath[1024];
+    char sourcePath[1024];
+    char *source = ZR_NULL;
+    SZrGlobalState *global;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    TZrUInt32 fusedCallCount;
+    char fusedHits[1024];
+    char failureMessage[1536];
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("known VM member-call load1 fusion",
+                 "Testing that receiver and one argument GET_STACK materialization before a direct VM member call fuse into one opcode.");
+
+    snprintf(projectPath,
+             sizeof(projectPath),
+             "%s/benchmarks/cases/dispatch_loops/zr/benchmark_dispatch_loops.zrp",
+             ZR_VM_TESTS_SOURCE_DIR);
+    snprintf(sourcePath,
+             sizeof(sourcePath),
+             "%s/benchmarks/cases/dispatch_loops/zr/src/main.zr",
+             ZR_VM_TESTS_SOURCE_DIR);
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE(ZrVmLibSystem_Register(global));
+
+    source = read_text_file_owned(sourcePath);
+    TEST_ASSERT_NOT_NULL(source);
+
+    sourceName = ZrCore_String_CreateFromNative(state, sourcePath);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    fusedCallCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8), 0);
+    build_opcode_hits_message(function,
+                              ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8),
+                              fusedHits,
+                              sizeof(fusedHits));
+    snprintf(failureMessage,
+             sizeof(failureMessage),
+             "KNOWN_VM_MEMBER_CALL_LOAD1_U8=%u hits=%s",
+             (unsigned int)fusedCallCount,
+             fusedHits);
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(0u, fusedCallCount, failureMessage);
+
+    ZrCore_Function_Free(state, function);
+    free(source);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    ZR_TEST_DIVIDER();
+}
+
 void test_typed_member_calls_quicken_to_known_vm_call_family(void) {
     SZrRegressionTestTimer timer;
     const TZrChar *testSummary = "Typed Member Calls Quicken To Known VM Call Family";
@@ -4099,6 +4211,7 @@ void test_matrix_add_2d_benchmark_project_compile_quickens_array_add_loop_calls(
     ZrMatrixAdd2dCompileFixture fixture;
     TZrUInt32 totalGenericCallCount;
     TZrUInt32 totalKnownNativeCallCount;
+    TZrUInt32 totalKnownNativeMemberCallCount;
     char firstGenericCallWindow[1024];
     char secondGenericCallWindow[1024];
     char thirdGenericCallWindow[1024];
@@ -4111,7 +4224,7 @@ void test_matrix_add_2d_benchmark_project_compile_quickens_array_add_loop_calls(
     ZR_TEST_START(testSummary);
     ZR_TEST_INFO("benchmark native member-call lowering",
                  "Testing that the real matrix_add_2d project compile path lowers the four hot Array.add(0) loop calls "
-                 "into KNOWN_NATIVE_CALL instead of leaving them on generic FUNCTION_CALL.");
+                 "into known native call opcodes instead of leaving them on generic FUNCTION_CALL.");
 
     TEST_ASSERT_TRUE_MESSAGE(ZrTests_PrepareMatrixAdd2dCompileFixture(&fixture, "known_native_array_add_loop_calls"),
                              "Failed to prepare fresh matrix_add_2d compile fixture");
@@ -4147,14 +4260,17 @@ void test_matrix_add_2d_benchmark_project_compile_quickens_array_add_loop_calls(
 
     totalGenericCallCount = count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(FUNCTION_CALL), 0);
     totalKnownNativeCallCount = count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL), 0);
+    totalKnownNativeMemberCallCount =
+            count_opcode_recursive(fixture.function, ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL), 0);
 
     snprintf(failureMessage,
              sizeof(failureMessage),
-             "matrix_add_2d Array.add loop totals: generic=%u known-native=%u | function-call-hits: %s | "
+             "matrix_add_2d Array.add loop totals: generic=%u known-native=%u known-native-member=%u | function-call-hits: %s | "
              "known-native-call-hits: %s | first-generic: %s | second-generic: %s | third-generic: %s | "
              "fourth-generic: %s",
              (unsigned int)totalGenericCallCount,
              (unsigned int)totalKnownNativeCallCount,
+             (unsigned int)totalKnownNativeMemberCallCount,
              functionCallHits,
              knownNativeCallHits,
              firstGenericCallWindow,
@@ -4163,7 +4279,7 @@ void test_matrix_add_2d_benchmark_project_compile_quickens_array_add_loop_calls(
              fourthGenericCallWindow);
 
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u, totalGenericCallCount, failureMessage);
-    TEST_ASSERT_TRUE_MESSAGE(totalKnownNativeCallCount >= 6u, failureMessage);
+    TEST_ASSERT_TRUE_MESSAGE(totalKnownNativeCallCount + totalKnownNativeMemberCallCount >= 6u, failureMessage);
 
     ZrTests_FreeMatrixAdd2dCompileFixture(&fixture);
     timer.endTime = clock();
@@ -5041,6 +5157,55 @@ void test_initializer_bound_local_is_visible_on_next_source_line(void) {
             visibleName,
             "Initializer-bound local 'second' should already be visible at the first instruction of the next source line");
     TEST_ASSERT_EQUAL_STRING("second", ZrCore_String_GetNativeString(visibleName));
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_noop_primitive_casts_do_not_emit_conversion_opcodes(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "No-op Primitive Casts Do Not Emit Conversion Opcodes";
+    const char *source =
+            "id(value: int): int {\n"
+            "    return <int> value;\n"
+            "}\n"
+            "sameFlag(flag: bool): bool {\n"
+            "    return <bool> flag;\n"
+            "}\n"
+            "return id(7) + (sameFlag(true) ? 1 : 0);\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    SZrTypeValue result;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("No-op primitive cast quickening",
+                 "Testing that primitive casts whose source type already matches the target type reuse the source slot.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+
+    sourceName = ZrCore_String_CreateFromNative(state, "noop_primitive_cast_compile_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u,
+                                     count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(TO_INT), 0),
+                                     "A cast from int to int should not materialize a TO_INT opcode");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0u,
+                                     count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(TO_BOOL), 0),
+                                     "A cast from bool to bool should not materialize a TO_BOOL opcode");
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, function, &result));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.type);
+    TEST_ASSERT_EQUAL_INT64(8, result.value.nativeObject.nativeInt64);
 
     ZrCore_Function_Free(state, function);
     timer.endTime = clock();

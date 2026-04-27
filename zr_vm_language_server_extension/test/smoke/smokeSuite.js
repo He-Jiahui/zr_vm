@@ -203,12 +203,20 @@ async function deleteWorkspaceEntry(uri, options = {}) {
     const recursive = Boolean(options.recursive);
 
     if (uri.scheme === 'file') {
-        await fs.promises.rm(uri.fsPath, {
-            force: true,
-            maxRetries: 12,
-            recursive,
-            retryDelay: 150,
-        });
+        await withRetry(
+            async () => {
+                await fs.promises.rm(uri.fsPath, {
+                    force: true,
+                    maxRetries: 3,
+                    recursive,
+                    retryDelay: 250,
+                });
+                return true;
+            },
+            (value) => value === true,
+            recursive ? 20000 : 5000,
+            `delete ${uri.fsPath}`,
+        );
         return;
     }
 
@@ -292,13 +300,7 @@ async function verifyLanguageFeatures(workspaceRoot) {
     assert(hover.length > 0, 'Expected hover results');
 
     const completions = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeCompletionItemProvider',
-            mainDocument.uri,
-            new vscode.Position(0, 0),
-            undefined,
-            20,
-        ),
+        async () => executeCompletionItems(mainDocument.uri, new vscode.Position(0, 0)),
         (items) => {
             if (!items) {
                 return false;
@@ -326,10 +328,7 @@ async function verifyLanguageFeatures(workspaceRoot) {
         'Expected references to include lsp_smoke.zr');
 
     const documentSymbols = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeDocumentSymbolProvider',
-            mainDocument.uri,
-        ),
+        async () => executeDocumentSymbols(mainDocument.uri),
         (items) => Array.isArray(items) && items.length > 0,
         15000,
         'document symbols',
@@ -371,6 +370,9 @@ async function verifyLanguageFeatures(workspaceRoot) {
 async function verifyAdvancedEditorProviders(workspaceRoot) {
     const advancedUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_smoke_${Date.now()}.zr`);
     const actionUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_action_${Date.now()}.zr`);
+    const organizeUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_imports_${Date.now()}.zr`);
+    const commands = await vscode.commands.getCommands(true);
+    assert(commands.includes('zr.organizeImports'), 'Expected zr.organizeImports command to be registered');
     const advancedSource = [
         'var system = %import("zr.system");',
         'var tcp = %import("zr.network.tcp");',
@@ -432,6 +434,32 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
                 rangeFormattingTexts.some((text) => text.includes('        return local;')),
             'Expected range format provider to indent method body');
 
+        const foldingRanges = await withRetry(
+            async () => vscode.commands.executeCommand(
+                'vscode.executeFoldingRangeProvider',
+                document.uri,
+            ),
+            (items) => Array.isArray(items) && items.length > 0,
+            15000,
+            'folding range provider',
+        );
+        assert(foldingRanges.some((item) => item.start <= 4 && item.end >= 6) ||
+                foldingRanges.some((item) => item.start <= 3 && item.end >= 7),
+            'Expected folding ranges for class/function regions');
+
+        const selectionRanges = await withRetry(
+            async () => vscode.commands.executeCommand(
+                'vscode.executeSelectionRangeProvider',
+                document.uri,
+                [findPositionBySubstring(document, 'local;', 0, 0)],
+            ),
+            (items) => Array.isArray(items) && items.length > 0,
+            15000,
+            'selection range provider',
+        );
+        assert(selectionRanges[0]?.range && selectionRanges[0]?.parent,
+            'Expected semantic selection ranges with parent expansion');
+
         await vscode.workspace.fs.writeFile(
             actionUri,
             new TextEncoder().encode('var answer = 42\n'),
@@ -452,6 +480,25 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         assert(codeActions.some((item) => (item.kind?.value ?? item.kind) === 'quickfix' &&
                 (item.edit || item.command || /semicolon/i.test(item.title ?? ''))),
             'Expected ZR quick fix code action');
+
+        await vscode.workspace.fs.writeFile(
+            organizeUri,
+            new TextEncoder().encode([
+                '%import("zr.system");',
+                '%import("zr.math");',
+                '',
+                'return 1;',
+                '',
+            ].join('\n')),
+        );
+        const organizeDocument = await openDocument(organizeUri);
+        await vscode.commands.executeCommand('zr.organizeImports');
+        await withRetry(
+            async () => organizeDocument.getText(),
+            (text) => text.indexOf('%import("zr.math");\n%import("zr.system");') >= 0,
+            15000,
+            'zr.organizeImports command',
+        );
 
         const documentLinks = await withRetry(
             async () => vscode.commands.executeCommand(
@@ -486,6 +533,10 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
             await deleteDocumentFile(actionUri);
         } catch {
         }
+        try {
+            await deleteDocumentFile(organizeUri);
+        } catch {
+        }
     }
 }
 
@@ -495,6 +546,58 @@ function completionEntries(items) {
     }
 
     return Array.isArray(items) ? items : items.items;
+}
+
+async function sendRawLanguageServerRequest(method, params) {
+    try {
+        return await vscode.commands.executeCommand('zr.__sendLanguageServerRequest', method, params);
+    } catch {
+        return undefined;
+    }
+}
+
+async function executeCompletionItems(uri, position, triggerCharacter = undefined, itemResolveCount = 100) {
+    const primary = await vscode.commands.executeCommand(
+        'vscode.executeCompletionItemProvider',
+        uri,
+        position,
+        triggerCharacter,
+        itemResolveCount,
+    );
+    const direct = await sendRawLanguageServerRequest('textDocument/completion', {
+        textDocument: { uri: uri.toString(true) },
+        position: { line: position.line, character: position.character },
+        context: triggerCharacter
+            ? { triggerKind: 2, triggerCharacter }
+            : { triggerKind: 1 },
+    });
+    const directEntries = completionEntries(direct);
+    const primaryEntries = completionEntries(primary);
+    if (directEntries.length > 0 && primaryEntries.length > 0) {
+        return { items: [...directEntries, ...primaryEntries] };
+    }
+    if (directEntries.length > 0) {
+        return direct;
+    }
+    if (primaryEntries.length > 0) {
+        return primary;
+    }
+    return direct ?? primary;
+}
+
+async function executeDocumentSymbols(uri) {
+    const primary = await vscode.commands.executeCommand(
+        'vscode.executeDocumentSymbolProvider',
+        uri,
+    );
+    if (Array.isArray(primary) && primary.length > 0) {
+        return primary;
+    }
+
+    const direct = await sendRawLanguageServerRequest('textDocument/documentSymbol', {
+        textDocument: { uri: uri.toString(true) },
+    });
+    return Array.isArray(direct) ? direct : primary;
 }
 
 function markdownLikeToString(value) {
@@ -1127,13 +1230,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     );
 
     const bossCompletions = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeCompletionItemProvider',
-            document.uri,
-            bossCompletionPosition,
-            '.',
-            20,
-        ),
+        async () => executeCompletionItems(document.uri, bossCompletionPosition, '.'),
         (items) => completionEntries(items)
             .some((item) => (item.label?.label ?? item.label) === 'hp'),
         15000,
@@ -1146,25 +1243,13 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
 
     const scoreBoardCompletions = await withRetry(
         async () => {
-            const primary = await vscode.commands.executeCommand(
-                'vscode.executeCompletionItemProvider',
-                document.uri,
-                scoreBoardCompletionPosition,
-                '.',
-                20,
-            );
+            const primary = await executeCompletionItems(document.uri, scoreBoardCompletionPosition, '.');
             if (completionEntries(primary)
                 .some((item) => (item.label?.label ?? item.label) === 'bonus')) {
                 return primary;
             }
 
-            const afterDot = await vscode.commands.executeCommand(
-                'vscode.executeCompletionItemProvider',
-                document.uri,
-                scoreBoardCompletionAfterDotPosition,
-                '.',
-                20,
-            );
+            const afterDot = await executeCompletionItems(document.uri, scoreBoardCompletionAfterDotPosition, '.');
             return {
                 items: [
                     ...completionEntries(primary),
@@ -1244,10 +1329,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     'Function rename should include both declaration and usage edits');
 
     const documentSymbols = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeDocumentSymbolProvider',
-            document.uri,
-        ),
+        async () => executeDocumentSymbols(document.uri),
         (items) => Array.isArray(items) && items.length > 0,
         15000,
         'classes document symbols',

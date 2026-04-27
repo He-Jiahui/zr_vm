@@ -8,6 +8,7 @@
 #include "zr_test_log_macros.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_lib_container/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_parser.h"
@@ -23,6 +24,7 @@ void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void);
 void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void);
 void test_w2_signed_equality_branch_fuses_slot_operands(void);
 void test_w2_signed_greater_equal_branch_reuses_greater_signed_jump(void);
+void test_w2_static_iterator_move_next_branch_fuses(void);
 void test_w2_left_constant_add_mul_fold_to_existing_const_opcodes(void);
 void test_w2_right_constant_mod_fold_uses_cfg_liveness_across_branch(void);
 void test_w2_late_forward_get_stack_after_member_call_specialization(void);
@@ -133,6 +135,33 @@ static TZrBool function_has_adjacent_signed_equality_const_jump_if_pair_recursiv
 
     for (index = 0; index < function->childFunctionLength; index++) {
         if (function_has_adjacent_signed_equality_const_jump_if_pair_recursive(&function->childFunctionList[index])) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool function_has_adjacent_iter_move_next_jump_if_pair_recursive(const SZrFunction *function) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 1; index < function->instructionsLength; index++) {
+        const TZrInstruction *moveNextInstruction = &function->instructionsList[index - 1];
+        const TZrInstruction *jumpInstruction = &function->instructionsList[index];
+
+        if ((EZrInstructionCode)moveNextInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT) &&
+            (EZrInstructionCode)jumpInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(JUMP_IF) &&
+            moveNextInstruction->instruction.operandExtra == jumpInstruction->instruction.operandExtra) {
+            return ZR_TRUE;
+        }
+    }
+
+    for (index = 0; index < function->childFunctionLength; index++) {
+        if (function_has_adjacent_iter_move_next_jump_if_pair_recursive(&function->childFunctionList[index])) {
             return ZR_TRUE;
         }
     }
@@ -359,6 +388,7 @@ void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void) 
     TZrUInt32 fusedDeadStackCount;
     TZrUInt32 fusedStackLoadConstantCount;
     TZrUInt32 fusedSignedEqualityBranchCount;
+    TZrUInt32 resetNullCount;
     SZrQuickeningLoadTypedArithmeticProbeStats stats;
     int written;
 
@@ -411,6 +441,7 @@ void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void) 
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST));
     fusedSignedEqualityBranchCount =
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST));
+    resetNullCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(RESET_STACK_NULL));
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
             fusedConstantCount,
@@ -431,6 +462,10 @@ void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void) 
             0u,
             fusedSignedEqualityBranchCount,
             "Expected at least one signed equality const plus branch fused opcode");
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            resetNullCount,
+            "Expected null constant temp clears to lower to RESET_STACK_NULL");
     TEST_ASSERT_FALSE_MESSAGE(
             function_has_adjacent_signed_equality_const_jump_if_pair_recursive(function),
             "No adjacent LOGICAL_EQUAL_SIGNED_CONST -> JUMP_IF pair should remain in dispatch_loops");
@@ -528,6 +563,58 @@ void test_w2_signed_greater_equal_branch_reuses_greater_signed_jump(void) {
 
     timer.endTime = clock();
     ZR_TEST_PASS(timer, "W2 Signed Greater Equal Branch Reuses Greater Signed Jump");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_static_iterator_move_next_branch_fuses(void) {
+    static const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var values = new container.Array<int>();\n"
+            "values.add(3);\n"
+            "values.add(5);\n"
+            "var total = 0;\n"
+            "for (var value in values) {\n"
+            "    total = total + value;\n"
+            "}\n"
+            "return total;\n";
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Static Iterator Move Next Branch Fuses");
+    ZR_TEST_INFO("iterator loop guard fusion",
+                 "Testing that typed foreach lowers ITER_MOVE_NEXT plus JUMP_IF to a static iterator superinstruction.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE_MESSAGE(ZrVmLibContainer_Register(state->global),
+                             "Failed to register zr.container for static iterator fusion test");
+
+    sourceName = ZrCore_String_CreateFromNative(state, "w2_static_iterator_loop_guard_fusion.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(sourceName, "Failed to create source name");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to compile static iterator fusion source");
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE)),
+            "Expected typed foreach loop guard to fuse into SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE");
+    TEST_ASSERT_FALSE_MESSAGE(
+            function_has_adjacent_iter_move_next_jump_if_pair_recursive(function),
+            "No adjacent ITER_MOVE_NEXT -> JUMP_IF pair should remain for typed foreach loop guards");
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result),
+            "Fused static iterator loop guard should execute successfully");
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(8, result, "Fused static iterator loop should preserve foreach semantics");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Static Iterator Move Next Branch Fuses");
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();
@@ -669,8 +756,9 @@ void test_w2_late_forward_get_stack_after_member_call_specialization(void) {
 
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
-            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)),
-            "The fixture should lower worker.step(delta) to a known VM member call");
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)) +
+                    count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)),
+            "The fixture should lower worker.step(delta) to a known or fused VM member call");
     TEST_ASSERT_FALSE_MESSAGE(
             function_has_post_member_call_get_stack_typed_arithmetic_pair_recursive(function),
             "Late member-call specialization should not leave GET_STACK copies feeding typed arithmetic");

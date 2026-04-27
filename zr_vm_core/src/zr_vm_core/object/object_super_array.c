@@ -1940,6 +1940,17 @@ ZR_CORE_API TZrBool ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(SZrState *st
     return object_super_array_commit_append_plans4_assume_fast(state, plans, value);
 }
 
+TZrBool ZrCore_Object_SuperArrayEnsureRawIntCapacity(SZrState *state,
+                                                     SZrObject *itemsObject,
+                                                     TZrSize requiredCapacity) {
+    if (state == ZR_NULL || itemsObject == ZR_NULL ||
+        itemsObject->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY) {
+        return ZR_FALSE;
+    }
+
+    return zr_super_array_raw_int_ensure_capacity(state, itemsObject, requiredCapacity);
+}
+
 TZrBool ZrCore_Object_SuperArrayGetInt(struct SZrState *state,
                                        SZrTypeValue *receiver,
                                        const SZrTypeValue *key,

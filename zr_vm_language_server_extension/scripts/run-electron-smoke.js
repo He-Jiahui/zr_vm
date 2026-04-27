@@ -1,6 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const { pathToFileURL } = require('node:url');
 const { runTests } = require('@vscode/test-electron');
 const { spawnSync } = require('node:child_process');
 const {
@@ -49,6 +50,11 @@ function prepareUserDataDir(extensionDevelopmentPath) {
     return userDataDir;
 }
 
+function clearElectronNodeEnvironment() {
+    delete process.env.ELECTRON_RUN_AS_NODE;
+    delete process.env.VSCODE_DEV;
+}
+
 async function main() {
     const extensionDevelopmentPath = path.resolve(__dirname, '..');
     const extensionTestsPath = path.resolve(__dirname, '..', 'test', 'smoke', 'electronRunner.js');
@@ -62,18 +68,20 @@ async function main() {
 
     syncBundledNativeServer(extensionDevelopmentPath, nativeServerPath);
     const userDataDir = prepareUserDataDir(extensionDevelopmentPath);
+    clearElectronNodeEnvironment();
 
     await runTests({
         extensionDevelopmentPath,
         extensionTestsPath,
         launchArgs: [
-            workspacePath,
+            `--folder-uri=${pathToFileURL(workspacePath).toString()}`,
             '--disable-extensions',
             `--user-data-dir=${userDataDir}`,
         ],
         extensionTestsEnv: {
             ZR_TEST_SERVER_MODE: 'native',
             ZR_TEST_NATIVE_SERVER: nativeServerPath,
+            ZR_TEST_SMOKE_FOCUS: process.env.ZR_TEST_SMOKE_FOCUS || 'all',
         },
     });
 }

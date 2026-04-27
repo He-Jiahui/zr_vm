@@ -819,6 +819,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
 
         switch (opcode) {
             case ZR_INSTRUCTION_ENUM(GET_CONSTANT): fprintf(file, "GET_CONSTANT"); break;
+            case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL): fprintf(file, "RESET_STACK_NULL"); break;
             case ZR_INSTRUCTION_ENUM(SET_STACK): fprintf(file, "SET_STACK"); break;
             case ZR_INSTRUCTION_ENUM(GET_STACK): fprintf(file, "GET_STACK"); break;
             case ZR_INSTRUCTION_ENUM(ADD_INT): fprintf(file, "ADD_INT"); break;
@@ -910,8 +911,10 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED): fprintf(file, "SUPER_META_TAIL_CALL_CACHED"); break;
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL): fprintf(file, "KNOWN_VM_CALL"); break;
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL): fprintf(file, "KNOWN_VM_MEMBER_CALL"); break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8): fprintf(file, "KNOWN_VM_MEMBER_CALL_LOAD1_U8"); break;
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL): fprintf(file, "KNOWN_VM_TAIL_CALL"); break;
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL): fprintf(file, "KNOWN_NATIVE_CALL"); break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL): fprintf(file, "KNOWN_NATIVE_MEMBER_CALL"); break;
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL): fprintf(file, "KNOWN_NATIVE_TAIL_CALL"); break;
             case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS): fprintf(file, "SUPER_KNOWN_VM_CALL_NO_ARGS"); break;
             case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS):
@@ -934,6 +937,9 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_FLOAT): fprintf(file, "LOGICAL_NOT_EQUAL_FLOAT"); break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING): fprintf(file, "LOGICAL_EQUAL_STRING"); break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_STRING): fprintf(file, "LOGICAL_NOT_EQUAL_STRING"); break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
+                fprintf(file, "SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE");
+                break;
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
                 fprintf(file, "SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE");
                 break;
@@ -1146,6 +1152,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
+            case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
             case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):
@@ -1168,6 +1175,15 @@ static void writer_intermediate_write_nested_function(FILE *file,
                         inst->instruction.operand.operand1[1]);
                 break;
 
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
+                fprintf(file,
+                        ", cache=%u, receiver_source=%u, arg0_source=%u",
+                        inst->instruction.operand.operand0[0],
+                        inst->instruction.operand.operand0[1],
+                        inst->instruction.operand.operand0[2]);
+                break;
+
+            case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
                 fprintf(file,
                         ", iterator_slot=%u, jump_if_false_offset=%d",
@@ -1333,6 +1349,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
                 fprintf(file, "GET_CONSTANT");
                 break;
+            case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
+                fprintf(file, "RESET_STACK_NULL");
+                break;
             case ZR_INSTRUCTION_ENUM(SET_CONSTANT):
                 fprintf(file, "SET_CONSTANT");
                 break;
@@ -1458,6 +1477,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED):
                 fprintf(file, "SUPER_META_TAIL_CALL_CACHED");
+                break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
+                fprintf(file, "SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE");
                 break;
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
                 fprintf(file, "SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE");
@@ -1819,6 +1841,12 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
                 fprintf(file, "KNOWN_VM_MEMBER_CALL");
                 break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
+                fprintf(file, "KNOWN_VM_MEMBER_CALL_LOAD1_U8");
+                break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
+                fprintf(file, "KNOWN_NATIVE_MEMBER_CALL");
+                break;
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
                 fprintf(file, "KNOWN_VM_TAIL_CALL");
                 break;
@@ -2175,6 +2203,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
+            case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
             case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
             case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
             case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
@@ -2195,6 +2224,14 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                         inst->instruction.operand.operand1[0], 
                         inst->instruction.operand.operand1[1]);
                 break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
+                fprintf(file,
+                        ", cache=%u, receiver_source=%u, arg0_source=%u",
+                        inst->instruction.operand.operand0[0],
+                        inst->instruction.operand.operand0[1],
+                        inst->instruction.operand.operand0[2]);
+                break;
+            case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
                 fprintf(file,
                         ", iterator_slot=%u, jump_if_false_offset=%d",
@@ -2203,6 +2240,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
                 break;
                 
             // 只使用 operandExtra，不需要其他操作数
+            case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
             case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
             case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
             case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):

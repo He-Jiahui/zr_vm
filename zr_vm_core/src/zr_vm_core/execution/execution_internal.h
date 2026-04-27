@@ -727,6 +727,12 @@ ZR_CORE_API TZrBool execution_member_get_cached(SZrState *state,
                                                 TZrUInt16 cacheIndex,
                                                 SZrTypeValue *receiver,
                                                 SZrTypeValue *result);
+TZrBool execution_member_get_cached_stack_receiver(SZrState *state,
+                                                   const TZrInstruction *programCounter,
+                                                   SZrFunction *function,
+                                                   TZrUInt16 cacheIndex,
+                                                   SZrTypeValue *receiver,
+                                                   SZrTypeValue *result);
 SZrFunctionCallSiteCacheEntry *execution_member_get_cache_entry_fast(SZrFunction *function,
                                                                      TZrUInt16 cacheIndex,
                                                                      EZrFunctionCallSiteCacheKind expectedKind);
@@ -750,6 +756,12 @@ ZR_CORE_API TZrBool execution_member_set_cached(SZrState *state,
                                                 TZrUInt16 cacheIndex,
                                                 SZrTypeValue *receiverAndResult,
                                                 const SZrTypeValue *assignedValue);
+TZrBool execution_member_set_cached_stack_receiver(SZrState *state,
+                                                   const TZrInstruction *programCounter,
+                                                   SZrFunction *function,
+                                                   TZrUInt16 cacheIndex,
+                                                   SZrTypeValue *receiverAndResult,
+                                                   const SZrTypeValue *assignedValue);
 TZrBool execution_invoke_meta_call(SZrState *state,
                                    SZrCallInfo *savedCallInfo,
                                    TZrStackValuePointer savedStackTop,

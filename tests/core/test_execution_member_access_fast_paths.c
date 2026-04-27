@@ -4187,7 +4187,6 @@ static void test_member_get_cached_refresh_marks_non_hidden_plain_value_fast_set
 
     TEST_ASSERT_TRUE(execution_member_get_cached(state, ZR_NULL, runtimeFunction, 0, &fixture.receiverValue, &result));
     TEST_ASSERT_EQUAL_UINT32(1u, fixture.cacheEntry.picSlotCount);
-    TEST_ASSERT_EQUAL_UINT8(0u, fixture.cacheEntry.picSlots[0].reserved1);
     TEST_ASSERT_TRUE((fixture.cacheEntry.picSlots[0].cachedIsStatic & ZR_TRUE) == 0u);
     TEST_ASSERT_TRUE((fixture.cacheEntry.picSlots[0].cachedIsStatic &
                       ZR_FUNCTION_CALLSITE_PIC_SLOT_FLAG_NON_HIDDEN_STRING_PAIR_FAST_SET) != 0u);
