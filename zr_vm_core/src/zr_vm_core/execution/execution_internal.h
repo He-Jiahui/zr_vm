@@ -591,7 +591,7 @@ TZrBool execution_try_materialize_global_prototypes(SZrState *state,
                                                     const SZrTypeValue *tableValue,
                                                     const SZrTypeValue *keyValue);
 
-TZrInt64 value_to_int64(const SZrTypeValue *value);
+ZR_CORE_API TZrInt64 value_to_int64(const SZrTypeValue *value);
 TZrUInt64 value_to_uint64(const SZrTypeValue *value);
 TZrDouble value_to_double(const SZrTypeValue *value);
 
@@ -600,13 +600,13 @@ TZrBool concat_values_to_destination(SZrState *state,
                                      const SZrTypeValue *opA,
                                      const SZrTypeValue *opB,
                                      TZrBool safeMode);
-TZrBool try_builtin_add(SZrState *state,
-                        SZrTypeValue *outResult,
-                        const SZrTypeValue *opA,
-                        const SZrTypeValue *opB);
-TZrBool execution_try_builtin_mul_mixed_numeric_fast(SZrTypeValue *outResult,
-                                                     const SZrTypeValue *opA,
-                                                     const SZrTypeValue *opB);
+ZR_CORE_API TZrBool try_builtin_add(SZrState *state,
+                                    SZrTypeValue *outResult,
+                                    const SZrTypeValue *opA,
+                                    const SZrTypeValue *opB);
+ZR_CORE_API TZrBool execution_try_builtin_mul_mixed_numeric_fast(SZrTypeValue *outResult,
+                                                                 const SZrTypeValue *opA,
+                                                                 const SZrTypeValue *opB);
 static ZR_FORCE_INLINE TZrSize execution_concat_pair_cache_bucket_index(const SZrString *left, const SZrString *right) {
     TZrUInt64 leftHash;
     TZrUInt64 rightHash;
@@ -894,18 +894,18 @@ void execution_apply_binary_numeric_float_or_raise(SZrState *state,
                                                    const SZrTypeValue *opA,
                                                    const SZrTypeValue *opB,
                                                    const TZrChar *instructionName);
-void execution_apply_binary_numeric_compare_or_raise(SZrState *state,
-                                                     EZrExecutionNumericCompareOp operation,
-                                                     SZrTypeValue *destination,
-                                                     const SZrTypeValue *opA,
-                                                     const SZrTypeValue *opB,
-                                                     const TZrChar *instructionName);
-void execution_try_binary_numeric_float_fallback_or_raise(SZrState *state,
-                                                          EZrExecutionNumericFallbackOp operation,
-                                                          SZrTypeValue *destination,
-                                                          const SZrTypeValue *opA,
-                                                          const SZrTypeValue *opB,
-                                                          const TZrChar *instructionName);
+ZR_CORE_API void execution_apply_binary_numeric_compare_or_raise(SZrState *state,
+                                                                 EZrExecutionNumericCompareOp operation,
+                                                                 SZrTypeValue *destination,
+                                                                 const SZrTypeValue *opA,
+                                                                 const SZrTypeValue *opB,
+                                                                 const TZrChar *instructionName);
+ZR_CORE_API void execution_try_binary_numeric_float_fallback_or_raise(SZrState *state,
+                                                                      EZrExecutionNumericFallbackOp operation,
+                                                                      SZrTypeValue *destination,
+                                                                      const SZrTypeValue *opA,
+                                                                      const SZrTypeValue *opB,
+                                                                      const TZrChar *instructionName);
 
 SZrObjectPrototype *find_type_prototype(SZrState *state,
                                         SZrString *typeName,
@@ -988,10 +988,11 @@ TZrBool execution_member_get_cached_stack_receiver(SZrState *state,
                                                    TZrUInt16 cacheIndex,
                                                    SZrTypeValue *receiver,
                                                    SZrTypeValue *result);
-SZrFunctionCallSiteCacheEntry *execution_member_get_cache_entry_fast(SZrFunction *function,
-                                                                     TZrUInt16 cacheIndex,
-                                                                     EZrFunctionCallSiteCacheKind expectedKind);
-TZrBool execution_member_try_resolve_cached_known_vm_function_entry(
+ZR_CORE_API SZrFunctionCallSiteCacheEntry *execution_member_get_cache_entry_fast(
+        SZrFunction *function,
+        TZrUInt16 cacheIndex,
+        EZrFunctionCallSiteCacheKind expectedKind);
+ZR_CORE_API TZrBool execution_member_try_resolve_cached_known_vm_function_entry(
         SZrState *state,
         SZrFunction *function,
         TZrUInt16 cacheIndex,

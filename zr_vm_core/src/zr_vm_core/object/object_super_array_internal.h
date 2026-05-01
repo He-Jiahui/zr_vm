@@ -15,7 +15,7 @@
 #define ZR_OBJECT_SUPER_ARRAY_GROWTH_FACTOR 2U
 #define ZR_OBJECT_SUPER_ARRAY_EXACT_PAIR_SPAN_MIN_COUNT 8U
 
-SZrString *ZrCore_Object_CachedKnownFieldString(SZrState *state, const TZrChar *literal);
+ZR_CORE_API SZrString *ZrCore_Object_CachedKnownFieldString(SZrState *state, const TZrChar *literal);
 
 TZrBool ZrCore_Object_SuperArrayResolveItemsAssumeFastSlow(SZrState *state,
                                                            SZrTypeValue *receiver,

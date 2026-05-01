@@ -420,11 +420,12 @@ TZrBool native_binding_dispatch_stack_root_lane(SZrState *state,
                                                 ZrLibCallContext *context,
                                                 const SZrFunctionStackAnchor *functionBaseAnchor,
                                                 SZrTypeValue *result);
-TZrBool native_binding_dispatch_stack_root_callback_lane(SZrState *state,
-                                                         FZrLibBoundCallback callback,
-                                                         ZrLibCallContext *context,
-                                                         const SZrFunctionStackAnchor *functionBaseAnchor,
-                                                         SZrTypeValue *result);
+ZR_LIBRARY_API TZrBool native_binding_dispatch_stack_root_callback_lane(
+        SZrState *state,
+        FZrLibBoundCallback callback,
+        ZrLibCallContext *context,
+        const SZrFunctionStackAnchor *functionBaseAnchor,
+        SZrTypeValue *result);
 TZrBool native_binding_dispatch_fast_lane(SZrState *state,
                                           const ZrLibBindingEntry *entry,
                                           ZrLibCallContext *context,

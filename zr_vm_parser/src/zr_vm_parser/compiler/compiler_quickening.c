@@ -301,6 +301,7 @@ static SZrFunction *compiler_quickening_resolve_bound_member_callable_metadata_f
         EZrCompilerQuickeningSlotKind *outSlotKind,
         EZrCompilerQuickeningCallableProvenanceKind *outProvenance);
 static SZrFunction *compiler_quickening_find_prototype_owner_function(SZrFunction *function);
+static TZrUInt8 compiler_quickening_member_entry_flags(const SZrFunction *function, TZrUInt32 memberEntryIndex);
 static TZrBool compiler_quickening_function_matches_inline_child(const SZrFunction *left, const SZrFunction *right);
 
 static const TZrChar *compiler_quickening_type_name_text(SZrString *typeName) {
@@ -3532,6 +3533,24 @@ static TZrBool compiler_quickening_instruction_can_stay_between_member_load_and_
     }
 }
 
+static TZrBool compiler_quickening_member_get_cache_is_static_accessor(const SZrFunction *function,
+                                                                       TZrUInt32 cacheIndex) {
+    const SZrFunctionCallSiteCacheEntry *cacheEntry;
+    TZrUInt8 memberFlags;
+
+    if (function == ZR_NULL || function->callSiteCaches == ZR_NULL || cacheIndex >= function->callSiteCacheLength) {
+        return ZR_FALSE;
+    }
+
+    cacheEntry = &function->callSiteCaches[cacheIndex];
+    if ((EZrFunctionCallSiteCacheKind)cacheEntry->kind != ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET) {
+        return ZR_FALSE;
+    }
+
+    memberFlags = compiler_quickening_member_entry_flags(function, cacheEntry->memberEntryIndex);
+    return (TZrBool)((memberFlags & ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR) != 0);
+}
+
 static TZrBool compiler_quickening_fuse_known_native_member_calls(SZrFunction *function) {
     TZrBool *blockStarts;
     TZrUInt32 index;
@@ -3554,6 +3573,7 @@ static TZrBool compiler_quickening_fuse_known_native_member_calls(SZrFunction *f
         TZrInstruction *loadInstruction = &function->instructionsList[index];
         EZrInstructionCode loadOpcode = (EZrInstructionCode)loadInstruction->instruction.operationCode;
         TZrUInt16 functionSlot;
+        TZrUInt32 loadCacheIndex;
         TZrUInt32 callIndex;
 
         if (loadOpcode != ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)) {
@@ -3561,6 +3581,11 @@ static TZrBool compiler_quickening_fuse_known_native_member_calls(SZrFunction *f
         }
 
         functionSlot = loadInstruction->instruction.operandExtra;
+        loadCacheIndex = (TZrUInt32)loadInstruction->instruction.operand.operand1[1];
+        if (compiler_quickening_member_get_cache_is_static_accessor(function, loadCacheIndex)) {
+            continue;
+        }
+
         for (callIndex = index + 1; callIndex < function->instructionsLength; callIndex++) {
             TZrInstruction *candidate = &function->instructionsList[callIndex];
             EZrInstructionCode candidateOpcode = (EZrInstructionCode)candidate->instruction.operationCode;

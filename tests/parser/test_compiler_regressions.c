@@ -22,6 +22,7 @@
 #include "zr_vm_lib_network/module.h"
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_library/common_state.h"
+#include "zr_vm_library/native_registry.h"
 #include "zr_vm_library/project.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser.h"
@@ -3578,6 +3579,51 @@ void test_known_native_member_calls_quicken_to_dedicated_member_call_opcode(void
             "Set.add calls should quicken to KNOWN_NATIVE_MEMBER_CALL");
     TEST_ASSERT_TRUE(ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result));
     TEST_ASSERT_EQUAL_INT64(260, result);
+
+    ZrCore_Function_Free(state, function);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_static_native_box_member_call_executes_without_receiver_frame_rewrite(void) {
+    SZrRegressionTestTimer timer;
+    const TZrChar *testSummary = "Static Native Box Member Call Executes Without Receiver Frame Rewrite";
+    const char *source =
+            "var builtin = %import(\"zr.builtin\");\n"
+            "var {TypeInfo} = %import(\"zr.builtin\");\n"
+            "var left = builtin.Object.box(7);\n"
+            "var right = TypeInfo.box(7);\n"
+            "return left.hashCode() == right.hashCode();\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function = ZR_NULL;
+    SZrTypeValue result;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("static native member-call receiver frame",
+                 "Testing that static native helpers such as TypeInfo.box keep the normal native call frame instead of being rewritten into an instance member-call frame.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE_MESSAGE(ZrLibrary_NativeRegistry_Attach(state->global),
+                             "Failed to attach builtin native module registry");
+
+    sourceName = ZrCore_String_CreateFromNative(state, "static_native_box_member_call_regression.zr");
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(function);
+
+    ZrCore_Value_ResetAsNull(&result);
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_Execute(state, function, &result),
+            "TypeInfo.box should execute as a static native call and preserve boxed helper runtime semantics");
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, result.type);
+    TEST_ASSERT_TRUE(result.value.nativeObject.nativeBool ? ZR_TRUE : ZR_FALSE);
 
     ZrCore_Function_Free(state, function);
     timer.endTime = clock();

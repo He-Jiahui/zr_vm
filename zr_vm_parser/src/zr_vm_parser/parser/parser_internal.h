@@ -76,7 +76,7 @@ SZrFilePosition get_file_position_from_offset(SZrLexState *lexer, TZrSize offset
 
 TZrSize get_current_token_length(SZrParserState *ps);
 
-SZrFileRange get_current_token_location(SZrParserState *ps);
+ZR_PARSER_API SZrFileRange get_current_token_location(SZrParserState *ps);
 
 void get_line_snippet(SZrParserState *ps, TZrChar *buffer, TZrSize bufferSize, TZrInt32 *errorColumn);
 

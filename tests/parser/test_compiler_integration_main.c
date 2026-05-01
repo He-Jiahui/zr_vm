@@ -85,6 +85,7 @@ extern void test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_op
 extern void test_typed_quickening_promotes_const_and_plain_destination_variants(void);
 extern void test_known_native_calls_quicken_to_dedicated_call_family(void);
 extern void test_known_native_member_calls_quicken_to_dedicated_member_call_opcode(void);
+extern void test_static_native_box_member_call_executes_without_receiver_frame_rewrite(void);
 extern void test_known_vm_member_call_load1_quickening_fuses_receiver_and_argument_loads(void);
 extern void test_typed_member_calls_quicken_to_known_vm_call_family(void);
 extern void test_typed_member_call_initializers_bind_directly_into_local_slots(void);
@@ -218,6 +219,7 @@ int main(void) {
     RUN_TEST(test_typed_quickening_promotes_const_and_plain_destination_variants);
     RUN_TEST(test_known_native_calls_quicken_to_dedicated_call_family);
     RUN_TEST(test_known_native_member_calls_quicken_to_dedicated_member_call_opcode);
+    RUN_TEST(test_static_native_box_member_call_executes_without_receiver_frame_rewrite);
     RUN_TEST(test_known_vm_member_call_load1_quickening_fuses_receiver_and_argument_loads);
     RUN_TEST(test_typed_member_calls_quicken_to_known_vm_call_family);
     RUN_TEST(test_typed_member_call_initializers_bind_directly_into_local_slots);

@@ -396,6 +396,11 @@ TZrUInt32 compiler_get_or_add_member_entry_for_type_member(SZrCompilerState *cs,
                                                            TZrUInt8 flags) {
     TZrUInt32 prototypeIndex = 0u;
     TZrUInt32 descriptorIndex = 0u;
+    TZrUInt8 effectiveFlags = flags;
+
+    if (memberInfo != ZR_NULL && memberInfo->isStatic) {
+        effectiveFlags |= ZR_FUNCTION_MEMBER_ENTRY_FLAG_STATIC_ACCESSOR;
+    }
 
     if (memberInfo != ZR_NULL &&
         compiler_resolve_type_member_runtime_descriptor_binding(cs,
@@ -406,10 +411,10 @@ TZrUInt32 compiler_get_or_add_member_entry_for_type_member(SZrCompilerState *cs,
                                                                  memberName,
                                                                  prototypeIndex,
                                                                  descriptorIndex,
-                                                                 flags);
+                                                                 effectiveFlags);
     }
 
-    return compiler_get_or_add_member_entry_with_flags(cs, memberName, flags);
+    return compiler_get_or_add_member_entry_with_flags(cs, memberName, effectiveFlags);
 }
 
 static EZrOwnershipBuiltinKind resolve_construct_expression_builtin_kind(

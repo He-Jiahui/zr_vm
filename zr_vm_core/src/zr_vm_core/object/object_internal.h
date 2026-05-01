@@ -308,11 +308,11 @@ static ZR_FORCE_INLINE TZrBool object_try_set_existing_pair_plain_value_fast_unc
     return object_try_set_existing_string_pair_plain_value_assume_non_hidden_unchecked(state, object, pair, value);
 }
 
-TZrBool ZrCore_Object_GetMemberWithKeyUnchecked(SZrState *state,
-                                                SZrTypeValue *receiver,
-                                                struct SZrString *memberName,
-                                                const SZrTypeValue *memberKey,
-                                                SZrTypeValue *result);
+ZR_CORE_API TZrBool ZrCore_Object_GetMemberWithKeyUnchecked(SZrState *state,
+                                                            SZrTypeValue *receiver,
+                                                            struct SZrString *memberName,
+                                                            const SZrTypeValue *memberKey,
+                                                            SZrTypeValue *result);
 
 struct SZrFunction *ZrCore_Object_GetMemberCachedCallableTargetUnchecked(SZrState *state,
                                                                          struct SZrObjectPrototype *ownerPrototype,
@@ -355,10 +355,10 @@ void ZrCore_Object_SetExistingPairValueUnchecked(SZrState *state,
                                                  SZrHashKeyValuePair *pair,
                                                  const SZrTypeValue *value);
 
-void ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(SZrState *state,
-                                                              SZrObject *object,
-                                                              SZrHashKeyValuePair *pair,
-                                                              const SZrTypeValue *value);
+ZR_CORE_API void ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(SZrState *state,
+                                                                          SZrObject *object,
+                                                                          SZrHashKeyValuePair *pair,
+                                                                          const SZrTypeValue *value);
 
 TZrBool ZrCore_Object_TrySetMemberWithKeyFastUnchecked(SZrState *state,
                                                        SZrTypeValue *receiver,
@@ -379,10 +379,10 @@ ZR_CORE_API TZrBool ZrCore_Object_GetByIndexUnchecked(SZrState *state,
                                                       const SZrTypeValue *key,
                                                       SZrTypeValue *result);
 
-TZrBool ZrCore_Object_GetByIndexUncheckedStackOperands(SZrState *state,
-                                                       SZrTypeValue *receiver,
-                                                       const SZrTypeValue *key,
-                                                       SZrTypeValue *result);
+ZR_CORE_API TZrBool ZrCore_Object_GetByIndexUncheckedStackOperands(SZrState *state,
+                                                                   SZrTypeValue *receiver,
+                                                                   const SZrTypeValue *key,
+                                                                   SZrTypeValue *result);
 
 TZrBool ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands(SZrState *state,
                                                                    SZrTypeValue *receiver,
@@ -394,10 +394,10 @@ ZR_CORE_API TZrBool ZrCore_Object_SetByIndexUnchecked(SZrState *state,
                                                       const SZrTypeValue *key,
                                                       const SZrTypeValue *value);
 
-TZrBool ZrCore_Object_SetByIndexUncheckedStackOperands(SZrState *state,
-                                                       SZrTypeValue *receiver,
-                                                       const SZrTypeValue *key,
-                                                       const SZrTypeValue *value);
+ZR_CORE_API TZrBool ZrCore_Object_SetByIndexUncheckedStackOperands(SZrState *state,
+                                                                   SZrTypeValue *receiver,
+                                                                   const SZrTypeValue *key,
+                                                                   const SZrTypeValue *value);
 
 TZrBool ZrCore_Object_TrySetByIndexReadonlyInlineFastStackOperands(SZrState *state,
                                                                    SZrTypeValue *receiver,

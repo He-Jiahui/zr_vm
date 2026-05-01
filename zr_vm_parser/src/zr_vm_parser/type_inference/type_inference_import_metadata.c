@@ -1220,7 +1220,7 @@ static TZrBool register_summary_import_metadata(SZrCompilerState *cs,
             continue;
         }
 
-        if (exportInfo->exportKind == ZR_MODULE_EXPORT_KIND_FUNCTION) {
+        if (exportInfo->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION) {
             SZrTypeMemberInfo memberInfo;
             ZrCore_Memory_RawSet(&memberInfo, 0, sizeof(memberInfo));
             memberInfo.minArgumentCount = ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
@@ -1238,8 +1238,8 @@ static TZrBool register_summary_import_metadata(SZrCompilerState *cs,
             memberInfo.isStatic = ZR_TRUE;
             memberInfo.parameterCount = exportInfo->parameterCount;
             memberInfo.returnTypeName = typed_type_ref_to_type_name(cs, &exportInfo->valueType);
-            memberInfo.moduleExportKind = ZR_MODULE_EXPORT_KIND_FUNCTION;
-            memberInfo.moduleExportReadiness = ZR_MODULE_EXPORT_READY_DECLARATION;
+            memberInfo.moduleExportKind = (EZrModuleExportKind)exportInfo->exportKind;
+            memberInfo.moduleExportReadiness = (EZrModuleExportReadiness)exportInfo->readiness;
             if (exportInfo->parameterCount > 0 && exportInfo->parameterTypes != ZR_NULL) {
                 ZrCore_Array_Init(cs->state,
                                   &memberInfo.parameterTypes,

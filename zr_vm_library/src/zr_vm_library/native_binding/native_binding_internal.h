@@ -104,9 +104,9 @@ typedef struct ZrLibrary_NativeRegistryState {
     TZrChar lastErrorMessage[ZR_LIBRARY_NATIVE_REGISTRY_ERROR_BUFFER_LENGTH];
 } ZrLibrary_NativeRegistryState;
 
-TZrInt64 native_binding_dispatcher(SZrState *state);
-TZrInt64 native_binding_dispatch_cached_stack_root_one_argument(SZrState *state);
-TZrInt64 native_binding_dispatch_cached_stack_root_two_arguments(SZrState *state);
+ZR_LIBRARY_API TZrInt64 native_binding_dispatcher(SZrState *state);
+ZR_LIBRARY_API TZrInt64 native_binding_dispatch_cached_stack_root_one_argument(SZrState *state);
+ZR_LIBRARY_API TZrInt64 native_binding_dispatch_cached_stack_root_two_arguments(SZrState *state);
 
 static ZR_FORCE_INLINE TZrUInt32 native_binding_descriptor_dispatch_flags(EZrLibResolvedBindingKind bindingKind,
                                                                           const void *descriptor) {

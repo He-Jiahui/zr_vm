@@ -3,6 +3,7 @@
 //
 
 #include "compiler_internal.h"
+#include "type_inference_internal.h"
 #include "compile_time_executor_internal.h"
 #include "compile_time_binding_metadata.h"
 
@@ -85,8 +86,8 @@ static SZrFunctionTypeInfo *find_callable_binding_info(SZrCompilerState *cs, SZr
 }
 
 static TZrBool typed_type_ref_from_callable_binding(SZrCompilerState *cs,
-                                                    SZrString *name,
-                                                    SZrFunctionTypedTypeRef *outType) {
+                                                   SZrString *name,
+                                                   SZrFunctionTypedTypeRef *outType) {
     SZrFunctionTypeInfo *functionInfo;
 
     if (cs == ZR_NULL || outType == ZR_NULL) {
@@ -100,6 +101,29 @@ static TZrBool typed_type_ref_from_callable_binding(SZrCompilerState *cs,
 
     typed_type_ref_from_inferred(outType, &functionInfo->returnType);
     return ZR_TRUE;
+}
+
+static void typed_type_ref_from_type_name(SZrCompilerState *cs,
+                                          SZrString *typeName,
+                                          SZrFunctionTypedTypeRef *outType) {
+    SZrInferredType inferredType;
+
+    if (cs == ZR_NULL || outType == ZR_NULL) {
+        return;
+    }
+
+    typed_type_ref_init_unknown(outType);
+    if (typeName == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    if (inferred_type_from_type_name(cs, typeName, &inferredType)) {
+        typed_type_ref_from_inferred(outType, &inferredType);
+    } else {
+        outType->typeName = typeName;
+    }
+    ZrParser_InferredType_Free(cs->state, &inferredType);
 }
 
 typedef struct SZrCompileTimeVariableBindingBuildContext {
@@ -825,6 +849,128 @@ static TZrBool build_function_export_symbol(SZrCompilerState *cs,
                                              outSymbol);
 }
 
+static SZrTypeMemberInfo *find_imported_callable_member_alias_info(SZrCompilerState *cs,
+                                                                   SZrAstNode *valueNode) {
+    SZrPrimaryExpression *primary;
+    SZrAstNode *memberNode;
+    SZrString *moduleTypeName = ZR_NULL;
+    SZrString *memberName;
+    SZrInferredType baseType;
+    TZrBool baseTypeInitialized = ZR_FALSE;
+    SZrTypeMemberInfo *memberInfo = ZR_NULL;
+
+    if (cs == ZR_NULL || valueNode == ZR_NULL ||
+        valueNode->type != ZR_AST_PRIMARY_EXPRESSION) {
+        return ZR_NULL;
+    }
+
+    primary = &valueNode->data.primaryExpression;
+    if (primary->property == ZR_NULL ||
+        primary->members == ZR_NULL ||
+        primary->members->count != 1) {
+        return ZR_NULL;
+    }
+
+    memberNode = primary->members->nodes[0];
+    if (memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        memberNode->data.memberExpression.computed ||
+        memberNode->data.memberExpression.property == ZR_NULL ||
+        memberNode->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL ||
+        memberNode->data.memberExpression.property->data.identifier.name == ZR_NULL) {
+        return ZR_NULL;
+    }
+    memberName = memberNode->data.memberExpression.property->data.identifier.name;
+
+    if (primary->property->type == ZR_AST_IMPORT_EXPRESSION &&
+        primary->property->data.importExpression.modulePath != ZR_NULL &&
+        primary->property->data.importExpression.modulePath->type == ZR_AST_STRING_LITERAL &&
+        primary->property->data.importExpression.modulePath->data.stringLiteral.value != ZR_NULL) {
+        moduleTypeName = primary->property->data.importExpression.modulePath->data.stringLiteral.value;
+        (void)ensure_import_module_compile_info(cs, moduleTypeName);
+    } else {
+        ZrParser_InferredType_Init(cs->state, &baseType, ZR_VALUE_TYPE_OBJECT);
+        baseTypeInitialized = ZR_TRUE;
+        if (ZrParser_ExpressionType_Infer(cs, primary->property, &baseType)) {
+            moduleTypeName = baseType.typeName;
+        }
+    }
+
+    if (moduleTypeName != ZR_NULL) {
+        memberInfo = find_compiler_type_member_inference(cs, moduleTypeName, memberName);
+    }
+
+    if (baseTypeInitialized) {
+        ZrParser_InferredType_Free(cs->state, &baseType);
+    }
+
+    if (memberInfo == ZR_NULL ||
+        memberInfo->memberType != ZR_AST_CLASS_METHOD ||
+        memberInfo->moduleExportKind == ZR_MODULE_EXPORT_KIND_TYPE) {
+        return ZR_NULL;
+    }
+
+    return memberInfo;
+}
+
+static TZrBool build_imported_callable_member_alias_export_symbol(SZrCompilerState *cs,
+                                                                  const SZrExportedVariable *exportedVar,
+                                                                  const SZrTypeMemberInfo *memberInfo,
+                                                                  SZrFunctionTypedExportSymbol *outSymbol) {
+    TZrUInt32 parameterCount;
+
+    if (cs == ZR_NULL || exportedVar == ZR_NULL || memberInfo == ZR_NULL || outSymbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawSet(outSymbol, 0, sizeof(*outSymbol));
+    outSymbol->name = exportedVar->name;
+    outSymbol->stackSlot = exportedVar->stackSlot;
+    outSymbol->accessModifier = (TZrUInt8)exportedVar->accessModifier;
+    outSymbol->symbolKind = ZR_FUNCTION_TYPED_SYMBOL_FUNCTION;
+    outSymbol->exportKind = (TZrUInt8)exportedVar->exportKind;
+    outSymbol->readiness = (TZrUInt8)exportedVar->readiness;
+    outSymbol->reserved0 = 0;
+    outSymbol->callableChildIndex = exportedVar->callableChildIndex;
+    typed_type_ref_from_type_name(cs, memberInfo->returnTypeName, &outSymbol->valueType);
+
+    if (memberInfo->parameterCount == ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ||
+        memberInfo->parameterTypes.length == 0) {
+        outSymbol->parameterCount = 0;
+        return ZR_TRUE;
+    }
+
+    parameterCount = memberInfo->parameterCount;
+    if (parameterCount > memberInfo->parameterTypes.length) {
+        parameterCount = (TZrUInt32)memberInfo->parameterTypes.length;
+    }
+    outSymbol->parameterCount = parameterCount;
+    if (parameterCount == 0) {
+        return ZR_TRUE;
+    }
+
+    outSymbol->parameterTypes =
+            (SZrFunctionTypedTypeRef *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                       sizeof(SZrFunctionTypedTypeRef) * parameterCount,
+                                                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (outSymbol->parameterTypes == ZR_NULL) {
+        outSymbol->parameterCount = 0;
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0; index < parameterCount; index++) {
+        const SZrInferredType *parameterType =
+                (const SZrInferredType *)ZrCore_Array_Get((SZrArray *)&memberInfo->parameterTypes, index);
+        if (parameterType != ZR_NULL) {
+            typed_type_ref_from_inferred(&outSymbol->parameterTypes[index], parameterType);
+        } else {
+            typed_type_ref_init_unknown(&outSymbol->parameterTypes[index]);
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static void build_variable_export_symbol(SZrCompilerState *cs,
                                          const SZrExportedVariable *exportedVar,
                                          SZrFunctionTypedExportSymbol *outSymbol) {
@@ -1000,6 +1146,22 @@ static TZrBool build_typed_export_symbols(SZrCompilerState *cs,
                     }
                     typed_export_symbol_set_declaration_from_variable(&symbols[index], variableDeclNode);
                     continue;
+                }
+
+                {
+                    SZrTypeMemberInfo *memberInfo =
+                            find_imported_callable_member_alias_info(cs, declaration->value);
+                    if (memberInfo != ZR_NULL) {
+                        if (!build_imported_callable_member_alias_export_symbol(cs,
+                                                                                exportedVar,
+                                                                                memberInfo,
+                                                                                &symbols[index])) {
+                            free_typed_export_symbols(cs->state, symbols, exportCount);
+                            return ZR_FALSE;
+                        }
+                        typed_export_symbol_set_declaration_from_variable(&symbols[index], variableDeclNode);
+                        continue;
+                    }
                 }
             }
 
