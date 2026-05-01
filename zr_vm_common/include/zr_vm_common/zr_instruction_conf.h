@@ -230,7 +230,11 @@
     Z(GET_MEMBER_SLOT)                                                                                                 \
     Z(SET_MEMBER_SLOT)                                                                                                 \
     Z(KNOWN_VM_MEMBER_CALL_LOAD1_U8)                                                                                   \
-    Z(RESET_STACK_NULL)
+    Z(KNOWN_NATIVE_MEMBER_CALL_RECV_U8)                                                                                \
+    Z(RESET_STACK_NULL)                                                                                                \
+    Z(RESET_STACK_NULL2)                                                                                               \
+    Z(MUL_SIGNED_LOAD_STACK)                                                                                           \
+    Z(ADD_SIGNED_MOD_CONST)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

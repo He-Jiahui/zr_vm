@@ -67,6 +67,9 @@ static ZR_FORCE_INLINE void execution_copy_stack_value_to_stack_fast_no_profile(
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(destination != ZR_NULL);
     ZR_ASSERT(source != ZR_NULL);
+    if (destination == source) {
+        return;
+    }
     if (ZR_LIKELY(execution_can_copy_stack_value_by_bits(destination, source))) {
         *destination = *source;
         return;
@@ -321,7 +324,7 @@ static ZR_FORCE_INLINE TZrBool execution_try_resolve_known_vm_member_exact_singl
         return ZR_FALSE;
     }
 
-    receiverObject = ZR_CAST_OBJECT(ZR_NULL, receiverValue->value.object);
+    receiverObject = slot->cachedReceiverObject;
     if (receiverObject == ZR_NULL || receiverObject->internalType == ZR_OBJECT_INTERNAL_TYPE_MODULE ||
         receiverObject->prototype != slot->cachedReceiverPrototype ||
         slot->cachedReceiverPrototype->super.memberVersion != slot->cachedReceiverVersion ||
@@ -586,10 +589,6 @@ static SZrString *execution_resolve_function_member_symbol(SZrFunction *function
     return memberSymbol;
 }
 
-static SZrString *execution_resolve_member_symbol(SZrClosure *closure, TZrUInt16 memberId) {
-    return execution_resolve_function_member_symbol(closure != ZR_NULL ? closure->function : ZR_NULL, memberId);
-}
-
 static SZrString *execution_resolve_cached_member_symbol(SZrFunction *function,
                                                          TZrUInt16 cacheIndex,
                                                          EZrFunctionCallSiteCacheKind expectedKind) {
@@ -626,6 +625,381 @@ static ZR_FORCE_INLINE SZrFunctionCallSiteCacheEntry *execution_member_get_cache
     }
 
     return entry;
+}
+
+static ZR_FORCE_INLINE SZrFunctionCallSiteCacheEntry *execution_member_try_get_single_slot_cache_entry_dispatch_fast(
+        SZrFunction *function,
+        TZrUInt16 cacheIndex,
+        EZrFunctionCallSiteCacheKind expectedKind) {
+    SZrFunctionCallSiteCacheEntry *entry;
+
+    if (ZR_UNLIKELY(function == ZR_NULL ||
+                    function->callSiteCaches == ZR_NULL ||
+                    cacheIndex >= function->callSiteCacheLength ||
+                    execution_callsite_sanitize_enabled())) {
+        return ZR_NULL;
+    }
+
+    entry = &function->callSiteCaches[cacheIndex];
+    if (ZR_UNLIKELY((EZrFunctionCallSiteCacheKind)entry->kind != expectedKind || entry->picSlotCount != 1u)) {
+        return ZR_NULL;
+    }
+
+    return entry;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair_get_from_entry_fast(
+        SZrState *state,
+        SZrFunctionCallSiteCacheEntry *entry,
+        const SZrTypeValue *receiver,
+        SZrTypeValue *result,
+        SZrProfileRuntime *runtime,
+        TZrBool recordHelpers) {
+    SZrFunctionCallSitePicSlot *slot;
+    const SZrTypeValue *sourceValue;
+
+    ZR_ASSERT(entry != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+
+    slot = &entry->picSlots[0];
+    if (receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
+        slot->cachedReceiverPair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    sourceValue = &slot->cachedReceiverPair->value;
+    if (ZR_UNLIKELY(recordHelpers)) {
+        runtime->helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]++;
+        runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+    }
+
+    if (ZR_LIKELY(execution_member_can_copy_transient_result_by_bits(state, result, sourceValue))) {
+        *result = *sourceValue;
+    } else {
+        ZrCore_Value_CopyNoProfile(state, result, sourceValue);
+    }
+
+    entry->runtimeHitCount++;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_field_get_from_entry_fast(
+        SZrState *state,
+        SZrFunctionCallSiteCacheEntry *entry,
+        const SZrTypeValue *receiver,
+        SZrTypeValue *result,
+        SZrProfileRuntime *runtime,
+        TZrBool recordHelpers) {
+    SZrFunctionCallSitePicSlot *slot;
+    SZrObject *receiverObject;
+    SZrString *memberName;
+    SZrHashKeyValuePair **hotPairSlot;
+    SZrHashKeyValuePair *pair;
+    const SZrTypeValue *sourceValue;
+
+    ZR_ASSERT(entry != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+
+    slot = &entry->picSlots[0];
+    if ((EZrFunctionCallSitePicAccessKind)slot->cachedAccessKind !=
+                ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD ||
+        slot->cachedHotFieldKind == ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_NONE ||
+        !execution_member_dispatch_cached_slot_versions_match(slot)) {
+        return ZR_FALSE;
+    }
+
+    receiverObject = (SZrObject *)receiver->value.object;
+    if (receiverObject == ZR_NULL || receiverObject->prototype != slot->cachedReceiverPrototype) {
+        return ZR_FALSE;
+    }
+
+    memberName = execution_member_dispatch_refresh_forwarded_cached_member_name(slot);
+    if (memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    hotPairSlot = execution_member_dispatch_hot_field_pair_slot(
+            receiverObject, (EZrFunctionCallSitePicHotFieldKind)slot->cachedHotFieldKind);
+    pair = hotPairSlot != ZR_NULL
+                   ? object_try_match_cached_string_pair_by_name_unchecked(state, *hotPairSlot, memberName)
+                   : ZR_NULL;
+    if (pair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    sourceValue = &pair->value;
+    if (ZR_UNLIKELY(recordHelpers)) {
+        runtime->helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]++;
+        runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+    }
+
+    if (ZR_LIKELY(execution_member_can_copy_transient_result_by_bits(state, result, sourceValue))) {
+        *result = *sourceValue;
+    } else {
+        ZrCore_Value_CopyNoProfile(state, result, sourceValue);
+    }
+
+    entry->runtimeHitCount++;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_instance_field_get_from_entry_fast(
+        SZrState *state,
+        SZrFunctionCallSiteCacheEntry *entry,
+        const SZrTypeValue *receiver,
+        SZrTypeValue *result,
+        SZrProfileRuntime *runtime,
+        TZrBool recordHelpers) {
+    SZrFunctionCallSitePicSlot *slot;
+    SZrObject *receiverObject;
+    SZrString *memberName;
+    SZrHashKeyValuePair *pair;
+    const SZrTypeValue *sourceValue;
+
+    ZR_ASSERT(entry != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(result != ZR_NULL);
+
+    slot = &entry->picSlots[0];
+    if ((EZrFunctionCallSitePicAccessKind)slot->cachedAccessKind !=
+                ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD ||
+        !execution_member_dispatch_cached_slot_versions_match(slot)) {
+        return ZR_FALSE;
+    }
+
+    receiverObject = (SZrObject *)receiver->value.object;
+    if (receiverObject == ZR_NULL || receiverObject->prototype != slot->cachedReceiverPrototype) {
+        return ZR_FALSE;
+    }
+
+    memberName = execution_member_dispatch_refresh_forwarded_cached_member_name(slot);
+    if (memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    pair = object_get_own_string_pair_by_name_cached_unchecked(state, receiverObject, memberName);
+    if (pair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    sourceValue = &pair->value;
+    if (ZR_UNLIKELY(recordHelpers)) {
+        runtime->helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]++;
+        runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+    }
+
+    if (ZR_LIKELY(execution_member_can_copy_transient_result_by_bits(state, result, sourceValue))) {
+        *result = *sourceValue;
+    } else {
+        ZrCore_Value_CopyNoProfile(state, result, sourceValue);
+    }
+
+    entry->runtimeHitCount++;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair_set_from_entry_fast(
+        SZrState *state,
+        SZrFunctionCallSiteCacheEntry *entry,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *assignedValue,
+        SZrProfileRuntime *runtime,
+        TZrBool recordHelpers) {
+    SZrFunctionCallSitePicSlot *slot;
+    SZrObject *receiverObject;
+    SZrTypeValue stableAssignedValue;
+    const SZrTypeValue *effectiveAssignedValue = assignedValue;
+
+    ZR_ASSERT(entry != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(assignedValue != ZR_NULL);
+
+    slot = &entry->picSlots[0];
+    if (receiver->value.object != ZR_CAST_RAW_OBJECT_AS_SUPER(slot->cachedReceiverObject) ||
+        slot->cachedReceiverPair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (assignedValue->isGarbageCollectable && assignedValue->value.object != ZR_NULL) {
+        stableAssignedValue = *assignedValue;
+        execution_member_dispatch_refresh_forwarded_assigned_value(&stableAssignedValue);
+        effectiveAssignedValue = &stableAssignedValue;
+    }
+
+    receiverObject = (SZrObject *)receiver->value.object;
+    if (ZR_UNLIKELY(recordHelpers)) {
+        runtime->helperCounts[ZR_PROFILE_HELPER_SET_MEMBER]++;
+    }
+
+    if ((slot->cachedIsStatic & ZR_FUNCTION_CALLSITE_PIC_SLOT_FLAG_NON_HIDDEN_STRING_PAIR_FAST_SET) != 0u &&
+        object_try_set_existing_string_pair_plain_value_assume_non_hidden_unchecked(
+                state, receiverObject, slot->cachedReceiverPair, effectiveAssignedValue)) {
+        if (ZR_UNLIKELY(recordHelpers)) {
+            runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+        }
+        entry->runtimeHitCount++;
+        return ZR_TRUE;
+    }
+    if (object_try_set_existing_pair_plain_value_fast_unchecked(
+                state, receiverObject, slot->cachedReceiverPair, effectiveAssignedValue)) {
+        if (ZR_UNLIKELY(recordHelpers)) {
+            runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+        }
+        entry->runtimeHitCount++;
+        return ZR_TRUE;
+    }
+
+    ZrCore_Object_SetExistingPairValueUnchecked(state, receiverObject, slot->cachedReceiverPair, effectiveAssignedValue);
+    entry->runtimeHitCount++;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_field_set_from_entry_fast(
+        SZrState *state,
+        SZrFunctionCallSiteCacheEntry *entry,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *assignedValue,
+        SZrProfileRuntime *runtime,
+        TZrBool recordHelpers) {
+    SZrFunctionCallSitePicSlot *slot;
+    SZrObject *receiverObject;
+    SZrString *memberName;
+    SZrHashKeyValuePair **hotPairSlot;
+    SZrHashKeyValuePair *pair;
+    SZrTypeValue stableAssignedValue;
+    const SZrTypeValue *effectiveAssignedValue = assignedValue;
+
+    ZR_ASSERT(entry != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(assignedValue != ZR_NULL);
+
+    slot = &entry->picSlots[0];
+    if ((EZrFunctionCallSitePicAccessKind)slot->cachedAccessKind !=
+                ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD ||
+        slot->cachedHotFieldKind == ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_NONE ||
+        !execution_member_dispatch_cached_slot_versions_match(slot)) {
+        return ZR_FALSE;
+    }
+
+    receiverObject = (SZrObject *)receiver->value.object;
+    if (receiverObject == ZR_NULL || receiverObject->prototype != slot->cachedReceiverPrototype) {
+        return ZR_FALSE;
+    }
+
+    memberName = execution_member_dispatch_refresh_forwarded_cached_member_name(slot);
+    if (memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    hotPairSlot = execution_member_dispatch_hot_field_pair_slot(
+            receiverObject, (EZrFunctionCallSitePicHotFieldKind)slot->cachedHotFieldKind);
+    pair = hotPairSlot != ZR_NULL
+                   ? object_try_match_cached_string_pair_by_name_unchecked(state, *hotPairSlot, memberName)
+                   : ZR_NULL;
+    if (pair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (assignedValue->isGarbageCollectable && assignedValue->value.object != ZR_NULL) {
+        stableAssignedValue = *assignedValue;
+        execution_member_dispatch_refresh_forwarded_assigned_value(&stableAssignedValue);
+        effectiveAssignedValue = &stableAssignedValue;
+    }
+
+    if (ZR_UNLIKELY(recordHelpers)) {
+        runtime->helperCounts[ZR_PROFILE_HELPER_SET_MEMBER]++;
+    }
+
+    if ((slot->cachedIsStatic & ZR_FUNCTION_CALLSITE_PIC_SLOT_FLAG_NON_HIDDEN_STRING_PAIR_FAST_SET) != 0u &&
+        object_try_set_existing_string_pair_plain_value_assume_non_hidden_unchecked(
+                state, receiverObject, pair, effectiveAssignedValue)) {
+        if (ZR_UNLIKELY(recordHelpers)) {
+            runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+        }
+        entry->runtimeHitCount++;
+        return ZR_TRUE;
+    }
+    if (object_try_set_existing_pair_plain_value_fast_unchecked(state, receiverObject, pair, effectiveAssignedValue)) {
+        if (ZR_UNLIKELY(recordHelpers)) {
+            runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+        }
+        entry->runtimeHitCount++;
+        return ZR_TRUE;
+    }
+
+    ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(state, receiverObject, pair, effectiveAssignedValue);
+    entry->runtimeHitCount++;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_instance_field_set_from_entry_fast(
+        SZrState *state,
+        SZrFunctionCallSiteCacheEntry *entry,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *assignedValue,
+        SZrProfileRuntime *runtime,
+        TZrBool recordHelpers) {
+    SZrFunctionCallSitePicSlot *slot;
+    SZrObject *receiverObject;
+    SZrString *memberName;
+    SZrHashKeyValuePair *pair;
+    SZrTypeValue stableAssignedValue;
+    const SZrTypeValue *effectiveAssignedValue = assignedValue;
+
+    ZR_ASSERT(entry != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(assignedValue != ZR_NULL);
+
+    slot = &entry->picSlots[0];
+    if ((EZrFunctionCallSitePicAccessKind)slot->cachedAccessKind !=
+                ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD ||
+        !execution_member_dispatch_cached_slot_versions_match(slot)) {
+        return ZR_FALSE;
+    }
+
+    receiverObject = (SZrObject *)receiver->value.object;
+    if (receiverObject == ZR_NULL || receiverObject->prototype != slot->cachedReceiverPrototype) {
+        return ZR_FALSE;
+    }
+
+    memberName = execution_member_dispatch_refresh_forwarded_cached_member_name(slot);
+    if (memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    pair = object_get_own_string_pair_by_name_cached_unchecked(state, receiverObject, memberName);
+    if (pair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (assignedValue->isGarbageCollectable && assignedValue->value.object != ZR_NULL) {
+        stableAssignedValue = *assignedValue;
+        execution_member_dispatch_refresh_forwarded_assigned_value(&stableAssignedValue);
+        effectiveAssignedValue = &stableAssignedValue;
+    }
+
+    if (ZR_UNLIKELY(recordHelpers)) {
+        runtime->helperCounts[ZR_PROFILE_HELPER_SET_MEMBER]++;
+    }
+
+    if ((slot->cachedIsStatic & ZR_FUNCTION_CALLSITE_PIC_SLOT_FLAG_NON_HIDDEN_STRING_PAIR_FAST_SET) != 0u &&
+        object_try_set_existing_string_pair_plain_value_assume_non_hidden_unchecked(
+                state, receiverObject, pair, effectiveAssignedValue)) {
+        if (ZR_UNLIKELY(recordHelpers)) {
+            runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+        }
+        entry->runtimeHitCount++;
+        return ZR_TRUE;
+    }
+    if (object_try_set_existing_pair_plain_value_fast_unchecked(state, receiverObject, pair, effectiveAssignedValue)) {
+        if (ZR_UNLIKELY(recordHelpers)) {
+            runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+        }
+        entry->runtimeHitCount++;
+        return ZR_TRUE;
+    }
+
+    ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(state, receiverObject, pair, effectiveAssignedValue);
+    entry->runtimeHitCount++;
+    return ZR_TRUE;
 }
 
 static TZrBool execution_raise_vm_runtime_error(SZrState *state,
@@ -802,12 +1176,16 @@ static TZrBool execution_profile_signed_arithmetic_reads_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
             return ZR_FALSE;
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
+            return instruction->instruction.operand.operand0[0] == slot ||
+                   instruction->instruction.operand.operand0[1] == slot;
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUB_SIGNED):
@@ -893,6 +1271,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(SET_STACK)] = &&LZrFastInstruction_SET_STACK,
             [ZR_INSTRUCTION_ENUM(GET_CONSTANT)] = &&LZrFastInstruction_GET_CONSTANT,
             [ZR_INSTRUCTION_ENUM(RESET_STACK_NULL)] = &&LZrFastInstruction_RESET_STACK_NULL,
+            [ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2)] = &&LZrFastInstruction_RESET_STACK_NULL2,
+            [ZR_INSTRUCTION_ENUM(ADD)] = &&LZrFastInstruction_ADD,
             [ZR_INSTRUCTION_ENUM(ADD_INT)] = &&LZrFastInstruction_ADD_INT,
             [ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST)] = &&LZrFastInstruction_ADD_INT_PLAIN_DEST,
             [ZR_INSTRUCTION_ENUM(ADD_INT_CONST)] = &&LZrFastInstruction_ADD_INT_CONST,
@@ -906,6 +1286,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK)] = &&LZrFastInstruction_ADD_SIGNED_LOAD_STACK,
             [ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST)] =
                     &&LZrFastInstruction_ADD_SIGNED_LOAD_STACK_LOAD_CONST,
+            [ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST)] = &&LZrFastInstruction_ADD_SIGNED_MOD_CONST,
             [ZR_INSTRUCTION_ENUM(ADD_UNSIGNED)] = &&LZrFastInstruction_ADD_UNSIGNED,
             [ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST)] = &&LZrFastInstruction_ADD_UNSIGNED_PLAIN_DEST,
             [ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST)] = &&LZrFastInstruction_ADD_UNSIGNED_CONST,
@@ -924,12 +1305,14 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST)] = &&LZrFastInstruction_SUB_UNSIGNED_PLAIN_DEST,
             [ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST)] = &&LZrFastInstruction_SUB_UNSIGNED_CONST,
             [ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST_PLAIN_DEST)] = &&LZrFastInstruction_SUB_UNSIGNED_CONST_PLAIN_DEST,
+            [ZR_INSTRUCTION_ENUM(MUL)] = &&LZrFastInstruction_MUL,
             [ZR_INSTRUCTION_ENUM(MUL_SIGNED)] = &&LZrFastInstruction_MUL_SIGNED,
             [ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST)] = &&LZrFastInstruction_MUL_SIGNED_PLAIN_DEST,
             [ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST)] = &&LZrFastInstruction_MUL_SIGNED_CONST,
             [ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST)] = &&LZrFastInstruction_MUL_SIGNED_CONST_PLAIN_DEST,
             [ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST)] = &&LZrFastInstruction_MUL_SIGNED_LOAD_CONST,
             [ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST)] = &&LZrFastInstruction_MUL_SIGNED_LOAD_STACK_CONST,
+            [ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK)] = &&LZrFastInstruction_MUL_SIGNED_LOAD_STACK,
             [ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_PLAIN_DEST)] = &&LZrFastInstruction_MUL_UNSIGNED_PLAIN_DEST,
             [ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST)] = &&LZrFastInstruction_MUL_UNSIGNED_CONST,
             [ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST_PLAIN_DEST)] = &&LZrFastInstruction_MUL_UNSIGNED_CONST_PLAIN_DEST,
@@ -940,6 +1323,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST)] = &&LZrFastInstruction_DIV_UNSIGNED_CONST,
             [ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST)] =
                     &&LZrFastInstruction_DIV_UNSIGNED_CONST_PLAIN_DEST,
+            [ZR_INSTRUCTION_ENUM(MOD)] = &&LZrFastInstruction_MOD,
             [ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST)] = &&LZrFastInstruction_MOD_SIGNED_CONST,
             [ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST)] = &&LZrFastInstruction_MOD_SIGNED_CONST_PLAIN_DEST,
             [ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST)] = &&LZrFastInstruction_MOD_SIGNED_LOAD_CONST,
@@ -959,6 +1343,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_FLOAT)] = &&LZrFastInstruction_LOGICAL_NOT_EQUAL_FLOAT,
             [ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING)] = &&LZrFastInstruction_LOGICAL_EQUAL_STRING,
             [ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_STRING)] = &&LZrFastInstruction_LOGICAL_NOT_EQUAL_STRING,
+            [ZR_INSTRUCTION_ENUM(BITWISE_XOR)] = &&LZrFastInstruction_BITWISE_XOR,
             [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS)] = &&LZrFastInstruction_SUPER_ARRAY_BIND_ITEMS,
             [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT)] = &&LZrFastInstruction_SUPER_ARRAY_GET_INT,
             [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS)] = &&LZrFastInstruction_SUPER_ARRAY_GET_INT_ITEMS,
@@ -968,7 +1353,15 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                     &&LZrFastInstruction_SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST,
             [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT)] = &&LZrFastInstruction_SUPER_ARRAY_SET_INT,
             [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_SET_INT_ITEMS)] = &&LZrFastInstruction_SUPER_ARRAY_SET_INT_ITEMS,
+            [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)] = &&LZrFastInstruction_SUPER_ARRAY_ADD_INT,
+            [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4)] = &&LZrFastInstruction_SUPER_ARRAY_ADD_INT4,
+            [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4_CONST)] = &&LZrFastInstruction_SUPER_ARRAY_ADD_INT4_CONST,
             [ZR_INSTRUCTION_ENUM(SUPER_ARRAY_FILL_INT4_CONST)] = &&LZrFastInstruction_SUPER_ARRAY_FILL_INT4_CONST,
+            [ZR_INSTRUCTION_ENUM(ITER_INIT)] = &&LZrFastInstruction_ITER_INIT,
+            [ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT)] = &&LZrFastInstruction_ITER_MOVE_NEXT,
+            [ZR_INSTRUCTION_ENUM(DYN_ITER_INIT)] = &&LZrFastInstruction_DYN_ITER_INIT,
+            [ZR_INSTRUCTION_ENUM(DYN_ITER_MOVE_NEXT)] = &&LZrFastInstruction_DYN_ITER_MOVE_NEXT,
+            [ZR_INSTRUCTION_ENUM(ITER_CURRENT)] = &&LZrFastInstruction_ITER_CURRENT,
             [ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE)] =
                     &&LZrFastInstruction_SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE,
             [ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE)] =
@@ -979,25 +1372,55 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             [ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED)] = &&LZrFastInstruction_JUMP_IF_NOT_EQUAL_SIGNED,
             [ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST)] =
                     &&LZrFastInstruction_JUMP_IF_NOT_EQUAL_SIGNED_CONST,
-            [ZR_INSTRUCTION_ENUM(FUNCTION_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
+            [ZR_INSTRUCTION_ENUM(FUNCTION_CALL)] = &&LZrFastInstruction_FUNCTION_CALL,
+            [ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL)] = &&LZrFastInstruction_KNOWN_VM_CALL,
+            [ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL)] = &&LZrFastInstruction_KNOWN_VM_MEMBER_CALL,
+            [ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)] =
+                    &&LZrFastInstruction_KNOWN_VM_MEMBER_CALL_LOAD1_U8,
+            [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL)] = &&LZrFastInstruction_KNOWN_NATIVE_CALL,
+            [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL)] =
+                    &&LZrFastInstruction_KNOWN_NATIVE_MEMBER_CALL,
+            [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL_RECV_U8)] =
+                    &&LZrFastInstruction_KNOWN_NATIVE_MEMBER_CALL_RECV_U8,
+            [ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS)] =
+                    &&LZrFastInstruction_SUPER_FUNCTION_CALL_NO_ARGS,
+            [ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS)] =
+                    &&LZrFastInstruction_SUPER_KNOWN_VM_CALL_NO_ARGS,
+            [ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS)] =
+                    &&LZrFastInstruction_SUPER_KNOWN_NATIVE_CALL_NO_ARGS,
+            [ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_NO_ARGS)] =
+                    &&LZrFastInstruction_SUPER_DYN_CALL_NO_ARGS,
+            [ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED)] =
+                    &&LZrFastInstruction_SUPER_DYN_CALL_CACHED,
+            [ZR_INSTRUCTION_ENUM(DYN_CALL)] = &&LZrFastInstruction_DYN_CALL,
+            [ZR_INSTRUCTION_ENUM(SUPER_META_CALL_NO_ARGS)] =
+                    &&LZrFastInstruction_SUPER_META_CALL_NO_ARGS,
+            [ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED)] =
+                    &&LZrFastInstruction_SUPER_META_CALL_CACHED,
+            [ZR_INSTRUCTION_ENUM(META_CALL)] = &&LZrFastInstruction_META_CALL,
             [ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)] = &&LZrFastInstruction_GET_MEMBER_SLOT,
             [ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)] = &&LZrFastInstruction_SET_MEMBER_SLOT,
-            [ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
+            [ZR_INSTRUCTION_ENUM(GET_BY_INDEX)] = &&LZrFastInstruction_GET_BY_INDEX,
+            [ZR_INSTRUCTION_ENUM(FUNCTION_TAIL_CALL)] = &&LZrFastInstruction_FUNCTION_TAIL_CALL,
+            [ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL)] = &&LZrFastInstruction_KNOWN_VM_TAIL_CALL,
+            [ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL)] = &&LZrFastInstruction_KNOWN_NATIVE_TAIL_CALL,
+            [ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS)] =
+                    &&LZrFastInstruction_SUPER_FUNCTION_TAIL_CALL_NO_ARGS,
+            [ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS)] =
+                    &&LZrFastInstruction_SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS,
             [ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS)] =
-                    &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
-            [ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)] = &&LZrFastInstruction_FALLBACK_NO_DESTINATION,
+                    &&LZrFastInstruction_SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS,
+            [ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_NO_ARGS)] =
+                    &&LZrFastInstruction_SUPER_DYN_TAIL_CALL_NO_ARGS,
+            [ZR_INSTRUCTION_ENUM(SUPER_DYN_TAIL_CALL_CACHED)] =
+                    &&LZrFastInstruction_SUPER_DYN_TAIL_CALL_CACHED,
+            [ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL)] = &&LZrFastInstruction_DYN_TAIL_CALL,
+            [ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_NO_ARGS)] =
+                    &&LZrFastInstruction_SUPER_META_TAIL_CALL_NO_ARGS,
+            [ZR_INSTRUCTION_ENUM(SUPER_META_TAIL_CALL_CACHED)] =
+                    &&LZrFastInstruction_SUPER_META_TAIL_CALL_CACHED,
+            [ZR_INSTRUCTION_ENUM(META_TAIL_CALL)] = &&LZrFastInstruction_META_TAIL_CALL,
+            [ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)] = &&LZrFastInstruction_FUNCTION_RETURN,
     };
 #define ZR_FAST_INSTRUCTION_DISPATCH(INSTRUCTION) goto *fastDispatchTable[ZR_INSTRUCTION_OPCODE(INSTRUCTION)];
 #endif
@@ -1244,17 +1667,48 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         }                                                                                                              \
         execution_reset_stack_value_to_null_fast_no_profile(state, &BASE(E(instruction))->value);                     \
     } while (0)
+#define EXECUTE_RESET_STACK_NULL2_BODY()                                                                               \
+    do {                                                                                                               \
+        if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
+            profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_RESET_NULL] += 2u;                                   \
+        }                                                                                                              \
+        execution_reset_stack_value_to_null_fast_no_profile(state, &BASE(E(instruction))->value);                     \
+        execution_reset_stack_value_to_null_fast_no_profile(state, &BASE(A1(instruction))->value);                    \
+    } while (0)
 #define EXECUTE_GET_MEMBER_SLOT_BODY()                                                                                 \
     do {                                                                                                               \
         SZrString *memberName__ = ZR_NULL;                                                                             \
         TZrNativeString memberNativeName__;                                                                            \
+        SZrFunctionCallSiteCacheEntry *entry__;                                                                        \
         opA = &BASE(A1(instruction))->value;                                                                           \
+        entry__ = (opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY)                            \
+                          ? execution_member_try_get_single_slot_cache_entry_dispatch_fast(                            \
+                                    currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET)     \
+                          : ZR_NULL;                                                                                  \
         if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY &&                                  \
             opA->type != ZR_VALUE_TYPE_STRING) {                                                                       \
             ZrCore_Debug_RunError(state, "GET_MEMBER: receiver must be an object, array, or string");                \
         } else if (!(((opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY) &&                      \
-                      execution_member_try_dispatch_exact_receiver_pair_get_hot_fast_checked_object(                   \
-                              state, currentFunction, B1(instruction), opA, destination)) ||                          \
+                      execution_member_try_dispatch_exact_receiver_pair_get_hot_fast_checked_object_profiled(          \
+                              state,                                                                                  \
+                              currentFunction,                                                                        \
+                              B1(instruction),                                                                        \
+                              opA,                                                                                    \
+                              destination,                                                                            \
+                              profileRuntime,                                                                         \
+                              recordHelpers)) ||                                                                      \
+                     ((opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY) &&                      \
+                      execution_member_try_dispatch_same_prototype_hot_field_get_fast_checked_object(                  \
+                              state,                                                                                  \
+                              currentFunction,                                                                        \
+                              B1(instruction),                                                                        \
+                              opA,                                                                                    \
+                              destination,                                                                            \
+                              profileRuntime,                                                                         \
+                              recordHelpers)) ||                                                                      \
+                     (entry__ != ZR_NULL &&                                                                            \
+                      execution_member_try_dispatch_same_prototype_instance_field_get_from_entry_fast(                 \
+                              state, entry__, opA, destination, profileRuntime, recordHelpers)) ||                    \
                      execution_member_get_cached_stack_receiver(                                                        \
                              state, programCounter, currentFunction, B1(instruction), opA, destination))) {           \
             memberName__ = execution_resolve_cached_member_symbol(                                                     \
@@ -1269,13 +1723,53 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
             }                                                                                                          \
         }                                                                                                              \
     } while (0)
+#define EXECUTE_GET_MEMBER_SLOT_BODY_FAST()                                                                            \
+    do {                                                                                                               \
+        SZrFunctionCallSiteCacheEntry *entry__;                                                                        \
+        opA = &BASE(A1(instruction))->value;                                                                           \
+        entry__ = (opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY)                            \
+                          ? execution_member_try_get_single_slot_cache_entry_dispatch_fast(                            \
+                                    currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET)     \
+                          : ZR_NULL;                                                                                  \
+        if (ZR_UNLIKELY(!(entry__ != ZR_NULL &&                                                                       \
+                          (execution_member_try_dispatch_exact_receiver_pair_get_from_entry_fast(                      \
+                                   state, entry__, opA, destination, profileRuntime, recordHelpers) ||                \
+                           execution_member_try_dispatch_same_prototype_hot_field_get_from_entry_fast(                 \
+                                   state, entry__, opA, destination, profileRuntime, recordHelpers) ||                \
+                           execution_member_try_dispatch_same_prototype_instance_field_get_from_entry_fast(            \
+                                   state, entry__, opA, destination, profileRuntime, recordHelpers))))) {             \
+            EXECUTE_GET_MEMBER_SLOT_BODY();                                                                            \
+        }                                                                                                              \
+    } while (0)
 #define EXECUTE_SET_MEMBER_SLOT_BODY()                                                                                 \
     do {                                                                                                               \
+        SZrFunctionCallSiteCacheEntry *entry__;                                                                        \
         opA = &BASE(A1(instruction))->value;                                                                           \
+        entry__ = (opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY)                            \
+                          ? execution_member_try_get_single_slot_cache_entry_dispatch_fast(                            \
+                                    currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET)     \
+                          : ZR_NULL;                                                                                  \
         if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {                                  \
             ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");                   \
-        } else if (!(execution_member_try_dispatch_exact_receiver_pair_set_hot_fast_checked_object(                   \
-                             state, currentFunction, B1(instruction), opA, destination) ||                            \
+        } else if (!(execution_member_try_dispatch_exact_receiver_pair_set_hot_fast_checked_object_profiled(          \
+                             state,                                                                                   \
+                             currentFunction,                                                                         \
+                             B1(instruction),                                                                         \
+                             opA,                                                                                     \
+                             destination,                                                                             \
+                             profileRuntime,                                                                          \
+                             recordHelpers) ||                                                                        \
+                     execution_member_try_dispatch_same_prototype_hot_field_set_fast_checked_object(                  \
+                             state,                                                                                   \
+                             currentFunction,                                                                         \
+                             B1(instruction),                                                                         \
+                             opA,                                                                                     \
+                             destination,                                                                             \
+                             profileRuntime,                                                                          \
+                             recordHelpers) ||                                                                        \
+                     (entry__ != ZR_NULL &&                                                                            \
+                      execution_member_try_dispatch_same_prototype_instance_field_set_from_entry_fast(                 \
+                              state, entry__, opA, destination, profileRuntime, recordHelpers)) ||                    \
                      execution_member_set_cached_stack_receiver(                                                       \
                              state, programCounter, currentFunction, B1(instruction), opA, destination))) {           \
             if (execution_resolve_cached_member_symbol(                                                                \
@@ -1285,6 +1779,1044 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                 ZrCore_Debug_RunError(state, "SET_MEMBER: receiver must be a writable object member");               \
             }                                                                                                          \
         }                                                                                                              \
+    } while (0)
+#define EXECUTE_SET_MEMBER_SLOT_BODY_FAST()                                                                            \
+    do {                                                                                                               \
+        SZrFunctionCallSiteCacheEntry *entry__;                                                                        \
+        opA = &BASE(A1(instruction))->value;                                                                           \
+        entry__ = (opA->type == ZR_VALUE_TYPE_OBJECT || opA->type == ZR_VALUE_TYPE_ARRAY)                            \
+                          ? execution_member_try_get_single_slot_cache_entry_dispatch_fast(                            \
+                                    currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET)     \
+                          : ZR_NULL;                                                                                  \
+        if (ZR_UNLIKELY(!(entry__ != ZR_NULL &&                                                                       \
+                          (execution_member_try_dispatch_exact_receiver_pair_set_from_entry_fast(                      \
+                                   state, entry__, opA, destination, profileRuntime, recordHelpers) ||                \
+                           execution_member_try_dispatch_same_prototype_hot_field_set_from_entry_fast(                 \
+                                   state, entry__, opA, destination, profileRuntime, recordHelpers) ||                \
+                           execution_member_try_dispatch_same_prototype_instance_field_set_from_entry_fast(            \
+                                   state, entry__, opA, destination, profileRuntime, recordHelpers))))) {             \
+            EXECUTE_SET_MEMBER_SLOT_BODY();                                                                            \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_GET_BY_INDEX_BODY()                                                                                    \
+    do {                                                                                                               \
+        SZrTypeValue stableResult__;                                                                                   \
+        TZrBool resolved__ = ZR_FALSE;                                                                                 \
+        TZrBool readonlyFastTried__ = ZR_FALSE;                                                                        \
+        TZrBool directResultStored__ = ZR_FALSE;                                                                       \
+        opA = &BASE(A1(instruction))->value;                                                                           \
+        opB = &BASE(B1(instruction))->value;                                                                           \
+        if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {                                  \
+            ZrCore_Debug_RunError(state, "GET_BY_INDEX: receiver must be an object or array");                       \
+        } else {                                                                                                       \
+            destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;        \
+            if (E(instruction) != ZR_INSTRUCTION_USE_RET_FLAG && destination != opA && destination != opB) {          \
+                readonlyFastTried__ = ZR_TRUE;                                                                        \
+                execution_prepare_destination_for_direct_store_no_profile(state, destination);                         \
+                ZrCore_Value_ResetAsNullNoProfile(destination);                                                        \
+                resolved__ = ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands(                              \
+                        state, opA, opB, destination);                                                                \
+                if (resolved__) {                                                                                      \
+                    if (ZR_UNLIKELY(recordHelpers)) {                                                                  \
+                        profileRuntime->helperCounts[ZR_PROFILE_HELPER_GET_BY_INDEX]++;                               \
+                    }                                                                                                  \
+                    directResultStored__ = ZR_TRUE;                                                                    \
+                    UPDATE_BASE(callInfo);                                                                             \
+                    destination = &BASE(E(instruction))->value;                                                        \
+                } else if (state->threadStatus != ZR_THREAD_STATUS_FINE) {                                            \
+                    SAVE_PC(state, callInfo);                                                                          \
+                    goto LZrReturning;                                                                                 \
+                }                                                                                                      \
+            }                                                                                                          \
+            if (!directResultStored__) {                                                                               \
+                ZrCore_Value_ResetAsNull(&stableResult__);                                                             \
+                if (!readonlyFastTried__) {                                                                            \
+                    resolved__ = ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands(                          \
+                            state, opA, opB, &stableResult__);                                                        \
+                }                                                                                                      \
+            }                                                                                                          \
+            if (!directResultStored__ && resolved__) {                                                                 \
+                if (ZR_UNLIKELY(recordHelpers)) {                                                                      \
+                    profileRuntime->helperCounts[ZR_PROFILE_HELPER_GET_BY_INDEX]++;                                   \
+                }                                                                                                      \
+                UPDATE_BASE(callInfo);                                                                                 \
+                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;   \
+            } else if (!directResultStored__ && state->threadStatus != ZR_THREAD_STATUS_FINE) {                       \
+                SAVE_PC(state, callInfo);                                                                              \
+                goto LZrReturning;                                                                                     \
+            } else if (!directResultStored__ && !resolved__) {                                                         \
+                PROTECT_E(state, callInfo, {                                                                           \
+                    resolved__ = ZrCore_Object_GetByIndexUncheckedStackOperands(                                      \
+                            state, opA, opB, &stableResult__);                                                        \
+                });                                                                                                    \
+                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);                                              \
+            }                                                                                                          \
+            if (!directResultStored__) {                                                                               \
+                if (resolved__) {                                                                                      \
+                    execution_copy_value_fast(state, destination, &stableResult__, profileRuntime, recordHelpers);     \
+                } else {                                                                                               \
+                    ZrCore_Debug_RunError(state, "GET_BY_INDEX: receiver must be an object or array");               \
+                }                                                                                                      \
+            }                                                                                                          \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SET_BY_INDEX_BODY()                                                                                    \
+    do {                                                                                                               \
+        TZrBool resolved__ = ZR_FALSE;                                                                                 \
+        opA = &BASE(A1(instruction))->value;                                                                           \
+        opB = &BASE(B1(instruction))->value;                                                                           \
+        if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {                                  \
+            ZrCore_Debug_RunError(state, "SET_BY_INDEX: receiver must be an object or array");                       \
+        } else {                                                                                                       \
+            resolved__ = ZrCore_Object_TrySetByIndexReadonlyInlineFastStackOperands(                                  \
+                    state, opA, opB, destination);                                                                     \
+            if (resolved__) {                                                                                          \
+                if (ZR_UNLIKELY(recordHelpers)) {                                                                      \
+                    profileRuntime->helperCounts[ZR_PROFILE_HELPER_SET_BY_INDEX]++;                                   \
+                }                                                                                                      \
+                UPDATE_BASE(callInfo);                                                                                 \
+                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;   \
+            } else if (state->threadStatus != ZR_THREAD_STATUS_FINE) {                                                \
+                SAVE_PC(state, callInfo);                                                                              \
+                goto LZrReturning;                                                                                     \
+            } else {                                                                                                   \
+                PROTECT_E(state, callInfo, {                                                                           \
+                    resolved__ = ZrCore_Object_SetByIndexUncheckedStackOperands(state, opA, opB, destination);         \
+                });                                                                                                    \
+                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);                                              \
+            }                                                                                                          \
+            if (!resolved__) {                                                                                         \
+                ZrCore_Debug_RunError(state, "SET_BY_INDEX: receiver must be an object or array");                   \
+            }                                                                                                          \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_ITER_INIT_BODY(ERROR_MESSAGE__)                                                                        \
+    do {                                                                                                               \
+        SZrTypeValue stableReceiver__;                                                                                 \
+        SZrTypeValue stableResult__;                                                                                   \
+        TZrBool resolved__ = ZR_FALSE;                                                                                 \
+        opA = &BASE(A1(instruction))->value;                                                                           \
+        stableReceiver__ = *opA;                                                                                       \
+        ZrCore_Value_ResetAsNull(&stableResult__);                                                                     \
+        PROTECT_E(state, callInfo, {                                                                                   \
+            resolved__ = ZrCore_Object_IterInit(state, &stableReceiver__, &stableResult__);                            \
+        });                                                                                                            \
+        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);                                                       \
+        if (resolved__) {                                                                                              \
+            ZrCore_Value_Copy(state, destination, &stableResult__);                                                    \
+        } else {                                                                                                       \
+            ZrCore_Debug_RunError(state, ERROR_MESSAGE__);                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_ITER_MOVE_NEXT_BODY(ERROR_MESSAGE__, DONE_ON_FAST__)                                                   \
+    do {                                                                                                               \
+        SZrTypeValue stableReceiver__;                                                                                 \
+        SZrTypeValue stableResult__;                                                                                   \
+        TZrBool resolved__ = ZR_FALSE;                                                                                 \
+        opA = &BASE(A1(instruction))->value;                                                                           \
+        if (ZrCore_Object_TryIterMoveNextCachedArrayFast(state, opA, destination)) {                                  \
+            DONE_ON_FAST__(1);                                                                                         \
+        }                                                                                                              \
+        stableReceiver__ = *opA;                                                                                       \
+        ZrCore_Value_ResetAsNull(&stableResult__);                                                                     \
+        PROTECT_E(state, callInfo, {                                                                                   \
+            resolved__ = ZrCore_Object_IterMoveNext(state, &stableReceiver__, &stableResult__);                        \
+        });                                                                                                            \
+        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);                                                       \
+        if (resolved__) {                                                                                              \
+            ZrCore_Value_Copy(state, destination, &stableResult__);                                                    \
+        } else {                                                                                                       \
+            ZrCore_Debug_RunError(state, ERROR_MESSAGE__);                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_ITER_CURRENT_BODY(DONE_ON_FAST__)                                                                      \
+    do {                                                                                                               \
+        SZrTypeValue stableReceiver__;                                                                                 \
+        SZrTypeValue stableResult__;                                                                                   \
+        TZrBool resolved__ = ZR_FALSE;                                                                                 \
+        opA = &BASE(A1(instruction))->value;                                                                           \
+        if (ZrCore_Object_TryIterCurrentCachedMemberFastStackResult(state, opA, destination)) {                       \
+            DONE_ON_FAST__(1);                                                                                         \
+        }                                                                                                              \
+        stableReceiver__ = *opA;                                                                                       \
+        ZrCore_Value_ResetAsNull(&stableResult__);                                                                     \
+        PROTECT_E(state, callInfo, {                                                                                   \
+            resolved__ = ZrCore_Object_IterCurrent(state, &stableReceiver__, &stableResult__);                         \
+        });                                                                                                            \
+        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);                                                       \
+        if (resolved__) {                                                                                              \
+            ZrCore_Value_Copy(state, destination, &stableResult__);                                                    \
+        } else {                                                                                                       \
+            ZrCore_Debug_RunError(state, "ITER_CURRENT: receiver does not satisfy iterator contract");                \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_KNOWN_VM_MEMBER_CALL_BODY()                                                                            \
+    do {                                                                                                               \
+        TZrSize resultSlot__ = E(instruction);                                                                         \
+        TZrUInt16 cacheIndex__ = (TZrUInt16)A1(instruction);                                                           \
+        SZrFunctionCallSiteCacheEntry *cacheEntry__;                                                                   \
+        TZrSize parametersCount__ = 0u;                                                                                \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        cacheEntry__ = execution_member_get_cache_entry_dispatch_fast(                                                 \
+                currentFunction, cacheIndex__, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);                           \
+        parametersCount__ = cacheEntry__ != ZR_NULL ? cacheEntry__->argumentCount : 0u;                               \
+        state->stackTop.valuePointer = BASE(resultSlot__) + parametersCount__ + 1;                                    \
+        nextCallInfo__ = execution_pre_call_known_vm_member_fast(state,                                                \
+                                                                 programCounter,                                      \
+                                                                 currentFunction,                                     \
+                                                                 cacheIndex__,                                        \
+                                                                 cacheEntry__,                                        \
+                                                                 BASE(resultSlot__),                                  \
+                                                                 expectedReturnCount__,                               \
+                                                                 BASE(resultSlot__),                                  \
+                                                                 profileRuntime,                                      \
+                                                                 recordHelpers);                                      \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            ZrCore_Debug_RunError(state, "KNOWN_VM_MEMBER_CALL: invalid cached VM member callable");                 \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_KNOWN_VM_MEMBER_CALL_LOAD1_U8_BODY()                                                                   \
+    do {                                                                                                               \
+        TZrSize resultSlot__ = E(instruction);                                                                         \
+        TZrUInt16 cacheIndex__ = (TZrUInt16)instruction.instruction.operand.operand0[0];                              \
+        TZrUInt16 receiverSourceSlot__ = (TZrUInt16)instruction.instruction.operand.operand0[1];                      \
+        TZrUInt16 argumentSourceSlot__ = (TZrUInt16)instruction.instruction.operand.operand0[2];                      \
+        SZrFunctionCallSiteCacheEntry *cacheEntry__;                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        execution_copy_stack_value_to_stack_fast_no_profile(                                                           \
+                state, &BASE(resultSlot__ + 1u)->value, &BASE(receiverSourceSlot__)->value);                          \
+        execution_copy_stack_value_to_stack_fast_no_profile(                                                           \
+                state, &BASE(resultSlot__ + 2u)->value, &BASE(argumentSourceSlot__)->value);                          \
+        if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
+            profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY] += 2u;                                         \
+        }                                                                                                              \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        cacheEntry__ = execution_member_get_cache_entry_dispatch_fast(                                                 \
+                currentFunction, cacheIndex__, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);                           \
+        state->stackTop.valuePointer = BASE(resultSlot__) + 3u;                                                       \
+        nextCallInfo__ = execution_pre_call_known_vm_member_fast(state,                                                \
+                                                                 programCounter,                                      \
+                                                                 currentFunction,                                     \
+                                                                 cacheIndex__,                                        \
+                                                                 cacheEntry__,                                        \
+                                                                 BASE(resultSlot__),                                  \
+                                                                 expectedReturnCount__,                               \
+                                                                 BASE(resultSlot__),                                  \
+                                                                 profileRuntime,                                      \
+                                                                 recordHelpers);                                      \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            ZrCore_Debug_RunError(state, "KNOWN_VM_MEMBER_CALL_LOAD1_U8: invalid cached VM member callable");        \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_KNOWN_VM_CALL_BODY()                                                                                   \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_VM_CALL");                   \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = execution_pre_call_known_vm_fast(state,                                                       \
+                                                          BASE(functionSlot__),                                        \
+                                                          opA,                                                         \
+                                                          parametersCount__,                                           \
+                                                          expectedReturnCount__,                                        \
+                                                          BASE(E(instruction)),                                        \
+                                                          profileRuntime,                                              \
+                                                          recordHelpers);                                              \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            ZrCore_Debug_RunError(state, "KNOWN_VM_CALL: invalid known VM callable");                                \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_KNOWN_NATIVE_CALL_BODY()                                                                               \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_NATIVE_CALL");               \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        execution_pre_call_known_native_fast(state,                                                                    \
+                                             BASE(functionSlot__),                                                     \
+                                             opA,                                                                      \
+                                             expectedReturnCount__,                                                    \
+                                             BASE(E(instruction)),                                                     \
+                                             profileRuntime,                                                           \
+                                             recordHelpers);                                                           \
+        RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                     \
+    } while (0)
+#define EXECUTE_KNOWN_NATIVE_MEMBER_CALL_BODY()                                                                        \
+    do {                                                                                                               \
+        TZrSize resultSlot__ = E(instruction);                                                                         \
+        TZrUInt16 cacheIndex__ = (TZrUInt16)A1(instruction);                                                           \
+        SZrTypeValue *callableValue__;                                                                                 \
+        SZrTypeValue *receiverValue__;                                                                                 \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        state->stackTop.valuePointer = BASE(resultSlot__) + parametersCount__ + 1;                                    \
+        callableValue__ = ZrCore_Stack_GetValueNoProfile(BASE(resultSlot__));                                         \
+        receiverValue__ = ZrCore_Stack_GetValueNoProfile(BASE(resultSlot__) + 1);                                     \
+        if (callableValue__ == ZR_NULL || receiverValue__ == ZR_NULL ||                                               \
+            !execution_member_get_cached(                                                                              \
+                    state, programCounter, currentFunction, cacheIndex__, receiverValue__, callableValue__)) {        \
+            ZrCore_Debug_RunError(state, "KNOWN_NATIVE_MEMBER_CALL: invalid cached native member callable");         \
+        }                                                                                                              \
+        execution_pre_call_known_native_fast(state,                                                                    \
+                                             BASE(resultSlot__),                                                       \
+                                             callableValue__,                                                          \
+                                             expectedReturnCount__,                                                    \
+                                             BASE(resultSlot__),                                                       \
+                                             profileRuntime,                                                           \
+                                             recordHelpers);                                                           \
+        RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                     \
+    } while (0)
+#define EXECUTE_KNOWN_NATIVE_MEMBER_CALL_RECV_U8_BODY()                                                                \
+    do {                                                                                                               \
+        TZrSize resultSlot__ = E(instruction);                                                                         \
+        TZrUInt16 cacheIndex__ = (TZrUInt16)instruction.instruction.operand.operand0[0];                              \
+        TZrUInt16 receiverSourceSlot__ = (TZrUInt16)instruction.instruction.operand.operand0[1];                      \
+        TZrSize parametersCount__ = (TZrSize)instruction.instruction.operand.operand0[2];                             \
+        SZrTypeValue *callableValue__;                                                                                 \
+        SZrTypeValue *receiverValue__;                                                                                 \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+                                                                                                                       \
+        execution_copy_stack_value_to_stack_fast_no_profile(                                                           \
+                state, &BASE(resultSlot__ + 1u)->value, &BASE(receiverSourceSlot__)->value);                          \
+        if (ZR_UNLIKELY(recordHelpers)) {                                                                              \
+            profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;                                             \
+        }                                                                                                              \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        state->stackTop.valuePointer = BASE(resultSlot__) + parametersCount__ + 1;                                    \
+        callableValue__ = ZrCore_Stack_GetValueNoProfile(BASE(resultSlot__));                                         \
+        receiverValue__ = ZrCore_Stack_GetValueNoProfile(BASE(resultSlot__) + 1);                                     \
+        if (callableValue__ == ZR_NULL || receiverValue__ == ZR_NULL ||                                               \
+            !execution_member_get_cached(                                                                              \
+                    state, programCounter, currentFunction, cacheIndex__, receiverValue__, callableValue__)) {        \
+            ZrCore_Debug_RunError(state, "KNOWN_NATIVE_MEMBER_CALL_RECV_U8: invalid cached native member callable"); \
+        }                                                                                                              \
+        execution_pre_call_known_native_fast(state,                                                                    \
+                                             BASE(resultSlot__),                                                       \
+                                             callableValue__,                                                          \
+                                             expectedReturnCount__,                                                    \
+                                             BASE(resultSlot__),                                                       \
+                                             profileRuntime,                                                           \
+                                             recordHelpers);                                                           \
+        RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                     \
+    } while (0)
+#define EXECUTE_SUPER_FUNCTION_CALL_NO_ARGS_BODY()                                                                     \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
+                  "Function value is NULL in SUPER_FUNCTION_CALL_NO_ARGS");                                           \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, BASE(functionSlot__), expectedReturnCount__, BASE(E(instruction)));                            \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_KNOWN_VM_CALL_NO_ARGS_BODY()                                                                     \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
+                  "Function value is NULL in SUPER_KNOWN_VM_CALL_NO_ARGS");                                          \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = execution_pre_call_known_vm_fast(state,                                                       \
+                                                          BASE(functionSlot__),                                        \
+                                                          opA,                                                         \
+                                                          0,                                                           \
+                                                          expectedReturnCount__,                                        \
+                                                          BASE(E(instruction)),                                        \
+                                                          profileRuntime,                                              \
+                                                          recordHelpers);                                              \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            ZrCore_Debug_RunError(state, "SUPER_KNOWN_VM_CALL_NO_ARGS: invalid known VM callable");                  \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_KNOWN_NATIVE_CALL_NO_ARGS_BODY()                                                                 \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
+                  "Function value is NULL in SUPER_KNOWN_NATIVE_CALL_NO_ARGS");                                      \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        execution_pre_call_known_native_fast(state,                                                                    \
+                                             BASE(functionSlot__),                                                     \
+                                             opA,                                                                      \
+                                             expectedReturnCount__,                                                    \
+                                             BASE(E(instruction)),                                                     \
+                                             profileRuntime,                                                           \
+                                             recordHelpers);                                                           \
+        RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                     \
+    } while (0)
+#define EXECUTE_FUNCTION_CALL_BODY()                                                                                   \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");                   \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, BASE(functionSlot__), expectedReturnCount__, BASE(E(instruction)));                            \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_DYN_CALL_NO_ARGS_BODY()                                                                          \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in SUPER_DYN_CALL_NO_ARGS");         \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, BASE(functionSlot__), expectedReturnCount__, BASE(E(instruction)));                            \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_DYN_CALL_CACHED_BODY()                                                                           \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        const SZrFunctionCallSiteCacheEntry *cacheEntry__ = execution_get_callsite_cache_entry(                       \
+                currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL);                          \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        if (cacheEntry__ == ZR_NULL) {                                                                                 \
+            ZrCore_Debug_RunError(state, "SUPER_DYN_CALL_CACHED: invalid callsite cache");                           \
+        }                                                                                                              \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + cacheEntry__->argumentCount + 1;                        \
+        execution_try_prepare_dyn_call_target_cached(state,                                                            \
+                                                     currentFunction,                                                  \
+                                                     B1(instruction),                                                  \
+                                                     BASE(functionSlot__),                                             \
+                                                     ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL);                       \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, BASE(functionSlot__), expectedReturnCount__, BASE(E(instruction)));                            \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_DYN_CALL_BODY()                                                                                        \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in DYN_CALL");                       \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, BASE(functionSlot__), expectedReturnCount__, BASE(E(instruction)));                            \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_META_CALL_NO_ARGS_BODY()                                                                         \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
+        if (!execution_prepare_meta_call_target(state, BASE(functionSlot__))) {                                        \
+            ZrCore_Debug_RunError(state, "SUPER_META_CALL_NO_ARGS: receiver does not define @call");                 \
+        }                                                                                                              \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, BASE(functionSlot__), expectedReturnCount__, BASE(E(instruction)));                            \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_META_CALL_CACHED_BODY()                                                                          \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        const SZrFunctionCallSiteCacheEntry *cacheEntry__ = execution_get_callsite_cache_entry(                       \
+                currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL);                         \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        if (cacheEntry__ == ZR_NULL) {                                                                                 \
+            ZrCore_Debug_RunError(state, "SUPER_META_CALL_CACHED: invalid callsite cache");                          \
+        }                                                                                                              \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + cacheEntry__->argumentCount + 1;                        \
+        if (!execution_prepare_meta_call_target_cached(state,                                                          \
+                                                       currentFunction,                                                \
+                                                       B1(instruction),                                                \
+                                                       BASE(functionSlot__),                                           \
+                                                       ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL)) {                  \
+            ZrCore_Debug_RunError(state, "SUPER_META_CALL_CACHED: receiver does not define @call");                  \
+        }                                                                                                              \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, BASE(functionSlot__), expectedReturnCount__, BASE(E(instruction)));                            \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_META_CALL_BODY()                                                                                       \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        if (!execution_prepare_meta_call_target(state, BASE(functionSlot__))) {                                        \
+            ZrCore_Debug_RunError(state, "META_CALL: receiver does not define @call");                               \
+        }                                                                                                              \
+        parametersCount__++;                                                                                           \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, BASE(functionSlot__), expectedReturnCount__, BASE(E(instruction)));                            \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_FUNCTION_TAIL_CALL_BODY()                                                                              \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");                   \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_KNOWN_VM_TAIL_CALL_BODY()                                                                              \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_VM_TAIL_CALL");             \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        nextCallInfo__ = execution_pre_call_known_vm_fast(state,                                                       \
+                                                          functionPointer__,                                           \
+                                                          opA,                                                         \
+                                                          parametersCount__,                                           \
+                                                          expectedReturnCount__,                                        \
+                                                          BASE(E(instruction)),                                        \
+                                                          profileRuntime,                                              \
+                                                          recordHelpers);                                              \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            ZrCore_Debug_RunError(state, "KNOWN_VM_TAIL_CALL: invalid known VM callable");                          \
+        } else {                                                                                                       \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_KNOWN_NATIVE_TAIL_CALL_BODY()                                                                          \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_NATIVE_TAIL_CALL");         \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        execution_pre_call_known_native_fast(state,                                                                    \
+                                             functionPointer__,                                                        \
+                                             opA,                                                                      \
+                                             expectedReturnCount__,                                                    \
+                                             BASE(E(instruction)),                                                     \
+                                             profileRuntime,                                                           \
+                                             recordHelpers);                                                           \
+        callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                            \
+        RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                     \
+    } while (0)
+#define EXECUTE_SUPER_FUNCTION_TAIL_CALL_NO_ARGS_BODY()                                                                \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
+                  "Function value is NULL in SUPER_FUNCTION_TAIL_CALL_NO_ARGS");                                      \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS_BODY()                                                                \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
+                  "Function value is NULL in SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS");                                     \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        nextCallInfo__ = execution_pre_call_known_vm_fast(state,                                                       \
+                                                          functionPointer__,                                           \
+                                                          opA,                                                         \
+                                                          0,                                                           \
+                                                          expectedReturnCount__,                                        \
+                                                          BASE(E(instruction)),                                        \
+                                                          profileRuntime,                                              \
+                                                          recordHelpers);                                              \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            ZrCore_Debug_RunError(state, "SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS: invalid known VM callable");             \
+        } else {                                                                                                       \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS_BODY()                                                            \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
+                  "Function value is NULL in SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS");                                 \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        execution_pre_call_known_native_fast(state,                                                                    \
+                                             functionPointer__,                                                        \
+                                             opA,                                                                      \
+                                             expectedReturnCount__,                                                    \
+                                             BASE(E(instruction)),                                                     \
+                                             profileRuntime,                                                           \
+                                             recordHelpers);                                                           \
+        callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                            \
+        RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                     \
+    } while (0)
+#define EXECUTE_SUPER_DYN_TAIL_CALL_NO_ARGS_BODY()                                                                     \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&                                                                \
+                  "Function value is NULL in SUPER_DYN_TAIL_CALL_NO_ARGS");                                          \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_DYN_TAIL_CALL_CACHED_BODY()                                                                      \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        const SZrFunctionCallSiteCacheEntry *cacheEntry__ = execution_get_callsite_cache_entry(                       \
+                currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL);                     \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        if (cacheEntry__ == ZR_NULL) {                                                                                 \
+            ZrCore_Debug_RunError(state, "SUPER_DYN_TAIL_CALL_CACHED: invalid callsite cache");                      \
+        }                                                                                                              \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + cacheEntry__->argumentCount + 1;                        \
+        execution_try_prepare_dyn_call_target_cached(state,                                                            \
+                                                     currentFunction,                                                  \
+                                                     B1(instruction),                                                  \
+                                                     BASE(functionSlot__),                                             \
+                                                     ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL);                  \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_DYN_TAIL_CALL_BODY()                                                                                   \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        opA = &BASE(functionSlot__)->value;                                                                            \
+        ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in DYN_TAIL_CALL");                  \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_META_TAIL_CALL_NO_ARGS_BODY()                                                                    \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + 1;                                                      \
+        if (!execution_prepare_meta_call_target(state, BASE(functionSlot__))) {                                        \
+            ZrCore_Debug_RunError(state, "SUPER_META_TAIL_CALL_NO_ARGS: receiver does not define @call");            \
+        }                                                                                                              \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_SUPER_META_TAIL_CALL_CACHED_BODY()                                                                     \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        const SZrFunctionCallSiteCacheEntry *cacheEntry__ = execution_get_callsite_cache_entry(                       \
+                currentFunction, B1(instruction), ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL);                    \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        if (cacheEntry__ == ZR_NULL) {                                                                                 \
+            ZrCore_Debug_RunError(state, "SUPER_META_TAIL_CALL_CACHED: invalid callsite cache");                     \
+        }                                                                                                              \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + cacheEntry__->argumentCount + 1;                        \
+        if (!execution_prepare_meta_call_target_cached(state,                                                          \
+                                                       currentFunction,                                                \
+                                                       B1(instruction),                                                \
+                                                       BASE(functionSlot__),                                           \
+                                                       ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL)) {             \
+            ZrCore_Debug_RunError(state, "SUPER_META_TAIL_CALL_CACHED: receiver does not define @call");             \
+        }                                                                                                              \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_META_TAIL_CALL_BODY()                                                                                  \
+    do {                                                                                                               \
+        TZrSize functionSlot__ = A1(instruction);                                                                      \
+        TZrSize parametersCount__ = B1(instruction);                                                                   \
+        TZrSize expectedReturnCount__ = 1;                                                                             \
+        TZrStackValuePointer functionPointer__;                                                                        \
+        SZrCallInfo *nextCallInfo__;                                                                                   \
+                                                                                                                       \
+        state->stackTop.valuePointer = BASE(functionSlot__) + parametersCount__ + 1;                                  \
+        if (!execution_prepare_meta_call_target(state, BASE(functionSlot__))) {                                        \
+            ZrCore_Debug_RunError(state, "META_TAIL_CALL: receiver does not define @call");                          \
+        }                                                                                                              \
+        parametersCount__++;                                                                                           \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter + 1;                                                 \
+        callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;                                                             \
+        functionPointer__ = BASE(functionSlot__);                                                                      \
+        if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer__)) {                                \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+        nextCallInfo__ = ZrCore_Function_PreCall(                                                                      \
+                state, functionPointer__, expectedReturnCount__, BASE(E(instruction)));                               \
+        if (nextCallInfo__ == ZR_NULL) {                                                                               \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            RESUME_AFTER_NATIVE_CALL(state, callInfo);                                                                 \
+        } else {                                                                                                       \
+            callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;                                                        \
+            callInfo = nextCallInfo__;                                                                                 \
+            goto LZrStart;                                                                                             \
+        }                                                                                                              \
+    } while (0)
+#define EXECUTE_FUNCTION_RETURN_BODY()                                                                                 \
+    do {                                                                                                               \
+        TZrSize returnCount__ = E(instruction);                                                                        \
+        TZrSize resultSlot__ = A1(instruction);                                                                        \
+        TZrSize variableArguments__ = B1(instruction);                                                                 \
+                                                                                                                       \
+        callInfo->context.context.programCounter = programCounter;                                                     \
+        if (ZR_LIKELY(returnCount__ == 1u && variableArguments__ == 0u &&                                             \
+                      state->exceptionHandlerStackLength == 0u &&                                                      \
+                      (currentFunction == ZR_NULL || currentFunction->returnEscapeSlotCount == 0u) &&                 \
+                      state->debugHookSignal == 0u && callInfo->expectedReturnCount == 1u &&                          \
+                      callInfo->callStatus == ZR_CALL_STATUS_NONE && callInfo->hasReturnDestination &&                \
+                      !execution_callinfo_has_pending_close_work(state, callInfo))) {                                  \
+            TZrStackValuePointer returnSource__ = BASE(resultSlot__);                                                  \
+            TZrStackValuePointer returnDestination__ = callInfo->returnDestination;                                    \
+            if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {                                  \
+                state->stackTop.valuePointer = callInfo->functionTop.valuePointer;                                    \
+            }                                                                                                          \
+            UPDATE_BASE(callInfo);                                                                                     \
+            if (returnSource__ != returnDestination__) {                                                               \
+                execution_copy_stack_value_to_stack_fast_no_profile(                                                   \
+                        state, &returnDestination__->value, &returnSource__->value);                                  \
+            }                                                                                                          \
+            state->stackTop.valuePointer = returnDestination__ + 1;                                                    \
+            state->callInfoList = callInfo->previous;                                                                  \
+            trap = callInfo->context.context.trap;                                                                     \
+            callInfo = callInfo->previous;                                                                             \
+            goto LZrReturning;                                                                                         \
+        }                                                                                                              \
+        if (ZR_UNLIKELY(state->exceptionHandlerStackLength > 0u)) {                                                    \
+            execution_discard_exception_handlers_for_callinfo_fast(state, callInfo);                                  \
+        }                                                                                                              \
+                                                                                                                       \
+        if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {                                      \
+            state->stackTop.valuePointer = callInfo->functionTop.valuePointer;                                        \
+        }                                                                                                              \
+        if (currentFunction != ZR_NULL && currentFunction->returnEscapeSlotCount > 0u) {                              \
+            for (TZrSize returnIndex__ = 0; returnIndex__ < returnCount__; returnIndex__++) {                         \
+                ZrCore_Function_ApplyReturnEscape(state,                                                              \
+                                                  currentFunction,                                                     \
+                                                  (TZrUInt32)(resultSlot__ + returnIndex__),                          \
+                                                  &BASE(resultSlot__ + returnIndex__)->value);                        \
+            }                                                                                                          \
+        }                                                                                                              \
+        if (execution_callinfo_has_pending_close_work(state, callInfo)) {                                              \
+            ZrCore_Closure_CloseClosure(state,                                                                         \
+                                        callInfo->functionBase.valuePointer + 1,                                       \
+                                        ZR_THREAD_STATUS_INVALID,                                                      \
+                                        ZR_FALSE);                                                                     \
+        }                                                                                                              \
+        UPDATE_BASE(callInfo);                                                                                         \
+                                                                                                                       \
+        if (variableArguments__ > 0) {                                                                                 \
+            callInfo->functionBase.valuePointer -=                                                                     \
+                    callInfo->context.context.variableArgumentCount + variableArguments__;                            \
+        }                                                                                                              \
+        if (ZR_LIKELY(state->debugHookSignal == 0u &&                                                                  \
+                      callInfo->expectedReturnCount == 1u &&                                                           \
+                      callInfo->callStatus == ZR_CALL_STATUS_NONE)) {                                                  \
+            TZrStackValuePointer returnSource__ = returnCount__ > 0u ? BASE(resultSlot__) : ZR_NULL;                  \
+            execution_post_call_single_result_resolved_source_fast(state, callInfo, returnSource__);                  \
+        } else {                                                                                                       \
+            state->stackTop.valuePointer = BASE(resultSlot__) + returnCount__;                                        \
+            ZrCore_Function_PostCall(state, callInfo, returnCount__);                                                 \
+        }                                                                                                              \
+        trap = callInfo->context.context.trap;                                                                         \
+        goto LZrReturn;                                                                                                \
     } while (0)
 #define EXECUTE_GET_STACK_BODY_FAST()                                                                                  \
     do {                                                                                                               \
@@ -1567,6 +3099,27 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                  \
         ALGORITHM_2(nativeInt64, +, opA->type);                                                                        \
     } while (0)
+#define EXECUTE_ADD_SIGNED_MOD_CONST_BODY()                                                                            \
+    do {                                                                                                               \
+        const SZrTypeValue *constOpC__ = CONST(instruction.instruction.operand.operand1[1]);                          \
+        TZrInt64 divisor__;                                                                                            \
+        opA = &BASE(instruction.instruction.operand.operand0[0])->value;                                               \
+        opB = &BASE(instruction.instruction.operand.operand0[1])->value;                                               \
+        ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_SIGNED_INT(opB->type));                  \
+        ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpC__->type));                                                             \
+        divisor__ = constOpC__->value.nativeObject.nativeInt64;                                                        \
+        if (ZR_UNLIKELY(divisor__ == 0)) {                                                                             \
+            SAVE_STATE(state, callInfo);                                                                               \
+            ZrCore_Debug_RunError(state, "modulo by zero");                                                           \
+        }                                                                                                              \
+        if (ZR_UNLIKELY(divisor__ < 0)) {                                                                              \
+            divisor__ = -divisor__;                                                                                   \
+        }                                                                                                              \
+        EXECUTION_STORE_PLAIN_REUSE(                                                                                   \
+                nativeInt64,                                                                                           \
+                (opA->value.nativeObject.nativeInt64 + opB->value.nativeObject.nativeInt64) % divisor__,               \
+                ZR_VALUE_TYPE_INT64);                                                                                  \
+    } while (0)
 #define EXECUTE_ADD_SIGNED_LOAD_STACK_LOAD_CONST_BODY()                                                                \
     do {                                                                                                               \
         TZrUInt16 constantIndex__ = instruction.instruction.operand.operand1[1];                                       \
@@ -1826,6 +3379,22 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                     "MUL_SIGNED_LOAD_STACK_CONST");                                                                    \
         }                                                                                                              \
     } while (0)
+#define EXECUTE_MUL_SIGNED_LOAD_STACK_BODY()                                                                           \
+    do {                                                                                                               \
+        opA = &BASE(instruction.instruction.operand.operand0[0])->value;                                               \
+        opB = &BASE(instruction.instruction.operand.operand0[1])->value;                                               \
+        if (ZR_VALUE_IS_TYPE_INT(opA->type) && ZR_VALUE_IS_TYPE_INT(opB->type)) {                                     \
+            ALGORITHM_2(nativeInt64, *, ZR_VALUE_TYPE_INT64);                                                         \
+        } else {                                                                                                       \
+            execution_try_binary_numeric_float_fallback_or_raise(                                                      \
+                    state,                                                                                             \
+                    ZR_EXEC_NUMERIC_FALLBACK_MUL,                                                                      \
+                    destination,                                                                                       \
+                    opA,                                                                                               \
+                    opB,                                                                                               \
+                    "MUL_SIGNED_LOAD_STACK");                                                                          \
+        }                                                                                                              \
+    } while (0)
 #define EXECUTE_DIV_SIGNED_CONST_BODY()                                                                                \
     do {                                                                                                               \
         const SZrTypeValue *constOpB = CONST(B1(instruction));                                                         \
@@ -1833,8 +3402,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            SAVE_STATE(state, callInfo);                                                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
+                SAVE_STATE(state, callInfo);                                                                           \
                 ZrCore_Debug_RunError(state, "divide by zero");                                                        \
             }                                                                                                          \
             ALGORITHM_CONST_2(nativeInt64, /, ZR_VALUE_TYPE_INT64, divisor);                                          \
@@ -1856,8 +3425,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            SAVE_STATE(state, callInfo);                                                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
+                SAVE_STATE(state, callInfo);                                                                           \
                 ZrCore_Debug_RunError(state, "divide by zero");                                                        \
             }                                                                                                          \
             EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                        \
@@ -1884,8 +3453,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            SAVE_STATE(state, callInfo);                                                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
+                SAVE_STATE(state, callInfo);                                                                           \
                 ZrCore_Debug_RunError(state, "divide by zero");                                                        \
             }                                                                                                          \
             ALGORITHM_CONST_2(nativeInt64, /, ZR_VALUE_TYPE_INT64, divisor);                                          \
@@ -1909,8 +3478,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            SAVE_STATE(state, callInfo);                                                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
+                SAVE_STATE(state, callInfo);                                                                           \
                 ZrCore_Debug_RunError(state, "divide by zero");                                                        \
             }                                                                                                          \
             ALGORITHM_CONST_2(nativeInt64, /, ZR_VALUE_TYPE_INT64, divisor);                                          \
@@ -1931,8 +3500,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            SAVE_STATE(state, callInfo);                                                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
+                SAVE_STATE(state, callInfo);                                                                           \
                 ZrCore_Debug_RunError(state, "modulo by zero");                                                        \
             }                                                                                                          \
             if (ZR_UNLIKELY(divisor < 0)) {                                                                            \
@@ -1957,8 +3526,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(leftValue__->type)) {                                                                 \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            SAVE_STATE(state, callInfo);                                                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
+                SAVE_STATE(state, callInfo);                                                                           \
                 ZrCore_Debug_RunError(state, "modulo by zero");                                                        \
             }                                                                                                          \
             if (ZR_UNLIKELY(divisor < 0)) {                                                                            \
@@ -1988,8 +3557,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            SAVE_STATE(state, callInfo);                                                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
+                SAVE_STATE(state, callInfo);                                                                           \
                 ZrCore_Debug_RunError(state, "modulo by zero");                                                        \
             }                                                                                                          \
             if (ZR_UNLIKELY(divisor < 0)) {                                                                            \
@@ -2016,8 +3585,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_INT(constOpB->type));                                                               \
         if (ZR_VALUE_IS_TYPE_INT(opA->type)) {                                                                         \
             TZrInt64 divisor = constOpB->value.nativeObject.nativeInt64;                                               \
-            SAVE_STATE(state, callInfo);                                                                               \
             if (ZR_UNLIKELY(divisor == 0)) {                                                                           \
+                SAVE_STATE(state, callInfo);                                                                           \
                 ZrCore_Debug_RunError(state, "modulo by zero");                                                        \
             }                                                                                                          \
             if (ZR_UNLIKELY(divisor < 0)) {                                                                            \
@@ -2061,8 +3630,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrUInt64 divisor;                                                                                             \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));         \
         divisor = constOpB->value.nativeObject.nativeUInt64;                                                           \
-        SAVE_STATE(state, callInfo);                                                                                   \
         if (ZR_UNLIKELY(divisor == 0)) {                                                                               \
+            SAVE_STATE(state, callInfo);                                                                               \
             ZrCore_Debug_RunError(state, "divide by zero");                                                            \
         }                                                                                                              \
         ALGORITHM_CONST_2(nativeUInt64, /, opA->type, divisor);                                                        \
@@ -2076,8 +3645,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));                                                       \
         divisor = constOpB->value.nativeObject.nativeUInt64;                                                           \
-        SAVE_STATE(state, callInfo);                                                                                   \
         if (ZR_UNLIKELY(divisor == 0)) {                                                                               \
+            SAVE_STATE(state, callInfo);                                                                               \
             ZrCore_Debug_RunError(state, "divide by zero");                                                            \
         }                                                                                                              \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
@@ -2092,8 +3661,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         TZrUInt64 divisor;                                                                                             \
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(opA->type) && ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));         \
         divisor = constOpB->value.nativeObject.nativeUInt64;                                                           \
-        SAVE_STATE(state, callInfo);                                                                                   \
         if (ZR_UNLIKELY(divisor == 0)) {                                                                               \
+            SAVE_STATE(state, callInfo);                                                                               \
             ZrCore_Debug_RunError(state, "modulo by zero");                                                            \
         }                                                                                                              \
         ALGORITHM_CONST_2(nativeUInt64, %, opA->type, divisor);                                                        \
@@ -2107,8 +3676,8 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
         ZR_ASSERT(ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftValue__->type) &&                                                  \
                   ZR_VALUE_IS_TYPE_UNSIGNED_INT(constOpB->type));                                                       \
         divisor = constOpB->value.nativeObject.nativeUInt64;                                                           \
-        SAVE_STATE(state, callInfo);                                                                                   \
         if (ZR_UNLIKELY(divisor == 0)) {                                                                               \
+            SAVE_STATE(state, callInfo);                                                                               \
             ZrCore_Debug_RunError(state, "modulo by zero");                                                            \
         }                                                                                                              \
         EXECUTION_STORE_PLAIN_DIRECT_TO(plainDestination__,                                                            \
@@ -2271,7 +3840,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
     do {                                                                                                               \
         opA = &BASE(A1(instruction))->value;                                                                           \
         opB = &BASE(B1(instruction))->value;                                                                           \
-        if (ZR_UNLIKELY(!ZrCore_Object_SuperArrayAddIntAssumeFast(state, opA, opB, destination))) {                  \
+        if (ZR_UNLIKELY(!(E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG                                               \
+                                  ? ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(state, opA, opB)            \
+                                  : ZrCore_Object_SuperArrayAddIntAssumeFast(state, opA, opB, destination)))) {       \
             ZrCore_Debug_RunError(state,                                                                               \
                                   "SUPER_ARRAY_ADD_INT: receiver must be an array-like object with int payload");     \
         }                                                                                                              \
@@ -2494,7 +4065,6 @@ LZrReturning: {
         }
 LZrFastInstruction_FALLBACK:
         FAST_PREPARE_DESTINATION();
-LZrFastInstruction_FALLBACK_NO_DESTINATION:
 #endif
         ZR_INSTRUCTION_DISPATCH(instruction) {
             ZR_INSTRUCTION_LABEL(NOP) {
@@ -2536,8 +4106,18 @@ LZrFastInstruction_RESET_STACK_NULL: {
             }
             DONE_FAST(1);
 #endif
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_RESET_STACK_NULL2: {
+                EXECUTE_RESET_STACK_NULL2_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(RESET_STACK_NULL) {
                 EXECUTE_RESET_STACK_NULL_BODY();
+            }
+            DONE(1);
+            ZR_INSTRUCTION_LABEL(RESET_STACK_NULL2) {
+                EXECUTE_RESET_STACK_NULL2_BODY();
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(SET_CONSTANT) {
@@ -2982,6 +4562,12 @@ LZrFastInstruction_RESET_STACK_NULL: {
                 }
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_ADD: {
+                FAST_PREPARE_DESTINATION();
+                goto LZrInstruction_ADD;
+            }
+#endif
             ZR_INSTRUCTION_LABEL(ADD) {
                 SZrTypeValue builtinResult;
                 TZrBool builtinNeedsTemporaryResult;
@@ -3192,6 +4778,17 @@ LZrFastInstruction_ADD_SIGNED_LOAD_STACK: {
 #endif
             ZR_INSTRUCTION_LABEL(ADD_SIGNED_LOAD_STACK) {
                 EXECUTE_ADD_SIGNED_LOAD_STACK_BODY();
+            }
+            DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_ADD_SIGNED_MOD_CONST: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_ADD_SIGNED_MOD_CONST_BODY();
+            }
+            DONE_FAST(1);
+#endif
+            ZR_INSTRUCTION_LABEL(ADD_SIGNED_MOD_CONST) {
+                EXECUTE_ADD_SIGNED_MOD_CONST_BODY();
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -3459,6 +5056,12 @@ LZrFastInstruction_SUB_UNSIGNED_CONST_PLAIN_DEST: {
                         state, ZR_EXEC_NUMERIC_FALLBACK_SUB, destination, opA, opB, "SUB_FLOAT");
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_MUL: {
+                FAST_PREPARE_DESTINATION();
+                goto LZrInstruction_MUL;
+            }
+#endif
             ZR_INSTRUCTION_LABEL(MUL) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
@@ -3564,6 +5167,17 @@ LZrFastInstruction_MUL_SIGNED_LOAD_STACK_CONST: {
 #endif
             ZR_INSTRUCTION_LABEL(MUL_SIGNED_LOAD_STACK_CONST) {
                 EXECUTE_MUL_SIGNED_LOAD_STACK_CONST_BODY();
+            }
+            DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_MUL_SIGNED_LOAD_STACK: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_MUL_SIGNED_LOAD_STACK_BODY();
+            }
+            DONE_FAST(1);
+#endif
+            ZR_INSTRUCTION_LABEL(MUL_SIGNED_LOAD_STACK) {
+                EXECUTE_MUL_SIGNED_LOAD_STACK_BODY();
             }
             DONE(1);
             ZR_INSTRUCTION_LABEL(MUL_UNSIGNED) {
@@ -3823,6 +5437,12 @@ LZrFastInstruction_DIV_UNSIGNED_CONST_PLAIN_DEST: {
                         state, ZR_EXEC_NUMERIC_FALLBACK_DIV, destination, opA, opB, "DIV_FLOAT");
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_MOD: {
+                FAST_PREPARE_DESTINATION();
+                goto LZrInstruction_MOD;
+            }
+#endif
             ZR_INSTRUCTION_LABEL(MOD) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
@@ -4455,6 +6075,12 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 ALGORITHM_2(nativeInt64, |, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_BITWISE_XOR: {
+                FAST_PREPARE_DESTINATION();
+                goto LZrInstruction_BITWISE_XOR;
+            }
+#endif
             ZR_INSTRUCTION_LABEL(BITWISE_XOR) {
                 opA = &BASE(A1(instruction))->value;
                 opB = &BASE(B1(instruction))->value;
@@ -4476,874 +6102,294 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
                 ALGORITHM_2(nativeUInt64, >>, ZR_VALUE_TYPE_INT64);
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_FUNCTION_CALL_NO_ARGS: {
+                EXECUTE_SUPER_FUNCTION_CALL_NO_ARGS_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_FUNCTION_CALL_NO_ARGS) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize expectedReturnCount = 1;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in SUPER_FUNCTION_CALL_NO_ARGS");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                SZrCallInfo *nextCallInfo =
-                        ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_FUNCTION_CALL_NO_ARGS_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_KNOWN_VM_CALL_NO_ARGS: {
+                EXECUTE_SUPER_KNOWN_VM_CALL_NO_ARGS_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_KNOWN_VM_CALL_NO_ARGS) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize expectedReturnCount = 1;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in SUPER_KNOWN_VM_CALL_NO_ARGS");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                SZrCallInfo *nextCallInfo = execution_pre_call_known_vm_fast(state,
-                                                                             BASE(functionSlot),
-                                                                             opA,
-                                                                             0,
-                                                                             expectedReturnCount,
-                                                                             BASE(E(instruction)),
-                                                                             profileRuntime,
-                                                                             recordHelpers);
-                if (nextCallInfo == ZR_NULL) {
-                    ZrCore_Debug_RunError(state, "SUPER_KNOWN_VM_CALL_NO_ARGS: invalid known VM callable");
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_KNOWN_VM_CALL_NO_ARGS_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_KNOWN_NATIVE_CALL_NO_ARGS: {
+                EXECUTE_SUPER_KNOWN_NATIVE_CALL_NO_ARGS_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_KNOWN_NATIVE_CALL_NO_ARGS) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize expectedReturnCount = 1;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&
-                          "Function value is NULL in SUPER_KNOWN_NATIVE_CALL_NO_ARGS");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                execution_pre_call_known_native_fast(state,
-                                                     BASE(functionSlot),
-                                                     opA,
-                                                     expectedReturnCount,
-                                                     BASE(E(instruction)),
-                                                     profileRuntime,
-                                                     recordHelpers);
-                RESUME_AFTER_NATIVE_CALL(state, callInfo);
+                EXECUTE_SUPER_KNOWN_NATIVE_CALL_NO_ARGS_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_FUNCTION_TAIL_CALL_NO_ARGS: {
+                EXECUTE_SUPER_FUNCTION_TAIL_CALL_NO_ARGS_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_FUNCTION_TAIL_CALL_NO_ARGS) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-                SZrCallInfo *nextCallInfo;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&
-                          "Function value is NULL in SUPER_FUNCTION_TAIL_CALL_NO_ARGS");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_FUNCTION_TAIL_CALL_NO_ARGS_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS: {
+                EXECUTE_SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-                SZrCallInfo *nextCallInfo;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&
-                          "Function value is NULL in SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                nextCallInfo = execution_pre_call_known_vm_fast(state,
-                                                                functionPointer,
-                                                                opA,
-                                                                0,
-                                                                expectedReturnCount,
-                                                                BASE(E(instruction)),
-                                                                profileRuntime,
-                                                                recordHelpers);
-                if (nextCallInfo == ZR_NULL) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    ZrCore_Debug_RunError(state, "SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS: invalid known VM callable");
-                } else {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS: {
+                EXECUTE_SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&
-                          "Function value is NULL in SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                execution_pre_call_known_native_fast(state,
-                                                     functionPointer,
-                                                     opA,
-                                                     expectedReturnCount,
-                                                     BASE(E(instruction)),
-                                                     profileRuntime,
-                                                     recordHelpers);
-                callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                RESUME_AFTER_NATIVE_CALL(state, callInfo);
+                EXECUTE_SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_FUNCTION_CALL: {
+                EXECUTE_FUNCTION_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(FUNCTION_CALL) {
-                // FUNCTION_CALL 指令格式：
-                // operandExtra (E) = resultSlot (返回值槽位，用于编译时；ZrCore_Function_PreCall 需要的是 expectedReturnCount)
-                // operand1[0] (A1) = functionSlot (函数在栈上的槽位)
-                // operand1[1] (B1) = parametersCount (参数数量，直接使用，不从栈读取)
-                TZrSize functionSlot = A1(instruction);
-                TZrSize parametersCount = B1(instruction);  // 参数数量直接使用，不是栈槽位
-                TZrSize expectedReturnCount = 1;  // 期望 1 个返回值；ZrCore_Function_PreCall 的 resultCount 表示 expectedReturnCount；E(instruction)=resultSlot 仅编译时用
-                
-                opA = &BASE(functionSlot)->value;
-                // 这里只保证“非空可调用目标”进入统一预调用分派。
-                // ZrCore_Function_PreCall 会继续分流 function/closure/native pointer，
-                // 并在其它值类型上解析 @call 元方法。
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");
-                
-                // 设置栈顶指针（函数在 functionSlot，参数在 functionSlot+1 到 functionSlot+parametersCount）
-                if (parametersCount > 0) {
-                    state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
-                } else {
-                    state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                }
-                
-                // save 下一条指令的地址：fetch 使用 *(PC+=1)，当前 programCounter 指向本指令，故保存 programCounter+1
-                callInfo->context.context.programCounter = programCounter + 1;
-                SZrCallInfo *nextCallInfo =
-                        ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    // NULL means native call
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    // a vm call
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_FUNCTION_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_KNOWN_VM_CALL: {
+                EXECUTE_KNOWN_VM_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(KNOWN_VM_CALL) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize parametersCount = B1(instruction);
-                TZrSize expectedReturnCount = 1;
-                SZrCallInfo *nextCallInfo;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_VM_CALL");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                nextCallInfo = execution_pre_call_known_vm_fast(state,
-                                                                BASE(functionSlot),
-                                                                opA,
-                                                                parametersCount,
-                                                                expectedReturnCount,
-                                                                BASE(E(instruction)),
-                                                                profileRuntime,
-                                                                recordHelpers);
-                if (nextCallInfo == ZR_NULL) {
-                    ZrCore_Debug_RunError(state, "KNOWN_VM_CALL: invalid known VM callable");
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_KNOWN_VM_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_KNOWN_VM_MEMBER_CALL: {
+                EXECUTE_KNOWN_VM_MEMBER_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(KNOWN_VM_MEMBER_CALL) {
-                TZrSize resultSlot = E(instruction);
-                TZrUInt16 cacheIndex = (TZrUInt16)A1(instruction);
-                SZrFunctionCallSiteCacheEntry *cacheEntry;
-                TZrSize parametersCount = 0u;
-                TZrSize expectedReturnCount = 1;
-                SZrCallInfo *nextCallInfo;
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                cacheEntry = execution_member_get_cache_entry_dispatch_fast(
-                        currentFunction, cacheIndex, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
-                parametersCount = cacheEntry != ZR_NULL ? cacheEntry->argumentCount : 0u;
-                state->stackTop.valuePointer = BASE(resultSlot) + parametersCount + 1;
-                nextCallInfo = execution_pre_call_known_vm_member_fast(state,
-                                                                       programCounter,
-                                                                       currentFunction,
-                                                                       cacheIndex,
-                                                                       cacheEntry,
-                                                                       BASE(resultSlot),
-                                                                       expectedReturnCount,
-                                                                       BASE(E(instruction)),
-                                                                       profileRuntime,
-                                                                       recordHelpers);
-                if (nextCallInfo == ZR_NULL) {
-                    ZrCore_Debug_RunError(state, "KNOWN_VM_MEMBER_CALL: invalid cached VM member callable");
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_KNOWN_VM_MEMBER_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_KNOWN_VM_MEMBER_CALL_LOAD1_U8: {
+                EXECUTE_KNOWN_VM_MEMBER_CALL_LOAD1_U8_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(KNOWN_VM_MEMBER_CALL_LOAD1_U8) {
-                TZrSize resultSlot = E(instruction);
-                TZrUInt16 cacheIndex = (TZrUInt16)instruction.instruction.operand.operand0[0];
-                TZrUInt16 receiverSourceSlot = (TZrUInt16)instruction.instruction.operand.operand0[1];
-                TZrUInt16 argumentSourceSlot = (TZrUInt16)instruction.instruction.operand.operand0[2];
-                SZrFunctionCallSiteCacheEntry *cacheEntry;
-                TZrSize parametersCount = 0u;
-                TZrSize expectedReturnCount = 1;
-                SZrCallInfo *nextCallInfo;
-
-                execution_copy_stack_value_to_stack_fast_no_profile(
-                        state, &BASE(resultSlot + 1u)->value, &BASE(receiverSourceSlot)->value);
-                execution_copy_stack_value_to_stack_fast_no_profile(
-                        state, &BASE(resultSlot + 2u)->value, &BASE(argumentSourceSlot)->value);
-                if (ZR_UNLIKELY(recordHelpers)) {
-                    profileRuntime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY] += 2u;
-                }
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                cacheEntry = execution_member_get_cache_entry_dispatch_fast(
-                        currentFunction, cacheIndex, ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET);
-                parametersCount = cacheEntry != ZR_NULL ? cacheEntry->argumentCount : 0u;
-                state->stackTop.valuePointer = BASE(resultSlot) + parametersCount + 1;
-                nextCallInfo = execution_pre_call_known_vm_member_fast(state,
-                                                                       programCounter,
-                                                                       currentFunction,
-                                                                       cacheIndex,
-                                                                       cacheEntry,
-                                                                       BASE(resultSlot),
-                                                                       expectedReturnCount,
-                                                                       BASE(resultSlot),
-                                                                       profileRuntime,
-                                                                       recordHelpers);
-                if (nextCallInfo == ZR_NULL) {
-                    ZrCore_Debug_RunError(state, "KNOWN_VM_MEMBER_CALL_LOAD1_U8: invalid cached VM member callable");
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_KNOWN_VM_MEMBER_CALL_LOAD1_U8_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_KNOWN_NATIVE_CALL: {
+                EXECUTE_KNOWN_NATIVE_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(KNOWN_NATIVE_CALL) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize parametersCount = B1(instruction);
-                TZrSize expectedReturnCount = 1;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_NATIVE_CALL");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                execution_pre_call_known_native_fast(state,
-                                                     BASE(functionSlot),
-                                                     opA,
-                                                     expectedReturnCount,
-                                                     BASE(E(instruction)),
-                                                     profileRuntime,
-                                                     recordHelpers);
-                RESUME_AFTER_NATIVE_CALL(state, callInfo);
+                EXECUTE_KNOWN_NATIVE_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_KNOWN_NATIVE_MEMBER_CALL: {
+                EXECUTE_KNOWN_NATIVE_MEMBER_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(KNOWN_NATIVE_MEMBER_CALL) {
-                TZrSize resultSlot = E(instruction);
-                TZrUInt16 cacheIndex = (TZrUInt16)A1(instruction);
-                SZrTypeValue *callableValue;
-                SZrTypeValue *receiverValue;
-                TZrSize parametersCount = B1(instruction);
-                TZrSize expectedReturnCount = 1;
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                state->stackTop.valuePointer = BASE(resultSlot) + parametersCount + 1;
-                callableValue = ZrCore_Stack_GetValueNoProfile(BASE(resultSlot));
-                receiverValue = ZrCore_Stack_GetValueNoProfile(BASE(resultSlot) + 1);
-                if (callableValue == ZR_NULL || receiverValue == ZR_NULL ||
-                    !execution_member_get_cached(
-                            state, programCounter, currentFunction, cacheIndex, receiverValue, callableValue)) {
-                    ZrCore_Debug_RunError(state, "KNOWN_NATIVE_MEMBER_CALL: invalid cached native member callable");
-                }
-                execution_pre_call_known_native_fast(state,
-                                                     BASE(resultSlot),
-                                                     callableValue,
-                                                     expectedReturnCount,
-                                                     BASE(E(instruction)),
-                                                     profileRuntime,
-                                                     recordHelpers);
-                RESUME_AFTER_NATIVE_CALL(state, callInfo);
+                EXECUTE_KNOWN_NATIVE_MEMBER_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_KNOWN_NATIVE_MEMBER_CALL_RECV_U8: {
+                EXECUTE_KNOWN_NATIVE_MEMBER_CALL_RECV_U8_BODY();
+            }
+            DONE_FAST(1);
+#endif
+            ZR_INSTRUCTION_LABEL(KNOWN_NATIVE_MEMBER_CALL_RECV_U8) {
+                EXECUTE_KNOWN_NATIVE_MEMBER_CALL_RECV_U8_BODY();
+            }
+            DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_DYN_CALL_NO_ARGS: {
+                EXECUTE_SUPER_DYN_CALL_NO_ARGS_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_DYN_CALL_NO_ARGS) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize expectedReturnCount = 1;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in SUPER_DYN_CALL_NO_ARGS");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                SZrCallInfo *nextCallInfo =
-                        ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_DYN_CALL_NO_ARGS_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_DYN_CALL_CACHED: {
+                EXECUTE_SUPER_DYN_CALL_CACHED_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_DYN_CALL_CACHED) {
-                TZrSize functionSlot = A1(instruction);
-                const SZrFunctionCallSiteCacheEntry *cacheEntry =
-                        execution_get_callsite_cache_entry(currentFunction,
-                                                           B1(instruction),
-                                                           ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL);
-                TZrSize expectedReturnCount = 1;
-                SZrCallInfo *nextCallInfo;
-
-                if (cacheEntry == ZR_NULL) {
-                    ZrCore_Debug_RunError(state, "SUPER_DYN_CALL_CACHED: invalid callsite cache");
-                }
-
-                state->stackTop.valuePointer = BASE(functionSlot) + cacheEntry->argumentCount + 1;
-                execution_try_prepare_dyn_call_target_cached(state,
-                                                             currentFunction,
-                                                             B1(instruction),
-                                                             BASE(functionSlot),
-                                                             ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_CALL);
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                nextCallInfo = ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_DYN_CALL_CACHED_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_DYN_TAIL_CALL_NO_ARGS: {
+                EXECUTE_SUPER_DYN_TAIL_CALL_NO_ARGS_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_DYN_TAIL_CALL_NO_ARGS) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-                SZrCallInfo *nextCallInfo;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) &&
-                          "Function value is NULL in SUPER_DYN_TAIL_CALL_NO_ARGS");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_DYN_TAIL_CALL_NO_ARGS_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_DYN_TAIL_CALL_CACHED: {
+                EXECUTE_SUPER_DYN_TAIL_CALL_CACHED_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_DYN_TAIL_CALL_CACHED) {
-                TZrSize functionSlot = A1(instruction);
-                const SZrFunctionCallSiteCacheEntry *cacheEntry =
-                        execution_get_callsite_cache_entry(currentFunction,
-                                                           B1(instruction),
-                                                           ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-                SZrCallInfo *nextCallInfo;
-
-                if (cacheEntry == ZR_NULL) {
-                    ZrCore_Debug_RunError(state, "SUPER_DYN_TAIL_CALL_CACHED: invalid callsite cache");
-                }
-
-                state->stackTop.valuePointer = BASE(functionSlot) + cacheEntry->argumentCount + 1;
-                execution_try_prepare_dyn_call_target_cached(state,
-                                                             currentFunction,
-                                                             B1(instruction),
-                                                             BASE(functionSlot),
-                                                             ZR_FUNCTION_CALLSITE_CACHE_KIND_DYN_TAIL_CALL);
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_DYN_TAIL_CALL_CACHED_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_DYN_CALL: {
+                EXECUTE_DYN_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(DYN_CALL) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize parametersCount = B1(instruction);
-                TZrSize expectedReturnCount = 1;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in DYN_CALL");
-
-                if (parametersCount > 0) {
-                    state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
-                } else {
-                    state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                }
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                SZrCallInfo *nextCallInfo =
-                        ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_DYN_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_DYN_TAIL_CALL: {
+                EXECUTE_DYN_TAIL_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(DYN_TAIL_CALL) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize parametersCount = B1(instruction);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-                SZrCallInfo *nextCallInfo;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in DYN_TAIL_CALL");
-
-                if (parametersCount > 0) {
-                    state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
-                } else {
-                    state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                }
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_DYN_TAIL_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_META_CALL_NO_ARGS: {
+                EXECUTE_SUPER_META_CALL_NO_ARGS_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_META_CALL_NO_ARGS) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize expectedReturnCount = 1;
-
-                state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                if (!execution_prepare_meta_call_target(state, BASE(functionSlot))) {
-                    ZrCore_Debug_RunError(state, "SUPER_META_CALL_NO_ARGS: receiver does not define @call");
-                }
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                SZrCallInfo *nextCallInfo =
-                        ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_META_CALL_NO_ARGS_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_META_CALL_CACHED: {
+                EXECUTE_SUPER_META_CALL_CACHED_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_META_CALL_CACHED) {
-                TZrSize functionSlot = A1(instruction);
-                const SZrFunctionCallSiteCacheEntry *cacheEntry =
-                        execution_get_callsite_cache_entry(currentFunction,
-                                                           B1(instruction),
-                                                           ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL);
-                TZrSize expectedReturnCount = 1;
-                SZrCallInfo *nextCallInfo;
-
-                if (cacheEntry == ZR_NULL) {
-                    ZrCore_Debug_RunError(state, "SUPER_META_CALL_CACHED: invalid callsite cache");
-                }
-
-                state->stackTop.valuePointer = BASE(functionSlot) + cacheEntry->argumentCount + 1;
-                if (!execution_prepare_meta_call_target_cached(state,
-                                                               currentFunction,
-                                                               B1(instruction),
-                                                               BASE(functionSlot),
-                                                               ZR_FUNCTION_CALLSITE_CACHE_KIND_META_CALL)) {
-                    ZrCore_Debug_RunError(state, "SUPER_META_CALL_CACHED: receiver does not define @call");
-                }
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                nextCallInfo = ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_META_CALL_CACHED_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_META_TAIL_CALL_NO_ARGS: {
+                EXECUTE_SUPER_META_TAIL_CALL_NO_ARGS_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_META_TAIL_CALL_NO_ARGS) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-                SZrCallInfo *nextCallInfo;
-
-                state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                if (!execution_prepare_meta_call_target(state, BASE(functionSlot))) {
-                    ZrCore_Debug_RunError(state, "SUPER_META_TAIL_CALL_NO_ARGS: receiver does not define @call");
-                }
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_META_TAIL_CALL_NO_ARGS_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_META_TAIL_CALL_CACHED: {
+                EXECUTE_SUPER_META_TAIL_CALL_CACHED_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_META_TAIL_CALL_CACHED) {
-                TZrSize functionSlot = A1(instruction);
-                const SZrFunctionCallSiteCacheEntry *cacheEntry =
-                        execution_get_callsite_cache_entry(currentFunction,
-                                                           B1(instruction),
-                                                           ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-                SZrCallInfo *nextCallInfo;
-
-                if (cacheEntry == ZR_NULL) {
-                    ZrCore_Debug_RunError(state, "SUPER_META_TAIL_CALL_CACHED: invalid callsite cache");
-                }
-
-                state->stackTop.valuePointer = BASE(functionSlot) + cacheEntry->argumentCount + 1;
-                if (!execution_prepare_meta_call_target_cached(state,
-                                                               currentFunction,
-                                                               B1(instruction),
-                                                               BASE(functionSlot),
-                                                               ZR_FUNCTION_CALLSITE_CACHE_KIND_META_TAIL_CALL)) {
-                    ZrCore_Debug_RunError(state, "SUPER_META_TAIL_CALL_CACHED: receiver does not define @call");
-                }
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_SUPER_META_TAIL_CALL_CACHED_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_META_CALL: {
+                EXECUTE_META_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(META_CALL) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize parametersCount = B1(instruction);
-                TZrSize expectedReturnCount = 1;
-
-                if (parametersCount > 0) {
-                    state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
-                } else {
-                    state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                }
-
-                if (!execution_prepare_meta_call_target(state, BASE(functionSlot))) {
-                    ZrCore_Debug_RunError(state, "META_CALL: receiver does not define @call");
-                }
-                parametersCount++;
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                SZrCallInfo *nextCallInfo =
-                        ZrCore_Function_PreCall(state, BASE(functionSlot), expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_META_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_META_TAIL_CALL: {
+                EXECUTE_META_TAIL_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(META_TAIL_CALL) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize parametersCount = B1(instruction);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-                SZrCallInfo *nextCallInfo;
-
-                if (parametersCount > 0) {
-                    state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
-                } else {
-                    state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                }
-
-                if (!execution_prepare_meta_call_target(state, BASE(functionSlot))) {
-                    ZrCore_Debug_RunError(state, "META_TAIL_CALL: receiver does not define @call");
-                }
-                parametersCount++;
-
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                nextCallInfo = ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_META_TAIL_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_FUNCTION_TAIL_CALL: {
+                EXECUTE_FUNCTION_TAIL_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(FUNCTION_TAIL_CALL) {
-                // FUNCTION_TAIL_CALL 指令格式：
-                // operandExtra (E) = resultSlot (返回值槽位，编译时；ZrCore_Function_PreCall 需要的是 expectedReturnCount)
-                // operand1[0] (A1) = functionSlot (函数在栈上的槽位)
-                // operand1[1] (B1) = parametersCount (参数数量，直接使用，不从栈读取)
-                TZrSize functionSlot = A1(instruction);
-                TZrSize parametersCount = B1(instruction);  // 参数数量直接使用，不是栈槽位
-                TZrSize expectedReturnCount = 1;  // 期望 1 个返回值；E(instruction)=resultSlot 仅编译时用
-                
-                opA = &BASE(functionSlot)->value;
-                // 与普通调用保持一致，把实际可调用性判断交给统一预调用分派，
-                // 以便对象值通过 @call 元方法进入调用链。
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in FUNCTION_CALL");
-                
-                // 设置栈顶指针
-                if (parametersCount > 0) {
-                    state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
-                } else {
-                    state->stackTop.valuePointer = BASE(functionSlot) + 1;
-                }
-                
-                // 尾调用：重用当前调用帧
-                // 保存下一条指令的地址：fetch 使用 *(PC+=1)，故保存 programCounter+1
-                callInfo->context.context.programCounter = programCounter + 1;
-                // 设置尾调用标志
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                // 准备调用参数（函数在BASE(functionSlot)，参数在BASE(functionSlot+1)到BASE(functionSlot+parametersCount)）
-                TZrStackValuePointer functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                // 调用函数（expectedReturnCount=1，与 FUNCTION_CALL 一致）；返回值写入 BASE(E(instruction))
-                SZrCallInfo *nextCallInfo =
-                        ZrCore_Function_PreCall(state, functionPointer, expectedReturnCount, BASE(E(instruction)));
-                if (nextCallInfo == ZR_NULL) {
-                    // Native调用，清除尾调用标志
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    RESUME_AFTER_NATIVE_CALL(state, callInfo);
-                } else {
-                    // VM调用：对于尾调用，重用当前callInfo而不是创建新的
-                    // 但ZrFunctionPreCall总是创建新的callInfo，所以我们需要调整
-                    // 实际上，对于真正的尾调用优化，我们需要手动设置callInfo的字段
-                    // 这里先使用简单的实现：清除尾调用标志，使用普通调用
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_FUNCTION_TAIL_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_KNOWN_VM_TAIL_CALL: {
+                EXECUTE_KNOWN_VM_TAIL_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(KNOWN_VM_TAIL_CALL) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize parametersCount = B1(instruction);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-                SZrCallInfo *nextCallInfo;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_VM_TAIL_CALL");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                nextCallInfo = execution_pre_call_known_vm_fast(state,
-                                                                functionPointer,
-                                                                opA,
-                                                                parametersCount,
-                                                                expectedReturnCount,
-                                                                BASE(E(instruction)),
-                                                                profileRuntime,
-                                                                recordHelpers);
-                if (nextCallInfo == ZR_NULL) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    ZrCore_Debug_RunError(state, "KNOWN_VM_TAIL_CALL: invalid known VM callable");
-                } else {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    callInfo = nextCallInfo;
-                    goto LZrStart;
-                }
+                EXECUTE_KNOWN_VM_TAIL_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_KNOWN_NATIVE_TAIL_CALL: {
+                EXECUTE_KNOWN_NATIVE_TAIL_CALL_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(KNOWN_NATIVE_TAIL_CALL) {
-                TZrSize functionSlot = A1(instruction);
-                TZrSize parametersCount = B1(instruction);
-                TZrSize expectedReturnCount = 1;
-                TZrStackValuePointer functionPointer;
-
-                opA = &BASE(functionSlot)->value;
-                ZR_ASSERT(!ZR_VALUE_IS_TYPE_NULL(opA->type) && "Function value is NULL in KNOWN_NATIVE_TAIL_CALL");
-
-                state->stackTop.valuePointer = BASE(functionSlot) + parametersCount + 1;
-                callInfo->context.context.programCounter = programCounter + 1;
-                callInfo->callStatus |= ZR_CALL_STATUS_TAIL_CALL;
-                functionPointer = BASE(functionSlot);
-                if (execution_try_reuse_tail_call_frame(state, callInfo, functionPointer)) {
-                    callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                    goto LZrStart;
-                }
-                execution_pre_call_known_native_fast(state,
-                                                     functionPointer,
-                                                     opA,
-                                                     expectedReturnCount,
-                                                     BASE(E(instruction)),
-                                                     profileRuntime,
-                                                     recordHelpers);
-                callInfo->callStatus &= ~ZR_CALL_STATUS_TAIL_CALL;
-                RESUME_AFTER_NATIVE_CALL(state, callInfo);
+                EXECUTE_KNOWN_NATIVE_TAIL_CALL_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_FUNCTION_RETURN: {
+                EXECUTE_FUNCTION_RETURN_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(FUNCTION_RETURN) {
-                // FUNCTION_RETURN 指令格式：
-                // operandExtra (E) = 返回值数量 (returnCount)
-                // operand1[0] (A1) = 返回值槽位 (resultSlot)
-                // operand1[1] (B1) = 可变参数参数数量 (variableArguments, 0 表示非可变参数函数)
-                TZrSize returnCount = E(instruction);
-                TZrSize resultSlot = A1(instruction);
-                TZrSize variableArguments = B1(instruction);
-
-                // save its program counter
-                callInfo->context.context.programCounter = programCounter;
-                if (ZR_UNLIKELY(state->exceptionHandlerStackLength > 0u)) {
-                    execution_discard_exception_handlers_for_callinfo_fast(state, callInfo);
-                }
-
-                if (state->stackTop.valuePointer < callInfo->functionTop.valuePointer) {
-                    state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
-                }
-                if (currentFunction != ZR_NULL && currentFunction->returnEscapeSlotCount > 0u) {
-                    for (TZrSize returnIndex = 0; returnIndex < returnCount; returnIndex++) {
-                        ZrCore_Function_ApplyReturnEscape(state,
-                                                          currentFunction,
-                                                          (TZrUInt32)(resultSlot + returnIndex),
-                                                          &BASE(resultSlot + returnIndex)->value);
-                    }
-                }
-                if (execution_callinfo_has_pending_close_work(state, callInfo)) {
-                    // The to-be-closed list only tracks close metas, not ordinary
-                    // captured locals, so the frame still needs a full closure pass
-                    // when pending close work exists.
-                    ZrCore_Closure_CloseClosure(state,
-                                                callInfo->functionBase.valuePointer + 1,
-                                                ZR_THREAD_STATUS_INVALID,
-                                                ZR_FALSE);
-                }
-                UPDATE_BASE(callInfo);
-
-                // 如果是可变参数函数，需要调整 functionBase 指针
-                // 参考 Lua: if (nparams1) ci->func.p -= ci->u.l.nextraargs + nparams1;
-                if (variableArguments > 0) {
-                    callInfo->functionBase.valuePointer -=
-                            callInfo->context.context.variableArgumentCount + variableArguments;
-                }
-                if (ZR_LIKELY(state->debugHookSignal == 0u &&
-                              callInfo->expectedReturnCount == 1u &&
-                              callInfo->callStatus == ZR_CALL_STATUS_NONE)) {
-                    TZrStackValuePointer returnSource = returnCount > 0u ? BASE(resultSlot) : ZR_NULL;
-                    execution_post_call_single_result_resolved_source_fast(state, callInfo, returnSource);
-                } else {
-                    state->stackTop.valuePointer = BASE(resultSlot) + returnCount;
-                    ZrCore_Function_PostCall(state, callInfo, returnCount);
-                }
-                trap = callInfo->context.context.trap;
-                goto LZrReturn;
+                EXECUTE_FUNCTION_RETURN_BODY();
             }
 
         LZrReturn: {
@@ -5541,7 +6587,7 @@ LZrFastInstruction_LOGICAL_LESS_EQUAL_SIGNED: {
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_GET_MEMBER_SLOT: {
                 FAST_PREPARE_DESTINATION();
-                EXECUTE_GET_MEMBER_SLOT_BODY();
+                EXECUTE_GET_MEMBER_SLOT_BODY_FAST();
             }
             DONE_FAST(1);
 #endif
@@ -5553,7 +6599,7 @@ LZrFastInstruction_GET_MEMBER_SLOT: {
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
 LZrFastInstruction_SET_MEMBER_SLOT: {
                 FAST_PREPARE_DESTINATION();
-                EXECUTE_SET_MEMBER_SLOT_BODY();
+                EXECUTE_SET_MEMBER_SLOT_BODY_FAST();
             }
             DONE_FAST(1);
 #endif
@@ -5619,83 +6665,20 @@ LZrFastInstruction_SET_MEMBER_SLOT: {
             }
             DONE(1);
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_GET_BY_INDEX: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_GET_BY_INDEX_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(GET_BY_INDEX) {
-                SZrTypeValue stableResult;
-                TZrBool resolved = ZR_FALSE;
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
-                if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {
-                    ZrCore_Debug_RunError(state, "GET_BY_INDEX: receiver must be an object or array");
-                } else {
-                    ZrCore_Value_ResetAsNull(&stableResult);
-                    /*
-                     * Keep the hottest readonly-inline index callback off the
-                     * generic PROTECT_E wrapper. The callback already consumes
-                     * stack-rooted operands directly and does not need the full
-                     * generic call-preparation path on steady-state hits.
-                     */
-                    resolved = ZrCore_Object_TryGetByIndexReadonlyInlineFastStackOperands(
-                            state, opA, opB, &stableResult);
-                    if (resolved) {
-                        if (ZR_UNLIKELY(recordHelpers)) {
-                            profileRuntime->helperCounts[ZR_PROFILE_HELPER_GET_BY_INDEX]++;
-                        }
-                        UPDATE_BASE(callInfo);
-                        destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;
-                    } else if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
-                        SAVE_PC(state, callInfo);
-                        goto LZrReturning;
-                    } else {
-                        /*
-                         * Preserve stack-rooted receiver/key operands so the
-                         * object layer can anchor them directly on known-native
-                         * index contract calls instead of first degrading them
-                         * into local stable copies.
-                         */
-                        PROTECT_E(state, callInfo, {
-                            resolved = ZrCore_Object_GetByIndexUncheckedStackOperands(
-                                    state, opA, opB, &stableResult);
-                        });
-                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                    }
-                    if (resolved) {
-                        execution_copy_value_fast(state, destination, &stableResult, profileRuntime, recordHelpers);
-                    } else {
-                        ZrCore_Debug_RunError(state, "GET_BY_INDEX: receiver must be an object or array");
-                    }
-                }
+                EXECUTE_GET_BY_INDEX_BODY();
             }
             DONE(1);
 
             ZR_INSTRUCTION_LABEL(SET_BY_INDEX) {
-                TZrBool resolved = ZR_FALSE;
-                opA = &BASE(A1(instruction))->value;
-                opB = &BASE(B1(instruction))->value;
-                if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {
-                    ZrCore_Debug_RunError(state, "SET_BY_INDEX: receiver must be an object or array");
-                } else {
-                    resolved = ZrCore_Object_TrySetByIndexReadonlyInlineFastStackOperands(
-                            state, opA, opB, destination);
-                    if (resolved) {
-                        if (ZR_UNLIKELY(recordHelpers)) {
-                            profileRuntime->helperCounts[ZR_PROFILE_HELPER_SET_BY_INDEX]++;
-                        }
-                        UPDATE_BASE(callInfo);
-                        destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;
-                    } else if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
-                        SAVE_PC(state, callInfo);
-                        goto LZrReturning;
-                    } else {
-                        PROTECT_E(state, callInfo, {
-                            resolved = ZrCore_Object_SetByIndexUncheckedStackOperands(
-                                    state, opA, opB, destination);
-                        });
-                        RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                    }
-                    if (!resolved) {
-                        ZrCore_Debug_RunError(state, "SET_BY_INDEX: receiver must be an object or array");
-                    }
-                }
+                EXECUTE_SET_BY_INDEX_BODY();
             }
             DONE(1);
 
@@ -5780,14 +6763,33 @@ LZrFastInstruction_SUPER_ARRAY_FILL_INT4_CONST: {
             }
             DONE_FAST(1);
 #endif
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_ARRAY_ADD_INT: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_SUPER_ARRAY_ADD_INT_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_ARRAY_ADD_INT) {
                 EXECUTE_SUPER_ARRAY_ADD_INT_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_ARRAY_ADD_INT4: {
+                EXECUTE_SUPER_ARRAY_ADD_INT4_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_ARRAY_ADD_INT4) {
                 EXECUTE_SUPER_ARRAY_ADD_INT4_BODY();
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_SUPER_ARRAY_ADD_INT4_CONST: {
+                EXECUTE_SUPER_ARRAY_ADD_INT4_CONST_BODY();
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(SUPER_ARRAY_ADD_INT4_CONST) {
                 EXECUTE_SUPER_ARRAY_ADD_INT4_CONST_BODY();
             }
@@ -5797,83 +6799,52 @@ LZrFastInstruction_SUPER_ARRAY_FILL_INT4_CONST: {
             }
             DONE(1);
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_ITER_INIT: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_ITER_INIT_BODY("ITER_INIT: receiver does not satisfy iterable contract");
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(ITER_INIT) {
-                SZrTypeValue stableReceiver;
-                SZrTypeValue stableResult;
-                TZrBool resolved = ZR_FALSE;
-                opA = &BASE(A1(instruction))->value;
-                stableReceiver = *opA;
-                ZrCore_Value_ResetAsNull(&stableResult);
-                PROTECT_E(state, callInfo, {
-                    resolved = ZrCore_Object_IterInit(state, &stableReceiver, &stableResult);
-                });
-                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                if (resolved) {
-                    ZrCore_Value_Copy(state, destination, &stableResult);
-                } else {
-                    ZrCore_Debug_RunError(state, "ITER_INIT: receiver does not satisfy iterable contract");
-                }
+                EXECUTE_ITER_INIT_BODY("ITER_INIT: receiver does not satisfy iterable contract");
             }
             DONE(1);
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_ITER_MOVE_NEXT: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_ITER_MOVE_NEXT_BODY("ITER_MOVE_NEXT: receiver does not satisfy iterator contract", DONE_FAST);
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(ITER_MOVE_NEXT) {
-                SZrTypeValue stableReceiver;
-                SZrTypeValue stableResult;
-                TZrBool resolved = ZR_FALSE;
-                opA = &BASE(A1(instruction))->value;
-                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
-                    DONE(1);
-                }
-                stableReceiver = *opA;
-                ZrCore_Value_ResetAsNull(&stableResult);
-                PROTECT_E(state, callInfo, {
-                    resolved = ZrCore_Object_IterMoveNext(state, &stableReceiver, &stableResult);
-                });
-                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                if (resolved) {
-                    ZrCore_Value_Copy(state, destination, &stableResult);
-                } else {
-                    ZrCore_Debug_RunError(state, "ITER_MOVE_NEXT: receiver does not satisfy iterator contract");
-                }
+                EXECUTE_ITER_MOVE_NEXT_BODY("ITER_MOVE_NEXT: receiver does not satisfy iterator contract", DONE);
             }
             DONE(1);
+
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_DYN_ITER_INIT: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_ITER_INIT_BODY("DYN_ITER_INIT: receiver does not satisfy dynamic iterable contract");
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(DYN_ITER_INIT) {
-                SZrTypeValue stableReceiver;
-                SZrTypeValue stableResult;
-                TZrBool resolved = ZR_FALSE;
-                opA = &BASE(A1(instruction))->value;
-                stableReceiver = *opA;
-                ZrCore_Value_ResetAsNull(&stableResult);
-                PROTECT_E(state, callInfo, {
-                    resolved = ZrCore_Object_IterInit(state, &stableReceiver, &stableResult);
-                });
-                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                if (resolved) {
-                    ZrCore_Value_Copy(state, destination, &stableResult);
-                } else {
-                    ZrCore_Debug_RunError(state, "DYN_ITER_INIT: receiver does not satisfy dynamic iterable contract");
-                }
+                EXECUTE_ITER_INIT_BODY("DYN_ITER_INIT: receiver does not satisfy dynamic iterable contract");
             }
             DONE(1);
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_DYN_ITER_MOVE_NEXT: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_ITER_MOVE_NEXT_BODY(
+                        "DYN_ITER_MOVE_NEXT: receiver does not satisfy dynamic iterator contract", DONE_FAST);
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(DYN_ITER_MOVE_NEXT) {
-                SZrTypeValue stableReceiver;
-                SZrTypeValue stableResult;
-                TZrBool resolved = ZR_FALSE;
-                opA = &BASE(A1(instruction))->value;
-                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
-                    DONE(1);
-                }
-                stableReceiver = *opA;
-                ZrCore_Value_ResetAsNull(&stableResult);
-                PROTECT_E(state, callInfo, {
-                    resolved = ZrCore_Object_IterMoveNext(state, &stableReceiver, &stableResult);
-                });
-                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                if (resolved) {
-                    ZrCore_Value_Copy(state, destination, &stableResult);
-                } else {
-                    ZrCore_Debug_RunError(state, "DYN_ITER_MOVE_NEXT: receiver does not satisfy dynamic iterator contract");
-                }
+                EXECUTE_ITER_MOVE_NEXT_BODY(
+                        "DYN_ITER_MOVE_NEXT: receiver does not satisfy dynamic iterator contract", DONE);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -5885,7 +6856,7 @@ LZrFastInstruction_SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
                 TZrBool resolved = ZR_FALSE;
 
                 opA = &BASE(A1(instruction))->value;
-                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
+                if (ZrCore_Object_TryIterMoveNextCachedArrayFast(state, opA, destination)) {
                     if (!execution_is_truthy(state, destination)) {
                         programCounter += jumpOffset;
                         UPDATE_TRAP(callInfo);
@@ -5920,7 +6891,7 @@ LZrFastInstruction_SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
                 TZrBool resolved = ZR_FALSE;
 
                 opA = &BASE(A1(instruction))->value;
-                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
+                if (ZrCore_Object_TryIterMoveNextCachedArrayFast(state, opA, destination)) {
                     if (!execution_is_truthy(state, destination)) {
                         programCounter += jumpOffset;
                         UPDATE_TRAP(callInfo);
@@ -5956,7 +6927,7 @@ LZrFastInstruction_SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
                 TZrBool resolved = ZR_FALSE;
 
                 opA = &BASE(A1(instruction))->value;
-                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
+                if (ZrCore_Object_TryIterMoveNextCachedArrayFast(state, opA, destination)) {
                     if (!execution_is_truthy(state, destination)) {
                         programCounter += jumpOffset;
                         UPDATE_TRAP(callInfo);
@@ -5991,7 +6962,7 @@ LZrFastInstruction_SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
                 TZrBool resolved = ZR_FALSE;
 
                 opA = &BASE(A1(instruction))->value;
-                if (ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(state, opA, destination)) {
+                if (ZrCore_Object_TryIterMoveNextCachedArrayFast(state, opA, destination)) {
                     if (!execution_is_truthy(state, destination)) {
                         programCounter += jumpOffset;
                         UPDATE_TRAP(callInfo);
@@ -6019,25 +6990,15 @@ LZrFastInstruction_SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE: {
             }
             DONE_SKIP(2);
 
+#if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
+LZrFastInstruction_ITER_CURRENT: {
+                FAST_PREPARE_DESTINATION();
+                EXECUTE_ITER_CURRENT_BODY(DONE_FAST);
+            }
+            DONE_FAST(1);
+#endif
             ZR_INSTRUCTION_LABEL(ITER_CURRENT) {
-                SZrTypeValue stableReceiver;
-                SZrTypeValue stableResult;
-                TZrBool resolved = ZR_FALSE;
-                opA = &BASE(A1(instruction))->value;
-                if (ZrCore_Object_TryIterCurrentCachedMemberFast(state, opA, destination)) {
-                    DONE(1);
-                }
-                stableReceiver = *opA;
-                ZrCore_Value_ResetAsNull(&stableResult);
-                PROTECT_E(state, callInfo, {
-                    resolved = ZrCore_Object_IterCurrent(state, &stableReceiver, &stableResult);
-                });
-                RELOAD_DESTINATION_AFTER_PROTECT(callInfo, instruction);
-                if (resolved) {
-                    ZrCore_Value_Copy(state, destination, &stableResult);
-                } else {
-                    ZrCore_Debug_RunError(state, "ITER_CURRENT: receiver does not satisfy iterator contract");
-                }
+                EXECUTE_ITER_CURRENT_BODY(DONE);
             }
             DONE(1);
 #if defined(ZR_INSTRUCTION_USE_DISPATCH_TABLE) && ZR_INSTRUCTION_DISPATCH_TABLE_SUPPORTED
@@ -6455,8 +7416,45 @@ LZrExecutionDone:
 #undef EXECUTE_GET_CONSTANT_BODY
 #undef EXECUTE_GET_CONSTANT_BODY_FAST
 #undef EXECUTE_RESET_STACK_NULL_BODY
+#undef EXECUTE_RESET_STACK_NULL2_BODY
 #undef EXECUTE_GET_MEMBER_SLOT_BODY
+#undef EXECUTE_GET_MEMBER_SLOT_BODY_FAST
 #undef EXECUTE_SET_MEMBER_SLOT_BODY
+#undef EXECUTE_SET_MEMBER_SLOT_BODY_FAST
+#undef EXECUTE_GET_BY_INDEX_BODY
+#undef EXECUTE_SET_BY_INDEX_BODY
+#undef EXECUTE_ITER_INIT_BODY
+#undef EXECUTE_ITER_MOVE_NEXT_BODY
+#undef EXECUTE_ITER_CURRENT_BODY
+#undef EXECUTE_KNOWN_VM_MEMBER_CALL_BODY
+#undef EXECUTE_KNOWN_VM_MEMBER_CALL_LOAD1_U8_BODY
+#undef EXECUTE_KNOWN_VM_CALL_BODY
+#undef EXECUTE_KNOWN_NATIVE_CALL_BODY
+#undef EXECUTE_KNOWN_NATIVE_MEMBER_CALL_BODY
+#undef EXECUTE_KNOWN_NATIVE_MEMBER_CALL_RECV_U8_BODY
+#undef EXECUTE_SUPER_FUNCTION_CALL_NO_ARGS_BODY
+#undef EXECUTE_SUPER_KNOWN_VM_CALL_NO_ARGS_BODY
+#undef EXECUTE_SUPER_KNOWN_NATIVE_CALL_NO_ARGS_BODY
+#undef EXECUTE_FUNCTION_CALL_BODY
+#undef EXECUTE_SUPER_DYN_CALL_NO_ARGS_BODY
+#undef EXECUTE_SUPER_DYN_CALL_CACHED_BODY
+#undef EXECUTE_DYN_CALL_BODY
+#undef EXECUTE_SUPER_META_CALL_NO_ARGS_BODY
+#undef EXECUTE_SUPER_META_CALL_CACHED_BODY
+#undef EXECUTE_META_CALL_BODY
+#undef EXECUTE_FUNCTION_TAIL_CALL_BODY
+#undef EXECUTE_KNOWN_VM_TAIL_CALL_BODY
+#undef EXECUTE_KNOWN_NATIVE_TAIL_CALL_BODY
+#undef EXECUTE_SUPER_FUNCTION_TAIL_CALL_NO_ARGS_BODY
+#undef EXECUTE_SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS_BODY
+#undef EXECUTE_SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS_BODY
+#undef EXECUTE_SUPER_DYN_TAIL_CALL_NO_ARGS_BODY
+#undef EXECUTE_SUPER_DYN_TAIL_CALL_CACHED_BODY
+#undef EXECUTE_DYN_TAIL_CALL_BODY
+#undef EXECUTE_SUPER_META_TAIL_CALL_NO_ARGS_BODY
+#undef EXECUTE_SUPER_META_TAIL_CALL_CACHED_BODY
+#undef EXECUTE_META_TAIL_CALL_BODY
+#undef EXECUTE_FUNCTION_RETURN_BODY
 #undef EXECUTE_MATERIALIZE_CONSTANT_SLOT
 #undef EXECUTE_MATERIALIZE_STACK_SLOT
 #undef EXECUTE_ADD_INT_BODY
@@ -6470,6 +7468,7 @@ LZrExecutionDone:
 #undef EXECUTE_ADD_SIGNED_LOAD_CONST_BODY
 #undef EXECUTE_ADD_SIGNED_LOAD_STACK_CONST_BODY
 #undef EXECUTE_ADD_SIGNED_LOAD_STACK_BODY
+#undef EXECUTE_ADD_SIGNED_MOD_CONST_BODY
 #undef EXECUTE_ADD_SIGNED_LOAD_STACK_LOAD_CONST_BODY
 #undef EXECUTE_SUB_SIGNED_LOAD_CONST_BODY
 #undef EXECUTE_SUB_SIGNED_LOAD_STACK_CONST_BODY
@@ -6493,6 +7492,7 @@ LZrExecutionDone:
 #undef EXECUTE_MUL_SIGNED_CONST_BODY_PLAIN_DEST
 #undef EXECUTE_MUL_SIGNED_LOAD_CONST_BODY
 #undef EXECUTE_MUL_SIGNED_LOAD_STACK_CONST_BODY
+#undef EXECUTE_MUL_SIGNED_LOAD_STACK_BODY
 #undef EXECUTE_MUL_UNSIGNED_CONST_BODY
 #undef EXECUTE_MUL_UNSIGNED_CONST_BODY_PLAIN_DEST
 #undef EXECUTE_DIV_SIGNED_CONST_BODY

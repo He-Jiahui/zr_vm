@@ -373,6 +373,8 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             }
             return;
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
             info->operand1Index1IsSlot = ZR_FALSE;
             optimizer_info_add_read(info, instruction->instruction.operand.operand0[0]);
             optimizer_info_add_read(info, instruction->instruction.operand.operand0[1]);
@@ -497,8 +499,23 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             info->allowSlotReuse = ZR_FALSE;
             return;
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL_RECV_U8):
+            optimizer_info_add_read(info, instruction->instruction.operand.operand0[1]);
+            if (instruction->instruction.operand.operand0[2] > 1u) {
+                info->hasRangeRead = ZR_TRUE;
+                info->rangeReadStart = instruction->instruction.operandExtra + 2u;
+                info->rangeReadCount = (TZrUInt16)(instruction->instruction.operand.operand0[2] - 1u);
+            }
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            info->allowSlotReuse = ZR_FALSE;
+            return;
         case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            return;
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
+            optimizer_info_add_write(info, instruction->instruction.operandExtra);
+            optimizer_info_add_write(info, instruction->instruction.operand.operand1[0]);
+            info->operand1Index1IsSlot = ZR_FALSE;
             return;
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
             info->operand1Index1IsSlot = ZR_FALSE;
@@ -899,6 +916,8 @@ static TZrBool optimizer_rewrite_instruction_read_slot(TZrInstruction *instructi
             }
             return changed;
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
             if (instruction->instruction.operand.operand0[0] == fromSlot) {
                 if (toSlot > UINT8_MAX) {
                     return ZR_FALSE;
@@ -1272,8 +1291,20 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
                         (TZrUInt8)slotMap[instruction->instruction.operand.operand0[2]];
             }
             return;
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL_RECV_U8):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            if ((TZrSize)instruction->instruction.operand.operand0[1] < slotCount &&
+                slotMap[instruction->instruction.operand.operand0[1]] <= 0xFFu) {
+                instruction->instruction.operand.operand0[1] =
+                        (TZrUInt8)slotMap[instruction->instruction.operand.operand0[1]];
+            }
+            return;
         case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            return;
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
             optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
@@ -1306,6 +1337,8 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):

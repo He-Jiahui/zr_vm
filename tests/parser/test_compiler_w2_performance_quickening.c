@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -13,6 +15,7 @@
 #include "zr_vm_library/common_state.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/writer.h"
 
 typedef struct SZrRegressionTestTimer {
     clock_t startTime;
@@ -25,6 +28,10 @@ void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void);
 void test_w2_signed_equality_branch_fuses_slot_operands(void);
 void test_w2_signed_greater_equal_branch_reuses_greater_signed_jump(void);
 void test_w2_static_iterator_move_next_branch_fuses(void);
+void test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit(void);
+void test_w2_super_array_add_variable_value_elides_dead_receiver_setup(void);
+void test_w2_get_member_slot_direct_result_store_elides_temp_copy(void);
+void test_w2_known_native_member_call_skips_argument_loads(void);
 void test_w2_left_constant_add_mul_fold_to_existing_const_opcodes(void);
 void test_w2_right_constant_mod_fold_uses_cfg_liveness_across_branch(void);
 void test_w2_late_forward_get_stack_after_member_call_specialization(void);
@@ -48,6 +55,95 @@ static TZrUInt32 count_opcode_recursive(const SZrFunction *function, EZrInstruct
     }
 
     return count;
+}
+
+static TZrBool function_has_dead_super_array_add_receiver_setup_recursive(const SZrFunction *function) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 3; index < function->instructionsLength; index++) {
+        const TZrInstruction *addInstruction = &function->instructionsList[index];
+        const TZrInstruction *receiverReloadInstruction;
+        const TZrInstruction *receiverStageInstruction;
+        const TZrInstruction *receiverLoadInstruction;
+        TZrUInt32 destinationSlot;
+        TZrUInt32 receiverSlot;
+        TZrUInt32 reloadIndex;
+
+        if ((EZrInstructionCode)addInstruction->instruction.operationCode !=
+            ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)) {
+            continue;
+        }
+
+        destinationSlot = addInstruction->instruction.operandExtra;
+        receiverSlot = addInstruction->instruction.operand.operand1[0];
+        reloadIndex = index - 1u;
+        if ((EZrInstructionCode)function->instructionsList[reloadIndex].instruction.operationCode ==
+            ZR_INSTRUCTION_ENUM(GET_CONSTANT)) {
+            if (index < 4) {
+                continue;
+            }
+            reloadIndex--;
+        }
+
+        receiverReloadInstruction = &function->instructionsList[reloadIndex];
+        receiverStageInstruction = &function->instructionsList[reloadIndex - 1u];
+        receiverLoadInstruction = &function->instructionsList[reloadIndex - 2u];
+        if ((EZrInstructionCode)receiverReloadInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_STACK) &&
+            receiverReloadInstruction->instruction.operandExtra == destinationSlot &&
+            (TZrUInt32)receiverReloadInstruction->instruction.operand.operand2[0] == receiverSlot &&
+            (EZrInstructionCode)receiverStageInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SET_STACK) &&
+            receiverStageInstruction->instruction.operandExtra == receiverSlot &&
+            (TZrUInt32)receiverStageInstruction->instruction.operand.operand2[0] == destinationSlot &&
+            (EZrInstructionCode)receiverLoadInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_STACK) &&
+            receiverLoadInstruction->instruction.operandExtra == destinationSlot) {
+            return ZR_TRUE;
+        }
+    }
+
+    for (index = 0; index < function->childFunctionLength; index++) {
+        if (function_has_dead_super_array_add_receiver_setup_recursive(&function->childFunctionList[index])) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool function_has_adjacent_get_member_slot_set_stack_temp_store_recursive(const SZrFunction *function) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index + 1u < function->instructionsLength; index++) {
+        const TZrInstruction *memberInstruction = &function->instructionsList[index];
+        const TZrInstruction *storeInstruction = &function->instructionsList[index + 1u];
+        TZrUInt32 temporarySlot;
+
+        if ((EZrInstructionCode)memberInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT) ||
+            (EZrInstructionCode)storeInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(SET_STACK)) {
+            continue;
+        }
+
+        temporarySlot = memberInstruction->instruction.operandExtra;
+        if ((TZrUInt32)storeInstruction->instruction.operand.operand2[0] == temporarySlot &&
+            storeInstruction->instruction.operandExtra != temporarySlot) {
+            return ZR_TRUE;
+        }
+    }
+
+    for (index = 0; index < function->childFunctionLength; index++) {
+        if (function_has_adjacent_get_member_slot_set_stack_temp_store_recursive(&function->childFunctionList[index])) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
 }
 
 static TZrBool function_has_left_constant_add_mul_pair_recursive(const SZrFunction *function) {
@@ -85,6 +181,47 @@ static TZrBool function_has_left_constant_add_mul_pair_recursive(const SZrFuncti
     }
 
     return ZR_FALSE;
+}
+
+static char *read_text_file_owned(const TZrChar *path) {
+    FILE *file;
+    long fileSize;
+    char *buffer;
+
+    if (path == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    file = fopen(path, "rb");
+    if (file == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    fileSize = ftell(file);
+    if (fileSize < 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    buffer = (char *)malloc((size_t)fileSize + 1u);
+    if (buffer == ZR_NULL) {
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    if (fileSize > 0 && fread(buffer, 1u, (size_t)fileSize, file) != (size_t)fileSize) {
+        free(buffer);
+        fclose(file);
+        return ZR_NULL;
+    }
+
+    buffer[fileSize] = '\0';
+    fclose(file);
+    return buffer;
 }
 
 static TZrBool function_has_adjacent_right_constant_mod_signed_pair_recursive(const SZrFunction *function) {
@@ -375,10 +512,12 @@ void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void) {
 }
 
 void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void) {
+    static const char *intermediatePath = "w2_dispatch_loops_add_mod_const_writer_test.zri";
     SZrRegressionTestTimer timer;
     char projectPath[ZR_TESTS_PATH_MAX];
     char sourcePath[ZR_TESTS_PATH_MAX];
     char *source;
+    char *intermediateText;
     SZrGlobalState *global;
     SZrState *state;
     SZrString *sourceName;
@@ -388,7 +527,10 @@ void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void) 
     TZrUInt32 fusedDeadStackCount;
     TZrUInt32 fusedStackLoadConstantCount;
     TZrUInt32 fusedSignedEqualityBranchCount;
+    TZrUInt32 fusedAddModConstCount;
+    TZrUInt32 genericArithmeticCount;
     TZrUInt32 resetNullCount;
+    TZrUInt32 resetNull2Count;
     SZrQuickeningLoadTypedArithmeticProbeStats stats;
     int written;
 
@@ -436,12 +578,18 @@ void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void) 
                       count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST)) +
                       count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST)) +
                       count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST));
-    fusedDeadStackCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK));
+    fusedDeadStackCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK)) +
+                          count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK));
     fusedStackLoadConstantCount =
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST));
     fusedSignedEqualityBranchCount =
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST));
+    fusedAddModConstCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST));
+    genericArithmeticCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(ADD)) +
+                             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(MUL)) +
+                             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(MOD));
     resetNullCount = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(RESET_STACK_NULL));
+    resetNull2Count = count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2));
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
             fusedConstantCount,
@@ -464,8 +612,31 @@ void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void) 
             "Expected at least one signed equality const plus branch fused opcode");
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
-            resetNullCount,
-            "Expected null constant temp clears to lower to RESET_STACK_NULL");
+            fusedAddModConstCount,
+            "Expected adjacent signed add plus const modulo to fuse");
+    remove(intermediatePath);
+    TEST_ASSERT_TRUE_MESSAGE(ZrParser_Writer_WriteIntermediateFile(state, function, intermediatePath),
+                             "Expected intermediate writer to handle ADD_SIGNED_MOD_CONST");
+    intermediateText = read_text_file_owned(intermediatePath);
+    TEST_ASSERT_NOT_NULL_MESSAGE(intermediateText, "Failed to read dispatch_loops intermediate output");
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(intermediateText, "ADD_SIGNED_MOD_CONST"),
+                                 "Intermediate output should name ADD_SIGNED_MOD_CONST");
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(intermediateText, "constant_index="),
+                                 "Intermediate output should include ADD_SIGNED_MOD_CONST operands");
+    free(intermediateText);
+    remove(intermediatePath);
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            resetNullCount + (resetNull2Count * 2u),
+            "Expected null constant temp clears to lower to RESET_STACK_NULL forms");
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            resetNull2Count,
+            "Expected adjacent null temp clears to fuse into RESET_STACK_NULL2");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            genericArithmeticCount,
+            "dispatch_loops typed member arithmetic should not fall back to generic ADD/MUL/MOD opcodes");
     TEST_ASSERT_FALSE_MESSAGE(
             function_has_adjacent_signed_equality_const_jump_if_pair_recursive(function),
             "No adjacent LOGICAL_EQUAL_SIGNED_CONST -> JUMP_IF pair should remain in dispatch_loops");
@@ -615,6 +786,211 @@ void test_w2_static_iterator_move_next_branch_fuses(void) {
 
     timer.endTime = clock();
     ZR_TEST_PASS(timer, "W2 Static Iterator Move Next Branch Fuses");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit(void) {
+    static const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var {Pair} = %import(\"zr.container\");\n"
+            "var values = new container.Set<Pair<int, string>>();\n"
+            "var score = 0;\n"
+            "if (values.add(new container.Pair<int, string>(1, \"a\"))) { score = score + 10; }\n"
+            "if (!values.add(new container.Pair<int, string>(1, \"a\"))) { score = score + 20; }\n"
+            "if (values.add(new container.Pair<int, string>(2, \"b\"))) { score = score + 30; }\n"
+            "for (var item in values) {\n"
+            "    score = score + item.first;\n"
+            "}\n"
+            "return values.count * 100 + score;\n";
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Static Iterator Plain Dest State Does Not Cross Loop Exit");
+    ZR_TEST_INFO("iterator CFG",
+                 "Testing that static iterator fused branch exits reset plain-destination state before post-loop arithmetic.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE_MESSAGE(ZrVmLibContainer_Register(state->global),
+                             "Failed to register zr.container for static iterator CFG test");
+
+    sourceName = ZrCore_String_CreateFromNative(state, "w2_static_iterator_plain_dest_cfg_test.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(sourceName, "Failed to create source name");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to compile static iterator CFG test source");
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE)),
+            "Expected typed Set foreach loop guard to fuse into SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE");
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result),
+            "Static iterator loop followed by typed arithmetic should execute successfully");
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(263, result, "Set<Pair<int,string>> uniqueness and post-loop arithmetic changed");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Static Iterator Plain Dest State Does Not Cross Loop Exit");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_super_array_add_variable_value_elides_dead_receiver_setup(void) {
+    static const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var {Array} = %import(\"zr.container\");\n"
+            "var values = new container.Array<int>();\n"
+            "var buckets = new container.Map<string, Array<int>>();\n"
+            "var i = 0;\n"
+            "var total = 0;\n"
+            "while (i < 6) {\n"
+            "    var value = (i * 3 + 1) % 17;\n"
+            "    values.add((i * 3 + 1) % 17);\n"
+            "    buckets[\"last\"] = values;\n"
+            "    total = total + value;\n"
+            "    i = i + 1;\n"
+            "}\n"
+            "return total;\n";
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Super Array Add Variable Value Elides Dead Receiver Setup");
+    ZR_TEST_INFO("Array<int>.add receiver setup",
+                 "Testing that variable-value Array<int>.add folds the dead receiver materialization copies.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE_MESSAGE(ZrVmLibContainer_Register(state->global),
+                             "Failed to register zr.container for Array<int>.add receiver setup test");
+
+    sourceName = ZrCore_String_CreateFromNative(state, "w2_super_array_add_variable_value_receiver_setup.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(sourceName, "Failed to create source name");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to compile Array<int>.add receiver setup source");
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT)),
+            "Expected typed Array<int>.add to lower to SUPER_ARRAY_ADD_INT");
+    TEST_ASSERT_FALSE_MESSAGE(
+            function_has_dead_super_array_add_receiver_setup_recursive(function),
+            "No dead GET_STACK/SET_STACK/GET_STACK receiver setup should remain before SUPER_ARRAY_ADD_INT");
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result),
+            "Array<int>.add receiver setup fold should execute successfully");
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(51, result, "Array<int>.add loop result changed");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Super Array Add Variable Value Elides Dead Receiver Setup");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_get_member_slot_direct_result_store_elides_temp_copy(void) {
+    static const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var queue = new container.LinkedList<int>();\n"
+            "queue.addLast(7);\n"
+            "queue.addLast(11);\n"
+            "var head = queue.first;\n"
+            "var firstValue = head.value;\n"
+            "var tailValue = queue.last.value;\n"
+            "return <int> firstValue * 10 + <int> tailValue;\n";
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Get Member Slot Direct Result Store Elides Temp Copy");
+    ZR_TEST_INFO("member slot direct result",
+                 "Testing that GET_MEMBER_SLOT assignments store directly into the target stack slot.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE_MESSAGE(ZrVmLibContainer_Register(state->global),
+                             "Failed to register zr.container for member slot direct result test");
+
+    sourceName = ZrCore_String_CreateFromNative(state, "w2_get_member_slot_direct_result_store.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(sourceName, "Failed to create source name");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to compile member slot direct result source");
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT)),
+            "Expected member access to lower to GET_MEMBER_SLOT");
+    TEST_ASSERT_FALSE_MESSAGE(
+            function_has_adjacent_get_member_slot_set_stack_temp_store_recursive(function),
+            "No adjacent GET_MEMBER_SLOT -> SET_STACK temp store should remain");
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result),
+            "GET_MEMBER_SLOT direct result store should execute successfully");
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(81, result, "LinkedList member read result changed");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Get Member Slot Direct Result Store Elides Temp Copy");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_known_native_member_call_skips_argument_loads(void) {
+    static const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var queue = new container.LinkedList<int>();\n"
+            "var base = 10;\n"
+            "queue.addLast(base);\n"
+            "queue.addLast(base + 5);\n"
+            "return <int> queue.first.value + <int> queue.last.value;\n";
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Known Native Member Call Skips Argument Loads");
+    ZR_TEST_INFO("native member call fusion",
+                 "Testing that argument GET_STACK/GET_CONSTANT setup does not block KNOWN_NATIVE_MEMBER_CALL.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE_MESSAGE(ZrVmLibContainer_Register(state->global),
+                             "Failed to register zr.container for native member call fusion test");
+
+    sourceName = ZrCore_String_CreateFromNative(state, "w2_known_native_member_call_argument_loads.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(sourceName, "Failed to create source name");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to compile native member call fusion source");
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            1u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL_RECV_U8)),
+            "Expected LinkedList.addLast calls to fold loaded/computed arguments and receiver setup into RECV_U8 form");
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result),
+            "KNOWN_NATIVE_MEMBER_CALL with loaded arguments should execute successfully");
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(25, result, "LinkedList native member call result changed");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Known Native Member Call Skips Argument Loads");
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();

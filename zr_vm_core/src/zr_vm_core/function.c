@@ -593,6 +593,13 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_call_span(destinationSlot, operandB1, &slotCount);
                 break;
+            case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL_RECV_U8):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
+                function_note_generated_frame_slot(instruction->instruction.operand.operand0[1], &slotCount);
+                function_note_generated_call_span(destinationSlot,
+                                                  instruction->instruction.operand.operand0[2],
+                                                  &slotCount);
+                break;
 
             case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_CALL_NO_ARGS):
             case ZR_INSTRUCTION_ENUM(SUPER_FUNCTION_TAIL_CALL_NO_ARGS):
@@ -617,6 +624,15 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(JUMP_IF):
             case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
+                break;
+            case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
+                function_note_generated_frame_slot(operandA1, &slotCount);
+                break;
+            case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
+                function_note_generated_frame_slot(instruction->instruction.operand.operand0[0], &slotCount);
+                function_note_generated_frame_slot(instruction->instruction.operand.operand0[1], &slotCount);
                 break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);

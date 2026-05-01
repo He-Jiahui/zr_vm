@@ -35,6 +35,7 @@ typedef enum EZrCompilerQuickeningCallableProvenanceKind {
 } EZrCompilerQuickeningCallableProvenanceKind;
 
 static TZrBool compiler_quickening_instruction_writes_slot(const TZrInstruction *instruction, TZrUInt32 slot);
+static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstruction *instruction, TZrUInt32 slot);
 static TZrBool compiler_quicken_child_functions(SZrState *state, SZrFunction *function, TZrBool recurseChildren);
 
 static TZrBool compiler_quickening_trace_enabled(void) {
@@ -203,9 +204,18 @@ static TZrBool compiler_quickening_temp_slot_is_dead_until_block_end_with_termin
         const TZrBool *blockStarts,
         TZrUInt32 instructionIndex,
         TZrUInt32 slot);
+static TZrBool compiler_quickening_temp_slot_is_dead_after_instruction(const SZrFunction *function,
+                                                                       const TZrBool *blockStarts,
+                                                                       TZrUInt32 instructionIndex,
+                                                                       TZrUInt32 slot);
+static TZrBool compiler_quickening_temp_slot_is_dead_after_instruction_cfg(const SZrFunction *function,
+                                                                           const TZrBool *blockStarts,
+                                                                           TZrUInt32 instructionIndex,
+                                                                           TZrUInt32 slot);
 static TZrBool compiler_quickening_is_control_only_opcode(EZrInstructionCode opcode);
 static TZrBool compiler_quickening_block_ends_without_fallthrough(const TZrInstruction *instruction);
 static TZrBool compiler_quickening_fold_direct_result_stores(SZrFunction *function);
+static EZrInstructionCode compiler_quickening_plain_dest_const_opcode_to_reuse_opcode(EZrInstructionCode opcode);
 static TZrBool compiler_quickening_try_fold_super_array_fill_int4_const_loop_compact(SZrFunction *function,
                                                                                       const TZrBool *blockStarts,
                                                                                       TZrUInt32 instructionIndex);
@@ -231,6 +241,7 @@ static TZrBool compiler_quickening_fuse_jump_if_not_equal_signed(SZrFunction *fu
 static TZrBool compiler_quickening_fuse_jump_if_not_equal_signed_const(SZrFunction *function);
 static TZrBool compiler_quicken_member_slot_accesses(SZrState *state, SZrFunction *function);
 static TZrBool compiler_quickening_fuse_known_native_member_calls(SZrFunction *function);
+static TZrBool compiler_quickening_fuse_known_native_member_call_recv_u8(SZrFunction *function);
 static TZrBool compiler_quickening_fuse_known_vm_member_call_load1_u8(SZrFunction *function);
 static TZrBool compiler_quickening_rewrite_null_constant_loads(SZrFunction *function);
 static TZrBool compiler_quickening_try_fold_direct_result_store(SZrFunction *function,
@@ -1168,6 +1179,7 @@ static TZrBool compiler_quickening_opcode_produces_known_int(const SZrFunction *
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
@@ -1193,6 +1205,7 @@ static TZrBool compiler_quickening_opcode_produces_known_int(const SZrFunction *
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
         case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST):
@@ -2490,7 +2503,8 @@ static EZrCompilerQuickeningSlotKind compiler_quickening_known_call_result_slot_
     }
 
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
-    if (opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8)) {
+    if (opcode == ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8) ||
+        opcode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL_RECV_U8)) {
         calleeFunction = compiler_quickening_resolve_bound_member_callable_metadata_function_from_cache(
                 state,
                 function,
@@ -3013,7 +3027,8 @@ static TZrBool compiler_quickening_build_block_starts(const SZrFunction *functio
             continue;
         }
 
-        if (opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE)) {
+        if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+            opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE)) {
             TZrInt32 targetIndex = (TZrInt32)index + (TZrInt16)instruction->instruction.operand.operand1[1] + 1;
             compiler_quickening_mark_jump_target(blockStarts, function->instructionsLength, targetIndex);
             if (index + 1 < function->instructionsLength) {
@@ -3042,6 +3057,7 @@ static TZrBool compiler_quickening_instruction_destination_becomes_plain(const S
 
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
     switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(NOP):
         case ZR_INSTRUCTION_ENUM(GET_STACK):
         case ZR_INSTRUCTION_ENUM(SET_STACK): {
             TZrUInt32 sourceSlot = (TZrUInt32)instruction->instruction.operand.operand2[0];
@@ -3051,6 +3067,9 @@ static TZrBool compiler_quickening_instruction_destination_becomes_plain(const S
             return compiler_quickening_function_constant_is_plain_primitive(
                     function,
                     (TZrUInt32)instruction->instruction.operand.operand2[0]);
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
+            return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(TO_BOOL):
         case ZR_INSTRUCTION_ENUM(TO_INT):
         case ZR_INSTRUCTION_ENUM(TO_UINT):
@@ -3063,6 +3082,7 @@ static TZrBool compiler_quickening_instruction_destination_becomes_plain(const S
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
@@ -3128,6 +3148,7 @@ static TZrBool compiler_quickening_instruction_destination_becomes_plain(const S
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
             return ZR_TRUE;
         default:
             return ZR_FALSE;
@@ -3143,6 +3164,9 @@ static TZrBool compiler_quickening_try_get_plain_destination_variant(EZrInstruct
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
             *outVariant = ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST);
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
+            *outVariant = ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST);
             return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(ADD_INT):
             *outVariant = ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST);
@@ -3268,6 +3292,12 @@ static TZrBool compiler_quickening_promote_plain_destination_opcodes(SZrFunction
                                                                                   instruction,
                                                                                   plainState,
                                                                                   aliasCount));
+        if (opcode == ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2)) {
+            TZrUInt32 secondSlot = (TZrUInt32)instruction->instruction.operand.operand1[0];
+            if (secondSlot < aliasCount) {
+                plainState[secondSlot] = tempOnlySlots[secondSlot];
+            }
+        }
         compiler_quickening_clear_temp_only_plain_tracking_after_call(instruction, plainState, tempOnlySlots, aliasCount);
     }
 
@@ -3276,6 +3306,28 @@ static TZrBool compiler_quickening_promote_plain_destination_opcodes(SZrFunction
 cleanup:
     free(plainState);
     free(tempOnlySlots);
+    return success;
+}
+
+static TZrBool compiler_quickening_promote_plain_destination_opcodes_with_fresh_blocks(SZrFunction *function) {
+    TZrBool *blockStarts;
+    TZrBool success;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || function->instructionsLength == 0) {
+        return ZR_TRUE;
+    }
+
+    blockStarts = (TZrBool *)calloc(function->instructionsLength, sizeof(*blockStarts));
+    if (blockStarts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!compiler_quickening_build_block_starts(function, blockStarts)) {
+        free(blockStarts);
+        return ZR_FALSE;
+    }
+
+    success = compiler_quickening_promote_plain_destination_opcodes(function, blockStarts);
+    free(blockStarts);
     return success;
 }
 
@@ -3432,6 +3484,54 @@ static void compiler_quickening_write_nop(TZrInstruction *instruction) {
     instruction->instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(NOP);
 }
 
+static TZrBool compiler_quickening_instruction_can_stay_between_member_load_and_known_call(
+        const TZrInstruction *instruction,
+        TZrUInt32 functionSlot) {
+    EZrInstructionCode opcode;
+
+    if (instruction == ZR_NULL ||
+        compiler_quickening_instruction_writes_slot(instruction, functionSlot) ||
+        compiler_quickening_instruction_may_read_slot(instruction, functionSlot)) {
+        return ZR_FALSE;
+    }
+
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(GET_STACK):
+        case ZR_INSTRUCTION_ENUM(SET_STACK):
+        case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static TZrBool compiler_quickening_fuse_known_native_member_calls(SZrFunction *function) {
     TZrBool *blockStarts;
     TZrUInt32 index;
@@ -3480,11 +3580,98 @@ static TZrBool compiler_quickening_fuse_known_native_member_calls(SZrFunction *f
                 break;
             }
 
-            if (candidateOpcode != ZR_INSTRUCTION_ENUM(SET_STACK) ||
-                candidate->instruction.operandExtra == functionSlot ||
-                (TZrUInt32)candidate->instruction.operand.operand2[0] == functionSlot) {
+            if (compiler_quickening_instruction_can_stay_between_member_load_and_known_call(candidate, functionSlot)) {
+                continue;
+            }
+
+            break;
+        }
+    }
+
+    success = ZR_TRUE;
+    free(blockStarts);
+    return success;
+}
+
+static TZrBool compiler_quickening_fuse_known_native_member_call_recv_u8(SZrFunction *function) {
+    TZrBool *blockStarts;
+    TZrUInt32 index;
+    TZrBool success = ZR_FALSE;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || function->instructionsLength < 3) {
+        return ZR_TRUE;
+    }
+
+    blockStarts = (TZrBool *)calloc(function->instructionsLength, sizeof(TZrBool));
+    if (blockStarts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!compiler_quickening_build_block_starts(function, blockStarts)) {
+        free(blockStarts);
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index + 2u < function->instructionsLength; index++) {
+        TZrInstruction *receiverLoad = &function->instructionsList[index];
+        TZrInstruction *receiverStage = &function->instructionsList[index + 1u];
+        TZrUInt32 resultSlot;
+        TZrUInt32 receiverDestinationSlot;
+        TZrUInt32 receiverSourceSlot;
+        TZrUInt32 callIndex;
+
+        if (blockStarts[index + 1u] ||
+            receiverLoad->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) ||
+            receiverStage->instruction.operationCode != ZR_INSTRUCTION_ENUM(SET_STACK)) {
+            continue;
+        }
+
+        resultSlot = receiverLoad->instruction.operandExtra;
+        receiverDestinationSlot = receiverStage->instruction.operandExtra;
+        receiverSourceSlot = (TZrUInt32)receiverLoad->instruction.operand.operand2[0];
+        if (receiverDestinationSlot != resultSlot + 1u ||
+            (TZrUInt32)receiverStage->instruction.operand.operand2[0] != resultSlot ||
+            resultSlot > UINT16_MAX ||
+            receiverSourceSlot > 0xFFu) {
+            continue;
+        }
+
+        for (callIndex = index + 2u; callIndex < function->instructionsLength; callIndex++) {
+            TZrInstruction *candidate = &function->instructionsList[callIndex];
+            EZrInstructionCode candidateOpcode = (EZrInstructionCode)candidate->instruction.operationCode;
+
+            if (blockStarts[callIndex]) {
                 break;
             }
+
+            if (candidateOpcode == ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL)) {
+                TZrUInt32 cacheIndex = (TZrUInt32)candidate->instruction.operand.operand1[0];
+                TZrUInt32 parameterCount = (TZrUInt32)candidate->instruction.operand.operand1[1];
+
+                if (candidate->instruction.operandExtra == resultSlot &&
+                    parameterCount > 0u &&
+                    cacheIndex <= 0xFFu &&
+                    parameterCount <= 0xFFu) {
+                    *candidate = create_instruction_4(
+                            ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL_RECV_U8),
+                            (TZrUInt16)resultSlot,
+                            (TZrUInt8)cacheIndex,
+                            (TZrUInt8)receiverSourceSlot,
+                            (TZrUInt8)parameterCount,
+                            0u);
+                    compiler_quickening_write_nop(receiverLoad);
+                    compiler_quickening_write_nop(receiverStage);
+                    index = callIndex;
+                }
+                break;
+            }
+
+            if (compiler_quickening_instruction_can_stay_between_member_load_and_known_call(candidate, resultSlot) &&
+                !compiler_quickening_instruction_writes_slot(candidate, receiverDestinationSlot) &&
+                !compiler_quickening_instruction_may_read_slot(candidate, receiverDestinationSlot)) {
+                continue;
+            }
+
+            break;
         }
     }
 
@@ -3593,6 +3780,149 @@ static TZrBool compiler_quickening_rewrite_null_constant_loads(SZrFunction *func
     }
 
     return ZR_TRUE;
+}
+
+static TZrBool compiler_quickening_fuse_reset_stack_null_pairs(SZrFunction *function) {
+    TZrBool *blockStarts = ZR_NULL;
+    TZrUInt32 index;
+    TZrBool success = ZR_FALSE;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || function->instructionsLength < 2) {
+        return ZR_TRUE;
+    }
+
+    blockStarts = (TZrBool *)malloc(sizeof(*blockStarts) * function->instructionsLength);
+    if (blockStarts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!compiler_quickening_build_block_starts(function, blockStarts)) {
+        goto cleanup;
+    }
+
+    for (index = 0; index + 1u < function->instructionsLength; index++) {
+        TZrInstruction *firstInstruction = &function->instructionsList[index];
+        TZrInstruction *secondInstruction = &function->instructionsList[index + 1u];
+        TZrUInt32 firstSlot;
+        TZrUInt32 secondSlot;
+
+        if (blockStarts[index + 1u] ||
+            (EZrInstructionCode)firstInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(RESET_STACK_NULL) ||
+            (EZrInstructionCode)secondInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(RESET_STACK_NULL)) {
+            continue;
+        }
+
+        firstSlot = firstInstruction->instruction.operandExtra;
+        secondSlot = secondInstruction->instruction.operandExtra;
+        if (firstSlot == secondSlot || firstSlot > UINT16_MAX || secondSlot > UINT16_MAX) {
+            continue;
+        }
+
+        *firstInstruction = create_instruction_2(ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2),
+                                                 (TZrUInt16)firstSlot,
+                                                 (TZrUInt16)secondSlot,
+                                                 0u);
+        compiler_quickening_write_nop(secondInstruction);
+        index++;
+    }
+
+    success = ZR_TRUE;
+
+cleanup:
+    free(blockStarts);
+    return success;
+}
+
+static TZrBool compiler_quickening_try_get_add_mod_left_right_slots(const TZrInstruction *instruction,
+                                                                     TZrUInt32 *outLeftSlot,
+                                                                     TZrUInt32 *outRightSlot) {
+    EZrInstructionCode opcode;
+
+    if (instruction == ZR_NULL || outLeftSlot == ZR_NULL || outRightSlot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
+            *outLeftSlot = instruction->instruction.operand.operand1[0];
+            *outRightSlot = instruction->instruction.operand.operand1[1];
+            return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+            *outLeftSlot = instruction->instruction.operand.operand0[0];
+            *outRightSlot = instruction->instruction.operand.operand0[1];
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool compiler_quickening_fuse_add_signed_mod_const_pairs(SZrFunction *function) {
+    TZrBool *blockStarts = ZR_NULL;
+    TZrUInt32 index;
+    TZrBool success = ZR_FALSE;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || function->instructionsLength < 2) {
+        return ZR_TRUE;
+    }
+
+    blockStarts = (TZrBool *)malloc(sizeof(*blockStarts) * function->instructionsLength);
+    if (blockStarts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!compiler_quickening_build_block_starts(function, blockStarts)) {
+        goto cleanup;
+    }
+
+    for (index = 0; index + 1u < function->instructionsLength; index++) {
+        TZrInstruction *addInstruction = &function->instructionsList[index];
+        TZrInstruction *modInstruction = &function->instructionsList[index + 1u];
+        TZrUInt32 addDestination;
+        TZrUInt32 modDestination;
+        TZrUInt32 leftSlot;
+        TZrUInt32 rightSlot;
+        TZrUInt32 constantIndex;
+
+        if (blockStarts[index + 1u] ||
+            !compiler_quickening_try_get_add_mod_left_right_slots(addInstruction, &leftSlot, &rightSlot) ||
+            (EZrInstructionCode)modInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST)) {
+            continue;
+        }
+
+        addDestination = addInstruction->instruction.operandExtra;
+        modDestination = modInstruction->instruction.operandExtra;
+        constantIndex = modInstruction->instruction.operand.operand1[1];
+        if (modInstruction->instruction.operand.operand1[0] != addDestination ||
+            leftSlot > UINT8_MAX || rightSlot > UINT8_MAX || constantIndex > UINT16_MAX ||
+            compiler_quickening_find_active_local_variable(function, addDestination, index) != ZR_NULL) {
+            continue;
+        }
+
+        if (!compiler_quickening_temp_slot_is_dead_after_instruction(function,
+                                                                     blockStarts,
+                                                                     index + 1u,
+                                                                     addDestination) &&
+            !compiler_quickening_temp_slot_is_dead_after_instruction_cfg(function,
+                                                                         blockStarts,
+                                                                         index + 1u,
+                                                                         addDestination)) {
+            continue;
+        }
+
+        addInstruction->instruction.operationCode = (TZrUInt16)ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST);
+        addInstruction->instruction.operandExtra = (TZrUInt16)modDestination;
+        addInstruction->instruction.operand.operand0[0] = (TZrUInt8)leftSlot;
+        addInstruction->instruction.operand.operand0[1] = (TZrUInt8)rightSlot;
+        addInstruction->instruction.operand.operand1[1] = (TZrUInt16)constantIndex;
+        compiler_quickening_write_nop(modInstruction);
+        index++;
+    }
+
+    success = ZR_TRUE;
+
+cleanup:
+    free(blockStarts);
+    return success;
 }
 
 static TZrUInt32 compiler_quickening_remap_instruction_index(const TZrUInt32 *oldToNew,
@@ -3800,12 +4130,14 @@ static TZrBool compiler_quickening_rewrite_inserted_super_array_items_cache_bran
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) &&
             opcode != ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) &&
+            opcode != ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) &&
             opcode != ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE)) {
             continue;
         }
 
         targetIndex = (TZrInt64)oldIndex + 1;
-        if (opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+        if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+            opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST)) {
@@ -3837,7 +4169,8 @@ static TZrBool compiler_quickening_rewrite_inserted_super_array_items_cache_bran
         }
 
         newOffset = (TZrInt64)remappedTarget - (TZrInt64)newIndex - 1;
-        if (opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+        if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
+            opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST)) {
@@ -4149,6 +4482,7 @@ static TZrBool compiler_quickening_super_array_items_cache_instruction_may_escap
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL_RECV_U8):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_TAIL_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_CALL):
         case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL):
@@ -4864,21 +5198,22 @@ static TZrBool compiler_quickening_try_fold_dead_super_array_add_setup(SZrFuncti
                                                                        const TZrBool *blockStarts,
                                                                        TZrUInt32 instructionIndex) {
     TZrInstruction *addInstruction;
-    TZrInstruction *constantInstruction;
     TZrInstruction *receiverReloadInstruction;
     TZrInstruction *receiverStageInstruction;
     TZrInstruction *receiverLoadInstruction;
+    TZrUInt32 receiverReloadIndex;
+    TZrUInt32 receiverStageIndex;
+    TZrUInt32 receiverLoadIndex;
+    TZrUInt32 receiverSourceSlot;
     TZrUInt32 destinationSlot;
     TZrUInt32 receiverSlot;
     TZrUInt32 valueSlot;
+    TZrUInt32 blockStartIndex;
+    TZrUInt32 scan;
+    TZrBool destinationOverwrittenImmediately;
 
     if (function == ZR_NULL || function->instructionsList == ZR_NULL || blockStarts == ZR_NULL ||
-        instructionIndex < 4 || instructionIndex + 1 >= function->instructionsLength) {
-        return ZR_FALSE;
-    }
-
-    if (blockStarts[instructionIndex] || blockStarts[instructionIndex - 1] || blockStarts[instructionIndex - 2] ||
-        blockStarts[instructionIndex - 3] || blockStarts[instructionIndex + 1]) {
+        instructionIndex < 3 || instructionIndex + 1 >= function->instructionsLength) {
         return ZR_FALSE;
     }
 
@@ -4891,15 +5226,56 @@ static TZrBool compiler_quickening_try_fold_dead_super_array_add_setup(SZrFuncti
     destinationSlot = addInstruction->instruction.operandExtra;
     receiverSlot = addInstruction->instruction.operand.operand1[0];
     valueSlot = addInstruction->instruction.operand.operand1[1];
-    constantInstruction = &function->instructionsList[instructionIndex - 1];
-    receiverReloadInstruction = &function->instructionsList[instructionIndex - 2];
-    receiverStageInstruction = &function->instructionsList[instructionIndex - 3];
-    receiverLoadInstruction = &function->instructionsList[instructionIndex - 4];
-
-    if ((EZrInstructionCode)constantInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_CONSTANT) ||
-        constantInstruction->instruction.operandExtra != valueSlot) {
+    if (valueSlot == destinationSlot || valueSlot == receiverSlot) {
         return ZR_FALSE;
     }
+
+    blockStartIndex = instructionIndex;
+    while (blockStartIndex > 0 && !blockStarts[blockStartIndex]) {
+        blockStartIndex--;
+    }
+
+    receiverReloadIndex = UINT32_MAX;
+    for (scan = instructionIndex; scan > blockStartIndex; scan--) {
+        TZrUInt32 candidateIndex = scan - 1u;
+        TZrInstruction *candidate = &function->instructionsList[candidateIndex];
+
+        if ((EZrInstructionCode)candidate->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_STACK) &&
+            candidate->instruction.operandExtra == destinationSlot &&
+            (TZrUInt32)candidate->instruction.operand.operand2[0] == receiverSlot) {
+            receiverReloadIndex = candidateIndex;
+            break;
+        }
+
+        if (compiler_quickening_instruction_may_read_slot(candidate, destinationSlot) ||
+            compiler_quickening_instruction_writes_slot(candidate, destinationSlot) ||
+            compiler_quickening_instruction_may_read_slot(candidate, receiverSlot) ||
+            compiler_quickening_instruction_writes_slot(candidate, receiverSlot)) {
+            return ZR_FALSE;
+        }
+    }
+    if (receiverReloadIndex == UINT32_MAX || receiverReloadIndex < 2) {
+        return ZR_FALSE;
+    }
+
+    receiverStageIndex = receiverReloadIndex - 1u;
+    receiverLoadIndex = receiverReloadIndex - 2u;
+    destinationOverwrittenImmediately =
+            (TZrBool)(instructionIndex + 1 < function->instructionsLength &&
+                      !compiler_quickening_instruction_may_read_slot(
+                              &function->instructionsList[instructionIndex + 1], destinationSlot) &&
+                      compiler_quickening_instruction_writes_slot(
+                              &function->instructionsList[instructionIndex + 1], destinationSlot));
+
+    if (blockStarts[instructionIndex] || blockStarts[receiverReloadIndex] ||
+        blockStarts[receiverStageIndex] ||
+        (!destinationOverwrittenImmediately && blockStarts[instructionIndex + 1])) {
+        return ZR_FALSE;
+    }
+
+    receiverReloadInstruction = &function->instructionsList[receiverReloadIndex];
+    receiverStageInstruction = &function->instructionsList[receiverStageIndex];
+    receiverLoadInstruction = &function->instructionsList[receiverLoadIndex];
 
     if ((EZrInstructionCode)receiverReloadInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) ||
         receiverReloadInstruction->instruction.operandExtra != destinationSlot ||
@@ -4918,7 +5294,19 @@ static TZrBool compiler_quickening_try_fold_dead_super_array_add_setup(SZrFuncti
         return ZR_FALSE;
     }
 
-    if (!compiler_quickening_slot_is_overwritten_before_read(function, blockStarts, instructionIndex + 1, destinationSlot) &&
+    receiverSourceSlot = (TZrUInt32)receiverLoadInstruction->instruction.operand.operand2[0];
+    if (receiverSourceSlot > UINT16_MAX) {
+        return ZR_FALSE;
+    }
+    for (scan = receiverLoadIndex + 1u; scan < instructionIndex; scan++) {
+        if (compiler_quickening_instruction_may_read_slot(&function->instructionsList[scan], receiverSourceSlot) ||
+            compiler_quickening_instruction_writes_slot(&function->instructionsList[scan], receiverSourceSlot)) {
+            return ZR_FALSE;
+        }
+    }
+
+    if (!destinationOverwrittenImmediately &&
+        !compiler_quickening_slot_is_overwritten_before_read(function, blockStarts, instructionIndex + 1, destinationSlot) &&
         !compiler_quickening_temp_slot_is_dead_until_block_end_with_terminal_exit(
                 function,
                 blockStarts,
@@ -4927,8 +5315,7 @@ static TZrBool compiler_quickening_try_fold_dead_super_array_add_setup(SZrFuncti
         return ZR_FALSE;
     }
 
-    addInstruction->instruction.operand.operand1[0] =
-            (TZrUInt16)receiverLoadInstruction->instruction.operand.operand2[0];
+    addInstruction->instruction.operand.operand1[0] = (TZrUInt16)receiverSourceSlot;
     addInstruction->instruction.operandExtra = ZR_INSTRUCTION_USE_RET_FLAG;
     compiler_quickening_write_nop(receiverLoadInstruction);
     compiler_quickening_write_nop(receiverStageInstruction);
@@ -4992,6 +5379,7 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
         case ZR_INSTRUCTION_ENUM(NOP):
         case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
         case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
         case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
         case ZR_INSTRUCTION_ENUM(GETUPVAL):
         case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
@@ -5148,6 +5536,8 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
             return instruction->instruction.operand.operand0[0] == slot;
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
             return instruction->instruction.operand.operand0[0] == slot ||
                    instruction->instruction.operand.operand0[1] == slot;
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT4):
@@ -5197,6 +5587,9 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
             return slot == (TZrUInt32)instruction->instruction.operand.operand0[1] ||
                    slot == (TZrUInt32)instruction->instruction.operand.operand0[2] ||
+                   slot >= (TZrUInt32)instruction->instruction.operandExtra;
+        case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL_RECV_U8):
+            return slot == (TZrUInt32)instruction->instruction.operand.operand0[1] ||
                    slot >= (TZrUInt32)instruction->instruction.operandExtra;
         case ZR_INSTRUCTION_ENUM(SUPER_META_CALL_CACHED):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_CALL_CACHED):
@@ -5265,7 +5658,12 @@ static TZrBool compiler_quickening_instruction_writes_slot(const TZrInstruction 
             return instruction->instruction.operandExtra == slot ||
                    instruction->instruction.operand.operand0[1] == slot ||
                    instruction->instruction.operand.operand0[2] == slot;
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
+            return instruction->instruction.operandExtra == slot ||
+                   instruction->instruction.operand.operand1[0] == slot;
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
             return instruction->instruction.operandExtra == slot;
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
@@ -5648,6 +6046,8 @@ static TZrBool compiler_quickening_instruction_replace_read_slot_if_supported(TZ
             }
             break;
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
             if (instruction->instruction.operand.operand0[0] == oldSlot) {
                 if (newSlot > UINT8_MAX) {
                     return ZR_FALSE;
@@ -5830,6 +6230,7 @@ static TZrUInt32 compiler_quickening_collect_block_successor_indices(const SZrFu
                                                               successorIndices,
                                                               &successorCount);
             return successorCount;
+        case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             targetIndex = (TZrInt64)blockEndIndex + 1 + (TZrInt16)instruction->instruction.operand.operand1[1];
             if (targetIndex >= 0) {
@@ -6121,6 +6522,7 @@ static TZrBool compiler_quickening_opcode_supports_direct_result_store(const SZr
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
         case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
@@ -6137,6 +6539,24 @@ static TZrBool compiler_quickening_opcode_supports_direct_result_store(const SZr
             return ZR_TRUE;
         default:
             return ZR_FALSE;
+    }
+}
+
+static TZrBool compiler_quickening_direct_result_store_preserves_producer_reads(
+        const TZrInstruction *producerInstruction,
+        TZrUInt32 destinationSlot) {
+    EZrInstructionCode opcode;
+
+    if (producerInstruction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    opcode = (EZrInstructionCode)producerInstruction->instruction.operationCode;
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
+            return (TZrUInt32)producerInstruction->instruction.operand.operand1[0] != destinationSlot;
+        default:
+            return ZR_TRUE;
     }
 }
 
@@ -6165,6 +6585,10 @@ static TZrBool compiler_quickening_try_fold_direct_result_store(SZrFunction *fun
     destinationSlot = storeInstruction->instruction.operandExtra;
     if ((TZrUInt32)storeInstruction->instruction.operand.operand2[0] != temporarySlot ||
         temporarySlot == destinationSlot) {
+        return ZR_FALSE;
+    }
+
+    if (!compiler_quickening_direct_result_store_preserves_producer_reads(producerInstruction, destinationSlot)) {
         return ZR_FALSE;
     }
 
@@ -6685,6 +7109,11 @@ static TZrBool compiler_quickening_try_fold_right_converted_uint_const_arithmeti
         return ZR_FALSE;
     }
 
+    if (instruction->instruction.operandExtra == convertedSlot ||
+        instruction->instruction.operandExtra == constantSlot) {
+        constOpcode = compiler_quickening_plain_dest_const_opcode_to_reuse_opcode(constOpcode);
+    }
+
     instruction->instruction.operationCode = (TZrUInt16)constOpcode;
     instruction->instruction.operand.operand1[1] = (TZrUInt16)uintConstantIndex;
     compiler_quickening_write_nop(conversionInstruction);
@@ -6757,6 +7186,10 @@ static TZrBool compiler_quickening_try_fold_right_const_arithmetic(SZrState *sta
                                                                                       blockStarts,
                                                                                       instructionIndex);
         }
+    }
+
+    if (instruction->instruction.operandExtra == constantSlot) {
+        constOpcode = compiler_quickening_plain_dest_const_opcode_to_reuse_opcode(constOpcode);
     }
 
     instruction->instruction.operationCode = (TZrUInt16)constOpcode;
@@ -6923,6 +7356,9 @@ static EZrInstructionCode compiler_quickening_signed_load_stack_arithmetic_opcod
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
             return ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK);
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST):
+            return ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK);
         default:
             return ZR_INSTRUCTION_ENUM(ENUM_MAX);
     }
@@ -8162,6 +8598,7 @@ static TZrBool compiler_quicken_array_int_index_accesses(SZrState *state, SZrFun
                 case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
                 case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
                 case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+                case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
                 case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
                 case ZR_INSTRUCTION_ENUM(SUB_INT):
                 case ZR_INSTRUCTION_ENUM(SUB_INT_PLAIN_DEST):
@@ -8179,6 +8616,7 @@ static TZrBool compiler_quicken_array_int_index_accesses(SZrState *state, SZrFun
                 case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST):
                 case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
                 case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+                case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
                 case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
                 case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
                 case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST):
@@ -8235,6 +8673,7 @@ static TZrBool compiler_quicken_array_int_index_accesses(SZrState *state, SZrFun
                 case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
                 case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL_LOAD1_U8):
                 case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
+                case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL_RECV_U8):
                 case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_CALL_NO_ARGS):
                 case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_VM_TAIL_CALL_NO_ARGS):
                 case ZR_INSTRUCTION_ENUM(SUPER_KNOWN_NATIVE_CALL_NO_ARGS):
@@ -9098,6 +9537,7 @@ static TZrBool compiler_quickening_opcode_is_load_typed_arithmetic_probe_candida
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
             return ZR_TRUE;
         default:
             return ZR_FALSE;
@@ -9144,7 +9584,12 @@ static TZrBool compiler_quickening_load_typed_arithmetic_candidate_reads_slot(co
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+            return ZR_FALSE;
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
+            return instruction->instruction.operand.operand0[0] == slot ||
+                   instruction->instruction.operand.operand0[1] == slot;
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
             return ZR_FALSE;
         default:
             return instruction->instruction.operand.operand1[0] == slot ||
@@ -9371,6 +9816,8 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
     ZR_QUICKENING_RUN_PASS("known_calls_late", compiler_quicken_known_calls(state, function));
     ZR_QUICKENING_RUN_PASS("known_native_member_calls_late",
                            compiler_quickening_fuse_known_native_member_calls(function));
+    ZR_QUICKENING_RUN_PASS("known_native_member_call_recv_u8",
+                           compiler_quickening_fuse_known_native_member_call_recv_u8(function));
     ZR_QUICKENING_RUN_PASS("zero_arg_calls_late", compiler_quicken_zero_arg_calls(function));
     /*
      * member_slot_accesses and late known-call lowering can expose typed call
@@ -9393,9 +9840,18 @@ static TZrBool compiler_quicken_child_functions(SZrState *state,
                            compiler_quickening_fuse_known_vm_member_call_load1_u8(function));
     ZR_QUICKENING_RUN_PASS("rewrite_null_constant_loads",
                            compiler_quickening_rewrite_null_constant_loads(function));
+    ZR_QUICKENING_RUN_PASS("fuse_reset_stack_null_pairs",
+                           compiler_quickening_fuse_reset_stack_null_pairs(function));
+    ZR_QUICKENING_RUN_PASS("fuse_add_signed_mod_const_pairs",
+                           compiler_quickening_fuse_add_signed_mod_const_pairs(function));
     ZR_QUICKENING_RUN_PASS("compact_nops_12", compiler_quickening_compact_nops(state, function));
+    ZR_QUICKENING_RUN_PASS("known_native_member_call_recv_u8_after_compact",
+                           compiler_quickening_fuse_known_native_member_call_recv_u8(function));
+    ZR_QUICKENING_RUN_PASS("compact_nops_12b", compiler_quickening_compact_nops(state, function));
     ZR_QUICKENING_RUN_PASS("super_array_items_cache_bindings",
                            compiler_quickening_insert_super_array_items_cache_bindings(state, function));
+    ZR_QUICKENING_RUN_PASS("promote_plain_destination_after_items_cache",
+                           compiler_quickening_promote_plain_destination_opcodes_with_fresh_blocks(function));
 
     if (recurseChildren && !function->childFunctionGraphIsBorrowed) {
         for (childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
