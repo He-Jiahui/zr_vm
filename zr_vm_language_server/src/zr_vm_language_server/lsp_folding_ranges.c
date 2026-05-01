@@ -12,6 +12,15 @@ typedef struct SZrBraceStart {
     TZrInt32 character;
 } SZrBraceStart;
 
+typedef struct SZrStructuralFoldingScanData {
+    SZrState *state;
+    SZrArray *result;
+    const TZrChar *content;
+    TZrSize contentLength;
+    SZrBraceStart stack[ZR_LSP_AST_RECURSION_MAX_DEPTH];
+    TZrSize stackLength;
+} SZrStructuralFoldingScanData;
+
 static TZrBool lsp_editor_append_folding_range(SZrState *state,
                                                SZrArray *result,
                                                TZrInt32 startLine,
@@ -214,43 +223,59 @@ static TZrBool lsp_editor_append_marker_folding_ranges(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool lsp_editor_append_structural_folding_ranges_callback(TZrChar value,
+                                                                    TZrSize offset,
+                                                                    void *userData) {
+    SZrStructuralFoldingScanData *data = (SZrStructuralFoldingScanData *)userData;
+    SZrLspPosition position;
+
+    if (data == ZR_NULL || data->state == ZR_NULL || data->result == ZR_NULL || data->content == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    position = lsp_editor_position_from_offset(data->content, data->contentLength, offset);
+    if (value == '{') {
+        if (data->stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
+            data->stack[data->stackLength].line = position.line;
+            data->stack[data->stackLength].character = position.character;
+            data->stackLength++;
+        }
+        return ZR_TRUE;
+    }
+
+    if (value == '}' && data->stackLength > 0) {
+        SZrBraceStart start = data->stack[--data->stackLength];
+        return lsp_editor_append_folding_range(data->state,
+                                               data->result,
+                                               start.line,
+                                               start.character,
+                                               position.line,
+                                               position.character,
+                                               ZR_LSP_FOLDING_RANGE_KIND_REGION);
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool lsp_editor_append_structural_folding_ranges(SZrState *state,
                                                            SZrArray *result,
                                                            const TZrChar *content,
                                                            TZrSize contentLength) {
-    SZrBraceStart stack[ZR_LSP_AST_RECURSION_MAX_DEPTH];
-    TZrSize stackLength = 0;
-    TZrInt32 line = 0;
-    TZrInt32 character = 0;
+    SZrLspEditorScanState scanState = {ZR_LSP_EDITOR_SCAN_CODE, ZR_FALSE};
+    SZrStructuralFoldingScanData data;
 
-    for (TZrSize index = 0; index < contentLength; index++) {
-        TZrChar current = content[index];
-        if (current == '{' && stackLength < ZR_LSP_AST_RECURSION_MAX_DEPTH) {
-            stack[stackLength].line = line;
-            stack[stackLength].character = character;
-            stackLength++;
-        } else if (current == '}' && stackLength > 0) {
-            SZrBraceStart start = stack[--stackLength];
-            if (!lsp_editor_append_folding_range(state,
-                                                 result,
-                                                 start.line,
-                                                 start.character,
-                                                 line,
-                                                 character,
-                                                 ZR_LSP_FOLDING_RANGE_KIND_REGION)) {
-                return ZR_FALSE;
-            }
-        }
-
-        if (current == '\n') {
-            line++;
-            character = 0;
-        } else {
-            character++;
-        }
-    }
-
-    return ZR_TRUE;
+    data.state = state;
+    data.result = result;
+    data.content = content;
+    data.contentLength = contentLength;
+    data.stackLength = 0;
+    return lsp_editor_scan_structural_chars(content,
+                                            contentLength,
+                                            0,
+                                            contentLength,
+                                            &scanState,
+                                            lsp_editor_append_structural_folding_ranges_callback,
+                                            &data);
 }
 
 TZrBool ZrLanguageServer_Lsp_GetFoldingRanges(SZrState *state,

@@ -45,7 +45,7 @@ export async function sendLanguageServerRequest<TResult>(
     }
 }
 
-function isIgnorableLanguageServerRequestError(error: unknown): boolean {
+export function isIgnorableLanguageServerRequestError(error: unknown): boolean {
     const code = typeof error === 'object' && error !== null
         ? (error as { code?: unknown }).code
         : undefined;

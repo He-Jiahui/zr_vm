@@ -286,9 +286,8 @@ void ZrCore_Debug_HookReturn(struct SZrState *state, struct SZrCallInfo *callInf
         TZrUInt32 totalArgumentsCount = 0;
         TZrInt32 transferStart = 0;
         if (ZR_CALL_INFO_IS_VM(callInfo)) {
-            SZrTypeValue *functionValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
-            SZrFunction *function = (ZR_CAST_VM_CLOSURE(state, functionValue->value.object))->function;
-            if (function->hasVariableArguments) {
+            SZrFunction *function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+            if (function != ZR_NULL && function->hasVariableArguments) {
                 totalArgumentsCount = (TZrUInt32)(callInfo->context.context.variableArgumentCount +
                                                   function->parameterCount + 1);
             }
@@ -303,11 +302,13 @@ void ZrCore_Debug_HookReturn(struct SZrState *state, struct SZrCallInfo *callInf
         callInfo->functionBase.valuePointer -= totalArgumentsCount;
     }
     callInfo = callInfo->previous;
-    if (ZR_CALL_INFO_IS_VM(callInfo)) {
-        SZrTypeValue *functionValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer);
-        SZrFunction *function = (ZR_CAST_VM_CLOSURE(state, functionValue->value.object))->function;
-        state->previousProgramCounter =
-                ZR_CAST_INT64(callInfo->context.context.programCounter - function->instructionsList) - 1;
+    if (callInfo != ZR_NULL && ZR_CALL_INFO_IS_VM(callInfo)) {
+        SZrFunction *function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+        if (function != ZR_NULL && function->instructionsList != ZR_NULL &&
+            callInfo->context.context.programCounter >= function->instructionsList) {
+            state->previousProgramCounter =
+                    ZR_CAST_INT64(callInfo->context.context.programCounter - function->instructionsList) - 1;
+        }
     }
 }
 

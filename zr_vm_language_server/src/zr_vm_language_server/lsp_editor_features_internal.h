@@ -9,6 +9,24 @@ typedef struct SZrLspTextBuilder {
     TZrSize capacity;
 } SZrLspTextBuilder;
 
+typedef enum EZrLspEditorScanMode {
+    ZR_LSP_EDITOR_SCAN_CODE = 0,
+    ZR_LSP_EDITOR_SCAN_LINE_COMMENT,
+    ZR_LSP_EDITOR_SCAN_BLOCK_COMMENT,
+    ZR_LSP_EDITOR_SCAN_STRING,
+    ZR_LSP_EDITOR_SCAN_CHAR,
+    ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING
+} EZrLspEditorScanMode;
+
+typedef struct SZrLspEditorScanState {
+    EZrLspEditorScanMode mode;
+    TZrBool escaped;
+} SZrLspEditorScanState;
+
+typedef TZrBool (*TZrLspEditorStructuralCharCallback)(TZrChar value,
+                                                      TZrSize offset,
+                                                      void *userData);
+
 SZrString *lsp_editor_create_string(SZrState *state, const TZrChar *text, TZrSize length);
 SZrFileVersion *lsp_editor_get_file_version(SZrLspContext *context, SZrString *uri);
 SZrLspPosition lsp_editor_position_from_offset(const TZrChar *content,
@@ -33,5 +51,15 @@ TZrBool lsp_editor_append_text_edit(SZrState *state,
                                     SZrLspRange range,
                                     const TZrChar *newText,
                                     TZrSize newTextLength);
+TZrBool lsp_editor_scan_structural_chars(const TZrChar *content,
+                                         TZrSize contentLength,
+                                         TZrSize startOffset,
+                                         TZrSize endOffset,
+                                         SZrLspEditorScanState *scanState,
+                                         TZrLspEditorStructuralCharCallback callback,
+                                         void *userData);
+TZrBool lsp_editor_offset_is_code(const TZrChar *content,
+                                  TZrSize contentLength,
+                                  TZrSize offset);
 
 #endif

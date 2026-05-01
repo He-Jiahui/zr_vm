@@ -62,7 +62,10 @@ class DesktopProjectActionsController implements vscode.Disposable {
             vscode.commands.registerCommand(ZR_SELECT_PROJECT_COMMAND, async () => {
                 await this.selectProject();
             }),
-            vscode.commands.registerCommand(ZR_PROJECT_ACTIONS_INSPECT_COMMAND, () => this.state),
+            vscode.commands.registerCommand(ZR_PROJECT_ACTIONS_INSPECT_COMMAND, async () => {
+                await this.update();
+                return this.state;
+            }),
             vscode.window.onDidChangeActiveTextEditor(() => {
                 void this.update();
             }),

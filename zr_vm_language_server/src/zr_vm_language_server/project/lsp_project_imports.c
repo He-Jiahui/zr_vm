@@ -66,6 +66,28 @@ static SZrFileRange normalize_import_module_path_location(SZrFileRange range, TZ
     return range;
 }
 
+static SZrFileRange normalize_zero_width_identifier_location(SZrFileRange range, SZrString *identifierName) {
+    TZrNativeString text = ZR_NULL;
+    TZrSize length = 0;
+
+    get_string_view(identifierName, &text, &length);
+    if (text == ZR_NULL || length == 0 ||
+        range.start.offset != range.end.offset ||
+        range.start.line != range.end.line ||
+        range.start.column != range.end.column) {
+        return range;
+    }
+
+    if (range.start.offset >= length) {
+        range.start.offset -= length;
+    }
+    if (range.start.column > (TZrInt32)length) {
+        range.start.column -= (TZrInt32)length;
+    }
+
+    return range;
+}
+
 static TZrBool normalize_module_key(const TZrChar *modulePath, TZrChar *buffer, TZrSize bufferSize) {
     return ZrLibrary_Project_NormalizeModuleKey(modulePath, buffer, bufferSize);
 }
@@ -641,7 +663,8 @@ static TZrBool primary_expression_get_imported_member(SZrAstNode *node,
 
     outHit->moduleName = binding->moduleName;
     outHit->memberName = memberNode->data.memberExpression.property->data.identifier.name;
-    outHit->receiverLocation = receiverNode->location;
+    outHit->receiverLocation =
+        normalize_zero_width_identifier_location(receiverNode->location, receiverNode->data.identifier.name);
     outHit->location = memberNode->data.memberExpression.property->location;
     return ZR_TRUE;
 }
@@ -671,7 +694,8 @@ static TZrBool primary_expression_get_import_binding_hit(SZrAstNode *node,
     }
 
     *outBinding = binding;
-    *outLocation = receiverNode->location;
+    *outLocation = normalize_zero_width_identifier_location(receiverNode->location,
+                                                            receiverNode->data.identifier.name);
     return ZR_TRUE;
 }
 

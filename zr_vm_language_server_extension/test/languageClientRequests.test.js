@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    isIgnorableLanguageServerRequestError,
     sendLanguageServerRequest,
     setLanguageClientRequestClient,
 } = require('../out/languageClientRequests.js');
@@ -58,4 +59,10 @@ test('sendLanguageServerRequest suppresses disposed transport errors during rest
     });
 
     assert.equal(result, undefined);
+});
+
+test('language server client errors identify shutdown races', () => {
+    assert.equal(isIgnorableLanguageServerRequestError(new Error('Client is not running')), true);
+    assert.equal(isIgnorableLanguageServerRequestError(new Error('Cannot call write after a stream was destroyed')), true);
+    assert.equal(isIgnorableLanguageServerRequestError(new Error('real protocol failure')), false);
 });

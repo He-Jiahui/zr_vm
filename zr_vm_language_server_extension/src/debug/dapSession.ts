@@ -345,7 +345,7 @@ export class ZrDebugAdapter implements vscode.DebugAdapter {
             const resolved = resolvedBreakpoints?.[index];
             return {
                 id: index + 1,
-                verified: resolvedBreakpoints !== undefined ? resolved?.verified !== false : false,
+                verified: resolvedBreakpoints !== undefined ? Boolean(resolved && resolved.verified !== false) : false,
                 line: typeof resolved?.line === 'number' ? resolved.line : breakpoint.line,
                 source: { path: sourcePath, name: path.basename(sourcePath) },
             };

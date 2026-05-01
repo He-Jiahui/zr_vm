@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { isIgnorableLanguageServerRequestError } from './languageClientRequests';
 import { activeWorkspaceFolder, resolveSelectedProjectUri } from './workspaceProjects';
 
 const ZR_SELECTED_PROJECT_NOTIFICATION_METHOD = 'zr/selectedProject';
@@ -11,5 +12,13 @@ export async function sendZrSelectedProjectToLanguageServer(
         return;
     }
     const uri = await resolveSelectedProjectUri(context, activeWorkspaceFolder(), false);
-    await client.sendNotification(ZR_SELECTED_PROJECT_NOTIFICATION_METHOD, { uri: uri?.toString() ?? null });
+    try {
+        await client.sendNotification(ZR_SELECTED_PROJECT_NOTIFICATION_METHOD, { uri: uri?.toString() ?? null });
+    } catch (error) {
+        if (isIgnorableLanguageServerRequestError(error)) {
+            return;
+        }
+
+        throw error;
+    }
 }

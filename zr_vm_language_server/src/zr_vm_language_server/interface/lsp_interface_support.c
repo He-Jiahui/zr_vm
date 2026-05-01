@@ -350,11 +350,53 @@ TZrBool ZrLanguageServer_Lsp_StringContainsCaseInsensitive(SZrString *haystack, 
     return ZR_FALSE;
 }
 
+static SZrFileRange lsp_symbol_normalize_name_range(SZrSymbol *symbol, SZrFileRange range) {
+    TZrNativeString nameText;
+    TZrSize nameLength;
+
+    if (symbol == ZR_NULL || symbol->name == ZR_NULL ||
+        range.end.offset > range.start.offset ||
+        range.end.line > range.start.line ||
+        range.end.column > range.start.column) {
+        return range;
+    }
+
+    get_string_view(symbol->name, &nameText, &nameLength);
+    if (nameText == ZR_NULL || nameLength == 0) {
+        return range;
+    }
+
+    if (range.start.offset >= nameLength) {
+        range.start.offset -= nameLength;
+    }
+    if (range.start.line == range.end.line && range.start.column > (TZrInt32)nameLength) {
+        range.start.column -= (TZrInt32)nameLength;
+    }
+    return range;
+}
+
 SZrFileRange ZrLanguageServer_Lsp_GetSymbolLookupRange(SZrSymbol *symbol) {
     if (symbol == ZR_NULL) {
         return ZrParser_FileRange_Create(ZrParser_FilePosition_Create(0, 0, 0),
                                          ZrParser_FilePosition_Create(0, 0, 0),
                                          ZR_NULL);
+    }
+
+    if (symbol->astNode != ZR_NULL) {
+        switch (symbol->astNode->type) {
+            case ZR_AST_FUNCTION_DECLARATION:
+                return lsp_symbol_normalize_name_range(symbol,
+                                                       symbol->astNode->data.functionDeclaration.nameLocation);
+            case ZR_AST_VARIABLE_DECLARATION:
+                if (symbol->astNode->data.variableDeclaration.pattern != ZR_NULL &&
+                    symbol->astNode->data.variableDeclaration.pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
+                    return lsp_symbol_normalize_name_range(symbol,
+                                                           symbol->astNode->data.variableDeclaration.pattern->location);
+                }
+                break;
+            default:
+                break;
+        }
     }
 
     if (symbol->selectionRange.end.offset > symbol->selectionRange.start.offset ||
@@ -1128,10 +1170,32 @@ static TZrBool completion_items_contains_label(SZrArray *items, SZrString *label
 }
 
 static TZrBool symbol_name_matches(SZrSymbol *symbol, SZrString *name) {
-    return symbol != ZR_NULL &&
-           symbol->name != ZR_NULL &&
-           name != ZR_NULL &&
-           ZrLanguageServer_Lsp_StringsEqual(symbol->name, name);
+    TZrNativeString symbolText;
+    TZrNativeString nameText;
+    TZrSize symbolLength;
+    TZrSize nameLength;
+    static const TZrChar getterPrefix[] = "__get_";
+    static const TZrChar setterPrefix[] = "__set_";
+    const TZrSize accessorPrefixLength = 6;
+
+    if (symbol == ZR_NULL || symbol->name == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ZrLanguageServer_Lsp_StringsEqual(symbol->name, name)) {
+        return ZR_TRUE;
+    }
+
+    get_string_view(symbol->name, &symbolText, &symbolLength);
+    get_string_view(name, &nameText, &nameLength);
+    if (symbolText == ZR_NULL || nameText == ZR_NULL || nameLength == 0 ||
+        symbolLength != accessorPrefixLength + nameLength) {
+        return ZR_FALSE;
+    }
+
+    return ((memcmp(symbolText, getterPrefix, accessorPrefixLength) == 0 ||
+             memcmp(symbolText, setterPrefix, accessorPrefixLength) == 0) &&
+            memcmp(symbolText + accessorPrefixLength, nameText, nameLength) == 0);
 }
 
 static TZrInt32 completion_metadata_symbol_priority(SZrSymbol *symbol) {
@@ -1986,6 +2050,14 @@ static SZrFileRange receiver_project_member_lookup_range(SZrAstNode *declaration
     }
 
     switch (declarationNode->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return declarationNode->data.functionDeclaration.nameLocation;
+        case ZR_AST_VARIABLE_DECLARATION:
+            if (declarationNode->data.variableDeclaration.pattern != ZR_NULL &&
+                declarationNode->data.variableDeclaration.pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
+                return declarationNode->data.variableDeclaration.pattern->location;
+            }
+            break;
         case ZR_AST_CLASS_FIELD:
             return declarationNode->data.classField.nameLocation;
         case ZR_AST_CLASS_METHOD:
@@ -2085,6 +2157,19 @@ static SZrFileRange receiver_project_member_declaration_range(SZrString *uri,
     }
 
     switch (declarationNode->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            range = declarationNode->data.functionDeclaration.nameLocation;
+            break;
+
+        case ZR_AST_VARIABLE_DECLARATION:
+            if (declarationNode->data.variableDeclaration.pattern != ZR_NULL &&
+                declarationNode->data.variableDeclaration.pattern->type == ZR_AST_IDENTIFIER_LITERAL) {
+                range = declarationNode->data.variableDeclaration.pattern->location;
+                break;
+            }
+            range = declarationNode->location;
+            break;
+
         case ZR_AST_CLASS_FIELD:
             range = declarationNode->data.classField.nameLocation;
             break;

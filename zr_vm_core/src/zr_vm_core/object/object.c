@@ -283,6 +283,30 @@ static ZR_FORCE_INLINE TZrBool object_try_set_cached_iterator_current_null(SZrOb
     return ZR_TRUE;
 }
 
+static ZR_FORCE_INLINE TZrBool object_try_set_cached_iterator_current_value(SZrState *state,
+                                                                            SZrObject *iteratorObject,
+                                                                            const SZrTypeValue *value) {
+    SZrHashKeyValuePair *pair;
+
+    if (state == ZR_NULL || iteratorObject == ZR_NULL || value == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pair = iteratorObject->cachedIteratorCurrentPair;
+    if (pair == ZR_NULL || pair->key.type != ZR_VALUE_TYPE_STRING || pair->key.value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Object_SetExistingPairValueUnchecked(state, iteratorObject, pair, value);
+    if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+        return ZR_FALSE;
+    }
+
+    iteratorObject->memberVersion++;
+    iteratorObject->cachedStringLookupPair = pair;
+    return ZR_TRUE;
+}
+
 static ZR_FORCE_INLINE TZrBool object_try_move_next_cached_raw_int_array_iterator(SZrState *state,
                                                                                   SZrObject *iteratorObject,
                                                                                   TZrBool *outMoved) {
@@ -327,12 +351,12 @@ static ZR_FORCE_INLINE TZrBool object_try_move_next_cached_raw_int_array_iterato
     return ZR_TRUE;
 }
 
-static ZR_FORCE_INLINE TZrBool object_try_move_next_cached_int_array_iterator(SZrState *state,
-                                                                              SZrObject *iteratorObject,
-                                                                              TZrBool *outMoved) {
+static ZR_FORCE_INLINE TZrBool object_try_move_next_cached_array_iterator(SZrState *state,
+                                                                          SZrObject *iteratorObject,
+                                                                          TZrBool *outMoved) {
     SZrObject *source;
     TZrInt64 index;
-    SZrTypeValue indexValue;
+    SZrTypeValue key;
     const SZrTypeValue *current;
 
     if (outMoved != ZR_NULL) {
@@ -354,8 +378,8 @@ static ZR_FORCE_INLINE TZrBool object_try_move_next_cached_int_array_iterator(SZ
         return ZR_FALSE;
     }
 
-    ZrCore_Value_InitAsInt(state, &indexValue, index);
-    current = ZrCore_Object_GetValue(state, source, &indexValue);
+    ZrCore_Value_InitAsInt(state, &key, index);
+    current = ZrCore_Object_GetValue(state, source, &key);
     if (current == ZR_NULL) {
         if (!object_try_set_cached_iterator_current_null(iteratorObject)) {
             return ZR_FALSE;
@@ -363,13 +387,8 @@ static ZR_FORCE_INLINE TZrBool object_try_move_next_cached_int_array_iterator(SZ
         *outMoved = ZR_FALSE;
         return ZR_TRUE;
     }
-    if (!ZR_VALUE_IS_TYPE_SIGNED_INT(current->type)) {
-        return ZR_FALSE;
-    }
 
-    if (!object_try_set_cached_iterator_int_pair(iteratorObject,
-                                                 iteratorObject->cachedIteratorCurrentPair,
-                                                 current->value.nativeObject.nativeInt64) ||
+    if (!object_try_set_cached_iterator_current_value(state, iteratorObject, current) ||
         !object_try_set_cached_iterator_int_pair(iteratorObject,
                                                  iteratorObject->cachedIteratorIndexPair,
                                                  index + 1)) {
@@ -443,6 +462,30 @@ static ZR_FORCE_INLINE void object_copy_value_profiled(SZrState *state,
                                                        SZrTypeValue *destination,
                                                        const SZrTypeValue *source) {
     object_record_helper(state, ZR_PROFILE_HELPER_VALUE_COPY);
+    ZrCore_Value_CopyNoProfile(state, destination, source);
+}
+
+static ZR_FORCE_INLINE TZrBool object_can_copy_transient_result_by_bits(const SZrTypeValue *destination,
+                                                                        const SZrTypeValue *source) {
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(source != ZR_NULL);
+    ZR_ASSERT(source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+              (source->ownershipControl == ZR_NULL && source->ownershipWeakRef == ZR_NULL));
+    ZR_ASSERT(destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+              (destination->ownershipControl == ZR_NULL && destination->ownershipWeakRef == ZR_NULL));
+    return (TZrBool)(((TZrUInt32)source->ownershipKind | (TZrUInt32)destination->ownershipKind) ==
+                     (TZrUInt32)ZR_OWNERSHIP_VALUE_KIND_NONE);
+}
+
+static ZR_FORCE_INLINE void object_copy_value_to_transient_result_profiled(SZrState *state,
+                                                                           SZrTypeValue *destination,
+                                                                           const SZrTypeValue *source) {
+    object_record_helper(state, ZR_PROFILE_HELPER_VALUE_COPY);
+    if (ZR_LIKELY(object_can_copy_transient_result_by_bits(destination, source))) {
+        *destination = *source;
+        return;
+    }
+
     ZrCore_Value_CopyNoProfile(state, destination, source);
 }
 
@@ -3398,7 +3441,7 @@ TZrBool ZrCore_Object_IterMoveNext(struct SZrState *state,
     }
     prototype = object_value_resolve_prototype(state, iteratorValue);
     if (prototype != ZR_NULL && prototype->iteratorContract.moveNextFunction != ZR_NULL) {
-        if (object_try_move_next_cached_int_array_iterator(state, iteratorObject, &fastMoved)) {
+        if (object_try_move_next_cached_array_iterator(state, iteratorObject, &fastMoved)) {
             ZrCore_Value_InitAsBool(state, result, fastMoved);
             return ZR_TRUE;
         }
@@ -3475,6 +3518,36 @@ TZrBool ZrCore_Object_TryIterMoveNextCachedRawIntArrayFast(struct SZrState *stat
     return ZR_TRUE;
 }
 
+TZrBool ZrCore_Object_TryIterMoveNextCachedArrayFast(struct SZrState *state,
+                                                     const SZrTypeValue *iteratorValue,
+                                                     SZrTypeValue *result) {
+    SZrObject *iteratorObject;
+    SZrObjectPrototype *prototype;
+    TZrBool moved = ZR_FALSE;
+
+    if (state == ZR_NULL || iteratorValue == ZR_NULL || result == ZR_NULL ||
+        iteratorValue->type != ZR_VALUE_TYPE_OBJECT || iteratorValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    iteratorObject = ZR_CAST_OBJECT(state, iteratorValue->value.object);
+    if (iteratorObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    prototype = iteratorObject->prototype;
+    if (prototype == ZR_NULL || prototype->iteratorContract.moveNextFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!object_try_move_next_cached_array_iterator(state, iteratorObject, &moved)) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Value_InitAsBool(state, result, moved);
+    return ZR_TRUE;
+}
+
 TZrBool ZrCore_Object_TryIterCurrentCachedMemberFast(struct SZrState *state,
                                                      const SZrTypeValue *iteratorValue,
                                                      SZrTypeValue *result) {
@@ -3507,6 +3580,41 @@ TZrBool ZrCore_Object_TryIterCurrentCachedMemberFast(struct SZrState *state,
     }
 
     object_copy_value_profiled(state, result, cachedCurrent);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Object_TryIterCurrentCachedMemberFastStackResult(struct SZrState *state,
+                                                                const SZrTypeValue *iteratorValue,
+                                                                SZrTypeValue *result) {
+    SZrObject *iteratorObject;
+    SZrObjectPrototype *prototype;
+    const SZrTypeValue *cachedCurrent;
+
+    if (state == ZR_NULL || iteratorValue == ZR_NULL || result == ZR_NULL ||
+        iteratorValue->type != ZR_VALUE_TYPE_OBJECT || iteratorValue->value.object == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    iteratorObject = ZR_CAST_OBJECT(state, iteratorValue->value.object);
+    if (iteratorObject == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    prototype = iteratorObject->prototype;
+    if (prototype == ZR_NULL ||
+        prototype->iteratorContract.currentFunction != ZR_NULL ||
+        prototype->iteratorContract.currentMemberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    cachedCurrent = object_try_get_cached_iterator_current_value(state,
+                                                                 iteratorObject,
+                                                                 prototype->iteratorContract.currentMemberName);
+    if (cachedCurrent == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    object_copy_value_to_transient_result_profiled(state, result, cachedCurrent);
     return ZR_TRUE;
 }
 

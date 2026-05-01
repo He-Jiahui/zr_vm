@@ -339,6 +339,28 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_try_load(const SZrObject *
     return ZR_TRUE;
 }
 
+static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_try_load_bound_items_assume_fast(
+        const SZrObject *itemsObject,
+        TZrUInt64 unsignedIndex,
+        TZrInt64 *outValue) {
+    const TZrInt64 *data;
+    TZrSize length;
+
+    ZR_ASSERT(itemsObject != ZR_NULL);
+    ZR_ASSERT(itemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+    ZR_ASSERT(outValue != ZR_NULL);
+
+    data = itemsObject->superArrayRawIntData;
+    length = itemsObject->superArrayRawIntLength;
+    if (ZR_LIKELY(data != ZR_NULL && unsignedIndex < (TZrUInt64)length)) {
+        ZR_ASSERT(length <= itemsObject->superArrayRawIntCapacity);
+        *outValue = data[(TZrSize)unsignedIndex];
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 static ZR_FORCE_INLINE void zr_super_array_raw_int_store_existing_optional(SZrObject *itemsObject,
                                                                            TZrInt64 indexValue,
                                                                            TZrInt64 value) {
@@ -363,6 +385,30 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_store_existing_dirty_optio
     itemsObject->superArrayRawIntData[(TZrSize)indexValue] = value;
     itemsObject->superArrayRawIntDirty = ZR_TRUE;
     return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_store_existing_dirty_bound_items_assume_fast(
+        SZrObject *itemsObject,
+        TZrInt64 indexValue,
+        TZrInt64 value) {
+    TZrInt64 *data;
+    TZrSize length;
+
+    ZR_ASSERT(itemsObject != ZR_NULL);
+    ZR_ASSERT(itemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+
+    data = itemsObject->superArrayRawIntData;
+    length = itemsObject->superArrayRawIntLength;
+    if (ZR_LIKELY(data != ZR_NULL &&
+                  indexValue >= 0 &&
+                  (TZrUInt64)indexValue < (TZrUInt64)length)) {
+        ZR_ASSERT(length <= itemsObject->superArrayRawIntCapacity);
+        data[(TZrSize)indexValue] = value;
+        itemsObject->superArrayRawIntDirty = ZR_TRUE;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
 }
 
 static ZR_FORCE_INLINE TZrBool zr_super_array_raw_int_materialize_dirty(SZrState *state,
@@ -433,7 +479,7 @@ static ZR_FORCE_INLINE void zr_super_array_store_plain_get_from_items_object_ass
     ZR_ASSERT(result != ZR_NULL);
     ZR_ASSERT(zr_super_array_value_is_normalized_plain(result));
 
-    if (ZR_LIKELY(zr_super_array_raw_int_try_load(itemsObject, unsignedIndex, &rawValue))) {
+    if (ZR_LIKELY(zr_super_array_raw_int_try_load_bound_items_assume_fast(itemsObject, unsignedIndex, &rawValue))) {
         zr_super_array_store_plain_int_assume_normalized(result, rawValue);
         return;
     }
@@ -462,7 +508,8 @@ static ZR_FORCE_INLINE void zr_super_array_get_from_items_object_assume_fast(SZr
     ZR_ASSERT(itemsObject != ZR_NULL);
     ZR_ASSERT(result != ZR_NULL);
 
-    if (ZR_LIKELY(zr_super_array_raw_int_try_load(itemsObject, (TZrUInt64)indexValue, &rawValue))) {
+    if (ZR_LIKELY(zr_super_array_raw_int_try_load_bound_items_assume_fast(
+                itemsObject, (TZrUInt64)indexValue, &rawValue))) {
         zr_super_array_assign_int_or_copy(state, result, rawValue);
         return;
     }
@@ -493,7 +540,8 @@ static ZR_FORCE_INLINE TZrBool zr_super_array_set_int_in_items_object_assume_fas
         return ZR_FALSE;
     }
 
-    if (ZR_LIKELY(zr_super_array_raw_int_store_existing_dirty_optional(itemsObject, indexValue, value))) {
+    if (ZR_LIKELY(zr_super_array_raw_int_store_existing_dirty_bound_items_assume_fast(
+                itemsObject, indexValue, value))) {
         return ZR_TRUE;
     }
 
@@ -524,7 +572,8 @@ static ZR_FORCE_INLINE void zr_super_array_set_int_in_bound_items_object_assume_
     ZR_ASSERT(itemsObject != ZR_NULL);
     ZR_ASSERT(itemsObject->internalType == ZR_OBJECT_INTERNAL_TYPE_ARRAY);
 
-    if (ZR_LIKELY(zr_super_array_raw_int_store_existing_dirty_optional(itemsObject, indexValue, value))) {
+    if (ZR_LIKELY(zr_super_array_raw_int_store_existing_dirty_bound_items_assume_fast(
+                itemsObject, indexValue, value))) {
         return;
     }
 
@@ -570,7 +619,8 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
     plainDestination = (TZrBool)(result->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE);
     if (ZR_LIKELY(plainDestination)) {
         ZR_ASSERT(result->ownershipControl == ZR_NULL && result->ownershipWeakRef == ZR_NULL);
-        if (ZR_LIKELY(zr_super_array_raw_int_try_load(itemsObject, (TZrUInt64)indexValue, &rawValue))) {
+        if (ZR_LIKELY(zr_super_array_raw_int_try_load_bound_items_assume_fast(
+                    itemsObject, (TZrUInt64)indexValue, &rawValue))) {
             if (zr_super_array_value_is_normalized_plain(result)) {
                 zr_super_array_store_plain_int_assume_normalized(result, rawValue);
             } else {
@@ -600,7 +650,8 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArrayGetIntByValueInlineAssume
         return ZR_TRUE;
     }
 
-    if (ZR_LIKELY(zr_super_array_raw_int_try_load(itemsObject, (TZrUInt64)indexValue, &rawValue))) {
+    if (ZR_LIKELY(zr_super_array_raw_int_try_load_bound_items_assume_fast(
+                itemsObject, (TZrUInt64)indexValue, &rawValue))) {
         zr_super_array_assign_int_or_copy(state, result, rawValue);
         return ZR_TRUE;
     }
@@ -663,7 +714,8 @@ static ZR_FORCE_INLINE TZrBool ZrCore_Object_SuperArraySetIntByValueInlineAssume
         return ZR_FALSE;
     }
 
-    if (ZR_LIKELY(zr_super_array_raw_int_store_existing_dirty_optional(itemsObject, indexValue, value))) {
+    if (ZR_LIKELY(zr_super_array_raw_int_store_existing_dirty_bound_items_assume_fast(
+                itemsObject, indexValue, value))) {
         return ZR_TRUE;
     }
 
@@ -735,6 +787,10 @@ TZrBool ZrCore_Object_SuperArrayAddIntAssumeFast(SZrState *state,
                                                  SZrTypeValue *receiver,
                                                  const SZrTypeValue *value,
                                                  SZrTypeValue *result);
+
+TZrBool ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(SZrState *state,
+                                                              SZrTypeValue *receiver,
+                                                              const SZrTypeValue *value);
 
 TZrBool ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(SZrState *state,
                                                        TZrStackValuePointer receiverBase,

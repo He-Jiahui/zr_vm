@@ -79,7 +79,7 @@ static ZR_FORCE_INLINE void execution_member_copy_value_profiled(SZrState *state
                                                                  SZrTypeValue *destination,
                                                                  const SZrTypeValue *source) {
     execution_member_record_helper(state, ZR_PROFILE_HELPER_VALUE_COPY);
-    if (ZR_LIKELY(ZrCore_Value_CanFastCopyPlainValue(destination, source))) {
+    if (ZR_LIKELY(execution_member_can_copy_transient_result_by_bits(state, destination, source))) {
         *destination = *source;
         return;
     }
@@ -822,7 +822,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_cached_instance_field_pair_g
         runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
     }
 
-    if (ZR_LIKELY(ZrCore_Value_CanFastCopyPlainValue(result, sourceValue))) {
+    if (ZR_LIKELY(execution_member_can_copy_transient_result_by_bits(state, result, sourceValue))) {
         *result = *sourceValue;
         return ZR_TRUE;
     }

@@ -678,6 +678,8 @@ async function main() {
         'codeActionProvider resolveProvider must be enabled');
     assert(initializeResult.capabilities.codeActionProvider.codeActionKinds.includes('quickfix'),
         'codeActionProvider must advertise quick fixes');
+    assert(initializeResult.capabilities.codeActionProvider.codeActionKinds.includes('source.removeUnused'),
+        'codeActionProvider must advertise remove-unused source actions');
     assert(initializeResult.capabilities.documentFormattingProvider === true,
         'documentFormattingProvider must be enabled');
     assert(initializeResult.capabilities.documentRangeFormattingProvider === true,
@@ -1508,6 +1510,117 @@ async function main() {
         resolvedOrganizeImportAction.data.uri === moduleImportsUri,
     'codeAction/resolve must preserve resolved edits');
 
+    const aliasImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-alias-imports.zr';
+    const aliasImportsText = [
+        'var system = %import("zr.system");',
+        'var math = %import("zr.math");',
+        'var system = %import("zr.system");',
+        '',
+        'func main(): int { return 0; }',
+        '',
+    ].join('\n');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: aliasImportsUri,
+            languageId: 'zr',
+            version: 1,
+            text: aliasImportsText,
+        },
+    });
+    await waitForDiagnosticsUri(client, aliasImportsUri, 'alias import diagnostics uri mismatch');
+    const aliasImportActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: aliasImportsUri },
+        range: { start: { line: 0, character: 0 }, end: { line: 5, character: 0 } },
+        context: { diagnostics: [], only: ['source.organizeImports'] },
+    });
+    assert(Array.isArray(aliasImportActions) && aliasImportActions.some((action) =>
+        action &&
+        action.kind === 'source.organizeImports' &&
+        action.edit &&
+        action.edit.changes &&
+        Array.isArray(action.edit.changes[aliasImportsUri]) &&
+        action.edit.changes[aliasImportsUri].some((edit) =>
+            edit.newText.includes('var math = %import("zr.math");\nvar system = %import("zr.system");'))),
+    'textDocument/codeAction must organize alias imports');
+
+    const duplicateAliasImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-duplicate-alias-imports.zr';
+    const duplicateAliasImportsText = [
+        'var system = %import("zr.system");',
+        'var math = %import("zr.math");',
+        'var system = %import("zr.network");',
+        '',
+        'func main(): int { return 0; }',
+        '',
+    ].join('\n');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: duplicateAliasImportsUri,
+            languageId: 'zr',
+            version: 1,
+            text: duplicateAliasImportsText,
+        },
+    });
+    await waitForDiagnosticsUri(client,
+        duplicateAliasImportsUri,
+        'duplicate alias imports diagnostics uri mismatch');
+    const duplicateAliasImportActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: duplicateAliasImportsUri },
+        range: { start: { line: 0, character: 0 }, end: { line: 5, character: 0 } },
+        context: { diagnostics: [], only: ['source.organizeImports'] },
+    });
+    assert(Array.isArray(duplicateAliasImportActions) && duplicateAliasImportActions.some((action) =>
+        action &&
+        action.kind === 'source.organizeImports' &&
+        action.edit &&
+        action.edit.changes &&
+        Array.isArray(action.edit.changes[duplicateAliasImportsUri]) &&
+        action.edit.changes[duplicateAliasImportsUri].some((edit) =>
+            edit.newText.includes('var math = %import("zr.math");\nvar system = %import("zr.system");') &&
+            !edit.newText.includes('zr.network'))),
+    'textDocument/codeAction must remove duplicate alias imports while preserving the first alias binding');
+
+    const unusedAliasImportsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-unused-alias-imports.zr';
+    const unusedAliasImportsText = [
+        'var math = %import("zr.math");',
+        'var system = %import("zr.system");',
+        '',
+        'func main(value: int): int {',
+        '    return math.abs(value);',
+        '}',
+        '',
+    ].join('\n');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: unusedAliasImportsUri,
+            languageId: 'zr',
+            version: 1,
+            text: unusedAliasImportsText,
+        },
+    });
+    await waitForDiagnosticsUri(client,
+        unusedAliasImportsUri,
+        'unused alias imports diagnostics uri mismatch');
+    const removeUnusedImportActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: unusedAliasImportsUri },
+        range: { start: { line: 0, character: 0 }, end: { line: 6, character: 0 } },
+        context: { diagnostics: [], only: ['source.removeUnused'] },
+    });
+    assert(Array.isArray(removeUnusedImportActions) && removeUnusedImportActions.some((action) =>
+        action &&
+        action.kind === 'source.removeUnused' &&
+        action.edit &&
+        action.edit.changes &&
+        Array.isArray(action.edit.changes[unusedAliasImportsUri]) &&
+        action.edit.changes[unusedAliasImportsUri].some((edit) =>
+            edit.newText === '' &&
+            edit.range &&
+            edit.range.start.line === 1 &&
+            edit.range.end.line === 2) &&
+        !action.edit.changes[unusedAliasImportsUri].some((edit) =>
+            edit.range &&
+            edit.range.start.line === 0)),
+    'textDocument/codeAction must remove unused alias imports without deleting used aliases');
+
     const semicolonFixturePath = path.join(watchedFixture.rootPath, 'semicolon_action.zr');
     const semicolonFixtureUri = pathToFileURL(semicolonFixturePath).toString();
     const semicolonFixtureText = 'var answer = 42\n';
@@ -1535,6 +1648,123 @@ async function main() {
         Array.isArray(action.edit.changes[semicolonFixtureUri]) &&
         action.edit.changes[semicolonFixtureUri].some((edit) => edit.newText === ';')),
     'textDocument/codeAction must return a semicolon quickfix edit');
+
+    const missingImportFixturePath = path.join(watchedFixture.rootPath, 'missing_import_action.zr');
+    const missingImportFixtureUri = pathToFileURL(missingImportFixturePath).toString();
+    const missingImportFixtureText = [
+        'func main(value: int): int {',
+        '    return math.abs(value);',
+        '}',
+        '',
+    ].join('\n');
+    fs.writeFileSync(missingImportFixturePath, missingImportFixtureText);
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: missingImportFixtureUri,
+            languageId: 'zr',
+            version: 1,
+            text: missingImportFixtureText,
+        },
+    });
+    await waitForDiagnosticsUri(client, missingImportFixtureUri, 'missing import quickfix diagnostics uri mismatch');
+
+    const missingImportActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: missingImportFixtureUri },
+        range: { start: { line: 1, character: 11 }, end: { line: 1, character: 15 } },
+        context: { diagnostics: [], only: ['quickfix'] },
+    });
+    assert(Array.isArray(missingImportActions) && missingImportActions.some((action) =>
+        action &&
+        action.kind === 'quickfix' &&
+        action.title === 'Import zr.math as math' &&
+        action.edit &&
+        action.edit.changes &&
+        Array.isArray(action.edit.changes[missingImportFixtureUri]) &&
+        action.edit.changes[missingImportFixtureUri].some((edit) =>
+            edit.newText === 'var math = %import("zr.math");\n')),
+    'textDocument/codeAction must return a missing native import quickfix edit');
+
+    const rangeMissingImportFixturePath =
+        path.join(importDiagnosticsFixture.rootPath, 'src', 'range_missing_import_action.zr');
+    const rangeMissingImportFixtureUri = pathToFileURL(rangeMissingImportFixturePath).toString();
+    const rangeMissingImportFixtureText = [
+        'func main(value: int): int {',
+        '    return system.print(math.abs(value));',
+        '}',
+        '',
+    ].join('\n');
+    fs.writeFileSync(rangeMissingImportFixturePath, rangeMissingImportFixtureText);
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: rangeMissingImportFixtureUri,
+            languageId: 'zr',
+            version: 1,
+            text: rangeMissingImportFixtureText,
+        },
+    });
+    await waitForDiagnosticsUri(client,
+        rangeMissingImportFixtureUri,
+        'range missing import quickfix diagnostics uri mismatch');
+
+    const rangeMissingImportActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: rangeMissingImportFixtureUri },
+        range: { start: { line: 1, character: 24 }, end: { line: 1, character: 28 } },
+        context: { diagnostics: [], only: ['quickfix'] },
+    });
+    assert(Array.isArray(rangeMissingImportActions) && rangeMissingImportActions.some((action) =>
+        action &&
+        action.kind === 'quickfix' &&
+        action.title === 'Import zr.math as math' &&
+        action.edit &&
+        action.edit.changes &&
+        Array.isArray(action.edit.changes[rangeMissingImportFixtureUri]) &&
+        action.edit.changes[rangeMissingImportFixtureUri].some((edit) =>
+            edit.newText === 'var math = %import("zr.math");\n')) &&
+        !rangeMissingImportActions.some((action) => action?.title === 'Import zr.system as system'),
+    'textDocument/codeAction must use the requested range for missing import quickfixes');
+
+    const missingProjectImportModulePath = path.join(importDiagnosticsFixture.rootPath, 'src', 'helper.zr');
+    const missingProjectImportFixturePath =
+        path.join(importDiagnosticsFixture.rootPath, 'src', 'missing_project_import_action.zr');
+    const missingProjectImportFixtureUri = pathToFileURL(missingProjectImportFixturePath).toString();
+    const missingProjectImportFixtureText = [
+        'func main(): int {',
+        '    return helper.present;',
+        '}',
+        '',
+    ].join('\n');
+    fs.writeFileSync(missingProjectImportModulePath, [
+        'pub var present = 1;',
+        '',
+    ].join('\n'));
+    fs.writeFileSync(missingProjectImportFixturePath, missingProjectImportFixtureText);
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: missingProjectImportFixtureUri,
+            languageId: 'zr',
+            version: 1,
+            text: missingProjectImportFixtureText,
+        },
+    });
+    await waitForDiagnosticsUri(client,
+        missingProjectImportFixtureUri,
+        'missing project import quickfix diagnostics uri mismatch');
+
+    const missingProjectImportActions = await client.request('textDocument/codeAction', {
+        textDocument: { uri: missingProjectImportFixtureUri },
+        range: { start: { line: 1, character: 11 }, end: { line: 1, character: 17 } },
+        context: { diagnostics: [], only: ['quickfix'] },
+    });
+    assert(Array.isArray(missingProjectImportActions) && missingProjectImportActions.some((action) =>
+        action &&
+        action.kind === 'quickfix' &&
+        action.title === 'Import helper as helper' &&
+        action.edit &&
+        action.edit.changes &&
+        Array.isArray(action.edit.changes[missingProjectImportFixtureUri]) &&
+        action.edit.changes[missingProjectImportFixtureUri].some((edit) =>
+            edit.newText === 'var helper = %import("helper");\n')),
+    'textDocument/codeAction must return a missing project import quickfix edit');
 
     const sourceOnlyActions = await client.request('textDocument/codeAction', {
         textDocument: { uri: semicolonFixtureUri },

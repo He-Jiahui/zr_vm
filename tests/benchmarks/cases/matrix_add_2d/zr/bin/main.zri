@@ -1,0 +1,212 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 52
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 56
+
+CONSTANTS (19):
+  [0] native closure
+  [1] string: "bench_config"
+  [2] null
+  [3] native closure
+  [4] string: "zr.container"
+  [5] int: 24
+  [6] int: 32
+  [7] string: "Array<int>"
+  [8] int: 0
+  [9] int: 1
+  [10] int: 13
+  [11] int: 7
+  [12] int: 997
+  [13] int: 17
+  [14] int: 11
+  [15] int: 991
+  [16] int: 3
+  [17] int: 1000000007
+  [18] string: "BENCH_MATRIX_ADD_2D_PASS
+"
+
+LOCAL_VARIABLES (16):
+  [0] benchConfig: offset_activate=4, offset_dead=107
+  [1] container: offset_activate=8, offset_dead=107
+  [2] scale: offset_activate=11, offset_dead=107
+  [3] rows: offset_activate=12, offset_dead=107
+  [4] cols: offset_activate=14, offset_dead=107
+  [5] cells: offset_activate=15, offset_dead=107
+  [6] lhs: offset_activate=20, offset_dead=107
+  [7] rhs: offset_activate=25, offset_dead=107
+  [8] dst: offset_activate=30, offset_dead=107
+  [9] scratch: offset_activate=35, offset_dead=107
+  [10] index: offset_activate=35, offset_dead=107
+  [11] checksum: offset_activate=52, offset_dead=107
+  [12] row: offset_activate=53, offset_dead=107
+  [13] rowSum: offset_activate=56, offset_dead=90
+  [14] col: offset_activate=57, offset_dead=90
+  [15] index: offset_activate=65, offset_dead=84
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (16):
+    [0] benchConfig: bench_config
+    [1] container: zr.container
+    [2] scale: int
+    [3] rows: int
+    [4] cols: int
+    [5] cells: int
+    [6] lhs: Array<int>
+    [7] rhs: Array<int>
+    [8] dst: Array<int>
+    [9] scratch: Array<int>
+    [10] index: int
+    [21] checksum: int
+    [22] row: int
+    [28] rowSum: int
+    [29] col: int
+    [35] index: int
+  EXPORTED_SYMBOLS (0):
+  STATIC_IMPORTS (2):
+    import bench_config
+    import zr.container
+  MODULE_ENTRY_EFFECTS (1):
+    IMPORT_CALL bench_config.scale [kind=function readiness=declaration]
+  EXPORTED_CALLABLE_SUMMARIES (0):
+  TOP_LEVEL_CALLABLE_BINDINGS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (5):
+  [0] kind=MEMBER_GET inst=8 member=0 deopt=0 args=0 hits=0 misses=0
+  [1] kind=MEMBER_GET inst=17 member=1 deopt=0 args=0 hits=0 misses=0
+  [2] kind=MEMBER_GET inst=22 member=1 deopt=0 args=0 hits=0 misses=0
+  [3] kind=MEMBER_GET inst=27 member=1 deopt=0 args=0 hits=0 misses=0
+  [4] kind=MEMBER_GET inst=32 member=1 deopt=0 args=0 hits=0 misses=0
+
+EH_TABLE (0):
+
+INSTRUCTIONS (107):
+  [0] GET_CONSTANT (extra=1, operand=0)
+  [1] GET_CONSTANT (extra=2, operand=1)
+  [2] KNOWN_NATIVE_CALL (extra=1, operand1=1, operand2=1)
+  [3] SET_STACK (extra=0, operand=1)
+  [4] GET_CONSTANT (extra=2, operand=3)
+  [5] GET_CONSTANT (extra=3, operand=4)
+  [6] KNOWN_NATIVE_CALL (extra=2, operand1=2, operand2=1)
+  [7] SET_STACK (extra=1, operand=2)
+  [8] GET_MEMBER_SLOT (extra=3, operand1=0, operand2=0)
+  [9] SUPER_FUNCTION_CALL_NO_ARGS (extra=3, operand1=3, operand2=0)
+  [10] SET_STACK (extra=2, operand=3)
+  [11] MUL_SIGNED_CONST (extra=3, left_slot=2, constant_index=5)
+  [12] MUL_SIGNED_CONST (extra=7, left_slot=2, constant_index=6)
+  [13] SET_STACK (extra=4, operand=7)
+  [14] MUL_SIGNED (extra=5, operand1=3, operand2=4)
+  [15] CREATE_OBJECT (extra=7)
+  [16] OPCODE_32 (extra=7, operand2=458759, operand1=7, operand1_1=7)
+  [17] SET_STACK (extra=9, operand=7)
+  [18] KNOWN_NATIVE_MEMBER_CALL (extra=8, operand1=1, operand2=1)
+  [19] SET_STACK (extra=6, operand=7)
+  [20] CREATE_OBJECT (extra=8)
+  [21] OPCODE_32 (extra=8, operand2=458760, operand1=8, operand1_1=7)
+  [22] SET_STACK (extra=10, operand=8)
+  [23] KNOWN_NATIVE_MEMBER_CALL (extra=9, operand1=2, operand2=1)
+  [24] SET_STACK (extra=7, operand=8)
+  [25] CREATE_OBJECT (extra=9)
+  [26] OPCODE_32 (extra=9, operand2=458761, operand1=9, operand1_1=7)
+  [27] SET_STACK (extra=11, operand=9)
+  [28] KNOWN_NATIVE_MEMBER_CALL (extra=10, operand1=3, operand2=1)
+  [29] SET_STACK (extra=8, operand=9)
+  [30] CREATE_OBJECT (extra=10)
+  [31] OPCODE_32 (extra=10, operand2=458762, operand1=10, operand1_1=7)
+  [32] SET_STACK (extra=12, operand=10)
+  [33] KNOWN_NATIVE_MEMBER_CALL (extra=11, operand1=4, operand2=1)
+  [34] SET_STACK (extra=9, operand=10)
+  [35] SUPER_ARRAY_FILL_INT4_CONST (extra=8, operand1=6, operand2=5)
+  [36] GET_CONSTANT (extra=10, operand=8)
+  [37] SUPER_ARRAY_BIND_ITEMS (extra=52, receiver_slot=6)
+  [38] SUPER_ARRAY_BIND_ITEMS (extra=53, receiver_slot=7)
+  [39] SUB_SIGNED_CONST (extra=12, left_slot=5, constant_index=9)
+  [40] JUMP_IF_GREATER_SIGNED (extra=10, left_slot=10, right_slot=12, jump_offset=10)
+  [41] MUL_SIGNED_CONST (extra=23, left_slot=10, constant_index=10)
+  [42] ADD_SIGNED_CONST (extra=25, left_slot=23, constant_index=11)
+  [43] MOD_SIGNED_CONST (extra=27, left_slot=25, constant_index=12)
+  [44] SUPER_ARRAY_SET_INT_ITEMS (extra=27, operand1=52, operand2=10)
+  [45] MUL_SIGNED_CONST_PLAIN_DEST (extra=23, left_slot=10, constant_index=13)
+  [46] ADD_SIGNED_CONST_PLAIN_DEST (extra=25, left_slot=23, constant_index=14)
+  [47] MOD_SIGNED_CONST (extra=27, left_slot=25, constant_index=15)
+  [48] SUPER_ARRAY_SET_INT_ITEMS (extra=27, operand1=53, operand2=10)
+  [49] ADD_SIGNED_CONST_PLAIN_DEST (extra=10, left_slot=10, constant_index=9)
+  [50] JUMP (extra=0, operand=-12)
+  [51] GET_CONSTANT (extra=21, operand=8)
+  [52] GET_CONSTANT (extra=22, operand=8)
+  [53] SUB_SIGNED_CONST (extra=12, left_slot=3, constant_index=9)
+  [54] JUMP_IF_GREATER_SIGNED (extra=22, left_slot=22, right_slot=12, jump_offset=36)
+  [55] GET_CONSTANT (extra=28, operand=8)
+  [56] GET_CONSTANT (extra=29, operand=8)
+  [57] SUPER_ARRAY_BIND_ITEMS (extra=52, receiver_slot=6)
+  [58] SUPER_ARRAY_BIND_ITEMS (extra=53, receiver_slot=7)
+  [59] SUPER_ARRAY_BIND_ITEMS (extra=54, receiver_slot=8)
+  [60] SUPER_ARRAY_BIND_ITEMS (extra=55, receiver_slot=9)
+  [61] SUB_SIGNED_CONST (extra=12, left_slot=4, constant_index=9)
+  [62] JUMP_IF_GREATER_SIGNED (extra=29, left_slot=29, right_slot=12, jump_offset=22)
+  [63] MUL_SIGNED (extra=38, operand1=22, operand2=4)
+  [64] ADD_SIGNED (extra=35, operand1=38, operand2=29)
+  [65] SUPER_ARRAY_GET_INT_ITEMS (extra=36, operand1=52, operand2=35)
+  [66] SUPER_ARRAY_GET_INT_ITEMS (extra=37, operand1=53, operand2=35)
+  [67] ADD_SIGNED_PLAIN_DEST (extra=38, operand1=36, operand2=37)
+  [68] ADD_SIGNED (extra=41, operand1=22, operand2=29)
+  [69] MOD_SIGNED_CONST (extra=43, left_slot=41, constant_index=11)
+  [70] ADD_SIGNED (extra=44, operand1=38, operand2=43)
+  [71] SUPER_ARRAY_SET_INT_ITEMS (extra=44, operand1=54, operand2=35)
+  [72] SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST (extra=37, operand1=52, operand2=35)
+  [73] DIV_SIGNED_CONST (extra=39, left_slot=37, constant_index=16)
+  [74] SUB_SIGNED_PLAIN_DEST (extra=40, operand1=44, operand2=39)
+  [75] SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST (extra=41, operand1=53, operand2=35)
+  [76] MOD_SIGNED_CONST_PLAIN_DEST (extra=43, left_slot=41, constant_index=14)
+  [77] ADD_SIGNED (extra=44, operand1=40, operand2=43)
+  [78] SUPER_ARRAY_SET_INT_ITEMS (extra=44, operand1=55, operand2=35)
+  [79] ADD_SIGNED_CONST_PLAIN_DEST (extra=40, left_slot=29, constant_index=9)
+  [80] MUL_SIGNED_PLAIN_DEST (extra=41, operand1=44, operand2=40)
+  [81] ADD_SIGNED_LOAD_STACK (extra=42, source_slot=28, right_slot=41)
+  [82] SET_STACK (extra=28, operand=42)
+  [83] ADD_SIGNED_CONST (extra=29, left_slot=29, constant_index=9)
+  [84] JUMP (extra=0, operand=-24)
+  [85] ADD_SIGNED_CONST (extra=40, left_slot=22, constant_index=9)
+  [86] MUL_SIGNED_LOAD_STACK (extra=41, source_slot=28, right_slot=40)
+  [87] ADD_SIGNED_LOAD_STACK (extra=42, source_slot=21, right_slot=41)
+  [88] MOD_SIGNED_CONST (extra=21, left_slot=42, constant_index=17)
+  [89] ADD_SIGNED_CONST (extra=22, left_slot=22, constant_index=9)
+  [90] JUMP (extra=0, operand=-38)
+  [91] GET_CONSTANT (extra=35, operand=8)
+  [92] SUPER_ARRAY_BIND_ITEMS (extra=55, receiver_slot=9)
+  [93] SUB_SIGNED_CONST (extra=12, left_slot=5, constant_index=9)
+  [94] JUMP_IF_GREATER_SIGNED (extra=35, left_slot=35, right_slot=12, jump_offset=8)
+  [95] SUPER_ARRAY_GET_INT_ITEMS (extra=42, operand1=55, operand2=35)
+  [96] MOD_SIGNED_CONST (extra=45, left_slot=35, constant_index=13)
+  [97] ADD_SIGNED_CONST (extra=47, left_slot=45, constant_index=9)
+  [98] MUL_SIGNED (extra=48, operand1=42, operand2=47)
+  [99] ADD_SIGNED_LOAD_STACK (extra=49, source_slot=21, right_slot=48)
+  [100] MOD_SIGNED_CONST (extra=21, left_slot=49, constant_index=17)
+  [101] ADD_SIGNED_CONST (extra=35, left_slot=35, constant_index=9)
+  [102] JUMP (extra=0, operand=-10)
+  [103] GET_CONSTANT (extra=11, operand=18)
+  [104] TO_STRING (extra=12, operand1=21)
+  [105] ADD_STRING (extra=11, operand1=11, operand2=12)
+  [106] FUNCTION_RETURN (extra=1, operand1=11, operand2=0)
+

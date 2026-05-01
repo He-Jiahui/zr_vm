@@ -362,8 +362,10 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
     const advancedUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_smoke_${Date.now()}.zr`);
     const actionUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_action_${Date.now()}.zr`);
     const organizeUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_imports_${Date.now()}.zr`);
+    const cleanupUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_cleanup_${Date.now()}.zr`);
     const commands = await vscode.commands.getCommands(true);
     assert(commands.includes('zr.organizeImports'), 'Expected web zr.organizeImports command to be registered');
+    assert(commands.includes('zr.removeUnusedImports'), 'Expected web zr.removeUnusedImports command to be registered');
     const advancedSource = [
         'var system = %import("zr.system");',
         'var tcp = %import("zr.network.tcp");',
@@ -488,6 +490,26 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
             'zr.organizeImports command',
         );
 
+        await vscode.workspace.fs.writeFile(
+            cleanupUri,
+            new TextEncoder().encode([
+                'var math = %import("zr.math");',
+                'var system = %import("zr.system");',
+                '',
+                'return math.PI;',
+                '',
+            ].join('\n')),
+        );
+        const cleanupDocument = await openDocument(cleanupUri);
+        await vscode.commands.executeCommand('zr.removeUnusedImports');
+        await withRetry(
+            async () => cleanupDocument.getText(),
+            (text) => text.includes('var math = %import("zr.math");') &&
+                !text.includes('var system = %import("zr.system");'),
+            15000,
+            'zr.removeUnusedImports command',
+        );
+
         const documentLinks = await withRetry(
             async () => vscode.commands.executeCommand(
                 'vscode.executeLinkProvider',
@@ -512,6 +534,42 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         );
         assert(codeLens.some((item) => item.command?.command === 'zr.runCurrentProject'),
             'Expected web CodeLens to expose the Zr test run command');
+
+        const pullDiagnostics = await sendRawLanguageServerRequest('textDocument/diagnostic', {
+            textDocument: { uri: document.uri.toString(true) },
+        });
+        assert(pullDiagnostics &&
+                pullDiagnostics.kind === 'full' &&
+                Array.isArray(pullDiagnostics.items) &&
+                typeof pullDiagnostics.resultId === 'string' &&
+                pullDiagnostics.resultId.length > 0,
+            'Expected web textDocument/diagnostic to return a full report');
+
+        const unchangedDiagnostics = await sendRawLanguageServerRequest('textDocument/diagnostic', {
+            textDocument: { uri: document.uri.toString(true) },
+            previousResultId: pullDiagnostics.resultId,
+        });
+        assert(unchangedDiagnostics &&
+                unchangedDiagnostics.kind === 'unchanged' &&
+                unchangedDiagnostics.resultId === pullDiagnostics.resultId &&
+                !Object.prototype.hasOwnProperty.call(unchangedDiagnostics, 'items'),
+            'Expected web textDocument/diagnostic to return unchanged reports');
+
+        const workspaceDiagnostics = await sendRawLanguageServerRequest('workspace/diagnostic', {
+            previousResultIds: [
+                {
+                    uri: document.uri.toString(true),
+                    value: pullDiagnostics.resultId,
+                },
+            ],
+        });
+        assert(workspaceDiagnostics &&
+                Array.isArray(workspaceDiagnostics.items) &&
+                workspaceDiagnostics.items.some((item) =>
+                    item.uri === document.uri.toString(true) &&
+                    item.kind === 'unchanged' &&
+                    item.resultId === pullDiagnostics.resultId),
+            'Expected web workspace/diagnostic to include opened document reports');
     } finally {
         try {
             await deleteDocumentFile(advancedUri);
@@ -523,6 +581,10 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         }
         try {
             await deleteDocumentFile(organizeUri);
+        } catch {
+        }
+        try {
+            await deleteDocumentFile(cleanupUri);
         } catch {
         }
     }

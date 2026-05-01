@@ -310,6 +310,14 @@ static TZrBool semantic_token_should_prefer_chain_fallback(TZrInt32 tokenType, T
     if (tokenType == ZR_LSP_SEMANTIC_TOKEN_TYPE_UNKNOWN) {
         return ZR_TRUE;
     }
+    if (tokenType != fallbackTokenType &&
+        (fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_NAMESPACE ||
+         fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_CLASS ||
+         fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_STRUCT ||
+         fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_INTERFACE ||
+         fallbackTokenType == ZR_LSP_SEMANTIC_TOKEN_ENUM)) {
+        return ZR_TRUE;
+    }
 
     return semantic_token_is_member_like(fallbackTokenType) && !semantic_token_is_member_like(tokenType);
 }
@@ -484,6 +492,75 @@ static SZrLspImportBinding *semantic_token_find_import_binding(SZrArray *binding
     }
 
     return ZR_NULL;
+}
+
+static TZrBool semantic_token_identifier_is_import_alias_declaration(const TZrChar *content,
+                                                                     TZrSize contentLength,
+                                                                     TZrSize identifierEnd) {
+    TZrSize cursor = identifierEnd;
+    static const TZrChar importToken[] = "%import";
+
+    while (cursor < contentLength &&
+           isspace((unsigned char)content[cursor]) &&
+           content[cursor] != '\n' &&
+           content[cursor] != '\r') {
+        cursor++;
+    }
+    if (cursor >= contentLength || content[cursor] != '=') {
+        return ZR_FALSE;
+    }
+
+    cursor++;
+    while (cursor < contentLength &&
+           isspace((unsigned char)content[cursor]) &&
+           content[cursor] != '\n' &&
+           content[cursor] != '\r') {
+        cursor++;
+    }
+
+    return cursor + sizeof(importToken) - 1 <= contentLength &&
+           memcmp(content + cursor, importToken, sizeof(importToken) - 1) == 0;
+}
+
+static void semantic_token_append_import_alias_binding(SZrState *state,
+                                                       SZrArray *bindings,
+                                                       SZrString *uri,
+                                                       const TZrChar *content,
+                                                       TZrSize contentLength,
+                                                       TZrSize aliasStart,
+                                                       TZrSize aliasLength,
+                                                       TZrUInt32 aliasLine,
+                                                       TZrUInt32 aliasCharacter) {
+    SZrLspImportBinding *binding;
+
+    if (state == ZR_NULL || bindings == ZR_NULL || uri == ZR_NULL || content == ZR_NULL ||
+        aliasLength == 0 || aliasStart + aliasLength > contentLength ||
+        semantic_token_find_import_binding(bindings, content + aliasStart, aliasLength) != ZR_NULL ||
+        !semantic_token_identifier_is_import_alias_declaration(content, contentLength, aliasStart + aliasLength)) {
+        return;
+    }
+
+    binding = (SZrLspImportBinding *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspImportBinding));
+    if (binding == ZR_NULL) {
+        return;
+    }
+
+    memset(binding, 0, sizeof(*binding));
+    binding->aliasName = ZrCore_String_Create(state, (TZrNativeString)(content + aliasStart), aliasLength);
+    binding->aliasLocation = ZrParser_FileRange_Create(
+        ZrParser_FilePosition_Create(aliasStart, aliasLine, aliasCharacter),
+        ZrParser_FilePosition_Create(aliasStart + aliasLength, aliasLine, aliasCharacter + (TZrUInt32)aliasLength),
+        uri);
+    binding->modulePathLocation = ZrParser_FileRange_Create(
+        ZrParser_FilePosition_Create(0, 0, 0),
+        ZrParser_FilePosition_Create(0, 0, 0),
+        uri);
+
+    if (binding->aliasName == ZR_NULL) {
+        ZrCore_Memory_RawFree(state->global, binding, sizeof(SZrLspImportBinding));
+        return;
+    }
+    ZrCore_Array_Push(state, bindings, &binding);
 }
 
 static void semantic_token_add_scope_symbols(SZrState *state,
@@ -741,6 +818,15 @@ static void semantic_token_scan_source(SZrState *state,
                                    (TZrUInt32)length,
                                    ZR_LSP_SEMANTIC_TOKEN_KEYWORD);
             }
+            semantic_token_append_import_alias_binding(state,
+                                                       bindings,
+                                                       uri,
+                                                       content,
+                                                       contentLength,
+                                                       start,
+                                                       length,
+                                                       startLine,
+                                                       startCharacter);
 
             while (previous > 0 && isspace((unsigned char)content[previous - 1])) {
                 previous--;
@@ -881,7 +967,6 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
     SZrFileVersion *fileVersion;
     SZrSemanticAnalyzer *analyzer;
     SZrLspProjectIndex *projectIndex;
-    SZrAstNode *bindingAst;
     SZrArray entries;
     SZrArray bindings;
 
@@ -912,11 +997,8 @@ TZrBool ZrLanguageServer_Lsp_GetSemanticTokens(SZrState *state,
                       ZR_LSP_SEMANTIC_TOKEN_INITIAL_CAPACITY);
     ZrCore_Array_Init(state, &bindings, sizeof(SZrLspImportBinding *), ZR_LSP_SMALL_ARRAY_INITIAL_CAPACITY);
 
-    bindingAst = analyzer != ZR_NULL && analyzer->ast != ZR_NULL ? analyzer->ast : fileVersion->ast;
-    if (bindingAst != ZR_NULL) {
-        ZrLanguageServer_LspProject_CollectImportBindings(state, bindingAst, &bindings);
-    }
     if (analyzer != ZR_NULL && analyzer->ast != ZR_NULL) {
+        ZrLanguageServer_LspProject_CollectImportBindings(state, analyzer->ast, &bindings);
         semantic_token_add_symbol_tokens(state, analyzer, uri, &entries);
     }
 

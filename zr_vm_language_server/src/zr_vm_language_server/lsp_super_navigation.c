@@ -1,5 +1,8 @@
 #include "interface/lsp_interface_internal.h"
 
+#include <ctype.h>
+#include <string.h>
+
 static TZrBool super_navigation_file_range_contains_position(SZrFileRange range, SZrFileRange position) {
     if (!ZrLanguageServer_Lsp_StringsEqual(range.source, position.source) &&
         range.source != ZR_NULL &&
@@ -41,6 +44,104 @@ static TZrBool super_navigation_meta_function_is_constructor(SZrAstNode *metaFun
            strcmp(ZrCore_String_GetNativeStringShort(metaName), "constructor") == 0;
 }
 
+static TZrBool super_navigation_is_identifier_char(TZrChar value) {
+    return isalnum((unsigned char)value) || value == '_';
+}
+
+static SZrFilePosition super_navigation_file_position_from_offset(const TZrChar *content,
+                                                                  TZrSize contentLength,
+                                                                  TZrSize targetOffset) {
+    SZrFilePosition position;
+    TZrSize offset = 0;
+
+    position.line = 1;
+    position.column = 1;
+    position.offset = 0;
+
+    while (offset < contentLength && offset < targetOffset) {
+        if (content[offset] == '\n') {
+            position.line++;
+            position.column = 1;
+        } else if (content[offset] != '\r') {
+            position.column++;
+        }
+        offset++;
+    }
+
+    position.offset = targetOffset;
+    return position;
+}
+
+static TZrBool super_navigation_find_super_token_range(const TZrChar *content,
+                                                       TZrSize contentLength,
+                                                       SZrFileRange scope,
+                                                       SZrString *uri,
+                                                       SZrFileRange *outRange) {
+    TZrSize startOffset;
+    TZrSize endOffset;
+
+    if (content == ZR_NULL || contentLength == 0 || outRange == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    startOffset = scope.start.offset < contentLength ? scope.start.offset : 0;
+    endOffset = scope.end.offset > startOffset && scope.end.offset <= contentLength ? scope.end.offset : contentLength;
+    for (TZrSize index = startOffset; index + 5 <= endOffset; index++) {
+        if (memcmp(content + index, "super", 5) != 0) {
+            continue;
+        }
+        if (index > 0 && super_navigation_is_identifier_char(content[index - 1])) {
+            continue;
+        }
+        if (index + 5 < contentLength && super_navigation_is_identifier_char(content[index + 5])) {
+            continue;
+        }
+
+        *outRange = ZrParser_FileRange_Create(super_navigation_file_position_from_offset(content, contentLength, index),
+                                              super_navigation_file_position_from_offset(content,
+                                                                                         contentLength,
+                                                                                         index + 5),
+                                              uri);
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool super_navigation_position_is_super_token(const TZrChar *content,
+                                                        TZrSize contentLength,
+                                                        TZrSize offset) {
+    TZrSize start;
+    TZrSize end;
+
+    if (content == ZR_NULL || contentLength == 0) {
+        return ZR_FALSE;
+    }
+
+    if (offset >= contentLength) {
+        offset = contentLength - 1;
+    }
+    if (!super_navigation_is_identifier_char(content[offset]) &&
+        offset > 0 &&
+        super_navigation_is_identifier_char(content[offset - 1])) {
+        offset--;
+    }
+    if (!super_navigation_is_identifier_char(content[offset])) {
+        return ZR_FALSE;
+    }
+
+    start = offset;
+    while (start > 0 && super_navigation_is_identifier_char(content[start - 1])) {
+        start--;
+    }
+    end = offset + 1;
+    while (end < contentLength && super_navigation_is_identifier_char(content[end])) {
+        end++;
+    }
+
+    return end - start == 5 && memcmp(content + start, "super", 5) == 0;
+}
+
 static SZrFileRange super_navigation_super_call_context_range(SZrAstNode *metaFunctionNode) {
     SZrFileRange range;
 
@@ -74,7 +175,33 @@ static SZrFileRange super_navigation_super_call_context_range(SZrAstNode *metaFu
     return range;
 }
 
-static TZrBool super_navigation_super_call_matches_position(SZrAstNode *metaFunctionNode, SZrFileRange position) {
+static SZrFileRange super_navigation_super_call_token_range(SZrAstNode *metaFunctionNode,
+                                                            const TZrChar *content,
+                                                            TZrSize contentLength,
+                                                            SZrString *uri) {
+    SZrFileRange scope;
+    SZrFileRange tokenRange;
+
+    scope = super_navigation_super_call_context_range(metaFunctionNode);
+    if (metaFunctionNode != ZR_NULL && metaFunctionNode->type == ZR_AST_CLASS_META_FUNCTION) {
+        scope = metaFunctionNode->location;
+        if (metaFunctionNode->data.classMetaFunction.body != ZR_NULL) {
+            scope.end = metaFunctionNode->data.classMetaFunction.body->location.start;
+        }
+    }
+
+    if (super_navigation_find_super_token_range(content, contentLength, scope, uri, &tokenRange)) {
+        return tokenRange;
+    }
+
+    return super_navigation_super_call_context_range(metaFunctionNode);
+}
+
+static TZrBool super_navigation_super_call_matches_position(SZrAstNode *metaFunctionNode,
+                                                            SZrFileRange position,
+                                                            const TZrChar *content,
+                                                            TZrSize contentLength,
+                                                            SZrString *uri) {
     SZrClassMetaFunction *metaFunction;
     SZrFileRange superRange;
 
@@ -87,7 +214,7 @@ static TZrBool super_navigation_super_call_matches_position(SZrAstNode *metaFunc
         return ZR_FALSE;
     }
 
-    superRange = super_navigation_super_call_context_range(metaFunctionNode);
+    superRange = super_navigation_super_call_token_range(metaFunctionNode, content, contentLength, uri);
     if (super_navigation_file_range_contains_position(superRange, position)) {
         return ZR_TRUE;
     }
@@ -106,6 +233,9 @@ static TZrBool super_navigation_super_call_matches_position(SZrAstNode *metaFunc
 
 static TZrBool super_navigation_find_super_constructor_context(SZrAstNode *node,
                                                                SZrFileRange position,
+                                                               const TZrChar *content,
+                                                               TZrSize contentLength,
+                                                               SZrString *uri,
                                                                SZrAstNode **ownerTypeNode,
                                                                SZrAstNode **metaFunctionNode) {
     if (ownerTypeNode != ZR_NULL) {
@@ -124,6 +254,9 @@ static TZrBool super_navigation_find_super_constructor_context(SZrAstNode *node,
                 for (TZrSize index = 0; index < node->data.script.statements->count; index++) {
                     if (super_navigation_find_super_constructor_context(node->data.script.statements->nodes[index],
                                                                         position,
+                                                                        content,
+                                                                        contentLength,
+                                                                        uri,
                                                                         ownerTypeNode,
                                                                         metaFunctionNode)) {
                         return ZR_TRUE;
@@ -137,6 +270,9 @@ static TZrBool super_navigation_find_super_constructor_context(SZrAstNode *node,
                 for (TZrSize index = 0; index < node->data.block.body->count; index++) {
                     if (super_navigation_find_super_constructor_context(node->data.block.body->nodes[index],
                                                                         position,
+                                                                        content,
+                                                                        contentLength,
+                                                                        uri,
                                                                         ownerTypeNode,
                                                                         metaFunctionNode)) {
                         return ZR_TRUE;
@@ -155,7 +291,11 @@ static TZrBool super_navigation_find_super_constructor_context(SZrAstNode *node,
                     }
 
                     if (memberNode->type == ZR_AST_CLASS_META_FUNCTION &&
-                        super_navigation_super_call_matches_position(memberNode, position)) {
+                        super_navigation_super_call_matches_position(memberNode,
+                                                                     position,
+                                                                     content,
+                                                                     contentLength,
+                                                                     uri)) {
                         if (ownerTypeNode != ZR_NULL) {
                             *ownerTypeNode = node;
                         }
@@ -167,6 +307,9 @@ static TZrBool super_navigation_find_super_constructor_context(SZrAstNode *node,
 
                     if (super_navigation_find_super_constructor_context(memberNode,
                                                                         position,
+                                                                        content,
+                                                                        contentLength,
+                                                                        uri,
                                                                         ownerTypeNode,
                                                                         metaFunctionNode)) {
                         return ZR_TRUE;
@@ -414,6 +557,9 @@ static SZrAstNode *super_navigation_find_constructor_declaration_in_type(SZrAstN
 
 static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
                                                SZrFileRange position,
+                                               const TZrChar *content,
+                                               TZrSize contentLength,
+                                               SZrString *uri,
                                                SZrString **targetBaseTypeName,
                                                SZrAstNode **targetConstructorDeclaration) {
     SZrAstNode *ownerTypeNode = ZR_NULL;
@@ -432,7 +578,13 @@ static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
         return ZR_FALSE;
     }
 
-    if (super_navigation_find_super_constructor_context(analyzer->ast, position, &ownerTypeNode, &metaFunctionNode) &&
+    if (super_navigation_find_super_constructor_context(analyzer->ast,
+                                                        position,
+                                                        content,
+                                                        contentLength,
+                                                        uri,
+                                                        &ownerTypeNode,
+                                                        &metaFunctionNode) &&
         ownerTypeNode != ZR_NULL && metaFunctionNode != ZR_NULL) {
         baseTypeName = super_navigation_get_direct_base_declaration_name(ownerTypeNode);
         if (baseTypeName == ZR_NULL) {
@@ -450,6 +602,20 @@ static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
                                                               &ownerTypeNode,
                                                               &metaFunctionNode) &&
         ownerTypeNode != ZR_NULL && metaFunctionNode != ZR_NULL) {
+        if (metaFunctionNode->type == ZR_AST_CLASS_META_FUNCTION &&
+            metaFunctionNode->data.classMetaFunction.hasSuperCall &&
+            super_navigation_position_is_super_token(content, contentLength, position.start.offset)) {
+            baseTypeName = super_navigation_get_direct_base_declaration_name(ownerTypeNode);
+            if (baseTypeName == ZR_NULL) {
+                return ZR_FALSE;
+            }
+
+            baseTypeDeclaration = super_navigation_find_type_declaration_recursive(analyzer->ast, baseTypeName);
+            *targetConstructorDeclaration = super_navigation_find_constructor_declaration_in_type(baseTypeDeclaration);
+            *targetBaseTypeName = baseTypeName;
+            return *targetConstructorDeclaration != ZR_NULL;
+        }
+
         *targetBaseTypeName = super_navigation_get_declared_type_name(ownerTypeNode);
         *targetConstructorDeclaration = metaFunctionNode;
         return *targetBaseTypeName != ZR_NULL;
@@ -461,6 +627,9 @@ static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
 static void super_navigation_collect_reference_ranges_recursive(SZrState *state,
                                                                 SZrAstNode *node,
                                                                 SZrString *targetBaseTypeName,
+                                                                const TZrChar *content,
+                                                                TZrSize contentLength,
+                                                                SZrString *uri,
                                                                 SZrArray *ranges) {
     SZrString *directBaseTypeName = ZR_NULL;
 
@@ -475,6 +644,9 @@ static void super_navigation_collect_reference_ranges_recursive(SZrState *state,
                     super_navigation_collect_reference_ranges_recursive(state,
                                                                        node->data.script.statements->nodes[index],
                                                                        targetBaseTypeName,
+                                                                       content,
+                                                                       contentLength,
+                                                                       uri,
                                                                        ranges);
                 }
             }
@@ -486,6 +658,9 @@ static void super_navigation_collect_reference_ranges_recursive(SZrState *state,
                     super_navigation_collect_reference_ranges_recursive(state,
                                                                        node->data.block.body->nodes[index],
                                                                        targetBaseTypeName,
+                                                                       content,
+                                                                       contentLength,
+                                                                       uri,
                                                                        ranges);
                 }
             }
@@ -503,7 +678,8 @@ static void super_navigation_collect_reference_ranges_recursive(SZrState *state,
                         memberNode->type == ZR_AST_CLASS_META_FUNCTION &&
                         super_navigation_meta_function_is_constructor(memberNode) &&
                         memberNode->data.classMetaFunction.hasSuperCall) {
-                        SZrFileRange range = super_navigation_super_call_context_range(memberNode);
+                        SZrFileRange range =
+                            super_navigation_super_call_token_range(memberNode, content, contentLength, uri);
                         ZrCore_Array_Push(state, ranges, &range);
                     }
                 }
@@ -581,7 +757,13 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDefinition(SZrState *state,
 
     filePos = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
-    if (!super_navigation_resolve_target(analyzer, fileRange, &baseTypeName, &baseConstructorDeclaration) ||
+    if (!super_navigation_resolve_target(analyzer,
+                                         fileRange,
+                                         fileVersion->content,
+                                         fileVersion->contentLength,
+                                         uri,
+                                         &baseTypeName,
+                                         &baseConstructorDeclaration) ||
         baseTypeName == ZR_NULL || baseConstructorDeclaration == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -619,7 +801,13 @@ TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
 
     filePos = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
-    if (!super_navigation_resolve_target(analyzer, fileRange, &baseTypeName, &baseConstructorDeclaration) ||
+    if (!super_navigation_resolve_target(analyzer,
+                                         fileRange,
+                                         fileVersion->content,
+                                         fileVersion->contentLength,
+                                         uri,
+                                         &baseTypeName,
+                                         &baseConstructorDeclaration) ||
         baseTypeName == ZR_NULL || baseConstructorDeclaration == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -633,7 +821,13 @@ TZrBool ZrLanguageServer_Lsp_TryFindSuperConstructorReferences(SZrState *state,
     }
 
     ZrCore_Array_Init(state, &ranges, sizeof(SZrFileRange), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    super_navigation_collect_reference_ranges_recursive(state, analyzer->ast, baseTypeName, &ranges);
+    super_navigation_collect_reference_ranges_recursive(state,
+                                                       analyzer->ast,
+                                                       baseTypeName,
+                                                       fileVersion->content,
+                                                       fileVersion->contentLength,
+                                                       uri,
+                                                       &ranges);
     for (TZrSize index = 0; index < ranges.length; index++) {
         SZrFileRange *range = (SZrFileRange *)ZrCore_Array_Get(&ranges, index);
         if (range != ZR_NULL) {
@@ -669,7 +863,13 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDocumentHighlights(SZrState *
 
     filePos = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     fileRange = ZrParser_FileRange_Create(filePos, filePos, uri);
-    if (!super_navigation_resolve_target(analyzer, fileRange, &baseTypeName, &baseConstructorDeclaration) ||
+    if (!super_navigation_resolve_target(analyzer,
+                                         fileRange,
+                                         fileVersion->content,
+                                         fileVersion->contentLength,
+                                         uri,
+                                         &baseTypeName,
+                                         &baseConstructorDeclaration) ||
         baseTypeName == ZR_NULL || baseConstructorDeclaration == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -684,7 +884,13 @@ TZrBool ZrLanguageServer_Lsp_TryGetSuperConstructorDocumentHighlights(SZrState *
     }
 
     ZrCore_Array_Init(state, &ranges, sizeof(SZrFileRange), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    super_navigation_collect_reference_ranges_recursive(state, analyzer->ast, baseTypeName, &ranges);
+    super_navigation_collect_reference_ranges_recursive(state,
+                                                       analyzer->ast,
+                                                       baseTypeName,
+                                                       fileVersion->content,
+                                                       fileVersion->contentLength,
+                                                       uri,
+                                                       &ranges);
     for (TZrSize index = 0; index < ranges.length; index++) {
         SZrFileRange *range = (SZrFileRange *)ZrCore_Array_Get(&ranges, index);
         if (range != ZR_NULL &&

@@ -145,6 +145,17 @@ static TZrBool text_edit_contains(SZrArray *edits, const TZrChar *needle) {
     return ZR_FALSE;
 }
 
+static const TZrChar *first_text_edit_text(SZrArray *edits) {
+    SZrLspTextEdit **editPtr;
+
+    if (edits == ZR_NULL || edits->length == 0) {
+        return ZR_NULL;
+    }
+
+    editPtr = (SZrLspTextEdit **)ZrCore_Array_Get(edits, 0);
+    return editPtr != ZR_NULL && *editPtr != ZR_NULL ? test_string_text((*editPtr)->newText) : ZR_NULL;
+}
+
 static void test_lsp_document_formatting_returns_single_document_edit(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP document formatting returns a full-document edit";
@@ -340,6 +351,96 @@ static void test_lsp_folding_ranges_include_import_regions(SZrState *state, int 
     }
 }
 
+static void test_lsp_formatting_ignores_non_code_braces(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP formatting ignores braces in strings and comments";
+    const TZrChar *content =
+        "func render(): string {\n"
+        "let text = \"{\";\n"
+        "// }\n"
+        "/* { */\n"
+        "return text;\n"
+        "}\n";
+    const TZrChar *expected =
+        "func render(): string {\n"
+        "    let text = \"{\";\n"
+        "    // }\n"
+        "    /* { */\n"
+        "    return text;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray edits = {0};
+    const TZrChar *formatted;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_format_non_code_braces.zr", content, &uri);
+    formatted = context != ZR_NULL &&
+                ZrLanguageServer_Lsp_GetFormatting(state, context, uri, &edits)
+                    ? first_text_edit_text(&edits)
+                    : ZR_NULL;
+    if (formatted == ZR_NULL || strcmp(formatted, expected) != 0) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "formatting treated string/comment braces as structural braces");
+    } else {
+        TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeTextEdits(state, &edits);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_folding_ignores_non_code_braces(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP folding ignores braces in strings and comments";
+    const TZrChar *content =
+        "func render(): string {\n"
+        "    let text = \"{\";\n"
+        "    // }\n"
+        "    /* { */\n"
+        "    return text;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray folds = {0};
+    TZrBool foundFunctionRange = ZR_FALSE;
+    TZrBool foundSpuriousRange = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_fold_non_code_braces.zr", content, &uri);
+    if (context == ZR_NULL || !ZrLanguageServer_Lsp_GetFoldingRanges(state, context, uri, &folds)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "folding range provider failed");
+    } else {
+        for (TZrSize index = 0; index < folds.length; index++) {
+            SZrLspFoldingRange **rangePtr = (SZrLspFoldingRange **)ZrCore_Array_Get(&folds, index);
+            if (rangePtr == ZR_NULL || *rangePtr == ZR_NULL) {
+                continue;
+            }
+            if ((*rangePtr)->startLine == 0 && (*rangePtr)->endLine == 5) {
+                foundFunctionRange = ZR_TRUE;
+            }
+            if ((*rangePtr)->startLine == 1 || (*rangePtr)->startLine == 3) {
+                foundSpuriousRange = ZR_TRUE;
+            }
+        }
+
+        if (!foundFunctionRange || foundSpuriousRange) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "folding created ranges from non-code braces");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeFoldingRanges(state, &folds);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 static void test_lsp_document_links_resolve_import_literals(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP document links resolve import literals";
@@ -363,6 +464,46 @@ static void test_lsp_document_links_resolve_import_literals(SZrState *state, int
         if (target == ZR_NULL || strstr(target, "zr.math") == ZR_NULL) {
             (*failures)++;
             TEST_FAIL(timer, summary, "documentLink target did not point at the resolved native module");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeDocumentLinks(state, &links);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_document_links_ignore_non_code_import_text(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP document links ignore import text in strings and comments";
+    const TZrChar *content =
+        "var text = \"%import(\\\"zr.system\\\")\";\n"
+        "// %import(\"zr.network\");\n"
+        "/*\n"
+        "%import(\"zr.container\");\n"
+        "*/\n"
+        "%import(\"zr.math\");\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray links = {0};
+    const TZrChar *target = ZR_NULL;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_links_non_code_imports.zr", content, &uri);
+    if (context == ZR_NULL || !ZrLanguageServer_Lsp_GetDocumentLinks(state, context, uri, &links)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "documentLink failed for non-code import text");
+    } else if (links.length != 1) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "documentLink produced links for non-code import text");
+    } else {
+        SZrLspDocumentLink **linkPtr = (SZrLspDocumentLink **)ZrCore_Array_Get(&links, 0);
+        target = linkPtr != ZR_NULL && *linkPtr != ZR_NULL ? test_string_text((*linkPtr)->target) : ZR_NULL;
+        if (target == ZR_NULL || strstr(target, "zr.math") == ZR_NULL) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "documentLink did not keep the real import target");
         } else {
             TEST_PASS(timer, summary);
         }
@@ -585,6 +726,132 @@ static void test_lsp_code_action_organizes_imports_after_module(SZrState *state,
     }
 }
 
+static void test_lsp_code_action_organizes_import_aliases(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action organizes import aliases";
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "var math = %import(\"zr.math\");\n"
+        "var system = %import(\"zr.system\");\n"
+        "\n"
+        "func main(): int { return 0; }\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{0, 0}, {4, 0}};
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_alias_import_actions.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions) ||
+        actions.length == 0) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction did not organize alias imports");
+    } else {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, 0);
+        if (actionPtr == ZR_NULL ||
+            *actionPtr == ZR_NULL ||
+            !text_edit_contains(&(*actionPtr)->edits,
+                                "var math = %import(\"zr.math\");\nvar system = %import(\"zr.system\");")) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "organize imports did not sort and dedupe alias import lines");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_organizes_duplicate_alias_imports(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action organizes duplicate alias imports";
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "var math = %import(\"zr.math\");\n"
+        "var system = %import(\"zr.network\");\n"
+        "\n"
+        "func main(): int { return 0; }\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{0, 0}, {4, 0}};
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_duplicate_alias_import_actions.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions) ||
+        actions.length == 0) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction did not organize duplicate alias imports");
+    } else {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, 0);
+        if (actionPtr == ZR_NULL ||
+            *actionPtr == ZR_NULL ||
+            !text_edit_contains(&(*actionPtr)->edits,
+                                "var math = %import(\"zr.math\");\nvar system = %import(\"zr.system\");") ||
+            text_edit_contains(&(*actionPtr)->edits, "zr.network")) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "organize imports did not keep the first duplicate alias import");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_does_not_organize_import_text_in_strings(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action does not organize import text inside strings";
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "var text = \"%import(\\\"zr.math\\\")\";\n"
+        "\n"
+        "func main(): int { return 0; }\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{0, 0}, {3, 0}};
+    TZrBool foundOrganizeAction = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_string_import_text_actions.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for string import text fixture");
+    } else {
+        for (TZrSize index = 0; index < actions.length; index++) {
+            SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+            const TZrChar *kind = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                      ? test_string_text((*actionPtr)->kind)
+                                      : ZR_NULL;
+            if (kind != ZR_NULL && strcmp(kind, ZR_LSP_CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS) == 0) {
+                foundOrganizeAction = ZR_TRUE;
+                break;
+            }
+        }
+        if (foundOrganizeAction) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "organize imports treated a string literal as an import line");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 static void test_lsp_code_action_skips_organized_imports(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action skips already organized imports";
@@ -609,6 +876,152 @@ static void test_lsp_code_action_skips_organized_imports(SZrState *state, int *f
         TEST_FAIL(timer, summary, "organized imports produced a no-op code action");
     } else {
         TEST_PASS(timer, summary);
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_removes_unused_alias_imports(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action removes unused alias imports";
+    const TZrChar *content =
+        "var math = %import(\"zr.math\");\n"
+        "var system = %import(\"zr.system\");\n"
+        "\n"
+        "func main(value: int): int {\n"
+        "    return math.abs(value);\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{0, 0}, {5, 0}};
+    TZrBool foundCleanupAction = ZR_FALSE;
+    TZrBool removedUsedImport = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_unused_alias_import_actions.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for unused alias import fixture");
+    } else {
+        for (TZrSize index = 0; index < actions.length; index++) {
+            SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+            const TZrChar *kind = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                      ? test_string_text((*actionPtr)->kind)
+                                      : ZR_NULL;
+            SZrLspTextEdit **editPtr =
+                (actionPtr != ZR_NULL && *actionPtr != ZR_NULL && (*actionPtr)->edits.length > 0)
+                    ? (SZrLspTextEdit **)ZrCore_Array_Get(&(*actionPtr)->edits, 0)
+                    : ZR_NULL;
+            const TZrChar *newText = editPtr != ZR_NULL && *editPtr != ZR_NULL
+                                         ? test_string_text((*editPtr)->newText)
+                                         : ZR_NULL;
+            if (kind != ZR_NULL &&
+                strcmp(kind, ZR_LSP_CODE_ACTION_KIND_SOURCE_REMOVE_UNUSED) == 0 &&
+                editPtr != ZR_NULL &&
+                *editPtr != ZR_NULL &&
+                (*editPtr)->range.start.line == 0) {
+                removedUsedImport = ZR_TRUE;
+            }
+            if (kind != ZR_NULL &&
+                strcmp(kind, ZR_LSP_CODE_ACTION_KIND_SOURCE_REMOVE_UNUSED) == 0 &&
+                editPtr != ZR_NULL &&
+                *editPtr != ZR_NULL &&
+                newText != ZR_NULL &&
+                strcmp(newText, "") == 0 &&
+                (*editPtr)->range.start.line == 1 &&
+                (*editPtr)->range.end.line == 2) {
+                foundCleanupAction = ZR_TRUE;
+                break;
+            }
+        }
+        if (!foundCleanupAction || removedUsedImport) {
+            (*failures)++;
+            TEST_FAIL(timer,
+                      summary,
+                      removedUsedImport
+                          ? "remove-unused source action deleted an alias import that is still used"
+                          : "unused alias import did not produce a remove-unused source action");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_ignores_text_mentions_when_removing_unused_alias_imports(SZrState *state,
+                                                                                         int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP remove-unused action ignores alias mentions in comments and strings";
+    const TZrChar *content =
+        "var math = %import(\"zr.math\");\n"
+        "var system = %import(\"zr.system\");\n"
+        "\n"
+        "func main(value: int): int {\n"
+        "    // system.console\n"
+        "    var text = \"system.console\";\n"
+        "    /* system.print(value); */\n"
+        "    return math.abs(value);\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{0, 0}, {8, 0}};
+    TZrBool foundCleanupAction = ZR_FALSE;
+    TZrBool removedUsedImport = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_unused_alias_text_mentions.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for unused alias text mention fixture");
+    } else {
+        for (TZrSize index = 0; index < actions.length; index++) {
+            SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+            const TZrChar *kind = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                      ? test_string_text((*actionPtr)->kind)
+                                      : ZR_NULL;
+            if (kind == ZR_NULL ||
+                strcmp(kind, ZR_LSP_CODE_ACTION_KIND_SOURCE_REMOVE_UNUSED) != 0) {
+                continue;
+            }
+            for (TZrSize editIndex = 0; editIndex < (*actionPtr)->edits.length; editIndex++) {
+                SZrLspTextEdit **editPtr =
+                    (SZrLspTextEdit **)ZrCore_Array_Get(&(*actionPtr)->edits, editIndex);
+                const TZrChar *newText = editPtr != ZR_NULL && *editPtr != ZR_NULL
+                                             ? test_string_text((*editPtr)->newText)
+                                             : ZR_NULL;
+                if (editPtr == ZR_NULL || *editPtr == ZR_NULL || newText == ZR_NULL ||
+                    strcmp(newText, "") != 0) {
+                    continue;
+                }
+                if ((*editPtr)->range.start.line == 0) {
+                    removedUsedImport = ZR_TRUE;
+                }
+                if ((*editPtr)->range.start.line == 1 && (*editPtr)->range.end.line == 2) {
+                    foundCleanupAction = ZR_TRUE;
+                }
+            }
+        }
+        if (!foundCleanupAction || removedUsedImport) {
+            (*failures)++;
+            TEST_FAIL(timer,
+                      summary,
+                      removedUsedImport
+                          ? "remove-unused source action deleted an alias import that is used in code"
+                          : "comment/string alias mentions prevented unused import cleanup");
+        } else {
+            TEST_PASS(timer, summary);
+        }
     }
 
     ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
@@ -648,6 +1061,294 @@ static void test_lsp_code_action_inserts_missing_semicolon(SZrState *state, int 
             !text_edit_contains(&(*actionPtr)->edits, ";")) {
             (*failures)++;
             TEST_FAIL(timer, summary, "semicolon quick fix did not contain the expected edit");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_inserts_semicolon_before_line_comment(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action inserts missing semicolon before line comment";
+    const TZrChar *content = "return answer // keep note\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{0, 0}, {0, 0}};
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_semicolon_comment_action.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions) ||
+        actions.length != 1) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction did not return a semicolon quick fix for a commented line");
+    } else {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, 0);
+        SZrLspTextEdit **editPtr =
+            (actionPtr != ZR_NULL && *actionPtr != ZR_NULL && (*actionPtr)->edits.length > 0)
+                ? (SZrLspTextEdit **)ZrCore_Array_Get(&(*actionPtr)->edits, 0)
+                : ZR_NULL;
+        const TZrChar *newText = (editPtr != ZR_NULL && *editPtr != ZR_NULL)
+                                     ? test_string_text((*editPtr)->newText)
+                                     : ZR_NULL;
+        if (newText == ZR_NULL ||
+            strcmp(newText, ";") != 0 ||
+            (*editPtr)->range.start.line != 0 ||
+            (*editPtr)->range.start.character != 13) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "semicolon quick fix was not inserted before the line comment");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_inserts_missing_native_import(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action inserts a missing native module import";
+    const TZrChar *content =
+        "func main(value: int): int {\n"
+        "    return math.abs(value);\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{1, 11}, {1, 15}};
+    TZrBool foundImportAction = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_missing_native_import_action.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for a missing native module alias");
+    } else {
+        for (TZrSize index = 0; index < actions.length; index++) {
+            SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+            const TZrChar *title = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                       ? test_string_text((*actionPtr)->title)
+                                       : ZR_NULL;
+            if (title != ZR_NULL &&
+                strcmp(title, "Import zr.math as math") == 0 &&
+                text_edit_contains(&(*actionPtr)->edits, "var math = %import(\"zr.math\");\n")) {
+                foundImportAction = ZR_TRUE;
+                break;
+            }
+        }
+        if (!foundImportAction) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "missing native module alias did not produce an import quick fix");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_uses_requested_range_for_missing_import(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action uses requested range for missing import";
+    const TZrChar *content =
+        "func main(value: int): int {\n"
+        "    return system.print(math.abs(value));\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{1, 24}, {1, 28}};
+    TZrBool foundMathImportAction = ZR_FALSE;
+    TZrBool foundSystemImportAction = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_range_missing_import_action.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for range-specific missing imports");
+    } else {
+        for (TZrSize index = 0; index < actions.length; index++) {
+            SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+            const TZrChar *title = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                       ? test_string_text((*actionPtr)->title)
+                                       : ZR_NULL;
+            if (title != ZR_NULL && strcmp(title, "Import zr.math as math") == 0) {
+                foundMathImportAction = text_edit_contains(&(*actionPtr)->edits,
+                                                           "var math = %import(\"zr.math\");\n");
+            }
+            if (title != ZR_NULL && strcmp(title, "Import zr.system as system") == 0) {
+                foundSystemImportAction = ZR_TRUE;
+            }
+        }
+        if (!foundMathImportAction || foundSystemImportAction) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "missing import quick fix ignored the requested identifier range");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_skips_existing_import_alias(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action skips missing import when alias already exists";
+    const TZrChar *content =
+        "var math = %import(\"zr.math\");\n"
+        "\n"
+        "func main(value: int): int {\n"
+        "    return math.abs(value);\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{3, 11}, {3, 15}};
+    TZrBool foundImportAction = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_existing_native_import_action.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for an existing native module alias");
+    } else {
+        for (TZrSize index = 0; index < actions.length; index++) {
+            SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+            const TZrChar *title = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                       ? test_string_text((*actionPtr)->title)
+                                       : ZR_NULL;
+            if (title != ZR_NULL && strstr(title, "Import zr.math as math") != ZR_NULL) {
+                foundImportAction = ZR_TRUE;
+                break;
+            }
+        }
+        if (foundImportAction) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "existing import alias produced a duplicate import quick fix");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_ignores_non_code_missing_import_text(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action ignores missing imports in strings and comments";
+    const TZrChar *content =
+        "func main(value: int): int {\n"
+        "    // math.abs(value);\n"
+        "    var text = \"math.abs\";\n"
+        "    /* math.abs(value); */\n"
+        "    return value;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray commentActions = {0};
+    SZrArray stringActions = {0};
+    SZrArray blockCommentActions = {0};
+    SZrLspRange commentRange = {{1, 7}, {1, 11}};
+    SZrLspRange stringRange = {{2, 16}, {2, 20}};
+    SZrLspRange blockCommentRange = {{3, 8}, {3, 12}};
+    TZrBool foundImportAction = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_non_code_missing_import_action.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, commentRange, &commentActions) ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, stringRange, &stringActions) ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, blockCommentRange, &blockCommentActions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for non-code missing import probes");
+    } else {
+        SZrArray *actionLists[] = {&commentActions, &stringActions, &blockCommentActions};
+        for (TZrSize listIndex = 0; listIndex < sizeof(actionLists) / sizeof(actionLists[0]); listIndex++) {
+            for (TZrSize actionIndex = 0; actionIndex < actionLists[listIndex]->length; actionIndex++) {
+                SZrLspCodeAction **actionPtr =
+                    (SZrLspCodeAction **)ZrCore_Array_Get(actionLists[listIndex], actionIndex);
+                const TZrChar *title = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                           ? test_string_text((*actionPtr)->title)
+                                           : ZR_NULL;
+                if (title != ZR_NULL && strstr(title, "Import zr.math as math") != ZR_NULL) {
+                    foundImportAction = ZR_TRUE;
+                    break;
+                }
+            }
+        }
+
+        if (foundImportAction) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "non-code math.abs text produced a missing import quick fix");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &commentActions);
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &stringActions);
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &blockCommentActions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_code_action_ignores_multiline_block_comment_missing_import(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action ignores missing imports in multiline block comments";
+    const TZrChar *content =
+        "func main(value: int): int {\n"
+        "    /*\n"
+        "    math.abs(value);\n"
+        "    */\n"
+        "    return value;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{2, 4}, {2, 8}};
+    TZrBool foundImportAction = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_multiline_comment_missing_import.zr", content, &uri);
+    if (context == ZR_NULL || !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for multiline block comment missing import text");
+    } else {
+        for (TZrSize index = 0; index < actions.length; index++) {
+            SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+            const TZrChar *title = actionPtr != ZR_NULL && *actionPtr != ZR_NULL
+                                       ? test_string_text((*actionPtr)->title)
+                                       : ZR_NULL;
+            if (title != ZR_NULL && strstr(title, "Import zr.math as math") != ZR_NULL) {
+                foundImportAction = ZR_TRUE;
+                break;
+            }
+        }
+        if (foundImportAction) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "multiline block comment math.abs text produced an import quick fix");
         } else {
             TEST_PASS(timer, summary);
         }
@@ -1192,13 +1893,27 @@ int main(void) {
     test_lsp_formatting_skips_noop_edits(state, &failures);
     test_lsp_folding_and_selection_ranges(state, &failures);
     test_lsp_folding_ranges_include_import_regions(state, &failures);
+    test_lsp_formatting_ignores_non_code_braces(state, &failures);
+    test_lsp_folding_ignores_non_code_braces(state, &failures);
     test_lsp_document_links_resolve_import_literals(state, &failures);
+    test_lsp_document_links_ignore_non_code_import_text(state, &failures);
     test_lsp_document_links_resolve_zrp_paths(state, &failures);
     test_lsp_document_links_resolve_virtual_module_links(state, &failures);
     test_lsp_code_action_organizes_imports(state, &failures);
     test_lsp_code_action_organizes_imports_after_module(state, &failures);
+    test_lsp_code_action_organizes_import_aliases(state, &failures);
+    test_lsp_code_action_organizes_duplicate_alias_imports(state, &failures);
+    test_lsp_code_action_does_not_organize_import_text_in_strings(state, &failures);
     test_lsp_code_action_skips_organized_imports(state, &failures);
+    test_lsp_code_action_removes_unused_alias_imports(state, &failures);
+    test_lsp_code_action_ignores_text_mentions_when_removing_unused_alias_imports(state, &failures);
     test_lsp_code_action_inserts_missing_semicolon(state, &failures);
+    test_lsp_code_action_inserts_semicolon_before_line_comment(state, &failures);
+    test_lsp_code_action_inserts_missing_native_import(state, &failures);
+    test_lsp_code_action_uses_requested_range_for_missing_import(state, &failures);
+    test_lsp_code_action_skips_existing_import_alias(state, &failures);
+    test_lsp_code_action_ignores_non_code_missing_import_text(state, &failures);
+    test_lsp_code_action_ignores_multiline_block_comment_missing_import(state, &failures);
     test_lsp_code_lens_exposes_test_command(state, &failures);
     test_lsp_code_lens_exposes_reference_count(state, &failures);
     test_lsp_call_hierarchy_prepare_returns_symbol_item(state, &failures);

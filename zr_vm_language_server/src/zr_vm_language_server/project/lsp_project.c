@@ -960,21 +960,28 @@ SZrLspProjectIndex *ZrLanguageServer_LspProject_FindProjectForUri(SZrLspContext 
         SZrLspProjectIndex **projectPtr =
             (SZrLspProjectIndex **)ZrCore_Array_Get(&context->projectIndexes, index);
         const TZrChar *sourceRoot;
+        const TZrChar *projectRoot;
         TZrSize sourceRootLength;
+        TZrSize projectRootLength;
 
         if (projectPtr == ZR_NULL || *projectPtr == ZR_NULL) {
             continue;
         }
 
         sourceRoot = get_string_text((*projectPtr)->sourceRootPath);
-        if (!native_path_is_within_directory(pathBuffer, sourceRoot)) {
-            continue;
-        }
-
         sourceRootLength = sourceRoot != ZR_NULL ? strlen(sourceRoot) : 0;
-        if (bestProject == ZR_NULL || sourceRootLength > bestRootLength) {
+        if (native_path_is_within_directory(pathBuffer, sourceRoot) &&
+            (bestProject == ZR_NULL || sourceRootLength > bestRootLength)) {
             bestProject = *projectPtr;
             bestRootLength = sourceRootLength;
+        }
+
+        projectRoot = get_string_text((*projectPtr)->projectRootPath);
+        projectRootLength = projectRoot != ZR_NULL ? strlen(projectRoot) : 0;
+        if (native_path_is_within_directory(pathBuffer, projectRoot) &&
+            (bestProject == ZR_NULL || projectRootLength > bestRootLength)) {
+            bestProject = *projectPtr;
+            bestRootLength = projectRootLength;
         }
     }
 

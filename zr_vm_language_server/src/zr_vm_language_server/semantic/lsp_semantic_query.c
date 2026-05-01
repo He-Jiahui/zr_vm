@@ -66,6 +66,38 @@ static TZrBool semantic_query_is_identifier_char(TZrChar value) {
     return isalnum((unsigned char)value) || value == '_';
 }
 
+static const TZrChar *semantic_query_string_text(SZrString *value) {
+    if (value == ZR_NULL) {
+        return ZR_NULL;
+    }
+    return value->shortStringLength < ZR_VM_LONG_STRING_FLAG
+               ? ZrCore_String_GetNativeStringShort(value)
+               : ZrCore_String_GetNativeString(value);
+}
+
+static TZrBool semantic_query_hover_is_unresolved_expression(SZrString *content) {
+    const TZrChar *text = semantic_query_string_text(content);
+    return text != ZR_NULL &&
+           strstr(text, "**expression**") != ZR_NULL &&
+           strstr(text, "cannot infer exact type") != ZR_NULL;
+}
+
+static TZrBool semantic_query_symbol_has_specific_type(SZrState *state, SZrSymbol *symbol) {
+    TZrChar typeBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+    const TZrChar *typeText;
+
+    if (state == ZR_NULL || symbol == ZR_NULL || symbol->typeInfo == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typeText = ZrParser_TypeNameString_Get(state, symbol->typeInfo, typeBuffer, sizeof(typeBuffer));
+    return typeText != ZR_NULL &&
+           typeText[0] != '\0' &&
+           strcmp(typeText, "cannot infer exact type") != 0 &&
+           strcmp(typeText, "object") != 0 &&
+           strcmp(typeText, "unknown") != 0;
+}
+
 static SZrString *semantic_query_extract_identifier_at_offset(SZrState *state,
                                                               const TZrChar *content,
                                                               TZrSize contentLength,
@@ -131,6 +163,47 @@ static TZrSize semantic_query_lsp_offset_from_position(const TZrChar *content,
     }
 
     return offset < contentLength ? offset : contentLength > 0 ? contentLength - 1 : 0;
+}
+
+static SZrFileRange semantic_query_range_from_offset(const TZrChar *content,
+                                                     TZrSize contentLength,
+                                                     TZrSize startOffset,
+                                                     TZrSize length,
+                                                     SZrString *uri) {
+    SZrFileRange range;
+    TZrSize offset = 0;
+    TZrInt32 line = 1;
+    TZrInt32 column = 1;
+
+    while (offset < contentLength && offset < startOffset) {
+        if (content[offset] == '\n') {
+            line++;
+            column = 1;
+        } else if (content[offset] != '\r') {
+            column++;
+        }
+        offset++;
+    }
+
+    range.start.line = line;
+    range.start.column = column;
+    range.start.offset = startOffset;
+
+    while (offset < contentLength && offset < startOffset + length) {
+        if (content[offset] == '\n') {
+            line++;
+            column = 1;
+        } else if (content[offset] != '\r') {
+            column++;
+        }
+        offset++;
+    }
+
+    range.end.line = line;
+    range.end.column = column;
+    range.end.offset = startOffset + length;
+    range.source = uri;
+    return range;
 }
 
 static SZrSymbol *semantic_query_lookup_identifier_at_position(SZrState *state,
@@ -327,6 +400,37 @@ static TZrBool semantic_query_append_document_highlight(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool semantic_query_range_is_zero_width(SZrFileRange range) {
+    return range.start.offset == range.end.offset &&
+           range.start.line == range.end.line &&
+           range.start.column == range.end.column;
+}
+
+static SZrFileRange semantic_query_normalize_symbol_reference_range(SZrSymbol *symbol,
+                                                                    SZrFileRange range) {
+    const TZrChar *nameText;
+    TZrSize nameLength;
+
+    if (symbol == ZR_NULL || !semantic_query_range_is_zero_width(range)) {
+        return range;
+    }
+
+    nameText = semantic_query_string_text(symbol->name);
+    if (nameText == ZR_NULL || nameText[0] == '\0') {
+        return range;
+    }
+
+    nameLength = strlen(nameText);
+    if (range.start.offset >= nameLength) {
+        range.start.offset -= nameLength;
+    }
+    if (range.start.line == range.end.line && range.start.column > (TZrInt32)nameLength) {
+        range.start.column -= (TZrInt32)nameLength;
+    }
+
+    return range;
+}
+
 static SZrString *semantic_query_append_markdown_section(SZrState *state, SZrString *base, SZrString *appendix) {
     TZrNativeString baseText;
     TZrNativeString appendixText;
@@ -422,15 +526,17 @@ static TZrBool semantic_query_append_local_symbol_references(SZrState *state,
 
     for (TZrSize index = 0; index < references.length; index++) {
         SZrReference **referencePtr = (SZrReference **)ZrCore_Array_Get(&references, index);
+        SZrFileRange referenceRange;
         if (referencePtr == ZR_NULL || *referencePtr == ZR_NULL ||
             ((*referencePtr)->type == ZR_REFERENCE_DEFINITION && !includeDeclaration)) {
             continue;
         }
 
+        referenceRange = semantic_query_normalize_symbol_reference_range(query->symbol, (*referencePtr)->location);
         if (!semantic_query_append_location(state,
                                             result,
-                                            (*referencePtr)->location.source,
-                                            (*referencePtr)->location)) {
+                                            referenceRange.source,
+                                            referenceRange)) {
             ZrCore_Array_Free(state, &references);
             return ZR_FALSE;
         }
@@ -469,14 +575,16 @@ static TZrBool semantic_query_append_local_symbol_highlights(SZrState *state,
 
     for (TZrSize index = 0; index < references.length; index++) {
         SZrReference **referencePtr = (SZrReference **)ZrCore_Array_Get(&references, index);
+        SZrFileRange referenceRange;
         if (referencePtr == ZR_NULL || *referencePtr == ZR_NULL ||
             !ZrLanguageServer_Lsp_StringsEqual((*referencePtr)->location.source, query->uri)) {
             continue;
         }
 
+        referenceRange = semantic_query_normalize_symbol_reference_range(query->symbol, (*referencePtr)->location);
         if (!semantic_query_append_document_highlight(state,
                                                       result,
-                                                      (*referencePtr)->location,
+                                                      referenceRange,
                                                       (*referencePtr)->type == ZR_REFERENCE_WRITE ? 3 : 2)) {
             ZrCore_Array_Free(state, &references);
             return ZR_FALSE;
@@ -504,6 +612,16 @@ static TZrBool semantic_query_path_has_extension(const TZrChar *path, const TZrC
     return pathLength >= extensionLength && strcmp(path + pathLength - extensionLength, extension) == 0;
 }
 
+static const TZrChar *semantic_query_dynamic_library_extension(void) {
+#if defined(ZR_VM_PLATFORM_IS_WIN) || defined(_WIN32)
+    return ".dll";
+#elif defined(__APPLE__)
+    return ".dylib";
+#else
+    return ".so";
+#endif
+}
+
 static TZrBool semantic_query_uri_is_binary_metadata_uri(SZrString *uri) {
     TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
 
@@ -513,6 +631,16 @@ static TZrBool semantic_query_uri_is_binary_metadata_uri(SZrString *uri) {
 
     return semantic_query_path_has_extension(nativePath, ZR_VM_BINARY_MODULE_FILE_EXTENSION) ||
            semantic_query_path_has_extension(nativePath, ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION);
+}
+
+static TZrBool semantic_query_uri_is_native_plugin_metadata_uri(SZrString *uri) {
+    TZrChar nativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (uri == ZR_NULL || !semantic_query_uri_to_native_path(uri, nativePath, sizeof(nativePath))) {
+        return ZR_FALSE;
+    }
+
+    return semantic_query_path_has_extension(nativePath, semantic_query_dynamic_library_extension());
 }
 
 static TZrBool semantic_query_try_get_analyzer_for_uri(SZrState *state,
@@ -685,6 +813,17 @@ static TZrBool semantic_query_append_imported_member_highlights(SZrState *state,
                                                                        query->moduleName,
                                                                        query->memberName,
                                                                        &locations);
+    if (query->resolvedMember.module.moduleName != ZR_NULL &&
+        !ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.module.moduleName, query->moduleName)) {
+        appended = semantic_query_append_imported_member_locations_for_uri(state,
+                                                                           context,
+                                                                           query->projectIndex,
+                                                                           query->uri,
+                                                                           query->resolvedMember.module.moduleName,
+                                                                           query->memberName,
+                                                                           &locations) ||
+                   appended;
+    }
     if (!appended) {
         ZrCore_Array_Free(state, &locations);
         return ZR_FALSE;
@@ -929,11 +1068,16 @@ static TZrBool semantic_query_try_append_primary_external_type_member_locations(
             continue;
         }
 
-        if (semantic_query_append_location(state,
-                                           result,
-                                           uri,
-                                           memberNode->data.memberExpression.property->location)) {
-            appended = ZR_TRUE;
+        {
+            const TZrChar *resolvedName = semantic_query_string_text(resolvedMember.memberName);
+            SZrFileRange location = semantic_query_range_from_offset(content,
+                                                                     contentLength,
+                                                                     cursorOffset,
+                                                                     resolvedName != ZR_NULL ? strlen(resolvedName) : 0,
+                                                                     uri);
+            if (semantic_query_append_location(state, result, uri, location)) {
+                appended = ZR_TRUE;
+            }
         }
     }
 
@@ -1825,6 +1969,30 @@ static TZrBool semantic_query_append_project_external_type_member_references(SZr
                                                                             result);
     }
 
+    if (query->resolvedMember.module.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_PROJECT_SOURCE ||
+        query->resolvedMember.module.sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_FFI_SOURCE_WRAPPER) {
+        if (query->uri != ZR_NULL &&
+            semantic_query_append_external_type_member_locations_for_uri(state,
+                                                                         context,
+                                                                         query->projectIndex,
+                                                                         query->uri,
+                                                                         query,
+                                                                         result)) {
+            appended = ZR_TRUE;
+        }
+        if (query->resolvedMember.declarationUri != ZR_NULL &&
+            !ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.declarationUri, query->uri) &&
+            semantic_query_append_external_type_member_locations_for_uri(state,
+                                                                         context,
+                                                                         query->projectIndex,
+                                                                         query->resolvedMember.declarationUri,
+                                                                         query,
+                                                                         result)) {
+            appended = ZR_TRUE;
+        }
+        return appended;
+    }
+
     for (TZrSize index = 0; index < query->projectIndex->files.length; index++) {
         SZrLspProjectFileRecord **recordPtr =
             (SZrLspProjectFileRecord **)ZrCore_Array_Get(&query->projectIndex->files, index);
@@ -1893,6 +2061,9 @@ static TZrBool semantic_query_resolve_external_metadata_target(SZrState *state,
                                                                SZrLspSemanticQuery *query) {
     SZrLspExternalMetadataDeclaration externalDeclaration;
     SZrLspMetadataProvider provider;
+    SZrString *preciseMemberDeclarationUri;
+    SZrFileRange preciseMemberDeclarationRange;
+    TZrBool hasPreciseMemberDeclaration;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || query == ZR_NULL) {
         return ZR_FALSE;
@@ -1917,6 +2088,9 @@ static TZrBool semantic_query_resolve_external_metadata_target(SZrState *state,
     query->resolvedMember.declarationUri = externalDeclaration.declarationUri;
     query->resolvedMember.declarationRange = externalDeclaration.declarationRange;
     query->resolvedMember.hasDeclaration = externalDeclaration.hasDeclaration;
+    preciseMemberDeclarationUri = externalDeclaration.declarationUri;
+    preciseMemberDeclarationRange = externalDeclaration.declarationRange;
+    hasPreciseMemberDeclaration = externalDeclaration.memberName != ZR_NULL && externalDeclaration.hasDeclaration;
 
     ZrLanguageServer_LspMetadataProvider_Init(&provider, state, context);
     if (externalDeclaration.memberName != ZR_NULL &&
@@ -1927,6 +2101,11 @@ static TZrBool semantic_query_resolve_external_metadata_target(SZrState *state,
                                                                    externalDeclaration.memberName,
                                                                    &query->resolvedMember)) {
         query->resolvedModule = query->resolvedMember.module;
+        if (hasPreciseMemberDeclaration) {
+            query->resolvedMember.declarationUri = preciseMemberDeclarationUri;
+            query->resolvedMember.declarationRange = preciseMemberDeclarationRange;
+            query->resolvedMember.hasDeclaration = ZR_TRUE;
+        }
         semantic_query_copy_resolved_member_type(state, &query->resolvedMember, &query->resolvedTypeInfo);
     } else if (externalDeclaration.moduleName != ZR_NULL &&
                ZrLanguageServer_LspMetadataProvider_ResolveImportedModule(&provider,
@@ -2252,8 +2431,9 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
     query->queryRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
 
-    if (semantic_query_uri_is_binary_metadata_uri(uri)) {
-        query->projectIndex = ZrLanguageServer_LspProject_GetOrCreateForUri(state, context, uri);
+    if (semantic_query_uri_is_binary_metadata_uri(uri) ||
+        semantic_query_uri_is_native_plugin_metadata_uri(uri)) {
+        query->projectIndex = ZrLanguageServer_Lsp_ProjectEnsureProjectForUri(state, context, uri);
         query->analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
         return semantic_query_resolve_external_metadata_target(state, context, uri, position, query);
     }
@@ -2476,25 +2656,47 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_LOCAL_SYMBOL && query->analyzer != ZR_NULL) {
         SZrHoverInfo *hoverInfo = ZR_NULL;
+        SZrHoverInfo *symbolHoverInfo = ZR_NULL;
         SZrFileVersion *fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, query->uri);
         SZrString *content = ZR_NULL;
+        TZrBool analyzerHoverIsUnresolved = ZR_FALSE;
 
         if (ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state,
                                                            query->analyzer,
                                                            query->queryRange,
                                                            &hoverInfo) &&
             hoverInfo != ZR_NULL && hoverInfo->contents != ZR_NULL) {
-            content = hoverInfo->contents;
-        } else if (query->symbol != ZR_NULL && fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
+            analyzerHoverIsUnresolved = semantic_query_hover_is_unresolved_expression(hoverInfo->contents);
+            if (!analyzerHoverIsUnresolved ||
+                !semantic_query_symbol_has_specific_type(state, query->symbol)) {
+                content = hoverInfo->contents;
+            }
+        }
+        if (content == ZR_NULL &&
+            analyzerHoverIsUnresolved &&
+            query->symbol != ZR_NULL &&
+            ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state,
+                                                           query->analyzer,
+                                                           ZrLanguageServer_Lsp_GetSymbolLookupRange(query->symbol),
+                                                           &symbolHoverInfo) &&
+            symbolHoverInfo != ZR_NULL &&
+            symbolHoverInfo->contents != ZR_NULL &&
+            !semantic_query_hover_is_unresolved_expression(symbolHoverInfo->contents)) {
+            content = symbolHoverInfo->contents;
+        }
+        if (content == ZR_NULL && query->symbol != ZR_NULL && fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
             content = ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(state,
-                                                                            query->symbol,
-                                                                            fileVersion->content,
+                                                                             query->symbol,
+                                                                             fileVersion->content,
                                                                             fileVersion->contentLength);
         }
 
         if (content == ZR_NULL) {
             if (hoverInfo != ZR_NULL) {
                 ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
+            }
+            if (symbolHoverInfo != ZR_NULL) {
+                ZrLanguageServer_HoverInfo_Free(state, symbolHoverInfo);
             }
             return ZR_FALSE;
         }
@@ -2509,6 +2711,9 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_BuildHover(SZrS
 
         if (hoverInfo != ZR_NULL) {
             ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
+        }
+        if (symbolHoverInfo != ZR_NULL) {
+            ZrLanguageServer_HoverInfo_Free(state, symbolHoverInfo);
         }
         return semantic_query_create_hover_from_content(state,
                                                         content,
@@ -2777,6 +2982,16 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
                                                                                 query->moduleName,
                                                                                 query->memberName,
                                                                                 result);
+            if (query->resolvedMember.module.moduleName != ZR_NULL &&
+                !ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.module.moduleName, query->moduleName)) {
+                appended = semantic_query_append_project_imported_member_references(state,
+                                                                                    context,
+                                                                                    query->projectIndex,
+                                                                                    query->resolvedMember.module.moduleName,
+                                                                                    query->memberName,
+                                                                                    result) ||
+                           appended;
+            }
         } else if (query->uri != ZR_NULL) {
             appended = semantic_query_append_imported_member_locations_for_uri(state,
                                                                                context,
@@ -2785,6 +3000,17 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
                                                                                query->moduleName,
                                                                                query->memberName,
                                                                                result);
+            if (query->resolvedMember.module.moduleName != ZR_NULL &&
+                !ZrLanguageServer_Lsp_StringsEqual(query->resolvedMember.module.moduleName, query->moduleName)) {
+                appended = semantic_query_append_imported_member_locations_for_uri(state,
+                                                                                   context,
+                                                                                   query->projectIndex,
+                                                                                   query->uri,
+                                                                                   query->resolvedMember.module.moduleName,
+                                                                                   query->memberName,
+                                                                                   result) ||
+                           appended;
+            }
         }
 
         return appended || result->length > 0;
@@ -2792,6 +3018,22 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_AppendReference
 
     if (query->kind == ZR_LSP_SEMANTIC_QUERY_TARGET_EXTERNAL_METADATA_DECLARATION) {
         SZrLspExternalMetadataDeclaration resolved;
+
+        if (query->sourceKind == ZR_LSP_IMPORTED_MODULE_SOURCE_NATIVE_DESCRIPTOR_PLUGIN &&
+            query->memberName != ZR_NULL) {
+            if (includeDeclaration &&
+                query->resolvedMember.hasDeclaration &&
+                query->resolvedMember.declarationUri != ZR_NULL &&
+                !semantic_query_append_location(state,
+                                                result,
+                                                query->resolvedMember.declarationUri,
+                                                query->resolvedMember.declarationRange)) {
+                return ZR_FALSE;
+            }
+
+            return semantic_query_append_project_external_type_member_references(state, context, query, result) ||
+                   result->length > 0;
+        }
 
         memset(&resolved, 0, sizeof(resolved));
         resolved.projectIndex = query->projectIndex;

@@ -1108,6 +1108,26 @@ static TZrBool copy_fixture_file(const TZrChar *sourcePath, const TZrChar *targe
     return success;
 }
 
+static TZrBool reset_generated_fixture_root(const TZrChar *rootPath, const TZrChar *artifactName) {
+    EZrLibrary_File_Exist existence;
+
+    if (rootPath == ZR_NULL || artifactName == ZR_NULL ||
+        strstr(rootPath, "tests_generated/language_server/") == ZR_NULL ||
+        strstr(rootPath, artifactName) == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    existence = ZrLibrary_File_Exist((TZrNativeString)rootPath);
+    if (existence == ZR_LIBRARY_FILE_NOT_EXIST) {
+        return ZR_TRUE;
+    }
+    if (existence != ZR_LIBRARY_FILE_IS_DIRECTORY) {
+        return ZR_FALSE;
+    }
+
+    return ZrLibrary_File_Delete((TZrNativeString)rootPath, ZR_TRUE);
+}
+
 static TZrBool regenerate_binary_metadata_fixture_artifacts(SZrState *state,
                                                             const TZrChar *binaryPath,
                                                             const TZrChar *moduleSource) {
@@ -1212,6 +1232,9 @@ static TZrBool prepare_generated_binary_metadata_fixture(SZrState *state,
         return ZR_FALSE;
     }
     *lastSeparator = '\0';
+    if (!reset_generated_fixture_root(rootPath, artifactName)) {
+        return ZR_FALSE;
+    }
 
     snprintf(fixture->projectPath, sizeof(fixture->projectPath), "%s", generatedProjectPath);
     ZrLibrary_File_PathJoin(rootPath, "src", sourceRootPath);
@@ -2423,6 +2446,8 @@ static void test_lsp_callable_assignment_surfaces_exact_signature_and_parameter_
     SZrLspHover *hover = ZR_NULL;
     SZrString *placeholder = ZR_NULL;
     SZrLspRange range;
+    TZrChar reason[1024];
+    const TZrChar *hoverText;
 
     TEST_START("LSP Callable Assignment Surfaces Exact Signature And Parameter Scope");
     TEST_INFO("Callable value inference / scope",
@@ -2471,10 +2496,15 @@ static void test_lsp_callable_assignment_surfaces_exact_signature_and_parameter_
         !hover_contains_text(hover, "prepareAmount: int") ||
         !hover_contains_text(hover, "battleAmount: int") ||
         hover_contains_text(hover, "cannot infer exact type")) {
+        hoverText = hover_first_text(hover);
+        snprintf(reason,
+                 sizeof(reason),
+                 "Hover on the assigned callable should preserve the exact function value signature, actual=%s",
+                 hoverText != ZR_NULL ? hoverText : "<null>");
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Callable Assignment Surfaces Exact Signature And Parameter Scope",
-                  "Hover on the assigned callable should preserve the exact function value signature");
+                  reason);
         return;
     }
 
@@ -5024,7 +5054,7 @@ static void test_lsp_auto_registers_linked_native_libraries_for_import_metadata(
 static void test_lsp_project_modules_summarize_project_native_and_binary_modules(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
-    TZrChar projectPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    SZrGeneratedBinaryMetadataFixture fixture;
     SZrString *projectUri = ZR_NULL;
     SZrArray modules;
     TZrBool foundProjectModule = ZR_FALSE;
@@ -5035,17 +5065,17 @@ static void test_lsp_project_modules_summarize_project_native_and_binary_modules
     TEST_INFO("Project module summary",
               "The language server should summarize selected-project source, binary and native modules through a single request.");
 
-    if (!build_fixture_native_path("tests/fixtures/projects/binary_module_graph_pipeline/binary_module_graph_pipeline.zrp",
-                                   projectPath,
-                                   sizeof(projectPath))) {
+    if (!prepare_generated_binary_metadata_fixture(state,
+                                                   "interface_project_modules_summary",
+                                                   &fixture)) {
         TEST_FAIL(timer,
                   "LSP Project Modules Summarize Project Native And Binary Modules",
-                  "Failed to build the project fixture path");
+                  "Failed to prepare generated binary metadata fixture");
         return;
     }
 
     context = ZrLanguageServer_LspContext_New(state);
-    projectUri = create_file_uri_from_native_path(state, projectPath);
+    projectUri = create_file_uri_from_native_path(state, fixture.projectPath);
     if (context == ZR_NULL || projectUri == ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,

@@ -1,0 +1,482 @@
+// ZR Intermediate File (.zri)
+// Generated from compiled function
+
+FUNCTION: <anonymous>
+  START_LINE: 1
+  END_LINE: 119
+  PARAMETERS: 0
+  HAS_VAR_ARGS: false
+  STACK_SIZE: 62
+
+CONSTANTS (42):
+  [0] native closure
+  [1] string: "bench_config"
+  [2] null
+  [3] native closure
+  [4] string: "zr.system"
+  [5] function
+  [6] function
+  [7] function
+  [8] function
+  [9] function
+  [10] function
+  [11] function
+  [12] function
+  [13] function
+  [14] function
+  [15] function
+  [16] function
+  [17] int: 120
+  [18] int: 320
+  [19] int: 0
+  [20] string: "MultiplyWorker"
+  [21] int: 17
+  [22] string: "ScaleWorker"
+  [23] int: 29
+  [24] string: "XorWorker"
+  [25] int: 43
+  [26] string: "DriftWorker"
+  [27] int: 61
+  [28] int: 1
+  [29] int: 4
+  [30] int: 7
+  [31] int: 11
+  [32] int: 1000000007
+  [33] int: 2
+  [34] int: 3
+  [35] string: "BENCH_DISPATCH_LOOPS_PASS"
+  [36] string: "zr.builtin.Object"
+  [37] string: "state"
+  [38] string: "int"
+  [39] string: "constructor"
+  [40] string: "step"
+  [41] string: "read"
+
+LOCAL_VARIABLES (20):
+  [0] benchConfig: offset_activate=4, offset_dead=146
+  [1] system: offset_activate=8, offset_dead=146
+  [2] scale: offset_activate=11, offset_dead=146
+  [3] outerLimit: offset_activate=12, offset_dead=146
+  [4] innerLimit: offset_activate=13, offset_dead=146
+  [5] innerChecksum: offset_activate=14, offset_dead=146
+  [6] outerChecksum: offset_activate=15, offset_dead=146
+  [7] worker0: offset_activate=22, offset_dead=146
+  [8] worker1: offset_activate=29, offset_dead=146
+  [9] worker2: offset_activate=36, offset_dead=146
+  [10] worker3: offset_activate=43, offset_dead=146
+  [11] outer: offset_activate=44, offset_dead=146
+  [12] inner: offset_activate=47, offset_dead=146
+  [13] index: offset_activate=51, offset_dead=96
+  [14] delta: offset_activate=57, offset_dead=96
+  [15] value: offset_activate=59, offset_dead=66
+  [16] value: offset_activate=69, offset_dead=76
+  [17] value: offset_activate=79, offset_dead=86
+  [18] value: offset_activate=88, offset_dead=95
+  [19] checksum: offset_activate=141, offset_dead=141
+
+CLOSURE_VARIABLES (0):
+
+TYPE_METADATA:
+  LOCAL_BINDINGS (20):
+    [0] benchConfig: bench_config
+    [1] system: zr.system
+    [2] scale: int
+    [3] outerLimit: int
+    [4] innerLimit: int
+    [5] innerChecksum: int
+    [6] outerChecksum: int
+    [7] worker0: MultiplyWorker
+    [8] worker1: ScaleWorker
+    [9] worker2: XorWorker
+    [10] worker3: DriftWorker
+    [11] outer: int
+    [17] inner: int
+    [23] index: int
+    [24] delta: int
+    [28] value: int
+    [32] value: int
+    [36] value: int
+    [37] value: int
+    [53] checksum: int
+  EXPORTED_SYMBOLS (0):
+  STATIC_IMPORTS (2):
+    import bench_config
+    import zr.system
+  MODULE_ENTRY_EFFECTS (1):
+    IMPORT_CALL bench_config.scale [kind=function readiness=declaration]
+  EXPORTED_CALLABLE_SUMMARIES (0):
+  TOP_LEVEL_CALLABLE_BINDINGS (0):
+  COMPILE_TIME_VARIABLES (0):
+  COMPILE_TIME_FUNCTIONS (0):
+  TESTS (0):
+
+TYPE_TABLE (0):
+
+OWNERSHIP_TABLE (0):
+
+EFFECT_TABLE (0):
+
+BLOCK_GRAPH (0):
+
+SEMIR (0):
+
+DEOPT_MAP (0):
+
+CALLSITE_CACHE_TABLE (14):
+  [0] kind=MEMBER_GET inst=80 member=2 deopt=0 args=2 hits=0 misses=0
+  [1] kind=MEMBER_GET inst=97 member=3 deopt=0 args=2 hits=0 misses=0
+  [2] kind=MEMBER_GET inst=115 member=4 deopt=0 args=2 hits=0 misses=0
+  [3] kind=MEMBER_GET inst=132 member=5 deopt=0 args=2 hits=0 misses=0
+  [4] kind=MEMBER_GET inst=146 member=6 deopt=0 args=1 hits=0 misses=0
+  [5] kind=MEMBER_GET inst=146 member=7 deopt=0 args=1 hits=0 misses=0
+  [6] kind=MEMBER_GET inst=146 member=8 deopt=0 args=1 hits=0 misses=0
+  [7] kind=MEMBER_GET inst=146 member=9 deopt=0 args=1 hits=0 misses=0
+  [8] kind=MEMBER_GET inst=146 member=10 deopt=0 args=0 hits=0 misses=0
+  [9] kind=MEMBER_GET inst=8 member=0 deopt=0 args=0 hits=0 misses=0
+  [10] kind=MEMBER_GET inst=17 member=1 deopt=0 args=0 hits=0 misses=0
+  [11] kind=MEMBER_GET inst=24 member=1 deopt=0 args=0 hits=0 misses=0
+  [12] kind=MEMBER_GET inst=31 member=1 deopt=0 args=0 hits=0 misses=0
+  [13] kind=MEMBER_GET inst=38 member=1 deopt=0 args=0 hits=0 misses=0
+
+EH_TABLE (0):
+
+PROTOTYPES (4):
+// ========== PROTOTYPES FROM DATA (count: 4) ==========
+// --- Prototype 1 ---
+class MultiplyWorker : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "state",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 5,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "step",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 6,
+      parameterCount: 1,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "read",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 7,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 2 ---
+class ScaleWorker : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "state",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 8,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "step",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 9,
+      parameterCount: 1,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "read",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 10,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 3 ---
+class XorWorker : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "state",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 11,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "step",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 12,
+      parameterCount: 1,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "read",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 13,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// --- Prototype 4 ---
+class DriftWorker : zr.builtin.Object {
+  access: private (1),
+  members: [
+    {
+      type: CLASS_FIELD (17),
+      name: "state",
+      access: private (1),
+      static: false,
+      fieldType: "int",
+      fieldOffset: 0,
+      fieldSize: 8
+    },
+    {
+      type: CLASS_META_FUNCTION (20),
+      name: "constructor",
+      access: public (0),
+      static: false,
+      isMetaMethod: true,
+      metaType: CONSTRUCTOR (0),
+      functionConstantIndex: 14,
+      parameterCount: 1,
+      returnType: "<void>"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "step",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 15,
+      parameterCount: 1,
+      returnType: "int"
+    },
+    {
+      type: CLASS_METHOD (18),
+      name: "read",
+      access: public (0),
+      static: false,
+      isMetaMethod: false,
+      functionConstantIndex: 16,
+      parameterCount: 0,
+      returnType: "int"
+    }
+  ]
+}
+
+// ========== END OF PROTOTYPES ==========
+
+INSTRUCTIONS (146):
+  [0] GET_CONSTANT (extra=1, operand=0)
+  [1] GET_CONSTANT (extra=2, operand=1)
+  [2] KNOWN_NATIVE_CALL (extra=1, operand1=1, operand2=1)
+  [3] SET_STACK (extra=0, operand=1)
+  [4] GET_CONSTANT (extra=2, operand=3)
+  [5] GET_CONSTANT (extra=3, operand=4)
+  [6] KNOWN_NATIVE_CALL (extra=2, operand1=2, operand2=1)
+  [7] SET_STACK (extra=1, operand=2)
+  [8] GET_MEMBER_SLOT (extra=3, operand1=0, operand2=9)
+  [9] SUPER_FUNCTION_CALL_NO_ARGS (extra=3, operand1=3, operand2=0)
+  [10] SET_STACK (extra=2, operand=3)
+  [11] MUL_SIGNED_CONST (extra=3, left_slot=2, constant_index=17)
+  [12] MUL_SIGNED_CONST (extra=4, left_slot=2, constant_index=18)
+  [13] GET_CONSTANT (extra=5, operand=19)
+  [14] GET_CONSTANT (extra=6, operand=19)
+  [15] CREATE_OBJECT (extra=8)
+  [16] OPCODE_32 (extra=8, operand2=1310728, operand1=8, operand1_1=20)
+  [17] GET_MEMBER_SLOT (extra=9, operand1=8, operand2=10)
+  [18] SET_STACK (extra=10, operand=8)
+  [19] GET_CONSTANT (extra=11, operand=21)
+  [20] KNOWN_VM_CALL (extra=9, operand1=9, operand2=2)
+  [21] SET_STACK (extra=7, operand=8)
+  [22] CREATE_OBJECT (extra=9)
+  [23] OPCODE_32 (extra=9, operand2=1441801, operand1=9, operand1_1=22)
+  [24] GET_MEMBER_SLOT (extra=10, operand1=9, operand2=11)
+  [25] SET_STACK (extra=11, operand=9)
+  [26] GET_CONSTANT (extra=12, operand=23)
+  [27] KNOWN_VM_CALL (extra=10, operand1=10, operand2=2)
+  [28] SET_STACK (extra=8, operand=9)
+  [29] CREATE_OBJECT (extra=10)
+  [30] OPCODE_32 (extra=10, operand2=1572874, operand1=10, operand1_1=24)
+  [31] GET_MEMBER_SLOT (extra=11, operand1=10, operand2=12)
+  [32] SET_STACK (extra=12, operand=10)
+  [33] GET_CONSTANT (extra=13, operand=25)
+  [34] KNOWN_VM_CALL (extra=11, operand1=11, operand2=2)
+  [35] SET_STACK (extra=9, operand=10)
+  [36] CREATE_OBJECT (extra=11)
+  [37] OPCODE_32 (extra=11, operand2=1703947, operand1=11, operand1_1=26)
+  [38] GET_MEMBER_SLOT (extra=12, operand1=11, operand2=13)
+  [39] SET_STACK (extra=13, operand=11)
+  [40] GET_CONSTANT (extra=14, operand=27)
+  [41] KNOWN_VM_CALL (extra=12, operand1=12, operand2=2)
+  [42] SET_STACK (extra=10, operand=11)
+  [43] GET_CONSTANT (extra=11, operand=19)
+  [44] SUB_SIGNED_CONST (extra=13, left_slot=3, constant_index=28)
+  [45] JUMP_IF_GREATER_SIGNED (extra=11, left_slot=11, right_slot=13, jump_offset=93)
+  [46] GET_CONSTANT (extra=17, operand=19)
+  [47] SUB_SIGNED_CONST (extra=13, left_slot=4, constant_index=28)
+  [48] JUMP_IF_GREATER_SIGNED (extra=17, left_slot=17, right_slot=13, jump_offset=48)
+  [49] ADD_SIGNED (extra=26, operand1=11, operand2=17)
+  [50] MOD_SIGNED_CONST (extra=23, left_slot=26, constant_index=29)
+  [51] MUL_SIGNED_CONST_PLAIN_DEST (extra=27, left_slot=11, constant_index=30)
+  [52] MUL_SIGNED_CONST (extra=30, left_slot=17, constant_index=31)
+  [53] ADD_SIGNED (extra=31, operand1=27, operand2=30)
+  [54] ADD_SIGNED (extra=33, operand1=31, operand2=23)
+  [55] SET_STACK (extra=24, operand=33)
+  [56] RESET_STACK_NULL2 (extra=28, first_slot=28, second_slot=32)
+  [57] JUMP_IF_NOT_EQUAL_SIGNED_CONST (extra=23, left_slot=23, constant_index=19, jump_offset=9)
+  [58] KNOWN_VM_MEMBER_CALL_LOAD1_U8 (extra=28, cache=0, receiver_source=7, arg0_source=24)
+  [59] MUL_SIGNED_CONST (extra=32, left_slot=28, constant_index=28)
+  [60] ADD_SIGNED_LOAD_STACK (extra=33, source_slot=5, right_slot=32)
+  [61] MOD_SIGNED_CONST (extra=36, left_slot=24, constant_index=23)
+  [62] ADD_SIGNED (extra=37, operand1=33, operand2=36)
+  [63] MOD_SIGNED_CONST (extra=39, left_slot=37, constant_index=32)
+  [64] SET_STACK (extra=5, operand=39)
+  [65] RESET_STACK_NULL2 (extra=36, first_slot=36, second_slot=37)
+  [66] JUMP (extra=0, operand=28)
+  [67] JUMP_IF_NOT_EQUAL_SIGNED_CONST (extra=23, left_slot=23, constant_index=28, jump_offset=9)
+  [68] KNOWN_VM_MEMBER_CALL_LOAD1_U8 (extra=32, cache=1, receiver_source=8, arg0_source=24)
+  [69] MUL_SIGNED_CONST (extra=36, left_slot=32, constant_index=33)
+  [70] ADD_SIGNED_LOAD_STACK (extra=37, source_slot=5, right_slot=36)
+  [71] MOD_SIGNED_CONST (extra=40, left_slot=24, constant_index=23)
+  [72] ADD_SIGNED (extra=41, operand1=37, operand2=40)
+  [73] MOD_SIGNED_CONST (extra=43, left_slot=41, constant_index=32)
+  [74] SET_STACK (extra=5, operand=43)
+  [75] RESET_STACK_NULL2 (extra=36, first_slot=36, second_slot=37)
+  [76] JUMP (extra=0, operand=18)
+  [77] JUMP_IF_NOT_EQUAL_SIGNED_CONST (extra=23, left_slot=23, constant_index=33, jump_offset=9)
+  [78] KNOWN_VM_MEMBER_CALL_LOAD1_U8 (extra=36, cache=2, receiver_source=9, arg0_source=24)
+  [79] MUL_SIGNED_CONST (extra=40, left_slot=36, constant_index=34)
+  [80] ADD_SIGNED_LOAD_STACK (extra=41, source_slot=5, right_slot=40)
+  [81] MOD_SIGNED_CONST (extra=44, left_slot=24, constant_index=23)
+  [82] ADD_SIGNED (extra=45, operand1=41, operand2=44)
+  [83] MOD_SIGNED_CONST (extra=47, left_slot=45, constant_index=32)
+  [84] SET_STACK (extra=5, operand=47)
+  [85] RESET_STACK_NULL2 (extra=37, first_slot=37, second_slot=44)
+  [86] JUMP (extra=0, operand=8)
+  [87] KNOWN_VM_MEMBER_CALL_LOAD1_U8 (extra=37, cache=3, receiver_source=10, arg0_source=24)
+  [88] MUL_SIGNED_LOAD_STACK_CONST (extra=41, source_slot=37, materialized_slot=39, constant_index=29)
+  [89] ADD_SIGNED_LOAD_STACK (extra=42, source_slot=5, right_slot=41)
+  [90] MOD_SIGNED_LOAD_STACK_CONST (extra=45, source_slot=24, materialized_slot=43, constant_index=23)
+  [91] ADD_SIGNED (extra=46, operand1=42, operand2=45)
+  [92] MOD_SIGNED_LOAD_CONST (extra=48, left_slot=46, materialized_slot=47, constant_index=32)
+  [93] SET_STACK (extra=5, operand=48)
+  [94] RESET_STACK_NULL (extra=44)
+  [95] ADD_SIGNED_CONST (extra=17, left_slot=17, constant_index=28)
+  [96] JUMP (extra=0, operand=-50)
+  [97] MOD_SIGNED_CONST (extra=12, left_slot=11, constant_index=29)
+  [98] JUMP_IF_NOT_EQUAL_SIGNED_CONST (extra=12, left_slot=12, constant_index=19, jump_offset=9)
+  [99] GET_STACK (extra=45, operand=7)
+  [100] KNOWN_VM_MEMBER_CALL (extra=44, operand1=4, operand2=0)
+  [101] ADD_SIGNED_CONST (extra=47, left_slot=11, constant_index=28)
+  [102] MUL_SIGNED (extra=48, operand1=44, operand2=47)
+  [103] ADD_SIGNED_LOAD_STACK (extra=49, source_slot=6, right_slot=48)
+  [104] MOD_SIGNED_CONST (extra=51, left_slot=49, constant_index=32)
+  [105] SET_STACK (extra=6, operand=51)
+  [106] RESET_STACK_NULL2 (extra=44, first_slot=44, second_slot=49)
+  [107] JUMP (extra=0, operand=28)
+  [108] MOD_SIGNED_LOAD_CONST (extra=12, left_slot=11, materialized_slot=44, constant_index=29)
+  [109] JUMP_IF_NOT_EQUAL_SIGNED_CONST (extra=12, left_slot=12, constant_index=28, jump_offset=9)
+  [110] GET_STACK (extra=50, operand=8)
+  [111] KNOWN_VM_MEMBER_CALL (extra=49, operand1=5, operand2=0)
+  [112] ADD_SIGNED_CONST (extra=52, left_slot=11, constant_index=28)
+  [113] MUL_SIGNED (extra=53, operand1=49, operand2=52)
+  [114] ADD_SIGNED_LOAD_STACK (extra=54, source_slot=6, right_slot=53)
+  [115] MOD_SIGNED_CONST (extra=56, left_slot=54, constant_index=32)
+  [116] SET_STACK (extra=6, operand=56)
+  [117] RESET_STACK_NULL (extra=49)
+  [118] JUMP (extra=0, operand=17)
+  [119] MOD_SIGNED_LOAD_CONST (extra=12, left_slot=11, materialized_slot=49, constant_index=29)
+  [120] JUMP_IF_NOT_EQUAL_SIGNED_CONST (extra=12, left_slot=12, constant_index=33, jump_offset=8)
+  [121] GET_STACK (extra=55, operand=9)
+  [122] KNOWN_VM_MEMBER_CALL (extra=54, operand1=6, operand2=0)
+  [123] ADD_SIGNED_CONST (extra=57, left_slot=11, constant_index=28)
+  [124] MUL_SIGNED (extra=58, operand1=54, operand2=57)
+  [125] ADD_SIGNED_LOAD_STACK (extra=59, source_slot=6, right_slot=58)
+  [126] MOD_SIGNED_CONST (extra=61, left_slot=59, constant_index=32)
+  [127] SET_STACK (extra=6, operand=61)
+  [128] JUMP (extra=0, operand=7)
+  [129] GET_STACK (extra=55, operand=10)
+  [130] KNOWN_VM_MEMBER_CALL (extra=54, operand1=7, operand2=0)
+  [131] ADD_SIGNED_LOAD_STACK_CONST (extra=57, source_slot=11, materialized_slot=55, constant_index=28)
+  [132] MUL_SIGNED (extra=58, operand1=54, operand2=57)
+  [133] ADD_SIGNED_LOAD_STACK (extra=59, source_slot=6, right_slot=58)
+  [134] MOD_SIGNED_LOAD_CONST (extra=61, left_slot=59, materialized_slot=60, constant_index=32)
+  [135] SET_STACK (extra=6, operand=61)
+  [136] ADD_SIGNED_CONST (extra=11, left_slot=11, constant_index=28)
+  [137] RESET_STACK_NULL (extra=54)
+  [138] JUMP (extra=0, operand=-95)
+  [139] ADD_SIGNED (extra=56, operand1=5, operand2=6)
+  [140] MOD_SIGNED_CONST (extra=53, left_slot=56, constant_index=32)
+  [141] GET_MEMBER_SLOT (extra=54, operand1=1, operand2=8)
+  [142] GET_MEMBER (extra=54, operand1=54, operand2=11)
+  [143] GET_CONSTANT (extra=55, operand=35)
+  [144] FUNCTION_CALL (extra=54, operand1=54, operand2=1)
+  [145] FUNCTION_RETURN (extra=1, operand1=53, operand2=0)
+

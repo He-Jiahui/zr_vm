@@ -175,6 +175,43 @@ static SZrString *zr_container_cached_field_string(SZrState *state, const TZrCha
         cachedPairSecondFieldString = ZR_NULL;
     }
 
+    if (fieldName == kContainerItemsField) {
+        return zr_container_cache_field_string_once(state, kContainerItemsField, &cachedItemsFieldString);
+    }
+    if (fieldName == kContainerEntriesField) {
+        return zr_container_cache_field_string_once(state, kContainerEntriesField, &cachedEntriesFieldString);
+    }
+    if (fieldName == kContainerCountField) {
+        return zr_container_cache_field_string_once(state, kContainerCountField, &cachedCountFieldString);
+    }
+    if (fieldName == kContainerLengthField) {
+        return zr_container_cache_field_string_once(state, kContainerLengthField, &cachedLengthFieldString);
+    }
+    if (fieldName == kContainerCapacityField) {
+        return zr_container_cache_field_string_once(state, kContainerCapacityField, &cachedCapacityFieldString);
+    }
+    if (fieldName == kContainerValueField) {
+        return zr_container_cache_field_string_once(state, kContainerValueField, &cachedValueFieldString);
+    }
+    if (fieldName == kContainerNextField) {
+        return zr_container_cache_field_string_once(state, kContainerNextField, &cachedNextFieldString);
+    }
+    if (fieldName == kContainerPreviousField) {
+        return zr_container_cache_field_string_once(state, kContainerPreviousField, &cachedPreviousFieldString);
+    }
+    if (fieldName == kContainerLastField) {
+        return zr_container_cache_field_string_once(state, kContainerLastField, &cachedLastFieldString);
+    }
+    if (fieldName == kContainerFirstField) {
+        return zr_container_cache_field_string_once(state, kContainerPairFirstField, &cachedPairFirstFieldString);
+    }
+    if (fieldName == kContainerPairFirstField) {
+        return zr_container_cache_field_string_once(state, kContainerPairFirstField, &cachedPairFirstFieldString);
+    }
+    if (fieldName == kContainerPairSecondField) {
+        return zr_container_cache_field_string_once(state, kContainerPairSecondField, &cachedPairSecondFieldString);
+    }
+
     if (zr_container_field_name_equals(fieldName, kContainerItemsField)) {
         return zr_container_cache_field_string_once(state, kContainerItemsField, &cachedItemsFieldString);
     }
@@ -299,27 +336,45 @@ static ZR_FORCE_INLINE void zr_container_reset_hot_map_lookup_cache_state(ZrCont
     memset(cache->slots, 0, sizeof(cache->slots));
 }
 
-static ZR_FORCE_INLINE void zr_container_commit_hot_map_lookup_cache_hit(ZrContainerHotMapLookupCache *cache,
-                                                                         const ZrContainerHotMapLookupCacheSlot *slot,
-                                                                         TZrSize *outIndex,
-                                                                         SZrObject **outEntryObject) {
+static ZR_FORCE_INLINE void zr_container_commit_hot_map_lookup_cache_entry_hit(ZrContainerHotMapLookupCache *cache,
+                                                                               SZrRawObject *keyObject,
+                                                                               TZrUInt32 entriesMemberVersion,
+                                                                               TZrSize index,
+                                                                               SZrObject *entryObject,
+                                                                               TZrSize *outIndex,
+                                                                               SZrObject **outEntryObject) {
     ZR_ASSERT(cache != ZR_NULL);
-    ZR_ASSERT(slot != ZR_NULL);
+    ZR_ASSERT(keyObject != ZR_NULL);
+    ZR_ASSERT(entryObject != ZR_NULL);
 
-    cache->lastKeyObject = slot->keyObject;
-    cache->lastEntriesMemberVersion = slot->entriesMemberVersion;
-    cache->lastIndex = slot->index;
-    cache->lastEntryObject = slot->entryObject;
+    cache->lastKeyObject = keyObject;
+    cache->lastEntriesMemberVersion = entriesMemberVersion;
+    cache->lastIndex = index;
+    cache->lastEntryObject = entryObject;
 #if defined(ZR_DEBUG)
     gZrContainerDebugHotMapLookupStats.hotHitCount++;
     gZrContainerDebugHotMapLookupStats.memberVersionHitCount++;
 #endif
     if (outIndex != ZR_NULL) {
-        *outIndex = slot->index;
+        *outIndex = index;
     }
     if (outEntryObject != ZR_NULL) {
-        *outEntryObject = slot->entryObject;
+        *outEntryObject = entryObject;
     }
+}
+
+static ZR_FORCE_INLINE void zr_container_commit_hot_map_lookup_cache_hit(ZrContainerHotMapLookupCache *cache,
+                                                                         const ZrContainerHotMapLookupCacheSlot *slot,
+                                                                         TZrSize *outIndex,
+                                                                         SZrObject **outEntryObject) {
+    ZR_ASSERT(slot != ZR_NULL);
+    zr_container_commit_hot_map_lookup_cache_entry_hit(cache,
+                                                       slot->keyObject,
+                                                       slot->entriesMemberVersion,
+                                                       slot->index,
+                                                       slot->entryObject,
+                                                       outIndex,
+                                                       outEntryObject);
 }
 
 static ZR_FORCE_INLINE TZrBool zr_container_try_hot_map_lookup_cache_slot(
@@ -436,6 +491,57 @@ static ZR_FORCE_INLINE TZrBool zr_container_try_hot_map_lookup_cache(SZrState *s
     }
 
     return ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE SZrObject *zr_container_try_hot_map_lookup_cache_entry(ZrContainerHotMapLookupCache *cache,
+                                                                              SZrObject *entries,
+                                                                              SZrRawObject *keyObject) {
+    TZrUInt32 entriesMemberVersion;
+
+    if (cache == ZR_NULL || entries == ZR_NULL || keyObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    entriesMemberVersion = entries->memberVersion;
+
+    if (cache->entries != entries) {
+        zr_container_reset_hot_map_lookup_cache_state(cache, entries);
+        return ZR_NULL;
+    }
+
+    if (cache->lastKeyObject == keyObject &&
+        cache->lastEntryObject != ZR_NULL &&
+        cache->lastEntriesMemberVersion == entriesMemberVersion) {
+        zr_container_commit_hot_map_lookup_cache_entry_hit(cache,
+                                                           keyObject,
+                                                           entriesMemberVersion,
+                                                           cache->lastIndex,
+                                                           cache->lastEntryObject,
+                                                           ZR_NULL,
+                                                           ZR_NULL);
+        return cache->lastEntryObject;
+    }
+
+    for (TZrSize slotIndex = 0; slotIndex < ZR_CONTAINER_HOT_MAP_LOOKUP_CACHE_SLOT_COUNT; slotIndex++) {
+        const ZrContainerHotMapLookupCacheSlot *slot = &cache->slots[slotIndex];
+
+        if (slot->keyObject != keyObject ||
+            slot->entriesMemberVersion != entriesMemberVersion ||
+            slot->entryObject == ZR_NULL) {
+            continue;
+        }
+
+        zr_container_commit_hot_map_lookup_cache_entry_hit(cache,
+                                                           keyObject,
+                                                           entriesMemberVersion,
+                                                           slot->index,
+                                                           slot->entryObject,
+                                                           ZR_NULL,
+                                                           ZR_NULL);
+        return slot->entryObject;
+    }
+
+    return ZR_NULL;
 }
 
 static ZR_FORCE_INLINE SZrString *zr_container_entries_field_string_fast(SZrState *state) {
@@ -755,6 +861,38 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair **zr_container_hot_field_pair_slot(SZ
         return ZR_NULL;
     }
 
+    if (fieldName == kContainerItemsField || fieldName == kContainerEntriesField) {
+        return &object->cachedHiddenItemsPair;
+    }
+    if (fieldName == kContainerLengthField ||
+        fieldName == kContainerCountField ||
+        fieldName == kContainerFirstField ||
+        fieldName == kContainerPairFirstField) {
+        return &object->cachedLengthPair;
+    }
+    if (fieldName == kContainerCapacityField ||
+        fieldName == kContainerLastField ||
+        fieldName == kContainerPairSecondField) {
+        return &object->cachedCapacityPair;
+    }
+    if (fieldName == kContainerSourceField) {
+        return &object->cachedIteratorSourcePair;
+    }
+    if (fieldName == kContainerCurrentField) {
+        return &object->cachedIteratorCurrentPair;
+    }
+    if (fieldName == kContainerIndexField) {
+        return &object->cachedIteratorIndexPair;
+    }
+    if (fieldName == kContainerNextNodeField) {
+        return &object->cachedIteratorNextNodePair;
+    }
+    if (fieldName == kContainerValueField ||
+        fieldName == kContainerNextField ||
+        fieldName == kContainerPreviousField) {
+        return ZR_NULL;
+    }
+
     if (zr_container_field_name_equals(fieldName, kContainerItemsField) ||
         zr_container_field_name_equals(fieldName, kContainerEntriesField)) {
         return &object->cachedHiddenItemsPair;
@@ -845,8 +983,12 @@ static ZR_FORCE_INLINE const SZrTypeValue *zr_container_try_get_hot_field_value_
         return ZR_NULL;
     }
 
-    fieldString = zr_container_cached_field_string(state, fieldName);
     hotPairSlot = zr_container_hot_field_pair_slot(object, fieldName);
+    if (hotPairSlot == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    fieldString = zr_container_cached_field_string(state, fieldName);
     pair = hotPairSlot != ZR_NULL ? zr_container_try_match_cached_field_pair_exact(*hotPairSlot, fieldString) : ZR_NULL;
     return pair != ZR_NULL ? &pair->value : ZR_NULL;
 }
@@ -2217,7 +2359,6 @@ static TZrBool zr_container_map_find_index(SZrState *state,
         SZrRawObject *wantedRawObject = key->value.object;
         SZrString *wantedString = ZR_NULL;
 
-        wantedHash = wantedRawObject->hash;
         {
             ZrContainerHotMapLookupCache *cache = zr_container_hot_map_lookup_cache(state);
 
@@ -2231,6 +2372,7 @@ static TZrBool zr_container_map_find_index(SZrState *state,
             }
         }
 
+        wantedHash = wantedRawObject->hash;
         wantedString = ZR_CAST_STRING(state, wantedRawObject);
         if (wantedString == ZR_NULL) {
             return ZR_FALSE;
@@ -2335,16 +2477,16 @@ static ZR_FORCE_INLINE SZrObject *zr_container_map_find_entry_object_fast(SZrSta
         SZrString *wantedString = ZR_NULL;
         SZrObject *entryObject = ZR_NULL;
 
-        wantedHash = wantedRawObject->hash;
         {
             ZrContainerHotMapLookupCache *cache = zr_container_hot_map_lookup_cache(state);
 
-            if (zr_container_try_hot_map_lookup_cache(
-                        state, cache, entries, wantedRawObject, ZR_NULL, &entryObject)) {
+            entryObject = zr_container_try_hot_map_lookup_cache_entry(cache, entries, wantedRawObject);
+            if (entryObject != ZR_NULL) {
                 return entryObject;
             }
         }
 
+        wantedHash = wantedRawObject->hash;
         wantedString = ZR_CAST_STRING(state, wantedRawObject);
         if (wantedString == ZR_NULL) {
             return ZR_NULL;

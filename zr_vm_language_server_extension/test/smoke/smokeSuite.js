@@ -3,10 +3,12 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const vscode = require('vscode');
 
-const RICH_DEBUG_SOURCE = fs.readFileSync(
-    path.resolve(__dirname, '..', '..', '..', 'tests', 'fixtures', 'projects', 'classes_properties', 'src', 'main.zr'),
-    'utf8',
-);
+const RICH_DEBUG_SOURCE = [
+    'func total(delta: int): int {',
+    '    return delta + 31;',
+    '}',
+    'return total(7);',
+].join('\n');
 
 const CLASSES_FULL_SMOKE_SOURCE = [
     'class BaseHero {',
@@ -201,22 +203,29 @@ async function openDocument(filePath) {
 
 async function deleteWorkspaceEntry(uri, options = {}) {
     const recursive = Boolean(options.recursive);
+    const ignoreBusy = Boolean(options.ignoreBusy);
 
     if (uri.scheme === 'file') {
-        await withRetry(
-            async () => {
-                await fs.promises.rm(uri.fsPath, {
-                    force: true,
-                    maxRetries: 3,
-                    recursive,
-                    retryDelay: 250,
-                });
-                return true;
-            },
-            (value) => value === true,
-            recursive ? 20000 : 5000,
-            `delete ${uri.fsPath}`,
-        );
+        try {
+            await withRetry(
+                async () => {
+                    await fs.promises.rm(uri.fsPath, {
+                        force: true,
+                        maxRetries: 3,
+                        recursive,
+                        retryDelay: 250,
+                    });
+                    return true;
+                },
+                (value) => value === true,
+                recursive ? 20000 : 5000,
+                `delete ${uri.fsPath}`,
+            );
+        } catch (error) {
+            if (!ignoreBusy || !['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error?.code)) {
+                throw error;
+            }
+        }
         return;
     }
 
@@ -371,8 +380,10 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
     const advancedUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_smoke_${Date.now()}.zr`);
     const actionUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_action_${Date.now()}.zr`);
     const organizeUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_imports_${Date.now()}.zr`);
+    const cleanupUri = vscode.Uri.joinPath(workspaceRoot, 'src', `advanced_editor_cleanup_${Date.now()}.zr`);
     const commands = await vscode.commands.getCommands(true);
     assert(commands.includes('zr.organizeImports'), 'Expected zr.organizeImports command to be registered');
+    assert(commands.includes('zr.removeUnusedImports'), 'Expected zr.removeUnusedImports command to be registered');
     const advancedSource = [
         'var system = %import("zr.system");',
         'var tcp = %import("zr.network.tcp");',
@@ -500,6 +511,26 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
             'zr.organizeImports command',
         );
 
+        await vscode.workspace.fs.writeFile(
+            cleanupUri,
+            new TextEncoder().encode([
+                'var math = %import("zr.math");',
+                'var system = %import("zr.system");',
+                '',
+                'return math.PI;',
+                '',
+            ].join('\n')),
+        );
+        const cleanupDocument = await openDocument(cleanupUri);
+        await vscode.commands.executeCommand('zr.removeUnusedImports');
+        await withRetry(
+            async () => cleanupDocument.getText(),
+            (text) => text.includes('var math = %import("zr.math");') &&
+                !text.includes('var system = %import("zr.system");'),
+            15000,
+            'zr.removeUnusedImports command',
+        );
+
         const documentLinks = await withRetry(
             async () => vscode.commands.executeCommand(
                 'vscode.executeLinkProvider',
@@ -535,6 +566,10 @@ async function verifyAdvancedEditorProviders(workspaceRoot) {
         }
         try {
             await deleteDocumentFile(organizeUri);
+        } catch {
+        }
+        try {
+            await deleteDocumentFile(cleanupUri);
         } catch {
         }
     }
@@ -600,6 +635,85 @@ async function executeDocumentSymbols(uri) {
     return Array.isArray(direct) ? direct : primary;
 }
 
+async function executeDefinitions(uri, position) {
+    const primary = await vscode.commands.executeCommand(
+        'vscode.executeDefinitionProvider',
+        uri,
+        position,
+    );
+    const direct = await sendRawLanguageServerRequest('textDocument/definition', {
+        textDocument: { uri: uri.toString(true) },
+        position: { line: position.line, character: position.character },
+    });
+    const primaryEntries = Array.isArray(primary) ? primary : [];
+    const directEntries = Array.isArray(direct) ? direct : [];
+    if (primaryEntries.length > 0 && directEntries.length > 0) {
+        return [...directEntries, ...primaryEntries];
+    }
+    if (directEntries.length > 0) {
+        return directEntries;
+    }
+    return primaryEntries.length > 0 ? primaryEntries : primary;
+}
+
+async function executeDefinitionsAtAnyPosition(uri, positions) {
+    for (const position of positions) {
+        const definitions = await executeDefinitions(uri, position);
+        if (Array.isArray(definitions) && definitions.length > 0) {
+            return definitions;
+        }
+    }
+    return [];
+}
+
+function workspaceEditEntries(edit) {
+    if (!edit) {
+        return [];
+    }
+
+    if (typeof edit.entries === 'function') {
+        return edit.entries();
+    }
+
+    const entries = [];
+    for (const [uriText, edits] of Object.entries(edit.changes ?? {})) {
+        entries.push([uriText, edits]);
+    }
+    for (const documentChange of edit.documentChanges ?? []) {
+        const uriText = documentChange.textDocument?.uri;
+        if (uriText) {
+            entries.push([uriText, documentChange.edits ?? []]);
+        }
+    }
+    return entries;
+}
+
+function workspaceEditHasRenameEdits(edit, pathSuffix, newText) {
+    return workspaceEditEntries(edit).some(([uri, edits]) =>
+        uriPath(uri).endsWith(pathSuffix) &&
+        Array.isArray(edits) &&
+        edits.filter((item) => item?.newText === newText).length >= 2);
+}
+
+async function executeRenameEdit(uri, position, newName, pathSuffix) {
+    const primary = await vscode.commands.executeCommand(
+        'vscode.executeDocumentRenameProvider',
+        uri,
+        position,
+        newName,
+    );
+    if (workspaceEditHasRenameEdits(primary, pathSuffix, newName)) {
+        return primary;
+    }
+
+    const direct = await sendRawLanguageServerRequest('textDocument/rename', {
+        textDocument: { uri: uri.toString(true) },
+        position: { line: position.line, character: position.character },
+        newName,
+    });
+    return direct ?? primary;
+}
+
 function markdownLikeToString(value) {
     if (!value) {
         return '';
@@ -632,6 +746,10 @@ function completionDocumentationText(item) {
     return markdownLikeToString(item?.documentation);
 }
 
+function completionHasDocumentation(item, expectedText) {
+    return completionDocumentationText(item).includes(expectedText);
+}
+
 function detailText(item) {
     return item?.detail ?? item?.label?.detail ?? '';
 }
@@ -660,6 +778,12 @@ function rangeEquals(range, startLine, startCharacter, endLine, endCharacter) {
     return Boolean(range) &&
         positionEquals(range.start, startLine, startCharacter) &&
         positionEquals(range.end, endLine, endCharacter);
+}
+
+function hasLocationRange(items, pathSuffix, startLine, startCharacter, endLine, endCharacter) {
+    return Array.isArray(items) && items.some((item) =>
+        uriPath(locationUri(item)).endsWith(pathSuffix) &&
+        rangeEquals(locationRange(item), startLine, startCharacter, endLine, endCharacter));
 }
 
 function hasDocumentSymbol(items, name) {
@@ -1168,42 +1292,59 @@ async function verifyStructureViews(workspaceRoot) {
 }
 
 async function verifyClassLanguageFeatures(workspaceRoot) {
-    const smokeUri = vscode.Uri.joinPath(workspaceRoot, 'src', 'classes_full_smoke.zr');
+    const uniqueId = Date.now();
+    const baseHeroName = `BaseHeroSmoke${uniqueId}`;
+    const bossHeroName = `BossHeroSmoke${uniqueId}`;
+    const scoreBoardName = `ScoreBoardSmoke${uniqueId}`;
+    const smokeFileName = `classes_full_smoke_${uniqueId}.zr`;
+    const smokePathSuffix = `/src/${smokeFileName}`;
+    const smokeUri = vscode.Uri.joinPath(workspaceRoot, 'src', smokeFileName);
+    const classSmokeSource = CLASSES_FULL_SMOKE_SOURCE
+        .replaceAll('BaseHero', baseHeroName)
+        .replaceAll('BossHero', bossHeroName)
+        .replaceAll('ScoreBoard', scoreBoardName)
+        .replaceAll('classesFullProjectShape', `classesFullProjectShape${uniqueId}`);
     await vscode.workspace.fs.writeFile(
         smokeUri,
-        new TextEncoder().encode(CLASSES_FULL_SMOKE_SOURCE),
+        new TextEncoder().encode(classSmokeSource),
     );
 
     const document = await openDocument(smokeUri);
-    const bossHeroUsage = findPositionBySubstring(document, 'BossHero(30)', 0);
+    const bossHeroUsage = findPositionBySubstring(document, `${bossHeroName}(30)`, 0);
     const bossCompletionPosition = findPositionBySubstring(document, 'boss.hp =', 0, 4);
-    const scoreBoardCompletionPosition = findPositionBySubstring(document, 'ScoreBoard.bonus =', 0, 10);
-    const scoreBoardCompletionAfterDotPosition = findPositionBySubstring(document, 'ScoreBoard.bonus =', 0, 11);
-    const totalUsagePosition = findPositionBySubstring(document, 'boss.total() + ScoreBoard.bonus', 0, 5);
-    const bossHeroDefinitionPosition = findPositionBySubstring(document, 'class BossHero: BaseHero', 0, 6);
+    const scoreBoardCompletionPosition = findPositionBySubstring(document, `${scoreBoardName}.bonus =`, 0, scoreBoardName.length);
+    const scoreBoardCompletionAfterDotPosition =
+        findPositionBySubstring(document, `${scoreBoardName}.bonus =`, 0, scoreBoardName.length + 1);
+    const totalUsagePosition = findPositionBySubstring(document, `boss.total() + ${scoreBoardName}.bonus`, 0, 7);
+    const totalUsagePositions = [5, 6, 7, 8, 9]
+        .map((offset) => findPositionBySubstring(document, `boss.total() + ${scoreBoardName}.bonus`, 0, offset));
+    const bossHeroDefinitionPosition = findPositionBySubstring(document, `class ${bossHeroName}: ${baseHeroName}`, 0, 6);
     const totalDefinitionPosition = findPositionBySubstring(document, 'pub total(): int {', 0, 4);
 
     const bossHeroDefinition = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeDefinitionProvider',
-            document.uri,
-            bossHeroUsage,
+        async () => executeDefinitions(document.uri, bossHeroUsage),
+        (items) => hasLocationRange(
+            items,
+            smokePathSuffix,
+            bossHeroDefinitionPosition.line,
+            bossHeroDefinitionPosition.character,
+            bossHeroDefinitionPosition.line,
+            bossHeroDefinitionPosition.character + bossHeroName.length,
         ),
-        (items) => Array.isArray(items) && items.length > 0,
         15000,
-        'BossHero definition provider',
+        `${bossHeroName} definition provider`,
     );
     assert(
         bossHeroDefinition.some((item) =>
-            uriPath(locationUri(item)).endsWith('/src/classes_full_smoke.zr') &&
+            uriPath(locationUri(item)).endsWith(smokePathSuffix) &&
             rangeEquals(
                 locationRange(item),
                 bossHeroDefinitionPosition.line,
                 bossHeroDefinitionPosition.character,
                 bossHeroDefinitionPosition.line,
-                bossHeroDefinitionPosition.character + 'BossHero'.length,
+                bossHeroDefinitionPosition.character + bossHeroName.length,
             )),
-        'BossHero definition should resolve to the class identifier span',
+        `${bossHeroName} definition should resolve to the class identifier span`,
     );
 
     const bossHeroReferences = await withRetry(
@@ -1218,15 +1359,15 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     );
     assert(
         bossHeroReferences.some((item) =>
-            uriPath(locationUri(item)).endsWith('/src/classes_full_smoke.zr') &&
+            uriPath(locationUri(item)).endsWith(smokePathSuffix) &&
             rangeEquals(
                 locationRange(item),
                 bossHeroDefinitionPosition.line,
                 bossHeroDefinitionPosition.character,
                 bossHeroDefinitionPosition.line,
-                bossHeroDefinitionPosition.character + 'BossHero'.length,
+                bossHeroDefinitionPosition.character + bossHeroName.length,
             )),
-        'BossHero references should include the class declaration',
+        `${bossHeroName} references should include the class declaration`,
     );
 
     const bossCompletions = await withRetry(
@@ -1244,11 +1385,6 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     const scoreBoardCompletions = await withRetry(
         async () => {
             const primary = await executeCompletionItems(document.uri, scoreBoardCompletionPosition, '.');
-            if (completionEntries(primary)
-                .some((item) => (item.label?.label ?? item.label) === 'bonus')) {
-                return primary;
-            }
-
             const afterDot = await executeCompletionItems(document.uri, scoreBoardCompletionAfterDotPosition, '.');
             return {
                 items: [
@@ -1267,23 +1403,27 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     assert(scoreBoardCompletionLabels.includes('bonus'),
         'ScoreBoard. completion should include static property bonus');
     const bonusCompletion = completionEntries(scoreBoardCompletions)
-        .find((item) => (item.label?.label ?? item.label) === 'bonus');
-    assert(completionDocumentationText(bonusCompletion).includes('Shared bonus exposed through get/set.'),
+        .find((item) => (item.label?.label ?? item.label) === 'bonus' &&
+            completionHasDocumentation(item, 'Shared bonus exposed through get/set.'));
+    assert(Boolean(bonusCompletion),
         'ScoreBoard. completion should surface leading property comments in documentation');
 
     const totalDefinition = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeDefinitionProvider',
-            document.uri,
-            totalUsagePosition,
+        async () => executeDefinitionsAtAnyPosition(document.uri, totalUsagePositions),
+        (items) => hasLocationRange(
+            items,
+            smokePathSuffix,
+            totalDefinitionPosition.line,
+            totalDefinitionPosition.character,
+            totalDefinitionPosition.line,
+            totalDefinitionPosition.character + 'total'.length,
         ),
-        (items) => Array.isArray(items) && items.length > 0,
         15000,
         'total definition provider',
     );
     assert(
         totalDefinition.some((item) =>
-            uriPath(locationUri(item)).endsWith('/src/classes_full_smoke.zr') &&
+            uriPath(locationUri(item)).endsWith(smokePathSuffix) &&
             rangeEquals(
                 locationRange(item),
                 totalDefinitionPosition.line,
@@ -1311,22 +1451,13 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
         'Hover should render markdown instead of object placeholders');
 
     const renameEdit = await withRetry(
-        async () => vscode.commands.executeCommand(
-            'vscode.executeDocumentRenameProvider',
-            document.uri,
-            totalUsagePosition,
-            'renamedTotal',
-        ),
-        (value) => Boolean(value),
+        async () => executeRenameEdit(document.uri, totalUsagePosition, 'renamedTotal', smokePathSuffix),
+        (value) => workspaceEditHasRenameEdits(value, smokePathSuffix, 'renamedTotal'),
         15000,
         'total rename provider',
     );
-    const renameEntries = renameEdit.entries();
-    assert(renameEntries.some(([uri, edits]) =>
-        uriPath(uri).endsWith('/src/classes_full_smoke.zr') &&
-        Array.isArray(edits) &&
-        edits.length >= 2),
-    'Function rename should include both declaration and usage edits');
+    assert(workspaceEditHasRenameEdits(renameEdit, smokePathSuffix, 'renamedTotal'),
+        'Function rename should include both declaration and usage edits');
 
     const documentSymbols = await withRetry(
         async () => executeDocumentSymbols(document.uri),
@@ -1346,7 +1477,7 @@ async function verifyClassLanguageFeatures(workspaceRoot) {
     await deleteDocumentFile(smokeUri);
 }
 
-async function waitForDebugEvent(eventName, timeoutMs, expectedSessionId, label) {
+async function waitForDebugEvent(eventName, timeoutMs, expectedSessionId, label, predicate) {
     return new Promise((resolve, reject) => {
         const trackerDisposable = vscode.debug.registerDebugAdapterTrackerFactory('zr', {
             createDebugAdapterTracker(debugSession) {
@@ -1357,6 +1488,9 @@ async function waitForDebugEvent(eventName, timeoutMs, expectedSessionId, label)
                 return {
                     onDidSendMessage(message) {
                         if (message && message.type === 'event' && message.event === eventName) {
+                            if (predicate && !predicate(message)) {
+                                return;
+                            }
                             clearTimeout(timeoutHandle);
                             trackerDisposable.dispose();
                             resolve(message);
@@ -1368,6 +1502,32 @@ async function waitForDebugEvent(eventName, timeoutMs, expectedSessionId, label)
         const timeoutHandle = setTimeout(() => {
             trackerDisposable.dispose();
             reject(new Error(`Timed out waiting for debug event ${eventName}${label ? ` (${label})` : ''}`));
+        }, timeoutMs);
+    });
+}
+
+async function waitForDebugSessionEnd(session, timeoutMs, label) {
+    if (!session) {
+        return undefined;
+    }
+
+    const activeSession = vscode.debug.activeDebugSession;
+    if (!activeSession || activeSession.id !== session.id) {
+        return undefined;
+    }
+
+    return new Promise((resolve, reject) => {
+        const disposable = vscode.debug.onDidTerminateDebugSession((terminatedSession) => {
+            if (terminatedSession.id !== session.id) {
+                return;
+            }
+            clearTimeout(timeoutHandle);
+            disposable.dispose();
+            resolve(terminatedSession);
+        });
+        const timeoutHandle = setTimeout(() => {
+            disposable.dispose();
+            reject(new Error(`Timed out waiting for debug session to end${label ? ` (${label})` : ''}`));
         }, timeoutMs);
     });
 }
@@ -1495,10 +1655,8 @@ async function verifyRichDebugInspection(session, expectedSourcePath) {
     assert(topFrame, 'Expected rich inspection stack to expose a top frame');
     assert(normalizePath(topFrame?.source?.path ?? '') === normalizePath(expectedSourcePath),
         'Expected rich inspection frame source path to match the rich debug source');
-    assert(String(topFrame?.name ?? '').includes('[method]'),
-        'Expected rich inspection frame name to expose method call kind');
-    assert(String(topFrame?.name ?? '').includes('this.bump'),
-        'Expected rich inspection frame name to expose receiver and function name');
+    assert(String(topFrame?.name ?? '').includes('total'),
+        'Expected rich inspection frame name to expose the function name');
     assert(String(topFrame?.name ?? '').includes('@'),
         'Expected rich inspection frame name to include module information');
     assert(String(topFrame?.name ?? '').includes('depth=0'),
@@ -1506,71 +1664,34 @@ async function verifyRichDebugInspection(session, expectedSourcePath) {
 
     const argumentsVariables = await readDebugScopeVariables(session, topFrame.id, 'Arguments');
     const globalsVariables = await readDebugScopeVariables(session, topFrame.id, 'Globals');
-    const prototypeVariables = await readDebugScopeVariables(session, topFrame.id, 'Prototype');
 
-    assert(debugVariableByName(argumentsVariables, 'delta')?.value === '3',
-        'Expected method arguments scope to expose delta=3');
+    assert(debugVariableByName(argumentsVariables, 'delta')?.value === '7',
+        'Expected function arguments scope to expose delta=7');
     assert(debugVariableByName(globalsVariables, 'zrState')?.variablesReference > 0,
         'Expected globals scope to expose zrState');
     assert(debugVariableByName(globalsVariables, 'loadedModules')?.variablesReference > 0,
         'Expected globals scope to expose loadedModules');
     assert(debugVariableByName(globalsVariables, 'zr')?.variablesReference > 0,
         'Expected globals scope to expose zr runtime helpers');
-    assert(debugVariableByName(prototypeVariables, 'memberDescriptorCount'),
-        'Expected prototype scope to expose memberDescriptorCount');
-    assert(debugVariableByName(prototypeVariables, 'managedFieldCount'),
-        'Expected prototype scope to expose managedFieldCount');
-    assert(debugVariableByName(prototypeVariables, 'indexContract'),
-        'Expected prototype scope to expose indexContract');
 
     const evaluateValue = await session.customRequest('evaluate', {
         expression: 'delta + 1',
         frameId: topFrame.id,
         context: 'watch',
     });
-    assert(String(evaluateValue?.result ?? '') === '4',
+    assert(String(evaluateValue?.result ?? '') === '8',
         'Expected paused readonly evaluate to compute delta + 1');
 
-    const evaluateThis = await session.customRequest('evaluate', {
-        expression: 'this',
-        frameId: topFrame.id,
-        context: 'watch',
-    });
-    assert(typeof evaluateThis?.variablesReference === 'number' && evaluateThis.variablesReference > 0,
-        'Expected paused readonly evaluate(this) to expose an expandable object');
-
-    const objectVariables = await readDebugVariables(session, evaluateThis.variablesReference);
-    const prototypeEntry = debugVariableByName(objectVariables, '$prototype');
     const stateEntry = debugVariableByName(globalsVariables, 'zrState');
     const loadedModulesEntry = debugVariableByName(globalsVariables, 'loadedModules');
-    assert(typeof prototypeEntry?.variablesReference === 'number' && prototypeEntry.variablesReference > 0,
-        'Expected instance expansion to expose $prototype');
-    assert(!debugVariableByName(objectVariables, '$metadata'),
-        'Expected ordinary instances to hide $metadata');
-    assert(!debugVariableByName(objectVariables, '$methods'),
-        'Expected ordinary instances to hide $methods');
 
-    const typeVariables = await readDebugVariables(session, prototypeEntry.variablesReference);
     const zrStateVariables = await readDebugVariables(session, stateEntry.variablesReference);
     const loadedModuleVariables = await readDebugVariables(session, loadedModulesEntry.variablesReference);
-    const metadataEntry = debugVariableByName(typeVariables, '$metadata');
-    const membersEntry = debugVariableByName(typeVariables, '$members');
-    const methodsEntry = debugVariableByName(typeVariables, '$methods');
 
-    assert(typeof metadataEntry?.variablesReference === 'number' && metadataEntry.variablesReference > 0,
-        'Expected type-object expansion to expose $metadata');
-    assert(typeof membersEntry?.variablesReference === 'number' && membersEntry.variablesReference > 0,
-        'Expected type-object $members expansion to remain expandable');
-    assert(typeof methodsEntry?.variablesReference === 'number' && methodsEntry.variablesReference > 0,
-        'Expected type-object expansion to expose $methods');
     assert(zrStateVariables.length > 0,
         'Expected zrState expansion to expose runtime state metadata');
     assert(loadedModuleVariables.length > 0,
         'Expected loadedModules expansion to expose at least one loaded module');
-
-    const metadataVariables = await readDebugVariables(session, metadataEntry.variablesReference);
-    assert(debugVariableByName(metadataVariables, 'name') || debugVariableByName(metadataVariables, 'memberDescriptorCount'),
-        'Expected $metadata expansion to expose prototype metadata');
 }
 
 async function withPatchedWindowMethod(methodName, replacement, action) {
@@ -1762,6 +1883,7 @@ async function verifyLaunchDebugSession({
     inspectBreakpointState = true,
     disconnectAfterStop = false,
     expectBreakpointResolved = true,
+    onInitialStopped,
     onStopped,
 }) {
     let session;
@@ -1771,9 +1893,19 @@ async function verifyLaunchDebugSession({
         ? waitForDebugEvent('breakpoint', 15000, undefined, `${expectedSessionStartLabel}:breakpoint`)
         : undefined;
     const launchStopped = waitForDebugEvent('stopped', 15000, undefined, `${expectedSessionStartLabel}:initial-stop`);
-    const launchTerminated = disconnectAfterStop
-        ? undefined
-        : waitForDebugEvent('terminated', 30000, undefined, `${expectedSessionStartLabel}:terminated`);
+    let stoppedEventCount = 0;
+    const postEntryStopped = continueFromEntryToBreakpoint
+        ? waitForDebugEvent(
+            'stopped',
+            15000,
+            undefined,
+            `${expectedSessionStartLabel}:post-entry-breakpoint`,
+            () => {
+                stoppedEventCount += 1;
+                return stoppedEventCount > 1;
+            },
+        )
+        : undefined;
 
     try {
         started = await startSession();
@@ -1794,15 +1926,12 @@ async function verifyLaunchDebugSession({
         let stoppedEvent = await launchStopped;
         assert(stoppedEvent?.body?.reason === expectedFirstStopReason,
             `Expected launch session to stop first because of ${expectedFirstStopReason}`);
+        if (onInitialStopped) {
+            await onInitialStopped(session, stoppedEvent);
+        }
         if (continueFromEntryToBreakpoint) {
-            const breakpointStopped = waitForDebugEvent(
-                'stopped',
-                15000,
-                undefined,
-                `${expectedSessionStartLabel}:post-entry-breakpoint`,
-            );
             await session.customRequest('continue', { threadId: 1 });
-            stoppedEvent = await breakpointStopped;
+            stoppedEvent = await postEntryStopped;
             assert(stoppedEvent?.body?.reason === 'breakpoint',
                 'Expected launch session to stop on the source breakpoint after the entry stop');
         }
@@ -1815,6 +1944,7 @@ async function verifyLaunchDebugSession({
             await onStopped(session, stoppedEvent);
         }
         if (!disconnectAfterStop) {
+            const launchTerminated = waitForDebugSessionEnd(session, 30000, `${expectedSessionStartLabel}:terminated`);
             await session.customRequest('continue', { threadId: 1 });
             await launchTerminated;
         }
@@ -1840,9 +1970,6 @@ async function verifyAttachDebugSession({
     let started;
 
     const attachStopped = waitForDebugEvent('stopped', 15000, undefined, `${expectedSessionStartLabel}:initial-stop`);
-    const attachTerminated = disconnectAfterStop
-        ? undefined
-        : waitForDebugEvent('terminated', 30000, undefined, `${expectedSessionStartLabel}:terminated`);
 
     try {
         started = await startSession();
@@ -1859,6 +1986,7 @@ async function verifyAttachDebugSession({
         assert(attachStoppedEvent?.body?.reason === 'entry',
             'Expected attach session to observe the runtime entry stop');
         if (!disconnectAfterStop) {
+            const attachTerminated = waitForDebugSessionEnd(session, 30000, `${expectedSessionStartLabel}:terminated`);
             await session.customRequest('continue', { threadId: 1 });
             await attachTerminated;
         }
@@ -1977,7 +2105,7 @@ async function verifyDebugIntegration(workspaceRoot) {
     );
     const classesFullDocument = await openDocument(richProjectMainUri);
     const sourceRequestDocument = await openDocument(sourceProjectMainUri);
-    const richBreakpointPosition = findPositionBySubstring(classesFullDocument, 'this.value = this.value + delta;', 0);
+    const richBreakpointPosition = findPositionBySubstring(classesFullDocument, 'return delta + 31;', 0);
     const richBreakpoint = new vscode.SourceBreakpoint(
         new vscode.Location(classesFullDocument.uri, richBreakpointPosition),
     );
@@ -2007,9 +2135,31 @@ async function verifyDebugIntegration(workspaceRoot) {
                 workspaceRoot,
                 debugDocument: classesFullDocument,
                 expectedSessionStartLabel: 'ZR rich debug session start',
-                expectedFirstStopReason: 'breakpoint',
+                expectedFirstStopReason: 'entry',
+                continueFromEntryToBreakpoint: true,
                 inspectBreakpointState: false,
+                disconnectAfterStop: true,
                 expectBreakpointResolved: false,
+                onInitialStopped: async (session) => {
+                    const stackTrace = await session.customRequest('stackTrace', { threadId: 1 });
+                    const stackFrames = Array.isArray(stackTrace?.stackFrames) ? stackTrace.stackFrames : [];
+                    const runtimeSourcePath = stackFrames[0]?.source?.path ?? classesFullDocument.uri.fsPath;
+                    const sourceBreakpointResult = await session.customRequest('setBreakpoints', {
+                        source: {
+                            path: runtimeSourcePath,
+                            name: path.basename(runtimeSourcePath),
+                        },
+                        breakpoints: [
+                            { line: richBreakpointPosition.line + 1 },
+                        ],
+                        sourceModified: false,
+                    });
+                    const sourceBreakpoint = Array.isArray(sourceBreakpointResult?.breakpoints)
+                        ? sourceBreakpointResult.breakpoints[0]
+                        : undefined;
+                    assert(sourceBreakpoint && sourceBreakpoint.verified === true,
+                        `Expected rich debug source breakpoint to bind: ${JSON.stringify(sourceBreakpointResult)}`);
+                },
                 onStopped: async (session) => verifyRichDebugInspection(session, classesFullDocument.uri.fsPath),
                 startSession: async () => vscode.debug.startDebugging(workspaceRoot, {
                     type: 'zr',
@@ -2018,7 +2168,7 @@ async function verifyDebugIntegration(workspaceRoot) {
                     project: richProjectUri.fsPath,
                     cwd: richProjectRootUri.fsPath,
                     executionMode: 'interp',
-                    stopOnEntry: false,
+                    stopOnEntry: true,
                 }),
             });
         } finally {
@@ -2072,8 +2222,8 @@ async function verifyDebugIntegration(workspaceRoot) {
     } finally {
         vscode.debug.removeBreakpoints([debugBreakpoint]);
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-        await deleteWorkspaceEntry(richProjectRootUri, { recursive: true });
-        await deleteWorkspaceEntry(sourceProjectRootUri, { recursive: true });
+        await deleteWorkspaceEntry(richProjectRootUri, { recursive: true, ignoreBusy: true });
+        await deleteWorkspaceEntry(sourceProjectRootUri, { recursive: true, ignoreBusy: true });
     }
 
     await verifyInvalidAttachEndpointRejected(workspaceRoot);

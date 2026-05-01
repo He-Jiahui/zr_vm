@@ -17,6 +17,7 @@
     "onLanguage:zr-project",
     "onCommand:zr.restartLanguageServer",
     "onCommand:zr.organizeImports",
+    "onCommand:zr.removeUnusedImports",
     "onCommand:zr.richHover.focus",
     "onCommand:zr.richHover.refresh",
     "onCommand:zr.structure.refresh",
@@ -94,6 +95,11 @@
       {
         "command": "zr.organizeImports",
         "title": "Organize Imports",
+        "category": "Zr"
+      },
+      {
+        "command": "zr.removeUnusedImports",
+        "title": "Remove Unused Imports",
         "category": "Zr"
       },
       {
@@ -331,6 +337,11 @@
           "command": "zr.organizeImports",
           "when": "editorLangId == zr",
           "group": "1_modification"
+        },
+        {
+          "command": "zr.removeUnusedImports",
+          "when": "editorLangId == zr",
+          "group": "1_modification@1"
         }
       ]
     },

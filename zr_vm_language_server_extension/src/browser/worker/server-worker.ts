@@ -98,16 +98,20 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
             documentFormattingProvider: true,
             documentRangeFormattingProvider: true,
             codeActionProvider: {
-                codeActionKinds: ['quickfix', 'source.organizeImports'],
-                resolveProvider: false,
+                codeActionKinds: ['quickfix', 'source.organizeImports', 'source.removeUnused'],
+                resolveProvider: true,
             },
             foldingRangeProvider: true,
             selectionRangeProvider: true,
             documentLinkProvider: {
-                resolveProvider: false,
+                resolveProvider: true,
             },
             codeLensProvider: {
-                resolveProvider: false,
+                resolveProvider: true,
+            },
+            diagnosticProvider: {
+                interFileDependencies: true,
+                workspaceDiagnostics: true,
             },
             inlayHintProvider: true,
             semanticTokensProvider: {
@@ -316,6 +320,8 @@ connection.onRequest('textDocument/codeAction', async ({
     return filterCodeActions(responseData<unknown[]>(response, []), context?.only);
 });
 
+connection.onRequest('codeAction/resolve', async (action: unknown) => action);
+
 connection.onRequest('textDocument/foldingRange', async ({ textDocument }: { textDocument: { uri: string } }) => {
     const response = await bridge.getFoldingRanges(textDocument.uri);
     return responseData<unknown[]>(response, []);
@@ -351,6 +357,37 @@ connection.onRequest('textDocument/codeLens', async ({ textDocument }: { textDoc
 
 connection.onRequest('codeLens/resolve', async (lens: unknown) => lens);
 
+connection.onRequest('textDocument/diagnostic', async ({
+    textDocument,
+    previousResultId,
+}: {
+    textDocument: { uri: string };
+    previousResultId?: string;
+}) => getDocumentDiagnosticReport(textDocument.uri, previousResultId));
+
+connection.onRequest('workspace/diagnostic', async ({
+    previousResultIds,
+}: {
+    previousResultIds?: { uri: string; value: string }[];
+} = {}) => {
+    const previousByUri = new Map<string, string>();
+    for (const previous of previousResultIds ?? []) {
+        previousByUri.set(previous.uri, previous.value);
+    }
+
+    const items: unknown[] = [];
+    for (const [uri, document] of documents.entries()) {
+        const report = await getDocumentDiagnosticReport(uri, previousByUri.get(uri));
+        items.push({
+            uri,
+            version: document.version,
+            ...report,
+        });
+    }
+
+    return { items };
+});
+
 connection.listen();
 
 function responseData<T>(response: WasmPayload<T>, fallback: T): T {
@@ -385,6 +422,39 @@ function normalizeDiagnostic(diagnostic: Diagnostic): Diagnostic {
     }
 
     return diagnostic;
+}
+
+async function getDocumentDiagnosticReport(uri: string, previousResultId: string | undefined): Promise<unknown> {
+    const response = await bridge.getDiagnostics(uri);
+    const diagnostics = responseData<Diagnostic[]>(response, []).map(normalizeDiagnostic);
+    const resultId = createDiagnosticResultId(uri, documents.get(uri)?.version, diagnostics);
+
+    if (previousResultId === resultId) {
+        return {
+            kind: 'unchanged',
+            resultId,
+        };
+    }
+
+    return {
+        kind: 'full',
+        resultId,
+        items: diagnostics,
+    };
+}
+
+function createDiagnosticResultId(uri: string, version: number | undefined, diagnostics: Diagnostic[]): string {
+    return `${version ?? -1}:${hashText(`${uri}\n${JSON.stringify(diagnostics)}`)}`;
+}
+
+function hashText(text: string): string {
+    let hash = 2166136261;
+    for (let index = 0; index < text.length; index++) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+    }
+
+    return (hash >>> 0).toString(16);
 }
 
 function buildWorkspaceEdit(locations: Location[], newName: string): WorkspaceEdit {

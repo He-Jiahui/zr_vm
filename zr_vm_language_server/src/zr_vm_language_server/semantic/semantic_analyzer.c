@@ -940,8 +940,9 @@ static SZrSymbol *semantic_resolve_callable_signature_symbol(SZrSemanticAnalyzer
     SZrString *sourceName;
     SZrFileRange lookupPosition;
 
+    (void)displayTypeInfo;
+
     if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL || symbol == ZR_NULL ||
-        displayTypeInfo == ZR_NULL || displayTypeInfo->baseType != ZR_VALUE_TYPE_CLOSURE ||
         symbol->astNode == ZR_NULL || symbol->astNode->type != ZR_AST_VARIABLE_DECLARATION) {
         return ZR_NULL;
     }

@@ -99,10 +99,21 @@ export async function resolveSelectedProjectUri(
 ): Promise<vscode.Uri | undefined> {
     const projects = await discoverWorkspaceProjects();
     const storedId = context.workspaceState.get<string>(ZR_SELECTED_PROJECT_KEY);
+    const activeUri = vscode.window.activeTextEditor?.document.uri;
 
     if (projects.length === 0) {
         await setSelectedProjectUri(context, undefined);
         return undefined;
+    }
+
+    if (activeUri?.scheme === 'file') {
+        const activeProject = isZrpUri(activeUri)
+            ? projects.find((project) => project.uri.toString() === activeUri.toString())
+            : pickWorkspaceProjectForUri(activeUri, projects);
+        if (activeProject) {
+            await setSelectedProjectUri(context, activeProject.uri);
+            return activeProject.uri;
+        }
     }
 
     if (projects.length === 1) {

@@ -1899,6 +1899,17 @@ TZrBool ZrCore_Object_SuperArrayAddIntAssumeFast(SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(SZrState *state,
+                                                              SZrTypeValue *receiver,
+                                                              const SZrTypeValue *value) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(receiver != ZR_NULL);
+    ZR_ASSERT(value != ZR_NULL);
+    ZR_ASSERT(ZR_VALUE_IS_TYPE_SIGNED_INT(value->type));
+
+    return object_super_array_append_int_assume_fast(state, receiver, value->value.nativeObject.nativeInt64);
+}
+
 TZrBool ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(SZrState *state,
                                                        TZrStackValuePointer receiverBase,
                                                        TZrInt64 intValue) {

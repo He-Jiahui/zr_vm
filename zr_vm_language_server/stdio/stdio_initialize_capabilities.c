@@ -18,6 +18,7 @@ void add_advanced_editor_capabilities(cJSON *capabilities) {
     if (codeActionProvider != NULL && codeActionKinds != NULL) {
         cJSON_AddItemToArray(codeActionKinds, cJSON_CreateString(ZR_LSP_CODE_ACTION_KIND_QUICK_FIX));
         cJSON_AddItemToArray(codeActionKinds, cJSON_CreateString(ZR_LSP_CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS));
+        cJSON_AddItemToArray(codeActionKinds, cJSON_CreateString(ZR_LSP_CODE_ACTION_KIND_SOURCE_REMOVE_UNUSED));
         cJSON_AddItemToObject(codeActionProvider, ZR_LSP_FIELD_CODE_ACTION_KINDS, codeActionKinds);
         cJSON_AddBoolToObject(codeActionProvider, ZR_LSP_FIELD_RESOLVE_PROVIDER, 1);
         cJSON_AddItemToObject(capabilities, ZR_LSP_FIELD_CODE_ACTION_PROVIDER, codeActionProvider);

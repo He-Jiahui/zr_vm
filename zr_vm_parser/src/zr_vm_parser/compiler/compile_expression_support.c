@@ -1233,8 +1233,7 @@ TZrBool compiler_try_infer_expression_base_type(SZrCompilerState *cs, SZrAstNode
     if (outType != ZR_NULL) {
         *outType = ZR_VALUE_TYPE_OBJECT;
     }
-    if (cs == ZR_NULL || expression == ZR_NULL || outType == ZR_NULL || cs->typeEnv == ZR_NULL ||
-        expression_uses_dynamic_object_access(expression)) {
+    if (cs == ZR_NULL || expression == ZR_NULL || outType == ZR_NULL || cs->typeEnv == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -1267,8 +1266,12 @@ EZrInstructionCode compiler_select_binary_arithmetic_opcode(const TZrChar *op,
         if (!hasTypeInfo) {
             return ZR_INSTRUCTION_ENUM(ADD);
         }
-        if (resultType == ZR_VALUE_TYPE_STRING || leftType == ZR_VALUE_TYPE_STRING || rightType == ZR_VALUE_TYPE_STRING) {
+        if (resultType == ZR_VALUE_TYPE_STRING && leftType == ZR_VALUE_TYPE_STRING &&
+            rightType == ZR_VALUE_TYPE_STRING) {
             return ZR_INSTRUCTION_ENUM(ADD_STRING);
+        }
+        if (resultType == ZR_VALUE_TYPE_STRING || leftType == ZR_VALUE_TYPE_STRING || rightType == ZR_VALUE_TYPE_STRING) {
+            return ZR_INSTRUCTION_ENUM(ADD);
         }
         if (!compiler_operands_can_use_numeric_fast_path(leftType, rightType)) {
             return ZR_INSTRUCTION_ENUM(ADD);

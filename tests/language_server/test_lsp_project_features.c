@@ -348,6 +348,25 @@ static TZrChar *find_last_path_separator(TZrChar *path) {
     return forwardSlash > backSlash ? forwardSlash : backSlash;
 }
 
+static TZrBool reset_generated_fixture_root(const TZrChar *rootPath, const TZrChar *artifactName) {
+    EZrLibrary_File_Exist existence;
+
+    if (rootPath == ZR_NULL || artifactName == ZR_NULL ||
+        strstr(rootPath, "tests_generated/language_server/") == ZR_NULL ||
+        strstr(rootPath, artifactName) == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    existence = ZrLibrary_File_Exist((TZrNativeString)rootPath);
+    if (existence == ZR_LIBRARY_FILE_NOT_EXIST) {
+        return ZR_TRUE;
+    }
+    if (existence != ZR_LIBRARY_FILE_IS_DIRECTORY) {
+        return ZR_FALSE;
+    }
+    return ZrLibrary_File_Delete((TZrNativeString)rootPath, ZR_TRUE);
+}
+
 typedef struct SZrGeneratedBinaryMetadataFixture {
     TZrChar projectPath[ZR_TESTS_PATH_MAX];
     TZrChar mainPath[ZR_TESTS_PATH_MAX];
@@ -502,6 +521,9 @@ static TZrBool prepare_generated_binary_metadata_fixture(SZrState *state,
         return ZR_FALSE;
     }
     *lastSeparator = '\0';
+    if (!reset_generated_fixture_root(rootPath, artifactName)) {
+        return ZR_FALSE;
+    }
 
     snprintf(fixture->projectPath, sizeof(fixture->projectPath), "%s", generatedProjectPath);
     ZrLibrary_File_PathJoin(rootPath, "src", sourceRootPath);
@@ -1040,6 +1062,67 @@ static TZrBool highlight_array_contains_range(SZrArray *highlights,
     return ZR_FALSE;
 }
 
+static void describe_first_location(SZrArray *locations, TZrChar *buffer, TZrSize bufferSize) {
+    SZrLspLocation *location = ZR_NULL;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    if (locations != ZR_NULL && locations->length > 0) {
+        SZrLspLocation **locationPtr = (SZrLspLocation **)ZrCore_Array_Get(locations, 0);
+        if (locationPtr != ZR_NULL) {
+            location = *locationPtr;
+        }
+    }
+
+    if (location == ZR_NULL) {
+        snprintf(buffer, bufferSize, "count=%zu first=<none>", locations != ZR_NULL ? (size_t)locations->length : 0u);
+        return;
+    }
+
+    snprintf(buffer,
+             bufferSize,
+             "count=%zu first=%s [%d:%d-%d:%d]",
+             (size_t)locations->length,
+             test_string_ptr(location->uri),
+             location->range.start.line,
+             location->range.start.character,
+             location->range.end.line,
+             location->range.end.character);
+}
+
+static void describe_first_highlight(SZrArray *highlights, TZrChar *buffer, TZrSize bufferSize) {
+    SZrLspDocumentHighlight *highlight = ZR_NULL;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    if (highlights != ZR_NULL && highlights->length > 0) {
+        SZrLspDocumentHighlight **highlightPtr =
+            (SZrLspDocumentHighlight **)ZrCore_Array_Get(highlights, 0);
+        if (highlightPtr != ZR_NULL) {
+            highlight = *highlightPtr;
+        }
+    }
+
+    if (highlight == ZR_NULL) {
+        snprintf(buffer, bufferSize, "count=%zu first=<none>", highlights != ZR_NULL ? (size_t)highlights->length : 0u);
+        return;
+    }
+
+    snprintf(buffer,
+             bufferSize,
+             "count=%zu first=[%d:%d-%d:%d] kind=%d",
+             (size_t)highlights->length,
+             highlight->range.start.line,
+             highlight->range.start.character,
+             highlight->range.end.line,
+             highlight->range.end.character,
+             highlight->kind);
+}
+
 static SZrLspPosition binary_seed_declaration_position(void) {
     SZrLspPosition position;
     position.line = 0;
@@ -1492,6 +1575,7 @@ static void test_lsp_native_import_member_references_and_highlights(SZrState *st
 static void test_lsp_watched_binary_metadata_refresh_bootstraps_unopened_projects(SZrState *state);
 static void test_lsp_watched_descriptor_plugin_refresh_bootstraps_unopened_projects(SZrState *state);
 static void test_lsp_watched_project_refresh_surfaces_advanced_editor_features(SZrState *state);
+static void test_lsp_watched_project_refresh_surfaces_project_source_import_quickfix(SZrState *state);
 static void test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_keys(SZrState *state);
 static void test_lsp_watched_binary_metadata_refresh_reanalyzes_open_documents(SZrState *state);
 static void test_lsp_watched_descriptor_plugin_refresh_reanalyzes_open_documents(SZrState *state);
@@ -3299,6 +3383,7 @@ static void test_lsp_descriptor_plugin_member_completion_definition_and_referenc
     SZrArray completions;
     SZrArray definitions;
     SZrArray references;
+    TZrChar reason[1024];
 
     ZrCore_Array_Construct(&completions);
     ZrCore_Array_Construct(&definitions);
@@ -3373,12 +3458,13 @@ static void test_lsp_descriptor_plugin_member_completion_definition_and_referenc
     ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 4);
     if (!ZrLanguageServer_Lsp_GetDefinition(state, context, pluginUri, (SZrLspPosition){0, 0}, &definitions) ||
         !location_array_contains_uri_and_range(&definitions, pluginUri, 0, 0, 0, 0)) {
+        describe_first_location(&definitions, reason, sizeof(reason));
         free(mainContent);
         ZrCore_Array_Free(state, &definitions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Descriptor Plugin Member Completion Definition And References",
-                  "Goto definition on the plugin metadata entry should stay on the same declaration target");
+                  reason);
         return;
     }
     ZrCore_Array_Free(state, &definitions);
@@ -3496,6 +3582,7 @@ static void test_lsp_descriptor_plugin_type_member_navigation(SZrState *state) {
     TZrInt32 methodDeclEndCharacter = 0;
     SZrLspPosition fieldDeclarationPosition;
     SZrLspPosition methodDeclarationPosition;
+    TZrChar reason[1024];
 
     ZrCore_Array_Construct(&completions);
     ZrCore_Array_Construct(&definitions);
@@ -3604,12 +3691,13 @@ static void test_lsp_descriptor_plugin_type_member_navigation(SZrState *state) {
                                                fieldDeclStartCharacter,
                                                fieldDeclEndLine,
                                                fieldDeclEndCharacter)) {
+        describe_first_location(&definitions, reason, sizeof(reason));
         free(mainContent);
         ZrCore_Array_Free(state, &definitions);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP Descriptor Plugin Type Member Navigation",
-                  "Goto definition on a descriptor-plugin member declaration should stay on the same member-level target");
+                  reason);
         return;
     }
     ZrCore_Array_Free(state, &definitions);
@@ -4216,6 +4304,7 @@ static void test_lsp_external_metadata_declarations_highlight_and_module_entry_n
     SZrLspPosition pluginImportAliasPosition;
     SZrArray references;
     SZrArray highlights;
+    TZrChar reason[1024];
 
     ZrCore_Array_Construct(&references);
     ZrCore_Array_Construct(&highlights);
@@ -4333,12 +4422,13 @@ static void test_lsp_external_metadata_declarations_highlight_and_module_entry_n
                                                     (SZrLspPosition){0, 0},
                                                     &highlights) ||
         !highlight_array_contains_range(&highlights, 0, 0, 0, 0)) {
+        describe_first_highlight(&highlights, reason, sizeof(reason));
         free(pluginMainContent);
         ZrCore_Array_Free(state, &highlights);
         ZrLanguageServer_LspContext_Free(state, context);
         TEST_FAIL(timer,
                   "LSP External Metadata Declarations Highlight And Module Entry Navigation",
-                  "Document highlights on a descriptor-plugin module entry should stay on the module entry");
+                  reason);
         return;
     }
     ZrCore_Array_Free(state, &highlights);
@@ -7026,6 +7116,216 @@ static void test_lsp_network_native_members_semantic_tokens_cover_chain_and_rece
     TEST_PASS(timer, "LSP Network Native Members Semantic Tokens Cover Chain And Receivers");
 }
 
+static void test_lsp_code_action_inserts_missing_project_source_import(SZrState *state) {
+    SZrTestTimer timer;
+    static const TZrChar *mainContent =
+        "func main(): int {\n"
+        "    return greet.present;\n"
+        "}\n";
+    static const TZrChar *moduleContent =
+        "pub var present = 7;\n";
+    SZrGeneratedImportDiagnosticsFixture fixture;
+    SZrLspContext *context;
+    SZrString *mainUri = ZR_NULL;
+    SZrArray actions;
+    SZrLspRange range = {{1, 11}, {1, 16}};
+    TZrBool foundQuickFix = ZR_FALSE;
+
+    ZrCore_Array_Construct(&actions);
+
+    TEST_START("LSP Code Action Inserts Missing Project Source Import");
+    TEST_INFO("Project-source import quick fix",
+              "A missing alias such as greet.present should offer a quick fix that imports the matching project source module");
+
+    if (!prepare_generated_import_diagnostics_fixture("project_features_missing_import_quickfix",
+                                                      mainContent,
+                                                      "greet.zr",
+                                                      moduleContent,
+                                                      ZR_NULL,
+                                                      ZR_NULL,
+                                                      &fixture)) {
+        TEST_FAIL(timer,
+                  "LSP Code Action Inserts Missing Project Source Import",
+                  "Failed to prepare generated project source import fixture");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    mainUri = create_file_uri_from_native_path(state, fixture.mainPath);
+    if (context == ZR_NULL || mainUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, strlen(mainContent), 1) ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, mainUri, range, &actions)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+        TEST_FAIL(timer,
+                  "LSP Code Action Inserts Missing Project Source Import",
+                  "Failed to open project source fixture or request code actions");
+        return;
+    }
+
+    for (TZrSize index = 0; index < actions.length; index++) {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+        const TZrChar *title = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                   ? test_string_ptr((*actionPtr)->title)
+                                   : ZR_NULL;
+        if (title == ZR_NULL || strcmp(title, "Import greet as greet") != 0) {
+            continue;
+        }
+        for (TZrSize editIndex = 0; editIndex < (*actionPtr)->edits.length; editIndex++) {
+            SZrLspTextEdit **editPtr =
+                (SZrLspTextEdit **)ZrCore_Array_Get(&(*actionPtr)->edits, editIndex);
+            const TZrChar *newText = (editPtr != ZR_NULL && *editPtr != ZR_NULL)
+                                         ? test_string_ptr((*editPtr)->newText)
+                                         : ZR_NULL;
+            if (newText != ZR_NULL && strcmp(newText, "var greet = %import(\"greet\");\n") == 0) {
+                foundQuickFix = ZR_TRUE;
+                break;
+            }
+        }
+        if (foundQuickFix) {
+            break;
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_LspContext_Free(state, context);
+
+    if (!foundQuickFix) {
+        TEST_FAIL(timer,
+                  "LSP Code Action Inserts Missing Project Source Import",
+                  "Expected a project source import quick fix for greet.present");
+        return;
+    }
+
+    TEST_PASS(timer, "LSP Code Action Inserts Missing Project Source Import");
+}
+
+static TZrBool lsp_code_actions_contain_import_edit(SZrArray *actions,
+                                                    const TZrChar *title,
+                                                    const TZrChar *newText) {
+    for (TZrSize index = 0; actions != ZR_NULL && index < actions->length; index++) {
+        SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(actions, index);
+        const TZrChar *candidateTitle = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                            ? test_string_ptr((*actionPtr)->title)
+                                            : ZR_NULL;
+        if (candidateTitle == ZR_NULL || strcmp(candidateTitle, title) != 0) {
+            continue;
+        }
+        for (TZrSize editIndex = 0; editIndex < (*actionPtr)->edits.length; editIndex++) {
+            SZrLspTextEdit **editPtr =
+                (SZrLspTextEdit **)ZrCore_Array_Get(&(*actionPtr)->edits, editIndex);
+            const TZrChar *candidateNewText = (editPtr != ZR_NULL && *editPtr != ZR_NULL)
+                                                  ? test_string_ptr((*editPtr)->newText)
+                                                  : ZR_NULL;
+            if (candidateNewText != ZR_NULL && strcmp(candidateNewText, newText) == 0) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static void test_lsp_watched_project_refresh_surfaces_project_source_import_quickfix(SZrState *state) {
+    SZrTestTimer timer;
+    static const TZrChar *mainContent =
+        "func main(): int {\n"
+        "    return late.present;\n"
+        "}\n";
+    static const TZrChar *moduleContent =
+        "pub var present = 9;\n";
+    SZrGeneratedImportDiagnosticsFixture fixture;
+    SZrLspContext *context;
+    SZrString *mainUri = ZR_NULL;
+    SZrString *moduleUri = ZR_NULL;
+    SZrArray actions;
+    SZrLspRange range = {{1, 11}, {1, 15}};
+
+    ZrCore_Array_Construct(&actions);
+
+    TEST_START("LSP Watched Project Refresh Surfaces Project Source Import Quickfix");
+    TEST_INFO("Watched source quick fix refresh",
+              "A newly-created project source file should become available to missing import quick fixes after watched refresh");
+
+    if (!prepare_generated_import_diagnostics_fixture("project_features_watched_missing_import_quickfix",
+                                                      mainContent,
+                                                      "late.zr",
+                                                      ZR_NULL,
+                                                      ZR_NULL,
+                                                      ZR_NULL,
+                                                      &fixture)) {
+        TEST_FAIL(timer,
+                  "LSP Watched Project Refresh Surfaces Project Source Import Quickfix",
+                  "Failed to prepare generated watched source import fixture");
+        return;
+    }
+    errno = 0;
+    if (remove(fixture.moduleAPath) != 0 && errno != ENOENT) {
+        TEST_FAIL(timer,
+                  "LSP Watched Project Refresh Surfaces Project Source Import Quickfix",
+                  "Failed to remove stale generated watched source file before the initial quick fix request");
+        return;
+    }
+
+    context = ZrLanguageServer_LspContext_New(state);
+    mainUri = create_file_uri_from_native_path(state, fixture.mainPath);
+    moduleUri = create_file_uri_from_native_path(state, fixture.moduleAPath);
+    if (context == ZR_NULL || mainUri == ZR_NULL || moduleUri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, mainUri, mainContent, strlen(mainContent), 1) ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, mainUri, range, &actions)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+        TEST_FAIL(timer,
+                  "LSP Watched Project Refresh Surfaces Project Source Import Quickfix",
+                  "Failed to open main source or request initial code actions");
+        return;
+    }
+
+    if (lsp_code_actions_contain_import_edit(&actions,
+                                             "Import late as late",
+                                             "var late = %import(\"late\");\n")) {
+        ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Watched Project Refresh Surfaces Project Source Import Quickfix",
+                  "Missing import quick fix should not appear before the project source file exists");
+        return;
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrCore_Array_Construct(&actions);
+
+    if (!write_text_file(fixture.moduleAPath, moduleContent, strlen(moduleContent)) ||
+        !ZrLanguageServer_LspProject_ReloadOwningProjectForWatchedUri(state, context, moduleUri) ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, mainUri, range, &actions)) {
+        ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Watched Project Refresh Surfaces Project Source Import Quickfix",
+                  "Failed to write watched source file, refresh project, or request refreshed code actions");
+        return;
+    }
+
+    if (!lsp_code_actions_contain_import_edit(&actions,
+                                              "Import late as late",
+                                              "var late = %import(\"late\");\n")) {
+        ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Watched Project Refresh Surfaces Project Source Import Quickfix",
+                  "Expected watched refresh to surface the newly-created project source import quick fix");
+        return;
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Watched Project Refresh Surfaces Project Source Import Quickfix");
+}
+
 static void test_lsp_native_value_constructor_members_surface_hover_and_completion(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -7228,6 +7528,12 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_watched_project_refresh_surfaces_advanced_editor_features(state);
+    TEST_DIVIDER();
+
+    test_lsp_watched_project_refresh_surfaces_project_source_import_quickfix(state);
+    TEST_DIVIDER();
+
+    test_lsp_code_action_inserts_missing_project_source_import(state);
     TEST_DIVIDER();
 
     test_lsp_watched_binary_metadata_refresh_invalidates_module_cache_keys(state);

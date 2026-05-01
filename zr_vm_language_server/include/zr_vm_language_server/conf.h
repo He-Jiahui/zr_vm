@@ -323,6 +323,7 @@
 
 #define ZR_LSP_CODE_ACTION_KIND_QUICK_FIX "quickfix"
 #define ZR_LSP_CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS "source.organizeImports"
+#define ZR_LSP_CODE_ACTION_KIND_SOURCE_REMOVE_UNUSED "source.removeUnused"
 #define ZR_LSP_COMMAND_RUN_CURRENT_PROJECT "zr.runCurrentProject"
 #define ZR_LSP_COMMAND_SHOW_REFERENCES "zr.showReferences"
 #define ZR_LSP_FOLDING_RANGE_KIND_REGION "region"

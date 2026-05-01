@@ -588,6 +588,10 @@ TZrBool ZrLanguageServer_Lsp_GetDocumentLinks(SZrState *state,
             break;
         }
         matchOffset = (TZrSize)(match - content);
+        if (!lsp_editor_offset_is_code(content, contentLength, matchOffset)) {
+            cursor = matchOffset + 7;
+            continue;
+        }
         quoteOffset = matchOffset;
         while (quoteOffset < contentLength && content[quoteOffset] != '"') {
             quoteOffset++;

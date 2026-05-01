@@ -68,6 +68,22 @@ static ZR_FORCE_INLINE SZrProfileRuntime *execution_member_dispatch_exact_receiv
     return (state != ZR_NULL && state->global != ZR_NULL) ? state->global->profileRuntime : ZR_NULL;
 }
 
+static ZR_FORCE_INLINE TZrBool execution_member_can_copy_transient_result_by_bits(
+        SZrState *state,
+        const SZrTypeValue *destination,
+        const SZrTypeValue *source) {
+    ZR_ASSERT(destination != ZR_NULL);
+    ZR_ASSERT(source != ZR_NULL);
+    ZR_ASSERT(source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+              (source->ownershipControl == ZR_NULL && source->ownershipWeakRef == ZR_NULL));
+    ZR_ASSERT(destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE ||
+              (destination->ownershipControl == ZR_NULL && destination->ownershipWeakRef == ZR_NULL));
+    return (TZrBool)(ZrCore_Value_HasNormalizedNoOwnership(source) &&
+                     ZrCore_Value_HasNormalizedNoOwnership(destination) &&
+                     ((!source->isGarbageCollectable || source->type != ZR_VALUE_TYPE_OBJECT) ||
+                      ZrCore_Value_CanFastCopyPlainHeapObject(state, source)));
+}
+
 static ZR_FORCE_INLINE void execution_member_dispatch_refresh_forwarded_assigned_value(
         SZrTypeValue *value) {
     SZrRawObject *forwardedObject;
@@ -84,6 +100,66 @@ static ZR_FORCE_INLINE void execution_member_dispatch_refresh_forwarded_assigned
     value->value.object = forwardedObject;
     value->type = (EZrValueType)forwardedObject->type;
     value->isNative = forwardedObject->isNative;
+}
+
+static ZR_FORCE_INLINE SZrString *execution_member_dispatch_refresh_forwarded_cached_member_name(
+        SZrFunctionCallSitePicSlot *slot) {
+    SZrRawObject *rawObject;
+    SZrRawObject *forwardedObject;
+    SZrString *memberName;
+
+    if (slot == ZR_NULL || slot->cachedMemberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    memberName = slot->cachedMemberName;
+    rawObject = ZR_CAST_RAW_OBJECT_AS_SUPER(memberName);
+    forwardedObject = (SZrRawObject *)rawObject->garbageCollectMark.forwardingAddress;
+    if (forwardedObject == ZR_NULL) {
+        return memberName;
+    }
+
+    memberName = ZR_CAST_STRING(ZR_NULL, forwardedObject);
+    slot->cachedMemberName = memberName;
+    return memberName;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_dispatch_cached_slot_versions_match(
+        const SZrFunctionCallSitePicSlot *slot) {
+    return slot != ZR_NULL &&
+           slot->cachedReceiverPrototype != ZR_NULL &&
+           slot->cachedOwnerPrototype != ZR_NULL &&
+           slot->cachedReceiverPrototype->super.memberVersion == slot->cachedReceiverVersion &&
+           slot->cachedOwnerPrototype->super.memberVersion == slot->cachedOwnerVersion;
+}
+
+static ZR_FORCE_INLINE SZrHashKeyValuePair **execution_member_dispatch_hot_field_pair_slot(
+        SZrObject *object,
+        EZrFunctionCallSitePicHotFieldKind fieldKind) {
+    if (object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (fieldKind) {
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITEMS:
+            return &object->cachedHiddenItemsPair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_LENGTH:
+            return &object->cachedLengthPair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_CAPACITY:
+            return &object->cachedCapacityPair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_SOURCE:
+            return &object->cachedIteratorSourcePair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_CURRENT:
+            return &object->cachedIteratorCurrentPair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_INDEX:
+            return &object->cachedIteratorIndexPair;
+        case ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_ITERATOR_NEXT_NODE:
+            return &object->cachedIteratorNextNodePair;
+        default:
+            break;
+    }
+
+    return ZR_NULL;
 }
 
 static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair_get_hot_fast(
@@ -125,7 +201,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
         runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
     }
 
-    if (ZR_LIKELY(ZrCore_Value_CanFastCopyPlainValue(result, sourceValue))) {
+    if (ZR_LIKELY(execution_member_can_copy_transient_result_by_bits(state, result, sourceValue))) {
         *result = *sourceValue;
     } else {
         ZrCore_Value_CopyNoProfile(state, result, sourceValue);
@@ -135,17 +211,17 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     return ZR_TRUE;
 }
 
-static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair_get_hot_fast_checked_object(
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair_get_hot_fast_checked_object_profiled(
         SZrState *state,
         SZrFunction *function,
         TZrUInt16 cacheIndex,
         const SZrTypeValue *receiver,
-        SZrTypeValue *result) {
+        SZrTypeValue *result,
+        SZrProfileRuntime *runtime,
+        TZrBool recordHelpers) {
     SZrFunctionCallSiteCacheEntry *entry;
     SZrFunctionCallSitePicSlot *slot;
     const SZrTypeValue *sourceValue;
-    SZrProfileRuntime *runtime;
-    TZrBool recordHelpers;
 
     if (state == ZR_NULL || function == ZR_NULL || receiver == ZR_NULL || result == ZR_NULL ||
         function->callSiteCaches == ZR_NULL || cacheIndex >= function->callSiteCacheLength ||
@@ -166,14 +242,95 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     }
 
     sourceValue = &slot->cachedReceiverPair->value;
-    runtime = execution_member_dispatch_exact_receiver_pair_profile_runtime(state);
-    recordHelpers = runtime != ZR_NULL && runtime->recordHelpers;
     if (ZR_UNLIKELY(recordHelpers)) {
         runtime->helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]++;
         runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
     }
 
-    if (ZR_LIKELY(ZrCore_Value_CanFastCopyPlainValue(result, sourceValue))) {
+    if (ZR_LIKELY(execution_member_can_copy_transient_result_by_bits(state, result, sourceValue))) {
+        *result = *sourceValue;
+    } else {
+        ZrCore_Value_CopyNoProfile(state, result, sourceValue);
+    }
+
+    entry->runtimeHitCount++;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair_get_hot_fast_checked_object(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt16 cacheIndex,
+        const SZrTypeValue *receiver,
+        SZrTypeValue *result) {
+    SZrProfileRuntime *runtime = execution_member_dispatch_exact_receiver_pair_profile_runtime(state);
+    TZrBool recordHelpers = runtime != ZR_NULL && runtime->recordHelpers;
+
+    return execution_member_try_dispatch_exact_receiver_pair_get_hot_fast_checked_object_profiled(
+            state, function, cacheIndex, receiver, result, runtime, recordHelpers);
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_field_get_fast_checked_object(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt16 cacheIndex,
+        const SZrTypeValue *receiver,
+        SZrTypeValue *result,
+        SZrProfileRuntime *runtime,
+        TZrBool recordHelpers) {
+    SZrFunctionCallSiteCacheEntry *entry;
+    SZrFunctionCallSitePicSlot *slot;
+    SZrObject *receiverObject;
+    SZrString *memberName;
+    SZrHashKeyValuePair **hotPairSlot;
+    SZrHashKeyValuePair *pair;
+    const SZrTypeValue *sourceValue;
+
+    if (state == ZR_NULL || function == ZR_NULL || receiver == ZR_NULL || result == ZR_NULL ||
+        function->callSiteCaches == ZR_NULL || cacheIndex >= function->callSiteCacheLength ||
+            ZR_UNLIKELY(execution_callsite_sanitize_enabled())) {
+        return ZR_FALSE;
+    }
+
+    entry = &function->callSiteCaches[cacheIndex];
+    if ((EZrFunctionCallSiteCacheKind)entry->kind != ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET ||
+        entry->picSlotCount != 1u) {
+        return ZR_FALSE;
+    }
+
+    slot = &entry->picSlots[0];
+    if ((EZrFunctionCallSitePicAccessKind)slot->cachedAccessKind !=
+                ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD ||
+        slot->cachedHotFieldKind == ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_NONE ||
+        !execution_member_dispatch_cached_slot_versions_match(slot)) {
+        return ZR_FALSE;
+    }
+
+    receiverObject = (SZrObject *)receiver->value.object;
+    if (receiverObject == ZR_NULL || receiverObject->prototype != slot->cachedReceiverPrototype) {
+        return ZR_FALSE;
+    }
+
+    memberName = execution_member_dispatch_refresh_forwarded_cached_member_name(slot);
+    if (memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    hotPairSlot = execution_member_dispatch_hot_field_pair_slot(
+            receiverObject, (EZrFunctionCallSitePicHotFieldKind)slot->cachedHotFieldKind);
+    pair = hotPairSlot != ZR_NULL
+                   ? object_try_match_cached_string_pair_by_name_unchecked(state, *hotPairSlot, memberName)
+                   : ZR_NULL;
+    if (pair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    sourceValue = &pair->value;
+    if (ZR_UNLIKELY(recordHelpers)) {
+        runtime->helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]++;
+        runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+    }
+
+    if (ZR_LIKELY(execution_member_can_copy_transient_result_by_bits(state, result, sourceValue))) {
         *result = *sourceValue;
     } else {
         ZrCore_Value_CopyNoProfile(state, result, sourceValue);
@@ -252,17 +409,104 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     return ZR_TRUE;
 }
 
-static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair_set_hot_fast_checked_object(
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_field_set_fast_checked_object(
         SZrState *state,
         SZrFunction *function,
         TZrUInt16 cacheIndex,
         const SZrTypeValue *receiver,
-        const SZrTypeValue *assignedValue) {
+        const SZrTypeValue *assignedValue,
+        SZrProfileRuntime *runtime,
+        TZrBool recordHelpers) {
     SZrFunctionCallSiteCacheEntry *entry;
     SZrFunctionCallSitePicSlot *slot;
     SZrObject *receiverObject;
-    SZrProfileRuntime *runtime;
-    TZrBool recordHelpers;
+    SZrString *memberName;
+    SZrHashKeyValuePair **hotPairSlot;
+    SZrHashKeyValuePair *pair;
+    SZrTypeValue stableAssignedValue;
+    const SZrTypeValue *effectiveAssignedValue = assignedValue;
+
+    if (state == ZR_NULL || function == ZR_NULL || receiver == ZR_NULL || assignedValue == ZR_NULL ||
+        function->callSiteCaches == ZR_NULL || cacheIndex >= function->callSiteCacheLength ||
+            ZR_UNLIKELY(execution_callsite_sanitize_enabled())) {
+        return ZR_FALSE;
+    }
+
+    entry = &function->callSiteCaches[cacheIndex];
+    if ((EZrFunctionCallSiteCacheKind)entry->kind != ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET ||
+        entry->picSlotCount != 1u) {
+        return ZR_FALSE;
+    }
+
+    slot = &entry->picSlots[0];
+    if ((EZrFunctionCallSitePicAccessKind)slot->cachedAccessKind !=
+                ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD ||
+        slot->cachedHotFieldKind == ZR_FUNCTION_CALLSITE_PIC_HOT_FIELD_NONE ||
+        !execution_member_dispatch_cached_slot_versions_match(slot)) {
+        return ZR_FALSE;
+    }
+
+    receiverObject = (SZrObject *)receiver->value.object;
+    if (receiverObject == ZR_NULL || receiverObject->prototype != slot->cachedReceiverPrototype) {
+        return ZR_FALSE;
+    }
+
+    memberName = execution_member_dispatch_refresh_forwarded_cached_member_name(slot);
+    if (memberName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    hotPairSlot = execution_member_dispatch_hot_field_pair_slot(
+            receiverObject, (EZrFunctionCallSitePicHotFieldKind)slot->cachedHotFieldKind);
+    pair = hotPairSlot != ZR_NULL
+                   ? object_try_match_cached_string_pair_by_name_unchecked(state, *hotPairSlot, memberName)
+                   : ZR_NULL;
+    if (pair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (assignedValue->isGarbageCollectable && assignedValue->value.object != ZR_NULL) {
+        stableAssignedValue = *assignedValue;
+        execution_member_dispatch_refresh_forwarded_assigned_value(&stableAssignedValue);
+        effectiveAssignedValue = &stableAssignedValue;
+    }
+
+    if (ZR_UNLIKELY(recordHelpers)) {
+        runtime->helperCounts[ZR_PROFILE_HELPER_SET_MEMBER]++;
+    }
+
+    if ((slot->cachedIsStatic & ZR_FUNCTION_CALLSITE_PIC_SLOT_FLAG_NON_HIDDEN_STRING_PAIR_FAST_SET) != 0u &&
+        object_try_set_existing_string_pair_plain_value_assume_non_hidden_unchecked(
+                state, receiverObject, pair, effectiveAssignedValue)) {
+        if (ZR_UNLIKELY(recordHelpers)) {
+            runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+        }
+        entry->runtimeHitCount++;
+        return ZR_TRUE;
+    }
+    if (object_try_set_existing_pair_plain_value_fast_unchecked(state, receiverObject, pair, effectiveAssignedValue)) {
+        if (ZR_UNLIKELY(recordHelpers)) {
+            runtime->helperCounts[ZR_PROFILE_HELPER_VALUE_COPY]++;
+        }
+        entry->runtimeHitCount++;
+        return ZR_TRUE;
+    }
+
+    ZrCore_Object_SetExistingPairValueAfterFastMissUnchecked(state, receiverObject, pair, effectiveAssignedValue);
+    entry->runtimeHitCount++;
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair_set_hot_fast_checked_object_profiled(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt16 cacheIndex,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *assignedValue,
+        SZrProfileRuntime *runtime,
+        TZrBool recordHelpers) {
+    SZrFunctionCallSiteCacheEntry *entry;
+    SZrFunctionCallSitePicSlot *slot;
+    SZrObject *receiverObject;
     SZrTypeValue stableAssignedValue;
     const SZrTypeValue *effectiveAssignedValue = assignedValue;
 
@@ -291,8 +535,6 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     }
 
     receiverObject = (SZrObject *)receiver->value.object;
-    runtime = execution_member_dispatch_exact_receiver_pair_profile_runtime(state);
-    recordHelpers = runtime != ZR_NULL && runtime->recordHelpers;
     if (ZR_UNLIKELY(recordHelpers)) {
         runtime->helperCounts[ZR_PROFILE_HELPER_SET_MEMBER]++;
     }
@@ -318,6 +560,19 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
     ZrCore_Object_SetExistingPairValueUnchecked(state, receiverObject, slot->cachedReceiverPair, effectiveAssignedValue);
     entry->runtimeHitCount++;
     return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair_set_hot_fast_checked_object(
+        SZrState *state,
+        SZrFunction *function,
+        TZrUInt16 cacheIndex,
+        const SZrTypeValue *receiver,
+        const SZrTypeValue *assignedValue) {
+    SZrProfileRuntime *runtime = execution_member_dispatch_exact_receiver_pair_profile_runtime(state);
+    TZrBool recordHelpers = runtime != ZR_NULL && runtime->recordHelpers;
+
+    return execution_member_try_dispatch_exact_receiver_pair_set_hot_fast_checked_object_profiled(
+            state, function, cacheIndex, receiver, assignedValue, runtime, recordHelpers);
 }
 
 #define EXEC_DONE(N) ZR_INSTRUCTION_DONE(instruction, programCounter, N)

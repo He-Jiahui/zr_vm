@@ -689,7 +689,8 @@ static void zr_debug_breakpoint_emit_logpoint(ZrDebugAgent *agent, const ZrDebug
 
 static TZrBool zr_debug_agent_should_stop_for_breakpoint(ZrDebugAgent *agent,
                                                          SZrFunction *function,
-                                                         TZrUInt32 instructionIndex) {
+                                                         TZrUInt32 instructionIndex,
+                                                         TZrUInt32 sourceLine) {
     TZrSize index;
     TZrBool shouldStop = ZR_FALSE;
 
@@ -701,10 +702,21 @@ static TZrBool zr_debug_agent_should_stop_for_breakpoint(ZrDebugAgent *agent,
         ZrDebugBreakpoint *breakpoint = &agent->breakpoints[index];
 
         if (!breakpoint->resolved ||
-            breakpoint->resolved_function != function ||
-            breakpoint->resolved_instruction_index != instructionIndex ||
             !zr_debug_breakpoint_matches_module(agent, breakpoint)) {
             continue;
+        }
+        if (breakpoint->resolved_function != function ||
+            breakpoint->resolved_instruction_index != instructionIndex) {
+            if (breakpoint->kind != ZR_DEBUG_BREAKPOINT_KIND_LINE ||
+                breakpoint->resolved_function == function ||
+                breakpoint->line == 0 ||
+                breakpoint->line != sourceLine ||
+                !zr_debug_breakpoint_matches_function(breakpoint, function)) {
+                continue;
+            }
+
+            breakpoint->resolved_function = function;
+            breakpoint->resolved_instruction_index = instructionIndex;
         }
 
         breakpoint->hit_count++;
@@ -803,7 +815,7 @@ static TZrDebugSignal zr_debug_agent_trace_observer(SZrState *state,
         }
         reason = ZR_DEBUG_STOP_REASON_ENTRY;
         agent->startStopPending = ZR_FALSE;
-    } else if (zr_debug_agent_should_stop_for_breakpoint(agent, function, instructionOffset)) {
+    } else if (zr_debug_agent_should_stop_for_breakpoint(agent, function, instructionOffset, sourceLine)) {
         reason = ZR_DEBUG_STOP_REASON_BREAKPOINT;
     } else if (zr_debug_agent_should_stop_for_step(agent, function, instructionOffset, sourceLine)) {
         reason = ZR_DEBUG_STOP_REASON_STEP;

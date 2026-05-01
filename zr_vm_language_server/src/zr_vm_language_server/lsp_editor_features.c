@@ -259,6 +259,124 @@ TZrBool lsp_text_builder_append_char(SZrLspTextBuilder *builder, TZrChar value) 
     return lsp_text_builder_append_range(builder, &value, 1);
 }
 
+TZrBool lsp_editor_scan_structural_chars(const TZrChar *content,
+                                         TZrSize contentLength,
+                                         TZrSize startOffset,
+                                         TZrSize endOffset,
+                                         SZrLspEditorScanState *scanState,
+                                         TZrLspEditorStructuralCharCallback callback,
+                                         void *userData) {
+    SZrLspEditorScanState localState = {ZR_LSP_EDITOR_SCAN_CODE, ZR_FALSE};
+    SZrLspEditorScanState *state = scanState != ZR_NULL ? scanState : &localState;
+
+    if (content == ZR_NULL || startOffset > contentLength) {
+        return ZR_FALSE;
+    }
+    if (endOffset > contentLength) {
+        endOffset = contentLength;
+    }
+    if (endOffset < startOffset) {
+        endOffset = startOffset;
+    }
+
+    for (TZrSize index = startOffset; index < endOffset; index++) {
+        TZrChar current = content[index];
+
+        switch (state->mode) {
+            case ZR_LSP_EDITOR_SCAN_CODE:
+                if (current == '/' && index + 1 < endOffset && content[index + 1] == '/') {
+                    state->mode = ZR_LSP_EDITOR_SCAN_LINE_COMMENT;
+                    index++;
+                } else if (current == '/' && index + 1 < endOffset && content[index + 1] == '*') {
+                    state->mode = ZR_LSP_EDITOR_SCAN_BLOCK_COMMENT;
+                    index++;
+                } else if (current == '"') {
+                    state->mode = ZR_LSP_EDITOR_SCAN_STRING;
+                    state->escaped = ZR_FALSE;
+                } else if (current == '\'') {
+                    state->mode = ZR_LSP_EDITOR_SCAN_CHAR;
+                    state->escaped = ZR_FALSE;
+                } else if (current == '`') {
+                    state->mode = ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING;
+                    state->escaped = ZR_FALSE;
+                } else if ((current == '{' || current == '}') && callback != ZR_NULL) {
+                    if (!callback(current, index, userData)) {
+                        return ZR_FALSE;
+                    }
+                }
+                break;
+
+            case ZR_LSP_EDITOR_SCAN_LINE_COMMENT:
+                if (current == '\n') {
+                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                    state->escaped = ZR_FALSE;
+                }
+                break;
+
+            case ZR_LSP_EDITOR_SCAN_BLOCK_COMMENT:
+                if (current == '*' && index + 1 < endOffset && content[index + 1] == '/') {
+                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                    state->escaped = ZR_FALSE;
+                    index++;
+                }
+                break;
+
+            case ZR_LSP_EDITOR_SCAN_STRING:
+                if (state->escaped) {
+                    state->escaped = ZR_FALSE;
+                } else if (current == '\\') {
+                    state->escaped = ZR_TRUE;
+                } else if (current == '"' || current == '\n' || current == '\r') {
+                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                }
+                break;
+
+            case ZR_LSP_EDITOR_SCAN_CHAR:
+                if (state->escaped) {
+                    state->escaped = ZR_FALSE;
+                } else if (current == '\\') {
+                    state->escaped = ZR_TRUE;
+                } else if (current == '\'' || current == '\n' || current == '\r') {
+                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                }
+                break;
+
+            case ZR_LSP_EDITOR_SCAN_TEMPLATE_STRING:
+                if (state->escaped) {
+                    state->escaped = ZR_FALSE;
+                } else if (current == '\\') {
+                    state->escaped = ZR_TRUE;
+                } else if (current == '`') {
+                    state->mode = ZR_LSP_EDITOR_SCAN_CODE;
+                }
+                break;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+TZrBool lsp_editor_offset_is_code(const TZrChar *content,
+                                  TZrSize contentLength,
+                                  TZrSize offset) {
+    SZrLspEditorScanState scanState = {ZR_LSP_EDITOR_SCAN_CODE, ZR_FALSE};
+
+    if (content == ZR_NULL || offset > contentLength) {
+        return ZR_FALSE;
+    }
+    if (!lsp_editor_scan_structural_chars(content,
+                                          contentLength,
+                                          0,
+                                          offset,
+                                          &scanState,
+                                          ZR_NULL,
+                                          ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    return scanState.mode == ZR_LSP_EDITOR_SCAN_CODE;
+}
+
 static TZrBool lsp_text_builder_append_indent(SZrLspTextBuilder *builder, TZrInt32 indentLevel) {
     for (TZrInt32 level = 0; level < indentLevel; level++) {
         if (!lsp_text_builder_append_range(builder, "    ", 4)) {
@@ -299,17 +417,52 @@ TZrBool lsp_editor_append_text_edit(SZrState *state,
     return ZR_TRUE;
 }
 
-static TZrInt32 lsp_editor_indent_before_offset(const TZrChar *content, TZrSize offset) {
-    TZrInt32 indent = 0;
+typedef struct SZrLspIndentScanData {
+    TZrInt32 *indent;
+} SZrLspIndentScanData;
 
-    for (TZrSize index = 0; content != ZR_NULL && index < offset; index++) {
-        if (content[index] == '{') {
-            indent++;
-        } else if (content[index] == '}' && indent > 0) {
-            indent--;
-        }
+static TZrBool lsp_editor_indent_scan_callback(TZrChar value, TZrSize offset, void *userData) {
+    SZrLspIndentScanData *data = (SZrLspIndentScanData *)userData;
+
+    ZR_UNUSED_PARAMETER(offset);
+    if (data == ZR_NULL || data->indent == ZR_NULL) {
+        return ZR_FALSE;
     }
 
+    if (value == '{') {
+        (*data->indent)++;
+    } else if (value == '}' && *data->indent > 0) {
+        (*data->indent)--;
+    }
+    return ZR_TRUE;
+}
+
+static TZrInt32 lsp_editor_indent_before_offset(const TZrChar *content,
+                                                TZrSize contentLength,
+                                                TZrSize offset,
+                                                SZrLspEditorScanState *scanState) {
+    TZrInt32 indent = 0;
+    SZrLspIndentScanData data;
+
+    if (scanState != ZR_NULL) {
+        scanState->mode = ZR_LSP_EDITOR_SCAN_CODE;
+        scanState->escaped = ZR_FALSE;
+    }
+    if (content == ZR_NULL) {
+        return indent;
+    }
+    if (offset > contentLength) {
+        offset = contentLength;
+    }
+
+    data.indent = &indent;
+    (void)lsp_editor_scan_structural_chars(content,
+                                           contentLength,
+                                           0,
+                                           offset,
+                                           scanState,
+                                           lsp_editor_indent_scan_callback,
+                                           &data);
     return indent;
 }
 
@@ -321,6 +474,7 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
     SZrLspTextBuilder builder = {0};
     TZrSize cursor;
     TZrInt32 indent;
+    SZrLspEditorScanState scanState;
 
     if (outLength != ZR_NULL) {
         *outLength = 0;
@@ -335,7 +489,7 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
         endOffset = startOffset;
     }
 
-    indent = lsp_editor_indent_before_offset(content, startOffset);
+    indent = lsp_editor_indent_before_offset(content, contentLength, startOffset, &scanState);
     cursor = startOffset;
     while (cursor < endOffset) {
         TZrSize lineStart = cursor;
@@ -343,7 +497,6 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
         TZrSize trimStart;
         TZrSize trimEnd;
         TZrBool hasNewline;
-        TZrBool leadingClose = ZR_FALSE;
 
         while (lineEnd < endOffset && content[lineEnd] != '\n') {
             lineEnd++;
@@ -365,11 +518,14 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
         }
 
         if (trimStart < trimEnd) {
-            if (content[trimStart] == '}') {
-                leadingClose = ZR_TRUE;
+            TZrSize scanStart = trimStart;
+            SZrLspIndentScanData data;
+
+            if (scanState.mode == ZR_LSP_EDITOR_SCAN_CODE && content[trimStart] == '}') {
                 if (indent > 0) {
                     indent--;
                 }
+                scanStart++;
             }
 
             if (!lsp_text_builder_append_indent(&builder, indent) ||
@@ -378,18 +534,26 @@ static TZrChar *lsp_editor_format_segment(const TZrChar *content,
                 return ZR_NULL;
             }
 
-            for (TZrSize index = trimStart; index < trimEnd; index++) {
-                if (content[index] == '{') {
-                    indent++;
-                } else if (content[index] == '}' && !(leadingClose && index == trimStart) && indent > 0) {
-                    indent--;
-                }
+            data.indent = &indent;
+            if (!lsp_editor_scan_structural_chars(content,
+                                                  contentLength,
+                                                  scanStart,
+                                                  trimEnd,
+                                                  &scanState,
+                                                  lsp_editor_indent_scan_callback,
+                                                  &data)) {
+                free(builder.data);
+                return ZR_NULL;
             }
         }
 
         if (hasNewline && !lsp_text_builder_append_char(&builder, '\n')) {
             free(builder.data);
             return ZR_NULL;
+        }
+        if (hasNewline && scanState.mode == ZR_LSP_EDITOR_SCAN_LINE_COMMENT) {
+            scanState.mode = ZR_LSP_EDITOR_SCAN_CODE;
+            scanState.escaped = ZR_FALSE;
         }
         cursor = hasNewline ? lineEnd + 1 : lineEnd;
     }

@@ -308,9 +308,7 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     ZrParser_InferredType_Init(cs->state, &rightType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(cs->state, &resultType, ZR_VALUE_TYPE_OBJECT);
     TZrBool hasTypeInfo = ZR_FALSE;
-    if (cs->typeEnv != ZR_NULL &&
-        !expression_uses_dynamic_object_access(left) &&
-        !expression_uses_dynamic_object_access(right)) {
+    if (cs->typeEnv != ZR_NULL) {
         if (ZrParser_ExpressionType_Infer(cs, left, &leftType) && ZrParser_ExpressionType_Infer(cs, right, &rightType)) {
             hasTypeInfo = ZR_TRUE;
             effectiveLeftType = leftType.baseType;
