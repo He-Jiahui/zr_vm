@@ -686,6 +686,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
 
 static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_field_get_from_entry_fast(
         SZrState *state,
+        SZrFunction *function,
         SZrFunctionCallSiteCacheEntry *entry,
         const SZrTypeValue *receiver,
         SZrTypeValue *result,
@@ -728,6 +729,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_
         return ZR_FALSE;
     }
 
+    execution_member_dispatch_refresh_instance_field_pic_slot(state, function, slot, receiverObject, pair);
     sourceValue = &pair->value;
     if (ZR_UNLIKELY(recordHelpers)) {
         runtime->helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]++;
@@ -746,6 +748,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_
 
 static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_instance_field_get_from_entry_fast(
         SZrState *state,
+        SZrFunction *function,
         SZrFunctionCallSiteCacheEntry *entry,
         const SZrTypeValue *receiver,
         SZrTypeValue *result,
@@ -782,6 +785,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_inst
         return ZR_FALSE;
     }
 
+    execution_member_dispatch_refresh_instance_field_pic_slot(state, function, slot, receiverObject, pair);
     sourceValue = &pair->value;
     if (ZR_UNLIKELY(recordHelpers)) {
         runtime->helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]++;
@@ -856,6 +860,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair
 
 static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_field_set_from_entry_fast(
         SZrState *state,
+        SZrFunction *function,
         SZrFunctionCallSiteCacheEntry *entry,
         const SZrTypeValue *receiver,
         const SZrTypeValue *assignedValue,
@@ -899,6 +904,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_
         return ZR_FALSE;
     }
 
+    execution_member_dispatch_refresh_instance_field_pic_slot(state, function, slot, receiverObject, pair);
     if (assignedValue->isGarbageCollectable && assignedValue->value.object != ZR_NULL) {
         stableAssignedValue = *assignedValue;
         execution_member_dispatch_refresh_forwarded_assigned_value(&stableAssignedValue);
@@ -933,6 +939,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_
 
 static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_instance_field_set_from_entry_fast(
         SZrState *state,
+        SZrFunction *function,
         SZrFunctionCallSiteCacheEntry *entry,
         const SZrTypeValue *receiver,
         const SZrTypeValue *assignedValue,
@@ -970,6 +977,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_inst
         return ZR_FALSE;
     }
 
+    execution_member_dispatch_refresh_instance_field_pic_slot(state, function, slot, receiverObject, pair);
     if (assignedValue->isGarbageCollectable && assignedValue->value.object != ZR_NULL) {
         stableAssignedValue = *assignedValue;
         execution_member_dispatch_refresh_forwarded_assigned_value(&stableAssignedValue);
@@ -1708,7 +1716,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                               recordHelpers)) ||                                                                      \
                      (entry__ != ZR_NULL &&                                                                            \
                       execution_member_try_dispatch_same_prototype_instance_field_get_from_entry_fast(                 \
-                              state, entry__, opA, destination, profileRuntime, recordHelpers)) ||                    \
+                              state, currentFunction, entry__, opA, destination, profileRuntime, recordHelpers)) ||   \
                      execution_member_get_cached_stack_receiver(                                                        \
                              state, programCounter, currentFunction, B1(instruction), opA, destination))) {           \
             memberName__ = execution_resolve_cached_member_symbol(                                                     \
@@ -1735,9 +1743,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                           (execution_member_try_dispatch_exact_receiver_pair_get_from_entry_fast(                      \
                                    state, entry__, opA, destination, profileRuntime, recordHelpers) ||                \
                            execution_member_try_dispatch_same_prototype_hot_field_get_from_entry_fast(                 \
-                                   state, entry__, opA, destination, profileRuntime, recordHelpers) ||                \
+                                   state, currentFunction, entry__, opA, destination, profileRuntime, recordHelpers) || \
                            execution_member_try_dispatch_same_prototype_instance_field_get_from_entry_fast(            \
-                                   state, entry__, opA, destination, profileRuntime, recordHelpers))))) {             \
+                                   state, currentFunction, entry__, opA, destination, profileRuntime, recordHelpers))))) { \
             EXECUTE_GET_MEMBER_SLOT_BODY();                                                                            \
         }                                                                                                              \
     } while (0)
@@ -1769,7 +1777,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                              recordHelpers) ||                                                                        \
                      (entry__ != ZR_NULL &&                                                                            \
                       execution_member_try_dispatch_same_prototype_instance_field_set_from_entry_fast(                 \
-                              state, entry__, opA, destination, profileRuntime, recordHelpers)) ||                    \
+                              state, currentFunction, entry__, opA, destination, profileRuntime, recordHelpers)) ||   \
                      execution_member_set_cached_stack_receiver(                                                       \
                              state, programCounter, currentFunction, B1(instruction), opA, destination))) {           \
             if (execution_resolve_cached_member_symbol(                                                                \
@@ -1792,9 +1800,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                           (execution_member_try_dispatch_exact_receiver_pair_set_from_entry_fast(                      \
                                    state, entry__, opA, destination, profileRuntime, recordHelpers) ||                \
                            execution_member_try_dispatch_same_prototype_hot_field_set_from_entry_fast(                 \
-                                   state, entry__, opA, destination, profileRuntime, recordHelpers) ||                \
+                                   state, currentFunction, entry__, opA, destination, profileRuntime, recordHelpers) || \
                            execution_member_try_dispatch_same_prototype_instance_field_set_from_entry_fast(            \
-                                   state, entry__, opA, destination, profileRuntime, recordHelpers))))) {             \
+                                   state, currentFunction, entry__, opA, destination, profileRuntime, recordHelpers))))) { \
             EXECUTE_SET_MEMBER_SLOT_BODY();                                                                            \
         }                                                                                                              \
     } while (0)

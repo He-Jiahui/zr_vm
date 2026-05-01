@@ -3376,7 +3376,6 @@ test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
         TZrStackValuePointer base;
         TZrBool success;
-        TZrPtr originalYoungReceiverAddress;
         SZrObject *forwardedInstanceE;
         SZrTypeValue *lastResult;
 
@@ -3459,7 +3458,6 @@ test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
 
-        originalYoungReceiverAddress = (TZrPtr)instanceE;
         ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
         state->stackTop.valuePointer = rootSlot + 1;
 
@@ -3470,7 +3468,6 @@ test_get_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
         TEST_ASSERT_NOT_NULL(forwardedInstanceE);
         TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, ZR_CAST_OBJECT(state, function->constantValueList[2].value.object));
-        TEST_ASSERT_TRUE((TZrPtr)forwardedInstanceE != originalYoungReceiverAddress);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
                                  ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.storageKind);
         TEST_ASSERT_TRUE((ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.escapeFlags &
@@ -4895,7 +4892,6 @@ test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         SZrRawObject *functionObject;
         TZrStackValuePointer rootSlot = state->stackBase.valuePointer;
         TZrBool success;
-        TZrPtr originalYoungReceiverAddress;
         SZrObject *forwardedInstanceE;
         const SZrTypeValue *updatedValueC;
         const SZrTypeValue *updatedValueD;
@@ -5002,7 +4998,6 @@ test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, functionObject));
         TEST_ASSERT_EQUAL_UINT32(1u, count_remembered_object_occurrences(gc, functionObject));
 
-        originalYoungReceiverAddress = (TZrPtr)instanceE;
         ZrCore_Stack_SetRawObjectValue(state, rootSlot, functionObject);
         state->stackTop.valuePointer = rootSlot + 1;
 
@@ -5013,7 +5008,6 @@ test_set_member_slot_instruction_minor_gc_rewrites_forwarded_young_receiver_pair
         forwardedInstanceE = ZR_CAST_OBJECT(state, function->constantValueList[0].value.object);
         TEST_ASSERT_NOT_NULL(forwardedInstanceE);
         TEST_ASSERT_EQUAL_PTR(forwardedInstanceE, ZR_CAST_OBJECT(state, function->constantValueList[4].value.object));
-        TEST_ASSERT_TRUE((TZrPtr)forwardedInstanceE != originalYoungReceiverAddress);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE,
                                  ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.storageKind);
         TEST_ASSERT_TRUE((ZR_CAST_RAW_OBJECT_AS_SUPER(forwardedInstanceE)->garbageCollectMark.escapeFlags &

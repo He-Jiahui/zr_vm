@@ -162,6 +162,36 @@ static ZR_FORCE_INLINE SZrHashKeyValuePair **execution_member_dispatch_hot_field
     return ZR_NULL;
 }
 
+static ZR_FORCE_INLINE void execution_member_dispatch_refresh_instance_field_pic_slot(
+        SZrState *state,
+        SZrFunction *function,
+        SZrFunctionCallSitePicSlot *slot,
+        SZrObject *receiverObject,
+        SZrHashKeyValuePair *pair) {
+    if (slot == ZR_NULL || receiverObject == ZR_NULL || pair == ZR_NULL ||
+        (EZrFunctionCallSitePicAccessKind)slot->cachedAccessKind !=
+                ZR_FUNCTION_CALLSITE_PIC_ACCESS_KIND_INSTANCE_FIELD) {
+        return;
+    }
+
+    if (slot->cachedReceiverObject == receiverObject && slot->cachedReceiverPair == pair) {
+        return;
+    }
+
+    slot->cachedReceiverObject = receiverObject;
+    slot->cachedReceiverPair = pair;
+    if (slot->cachedReceiverPrototype != ZR_NULL) {
+        slot->cachedReceiverVersion = slot->cachedReceiverPrototype->super.memberVersion;
+    }
+    if (slot->cachedOwnerPrototype != ZR_NULL) {
+        slot->cachedOwnerVersion = slot->cachedOwnerPrototype->super.memberVersion;
+    }
+    if (state != ZR_NULL && function != ZR_NULL) {
+        ZrCore_RawObject_Barrier(
+                state, ZR_CAST_RAW_OBJECT_AS_SUPER(function), ZR_CAST_RAW_OBJECT_AS_SUPER(receiverObject));
+    }
+}
+
 static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_exact_receiver_pair_get_hot_fast(
         SZrState *state,
         SZrFunction *function,
@@ -324,6 +354,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_
         return ZR_FALSE;
     }
 
+    execution_member_dispatch_refresh_instance_field_pic_slot(state, function, slot, receiverObject, pair);
     sourceValue = &pair->value;
     if (ZR_UNLIKELY(recordHelpers)) {
         runtime->helperCounts[ZR_PROFILE_HELPER_GET_MEMBER]++;
@@ -464,6 +495,7 @@ static ZR_FORCE_INLINE TZrBool execution_member_try_dispatch_same_prototype_hot_
         return ZR_FALSE;
     }
 
+    execution_member_dispatch_refresh_instance_field_pic_slot(state, function, slot, receiverObject, pair);
     if (assignedValue->isGarbageCollectable && assignedValue->value.object != ZR_NULL) {
         stableAssignedValue = *assignedValue;
         execution_member_dispatch_refresh_forwarded_assigned_value(&stableAssignedValue);

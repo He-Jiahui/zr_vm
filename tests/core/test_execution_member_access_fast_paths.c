@@ -2093,6 +2093,7 @@ static void test_member_set_cached_instance_field_pair_non_hidden_slow_lane_does
     assignedObject = ZrCore_Object_New(state, ZR_NULL);
     TEST_ASSERT_NOT_NULL(assignedObject);
     ZrCore_Object_Init(state, assignedObject);
+    ZrCore_Value_ResetAsNull(&assignedValue);
     TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
             state, &assignedValue, ZR_CAST_RAW_OBJECT_AS_SUPER(assignedObject)));
 
@@ -2159,6 +2160,7 @@ static void test_member_set_cached_exact_receiver_object_non_hidden_slow_lane_do
     assignedObject = ZrCore_Object_New(state, ZR_NULL);
     TEST_ASSERT_NOT_NULL(assignedObject);
     ZrCore_Object_Init(state, assignedObject);
+    ZrCore_Value_ResetAsNull(&assignedValue);
     TEST_ASSERT_TRUE(ZrCore_Ownership_InitUniqueValue(
             state, &assignedValue, ZR_CAST_RAW_OBJECT_AS_SUPER(assignedObject)));
 
