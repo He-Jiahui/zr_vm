@@ -3086,6 +3086,148 @@ static void test_current_token_location_tracks_crlf_and_multiline_template_range
     TEST_DIVIDER();
 }
 
+static void test_parser_cursor_restore_preserves_identifier_reference_locations(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Parser Cursor Restore Identifier Location Tracking";
+    const char *source =
+            "var seed = 0.0;\n"
+            "helper(seed: float) {\n"
+            "    var localValue = seed + 1.0;\n"
+            "    return localValue;\n"
+            "}\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *functionNode;
+    SZrAstNode *blockNode;
+    SZrAstNode *varNode;
+    SZrAstNode *binaryNode;
+    SZrAstNode *seedRef;
+    SZrAstNode *returnNode;
+    SZrAstNode *localValueRef;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "cursor_restore_locations.zr", 27);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse cursor restore location source");
+        destroy_test_state(state);
+        return;
+    }
+
+    functionNode = get_script_statement(ast, 1);
+    TEST_ASSERT_NOT_NULL(functionNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, functionNode->type);
+    blockNode = functionNode->data.functionDeclaration.body;
+    TEST_ASSERT_NOT_NULL(blockNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BLOCK, blockNode->type);
+    TEST_ASSERT_TRUE(blockNode->data.block.body->count >= 2);
+
+    varNode = blockNode->data.block.body->nodes[0];
+    TEST_ASSERT_NOT_NULL(varNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, varNode->type);
+    binaryNode = varNode->data.variableDeclaration.value;
+    TEST_ASSERT_NOT_NULL(binaryNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BINARY_EXPRESSION, binaryNode->type);
+    seedRef = binaryNode->data.binaryExpression.left;
+    TEST_ASSERT_NOT_NULL(seedRef);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, seedRef->type);
+    assert_token_location_matches(&seedRef->location, 59u, 3, 22, 63u, 3, 26);
+
+    returnNode = blockNode->data.block.body->nodes[1];
+    TEST_ASSERT_NOT_NULL(returnNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_RETURN_STATEMENT, returnNode->type);
+    localValueRef = returnNode->data.returnStatement.expr;
+    TEST_ASSERT_NOT_NULL(localValueRef);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, localValueRef->type);
+    assert_token_location_matches(&localValueRef->location, 82u, 4, 12, 92u, 4, 22);
+
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
+static void test_parser_call_callee_locations_cover_identifier_text(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Parser Call Callee Location Tracking";
+    const char *source =
+            "callee(): void {}\n"
+            "use(): void {\n"
+            "    callee();\n"
+            "    swap<int>(slot);\n"
+            "}\n";
+    SZrState *state = create_test_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *useFunction;
+    SZrAstNode *blockNode;
+    SZrAstNode *plainCall;
+    SZrAstNode *genericCall;
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_ASSERT_NOT_NULL(state);
+    sourceName = ZrCore_String_Create(state, "call_callee_locations.zr", 24);
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        TEST_FAIL_CUSTOM(timer, testSummary, "Failed to parse call callee location source");
+        destroy_test_state(state);
+        return;
+    }
+
+    useFunction = get_script_statement(ast, 1);
+    TEST_ASSERT_NOT_NULL(useFunction);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_FUNCTION_DECLARATION, useFunction->type);
+    blockNode = useFunction->data.functionDeclaration.body;
+    TEST_ASSERT_NOT_NULL(blockNode);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BLOCK, blockNode->type);
+    TEST_ASSERT_TRUE(blockNode->data.block.body->count >= 2);
+
+    plainCall = unwrap_statement_expression(blockNode->data.block.body->nodes[0]);
+    TEST_ASSERT_NOT_NULL(plainCall);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, plainCall->type);
+    TEST_ASSERT_NOT_NULL(plainCall->data.primaryExpression.property);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, plainCall->data.primaryExpression.property->type);
+    assert_token_location_matches(&plainCall->data.primaryExpression.property->location,
+                                  36u,
+                                  3,
+                                  5,
+                                  42u,
+                                  3,
+                                  11);
+
+    genericCall = unwrap_statement_expression(blockNode->data.block.body->nodes[1]);
+    TEST_ASSERT_NOT_NULL(genericCall);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_PRIMARY_EXPRESSION, genericCall->type);
+    TEST_ASSERT_NOT_NULL(genericCall->data.primaryExpression.property);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_IDENTIFIER_LITERAL, genericCall->data.primaryExpression.property->type);
+    assert_token_location_matches(&genericCall->data.primaryExpression.property->location,
+                                  50u,
+                                  4,
+                                  5,
+                                  54u,
+                                  4,
+                                  9);
+
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 // 测试 break/continue 语句编译
 static void test_compiler_break_continue(void) {
     SZrTestTimer timer;
@@ -3279,6 +3421,8 @@ int main(void) {
     RUN_TEST(test_compiler_parenthesized_lambda_iife);
     RUN_TEST(test_compiler_lambda_crlf_debug_metadata);
     RUN_TEST(test_current_token_location_tracks_crlf_and_multiline_template_ranges);
+    RUN_TEST(test_parser_cursor_restore_preserves_identifier_reference_locations);
+    RUN_TEST(test_parser_call_callee_locations_cover_identifier_text);
     RUN_TEST(test_compiler_break_continue);
     RUN_TEST(test_compiler_out_statement);
     

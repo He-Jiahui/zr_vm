@@ -44,12 +44,20 @@ void save_parser_cursor(SZrParserState *ps, SZrParserCursor *cursor) {
     cursor->currentChar = ps->lexer->currentChar;
     cursor->lineNumber = ps->lexer->lineNumber;
     cursor->lastLine = ps->lexer->lastLine;
+    cursor->currentLineStartOffset = ps->lexer->currentLineStartOffset;
+    cursor->tokenStartOffset = ps->lexer->tokenStartOffset;
+    cursor->tokenStartLineStart = ps->lexer->tokenStartLineStart;
+    cursor->tokenStartLine = ps->lexer->tokenStartLine;
     cursor->token = ps->lexer->t;
     cursor->lookahead = ps->lexer->lookahead;
     cursor->lookaheadPos = ps->lexer->lookaheadPos;
     cursor->lookaheadChar = ps->lexer->lookaheadChar;
     cursor->lookaheadLine = ps->lexer->lookaheadLine;
     cursor->lookaheadLastLine = ps->lexer->lookaheadLastLine;
+    cursor->lookaheadCurrentLineStartOffset = ps->lexer->lookaheadCurrentLineStartOffset;
+    cursor->lookaheadTokenStartOffset = ps->lexer->lookaheadTokenStartOffset;
+    cursor->lookaheadTokenStartLineStart = ps->lexer->lookaheadTokenStartLineStart;
+    cursor->lookaheadTokenStartLine = ps->lexer->lookaheadTokenStartLine;
     cursor->hasError = ps->hasError;
     cursor->errorMessage = ps->errorMessage;
 }
@@ -63,12 +71,20 @@ void restore_parser_cursor(SZrParserState *ps, const SZrParserCursor *cursor) {
     ps->lexer->currentChar = cursor->currentChar;
     ps->lexer->lineNumber = cursor->lineNumber;
     ps->lexer->lastLine = cursor->lastLine;
+    ps->lexer->currentLineStartOffset = cursor->currentLineStartOffset;
+    ps->lexer->tokenStartOffset = cursor->tokenStartOffset;
+    ps->lexer->tokenStartLineStart = cursor->tokenStartLineStart;
+    ps->lexer->tokenStartLine = cursor->tokenStartLine;
     ps->lexer->t = cursor->token;
     ps->lexer->lookahead = cursor->lookahead;
     ps->lexer->lookaheadPos = cursor->lookaheadPos;
     ps->lexer->lookaheadChar = cursor->lookaheadChar;
     ps->lexer->lookaheadLine = cursor->lookaheadLine;
     ps->lexer->lookaheadLastLine = cursor->lookaheadLastLine;
+    ps->lexer->lookaheadCurrentLineStartOffset = cursor->lookaheadCurrentLineStartOffset;
+    ps->lexer->lookaheadTokenStartOffset = cursor->lookaheadTokenStartOffset;
+    ps->lexer->lookaheadTokenStartLineStart = cursor->lookaheadTokenStartLineStart;
+    ps->lexer->lookaheadTokenStartLine = cursor->lookaheadTokenStartLine;
     ps->hasError = cursor->hasError;
     ps->errorMessage = cursor->errorMessage;
 }
@@ -510,9 +526,42 @@ TZrSize get_current_token_length(SZrParserState *ps) {
     }
 }
 
+static TZrBool get_current_token_source_text(SZrParserState *ps, const TZrChar **text, TZrSize *length) {
+    static const TZrChar trueText[] = "true";
+    static const TZrChar falseText[] = "false";
+
+    if (text == ZR_NULL || length == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *text = ZR_NULL;
+    *length = 0;
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    switch (ps->lexer->t.token) {
+        case ZR_TK_IDENTIFIER:
+        case ZR_TK_INTEGER:
+        case ZR_TK_FLOAT:
+            get_string_view_for_length(ps->lexer->t.seminfo.stringValue, text, length);
+            return *text != ZR_NULL && *length > 0;
+
+        case ZR_TK_BOOLEAN:
+            *text = ps->lexer->t.seminfo.booleanValue ? trueText : falseText;
+            *length = ps->lexer->t.seminfo.booleanValue ? 4 : 5;
+            return ZR_TRUE;
+
+        default:
+            return ZR_FALSE;
+    }
+}
+
 SZrFileRange get_current_token_location(SZrParserState *ps) {
     TZrSize endOffset;
     TZrSize startOffset;
+    TZrSize tokenLength;
+    const TZrChar *tokenText = ZR_NULL;
     SZrFilePosition start;
     SZrFilePosition end;
 
@@ -531,6 +580,18 @@ SZrFileRange get_current_token_location(SZrParserState *ps) {
     startOffset = ps->lexer->tokenStartOffset;
     if (startOffset > endOffset) {
         startOffset = endOffset;
+    }
+    if (get_current_token_source_text(ps, &tokenText, &tokenLength) &&
+        ps->lexer->source != ZR_NULL &&
+        startOffset + tokenLength <= ps->lexer->sourceLength &&
+        memcmp(ps->lexer->source + startOffset, tokenText, tokenLength) == 0) {
+        endOffset = startOffset + tokenLength;
+    } else if (tokenText != ZR_NULL &&
+               tokenLength > 0 &&
+               ps->lexer->source != ZR_NULL &&
+               endOffset >= tokenLength &&
+               memcmp(ps->lexer->source + endOffset - tokenLength, tokenText, tokenLength) == 0) {
+        startOffset = endOffset - tokenLength;
     }
 
     start = file_position_create_from_cached_line(startOffset,

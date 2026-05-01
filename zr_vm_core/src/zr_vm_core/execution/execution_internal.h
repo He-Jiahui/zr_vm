@@ -595,11 +595,11 @@ ZR_CORE_API TZrInt64 value_to_int64(const SZrTypeValue *value);
 TZrUInt64 value_to_uint64(const SZrTypeValue *value);
 TZrDouble value_to_double(const SZrTypeValue *value);
 
-TZrBool concat_values_to_destination(SZrState *state,
-                                     SZrTypeValue *outResult,
-                                     const SZrTypeValue *opA,
-                                     const SZrTypeValue *opB,
-                                     TZrBool safeMode);
+ZR_CORE_API TZrBool concat_values_to_destination(SZrState *state,
+                                                 SZrTypeValue *outResult,
+                                                 const SZrTypeValue *opA,
+                                                 const SZrTypeValue *opB,
+                                                 TZrBool safeMode);
 ZR_CORE_API TZrBool try_builtin_add(SZrState *state,
                                     SZrTypeValue *outResult,
                                     const SZrTypeValue *opA,

@@ -22,6 +22,8 @@ related_code:
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/stdio/stdio_requests.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
@@ -34,6 +36,7 @@ related_code:
   - tests/container/test_container_type_inference.c
   - tests/container/test_container_runtime.c
   - tests/language_server/test_semantic_analyzer.c
+  - tests/parser/test_parser.c
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_project_features.c
   - tests/language_server/stdio_smoke.js
@@ -60,6 +63,8 @@ implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_support.c
   - zr_vm_language_server/src/zr_vm_language_server/reference_tracker.c
   - zr_vm_language_server/stdio/stdio_requests.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_state.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_typed_metadata.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_bindings.c
@@ -77,6 +82,7 @@ tests:
   - tests/container/test_container_type_inference.c
   - tests/container/test_container_runtime.c
   - tests/language_server/test_semantic_analyzer.c
+  - tests/parser/test_parser.c
   - tests/language_server/test_lsp_interface.c
   - tests/language_server/test_lsp_project_features.c
   - tests/language_server/descriptor_plugin_fixture_int.c
@@ -96,6 +102,19 @@ doc_type: module-detail
 2. hover / definition / references 不能再被宽范围声明误导，必须优先命中最具体的引用范围。
 3. `%import("module")` 的字符串字面量必须成为一等导航目标，hover / definition 直接落在导入目标模块上。
 4. `%import("zr.math")` 这类导入必须在语义分析阶段就把 native/binary/source module metadata 预热进 parser/type inference，后续 LSP 才能正确解析 `$math.Vector3(...).y` 这类值类型构造链。
+
+## Parser Token Range Invariant
+
+LSP hover / definition / references ultimately depend on AST token ranges matching the actual source token, not just the surrounding statement. The parser now preserves the full lexer location snapshot in `SZrParserCursor`, including current-line start, current-token start, and cached lookahead token-start fields. This matters whenever speculative parsing probes a type expression before falling back to an ordinary expression: restoring only `currentPos` and `t` can leave later identifier references collapsed to the end of the token.
+
+`get_current_token_location(...)` also uses the token's actual source text for identifiers, numbers, and booleans when the lexer cursor under-reports the end of a token. The fallback is intentionally limited to source-backed token kinds so multiline template/string ranges keep using lexer cursor spans.
+
+Regression coverage lives in `tests/parser/test_parser.c`:
+
+- `test_parser_cursor_restore_preserves_identifier_reference_locations`
+- `test_parser_call_callee_locations_cover_identifier_text`
+
+Those parser tests protect the lower-layer ranges that `tests/language_server/test_semantic_analyzer.c` then consumes for scoped local hover, callable hover, generic callable signatures, and reference lookup.
 
 ## 隐式接收者符号
 
