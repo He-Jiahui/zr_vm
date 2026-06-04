@@ -26,22 +26,27 @@ static const TZrChar *compound_assignment_base_operator(const TZrChar *op) {
     return ZR_NULL;
 }
 
-static TZrBool compile_type_cast_source_satisfies(SZrCompilerState *cs,
-                                                  SZrAstNode *expression,
-                                                  TZrBool (*predicate)(EZrValueType)) {
+static TZrBool compile_type_cast_try_infer_source_base_type(SZrCompilerState *cs,
+                                                            SZrAstNode *expression,
+                                                            EZrValueType *outBaseType) {
     SZrInferredType sourceType;
-    TZrBool canReuse = ZR_FALSE;
+    TZrBool hasTypeInfo;
 
-    if (cs == ZR_NULL || expression == ZR_NULL || predicate == ZR_NULL) {
+    if (outBaseType != ZR_NULL) {
+        *outBaseType = ZR_VALUE_TYPE_OBJECT;
+    }
+
+    if (cs == ZR_NULL || expression == ZR_NULL || outBaseType == ZR_NULL) {
         return ZR_FALSE;
     }
 
     ZrParser_InferredType_Init(cs->state, &sourceType, ZR_VALUE_TYPE_OBJECT);
-    if (ZrParser_ExpressionType_Infer(cs, expression, &sourceType)) {
-        canReuse = predicate(sourceType.baseType);
+    hasTypeInfo = ZrParser_ExpressionType_Infer(cs, expression, &sourceType);
+    if (hasTypeInfo) {
+        *outBaseType = sourceType.baseType;
     }
     ZrParser_InferredType_Free(cs->state, &sourceType);
-    return canReuse;
+    return hasTypeInfo;
 }
 
 static TZrBool compile_type_cast_is_signed_int(EZrValueType type) {
@@ -83,6 +88,8 @@ static EZrInstructionCode compile_assignment_select_compound_opcode(SZrCompilerS
 }
 
 static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
+    EZrInstructionCode logicalNotOpcode;
+
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
     }
@@ -108,9 +115,16 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
         TZrUInt32 argSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
         
         if (strcmp(op, "!") == 0) {
+            EZrValueType argType = ZR_VALUE_TYPE_OBJECT;
+
+            logicalNotOpcode = ZR_INSTRUCTION_ENUM(LOGICAL_NOT);
+            if (compiler_try_infer_expression_base_type(cs, arg, &argType) && ZR_VALUE_IS_TYPE_BOOL(argType)) {
+                logicalNotOpcode = ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL);
+            }
+
             // 逻辑非
             TZrInstruction inst = create_instruction_2(
-                    ZR_INSTRUCTION_ENUM(LOGICAL_NOT),
+                    logicalNotOpcode,
                     ZR_COMPILE_SLOT_U16(destSlot),
                     ZR_COMPILE_SLOT_U16(argSlot),
                     0);
@@ -124,9 +138,20 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
                     0);
             emit_instruction(cs, inst);
         } else if (strcmp(op, "-") == 0) {
+            EZrValueType argType = ZR_VALUE_TYPE_OBJECT;
+            EZrInstructionCode negOpcode = ZR_INSTRUCTION_ENUM(NEG);
+
+            if (compiler_try_infer_expression_base_type(cs, arg, &argType)) {
+                if (ZR_VALUE_IS_TYPE_SIGNED_INT(argType)) {
+                    negOpcode = ZR_INSTRUCTION_ENUM(NEG_SIGNED);
+                } else if (ZR_VALUE_IS_TYPE_FLOAT(argType)) {
+                    negOpcode = ZR_INSTRUCTION_ENUM(NEG_FLOAT);
+                }
+            }
+
             // 取负
             TZrInstruction inst = create_instruction_2(
-                    ZR_INSTRUCTION_ENUM(NEG),
+                    negOpcode,
                     ZR_COMPILE_SLOT_U16(destSlot),
                     ZR_COMPILE_SLOT_U16(argSlot),
                     0);
@@ -180,6 +205,10 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
         SZrString *typeName = targetType->name->data.identifier.name;
         TZrNativeString typeNameStr;
         TZrSize nameLen;
+        EZrValueType sourceBaseType = ZR_VALUE_TYPE_OBJECT;
+        TZrBool hasSourceTypeInfo;
+
+        hasSourceTypeInfo = compile_type_cast_try_infer_source_base_type(cs, expression, &sourceBaseType);
         
         if (typeName->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
             typeNameStr = ZrCore_String_GetNativeStringShort(typeName);
@@ -191,31 +220,55 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
         
         // 检查基本类型
         if (nameLen == 3 && strncmp(typeNameStr, "int", 3) == 0) {
-            if (compile_type_cast_source_satisfies(cs, expression, compile_type_cast_is_signed_int)) {
+            if (hasSourceTypeInfo && compile_type_cast_is_signed_int(sourceBaseType)) {
                 collapse_stack_to_slot(cs, srcSlot);
+                return;
+            }
+            if (hasSourceTypeInfo && compile_type_cast_is_float(sourceBaseType)) {
+                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT_FLOAT));
+                return;
+            }
+            if (hasSourceTypeInfo && compile_type_cast_is_unsigned_int(sourceBaseType)) {
+                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED));
                 return;
             }
             // 转换为 int
             emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_INT));
             return;
         } else if (nameLen == 4 && strncmp(typeNameStr, "uint", 4) == 0) {
-            if (compile_type_cast_source_satisfies(cs, expression, compile_type_cast_is_unsigned_int)) {
+            if (hasSourceTypeInfo && compile_type_cast_is_unsigned_int(sourceBaseType)) {
                 collapse_stack_to_slot(cs, srcSlot);
+                return;
+            }
+            if (hasSourceTypeInfo && compile_type_cast_is_float(sourceBaseType)) {
+                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT));
+                return;
+            }
+            if (hasSourceTypeInfo && compile_type_cast_is_signed_int(sourceBaseType)) {
+                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED));
                 return;
             }
             // 转换为 uint
             emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_UINT));
             return;
         } else if (nameLen == 5 && strncmp(typeNameStr, "float", 5) == 0) {
-            if (compile_type_cast_source_satisfies(cs, expression, compile_type_cast_is_float)) {
+            if (hasSourceTypeInfo && compile_type_cast_is_float(sourceBaseType)) {
                 collapse_stack_to_slot(cs, srcSlot);
+                return;
+            }
+            if (hasSourceTypeInfo && compile_type_cast_is_signed_int(sourceBaseType)) {
+                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED));
+                return;
+            }
+            if (hasSourceTypeInfo && compile_type_cast_is_unsigned_int(sourceBaseType)) {
+                emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED));
                 return;
             }
             // 转换为 float
             emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_FLOAT));
             return;
         } else if (nameLen == 6 && strncmp(typeNameStr, "string", 6) == 0) {
-            if (compile_type_cast_source_satisfies(cs, expression, compile_type_cast_is_string)) {
+            if (hasSourceTypeInfo && compile_type_cast_is_string(sourceBaseType)) {
                 collapse_stack_to_slot(cs, srcSlot);
                 return;
             }
@@ -223,7 +276,7 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
             emit_type_conversion(cs, destSlot, srcSlot, ZR_INSTRUCTION_ENUM(TO_STRING));
             return;
         } else if (nameLen == 4 && strncmp(typeNameStr, "bool", 4) == 0) {
-            if (compile_type_cast_source_satisfies(cs, expression, compile_type_cast_is_bool)) {
+            if (hasSourceTypeInfo && compile_type_cast_is_bool(sourceBaseType)) {
                 collapse_stack_to_slot(cs, srcSlot);
                 return;
             }
@@ -561,6 +614,70 @@ static TZrUInt32 assignment_target_direct_local_slot(SZrCompilerState *cs, SZrAs
     return find_local_var(cs, node->data.identifier.name);
 }
 
+static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
+                                                    TZrUInt32 stackSlot,
+                                                    SZrString *fieldTypeName) {
+    SZrTypePrototypeInfo *prototypeInfo;
+    SZrInferredType fieldType;
+    TZrBool ok;
+
+    if (cs == ZR_NULL || stackSlot == ZR_PARSER_SLOT_NONE || fieldTypeName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    prototypeInfo = find_compiler_type_prototype(cs, fieldTypeName);
+    if (prototypeInfo == ZR_NULL || prototypeInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+        return ZR_TRUE;
+    }
+
+    ZrParser_InferredType_InitFull(cs->state, &fieldType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, fieldTypeName);
+    ok = compiler_register_stack_slot_type_hint(cs, stackSlot, &fieldType);
+    ZrParser_InferredType_Free(cs->state, &fieldType);
+    return ok;
+}
+
+typedef struct SZrAssignmentInlineStructParentWriteback {
+    TZrUInt32 parentSlot;
+    TZrUInt32 childSlot;
+    TZrUInt32 memberId;
+    SZrFileRange location;
+} SZrAssignmentInlineStructParentWriteback;
+
+#define ZR_ASSIGNMENT_INLINE_STRUCT_WRITEBACK_MAX 32u
+
+static TZrBool assignment_field_type_is_inline_struct(SZrCompilerState *cs, SZrString *fieldTypeName) {
+    SZrTypePrototypeInfo *prototypeInfo;
+
+    if (cs == ZR_NULL || fieldTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    prototypeInfo = find_compiler_type_prototype(cs, fieldTypeName);
+    return (TZrBool)(prototypeInfo != ZR_NULL && prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT);
+}
+
+static TZrBool emit_assignment_inline_struct_writebacks(
+        SZrCompilerState *cs,
+        const SZrAssignmentInlineStructParentWriteback *writebacks,
+        TZrSize writebackCount) {
+    if (cs == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = writebackCount; index > 0u; index--) {
+        const SZrAssignmentInlineStructParentWriteback *writeback = &writebacks[index - 1u];
+        if (!emit_member_slot_set(cs,
+                                  writeback->childSlot,
+                                  writeback->parentSlot,
+                                  writeback->memberId,
+                                  writeback->location)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                                                        SZrPrimaryExpression *primary,
                                                        TZrUInt32 *outObjectSlot,
@@ -568,7 +685,10 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                                                        TZrBool *ioRootIsTypeReference,
                                                        EZrOwnershipQualifier *ioRootOwnershipQualifier,
                                                        TZrBool *outUsesSuperLookup,
-                                                       TZrUInt32 *outSuperReceiverSlot) {
+                                                       TZrUInt32 *outSuperReceiverSlot,
+                                                       SZrAssignmentInlineStructParentWriteback *writebacks,
+                                                       TZrSize writebackCapacity,
+                                                       TZrSize *outWritebackCount) {
     TZrUInt32 currentSlot;
     SZrString *rootTypeName;
     TZrBool rootIsTypeReference;
@@ -585,6 +705,9 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
     }
     if (outSuperReceiverSlot != ZR_NULL) {
         *outSuperReceiverSlot = ZR_PARSER_SLOT_NONE;
+    }
+    if (outWritebackCount != ZR_NULL) {
+        *outWritebackCount = 0u;
     }
 
     if (primary->property == ZR_NULL) {
@@ -615,12 +738,19 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
         rootIsTypeReference = ZR_FALSE;
         usesSuperLookup = ZR_TRUE;
     } else {
-        ZrParser_Expression_Compile(cs, primary->property);
-        if (cs->hasError) {
-            return ZR_FALSE;
-        }
+        TZrUInt32 directLocalSlot = primary->members != ZR_NULL && primary->members->count > 1u
+                                            ? assignment_target_direct_local_slot(cs, primary->property)
+                                            : ZR_PARSER_SLOT_NONE;
+        if (directLocalSlot != ZR_PARSER_SLOT_NONE) {
+            currentSlot = directLocalSlot;
+        } else {
+            ZrParser_Expression_Compile(cs, primary->property);
+            if (cs->hasError) {
+                return ZR_FALSE;
+            }
 
-        currentSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+            currentSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+        }
 
         resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
         rootOwnershipQualifier = infer_expression_ownership_qualifier_local(cs, primary->property);
@@ -719,9 +849,34 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                 }
 
                 if (canEmitMemberSlot) {
-                    if (!emit_member_slot_get(cs, currentSlot, currentSlot, memberId, memberNode->location)) {
+                    TZrUInt32 parentSlot = currentSlot;
+                    SZrString *fieldTypeName = typeMember != ZR_NULL ? typeMember->fieldTypeName
+                                                                      : declaredFieldTypeName;
+                    TZrBool fieldIsInlineStruct = assignment_field_type_is_inline_struct(cs, fieldTypeName);
+                    TZrUInt32 destinationSlot = fieldIsInlineStruct ? allocate_stack_slot(cs) : currentSlot;
+
+                    if (!emit_member_slot_get(cs, destinationSlot, parentSlot, memberId, memberNode->location)) {
                         return ZR_FALSE;
                     }
+                    if (!note_inline_struct_field_result_slot(cs,
+                                                              destinationSlot,
+                                                              fieldTypeName)) {
+                        return ZR_FALSE;
+                    }
+                    if (fieldIsInlineStruct &&
+                        writebacks != ZR_NULL &&
+                        outWritebackCount != ZR_NULL) {
+                        if (*outWritebackCount >= writebackCapacity) {
+                            ZrParser_Compiler_Error(cs, "Too many nested struct fields in assignment target", memberNode->location);
+                            return ZR_FALSE;
+                        }
+                        writebacks[*outWritebackCount].parentSlot = parentSlot;
+                        writebacks[*outWritebackCount].childSlot = destinationSlot;
+                        writebacks[*outWritebackCount].memberId = memberId;
+                        writebacks[*outWritebackCount].location = memberNode->location;
+                        (*outWritebackCount)++;
+                    }
+                    currentSlot = destinationSlot;
                 } else {
                     emit_instruction(cs,
                                      create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
@@ -1002,6 +1157,8 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                         EZrOwnershipQualifier rootOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
                         TZrBool rootUsesSuperLookup = ZR_FALSE;
                         TZrUInt32 superReceiverSlot = ZR_PARSER_SLOT_NONE;
+                        SZrAssignmentInlineStructParentWriteback inlineWritebacks[ZR_ASSIGNMENT_INLINE_STRUCT_WRITEBACK_MAX];
+                        TZrSize inlineWritebackCount = 0u;
 
                         if (!compile_assignment_target_member_prefix(cs,
                                                                      primary,
@@ -1010,7 +1167,10 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                                                      &rootIsTypeReference,
                                                                      &rootOwnershipQualifier,
                                                                      &rootUsesSuperLookup,
-                                                                     &superReceiverSlot)) {
+                                                                     &superReceiverSlot,
+                                                                     inlineWritebacks,
+                                                                     ZR_ARRAY_COUNT(inlineWritebacks),
+                                                                     &inlineWritebackCount)) {
                             return;
                         }
 
@@ -1149,6 +1309,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                                     node->location)) {
                                             return;
                                         }
+                                        if (!emit_assignment_inline_struct_writebacks(cs,
+                                                                                      inlineWritebacks,
+                                                                                      inlineWritebackCount)) {
+                                            return;
+                                        }
                                     } else {
                                         TZrUInt32 leftValueSlot = allocate_stack_slot(cs);
                                         if (!emit_member_slot_get(
@@ -1176,6 +1341,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                                     node->location)) {
                                             return;
                                         }
+                                        if (!emit_assignment_inline_struct_writebacks(cs,
+                                                                                      inlineWritebacks,
+                                                                                      inlineWritebackCount)) {
+                                            return;
+                                        }
 
                                         ZrParser_Compiler_TrimStackBy(cs, 2); // leftValueSlot 和 resultSlot
                                     }
@@ -1188,6 +1358,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                     if (strcmp(op, "=") == 0) {
                                         TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), (TZrUInt16)rightSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
                                         emit_instruction(cs, setTableInst);
+                                        if (!emit_assignment_inline_struct_writebacks(cs,
+                                                                                      inlineWritebacks,
+                                                                                      inlineWritebackCount)) {
+                                            return;
+                                        }
                                     } else {
                                         TZrUInt32 leftValueSlot = allocate_stack_slot(cs);
                                         TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX), (TZrUInt16)leftValueSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
@@ -1203,6 +1378,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
 
                                         TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), (TZrUInt16)resultSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
                                         emit_instruction(cs, setTableInst);
+                                        if (!emit_assignment_inline_struct_writebacks(cs,
+                                                                                      inlineWritebacks,
+                                                                                      inlineWritebackCount)) {
+                                            return;
+                                        }
 
                                         ZrParser_Compiler_TrimStackBy(cs, 2); // leftValueSlot 和 resultSlot
                                     }
@@ -1218,6 +1398,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                 if (strcmp(op, "=") == 0) {
                                     TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), (TZrUInt16)rightSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
                                     emit_instruction(cs, setTableInst);
+                                    if (!emit_assignment_inline_struct_writebacks(cs,
+                                                                                  inlineWritebacks,
+                                                                                  inlineWritebackCount)) {
+                                        return;
+                                    }
                                 } else {
                                     TZrUInt32 leftValueSlot = allocate_stack_slot(cs);
                                     TZrInstruction getTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_BY_INDEX), (TZrUInt16)leftValueSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
@@ -1233,6 +1418,11 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
                                     
                                     TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX), (TZrUInt16)resultSlot, (TZrUInt16)objSlot, (TZrUInt16)keySlot);
                                     emit_instruction(cs, setTableInst);
+                                    if (!emit_assignment_inline_struct_writebacks(cs,
+                                                                                  inlineWritebacks,
+                                                                                  inlineWritebackCount)) {
+                                        return;
+                                    }
                                     
                                     ZrParser_Compiler_TrimStackBy(cs, 2); // leftValueSlot 和 resultSlot
                                 }
@@ -1286,7 +1476,7 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
         emit_instruction(cs, copyLeftInst);
         
         // 如果左操作数为false，直接短路到结束标签
-        TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)leftSlot, 0);
+        TZrInstruction jumpIfInst = compiler_create_jump_if_false_for_condition(cs, left, leftSlot);
         TZrSize jumpIfIndex = cs->instructionCount;
         emit_instruction(cs, jumpIfInst);
         add_pending_jump(cs, jumpIfIndex, endLabelId);
@@ -1303,7 +1493,7 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
         emit_instruction(cs, copyLeftInst);
         
         // JUMP_IF 在条件为 false 时跳转，所以 false 时进入右操作数求值。
-        TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)leftSlot, 0);
+        TZrInstruction jumpIfInst = compiler_create_jump_if_false_for_condition(cs, left, leftSlot);
         TZrSize jumpIfIndex = cs->instructionCount;
         emit_instruction(cs, jumpIfInst);
         add_pending_jump(cs, jumpIfIndex, evaluateRightLabelId);
@@ -1354,7 +1544,7 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     TZrSize endLabelId = create_label(cs);
     
     // JUMP_IF false -> else
-    TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)testSlot, 0);
+    TZrInstruction jumpIfInst = compiler_create_jump_if_false_for_condition(cs, test, testSlot);
     TZrSize jumpIfIndex = cs->instructionCount;
     emit_instruction(cs, jumpIfInst);
     add_pending_jump(cs, jumpIfIndex, elseLabelId);

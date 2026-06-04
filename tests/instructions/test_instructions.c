@@ -806,6 +806,8 @@ static const char *get_instruction_name(EZrInstructionCode opcode) {
             return "GET_MEMBER_SLOT";
         case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):
             return "SET_MEMBER_SLOT";
+        case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT_NULL):
+            return "SET_MEMBER_SLOT_NULL";
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
             return "GET_BY_INDEX";
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
@@ -972,6 +974,10 @@ static const char *get_instruction_name(EZrInstructionCode opcode) {
             return "JUMP_IF";
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
             return "JUMP_IF_GREATER_SIGNED";
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+            return "JUMP_IF_LESS_EQUAL_SIGNED";
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+            return "JUMP_IF_NULL";
         case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
             return "CREATE_CLOSURE";
         case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
@@ -1015,9 +1021,15 @@ static void print_instruction(const char *label, TZrInstruction *inst, TZrSize i
             printf(", operand2[0]=%d", inst->instruction.operand.operand2[0]);
             break;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
             printf(", left=%u, right=%u, jump_offset=%d",
                    inst->instruction.operandExtra,
                    inst->instruction.operand.operand1[0],
+                   (TZrInt16)inst->instruction.operand.operand1[1]);
+            break;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+            printf(", value=%u, jump_offset=%d",
+                   inst->instruction.operandExtra,
                    (TZrInt16)inst->instruction.operand.operand1[1]);
             break;
         case ZR_INSTRUCTION_ENUM(GETUPVAL):
@@ -1026,6 +1038,7 @@ static void print_instruction(const char *label, TZrInstruction *inst, TZrSize i
         case ZR_INSTRUCTION_ENUM(SET_MEMBER):
         case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
         case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):
+        case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT_NULL):
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):

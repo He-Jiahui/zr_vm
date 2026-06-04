@@ -782,6 +782,97 @@ static TZrBool signature_build_label_from_function(SZrState *state,
     return ZR_TRUE;
 }
 
+static SZrAstNodeArray *signature_function_parameter_nodes(SZrAstNode *declarationNode) {
+    if (declarationNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (declarationNode->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return declarationNode->data.functionDeclaration.params;
+        case ZR_AST_EXTERN_FUNCTION_DECLARATION:
+            return declarationNode->data.externFunctionDeclaration.params;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool signature_function_candidate_matches_call_shape(SZrFunctionTypeInfo *funcType,
+                                                               SZrFunctionCall *call) {
+    SZrAstNodeArray *params;
+    TZrSize argumentCount;
+
+    if (funcType == ZR_NULL || call == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    params = signature_function_parameter_nodes(funcType->declarationNode);
+    argumentCount = call->args != ZR_NULL ? call->args->count : 0;
+    if (params != ZR_NULL) {
+        return params->count == argumentCount;
+    }
+
+    return funcType->paramTypes.length == argumentCount;
+}
+
+static SZrFunctionTypeInfo *signature_lookup_unresolved_function_candidate(SZrState *state,
+                                                                           SZrTypeEnvironment *env,
+                                                                           SZrString *functionName,
+                                                                           SZrFunctionCall *call) {
+    SZrArray candidates;
+    SZrFunctionTypeInfo *matched = ZR_NULL;
+
+    if (state == ZR_NULL || env == ZR_NULL || functionName == ZR_NULL || call == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (!ZrParser_TypeEnvironment_LookupFunctions(state, env, functionName, &candidates)) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < candidates.length; index++) {
+        SZrFunctionTypeInfo **candidatePtr =
+            (SZrFunctionTypeInfo **)ZrCore_Array_Get(&candidates, index);
+        SZrFunctionTypeInfo *candidate = candidatePtr != ZR_NULL ? *candidatePtr : ZR_NULL;
+        if (!signature_function_candidate_matches_call_shape(candidate, call)) {
+            continue;
+        }
+        if (matched != ZR_NULL) {
+            matched = ZR_NULL;
+            break;
+        }
+        matched = candidate;
+    }
+
+    ZrCore_Array_Free(state, &candidates);
+    return matched;
+}
+
+static SZrFunctionTypeInfo *signature_lookup_unresolved_function_candidate_in_available_envs(
+        SZrState *state,
+        SZrCompilerState *compilerState,
+        SZrString *functionName,
+        SZrFunctionCall *call) {
+    SZrFunctionTypeInfo *candidate;
+
+    if (compilerState == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    candidate = signature_lookup_unresolved_function_candidate(state,
+                                                              compilerState->typeEnv,
+                                                              functionName,
+                                                              call);
+    if (candidate != ZR_NULL) {
+        return candidate;
+    }
+
+    return signature_lookup_unresolved_function_candidate(state,
+                                                         compilerState->compileTimeTypeEnv,
+                                                         functionName,
+                                                         call);
+}
+
 static TZrInt32 signature_active_parameter_index(SZrFunctionCall *call, SZrFilePosition position) {
     TZrInt32 activeIndex = 0;
 
@@ -2991,8 +3082,10 @@ static TZrBool signature_resolve_member_call_signature_locally(SZrState *state,
 }
 
 static TZrBool signature_populate_help_from_label(SZrState *state,
+                                                  SZrSemanticAnalyzer *analyzer,
                                                   const TZrChar *labelText,
                                                   SZrAstNodeArray *params,
+                                                  SZrAstNodeArray *argumentNodes,
                                                   const SZrResolvedCallSignature *resolvedSignature,
                                                   TZrInt32 activeParameter,
                                                   SZrLspSignatureHelp **result) {
@@ -3059,7 +3152,13 @@ static TZrBool signature_populate_help_from_label(SZrState *state,
             }
 
             parameterInfo->label = ZrCore_String_Create(state, buffer, strlen(buffer));
-            parameterInfo->documentation = ZR_NULL;
+            parameterInfo->documentation =
+                argumentNodes != ZR_NULL && index < argumentNodes->count
+                    ? ZrLanguageServer_Lsp_BuildSignatureArgumentSemanticFactDocumentation(
+                          state,
+                          analyzer,
+                          argumentNodes->nodes[index])
+                    : ZR_NULL;
             ZrCore_Array_Push(state, &signatureInfo->parameters, &parameterInfo);
         }
     }
@@ -3243,8 +3342,10 @@ static TZrBool signature_resolve_super_constructor_help(SZrState *state,
     }
 
     if (!signature_populate_help_from_label(state,
+                                            analyzer,
                                             labelBuffer,
                                             signature_method_parameter_nodes(constructorInfo->declarationNode),
+                                            context->argumentNodes,
                                             &resolvedSignature,
                                             signature_active_parameter_index_for_arguments(context->argumentNodes,
                                                                                           position),
@@ -3389,8 +3490,10 @@ static TZrBool signature_resolve_construct_help(SZrState *state,
     }
 
     if (!signature_populate_help_from_label(state,
+                                            analyzer,
                                             labelBuffer,
                                             signature_method_parameter_nodes(constructorInfo->declarationNode),
+                                            context->argumentNodes,
                                             &resolvedSignature,
                                             signature_active_parameter_index_for_arguments(context->argumentNodes,
                                                                                           position),
@@ -3420,6 +3523,7 @@ static TZrBool signature_resolve_function_help(SZrState *state,
     SZrAstNodeArray *signatureParams = ZR_NULL;
     TZrChar labelBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
     TZrBool resolved = ZR_FALSE;
+    TZrBool hasResolvedSignature = ZR_FALSE;
     SZrSymbol *calleeSymbol = ZR_NULL;
     SZrString *callableSourceName = ZR_NULL;
     SZrFileRange lookupPosition;
@@ -3449,6 +3553,7 @@ static TZrBool signature_resolve_function_help(SZrState *state,
                                        &resolvedFunction,
                                        &resolvedSignature)) {
         resolved = ZR_TRUE;
+        hasResolvedSignature = ZR_TRUE;
     } else if (compilerState->compileTimeTypeEnv != ZR_NULL &&
                resolve_best_function_overload(compilerState,
                                               compilerState->compileTimeTypeEnv,
@@ -3458,6 +3563,7 @@ static TZrBool signature_resolve_function_help(SZrState *state,
                                                &resolvedFunction,
                                                &resolvedSignature)) {
         resolved = ZR_TRUE;
+        hasResolvedSignature = ZR_TRUE;
     }
 
     if (!resolved && analyzer != ZR_NULL && analyzer->symbolTable != ZR_NULL) {
@@ -3480,43 +3586,53 @@ static TZrBool signature_resolve_function_help(SZrState *state,
                                                    &resolvedFunction,
                                                    &resolvedSignature)) {
                     resolved = ZR_TRUE;
+                    hasResolvedSignature = ZR_TRUE;
                 } else if (compilerState->compileTimeTypeEnv != ZR_NULL &&
                            resolve_best_function_overload(compilerState,
                                                           compilerState->compileTimeTypeEnv,
                                                           callableSourceName,
                                                           call,
                                                           context->callNode->location,
-                                                          &resolvedFunction,
-                                                          &resolvedSignature)) {
+                                                           &resolvedFunction,
+                                                           &resolvedSignature)) {
                     resolved = ZR_TRUE;
+                    hasResolvedSignature = ZR_TRUE;
                 }
             }
         }
     }
 
+    if (!resolved || resolvedFunction == ZR_NULL) {
+        SZrString *fallbackName = callableSourceName != ZR_NULL
+                                      ? callableSourceName
+                                      : primary->property->data.identifier.name;
+        resolvedFunction = signature_lookup_unresolved_function_candidate_in_available_envs(state,
+                                                                                           compilerState,
+                                                                                           fallbackName,
+                                                                                           call);
+        resolved = resolvedFunction != ZR_NULL;
+    }
+
     if (!resolved || resolvedFunction == ZR_NULL ||
-        !signature_build_label_from_function(state, resolvedFunction, &resolvedSignature, labelBuffer, sizeof(labelBuffer))) {
+        !signature_build_label_from_function(state,
+                                             resolvedFunction,
+                                             hasResolvedSignature ? &resolvedSignature : ZR_NULL,
+                                             labelBuffer,
+                                             sizeof(labelBuffer))) {
         free_resolved_call_signature(state, &resolvedSignature);
         return ZR_FALSE;
     }
 
     if (resolvedFunction->declarationNode != ZR_NULL) {
-        switch (resolvedFunction->declarationNode->type) {
-            case ZR_AST_FUNCTION_DECLARATION:
-                signatureParams = resolvedFunction->declarationNode->data.functionDeclaration.params;
-                break;
-            case ZR_AST_EXTERN_FUNCTION_DECLARATION:
-                signatureParams = resolvedFunction->declarationNode->data.externFunctionDeclaration.params;
-                break;
-            default:
-                break;
-        }
+        signatureParams = signature_function_parameter_nodes(resolvedFunction->declarationNode);
     }
 
     if (!signature_populate_help_from_label(state,
+                                            analyzer,
                                             labelBuffer,
                                             signatureParams,
-                                            &resolvedSignature,
+                                            call->args,
+                                            hasResolvedSignature ? &resolvedSignature : ZR_NULL,
                                             signature_active_parameter_index(call, position),
                                             result)) {
         free_resolved_call_signature(state, &resolvedSignature);
@@ -3658,8 +3774,10 @@ static TZrBool signature_resolve_method_help(SZrState *state,
     }
 
     if (!signature_populate_help_from_label(state,
+                                            analyzer,
                                             labelBuffer,
                                             signature_method_parameter_nodes(memberInfo->declarationNode),
+                                            context->argumentNodes,
                                             &resolvedSignature,
                                             signature_active_parameter_index(&context->callNode->data.functionCall, position),
                                             result)) {

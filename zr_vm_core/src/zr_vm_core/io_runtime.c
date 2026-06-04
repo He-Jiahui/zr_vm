@@ -556,8 +556,33 @@ static TZrBool io_runtime_populate_function(SZrState *state,
     function->parameterCount = (TZrUInt16)source->parametersLength;
     function->hasVariableArguments = source->hasVarArgs ? ZR_TRUE : ZR_FALSE;
     function->stackSize = source->stackSize;
+    function->frameByteSize = source->frameByteSize;
+    function->frameByteAlign = source->frameByteAlign;
     function->lineInSourceStart = (TZrUInt32)source->startLine;
     function->lineInSourceEnd = (TZrUInt32)source->endLine;
+
+    if (source->frameSlotLayoutsLength > 0 && source->frameSlotLayouts != ZR_NULL) {
+        TZrSize layoutBytes = sizeof(SZrFunctionFrameSlotLayout) * source->frameSlotLayoutsLength;
+        function->frameSlotLayouts =
+                (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(global,
+                                                                              layoutBytes,
+                                                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->frameSlotLayouts == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        for (TZrSize index = 0; index < source->frameSlotLayoutsLength; index++) {
+            function->frameSlotLayouts[index].stackSlot = source->frameSlotLayouts[index].stackSlot;
+            function->frameSlotLayouts[index].byteOffset = source->frameSlotLayouts[index].byteOffset;
+            function->frameSlotLayouts[index].byteSize = source->frameSlotLayouts[index].byteSize;
+            function->frameSlotLayouts[index].byteAlign = source->frameSlotLayouts[index].byteAlign;
+            function->frameSlotLayouts[index].typeLayoutId = source->frameSlotLayouts[index].typeLayoutId;
+            function->frameSlotLayouts[index].slotKind = source->frameSlotLayouts[index].slotKind;
+            function->frameSlotLayouts[index].isParameter = source->frameSlotLayouts[index].isParameter;
+            function->frameSlotLayouts[index].reserved0 = source->frameSlotLayouts[index].reserved0;
+        }
+        function->frameSlotLayoutLength = (TZrUInt32)source->frameSlotLayoutsLength;
+    }
 
     if (source->instructionsLength > 0) {
         TZrSize instructionBytes = sizeof(TZrInstruction) * source->instructionsLength;

@@ -88,6 +88,11 @@ SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
     // 可选初始值
     SZrAstNode *value = ZR_NULL;
     if (consume_token(ps, ZR_TK_EQUALS)) {
+        if (ps->lexer->t.token == ZR_TK_SEMICOLON || ps->lexer->t.token == ZR_TK_EOS) {
+            report_missing_expression_after_assignment(ps);
+            return ZR_NULL;
+        }
+
         value = parse_expression(ps);
         if (value == ZR_NULL) {
             // 如果解析表达式失败，尝试错误恢复

@@ -14,8 +14,16 @@ struct ZR_STRUCT_ALIGN SZrTypeValueOnStack {
 };
 
 typedef struct SZrTypeValueOnStack SZrTypeValueOnStack;
+typedef struct SZrTypeLayout SZrTypeLayout;
 
 typedef SZrTypeValueOnStack *TZrStackValuePointer;
+
+typedef struct SZrStackFramePlace {
+    TZrPtr address;
+    TZrMemoryOffset byteOffset;
+    TZrUInt32 byteSize;
+    TZrUInt32 byteAlign;
+} SZrStackFramePlace;
 
 union TZrStackPtr {
     TZrStackValuePointer valuePointer;
@@ -67,5 +75,26 @@ ZR_CORE_API void ZrCore_Stack_CopyValue(struct SZrState *state,
 ZR_CORE_API TZrMemoryOffset ZrCore_Stack_SavePointerAsOffset(struct SZrState *state, TZrStackValuePointer stackPointer);
 
 ZR_CORE_API TZrStackValuePointer ZrCore_Stack_LoadOffsetToPointer(struct SZrState *state, TZrMemoryOffset offset);
+
+ZR_CORE_API TZrMemoryOffset ZrCore_Stack_SaveByteAddressAsOffset(struct SZrState *state, TZrPtr stackAddress);
+
+ZR_CORE_API TZrPtr ZrCore_Stack_LoadByteOffsetToAddress(struct SZrState *state, TZrMemoryOffset offset);
+
+ZR_CORE_API TZrBool ZrCore_Stack_MakeFramePlace(struct SZrState *state,
+                                                TZrStackValuePointer frameBase,
+                                                TZrUInt32 frameByteOffset,
+                                                TZrUInt32 byteSize,
+                                                TZrUInt32 byteAlign,
+                                                SZrStackFramePlace *outPlace);
+
+ZR_CORE_API TZrBool ZrCore_Stack_CopyInline(struct SZrState *state,
+                                            const SZrTypeLayout *layout,
+                                            TZrMemoryOffset destinationOffset,
+                                            TZrMemoryOffset sourceOffset);
+
+ZR_CORE_API TZrBool ZrCore_Stack_CopyInlinePlace(struct SZrState *state,
+                                                 const SZrTypeLayout *layout,
+                                                 const SZrStackFramePlace *destination,
+                                                 const SZrStackFramePlace *source);
 
 #endif // ZR_VM_CORE_STACK_H

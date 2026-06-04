@@ -26,6 +26,11 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->localVarCount = 0;
     cs->stackSlotCount = 0;
     cs->maxStackSlotCount = 0;
+    ZrCore_Array_Init(state,
+                      &cs->stackSlotTypeHints,
+                      sizeof(SZrCompilerStackSlotTypeHint),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    cs->stackSlotTypeHintScopeStart = 0;
 
     // 初始化闭包变量数组
     ZrCore_Array_Init(state, &cs->closureVars, sizeof(SZrFunctionClosureVariable), ZR_PARSER_INITIAL_CAPACITY_SMALL);
@@ -200,6 +205,12 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
     if (cs->localVars.isValid && cs->localVars.head != ZR_NULL && cs->localVars.capacity > 0 &&
         cs->localVars.elementSize > 0) {
         ZrCore_Array_Free(state, &cs->localVars);
+    }
+
+    if (cs->stackSlotTypeHints.isValid && cs->stackSlotTypeHints.head != ZR_NULL &&
+        cs->stackSlotTypeHints.capacity > 0 && cs->stackSlotTypeHints.elementSize > 0) {
+        compiler_clear_stack_slot_type_hints_from(cs, 0);
+        ZrCore_Array_Free(state, &cs->stackSlotTypeHints);
     }
 
     // 释放闭包变量数组

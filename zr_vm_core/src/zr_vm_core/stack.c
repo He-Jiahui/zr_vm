@@ -10,6 +10,7 @@
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/ownership.h"
 #include "zr_vm_core/state.h"
+#include "zr_vm_core/type_layout.h"
 
 /*
  * Stack growth and stack-to-stack moves are hot internal VM paths. Use raw
@@ -43,6 +44,10 @@ static void stack_mark_stack_as_relative(SZrState *state) {
         if (callInfo->hasReturnDestination) {
             callInfo->returnDestinationReusableOffset = ZrStackSaveAsOffset(state, callInfo->returnDestination);
         }
+        if (callInfo->hasArgumentSourceFrame) {
+            callInfo->argumentSourceFrameBaseReusableOffset =
+                    ZrStackSaveAsOffset(state, callInfo->argumentSourceFrameBase.valuePointer);
+        }
     }
 }
 
@@ -61,6 +66,12 @@ static void stack_mark_stack_as_absolute(SZrState *state) {
             callInfo->returnDestination = ZrStackLoadAsOffset(state, callInfo->returnDestinationReusableOffset);
         } else {
             callInfo->returnDestination = ZR_NULL;
+        }
+        if (callInfo->hasArgumentSourceFrame) {
+            callInfo->argumentSourceFrameBase.valuePointer =
+                    ZrStackLoadAsOffset(state, callInfo->argumentSourceFrameBaseReusableOffset);
+        } else {
+            callInfo->argumentSourceFrameBase.valuePointer = ZR_NULL;
         }
         if (!ZrCore_CallInfo_IsNative(callInfo)) {
             callInfo->context.context.trap = 1;
@@ -198,4 +209,132 @@ TZrMemoryOffset ZrCore_Stack_SavePointerAsOffset(struct SZrState *state, TZrStac
 
 TZrStackValuePointer ZrCore_Stack_LoadOffsetToPointer(struct SZrState *state, TZrMemoryOffset offset) {
     return ZrStackLoadAsOffset(state, offset);
+}
+
+TZrMemoryOffset ZrCore_Stack_SaveByteAddressAsOffset(struct SZrState *state, TZrPtr stackAddress) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(state->stackBase.valuePointer != ZR_NULL);
+    ZR_ASSERT(stackAddress != ZR_NULL);
+    return (TZrBytePtr)stackAddress - (TZrBytePtr)state->stackBase.valuePointer;
+}
+
+TZrPtr ZrCore_Stack_LoadByteOffsetToAddress(struct SZrState *state, TZrMemoryOffset offset) {
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(state->stackBase.valuePointer != ZR_NULL);
+    ZR_ASSERT(offset >= 0);
+    return (TZrBytePtr)state->stackBase.valuePointer + offset;
+}
+
+static TZrBool stack_try_get_byte_size(struct SZrState *state, TZrMemoryOffset *outByteSize) {
+    if (state == ZR_NULL || state->stackBase.valuePointer == ZR_NULL || state->stackTail.valuePointer == ZR_NULL ||
+        outByteSize == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outByteSize = (TZrMemoryOffset)((state->stackTail.valuePointer - state->stackBase.valuePointer) *
+                                     (TZrMemoryOffset)sizeof(SZrTypeValueOnStack));
+    return ZR_TRUE;
+}
+
+static TZrBool stack_byte_range_is_available(struct SZrState *state, TZrMemoryOffset offset, TZrUInt32 byteSize) {
+    TZrMemoryOffset stackByteSize;
+
+    if (offset < 0 || !stack_try_get_byte_size(state, &stackByteSize)) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)((TZrMemoryOffset)byteSize <= stackByteSize &&
+                     offset <= stackByteSize - (TZrMemoryOffset)byteSize);
+}
+
+static TZrUInt32 stack_normalize_byte_align(TZrUInt32 byteAlign) {
+    return byteAlign > 0u ? byteAlign : 1u;
+}
+
+TZrBool ZrCore_Stack_MakeFramePlace(struct SZrState *state,
+                                    TZrStackValuePointer frameBase,
+                                    TZrUInt32 frameByteOffset,
+                                    TZrUInt32 byteSize,
+                                    TZrUInt32 byteAlign,
+                                    SZrStackFramePlace *outPlace) {
+    TZrMemoryOffset stackByteSize;
+    TZrMemoryOffset frameBaseOffset;
+    TZrMemoryOffset absoluteOffset;
+    TZrUInt32 normalizedAlign;
+
+    if (frameBase == ZR_NULL || outPlace == ZR_NULL || !stack_try_get_byte_size(state, &stackByteSize)) {
+        return ZR_FALSE;
+    }
+
+    normalizedAlign = stack_normalize_byte_align(byteAlign);
+    if (frameByteOffset % normalizedAlign != 0u) {
+        return ZR_FALSE;
+    }
+
+    frameBaseOffset = ZrStackSaveAsOffset(state, frameBase);
+    if (frameBaseOffset < 0 ||
+        frameBaseOffset > stackByteSize ||
+        (TZrMemoryOffset)frameByteOffset > stackByteSize - frameBaseOffset) {
+        return ZR_FALSE;
+    }
+
+    absoluteOffset = frameBaseOffset + (TZrMemoryOffset)frameByteOffset;
+    if (!stack_byte_range_is_available(state, absoluteOffset, byteSize)) {
+        return ZR_FALSE;
+    }
+
+    outPlace->address = ZrCore_Stack_LoadByteOffsetToAddress(state, absoluteOffset);
+    outPlace->byteOffset = absoluteOffset;
+    outPlace->byteSize = byteSize;
+    outPlace->byteAlign = normalizedAlign;
+    return ZR_TRUE;
+}
+
+static TZrBool stack_place_covers_layout(struct SZrState *state,
+                                         const SZrStackFramePlace *place,
+                                         const SZrTypeLayout *layout) {
+    TZrUInt32 layoutAlign;
+
+    if (place == ZR_NULL || place->address == ZR_NULL || layout == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    layoutAlign = stack_normalize_byte_align(layout->byteAlign);
+    if (place->byteSize < layout->byteSize ||
+        stack_normalize_byte_align(place->byteAlign) < layoutAlign ||
+        !stack_byte_range_is_available(state, place->byteOffset, layout->byteSize)) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(place->address == ZrCore_Stack_LoadByteOffsetToAddress(state, place->byteOffset));
+}
+
+TZrBool ZrCore_Stack_CopyInline(struct SZrState *state,
+                                const SZrTypeLayout *layout,
+                                TZrMemoryOffset destinationOffset,
+                                TZrMemoryOffset sourceOffset) {
+    TZrPtr destination;
+    TZrPtr source;
+
+    if (layout == ZR_NULL ||
+        !stack_byte_range_is_available(state, destinationOffset, layout->byteSize) ||
+        !stack_byte_range_is_available(state, sourceOffset, layout->byteSize)) {
+        return ZR_FALSE;
+    }
+
+    destination = ZrCore_Stack_LoadByteOffsetToAddress(state, destinationOffset);
+    source = ZrCore_Stack_LoadByteOffsetToAddress(state, sourceOffset);
+    return ZrCore_TypeLayout_CopyInline(state, layout, destination, source);
+}
+
+TZrBool ZrCore_Stack_CopyInlinePlace(struct SZrState *state,
+                                     const SZrTypeLayout *layout,
+                                     const SZrStackFramePlace *destination,
+                                     const SZrStackFramePlace *source) {
+    if (!stack_place_covers_layout(state, destination, layout) ||
+        !stack_place_covers_layout(state, source, layout)) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_TypeLayout_CopyInline(state, layout, destination->address, source->address);
 }

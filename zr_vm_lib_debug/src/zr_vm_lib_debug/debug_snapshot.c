@@ -1,7 +1,6 @@
 #include "debug_internal.h"
 
 #define ZR_DEBUG_VARIABLE_HANDLE_BASE ((TZrUInt32)1000u)
-#define ZR_DEBUG_INSTANCE_SYNTHETIC_FIELD_COUNT ((TZrSize)1u)
 #define ZR_DEBUG_TYPE_OBJECT_FIELD_COUNT ((TZrSize)6u)
 #define ZR_DEBUG_INVALID_SLOT_INDEX ((TZrUInt32)0xFFFFFFFFu)
 
@@ -574,32 +573,12 @@ static TZrBool zr_debug_fill_value_preview(ZrDebugAgent *agent,
                                zr_debug_value_type_name_safe(agent->state, value),
                                "",
                                variablesReference);
+    zr_debug_value_child_shape(agent->state,
+                               value,
+                               &preview->named_variables,
+                               &preview->indexed_variables);
     zr_debug_format_value_text_safe(agent->state, value, preview->value_text, sizeof(preview->value_text));
     return ZR_TRUE;
-}
-
-static TZrSize zr_debug_count_visible_object_entries(const SZrHashSet *set) {
-    TZrSize bucketIndex;
-    TZrSize count = 0;
-
-    if (set == ZR_NULL || !set->isValid || set->buckets == ZR_NULL || set->capacity == 0) {
-        return 0;
-    }
-
-    for (bucketIndex = 0; bucketIndex < set->capacity; bucketIndex++) {
-        SZrHashKeyValuePair *pair = set->buckets[bucketIndex];
-        while (pair != ZR_NULL) {
-            const TZrChar *keyText = pair->key.type == ZR_VALUE_TYPE_STRING && pair->key.value.object != ZR_NULL
-                                             ? ZrCore_String_GetNativeString(ZR_CAST_STRING(ZR_NULL, pair->key.value.object))
-                                             : ZR_NULL;
-            if (keyText == ZR_NULL || strncmp(keyText, "__zr_", 5) != 0) {
-                count++;
-            }
-            pair = pair->next;
-        }
-    }
-
-    return count;
 }
 
 static TZrBool zr_debug_key_to_index(const SZrTypeValue *key, TZrSize *outIndex) {
@@ -1840,6 +1819,8 @@ static TZrBool zr_debug_try_evaluate_index_window(ZrDebugAgent *agent,
              (unsigned long long)endIndex);
     outResult->value_text[sizeof(outResult->value_text) - 1u] = '\0';
     outResult->variables_reference = handleId;
+    outResult->named_variables = 0;
+    outResult->indexed_variables = endIndex - startIndex;
     return ZR_TRUE;
 }
 
@@ -1887,6 +1868,10 @@ TZrBool ZrDebug_Evaluate(ZrDebugAgent *agent,
     outResult->variables_reference = zr_debug_value_is_expandable(agent->state, &value)
                                              ? zr_debug_register_value_handle(agent, &value)
                                              : 0;
+    zr_debug_value_child_shape(agent->state,
+                               &value,
+                               &outResult->named_variables,
+                               &outResult->indexed_variables);
     return ZR_TRUE;
 }
 

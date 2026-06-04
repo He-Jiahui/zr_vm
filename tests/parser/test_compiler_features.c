@@ -7,8 +7,10 @@
 #include <string.h>
 #include <time.h>
 #include "unity.h"
+#include "module_fixture_support.h"
 #include "runtime_support.h"
 #include "zr_vm_common/zr_instruction_conf.h"
+#include "zr_vm_core/conversion.h"
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/function.h"
@@ -38,6 +40,8 @@ typedef struct SZrCompiledPrototypeInfoView {
     TZrUInt32 modifierFlags;
     TZrUInt32 nextVirtualSlotIndex;
     TZrUInt32 nextPropertyIdentity;
+    TZrUInt32 layoutByteSize;
+    TZrUInt32 layoutByteAlign;
 } SZrCompiledPrototypeInfoView;
 
 typedef struct SZrCompiledMemberInfoView {
@@ -170,11 +174,80 @@ static char *read_text_file_owned(const TZrChar *path) {
     return buffer;
 }
 
+static void fixture_reader_close_noop(SZrState *state, TZrPtr customData) {
+    ZR_UNUSED_PARAMETER(state);
+    ZR_UNUSED_PARAMETER(customData);
+}
+
+static SZrFunction *load_runtime_entry_from_binary_file(SZrState *state, const TZrChar *binaryPath) {
+    TZrSize binaryLength = 0;
+    TZrByte *binaryBytes;
+    ZrTestsFixtureReader reader;
+    SZrIo *io;
+    SZrIoSource *sourceObject;
+    SZrFunction *runtimeFunction;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(binaryPath);
+
+    binaryBytes = ZrTests_Fixture_ReadFileBytes(binaryPath, &binaryLength);
+    TEST_ASSERT_NOT_NULL(binaryBytes);
+    TEST_ASSERT_TRUE(binaryLength > 0);
+
+    reader.bytes = binaryBytes;
+    reader.length = binaryLength;
+    reader.consumed = ZR_FALSE;
+
+    io = ZrCore_Io_New(state->global);
+    TEST_ASSERT_NOT_NULL(io);
+    ZrCore_Io_Init(state, io, ZrTests_Fixture_ReaderRead, fixture_reader_close_noop, &reader);
+    io->isBinary = ZR_TRUE;
+
+    sourceObject = ZrCore_Io_ReadSourceNew(io);
+    TEST_ASSERT_NOT_NULL(sourceObject);
+    runtimeFunction = ZrCore_Io_LoadEntryFunctionToRuntime(state, sourceObject);
+    TEST_ASSERT_NOT_NULL(runtimeFunction);
+
+    ZrCore_Io_Free(state->global, io);
+    free(binaryBytes);
+    return runtimeFunction;
+}
+
 static SZrFunction *get_single_compiled_child_function(SZrFunction *wrapper) {
     TEST_ASSERT_NOT_NULL(wrapper);
     TEST_ASSERT_EQUAL_UINT32(1, wrapper->childFunctionLength);
     TEST_ASSERT_NOT_NULL(wrapper->childFunctionList);
     return &wrapper->childFunctionList[0];
+}
+
+static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode);
+
+static SZrFunction *find_single_function_constant_with_opcode(SZrState *state,
+                                                              SZrFunction *wrapper,
+                                                              EZrInstructionCode opcode) {
+    SZrFunction *match = ZR_NULL;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(wrapper);
+
+    for (TZrUInt32 constantIndex = 0; constantIndex < wrapper->constantValueLength; constantIndex++) {
+        SZrTypeValue *constant = &wrapper->constantValueList[constantIndex];
+        SZrFunction *candidate;
+
+        if (constant->type != ZR_VALUE_TYPE_FUNCTION || constant->value.object == ZR_NULL || constant->isNative) {
+            continue;
+        }
+
+        candidate = ZR_CAST_FUNCTION(state, constant->value.object);
+        if (!function_contains_opcode(candidate, opcode)) {
+            continue;
+        }
+
+        TEST_ASSERT_NULL(match);
+        match = candidate;
+    }
+
+    return match;
 }
 
 static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
@@ -363,6 +436,10 @@ static const SZrCompiledMemberInfoView *find_compiled_member_by_name(SZrState *s
     return ZR_NULL;
 }
 
+static TZrUInt32 test_align_offset_u32(TZrUInt32 offset, TZrUInt32 align) {
+    return ((offset + align - 1) / align) * align;
+}
+
 // 测试1: 函数声明参数处理
 void test_function_parameter_handling(void) {
     SZrTestTimer timer;
@@ -509,6 +586,24 @@ void test_function_parameter_handling(void) {
             case ZR_INSTRUCTION_ENUM(TO_FLOAT):
                 opcodeName = "TO_FLOAT";
                 break;
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
+                opcodeName = "TO_FLOAT_SIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
+                opcodeName = "TO_FLOAT_UNSIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
+                opcodeName = "TO_INT_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
+                opcodeName = "TO_INT_UNSIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
+                opcodeName = "TO_UINT_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
+                opcodeName = "TO_UINT_SIGNED";
+                break;
             case ZR_INSTRUCTION_ENUM(TO_STRING):
                 opcodeName = "TO_STRING";
                 break;
@@ -553,6 +648,9 @@ void test_function_parameter_handling(void) {
                 break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
                 opcodeName = "JUMP_IF_GREATER_SIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+                opcodeName = "JUMP_IF_LESS_EQUAL_SIGNED";
                 break;
             case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
                 opcodeName = "CREATE_CLOSURE";
@@ -614,7 +712,8 @@ void test_function_parameter_handling(void) {
             if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF)) {
                 printf(", condition=%u", operandExtra);
             }
-        } else if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED)) {
+        } else if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+                   opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED)) {
             printf(" left=%u, right=%u, jump_offset=%d", operandExtra, op1_0, (TZrInt16)op1_1);
         } else if (opcode == ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION)) {
             // 获取子函数指令：extra=目标槽位, operand2=子函数索引
@@ -828,6 +927,24 @@ void test_global_object_access(void) {
             case ZR_INSTRUCTION_ENUM(TO_FLOAT):
                 opcodeName = "TO_FLOAT";
                 break;
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
+                opcodeName = "TO_FLOAT_SIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
+                opcodeName = "TO_FLOAT_UNSIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
+                opcodeName = "TO_INT_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
+                opcodeName = "TO_INT_UNSIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
+                opcodeName = "TO_UINT_FLOAT";
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
+                opcodeName = "TO_UINT_SIGNED";
+                break;
             case ZR_INSTRUCTION_ENUM(TO_STRING):
                 opcodeName = "TO_STRING";
                 break;
@@ -872,6 +989,9 @@ void test_global_object_access(void) {
                 break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
                 opcodeName = "JUMP_IF_GREATER_SIGNED";
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+                opcodeName = "JUMP_IF_LESS_EQUAL_SIGNED";
                 break;
             case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
                 opcodeName = "CREATE_CLOSURE";
@@ -928,7 +1048,8 @@ void test_global_object_access(void) {
             if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF)) {
                 printf(", condition=%u", operandExtra);
             }
-        } else if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED)) {
+        } else if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+                   opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED)) {
             printf(" left=%u, right=%u, jump_offset=%d", operandExtra, op1_0, (TZrInt16)op1_1);
         } else if (opcode == ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION)) {
             // 获取子函数指令：extra=目标槽位, operand2=子函数索引
@@ -1684,6 +1805,430 @@ void test_using_statement_compiles_through_frontend(void) {
 
         TEST_ASSERT_NOT_NULL(func);
         TEST_ASSERT_GREATER_THAN_UINT32(0, func->instructionsLength);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_struct_prototype_metadata_serializes_layout_size_and_align(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Struct Prototype Metadata Serializes Layout Size And Align";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Struct byte layout metadata",
+                 "Testing that compiled prototypeData stores whole-struct byte size and alignment alongside field offsets");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source = "pub struct LayoutProbe { var a: i8; var b: int; var c: i32; }";
+        const TZrUInt32 expectedAlign = ZR_ALIGN_SIZE;
+        const TZrUInt32 offsetA = 0;
+        const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), ZR_ALIGN_SIZE);
+        const TZrUInt32 offsetC = test_align_offset_u32(offsetB + (TZrUInt32)sizeof(TZrInt64), (TZrUInt32)sizeof(TZrInt32));
+        const TZrUInt32 expectedSize =
+                test_align_offset_u32(offsetC + (TZrUInt32)sizeof(TZrInt32), expectedAlign);
+        SZrString *sourceName = ZrCore_String_Create(state, "struct_layout_metadata.zr", 25);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        const SZrCompiledPrototypeInfoView *structProto;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to parse struct layout metadata source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile struct layout metadata source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_NOT_NULL(func->prototypeData);
+        TEST_ASSERT_EQUAL_UINT32(1, func->prototypeCount);
+
+        structProto = find_compiled_prototype_by_name(state, func, "LayoutProbe");
+        TEST_ASSERT_NOT_NULL(structProto);
+        TEST_ASSERT_EQUAL_UINT32(expectedSize, structProto->layoutByteSize);
+        TEST_ASSERT_EQUAL_UINT32(expectedAlign, structProto->layoutByteAlign);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_function_frame_layout_metadata_marks_struct_parameter_inline(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Function Frame Layout Metadata Marks Struct Parameter Inline";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Function frame byte layout metadata",
+                 "Testing that function stack slots receive deterministic byte offsets and inline struct parameter spans");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "pub struct FrameProbe { var a: i8; var b: int; }\n"
+            "useProbe(p: FrameProbe) { var n: int = 7; return n; }";
+        const TZrUInt32 expectedStructAlign = ZR_ALIGN_SIZE;
+        const TZrUInt32 offsetA = 0;
+        const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), ZR_ALIGN_SIZE);
+        const TZrUInt32 expectedStructSize =
+                test_align_offset_u32(offsetB + (TZrUInt32)sizeof(TZrInt64), expectedStructAlign);
+        const TZrUInt32 expectedLocalOffset = test_align_offset_u32(expectedStructSize, ZR_ALIGN_SIZE);
+        SZrString *sourceName = ZrCore_String_Create(state, "function_frame_layout.zr", 24);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *wrapper;
+        SZrFunction *declaredFunction;
+        const SZrFunctionFrameSlotLayout *parameterLayout;
+        const SZrFunctionFrameSlotLayout *localLayout;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to parse function frame layout source");
+            destroy_test_state(state);
+            return;
+        }
+
+        wrapper = ZrParser_Compiler_Compile(state, ast);
+        if (wrapper == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile function frame layout source");
+            destroy_test_state(state);
+            return;
+        }
+
+        declaredFunction = get_single_compiled_child_function(wrapper);
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2, declaredFunction->stackSize);
+        TEST_ASSERT_EQUAL_UINT32(declaredFunction->stackSize, declaredFunction->frameSlotLayoutLength);
+        TEST_ASSERT_EQUAL_UINT32(ZR_ALIGN_SIZE, declaredFunction->frameByteAlign);
+
+        parameterLayout = ZrCore_Function_FindFrameSlotLayout(declaredFunction, 0);
+        localLayout = ZrCore_Function_FindFrameSlotLayout(declaredFunction, 1);
+        TEST_ASSERT_NOT_NULL(parameterLayout);
+        TEST_ASSERT_NOT_NULL(localLayout);
+
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT, parameterLayout->slotKind);
+        TEST_ASSERT_TRUE(parameterLayout->isParameter);
+        TEST_ASSERT_EQUAL_UINT32(0, parameterLayout->byteOffset);
+        TEST_ASSERT_EQUAL_UINT32(expectedStructSize, parameterLayout->byteSize);
+        TEST_ASSERT_EQUAL_UINT32(expectedStructAlign, parameterLayout->byteAlign);
+        TEST_ASSERT_NOT_EQUAL_UINT32(ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE, parameterLayout->typeLayoutId);
+
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_VALUE, localLayout->slotKind);
+        TEST_ASSERT_FALSE(localLayout->isParameter);
+        TEST_ASSERT_EQUAL_UINT32(expectedLocalOffset, localLayout->byteOffset);
+        TEST_ASSERT_EQUAL_UINT32((TZrUInt32)sizeof(SZrTypeValue), localLayout->byteSize);
+        TEST_ASSERT_EQUAL_UINT32(ZR_ALIGN_SIZE, localLayout->byteAlign);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE, localLayout->typeLayoutId);
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT32(localLayout->byteOffset + localLayout->byteSize,
+                                           declaredFunction->frameByteSize);
+
+        ZrCore_Function_Free(state, wrapper);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_function_frame_layout_metadata_keeps_large_struct_arithmetic_temps_plain(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Function Frame Layout Metadata Keeps Large Struct Arithmetic Temps Plain";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Function frame layout scalar temp reuse",
+                 "Testing that inline struct slot hints do not leak into scalar arithmetic temporaries after large struct construction");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "pub struct WidePoint {\n"
+            "    var a: int; var b: int; var c: int; var d: int; var e: int;\n"
+            "    var f: int; var g: int; var h: int; var i: int; var j: int;\n"
+            "    pub @constructor(a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int, j: int) {\n"
+            "        this.a = a; this.b = b; this.c = c; this.d = d; this.e = e;\n"
+            "        this.f = f; this.g = g; this.h = h; this.i = i; this.j = j;\n"
+            "    }\n"
+            "}\n"
+            "var point: WidePoint = $WidePoint(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);\n"
+            "return (point.a * 1000000) + (point.e * 10000) + point.j;\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "large_struct_arithmetic_frame_layout.zr", 39);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        const SZrFunctionFrameSlotLayout *pointLayout;
+        const SZrFunctionFrameSlotLayout *slot4Layout;
+        TZrBool sawScalarArithmetic = ZR_FALSE;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to parse large struct frame layout source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile large struct frame layout source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_GREATER_OR_EQUAL_UINT32(5u, func->frameSlotLayoutLength);
+        pointLayout = ZrCore_Function_FindFrameSlotLayout(func, 0);
+        slot4Layout = ZrCore_Function_FindFrameSlotLayout(func, 4);
+        TEST_ASSERT_NOT_NULL(pointLayout);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT, pointLayout->slotKind);
+        TEST_ASSERT_NOT_NULL(slot4Layout);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                ZR_FUNCTION_FRAME_SLOT_KIND_VALUE,
+                slot4Layout->slotKind,
+                "Stack slot 4 is reused by scalar arithmetic and must not inherit stale WidePoint inline metadata");
+
+        for (TZrUInt32 index = 0; index < func->instructionsLength; index++) {
+            const TZrInstruction *instruction = &func->instructionsList[index];
+            const SZrFunctionFrameSlotLayout *destinationLayout;
+            EZrInstructionCode opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+
+            switch (opcode) {
+                case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
+                case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
+                case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
+                case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
+                case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+                case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+                case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+                case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+                case ZR_INSTRUCTION_ENUM(SUB_SIGNED):
+                case ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST):
+                case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST):
+                case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST):
+                case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+                case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+                case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+                case ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST):
+                case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST):
+                case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST):
+                case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+                case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+                case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+                    sawScalarArithmetic = ZR_TRUE;
+                    if (instruction->instruction.operandExtra != ZR_INSTRUCTION_USE_RET_FLAG) {
+                        destinationLayout =
+                                ZrCore_Function_FindFrameSlotLayout(func, instruction->instruction.operandExtra);
+                        TEST_ASSERT_NOT_NULL(destinationLayout);
+                        TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                                ZR_FUNCTION_FRAME_SLOT_KIND_VALUE,
+                                destinationLayout->slotKind,
+                                "Scalar arithmetic destination slots must remain plain frame values");
+                    }
+                    break;
+                default:
+                    break;
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(sawScalarArithmetic, "Expected large struct return expression to emit scalar arithmetic");
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_function_frame_layout_metadata_keeps_member_slot_load_temps_plain(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Function Frame Layout Metadata Keeps Member Slot Load Temps Plain";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Function frame layout member temp reuse",
+                 "Testing that optimized member-slot loads do not inherit stale inline struct metadata in constructors");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "struct Label {\n"
+            "    pub var text: string;\n"
+            "    pub @constructor(text: string) {\n"
+            "        this.text = text;\n"
+            "    }\n"
+            "}\n"
+            "var original: Label = $Label(\"left\");\n"
+            "var copied: Label = original;\n"
+            "copied.text = \"right\";\n"
+            "return original.text + \":\" + copied.text;\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "member_slot_load_frame_layout.zr", 32);
+        SZrFunction *func;
+        SZrFunction *constructorFunction;
+        const SZrFunctionFrameSlotLayout *receiverLayout;
+        const SZrFunctionFrameSlotLayout *returnSourceLayout;
+        TZrUInt32 returnSourceSlot = ZR_INSTRUCTION_USE_RET_FLAG;
+
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile member-slot frame layout source");
+            destroy_test_state(state);
+            return;
+        }
+
+        constructorFunction = find_single_function_constant_with_opcode(state, func, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT));
+        TEST_ASSERT_NOT_NULL(constructorFunction);
+        receiverLayout = ZrCore_Function_FindFrameSlotLayout(constructorFunction, 0u);
+        TEST_ASSERT_NOT_NULL(receiverLayout);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT,
+                receiverLayout->slotKind,
+                "Constructor receiver slot 0 must remain inline so member-slot stores write into frame bytes");
+        for (TZrUInt32 index = 0; index < constructorFunction->instructionsLength; index++) {
+            const TZrInstruction *instruction = &constructorFunction->instructionsList[index];
+            if ((EZrInstructionCode)instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
+                returnSourceSlot = instruction->instruction.operand.operand1[0];
+                break;
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(returnSourceSlot != ZR_INSTRUCTION_USE_RET_FLAG,
+                                 "Expected constructor body to return a concrete stack slot");
+        TEST_ASSERT_LESS_THAN_UINT32(constructorFunction->stackSize, returnSourceSlot);
+        returnSourceLayout = ZrCore_Function_FindFrameSlotLayout(constructorFunction, returnSourceSlot);
+        TEST_ASSERT_NOT_NULL(returnSourceLayout);
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                ZR_FUNCTION_FRAME_SLOT_KIND_VALUE,
+                returnSourceLayout->slotKind,
+                "Constructor return-source temp must remain a plain value slot even when its stack slot was previously hinted as the struct type");
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Binary Roundtrip Preserves Function Frame Layout Metadata";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Function frame layout binary roundtrip",
+                 "Testing that .zro serialization keeps inline struct frame spans on runtime-loaded child functions");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "pub struct FrameProbe { var a: i8; var b: int; }\n"
+            "useProbe(p: FrameProbe) { var n: int = 7; return n; }";
+        const char *binaryPath = "function_frame_layout_roundtrip.zro";
+        const TZrUInt32 expectedStructAlign = ZR_ALIGN_SIZE;
+        const TZrUInt32 offsetA = 0;
+        const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), ZR_ALIGN_SIZE);
+        const TZrUInt32 expectedStructSize =
+                test_align_offset_u32(offsetB + (TZrUInt32)sizeof(TZrInt64), expectedStructAlign);
+        SZrString *sourceName = ZrCore_String_Create(state, "function_frame_layout_roundtrip.zr", 34);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *sourceWrapper;
+        SZrFunction *sourceFunction;
+        SZrFunction *runtimeWrapper;
+        SZrFunction *runtimeFunction;
+        const SZrFunctionFrameSlotLayout *sourceParameterLayout;
+        const SZrFunctionFrameSlotLayout *runtimeParameterLayout;
+        const SZrFunctionFrameSlotLayout *runtimeLocalLayout;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to parse function frame layout roundtrip source");
+            destroy_test_state(state);
+            return;
+        }
+
+        sourceWrapper = ZrParser_Compiler_Compile(state, ast);
+        if (sourceWrapper == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile function frame layout roundtrip source");
+            destroy_test_state(state);
+            return;
+        }
+
+        sourceFunction = get_single_compiled_child_function(sourceWrapper);
+        sourceParameterLayout = ZrCore_Function_FindFrameSlotLayout(sourceFunction, 0);
+        TEST_ASSERT_NOT_NULL(sourceParameterLayout);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT, sourceParameterLayout->slotKind);
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteBinaryFile(state, sourceWrapper, binaryPath));
+
+        runtimeWrapper = load_runtime_entry_from_binary_file(state, binaryPath);
+        runtimeFunction = get_single_compiled_child_function(runtimeWrapper);
+        TEST_ASSERT_EQUAL_UINT32(sourceFunction->stackSize, runtimeFunction->stackSize);
+        TEST_ASSERT_EQUAL_UINT32(sourceFunction->frameSlotLayoutLength, runtimeFunction->frameSlotLayoutLength);
+        TEST_ASSERT_EQUAL_UINT32(sourceFunction->frameByteSize, runtimeFunction->frameByteSize);
+        TEST_ASSERT_EQUAL_UINT32(sourceFunction->frameByteAlign, runtimeFunction->frameByteAlign);
+
+        runtimeParameterLayout = ZrCore_Function_FindFrameSlotLayout(runtimeFunction, 0);
+        runtimeLocalLayout = ZrCore_Function_FindFrameSlotLayout(runtimeFunction, 1);
+        TEST_ASSERT_NOT_NULL(runtimeParameterLayout);
+        TEST_ASSERT_NOT_NULL(runtimeLocalLayout);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT, runtimeParameterLayout->slotKind);
+        TEST_ASSERT_TRUE(runtimeParameterLayout->isParameter);
+        TEST_ASSERT_EQUAL_UINT32(0, runtimeParameterLayout->byteOffset);
+        TEST_ASSERT_EQUAL_UINT32(expectedStructSize, runtimeParameterLayout->byteSize);
+        TEST_ASSERT_EQUAL_UINT32(expectedStructAlign, runtimeParameterLayout->byteAlign);
+        TEST_ASSERT_NOT_EQUAL_UINT32(ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE, runtimeParameterLayout->typeLayoutId);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_VALUE, runtimeLocalLayout->slotKind);
+        TEST_ASSERT_EQUAL_UINT32((TZrUInt32)sizeof(SZrTypeValue), runtimeLocalLayout->byteSize);
+        TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE, runtimeLocalLayout->typeLayoutId);
+
+        ZrCore_Function_Free(state, runtimeWrapper);
+        ZrCore_Function_Free(state, sourceWrapper);
+        remove(binaryPath);
     }
 
     timer.endTime = clock();
@@ -2846,6 +3391,14 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "var owner = %shared(seed);\n"
             "var alias = %shared(owner);\n",
             "ownership_invalid_share_shared_compile.zr",
+        },
+        {
+            "borrow-return-escape",
+            "class Box {}\n"
+            "leak(owner: %shared Box): %borrowed Box {\n"
+            "    return %borrow(owner);\n"
+            "}\n",
+            "ownership_invalid_borrow_return_compile.zr",
         },
     };
     TZrSize i;

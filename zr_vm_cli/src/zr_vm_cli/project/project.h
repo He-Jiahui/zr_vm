@@ -13,6 +13,7 @@ typedef struct SZrCliProjectContext {
     TZrChar binaryRoot[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar entryModule[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar manifestPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const struct SZrLibrary_Project *libraryProject;
 } SZrCliProjectContext;
 
 typedef struct SZrCliStringList {

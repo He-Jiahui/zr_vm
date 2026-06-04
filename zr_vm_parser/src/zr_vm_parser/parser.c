@@ -10,6 +10,7 @@ void ZrParser_State_Init(SZrParserState *ps, SZrState *state, const TZrChar *sou
     ps->hasError = ZR_FALSE;
     ps->errorMessage = ZR_NULL;
     ps->errorCallback = ZR_NULL;
+    ps->structuredErrorCallback = ZR_NULL;
     ps->errorUserData = ZR_NULL;
     ps->suppressErrorOutput = ZR_FALSE;
 

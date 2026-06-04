@@ -279,6 +279,7 @@ TZrBool ZrCli_ProjectContext_FromGlobal(SZrCliProjectContext *context,
     }
 
     memset(context, 0, sizeof(*context));
+    context->libraryProject = project;
     snprintf(context->projectPath, sizeof(context->projectPath), "%s", projectPath);
     snprintf(context->projectRoot, sizeof(context->projectRoot), "%s", ZrCore_String_GetNativeString(project->directory));
     ZrLibrary_File_PathJoin(context->projectRoot, ZrCore_String_GetNativeString(project->source), context->sourceRoot);
@@ -314,6 +315,11 @@ TZrBool ZrCli_Project_ResolveSourcePath(const SZrCliProjectContext *context,
         return ZR_FALSE;
     }
 
+    if (moduleName != ZR_NULL && moduleName[0] == '$' && context->libraryProject != ZR_NULL &&
+        ZrLibrary_Project_ResolveSourcePath(context->libraryProject, moduleName, buffer, bufferSize)) {
+        return ZR_TRUE;
+    }
+
     return zr_cli_resolve_output_path(context->sourceRoot,
                                       moduleName,
                                       ZR_VM_SOURCE_MODULE_FILE_EXTENSION,
@@ -329,6 +335,11 @@ TZrBool ZrCli_Project_ResolveBinaryPath(const SZrCliProjectContext *context,
         return ZR_FALSE;
     }
 
+    if (moduleName != ZR_NULL && moduleName[0] == '$' && context->libraryProject != ZR_NULL &&
+        ZrLibrary_Project_ResolveBinaryPath(context->libraryProject, moduleName, buffer, bufferSize)) {
+        return ZR_TRUE;
+    }
+
     return zr_cli_resolve_output_path(context->binaryRoot,
                                       moduleName,
                                       ZR_VM_BINARY_MODULE_FILE_EXTENSION,
@@ -342,6 +353,11 @@ TZrBool ZrCli_Project_ResolveIntermediatePath(const SZrCliProjectContext *contex
                                               TZrSize bufferSize) {
     if (context == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (moduleName != ZR_NULL && moduleName[0] == '$' && context->libraryProject != ZR_NULL &&
+        ZrLibrary_Project_ResolveIntermediatePath(context->libraryProject, moduleName, buffer, bufferSize)) {
+        return ZR_TRUE;
     }
 
     return zr_cli_resolve_output_path(context->binaryRoot,

@@ -831,6 +831,8 @@ static TZrBool parse_compiled_prototype_info(SZrState *state,
     protoInfo->modifierFlags = protoInfoHeader->modifierFlags;
     protoInfo->nextVirtualSlotIndex = protoInfoHeader->nextVirtualSlotIndex;
     protoInfo->nextPropertyIdentity = protoInfoHeader->nextPropertyIdentity;
+    protoInfo->layoutByteSize = protoInfoHeader->layoutByteSize;
+    protoInfo->layoutByteAlign = protoInfoHeader->layoutByteAlign;
     protoInfo->hasDecoratorMetadata = ZR_FALSE;
     ZrCore_Value_ResetAsNull(&protoInfo->decoratorMetadataValue);
     protoInfo->prototype = ZR_NULL;
@@ -935,6 +937,8 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                 protoInfoData.modifierFlags = 0;
                 protoInfoData.nextVirtualSlotIndex = 0;
                 protoInfoData.nextPropertyIdentity = 0;
+                protoInfoData.layoutByteSize = 0;
+                protoInfoData.layoutByteAlign = 0;
                 protoInfoData.hasDecoratorMetadata = ZR_FALSE;
                 ZrCore_Value_ResetAsNull(&protoInfoData.decoratorMetadataValue);
                 ZrCore_Array_Init(state,
@@ -976,6 +980,8 @@ TZrSize ZrCore_Module_CreatePrototypesFromData(SZrState *state,
                             prototype->modifierFlags = protoInfoData.modifierFlags;
                             prototype->nextVirtualSlotIndex = protoInfoData.nextVirtualSlotIndex;
                             prototype->nextPropertyIdentity = protoInfoData.nextPropertyIdentity;
+                            prototype->layoutByteSize = protoInfoData.layoutByteSize;
+                            prototype->layoutByteAlign = protoInfoData.layoutByteAlign;
                             ZrCore_Reflection_AttachPrototypeRuntimeMetadata(state, prototype, module, entryFunction);
                             module_prototype_attach_ffi_wrapper_hidden_metadata(state, prototype, &protoInfoData);
                             module_prototype_attach_enum_hidden_metadata(state, prototype, &protoInfoData);

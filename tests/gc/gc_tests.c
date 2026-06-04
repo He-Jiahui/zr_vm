@@ -6,8 +6,11 @@
 #include <time.h>
 #include <string.h>
 #include "unity.h"
+#include "zr_vm_common/zr_ast_constants.h"
+#include "zr_vm_common/zr_object_conf.h"
 #include "zr_vm_core/call_info.h"
 #include "zr_vm_core/closure.h"
+#include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/function.h"
 #include "gc_test_utils.h"
 #include "zr_vm_core/gc.h"
@@ -94,6 +97,43 @@ static TZrBool gc_test_collector_contains_object(SZrState *state, SZrRawObject *
     }
 
     return ZR_FALSE;
+}
+
+static TZrUInt32 gc_test_write_single_compiled_struct_prototype(TZrByte *buffer,
+                                                                TZrUInt32 bufferSize,
+                                                                TZrUInt32 layoutByteSize,
+                                                                TZrUInt32 layoutByteAlign,
+                                                                TZrUInt32 fieldOffset,
+                                                                TZrUInt32 fieldSize) {
+    TZrUInt32 prototypeCount = 1u;
+    TZrUInt32 cursor = 0u;
+    SZrCompiledPrototypeInfo prototype;
+    SZrCompiledMemberInfo member;
+
+    TEST_ASSERT_NOT_NULL(buffer);
+    TEST_ASSERT_TRUE(bufferSize >=
+                     sizeof(TZrUInt32) + sizeof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledMemberInfo));
+
+    memset(&prototype, 0, sizeof(prototype));
+    prototype.type = ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
+    prototype.membersCount = 1u;
+    prototype.layoutByteSize = layoutByteSize;
+    prototype.layoutByteAlign = layoutByteAlign;
+
+    memset(&member, 0, sizeof(member));
+    member.memberType = ZR_AST_CONSTANT_STRUCT_FIELD;
+    member.fieldOffset = fieldOffset;
+    member.fieldSize = fieldSize;
+    member.isUsingManaged = 1u;
+    member.ownershipQualifier = 1u;
+
+    memcpy(buffer + cursor, &prototypeCount, sizeof(prototypeCount));
+    cursor += (TZrUInt32)sizeof(prototypeCount);
+    memcpy(buffer + cursor, &prototype, sizeof(prototype));
+    cursor += (TZrUInt32)sizeof(prototype);
+    memcpy(buffer + cursor, &member, sizeof(member));
+    cursor += (TZrUInt32)sizeof(member);
+    return cursor;
 }
 
 static void gc_test_assert_string_table_minor_bucket_index_list_consistent(const SZrStringTable *stringTable) {
@@ -1876,6 +1916,67 @@ static void test_gc_object_set_value_records_old_to_young_remembered_escape_from
     TEST_DIVIDER();
 }
 
+static void test_gc_array_push_value_dense_pair_pool_records_old_to_young_barrier(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Array PushValue Dense Pair Pool Records Old To Young Barrier";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Old-to-young array append",
+              "Testing that native Array.PushValue can append through dense pair-pool storage while still recording remembered old-to-young references");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrObject *array = ZrLib_Array_New(state);
+        SZrObject *child = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_OBJECT);
+        SZrTypeValue childValue;
+        const SZrTypeValue *resolvedChildValue;
+
+        TEST_ASSERT_NOT_NULL(array);
+        TEST_ASSERT_NOT_NULL(child);
+
+        ZrLib_Value_SetObject(state, &childValue, child, ZR_VALUE_TYPE_OBJECT);
+
+        ZrCore_RawObject_MarkAsInit(state, ZR_CAST_RAW_OBJECT_AS_SUPER(array));
+        ZrCore_RawObject_SetStorageKind(ZR_CAST_RAW_OBJECT_AS_SUPER(array), ZR_GARBAGE_COLLECT_STORAGE_KIND_OLD_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(ZR_CAST_RAW_OBJECT_AS_SUPER(array), ZR_GARBAGE_COLLECT_REGION_KIND_OLD);
+        ZrCore_RawObject_MarkAsInit(state, ZR_CAST_RAW_OBJECT_AS_SUPER(child));
+        ZrCore_RawObject_SetStorageKind(ZR_CAST_RAW_OBJECT_AS_SUPER(child), ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE);
+        ZrCore_RawObject_SetRegionKind(ZR_CAST_RAW_OBJECT_AS_SUPER(child), ZR_GARBAGE_COLLECT_REGION_KIND_EDEN);
+        ZR_CAST_RAW_OBJECT_AS_SUPER(child)->garbageCollectMark.anchorScopeDepth = 2u;
+
+        TEST_ASSERT_EQUAL_UINT32(0u, gc->rememberedObjectCount);
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_HasRememberedObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(array)));
+        TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)0u, (UNITY_UINT64)array->nodeMap.pairPoolUsed);
+
+        TEST_ASSERT_TRUE(ZrLib_Array_PushValue(state, array, &childValue));
+
+        TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)1u, (UNITY_UINT64)array->nodeMap.elementCount);
+        TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)1u, (UNITY_UINT64)array->nodeMap.pairPoolUsed);
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_HasRememberedObject(state->global, ZR_CAST_RAW_OBJECT_AS_SUPER(array)));
+        TEST_ASSERT_EQUAL_UINT32(1u, gc->rememberedObjectCount);
+        TEST_ASSERT_TRUE(ZR_CAST_RAW_OBJECT_AS_SUPER(array)->garbageCollectMark.rememberedRegistryIndex <
+                         gc->rememberedObjectCount);
+        TEST_ASSERT_TRUE((ZR_CAST_RAW_OBJECT_AS_SUPER(child)->garbageCollectMark.escapeFlags &
+                          ZR_GARBAGE_COLLECT_ESCAPE_KIND_OLD_REFERENCE) != 0u);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_OLD_REFERENCE,
+                                 ZR_CAST_RAW_OBJECT_AS_SUPER(child)->garbageCollectMark.promotionReason);
+
+        resolvedChildValue = ZrLib_Array_Get(state, array, 0);
+        TEST_ASSERT_NOT_NULL(resolvedChildValue);
+        TEST_ASSERT_EQUAL_PTR(ZR_CAST_RAW_OBJECT_AS_SUPER(child), resolvedChildValue->value.object);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_gc_pinning_marks_object_non_moving(void) {
     SZrTestTimer timer;
     const char *testSummary = "GC Pinning Marks Object Non Moving";
@@ -3011,6 +3112,139 @@ static void test_gc_minor_collection_rewrites_generated_frame_slot_above_stack_t
         TEST_ASSERT_EQUAL_UINT32(1u, newObject->garbageCollectMark.survivalAge);
         TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_PROMOTION_REASON_SURVIVAL,
                                  newObject->garbageCollectMark.promotionReason);
+        TEST_ASSERT_EQUAL_PTR(originalStackTop, state->stackTop.valuePointer);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_gc_minor_collection_rewrites_inline_frame_value_with_layout_visitor(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "GC Minor Collection Rewrites Inline Frame Value With Layout Visitor";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Inline-frame layout root promotion",
+              "Testing that minor GC keeps and rewrites a young object embedded inside a non-slot-aligned inline struct span below functionTop and above stackTop");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+    TEST_ASSERT_NOT_NULL(state->callInfoList);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrFunction *function = ZrCore_Function_New(state);
+        SZrObject *object = ZrCore_Object_New(state, ZR_NULL);
+        TZrStackValuePointer originalStackTop = state->stackTop.valuePointer;
+        SZrCallInfo *frame = ZrCore_CallInfo_Extend(state);
+        SZrFunctionFrameSlotLayout *layouts;
+        TZrByte *prototypeData;
+        TZrUInt32 prototypeDataLength;
+        TZrUInt32 inlineByteOffset =
+                (TZrUInt32)(3u * sizeof(SZrTypeValueOnStack) + (TZrUInt32)ZR_ALIGN_SIZE);
+        TZrSize frameStorageSlotCount;
+        TZrStackValuePointer slot;
+        SZrStackFramePlace inlinePlace;
+        SZrRawObject *oldObject = ZR_CAST_RAW_OBJECT_AS_SUPER(object);
+        SZrRawObject *newObject;
+        SZrTypeValue *inlineValue;
+
+        TEST_ASSERT_NOT_NULL(gc);
+        TEST_ASSERT_NOT_NULL(function);
+        TEST_ASSERT_NOT_NULL(object);
+        TEST_ASSERT_NOT_NULL(frame);
+
+        ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+
+        layouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrFunctionFrameSlotLayout),
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(layouts);
+        memset(layouts, 0, sizeof(*layouts));
+        layouts[0].stackSlot = 4u;
+        layouts[0].byteOffset = inlineByteOffset;
+        layouts[0].byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+        layouts[0].byteAlign = ZR_ALIGN_SIZE;
+        layouts[0].typeLayoutId = 0u;
+        layouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+        layouts[0].isParameter = ZR_TRUE;
+
+        prototypeDataLength =
+                (TZrUInt32)(sizeof(TZrUInt32) + sizeof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledMemberInfo));
+        prototypeData = (TZrByte *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                prototypeDataLength,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        TEST_ASSERT_NOT_NULL(prototypeData);
+        TEST_ASSERT_EQUAL_UINT32(
+                prototypeDataLength,
+                gc_test_write_single_compiled_struct_prototype(prototypeData,
+                                                               prototypeDataLength,
+                                                               (TZrUInt32)sizeof(SZrTypeValue),
+                                                               ZR_ALIGN_SIZE,
+                                                               0u,
+                                                               (TZrUInt32)sizeof(SZrTypeValue)));
+
+        function->frameSlotLayouts = layouts;
+        function->frameSlotLayoutLength = 1u;
+        function->frameByteSize = inlineByteOffset + (TZrUInt32)sizeof(SZrTypeValue);
+        function->frameByteAlign = ZR_ALIGN_SIZE;
+        function->prototypeData = prototypeData;
+        function->prototypeDataLength = prototypeDataLength;
+        function->prototypeCount = 1u;
+
+        frameStorageSlotCount = ZrCore_Function_GetFrameStorageSlotCount(function);
+        TEST_ASSERT_TRUE(originalStackTop + frameStorageSlotCount + 1u < state->stackTail.valuePointer);
+
+        for (slot = originalStackTop; slot < originalStackTop + frameStorageSlotCount + 1u; slot++) {
+            ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slot));
+        }
+
+        ZrCore_CallInfo_EntryNativeInit(state, frame, state->stackTop, state->stackTop, state->callInfoList);
+        frame->functionBase.valuePointer = originalStackTop;
+        frame->functionTop.valuePointer = originalStackTop + frameStorageSlotCount + 1u;
+        frame->callStatus = ZR_CALL_STATUS_CREATE_FRAME;
+        state->callInfoList = frame;
+
+        ZrCore_Stack_SetRawObjectValue(state, frame->functionBase.valuePointer, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+        TEST_ASSERT_TRUE(ZR_CALL_INFO_IS_VM(state->callInfoList));
+        TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(
+                state,
+                function,
+                frame->functionBase.valuePointer + 1,
+                4u,
+                &inlinePlace));
+
+        memset(inlinePlace.address, 0, sizeof(SZrTypeValue));
+        inlineValue = (SZrTypeValue *)inlinePlace.address;
+        ZrCore_Value_InitAsRawObject(state, inlineValue, oldObject);
+        inlineValue->type = ZR_VALUE_TYPE_OBJECT;
+
+        gc->gcMode = ZR_GARBAGE_COLLECT_MODE_GENERATIONAL;
+        state->stackTop.valuePointer = originalStackTop;
+        gc->gcDebtSize = 4096;
+        gc->gcLastStepWork = 0;
+
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_EDEN, oldObject->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
+                                 oldObject->garbageCollectMark.storageKind);
+
+        ZrCore_GarbageCollector_GcStep(state);
+
+        TEST_ASSERT_TRUE(inlineValue->isGarbageCollectable);
+        newObject = inlineValue->value.object;
+        TEST_ASSERT_NOT_NULL(newObject);
+        TEST_ASSERT_TRUE(newObject == oldObject || oldObject->garbageCollectMark.forwardingAddress == newObject);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_REGION_KIND_SURVIVOR, newObject->garbageCollectMark.regionKind);
+        TEST_ASSERT_EQUAL_UINT32(ZR_GARBAGE_COLLECT_STORAGE_KIND_YOUNG_MOVABLE,
+                                 newObject->garbageCollectMark.storageKind);
+        TEST_ASSERT_EQUAL_UINT32(1u, newObject->garbageCollectMark.survivalAge);
         TEST_ASSERT_EQUAL_PTR(originalStackTop, state->stackTop.valuePointer);
     }
 
@@ -4341,6 +4575,7 @@ int main(void) {
     RUN_TEST(test_gc_barrier_records_old_to_young_remembered_escape);
     RUN_TEST(test_gc_barrier_records_permanent_to_young_remembered_escape);
     RUN_TEST(test_gc_object_set_value_records_old_to_young_remembered_escape_from_inited_parent);
+    RUN_TEST(test_gc_array_push_value_dense_pair_pool_records_old_to_young_barrier);
     RUN_TEST(test_gc_pinning_marks_object_non_moving);
     RUN_TEST(test_gc_region_allocator_reuses_emptied_eden_region_after_permanent_transition);
     RUN_TEST(test_gc_permanent_transition_accepts_referenced_interned_string_without_unlinking_gc_list);
@@ -4357,6 +4592,7 @@ int main(void) {
     RUN_TEST(test_gc_minor_collection_evacuates_stack_root_young_object);
     RUN_TEST(test_gc_minor_collection_reassigns_root_function_and_stamps_minor_scan_epoch);
     RUN_TEST(test_gc_minor_collection_rewrites_generated_frame_slot_above_stack_top);
+    RUN_TEST(test_gc_minor_collection_rewrites_inline_frame_value_with_layout_visitor);
     RUN_TEST(test_gc_minor_collection_preserves_young_descendant_through_old_stack_root_chain);
     RUN_TEST(test_gc_minor_collection_preserves_closed_callable_captures);
     RUN_TEST(test_gc_minor_collection_rewrites_old_reference_to_forwarded_child);

@@ -5,6 +5,27 @@
 #include "compile_expression_internal.h"
 #include "type_inference_internal.h"
 
+static TZrBool compile_identifier_note_result_slot_type(SZrCompilerState *cs,
+                                                        SZrAstNode *node,
+                                                        TZrUInt32 destinationSlot) {
+    SZrInferredType inferredType;
+    TZrBool success;
+
+    if (cs == ZR_NULL || node == ZR_NULL || destinationSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_TRUE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    success = ZrParser_ExpressionType_Infer(cs, node, &inferredType);
+    if (success) {
+        success = compiler_register_stack_slot_type_hint(cs, destinationSlot, &inferredType);
+    } else {
+        success = ZR_TRUE;
+    }
+    ZrParser_InferredType_Free(cs->state, &inferredType);
+    return success;
+}
+
 static const TZrChar *compile_identifier_builtin_explicit_source(const TZrChar *identifierText) {
     if (identifierText == ZR_NULL) {
         return ZR_NULL;
@@ -438,6 +459,9 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         TZrInstruction inst = create_instruction_1(
                 ZR_INSTRUCTION_ENUM(GET_STACK), ZR_COMPILE_SLOT_U16(destSlot), (TZrInt32)localVarIndex);
         emit_instruction(cs, inst);
+        if (!compile_identifier_note_result_slot_type(cs, node, destSlot)) {
+            ZrParser_Compiler_Error(cs, "Failed to record identifier result slot type", node->location);
+        }
         return;
     }
     
@@ -615,7 +639,7 @@ void compile_object_literal(SZrCompilerState *cs, SZrAstNode *node) {
             // 编译键
             if (kv->key != ZR_NULL) {
                 // 键可能是标识符、字符串字面量或表达式（计算键）
-                if (kv->key->type == ZR_AST_IDENTIFIER_LITERAL) {
+                if (!kv->keyIsComputed && kv->key->type == ZR_AST_IDENTIFIER_LITERAL) {
                     // 标识符键：转换为字符串常量
                     SZrString *keyName = kv->key->data.identifier.name;
                     if (keyName != ZR_NULL) {

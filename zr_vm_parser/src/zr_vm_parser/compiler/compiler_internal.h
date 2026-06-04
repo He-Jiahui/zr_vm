@@ -156,6 +156,8 @@ typedef struct SZrCompiledPrototypeInfo {
     TZrUInt32 modifierFlags;
     TZrUInt32 nextVirtualSlotIndex;
     TZrUInt32 nextPropertyIdentity;
+    TZrUInt32 layoutByteSize;
+    TZrUInt32 layoutByteAlign;
 } SZrCompiledPrototypeInfo;
 
 typedef struct SZrCompiledMemberInfo {
@@ -519,6 +521,10 @@ void add_pending_jump(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize la
 
 void add_pending_absolute_patch(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId) ;
 
+TZrInstruction compiler_create_jump_if_false_for_condition(SZrCompilerState *cs,
+                                                           SZrAstNode *conditionExpression,
+                                                           TZrUInt32 conditionSlot) ;
+
 void record_external_var_reference(SZrCompilerState *cs, SZrString *name) ;
 
 void collect_identifiers_from_array(SZrCompilerState *cs, SZrAstNodeArray *nodes, SZrArray *identifierNames) ;
@@ -604,6 +610,13 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
 TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
                                             SZrFunctionTypedLocalBinding **outBindings,
                                             TZrUInt32 *outCount);
+TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrFunction *function);
+TZrBool compiler_register_stack_slot_type_hint(SZrCompilerState *cs,
+                                               TZrUInt32 stackSlot,
+                                               const SZrInferredType *type);
+void compiler_clear_stack_slot_type_hints_from(SZrCompilerState *cs, TZrSize startIndex);
+TZrSize compiler_enter_stack_slot_type_hint_scope(SZrCompilerState *cs);
+void compiler_restore_stack_slot_type_hint_scope(SZrCompilerState *cs, TZrSize previousScopeStart);
 TZrBool compiler_build_function_parameter_metadata(SZrCompilerState *cs,
                                                    SZrAstNodeArray *params,
                                                    TZrBool includeDefaultValues,

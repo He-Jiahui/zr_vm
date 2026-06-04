@@ -10,6 +10,8 @@
     },
     "version": {
       "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\s/\\\\]+$",
       "description": "Project version string."
     },
     "description": {
@@ -74,6 +76,51 @@
         {
           "@app": "feature/app",
           "@shared": "common/shared"
+        }
+      ]
+    },
+    "dependencies": {
+      "type": "object",
+      "description": "Optional third-party zrp dependency map. Keys start with $ and values are dependency manifest paths or objects with path/version metadata.",
+      "patternProperties": {
+        "^\\$[^\\s./\\\\@$]+$": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "description": "Dependency .zrp path relative to this manifest."
+            },
+            {
+              "type": "object",
+              "required": [
+                "path"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Dependency .zrp path relative to this manifest."
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^[^\\s/\\\\]+$",
+                  "description": "Expected dependency version. If the dependency manifest also declares version, it must match."
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "$math": {
+            "path": "deps/math/math.zrp",
+            "version": "1.0.0"
+          },
+          "$trig": "deps/trig/trig.zrp"
         }
       ]
     },

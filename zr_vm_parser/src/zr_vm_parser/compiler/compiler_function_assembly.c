@@ -1550,6 +1550,10 @@ ZR_PARSER_API TZrBool compiler_assemble_final_function(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
+    if (!compiler_build_function_frame_layout_metadata(cs, function)) {
+        return ZR_FALSE;
+    }
+
     if (!compiler_finalize_function_escape_metadata_recursive(cs, function)) {
         return ZR_FALSE;
     }

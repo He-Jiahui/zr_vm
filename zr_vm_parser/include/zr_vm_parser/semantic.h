@@ -11,14 +11,23 @@
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/state.h"
 
+#ifndef ZR_VM_PARSER_SEMANTIC_ID_TYPES_DECLARED
+#define ZR_VM_PARSER_SEMANTIC_ID_TYPES_DECLARED
 typedef TZrUInt32 TZrTypeId;
 typedef TZrUInt32 TZrSymbolId;
 typedef TZrUInt32 TZrOverloadSetId;
 typedef TZrUInt32 TZrLifetimeRegionId;
+#endif
 
 // Semantic IDs reserve 0 as "invalid / not assigned"; allocation starts at 1.
+#ifndef ZR_SEMANTIC_ID_INVALID
 #define ZR_SEMANTIC_ID_INVALID ((TZrUInt32)0U)
+#endif
+#ifndef ZR_SEMANTIC_ID_FIRST
 #define ZR_SEMANTIC_ID_FIRST ((TZrUInt32)1U)
+#endif
+
+#include "zr_vm_parser/semantic_facts.h"
 
 enum EZrSemanticTypeKind {
     ZR_SEMANTIC_TYPE_KIND_UNKNOWN = 0,
@@ -101,6 +110,12 @@ typedef struct SZrSemanticContext {
     SZrArray overloadSets;      // SZrSemanticOverloadSetRecord
     SZrArray cleanupPlan;       // SZrDeterministicCleanupStep
     SZrArray templateSegments;  // SZrTemplateSegment
+    SZrArray expressionFacts;   // SZrSemanticExpressionFact
+    SZrArray referenceFacts;    // SZrSemanticReferenceFact
+    SZrArray numericFacts;      // SZrSemanticNumericFact
+    SZrArray reachabilityFacts; // SZrSemanticReachabilityFact
+    SZrArray logicalFacts;      // SZrSemanticLogicalFact
+    SZrArray ownershipFacts;    // SZrSemanticOwnershipFact
 } SZrSemanticContext;
 
 typedef struct SZrHirModule {

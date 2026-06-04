@@ -48,6 +48,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     SZrFunctionClosureVariable *savedParentClosureVars = ZR_NULL;
     SZrCompilerArraySnapshot savedParentChildFunctions = {0};
     SZrCompilerArraySnapshot savedParentChildFunctionNameMap = {0};
+    TZrSize oldStackSlotTypeHintScopeStart = 0;
     TZrSize savedParentInstructionsSize = oldInstructionLength * sizeof(TZrInstruction);
     TZrSize savedParentLocalVarsSize = oldLocalVarLength * sizeof(SZrFunctionLocalVariable);
     TZrSize savedParentConstantsSize = oldConstantLength * sizeof(SZrTypeValue);
@@ -162,6 +163,8 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
     
+    oldStackSlotTypeHintScopeStart = compiler_enter_stack_slot_type_hint_scope(cs);
+
     // 创建新的函数对象
     cs->isInConstructor = ZR_FALSE;
     cs->currentFunctionNode = node;
@@ -192,6 +195,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return;
     }
     
@@ -385,6 +389,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return;
     }
     
@@ -464,6 +469,9 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     newFunc->hasVariableArguments = hasVariableArguments;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TZrUInt32)node->location.start.line : 0;
     newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TZrUInt32)node->location.end.line : 0;
+    if (!compiler_build_function_frame_layout_metadata(cs, newFunc)) {
+        ZrParser_Compiler_Error(cs, "Failed to build lambda frame layout metadata", node->location);
+    }
     if (!compiler_copy_function_exception_metadata_slice(cs,
                                                          newFunc,
                                                          oldExecutionLocationLength,
@@ -533,6 +541,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = oldConstLocalVarLength;
     cs->constParameters.length = oldConstParameterLength;
+    compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
 
     if (lambdaAssemblyFailed) {
         return;
@@ -668,7 +677,7 @@ void compile_if_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize endLabelId = create_label(cs);
     
     // JUMP_IF false -> else
-    TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)condSlot, 0);
+    TZrInstruction jumpIfInst = compiler_create_jump_if_false_for_condition(cs, ifExpr->condition, condSlot);
     TZrSize jumpIfIndex = cs->instructionCount;
     emit_instruction(cs, jumpIfInst);
     add_pending_jump(cs, jumpIfIndex, elseLabelId);

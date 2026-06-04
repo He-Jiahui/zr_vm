@@ -904,9 +904,7 @@ TZrBool receiver_ownership_can_call_member_local(EZrOwnershipQualifier receiverQ
         case ZR_OWNERSHIP_QUALIFIER_NONE:
             return ZR_TRUE;
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK ||
-                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
-                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
             return memberQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
                    memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
@@ -925,7 +923,7 @@ TZrBool receiver_ownership_can_call_member_local(EZrOwnershipQualifier receiverQ
 const TZrChar *receiver_ownership_call_error_local(EZrOwnershipQualifier receiverQualifier) {
     switch (receiverQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return "Weak-owned receivers can only call %weak, %shared, or %borrowed methods";
+            return "Weak-owned receivers must be upgraded before calling non-%weak methods";
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
             return "Shared-owned receivers can only call %shared or %borrowed methods";
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
@@ -1186,10 +1184,16 @@ EZrValueType binary_expression_effective_type_after_conversion(EZrValueType orig
         case ZR_INSTRUCTION_ENUM(TO_BOOL):
             return ZR_VALUE_TYPE_BOOL;
         case ZR_INSTRUCTION_ENUM(TO_INT):
+        case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
             return ZR_VALUE_TYPE_INT64;
         case ZR_INSTRUCTION_ENUM(TO_UINT):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
             return ZR_VALUE_TYPE_UINT64;
         case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
             return ZR_VALUE_TYPE_DOUBLE;
         case ZR_INSTRUCTION_ENUM(TO_STRING):
             return ZR_VALUE_TYPE_STRING;

@@ -73,36 +73,6 @@ void backend_aot_write_c_direct_own_release(FILE *file, TZrUInt32 destinationSlo
                                               sourceSlot);
 }
 
-void backend_aot_write_c_direct_mul_signed(FILE *file,
-                                           TZrUInt32 destinationSlot,
-                                           TZrUInt32 leftSlot,
-                                           TZrUInt32 rightSlot) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_MulSigned(state, &frame, %u, %u, %u));\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-}
-
-void backend_aot_write_c_direct_mul_signed_const(FILE *file,
-                                                 TZrUInt32 destinationSlot,
-                                                 TZrUInt32 leftSlot,
-                                                 TZrUInt32 constantIndex) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_MulSignedConst(state, &frame, %u, %u, %u));\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)constantIndex);
-}
-
 void backend_aot_write_c_direct_mul(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
@@ -186,46 +156,6 @@ void backend_aot_write_c_direct_sub_int_const(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)constantIndex);
-}
-
-void backend_aot_write_c_direct_bitwise_xor(FILE *file,
-                                            TZrUInt32 destinationSlot,
-                                            TZrUInt32 leftSlot,
-                                            TZrUInt32 rightSlot) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    {\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_right = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        TZrBool zr_aot_use_runtime_xor = ZR_FALSE;\n"
-            "        if (ZR_VALUE_IS_TYPE_INT(zr_aot_left->type) && ZR_VALUE_IS_TYPE_INT(zr_aot_right->type)) {\n"
-            "            TZrInt64 zr_aot_left_int = ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)\n"
-            "                                              ? zr_aot_left->value.nativeObject.nativeInt64\n"
-            "                                              : (TZrInt64)zr_aot_left->value.nativeObject.nativeUInt64;\n"
-            "            TZrInt64 zr_aot_right_int = ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_right->type)\n"
-            "                                               ? zr_aot_right->value.nativeObject.nativeInt64\n"
-            "                                               : (TZrInt64)zr_aot_right->value.nativeObject.nativeUInt64;\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeInt64,\n"
-            "                              zr_aot_left_int ^ zr_aot_right_int,\n"
-            "                              ZR_VALUE_TYPE_INT64);\n"
-            "        } else {\n"
-            "            zr_aot_use_runtime_xor = ZR_TRUE;\n"
-            "        }\n"
-            "        if (zr_aot_use_runtime_xor) {\n"
-            "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BitwiseXor(state, &frame, %u, %u, %u));\n"
-            "        }\n"
-            "    }\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot,
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
 }
 
 static void backend_aot_write_c_direct_cached_meta_call(FILE *file,
@@ -351,90 +281,6 @@ void backend_aot_write_c_direct_logical_not_equal(FILE *file,
             (unsigned)destinationSlot);
 }
 
-void backend_aot_write_c_direct_logical_less_signed(FILE *file,
-                                                    TZrUInt32 destinationSlot,
-                                                    TZrUInt32 leftSlot,
-                                                    TZrUInt32 rightSlot) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    {\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_right = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        TZrInt64 zr_aot_left_int;\n"
-            "        TZrInt64 zr_aot_right_int;\n"
-            "        if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)) {\n"
-            "            zr_aot_left_int = zr_aot_left->value.nativeObject.nativeInt64;\n"
-            "        } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_left->type)) {\n"
-            "            zr_aot_left_int = (TZrInt64)zr_aot_left->value.nativeObject.nativeUInt64;\n"
-            "        } else {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        if (ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_right->type)) {\n"
-            "            zr_aot_right_int = zr_aot_right->value.nativeObject.nativeInt64;\n"
-            "        } else if (ZR_VALUE_IS_TYPE_UNSIGNED_INT(zr_aot_right->type)) {\n"
-            "            zr_aot_right_int = (TZrInt64)zr_aot_right->value.nativeObject.nativeUInt64;\n"
-            "        } else {\n"
-            "            ZR_AOT_C_FAIL();\n"
-            "        }\n"
-            "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                          nativeBool,\n"
-            "                          zr_aot_left_int < zr_aot_right_int,\n"
-            "                          ZR_VALUE_TYPE_BOOL);\n"
-            "    }\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-}
-
-void backend_aot_write_c_direct_logical_greater_signed(FILE *file,
-                                                       TZrUInt32 destinationSlot,
-                                                       TZrUInt32 leftSlot,
-                                                       TZrUInt32 rightSlot) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalGreaterSigned(state, &frame, %u, %u, %u));\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-}
-
-void backend_aot_write_c_direct_logical_less_equal_signed(FILE *file,
-                                                          TZrUInt32 destinationSlot,
-                                                          TZrUInt32 leftSlot,
-                                                          TZrUInt32 rightSlot) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalLessEqualSigned(state, &frame, %u, %u, %u));\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-}
-
-void backend_aot_write_c_direct_logical_greater_equal_signed(FILE *file,
-                                                             TZrUInt32 destinationSlot,
-                                                             TZrUInt32 leftSlot,
-                                                             TZrUInt32 rightSlot) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalGreaterEqualSigned(state, &frame, %u, %u, %u));\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-}
-
 void backend_aot_write_c_direct_mod(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
@@ -450,21 +296,6 @@ void backend_aot_write_c_direct_mod(FILE *file,
             (unsigned)rightSlot);
 }
 
-void backend_aot_write_c_direct_mod_signed_const(FILE *file,
-                                                 TZrUInt32 destinationSlot,
-                                                 TZrUInt32 leftSlot,
-                                                 TZrUInt32 constantIndex) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ModSignedConst(state, &frame, %u, %u, %u));\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)constantIndex);
-}
-
 void backend_aot_write_c_direct_div(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
@@ -478,64 +309,6 @@ void backend_aot_write_c_direct_div(FILE *file,
             (unsigned)destinationSlot,
             (unsigned)leftSlot,
             (unsigned)rightSlot);
-}
-
-void backend_aot_write_c_direct_div_signed(FILE *file,
-                                           TZrUInt32 destinationSlot,
-                                           TZrUInt32 leftSlot,
-                                           TZrUInt32 rightSlot) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    {\n"
-            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        const SZrTypeValue *zr_aot_right = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        TZrBool zr_aot_use_runtime_div = ZR_FALSE;\n"
-            "        if (ZR_VALUE_IS_TYPE_INT(zr_aot_left->type) && ZR_VALUE_IS_TYPE_INT(zr_aot_right->type)) {\n"
-            "            TZrInt64 zr_aot_left_int = ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type)\n"
-            "                                              ? zr_aot_left->value.nativeObject.nativeInt64\n"
-            "                                              : (TZrInt64)zr_aot_left->value.nativeObject.nativeUInt64;\n"
-            "            TZrInt64 zr_aot_right_int = ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_right->type)\n"
-            "                                               ? zr_aot_right->value.nativeObject.nativeInt64\n"
-            "                                               : (TZrInt64)zr_aot_right->value.nativeObject.nativeUInt64;\n"
-            "            if (ZR_UNLIKELY(zr_aot_right_int == 0)) {\n"
-            "                ZrCore_Debug_RunError(state, \"divide by zero\");\n"
-            "            }\n"
-            "            ZR_VALUE_FAST_SET(zr_aot_destination,\n"
-            "                              nativeInt64,\n"
-            "                              zr_aot_left_int / zr_aot_right_int,\n"
-            "                              ZR_VALUE_TYPE_INT64);\n"
-            "        } else {\n"
-            "            zr_aot_use_runtime_div = ZR_TRUE;\n"
-            "        }\n"
-            "        if (zr_aot_use_runtime_div) {\n"
-            "            ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_DivSigned(state, &frame, %u, %u, %u));\n"
-            "        }\n"
-            "    }\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot,
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)rightSlot);
-}
-
-void backend_aot_write_c_direct_div_signed_const(FILE *file,
-                                                 TZrUInt32 destinationSlot,
-                                                 TZrUInt32 leftSlot,
-                                                 TZrUInt32 constantIndex) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_DivSignedConst(state, &frame, %u, %u, %u));\n",
-            (unsigned)destinationSlot,
-            (unsigned)leftSlot,
-            (unsigned)constantIndex);
 }
 
 void backend_aot_write_c_direct_neg(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {

@@ -3402,13 +3402,14 @@ static TZrBool ct_invoke_runtime_callable(SZrCompilerState *cs,
 
 static TZrBool ct_eval_object_key(SZrCompilerState *cs,
                                 SZrAstNode *keyNode,
+                                TZrBool keyIsComputed,
                                 SZrCompileTimeFrame *frame,
                                 SZrTypeValue *result) {
     if (cs == ZR_NULL || keyNode == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    if (keyNode->type == ZR_AST_IDENTIFIER_LITERAL) {
+    if (!keyIsComputed && keyNode->type == ZR_AST_IDENTIFIER_LITERAL) {
         ZrCore_Value_InitAsRawObject(cs->state, result, ZR_CAST_RAW_OBJECT_AS_SUPER(keyNode->data.identifier.name));
         result->type = ZR_VALUE_TYPE_STRING;
         return ZR_TRUE;
@@ -3452,7 +3453,11 @@ static TZrBool ct_eval_object_literal(SZrCompilerState *cs,
                 return ZR_FALSE;
             }
 
-            if (!ct_eval_object_key(cs, propertyNode->data.keyValuePair.key, frame, &keyValue) ||
+            if (!ct_eval_object_key(cs,
+                                    propertyNode->data.keyValuePair.key,
+                                    propertyNode->data.keyValuePair.keyIsComputed,
+                                    frame,
+                                    &keyValue) ||
                 !evaluate_compile_time_expression_internal(cs, propertyNode->data.keyValuePair.value, frame, &propertyValue)) {
                 return ZR_FALSE;
             }

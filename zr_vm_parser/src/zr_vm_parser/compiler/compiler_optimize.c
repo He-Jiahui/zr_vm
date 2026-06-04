@@ -191,11 +191,20 @@ static void optimizer_classify_instruction(const SZrFunction *function,
         case ZR_INSTRUCTION_ENUM(TO_INT):
         case ZR_INSTRUCTION_ENUM(TO_UINT):
         case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
         case ZR_INSTRUCTION_ENUM(TO_STRING):
         case ZR_INSTRUCTION_ENUM(TO_STRUCT):
         case ZR_INSTRUCTION_ENUM(TO_OBJECT):
         case ZR_INSTRUCTION_ENUM(NEG):
+        case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
+        case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):
         case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
         case ZR_INSTRUCTION_ENUM(TYPEOF):
         case ZR_INSTRUCTION_ENUM(GET_MEMBER):
@@ -237,6 +246,10 @@ static void optimizer_classify_instruction(const SZrFunction *function,
         case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):
             info->operand1Index1IsSlot = ZR_FALSE;
             optimizer_info_add_read(info, instruction->instruction.operandExtra);
+            optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
+            return;
+        case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT_NULL):
+            info->operand1Index1IsSlot = ZR_FALSE;
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
             return;
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
@@ -316,6 +329,7 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             optimizer_info_add_write(info, instruction->instruction.operandExtra);
             return;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
             optimizer_info_add_read(info, instruction->instruction.operandExtra);
             optimizer_info_add_read(info, instruction->instruction.operand.operand1[0]);
             info->hasRelativeJump = ZR_TRUE;
@@ -328,6 +342,12 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             info->conditionalJump = ZR_TRUE;
             return;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            info->operand1Index1IsSlot = ZR_FALSE;
+            optimizer_info_add_read(info, instruction->instruction.operandExtra);
+            info->hasRelativeJump = ZR_TRUE;
+            info->conditionalJump = ZR_TRUE;
+            return;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
             info->operand1Index1IsSlot = ZR_FALSE;
             optimizer_info_add_read(info, instruction->instruction.operandExtra);
             info->hasRelativeJump = ZR_TRUE;
@@ -421,6 +441,7 @@ static void optimizer_classify_instruction(const SZrFunction *function,
             info->terminator = ZR_TRUE;
             return;
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
             optimizer_info_add_read(info, instruction->instruction.operandExtra);
             info->hasRelativeJump = ZR_TRUE;
             info->conditionalJump = ZR_TRUE;
@@ -570,8 +591,10 @@ static TZrInt32 optimizer_relative_jump_offset(const TZrInstruction *instruction
     if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
         opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
-        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST)) {
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)) {
         return (TZrInt16)instruction->instruction.operand.operand1[1];
     }
 
@@ -589,8 +612,10 @@ static void optimizer_store_relative_jump_offset(TZrInstruction *instruction, TZ
     if (opcode == ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
         opcode == ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
         opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
-        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST)) {
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
+        opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)) {
         instruction->instruction.operand.operand1[1] = (TZrUInt16)(TZrInt16)offset;
         return;
     }
@@ -858,12 +883,14 @@ static TZrBool optimizer_rewrite_instruction_read_slot(TZrInstruction *instructi
             }
             return changed;
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
             if (instruction->instruction.operandExtra == fromSlot) {
                 instruction->instruction.operandExtra = toSlot;
                 changed = ZR_TRUE;
             }
             return changed;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
             if (instruction->instruction.operandExtra == fromSlot) {
                 instruction->instruction.operandExtra = toSlot;
                 changed = ZR_TRUE;
@@ -884,6 +911,12 @@ static TZrBool optimizer_rewrite_instruction_read_slot(TZrInstruction *instructi
             }
             return changed;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            if (instruction->instruction.operandExtra == fromSlot) {
+                instruction->instruction.operandExtra = toSlot;
+                changed = ZR_TRUE;
+            }
+            return changed;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
             if (instruction->instruction.operandExtra == fromSlot) {
                 instruction->instruction.operandExtra = toSlot;
                 changed = ZR_TRUE;
@@ -983,9 +1016,12 @@ static TZrBool optimizer_opcode_supports_adjacent_get_stack_forwarding(EZrInstru
          * original local instead of copying it.
          */
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
         case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
@@ -993,11 +1029,20 @@ static TZrBool optimizer_opcode_supports_adjacent_get_stack_forwarding(EZrInstru
         case ZR_INSTRUCTION_ENUM(TO_INT):
         case ZR_INSTRUCTION_ENUM(TO_UINT):
         case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
         case ZR_INSTRUCTION_ENUM(TO_STRING):
         case ZR_INSTRUCTION_ENUM(TO_STRUCT):
         case ZR_INSTRUCTION_ENUM(TO_OBJECT):
         case ZR_INSTRUCTION_ENUM(NEG):
+        case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
+        case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):
         case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
         case ZR_INSTRUCTION_ENUM(TYPEOF):
         case ZR_INSTRUCTION_ENUM(GET_MEMBER):
@@ -1274,6 +1319,12 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
             return;
+        case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT_NULL):
+            if ((TZrSize)instruction->instruction.operand.operand1[0] < slotCount) {
+                instruction->instruction.operand.operand1[0] =
+                        (TZrUInt16)slotMap[instruction->instruction.operand.operand1[0]];
+            }
+            return;
         case ZR_INSTRUCTION_ENUM(KNOWN_VM_MEMBER_CALL):
         case ZR_INSTRUCTION_ENUM(KNOWN_NATIVE_MEMBER_CALL):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
@@ -1312,9 +1363,11 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
         case ZR_INSTRUCTION_ENUM(JUMP):
             return;
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
             return;
@@ -1323,6 +1376,9 @@ static void optimizer_remap_instruction_slots(TZrInstruction *instruction,
             optimizer_remap_slot_value(&instruction->instruction.operand.operand1[0], slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
+            return;
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
             optimizer_remap_slot_value(&instruction->instruction.operandExtra, slotMap, slotCount);
             return;
         case ZR_INSTRUCTION_ENUM(SUPER_ITER_MOVE_NEXT_JUMP_IF_FALSE):

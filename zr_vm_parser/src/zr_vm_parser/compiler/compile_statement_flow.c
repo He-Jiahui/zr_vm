@@ -43,10 +43,26 @@ TZrBool try_context_find_innermost_finally(const SZrCompilerState *cs, SZrCompil
     return ZR_FALSE;
 }
 
-static SZrString *catch_clause_type_name(SZrAstNode *catchClauseNode) {
+static SZrString *catch_clause_annotation_type_name(SZrCompilerState *cs, SZrType *typeInfo) {
+    if (cs == ZR_NULL || typeInfo == ZR_NULL || typeInfo->name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    while (typeInfo->subType != ZR_NULL) {
+        typeInfo = typeInfo->subType;
+    }
+
+    if (typeInfo->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        return typeInfo->name->data.identifier.name;
+    }
+
+    return extract_type_name_string(cs, typeInfo);
+}
+
+static SZrString *catch_clause_type_name(SZrCompilerState *cs, SZrAstNode *catchClauseNode) {
     SZrAstNodeArray *pattern = catch_clause_pattern(catchClauseNode);
 
-    if (pattern == ZR_NULL || pattern->count == 0) {
+    if (cs == ZR_NULL || pattern == ZR_NULL || pattern->count == 0) {
         return ZR_NULL;
     }
 
@@ -64,9 +80,7 @@ static SZrString *catch_clause_type_name(SZrAstNode *catchClauseNode) {
             return ZR_NULL;
         }
 
-        if (paramNode->data.parameter.typeInfo->name->type == ZR_AST_IDENTIFIER_LITERAL) {
-            return paramNode->data.parameter.typeInfo->name->data.identifier.name;
-        }
+        return catch_clause_annotation_type_name(cs, paramNode->data.parameter.typeInfo);
     }
 
     return ZR_NULL;
@@ -220,7 +234,7 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize loopEndLabelId = loopLabel.breakLabelId;
     
     // JUMP_IF false -> end
-    TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)condSlot, 0);
+    TZrInstruction jumpIfInst = compiler_create_jump_if_false_for_condition(cs, whileLoop->cond, condSlot);
     TZrSize jumpIfIndex = cs->instructionCount;
     emit_instruction(cs, jumpIfInst);
     add_pending_jump(cs, jumpIfIndex, loopEndLabelId);
@@ -305,7 +319,7 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
             TZrSize loopEndLabelId = loopLabel.breakLabelId;
         
         // JUMP_IF false -> end
-        TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)condSlot, 0);
+        TZrInstruction jumpIfInst = compiler_create_jump_if_false_for_condition(cs, forLoop->cond, condSlot);
         TZrSize jumpIfIndex = cs->instructionCount;
         emit_instruction(cs, jumpIfInst);
         add_pending_jump(cs, jumpIfIndex, loopEndLabelId);
@@ -737,7 +751,7 @@ void compile_try_catch_finally_statement(SZrCompilerState *cs, SZrAstNode *node)
                 continue;
             }
 
-            catchInfo.typeName = catch_clause_type_name(catchClauseNode);
+            catchInfo.typeName = catch_clause_type_name(cs, catchClauseNode);
             catchInfo.targetLabelId = create_label(cs);
             ZrCore_Array_Push(cs->state, &cs->catchClauseInfos, &catchInfo);
         }

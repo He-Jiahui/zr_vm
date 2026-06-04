@@ -63,6 +63,9 @@ typedef struct ZrLibCallContext {
     TZrSize rawArgumentCount;
     TZrBool stackLayoutUsesReceiver;
     TZrBool stackLayoutAnchored;
+    const SZrFunction *inlineFrameFunction;
+    TZrStackValuePointer inlineFrameBase;
+    TZrUInt32 inlineArgumentStartSlot;
 } ZrLibCallContext;
 
 typedef TZrBool (*FZrLibBoundCallback)(ZrLibCallContext *context, SZrTypeValue *result);
@@ -1067,6 +1070,7 @@ static ZR_FORCE_INLINE void object_init_direct_binding_stack_root_context(
     ZR_ASSERT(functionBase != ZR_NULL);
     ZR_ASSERT(dispatch->usesReceiver);
 
+    memset(context, 0, sizeof(*context));
     context->state = state;
     context->moduleDescriptor = (const ZrLibModuleDescriptor *)dispatch->moduleDescriptor;
     context->typeDescriptor = (const ZrLibTypeDescriptor *)dispatch->typeDescriptor;
@@ -1100,6 +1104,7 @@ static ZR_FORCE_INLINE void object_init_direct_binding_inline_value_context(
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(dispatch != ZR_NULL);
 
+    memset(context, 0, sizeof(*context));
     context->state = state;
     context->moduleDescriptor = (const ZrLibModuleDescriptor *)dispatch->moduleDescriptor;
     context->typeDescriptor = (const ZrLibTypeDescriptor *)dispatch->typeDescriptor;
@@ -1132,6 +1137,7 @@ static ZR_FORCE_INLINE void object_init_direct_binding_inline_pointer_value_cont
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(dispatch != ZR_NULL);
 
+    memset(context, 0, sizeof(*context));
     context->state = state;
     context->moduleDescriptor = (const ZrLibModuleDescriptor *)dispatch->moduleDescriptor;
     context->typeDescriptor = (const ZrLibTypeDescriptor *)dispatch->typeDescriptor;

@@ -468,6 +468,7 @@ typedef struct SZrObjectLiteral {
 typedef struct SZrKeyValuePair {
     SZrAstNode *key; // Identifier, String, 或 Expression（计算键）
     SZrAstNode *value; // Expression
+    TZrBool keyIsComputed; // true when the key came from [expr]
 } SZrKeyValuePair;
 
 typedef struct SZrUnpackLiteral {

@@ -95,6 +95,8 @@ typedef struct ZrDebugScopeSnapshot {
 
 typedef struct ZrDebugValuePreview {
     TZrUInt32 variables_reference;
+    TZrSize named_variables;
+    TZrSize indexed_variables;
     EZrDebugScopeKind scope_kind;
     TZrChar name[ZR_DEBUG_NAME_CAPACITY];
     TZrChar type_name[ZR_DEBUG_NAME_CAPACITY];
@@ -103,6 +105,8 @@ typedef struct ZrDebugValuePreview {
 
 typedef struct ZrDebugEvaluateResult {
     TZrUInt32 variables_reference;
+    TZrSize named_variables;
+    TZrSize indexed_variables;
     TZrChar type_name[ZR_DEBUG_NAME_CAPACITY];
     TZrChar value_text[ZR_DEBUG_TEXT_CAPACITY];
 } ZrDebugEvaluateResult;

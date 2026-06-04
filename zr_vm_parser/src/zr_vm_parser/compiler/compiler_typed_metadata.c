@@ -6,6 +6,7 @@
 #include "type_inference_internal.h"
 #include "compile_time_executor_internal.h"
 #include "compile_time_binding_metadata.h"
+#include "zr_vm_core/stack.h"
 
 static void typed_type_ref_init_unknown(SZrFunctionTypedTypeRef *typeRef) {
     if (typeRef == ZR_NULL) {
@@ -68,6 +69,96 @@ static TZrBool typed_type_ref_from_ast_type(SZrCompilerState *cs,
 
     typed_type_ref_from_inferred(outType, &inferredType);
     ZrParser_InferredType_Free(cs->state, &inferredType);
+    return ZR_TRUE;
+}
+
+static SZrAstNodeArray *typed_metadata_current_parameter_list(SZrCompilerState *cs) {
+    SZrAstNode *node;
+
+    if (cs == ZR_NULL || cs->currentFunctionNode == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    node = cs->currentFunctionNode;
+    switch (node->type) {
+        case ZR_AST_FUNCTION_DECLARATION:
+            return node->data.functionDeclaration.params;
+        case ZR_AST_TEST_DECLARATION:
+            return node->data.testDeclaration.params;
+        case ZR_AST_STRUCT_METHOD:
+            return node->data.structMethod.params;
+        case ZR_AST_STRUCT_META_FUNCTION:
+            return node->data.structMetaFunction.params;
+        case ZR_AST_CLASS_METHOD:
+            return node->data.classMethod.params;
+        case ZR_AST_CLASS_META_FUNCTION:
+            return node->data.classMetaFunction.params;
+        case ZR_AST_LAMBDA_EXPRESSION:
+            return node->data.lambdaExpression.params;
+        default:
+            return ZR_NULL;
+    }
+}
+
+static const SZrParameter *typed_metadata_find_parameter_by_name(const SZrAstNodeArray *params,
+                                                                 const SZrString *name) {
+    if (params == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < params->count; index++) {
+        const SZrAstNode *paramNode = params->nodes[index];
+        if (paramNode == ZR_NULL ||
+            paramNode->type != ZR_AST_PARAMETER ||
+            paramNode->data.parameter.name == ZR_NULL ||
+            paramNode->data.parameter.name->name == ZR_NULL) {
+            continue;
+        }
+
+        if (ZrCore_String_Equal(paramNode->data.parameter.name->name, (SZrString *)name)) {
+            return &paramNode->data.parameter;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool typed_type_ref_from_current_parameter(SZrCompilerState *cs,
+                                                     SZrString *name,
+                                                     SZrFunctionTypedTypeRef *outType) {
+    const SZrParameter *parameter;
+
+    if (cs == ZR_NULL || name == ZR_NULL || outType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    parameter = typed_metadata_find_parameter_by_name(typed_metadata_current_parameter_list(cs), name);
+    if (parameter == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return typed_type_ref_from_ast_type(cs, parameter->typeInfo, outType);
+}
+
+static TZrBool typed_type_ref_from_injected_this(SZrCompilerState *cs,
+                                                 SZrString *name,
+                                                 SZrFunctionTypedTypeRef *outType) {
+    const TZrChar *nameText;
+
+    if (cs == ZR_NULL || name == ZR_NULL || outType == ZR_NULL || cs->currentTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nameText = ZrCore_String_GetNativeStringShort(name);
+    if (nameText == ZR_NULL || strcmp(nameText, "this") != 0) {
+        return ZR_FALSE;
+    }
+
+    typed_type_ref_init_unknown(outType);
+    outType->baseType = ZR_VALUE_TYPE_OBJECT;
+    outType->typeName = cs->currentTypeName;
+    outType->ownershipQualifier =
+            get_implicit_this_ownership_qualifier(get_member_receiver_qualifier(cs->currentFunctionNode));
     return ZR_TRUE;
 }
 
@@ -1041,6 +1132,10 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
         bindings[index].name = localVar->name;
         bindings[index].stackSlot = localVar->stackSlot;
 
+        if (typed_type_ref_from_injected_this(cs, localVar->name, &bindings[index].type)) {
+            continue;
+        }
+
         ZrParser_InferredType_Init(cs->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
         if (localVar->name != ZR_NULL &&
             cs->typeEnv != ZR_NULL &&
@@ -1051,6 +1146,10 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
         }
 
         ZrParser_InferredType_Free(cs->state, &inferredType);
+        if (typed_type_ref_from_current_parameter(cs, localVar->name, &bindings[index].type)) {
+            continue;
+        }
+
         functionDeclNode = find_script_function_declaration_by_name(cs, localVar->name);
         if (functionDeclNode != ZR_NULL) {
             typed_type_ref_init_unknown(&bindings[index].type);
@@ -1062,6 +1161,550 @@ TZrBool compiler_build_typed_local_bindings(SZrCompilerState *cs,
 
     *outBindings = bindings;
     *outCount = localCount;
+    return ZR_TRUE;
+}
+
+static TZrUInt32 frame_layout_align_offset(TZrUInt32 offset, TZrUInt32 align) {
+    if (align <= 1) {
+        return offset;
+    }
+
+    return ((offset + align - 1) / align) * align;
+}
+
+void compiler_clear_stack_slot_type_hints_from(SZrCompilerState *cs, TZrSize startIndex) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || !cs->stackSlotTypeHints.isValid) {
+        return;
+    }
+
+    if (startIndex > cs->stackSlotTypeHints.length) {
+        startIndex = cs->stackSlotTypeHints.length;
+    }
+
+    for (TZrSize index = startIndex; index < cs->stackSlotTypeHints.length; index++) {
+        SZrCompilerStackSlotTypeHint *hint =
+                (SZrCompilerStackSlotTypeHint *)ZrCore_Array_Get(&cs->stackSlotTypeHints, index);
+        if (hint != ZR_NULL) {
+            ZrParser_InferredType_Free(cs->state, &hint->type);
+        }
+    }
+    cs->stackSlotTypeHints.length = startIndex;
+    if (cs->stackSlotTypeHintScopeStart > cs->stackSlotTypeHints.length) {
+        cs->stackSlotTypeHintScopeStart = cs->stackSlotTypeHints.length;
+    }
+}
+
+TZrSize compiler_enter_stack_slot_type_hint_scope(SZrCompilerState *cs) {
+    TZrSize previousScopeStart;
+
+    if (cs == ZR_NULL) {
+        return 0;
+    }
+
+    previousScopeStart = cs->stackSlotTypeHintScopeStart;
+    cs->stackSlotTypeHintScopeStart = cs->stackSlotTypeHints.length;
+    return previousScopeStart;
+}
+
+void compiler_restore_stack_slot_type_hint_scope(SZrCompilerState *cs, TZrSize previousScopeStart) {
+    if (cs == ZR_NULL) {
+        return;
+    }
+
+    compiler_clear_stack_slot_type_hints_from(cs, cs->stackSlotTypeHintScopeStart);
+    cs->stackSlotTypeHintScopeStart = previousScopeStart;
+}
+
+static const SZrCompilerStackSlotTypeHint *find_stack_slot_type_hint_for_slot(const SZrCompilerState *cs,
+                                                                              TZrUInt32 stackSlot) {
+    if (cs == ZR_NULL || !cs->stackSlotTypeHints.isValid) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = cs->stackSlotTypeHintScopeStart; index < cs->stackSlotTypeHints.length; index++) {
+        const SZrCompilerStackSlotTypeHint *hint =
+                (const SZrCompilerStackSlotTypeHint *)ZrCore_Array_Get((SZrArray *)&cs->stackSlotTypeHints, index);
+        if (hint != ZR_NULL && hint->stackSlot == stackSlot) {
+            return hint;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const SZrFunctionTypedLocalBinding *find_typed_local_binding_for_slot(const SZrFunction *function,
+                                                                             TZrUInt32 stackSlot) {
+    if (function == ZR_NULL || function->typedLocalBindings == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0; index < function->typedLocalBindingLength; index++) {
+        if (function->typedLocalBindings[index].stackSlot == stackSlot) {
+            return &function->typedLocalBindings[index];
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static void compiler_finalize_current_struct_inline_layout(SZrCompilerState *cs, SZrTypePrototypeInfo *prototypeInfo) {
+    TZrUInt32 currentOffset = 0;
+    TZrUInt32 maxAlign = 0;
+
+    if (cs == ZR_NULL ||
+        prototypeInfo == ZR_NULL ||
+        prototypeInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+        prototypeInfo->layoutByteAlign != 0) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < prototypeInfo->members.length; index++) {
+        SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&prototypeInfo->members, index);
+        TZrUInt32 align;
+        TZrUInt32 fieldSize;
+
+        if (memberInfo == ZR_NULL ||
+            memberInfo->memberType != ZR_AST_STRUCT_FIELD ||
+            memberInfo->isStatic) {
+            continue;
+        }
+
+        align = memberInfo->fieldType != ZR_NULL ? get_type_alignment(cs, memberInfo->fieldType) : ZR_ALIGN_SIZE;
+        if (align > maxAlign) {
+            maxAlign = align;
+        }
+
+        currentOffset = align_offset(currentOffset, align);
+        memberInfo->fieldOffset = currentOffset;
+        fieldSize = memberInfo->fieldSize != 0u ? memberInfo->fieldSize : ZR_ALIGN_SIZE;
+        currentOffset += fieldSize;
+    }
+
+    prototypeInfo->layoutByteAlign = maxAlign;
+    prototypeInfo->layoutByteSize = maxAlign > 0u ? align_offset(currentOffset, maxAlign) : 0u;
+}
+
+static TZrBool compiler_find_inline_struct_layout(SZrCompilerState *cs,
+                                                  const SZrFunctionTypedTypeRef *typeRef,
+                                                  TZrUInt32 *outLayoutId,
+                                                  TZrUInt32 *outSize,
+                                                  TZrUInt32 *outAlign) {
+    SZrTypePrototypeInfo *currentPrototypeInfo;
+
+    if (cs == ZR_NULL || typeRef == ZR_NULL || typeRef->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    currentPrototypeInfo = cs->currentTypePrototypeInfo;
+    if (currentPrototypeInfo != ZR_NULL &&
+        currentPrototypeInfo->name != ZR_NULL &&
+        currentPrototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+        ZrCore_String_Equal(currentPrototypeInfo->name, typeRef->typeName)) {
+        compiler_finalize_current_struct_inline_layout(cs, currentPrototypeInfo);
+        if (currentPrototypeInfo->layoutByteAlign == 0) {
+            return ZR_FALSE;
+        }
+        if (outLayoutId != ZR_NULL) {
+            *outLayoutId = (TZrUInt32)cs->typePrototypes.length;
+        }
+        if (outSize != ZR_NULL) {
+            *outSize = currentPrototypeInfo->layoutByteSize;
+        }
+        if (outAlign != ZR_NULL) {
+            *outAlign = currentPrototypeInfo->layoutByteAlign;
+        }
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
+        SZrTypePrototypeInfo *prototypeInfo =
+                (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
+        if (prototypeInfo == ZR_NULL ||
+            prototypeInfo->name == ZR_NULL ||
+            prototypeInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+            prototypeInfo->layoutByteAlign == 0 ||
+            !ZrCore_String_Equal(prototypeInfo->name, typeRef->typeName)) {
+            continue;
+        }
+
+        if (outLayoutId != ZR_NULL) {
+            *outLayoutId = (TZrUInt32)index;
+        }
+        if (outSize != ZR_NULL) {
+            *outSize = prototypeInfo->layoutByteSize;
+        }
+        if (outAlign != ZR_NULL) {
+            *outAlign = prototypeInfo->layoutByteAlign;
+        }
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool compiler_register_stack_slot_type_hint(SZrCompilerState *cs,
+                                               TZrUInt32 stackSlot,
+                                               const SZrInferredType *type) {
+    SZrFunctionTypedTypeRef typeRef;
+
+    if (cs == ZR_NULL || type == ZR_NULL || !cs->stackSlotTypeHints.isValid) {
+        return ZR_FALSE;
+    }
+
+    typed_type_ref_from_inferred(&typeRef, type);
+    if (!compiler_find_inline_struct_layout(cs, &typeRef, ZR_NULL, ZR_NULL, ZR_NULL)) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = cs->stackSlotTypeHintScopeStart; index < cs->stackSlotTypeHints.length; index++) {
+        SZrCompilerStackSlotTypeHint *hint =
+                (SZrCompilerStackSlotTypeHint *)ZrCore_Array_Get(&cs->stackSlotTypeHints, index);
+        if (hint == ZR_NULL || hint->stackSlot != stackSlot) {
+            continue;
+        }
+
+        ZrParser_InferredType_Free(cs->state, &hint->type);
+        ZrParser_InferredType_Copy(cs->state, &hint->type, type);
+        return ZR_TRUE;
+    }
+
+    {
+        SZrCompilerStackSlotTypeHint hint;
+        hint.stackSlot = stackSlot;
+        ZrParser_InferredType_Copy(cs->state, &hint.type, type);
+        ZrCore_Array_Push(cs->state, &cs->stackSlotTypeHints, &hint);
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool compiler_instruction_extra_matches_slot(const TZrInstruction *instruction, TZrUInt32 slot) {
+    return instruction != ZR_NULL &&
+           instruction->instruction.operandExtra != ZR_INSTRUCTION_USE_RET_FLAG &&
+           (TZrUInt32)instruction->instruction.operandExtra == slot;
+}
+
+static TZrBool compiler_instruction_binary_operands_match_slot(const TZrInstruction *instruction, TZrUInt32 slot) {
+    return instruction != ZR_NULL &&
+           ((TZrUInt32)instruction->instruction.operand.operand1[0] == slot ||
+            (TZrUInt32)instruction->instruction.operand.operand1[1] == slot);
+}
+
+static TZrBool compiler_instruction_const_binary_operand_matches_slot(const TZrInstruction *instruction,
+                                                                      TZrUInt32 slot) {
+    return instruction != ZR_NULL && (TZrUInt32)instruction->instruction.operand.operand1[0] == slot;
+}
+
+static TZrBool compiler_instruction_operand0_pair_matches_slot(const TZrInstruction *instruction, TZrUInt32 slot) {
+    return instruction != ZR_NULL &&
+           ((TZrUInt32)instruction->instruction.operand.operand0[0] == slot ||
+            (TZrUInt32)instruction->instruction.operand.operand0[1] == slot);
+}
+
+static TZrBool compiler_instruction_operand0_triple_matches_slot(const TZrInstruction *instruction, TZrUInt32 slot) {
+    return compiler_instruction_operand0_pair_matches_slot(instruction, slot) ||
+           (instruction != ZR_NULL && (TZrUInt32)instruction->instruction.operand.operand0[2] == slot);
+}
+
+static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstruction *instruction, TZrUInt32 slot) {
+    EZrInstructionCode opcode;
+
+    if (instruction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(GET_CONSTANT):
+        case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
+        case ZR_INSTRUCTION_ENUM(GETUPVAL):
+        case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
+        case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER):
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
+        case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT_ITEMS_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ITER_INIT):
+        case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
+        case ZR_INSTRUCTION_ENUM(ITER_CURRENT):
+        case ZR_INSTRUCTION_ENUM(TO_BOOL):
+        case ZR_INSTRUCTION_ENUM(TO_INT):
+        case ZR_INSTRUCTION_ENUM(TO_UINT):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_STRING):
+        case ZR_INSTRUCTION_ENUM(TO_OBJECT):
+        case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
+        case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
+        case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
+        case ZR_INSTRUCTION_ENUM(CATCH):
+        case ZR_INSTRUCTION_ENUM(TYPEOF):
+        case ZR_INSTRUCTION_ENUM(DYN_ITER_INIT):
+        case ZR_INSTRUCTION_ENUM(DYN_ITER_MOVE_NEXT):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_GET_CACHED):
+        case ZR_INSTRUCTION_ENUM(META_GET):
+        case ZR_INSTRUCTION_ENUM(SUPER_META_GET_STATIC_CACHED):
+            return compiler_instruction_extra_matches_slot(instruction, slot);
+        case ZR_INSTRUCTION_ENUM(NEG):
+        case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
+        case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):
+        case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
+        case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
+        case ZR_INSTRUCTION_ENUM(OWN_BORROW):
+        case ZR_INSTRUCTION_ENUM(OWN_LOAN):
+        case ZR_INSTRUCTION_ENUM(OWN_SHARE):
+        case ZR_INSTRUCTION_ENUM(OWN_WEAK):
+        case ZR_INSTRUCTION_ENUM(OWN_DETACH):
+        case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
+        case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
+            return compiler_instruction_extra_matches_slot(instruction, slot) ||
+                   compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
+        case ZR_INSTRUCTION_ENUM(ADD):
+        case ZR_INSTRUCTION_ENUM(ADD_INT):
+        case ZR_INSTRUCTION_ENUM(ADD_INT_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
+        case ZR_INSTRUCTION_ENUM(ADD_STRING):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB):
+        case ZR_INSTRUCTION_ENUM(SUB_INT):
+        case ZR_INSTRUCTION_ENUM(SUB_INT_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(DIV):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
+        case ZR_INSTRUCTION_ENUM(MOD):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(MOD_FLOAT):
+        case ZR_INSTRUCTION_ENUM(POW):
+        case ZR_INSTRUCTION_ENUM(POW_SIGNED):
+        case ZR_INSTRUCTION_ENUM(POW_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(POW_FLOAT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_LEFT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT):
+        case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_AND):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_OR):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(BITWISE_AND):
+        case ZR_INSTRUCTION_ENUM(BITWISE_OR):
+        case ZR_INSTRUCTION_ENUM(BITWISE_XOR):
+        case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT):
+        case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_BOOL):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_FLOAT):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_STRING):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_STRING):
+            return compiler_instruction_extra_matches_slot(instruction, slot) ||
+                   compiler_instruction_binary_operands_match_slot(instruction, slot);
+        case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_INT_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_INT_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+            return compiler_instruction_extra_matches_slot(instruction, slot) ||
+                   compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
+            return compiler_instruction_extra_matches_slot(instruction, slot) ||
+                   compiler_instruction_operand0_pair_matches_slot(instruction, slot);
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
+            return compiler_instruction_extra_matches_slot(instruction, slot) ||
+                   compiler_instruction_operand0_triple_matches_slot(instruction, slot);
+        case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+            return compiler_instruction_extra_matches_slot(instruction, slot) ||
+                   compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
+        case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
+        case ZR_INSTRUCTION_ENUM(SET_PENDING_RETURN):
+            return compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static TZrBool compiler_stack_slot_requires_plain_value_layout(const SZrFunction *function, TZrUInt32 slot) {
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0; index < function->instructionsLength; index++) {
+        if (compiler_instruction_requires_plain_value_slot(&function->instructionsList[index], slot)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrFunction *function) {
+    SZrFunctionFrameSlotLayout *layouts;
+    TZrUInt32 slotCount;
+    TZrUInt32 cursor = 0;
+    TZrUInt32 frameAlign = 0;
+
+    if (cs == ZR_NULL || function == ZR_NULL || cs->state == ZR_NULL || cs->state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (function->frameSlotLayouts != ZR_NULL && function->frameSlotLayoutLength > 0) {
+        ZrCore_Memory_RawFreeWithType(cs->state->global,
+                                      function->frameSlotLayouts,
+                                      sizeof(SZrFunctionFrameSlotLayout) * function->frameSlotLayoutLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        function->frameSlotLayouts = ZR_NULL;
+        function->frameSlotLayoutLength = 0;
+    }
+    function->frameByteSize = 0;
+    function->frameByteAlign = 0;
+
+    if (function->stackSize == 0) {
+        return ZR_TRUE;
+    }
+
+    slotCount = function->stackSize;
+    layouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            cs->state->global,
+            sizeof(SZrFunctionFrameSlotLayout) * slotCount,
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (layouts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    cursor = frame_layout_align_offset((TZrUInt32)(slotCount * sizeof(SZrTypeValueOnStack)), ZR_ALIGN_SIZE);
+
+    for (TZrUInt32 slot = 0; slot < slotCount; slot++) {
+        const SZrFunctionTypedLocalBinding *binding = find_typed_local_binding_for_slot(function, slot);
+        const SZrCompilerStackSlotTypeHint *hint =
+                (binding == ZR_NULL && !compiler_stack_slot_requires_plain_value_layout(function, slot))
+                        ? find_stack_slot_type_hint_for_slot(cs, slot)
+                        : ZR_NULL;
+        SZrFunctionTypedTypeRef hintTypeRef;
+        const SZrFunctionTypedTypeRef *slotTypeRef = binding != ZR_NULL ? &binding->type : ZR_NULL;
+        TZrUInt32 byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+        TZrUInt32 byteAlign = ZR_ALIGN_SIZE;
+        TZrUInt32 typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+        TZrUInt8 slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+
+        if (hint != ZR_NULL) {
+            typed_type_ref_from_inferred(&hintTypeRef, &hint->type);
+            slotTypeRef = &hintTypeRef;
+        }
+
+        if (compiler_find_inline_struct_layout(cs, slotTypeRef,
+                                               &typeLayoutId,
+                                               &byteSize,
+                                               &byteAlign)) {
+            slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+        }
+
+        if (byteAlign == 0) {
+            byteAlign = ZR_ALIGN_SIZE;
+        }
+        if (byteAlign > frameAlign) {
+            frameAlign = byteAlign;
+        }
+
+        cursor = frame_layout_align_offset(cursor, byteAlign);
+        ZrCore_Memory_RawSet(&layouts[slot], 0, sizeof(layouts[slot]));
+        layouts[slot].stackSlot = slot;
+        layouts[slot].byteOffset = cursor;
+        layouts[slot].byteSize = byteSize;
+        layouts[slot].byteAlign = byteAlign;
+        layouts[slot].typeLayoutId = typeLayoutId;
+        layouts[slot].slotKind = slotKind;
+        layouts[slot].isParameter = slot < function->parameterCount ? 1 : 0;
+        cursor += byteSize;
+    }
+
+    if (frameAlign == 0) {
+        frameAlign = ZR_ALIGN_SIZE;
+    }
+
+    function->frameSlotLayouts = layouts;
+    function->frameSlotLayoutLength = slotCount;
+    function->frameByteAlign = frameAlign;
+    function->frameByteSize = frame_layout_align_offset(cursor, frameAlign);
     return ZR_TRUE;
 }
 

@@ -16,6 +16,26 @@ typedef struct SZrLibrary_ProjectPathAlias {
     SZrString *modulePrefix;
 } SZrLibrary_ProjectPathAlias;
 
+typedef struct SZrLibrary_ProjectDependencyReference {
+    SZrString *name;
+    TZrSize packageIndex;
+} SZrLibrary_ProjectDependencyReference;
+
+typedef struct SZrLibrary_ProjectDependencyPackage {
+    SZrString *name;
+    SZrString *version;
+    SZrString *file;
+    SZrString *directory;
+    SZrString *source;
+    SZrString *binary;
+    SZrString *entry;
+    SZrLibrary_ProjectPathAlias *pathAliases;
+    TZrSize pathAliasCount;
+    SZrLibrary_ProjectDependencyReference *dependencyRefs;
+    TZrSize dependencyRefCount;
+    TZrSize dependencyRefCapacity;
+} SZrLibrary_ProjectDependencyPackage;
+
 struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     TZrUInt64 signature;
     SZrString *file;
@@ -35,6 +55,12 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrString *local;
     SZrLibrary_ProjectPathAlias *pathAliases;
     TZrSize pathAliasCount;
+    SZrLibrary_ProjectDependencyPackage *dependencyPackages;
+    TZrSize dependencyPackageCount;
+    TZrSize dependencyPackageCapacity;
+    SZrLibrary_ProjectDependencyReference *dependencyRefs;
+    TZrSize dependencyRefCount;
+    TZrSize dependencyRefCapacity;
     TZrBool supportMultithread;
     TZrBool autoCoroutine;
 };
@@ -65,6 +91,21 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
                                                                 TZrSize bufferSize,
                                                                 TZrChar *errorBuffer,
                                                                 TZrSize errorBufferSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveSourcePath(const SZrLibrary_Project *project,
+                                                           const TZrChar *moduleName,
+                                                           TZrChar *buffer,
+                                                           TZrSize bufferSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveBinaryPath(const SZrLibrary_Project *project,
+                                                           const TZrChar *moduleName,
+                                                           TZrChar *buffer,
+                                                           TZrSize bufferSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveIntermediatePath(const SZrLibrary_Project *project,
+                                                                 const TZrChar *moduleName,
+                                                                 TZrChar *buffer,
+                                                                 TZrSize bufferSize);
 
 ZR_LIBRARY_API EZrThreadStatus ZrLibrary_Project_Run(SZrState *state, SZrTypeValue *result);
 

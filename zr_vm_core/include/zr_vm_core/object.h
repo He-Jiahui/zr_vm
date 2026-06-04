@@ -151,6 +151,8 @@ struct ZR_STRUCT_ALIGN SZrObjectPrototype {
     TZrUInt32 modifierFlags;
     TZrUInt32 nextVirtualSlotIndex;
     TZrUInt32 nextPropertyIdentity;
+    TZrUInt32 layoutByteSize;
+    TZrUInt32 layoutByteAlign;
     SZrManagedFieldInfo *managedFields;
     TZrUInt32 managedFieldCount;
     TZrUInt32 managedFieldCapacity;

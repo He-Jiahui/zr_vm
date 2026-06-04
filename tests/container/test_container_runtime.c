@@ -2472,6 +2472,98 @@ static void test_container_native_binding_temp_roots_preserve_gc_object_values_w
     TEST_DIVIDER();
 }
 
+static void test_container_array_push_value_uses_dense_pair_pool_for_gc_object_values(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Array PushValue Uses Dense Pair Pool For GC Object Values";
+    SZrState *state;
+    SZrObject *targetArray;
+    SZrObject *entryObject;
+    SZrTypeValue entryValue;
+    const SZrTypeValue *capturedEntry;
+
+    TEST_START(summary);
+    timer.startTime = clock();
+    ZrCore_Value_ResetAsNull(&entryValue);
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    targetArray = ZrLib_Array_New(state);
+    entryObject = ZrLib_Object_New(state);
+    TEST_ASSERT_NOT_NULL(targetArray);
+    TEST_ASSERT_NOT_NULL(entryObject);
+    TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)0u, (UNITY_UINT64)targetArray->nodeMap.pairPoolUsed);
+
+    ZrLib_Value_SetObject(state, &entryValue, entryObject, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrLib_Array_PushValue(state, targetArray, &entryValue));
+
+    TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)1u, (UNITY_UINT64)targetArray->nodeMap.elementCount);
+    TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)1u, (UNITY_UINT64)targetArray->nodeMap.pairPoolUsed);
+    TEST_ASSERT_TRUE(targetArray->nodeMap.pairPoolCapacity >= targetArray->nodeMap.elementCount);
+
+    capturedEntry = ZrLib_Array_Get(state, targetArray, 0);
+    TEST_ASSERT_NOT_NULL(capturedEntry);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, capturedEntry->type);
+    TEST_ASSERT_EQUAL_PTR(entryObject, ZR_CAST_OBJECT(state, capturedEntry->value.object));
+
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
+static void test_container_array_add_uses_dense_pair_pool_for_gc_object_values(void) {
+    SZrTestTimer timer = {0};
+    const char *summary = "Container Runtime - Array Add Uses Dense Pair Pool For GC Object Values";
+    SZrState *state;
+    SZrFunction *entryFunction;
+    SZrTypeValue resultValue;
+    SZrObject *arrayObject;
+    SZrObject *itemsObject;
+    SZrHashKeyValuePair *firstPair;
+    const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var xs = new container.Array<object>();\n"
+            "var value = {};\n"
+            "xs.add(value);\n"
+            "return xs;\n";
+
+    TEST_START(summary);
+    timer.startTime = clock();
+
+    state = ZrContainerTests_CreateState();
+    TEST_ASSERT_NOT_NULL(state);
+
+    entryFunction = compile_test_script(state, "container_array_add_dense_pair_pool_runtime_test.zr", source);
+    TEST_ASSERT_NOT_NULL(entryFunction);
+    TEST_ASSERT_TRUE(ZrTests_Runtime_Function_Execute(state, entryFunction, &resultValue));
+    TEST_ASSERT_TRUE(resultValue.type == ZR_VALUE_TYPE_OBJECT || resultValue.type == ZR_VALUE_TYPE_ARRAY);
+    TEST_ASSERT_NOT_NULL(resultValue.value.object);
+
+    arrayObject = ZR_CAST_OBJECT(state, resultValue.value.object);
+    TEST_ASSERT_NOT_NULL(arrayObject);
+    itemsObject = arrayObject->cachedHiddenItemsObject;
+    TEST_ASSERT_NOT_NULL(itemsObject);
+    TEST_ASSERT_EQUAL_INT(ZR_OBJECT_INTERNAL_TYPE_ARRAY, itemsObject->internalType);
+    TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)1u, (UNITY_UINT64)itemsObject->nodeMap.elementCount);
+    TEST_ASSERT_EQUAL_UINT64((UNITY_UINT64)1u, (UNITY_UINT64)itemsObject->nodeMap.pairPoolUsed);
+
+    firstPair = itemsObject->nodeMap.buckets[0];
+    TEST_ASSERT_NOT_NULL(firstPair);
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_SIGNED_INT(firstPair->key.type));
+    TEST_ASSERT_EQUAL_INT64(0, firstPair->key.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_OBJECT, firstPair->value.type);
+    TEST_ASSERT_NOT_NULL(firstPair->value.value.object);
+
+    ZrCore_Function_Free(state, entryFunction);
+    ZrContainerTests_DestroyState(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, summary);
+    TEST_DIVIDER();
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -2522,6 +2614,8 @@ int main(void) {
     RUN_TEST(test_reference_protocols_nested_foreach_fixture_keeps_iterators_independent);
     RUN_TEST(test_reference_protocols_comparable_hashable_fixture_preserves_container_consistency);
     RUN_TEST(test_container_native_binding_temp_roots_preserve_gc_object_values_without_extra_pin_scope);
+    RUN_TEST(test_container_array_push_value_uses_dense_pair_pool_for_gc_object_values);
+    RUN_TEST(test_container_array_add_uses_dense_pair_pool_for_gc_object_values);
     RUN_TEST(test_container_array_runtime_bulk_super_array_helpers_preserve_existing_prefixes);
     RUN_TEST(test_container_array_runtime_bulk_super_array_fill_keeps_dense_bucket_capacity_aligned_with_cached_capacity);
     RUN_TEST(test_container_array_runtime_bulk_super_array_fill_grows_pair_pool_to_length_before_bucket_capacity);

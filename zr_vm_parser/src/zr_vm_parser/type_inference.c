@@ -6,6 +6,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
+#include "type_inference/type_inference_semantic_facts.h"
 #include "zr_vm_parser/ast.h"
 
 #include "zr_vm_core/array.h"
@@ -286,6 +287,7 @@ TZrBool ZrParser_LiteralType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrIn
             // 未加后缀的整数字面量统一按 int64 推断。
             // 后续若需要字面量收窄，应由语义层在约束上下文中完成，而不是在基础推断阶段直接缩小。
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_INT64);
+            type_inference_apply_literal_numeric_range(node, result);
             return ZR_TRUE;
         }
             
@@ -301,6 +303,7 @@ TZrBool ZrParser_LiteralType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrIn
             
         case ZR_AST_CHAR_LITERAL:
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_INT8);
+            type_inference_apply_literal_numeric_range(node, result);
             return ZR_TRUE;
             
         case ZR_AST_NULL_LITERAL:
@@ -339,6 +342,32 @@ static TZrBool infer_identifier_callable_type(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static void record_identifier_reference_fact(SZrCompilerState *cs,
+                                             SZrAstNode *node,
+                                             const SZrTypeBinding *binding) {
+    SZrSemanticReferenceFact fact;
+
+    if (cs == ZR_NULL ||
+        cs->semanticContext == ZR_NULL ||
+        node == ZR_NULL ||
+        node->type != ZR_AST_IDENTIFIER_LITERAL ||
+        binding == ZR_NULL ||
+        binding->name == ZR_NULL) {
+        return;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = node;
+    fact.range = node->location;
+    fact.declarationRange = binding->hasDeclarationRange ? binding->declarationRange : node->location;
+    fact.kind = ZR_SEMANTIC_REFERENCE_READ;
+    fact.symbolId = binding->symbolId;
+    fact.typeId = binding->typeId;
+    fact.name = binding->name;
+    fact.isResolved = ZR_TRUE;
+    ZrParser_SemanticFacts_AppendReference(cs->semanticContext, &fact);
+}
+
 // 从标识符推断类型
 TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
     SZrFunctionTypeInfo *funcTypeInfo = ZR_NULL;
@@ -356,6 +385,7 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     if (cs->typeEnv != ZR_NULL) {
         if (ZrParser_TypeEnvironment_LookupVariable(cs->state, cs->typeEnv, name, result)) {
             SZrInferredType normalizedType;
+            const SZrTypeBinding *binding = ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv, name);
 
             ZrParser_InferredType_Init(cs->state, &normalizedType, ZR_VALUE_TYPE_OBJECT);
             if (result->typeName != ZR_NULL &&
@@ -368,6 +398,7 @@ TZrBool ZrParser_IdentifierType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                 ZrParser_InferredType_Copy(cs->state, result, &normalizedType);
             }
             ZrParser_InferredType_Free(cs->state, &normalizedType);
+            record_identifier_reference_fact(cs, node, binding);
             return ZR_TRUE;
         }
 
@@ -426,11 +457,13 @@ TZrBool ZrParser_UnaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *nod
     } else if (strcmp(op, "~") == 0) {
         // 位非：结果类型与操作数类型相同（整数类型）
         ZrParser_InferredType_Copy(cs->state, result, &argType);
+        type_inference_apply_unary_numeric_range(op, &argType, result);
         ZrParser_InferredType_Free(cs->state, &argType);
         return ZR_TRUE;
     } else if (strcmp(op, "-") == 0 || strcmp(op, "+") == 0) {
         // 取负/正号：结果类型与操作数类型相同
         ZrParser_InferredType_Copy(cs->state, result, &argType);
+        type_inference_apply_unary_numeric_range(op, &argType, result);
         ZrParser_InferredType_Free(cs->state, &argType);
         return ZR_TRUE;
     }
@@ -501,6 +534,7 @@ TZrBool ZrParser_BinaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *no
             ZrParser_InferredType_Free(cs->state, &rightType);
             return ZR_FALSE;
         }
+        type_inference_apply_binary_numeric_range(op, &leftType, &rightType, result);
         ZrParser_InferredType_Free(cs->state, &leftType);
         ZrParser_InferredType_Free(cs->state, &rightType);
         return ZR_TRUE;
@@ -516,6 +550,38 @@ TZrBool ZrParser_BinaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *no
     ZrParser_InferredType_Free(cs->state, &leftType);
     ZrParser_InferredType_Free(cs->state, &rightType);
     return ZR_FALSE;
+}
+
+static TZrBool type_inference_logical_expression(SZrCompilerState *cs,
+                                                 SZrAstNode *node,
+                                                 SZrInferredType *result) {
+    SZrAstNode *left;
+    SZrAstNode *right;
+    SZrInferredType leftType;
+    SZrInferredType rightType;
+    TZrBool hasLeftType;
+    TZrBool hasRightType;
+
+    if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL ||
+        node->type != ZR_AST_LOGICAL_EXPRESSION) {
+        return ZR_FALSE;
+    }
+
+    left = node->data.logicalExpression.left;
+    right = node->data.logicalExpression.right;
+    ZrParser_InferredType_Init(cs->state, &leftType, ZR_VALUE_TYPE_OBJECT);
+    ZrParser_InferredType_Init(cs->state, &rightType, ZR_VALUE_TYPE_OBJECT);
+    hasLeftType = ZrParser_ExpressionType_Infer(cs, left, &leftType);
+    hasRightType = hasLeftType ? ZrParser_ExpressionType_Infer(cs, right, &rightType) : ZR_FALSE;
+    ZrParser_InferredType_Free(cs->state, &leftType);
+    ZrParser_InferredType_Free(cs->state, &rightType);
+
+    if (!hasLeftType || !hasRightType) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_BOOL);
+    return ZR_TRUE;
 }
 
 // 从函数调用推断类型
@@ -1113,27 +1179,86 @@ TZrBool ZrParser_ArrayLiteralType_Infer(SZrCompilerState *cs, SZrAstNode *node, 
 
 // 从对象字面量推断类型
 TZrBool ZrParser_ObjectLiteralType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+    SZrObjectLiteral *objectLiteral;
+
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_OBJECT_LITERAL) {
         return ZR_FALSE;
     }
-    
+
     // 对象字面量返回对象类型
     ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+    objectLiteral = &node->data.objectLiteral;
+    if (objectLiteral->properties == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < objectLiteral->properties->count; index++) {
+        SZrAstNode *propertyNode = objectLiteral->properties->nodes[index];
+        SZrAstNode *keyNode;
+        SZrAstNode *valueNode;
+        SZrInferredType keyType;
+        SZrInferredType valueType;
+
+        if (propertyNode == ZR_NULL || propertyNode->type != ZR_AST_KEY_VALUE_PAIR) {
+            continue;
+        }
+
+        keyNode = propertyNode->data.keyValuePair.key;
+        if (propertyNode->data.keyValuePair.keyIsComputed && keyNode != ZR_NULL) {
+            ZrParser_InferredType_Init(cs->state, &keyType, ZR_VALUE_TYPE_OBJECT);
+            (void)ZrParser_ExpressionType_Infer(cs, keyNode, &keyType);
+            ZrParser_InferredType_Free(cs->state, &keyType);
+        }
+
+        valueNode = propertyNode->data.keyValuePair.value;
+        if (valueNode == ZR_NULL) {
+            continue;
+        }
+
+        ZrParser_InferredType_Init(cs->state, &valueType, ZR_VALUE_TYPE_OBJECT);
+        (void)ZrParser_ExpressionType_Infer(cs, valueNode, &valueType);
+        ZrParser_InferredType_Free(cs->state, &valueType);
+    }
+
     return ZR_TRUE;
 }
 
 // 从条件表达式推断类型
+static TZrBool type_inference_boolean_literal_value(const SZrAstNode *node, TZrBool *outValue) {
+    if (outValue != ZR_NULL) {
+        *outValue = ZR_FALSE;
+    }
+    if (node == ZR_NULL || node->type != ZR_AST_BOOLEAN_LITERAL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outValue = node->data.booleanLiteral.value;
+    return ZR_TRUE;
+}
+
 TZrBool ZrParser_ConditionalType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+    SZrConditionalExpression *condExpr;
+    TZrBool conditionValue = ZR_FALSE;
+    SZrInferredType thenType, elseType;
+    TZrBool hasThenType = ZR_FALSE;
+    TZrBool hasElseType = ZR_FALSE;
+
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_CONDITIONAL_EXPRESSION) {
         return ZR_FALSE;
     }
     
-    SZrConditionalExpression *condExpr = &node->data.conditionalExpression;
+    condExpr = &node->data.conditionalExpression;
+    if (type_inference_boolean_literal_value(condExpr->test, &conditionValue)) {
+        SZrAstNode *selectedBranch = conditionValue ? condExpr->consequent : condExpr->alternate;
+        if (selectedBranch == ZR_NULL ||
+            !ZrParser_ExpressionType_Infer(cs, selectedBranch, result)) {
+            return ZR_FALSE;
+        }
+        type_inference_record_constant_conditional_branch_facts(cs, node, conditionValue);
+        return ZR_TRUE;
+    }
     
     // 推断then和else分支类型
-    SZrInferredType thenType, elseType;
-    TZrBool hasThenType = ZR_FALSE;
-    TZrBool hasElseType = ZR_FALSE;
     ZrParser_InferredType_Init(cs->state, &thenType, ZR_VALUE_TYPE_OBJECT);
     ZrParser_InferredType_Init(cs->state, &elseType, ZR_VALUE_TYPE_OBJECT);
     hasThenType = ZrParser_ExpressionType_Infer(cs, condExpr->consequent, &thenType);
@@ -1164,6 +1289,8 @@ TZrBool ZrParser_ConditionalType_Infer(SZrCompilerState *cs, SZrAstNode *node, S
 
 // 从赋值表达式推断类型
 TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+    TZrBool hasLeftType = ZR_FALSE;
+
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL || node->type != ZR_AST_ASSIGNMENT_EXPRESSION) {
         return ZR_FALSE;
     }
@@ -1179,7 +1306,51 @@ TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     // 1. 推断左值类型
     SZrInferredType leftType;
     ZrParser_InferredType_Init(cs->state, &leftType, ZR_VALUE_TYPE_OBJECT);
-    if (ZrParser_ExpressionType_Infer(cs, assignExpr->left, &leftType)) {
+
+    if (assignExpr->left != ZR_NULL &&
+        assignExpr->left->type == ZR_AST_IDENTIFIER_LITERAL &&
+        assignExpr->left->data.identifier.name != ZR_NULL &&
+        cs->typeEnv != ZR_NULL) {
+        const SZrTypeBinding *binding =
+                ZrParser_TypeEnvironment_FindVariableBinding(cs->typeEnv,
+                                                             assignExpr->left->data.identifier.name);
+        if (binding != ZR_NULL) {
+            SZrInferredType normalizedType;
+            EZrSemanticNumericFactKind leftNumericKind = ZR_SEMANTIC_NUMERIC_FACT_UNKNOWN;
+
+            ZrParser_InferredType_Copy(cs->state, &leftType, &binding->type);
+            ZrParser_InferredType_Init(cs->state, &normalizedType, ZR_VALUE_TYPE_OBJECT);
+            if (leftType.typeName != ZR_NULL &&
+                leftType.elementTypes.length == 0 &&
+                inferred_type_from_type_name(cs, leftType.typeName, &normalizedType) &&
+                normalizedType.elementTypes.length > 0) {
+                normalizedType.isNullable = leftType.isNullable;
+                normalizedType.ownershipQualifier = leftType.ownershipQualifier;
+                ZrParser_InferredType_Free(cs->state, &leftType);
+                ZrParser_InferredType_Copy(cs->state, &leftType, &normalizedType);
+            }
+            ZrParser_InferredType_Free(cs->state, &normalizedType);
+            if (ZR_VALUE_IS_TYPE_NUMBER(leftType.baseType) &&
+                (leftType.hasRangeConstraint || ZR_VALUE_IS_TYPE_UNSIGNED_INT(leftType.baseType))) {
+                leftNumericKind = ZR_SEMANTIC_NUMERIC_FACT_RANGE;
+            }
+            type_inference_record_expression_and_numeric_facts(cs,
+                                                               assignExpr->left,
+                                                               &leftType,
+                                                               leftNumericKind);
+            type_inference_record_identifier_write_reference_fact(cs, assignExpr->left, binding);
+            hasLeftType = ZR_TRUE;
+        }
+    }
+
+    if (!hasLeftType) {
+        hasLeftType = ZrParser_ExpressionType_Infer(cs, assignExpr->left, &leftType);
+        if (hasLeftType) {
+            type_inference_record_member_write_reference_fact(cs, assignExpr->left);
+        }
+    }
+
+    if (hasLeftType) {
         // 2. 检查类型兼容性
         if (leftType.baseType != ZR_VALUE_TYPE_OBJECT && result->baseType != ZR_VALUE_TYPE_OBJECT &&
             !ZrParser_InferredType_IsCompatible(result, &leftType)) {
@@ -1265,9 +1436,13 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                         free_resolved_call_signature(cs->state, &resolvedSignature);
                         return ZR_FALSE;
                     }
+                    type_inference_record_primary_call_reference_fact(cs, node, firstMember, funcTypeInfo);
                     if (primary->members->count > 1) {
                         TZrBool success =
                                 infer_primary_member_chain_type(cs, &baseType, primary->members, 1, ZR_FALSE, result);
+                        if (success) {
+                            type_inference_record_member_access_reference_fact(cs, node);
+                        }
                         ZrParser_InferredType_Free(cs->state, &baseType);
                         free_resolved_call_signature(cs->state, &resolvedSignature);
                         return success;
@@ -1309,9 +1484,13 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                         free_resolved_call_signature(cs->state, &resolvedSignature);
                         return ZR_FALSE;
                     }
+                    type_inference_record_primary_call_reference_fact(cs, node, firstMember, funcTypeInfo);
                     if (primary->members->count > 1) {
                         TZrBool success =
                                 infer_primary_member_chain_type(cs, &baseType, primary->members, 1, ZR_FALSE, result);
+                        if (success) {
+                            type_inference_record_member_access_reference_fact(cs, node);
+                        }
                         ZrParser_InferredType_Free(cs->state, &baseType);
                         free_resolved_call_signature(cs->state, &resolvedSignature);
                         return success;
@@ -1346,6 +1525,7 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                                                             0,
                                                             baseIsPrototypeReference,
                                                             result)) {
+                            type_inference_record_member_access_reference_fact(cs, node);
                             ZrParser_InferredType_Free(cs->state, &baseType);
                             free_resolved_call_signature(cs->state, &resolvedSignature);
                             return ZR_TRUE;
@@ -1388,6 +1568,9 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
                                                                   0,
                                                                   baseIsPrototypeReference,
                                                                   result);
+                if (success) {
+                    type_inference_record_member_access_reference_fact(cs, node);
+                }
                 ZrParser_InferredType_Free(cs->state, &baseType);
                 return success;
             } else {
@@ -1406,6 +1589,9 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
 
 // 从AST节点推断类型（主入口函数）
 TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
+    EZrSemanticNumericFactKind numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_UNKNOWN;
+    TZrBool success = ZR_FALSE;
+
     if (cs == ZR_NULL || node == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -1429,60 +1615,107 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
         case ZR_AST_TEMPLATE_STRING_LITERAL:
         case ZR_AST_CHAR_LITERAL:
         case ZR_AST_NULL_LITERAL:
-            return ZrParser_LiteralType_Infer(cs, node, result);
+            if (!ZrParser_LiteralType_Infer(cs, node, result)) {
+                return ZR_FALSE;
+            }
+            numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_LITERAL;
+            success = ZR_TRUE;
+            break;
         
         case ZR_AST_IDENTIFIER_LITERAL:
-            return ZrParser_IdentifierType_Infer(cs, node, result);
+            success = ZrParser_IdentifierType_Infer(cs, node, result);
+            if (success &&
+                ZR_VALUE_IS_TYPE_NUMBER(result->baseType) &&
+                (result->hasRangeConstraint || ZR_VALUE_IS_TYPE_UNSIGNED_INT(result->baseType))) {
+                numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_RANGE;
+            }
+            break;
         
         // 表达式
         case ZR_AST_BINARY_EXPRESSION:
-            return ZrParser_BinaryExpressionType_Infer(cs, node, result);
+            if (!ZrParser_BinaryExpressionType_Infer(cs, node, result)) {
+                return ZR_FALSE;
+            }
+            numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_PROMOTION;
+            success = ZR_TRUE;
+            break;
+
+        case ZR_AST_LOGICAL_EXPRESSION:
+            success = type_inference_logical_expression(cs, node, result);
+            break;
         
         case ZR_AST_UNARY_EXPRESSION:
-            return ZrParser_UnaryExpressionType_Infer(cs, node, result);
+            success = ZrParser_UnaryExpressionType_Infer(cs, node, result);
+            if (success &&
+                ZR_VALUE_IS_TYPE_NUMBER(result->baseType) &&
+                (result->hasRangeConstraint || ZR_VALUE_IS_TYPE_UNSIGNED_INT(result->baseType))) {
+                numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_RANGE;
+            }
+            break;
         
         case ZR_AST_CONDITIONAL_EXPRESSION:
-            return ZrParser_ConditionalType_Infer(cs, node, result);
+            success = ZrParser_ConditionalType_Infer(cs, node, result);
+            if (success &&
+                ZR_VALUE_IS_TYPE_NUMBER(result->baseType) &&
+                (result->hasRangeConstraint || ZR_VALUE_IS_TYPE_UNSIGNED_INT(result->baseType))) {
+                numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_RANGE;
+            }
+            break;
         
         case ZR_AST_ASSIGNMENT_EXPRESSION:
-            return ZrParser_AssignmentType_Infer(cs, node, result);
+            success = ZrParser_AssignmentType_Infer(cs, node, result);
+            break;
 
         case ZR_AST_TYPE_CAST_EXPRESSION:
             if (node->data.typeCastExpression.targetType == ZR_NULL) {
                 return ZR_FALSE;
             }
-            return ZrParser_AstTypeToInferredType_Convert(cs, node->data.typeCastExpression.targetType, result);
+            success = ZrParser_AstTypeToInferredType_Convert(cs, node->data.typeCastExpression.targetType, result);
+            if (success) {
+                numericFactKind = ZR_SEMANTIC_NUMERIC_FACT_CONVERSION;
+            }
+            break;
         
         case ZR_AST_FUNCTION_CALL:
-            return ZrParser_FunctionCallType_Infer(cs, node, result);
+            success = ZrParser_FunctionCallType_Infer(cs, node, result);
+            break;
 
         case ZR_AST_IMPORT_EXPRESSION:
-            return infer_import_expression_type(cs, node, result);
+            success = infer_import_expression_type(cs, node, result);
+            break;
 
         case ZR_AST_TYPE_QUERY_EXPRESSION:
-            return infer_type_query_expression_type(cs, node, result);
+            success = infer_type_query_expression_type(cs, node, result);
+            break;
 
         case ZR_AST_TYPE_LITERAL_EXPRESSION:
-            return infer_type_literal_expression_type(cs, node, result);
+            success = infer_type_literal_expression_type(cs, node, result);
+            break;
         
         case ZR_AST_LAMBDA_EXPRESSION:
-            return ZrParser_LambdaType_Infer(cs, node, result);
+            success = ZrParser_LambdaType_Infer(cs, node, result);
+            break;
         
         case ZR_AST_ARRAY_LITERAL:
-            return ZrParser_ArrayLiteralType_Infer(cs, node, result);
+            success = ZrParser_ArrayLiteralType_Infer(cs, node, result);
+            break;
         
         case ZR_AST_OBJECT_LITERAL:
-            return ZrParser_ObjectLiteralType_Infer(cs, node, result);
+            success = ZrParser_ObjectLiteralType_Infer(cs, node, result);
+            break;
 
         case ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION:
-            return infer_prototype_reference_type(cs, node, result);
+            success = infer_prototype_reference_type(cs, node, result);
+            break;
 
         case ZR_AST_CONSTRUCT_EXPRESSION:
-            return infer_construct_expression_type(cs, node, result);
+            success = infer_construct_expression_type(cs, node, result);
+            break;
         
         // TODO: 处理其他表达式类型
         case ZR_AST_PRIMARY_EXPRESSION:
-            return ZrParser_PrimaryExpressionType_Infer(cs, node, result);
+            success = ZrParser_PrimaryExpressionType_Infer(cs, node, result);
+            break;
         
         case ZR_AST_MEMBER_EXPRESSION:
             // 实现member expression的类型推断
@@ -1491,7 +1724,8 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
             // 完整的实现需要从对象类型查找成员定义
             // TODO: 注意：member expression的类型推断需要知道对象类型，暂时返回对象类型
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
-            return ZR_TRUE;
+            success = ZR_TRUE;
+            break;
         
         case ZR_AST_IF_EXPRESSION:
             // 实现if expression的类型推断
@@ -1508,19 +1742,23 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                         if (ZrParser_InferredType_GetCommonType(cs->state, result, &thenType, &elseType)) {
                             ZrParser_InferredType_Free(cs->state, &thenType);
                             ZrParser_InferredType_Free(cs->state, &elseType);
-                            return ZR_TRUE;
+                            success = ZR_TRUE;
+                            break;
                         }
                         ZrParser_InferredType_Free(cs->state, &thenType);
                         ZrParser_InferredType_Free(cs->state, &elseType);
                     }
                 } else if (ifExpr->thenExpr != ZR_NULL) {
-                    return ZrParser_ExpressionType_Infer(cs, ifExpr->thenExpr, result);
+                    success = ZrParser_ExpressionType_Infer(cs, ifExpr->thenExpr, result);
+                    break;
                 } else if (ifExpr->elseExpr != ZR_NULL) {
-                    return ZrParser_ExpressionType_Infer(cs, ifExpr->elseExpr, result);
+                    success = ZrParser_ExpressionType_Infer(cs, ifExpr->elseExpr, result);
+                    break;
                 }
                 // 默认返回对象类型
                 ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
-                return ZR_TRUE;
+                success = ZR_TRUE;
+                break;
             }
         
         case ZR_AST_SWITCH_EXPRESSION:
@@ -1586,17 +1824,24 @@ TZrBool ZrParser_ExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
                 if (hasType) {
                     ZrParser_InferredType_Copy(cs->state, result, &commonType);
                     ZrParser_InferredType_Free(cs->state, &commonType);
-                    return ZR_TRUE;
+                    success = ZR_TRUE;
+                    break;
                 }
                 
                 // 默认返回对象类型
                 ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
-                return ZR_TRUE;
+                success = ZR_TRUE;
+                break;
             }
         
         default:
             return ZR_FALSE;
     }
+
+    if (success) {
+        type_inference_record_expression_and_numeric_facts(cs, node, result, numericFactKind);
+    }
+    return success;
 }
 
 static TZrBool ast_type_should_preserve_primitive_alias(const TZrNativeString nameStr,
@@ -1796,6 +2041,7 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
             } else {
                 ZrParser_InferredType_Init(cs->state, result, baseType);
             }
+            type_inference_apply_primitive_numeric_range(result);
         } else {
             TZrBool allowReservedDecoratorPseudoType =
                     astType->isDecoratorPseudoType &&

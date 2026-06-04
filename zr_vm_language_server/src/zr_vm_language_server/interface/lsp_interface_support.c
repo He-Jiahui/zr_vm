@@ -919,6 +919,8 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(SZrState *state,
                                                                   contentLength);
     }
 
+    ZrLanguageServer_Lsp_EnrichCompletionItemSemanticFacts(state, analyzer, symbol, item);
+
     if (hoveredSymbolName != ZR_NULL &&
         resolvedTypeText != ZR_NULL &&
         ZrLanguageServer_Lsp_StringsEqual(item->label, hoveredSymbolName)) {
@@ -959,6 +961,75 @@ static TZrBool should_suppress_parser_diagnostic(SZrDiagnostic *diag) {
            memcmp(messageText, legacyImportMessage, messageLength) == 0;
 }
 
+static SZrString *lsp_diagnostic_message_with_context(SZrState *state, SZrDiagnostic *diag) {
+    TZrNativeString messageText;
+    TZrNativeString causeText = ZR_NULL;
+    TZrNativeString suggestionText = ZR_NULL;
+    TZrSize messageLength;
+    TZrSize causeLength = 0;
+    TZrSize suggestionLength = 0;
+    TZrSize totalLength;
+    TZrSize offset = 0;
+    TZrChar *buffer;
+    SZrString *result;
+    static const TZrChar causePrefix[] = "\nCause: ";
+    static const TZrChar suggestionPrefix[] = "\nSuggestion: ";
+
+    if (state == ZR_NULL || diag == ZR_NULL || diag->message == ZR_NULL ||
+        (diag->cause == ZR_NULL && diag->suggestion == ZR_NULL)) {
+        return diag != ZR_NULL ? diag->message : ZR_NULL;
+    }
+
+    get_string_view(diag->message, &messageText, &messageLength);
+    if (messageText == ZR_NULL) {
+        return diag->message;
+    }
+    if (diag->cause != ZR_NULL) {
+        get_string_view(diag->cause, &causeText, &causeLength);
+    }
+    if (diag->suggestion != ZR_NULL) {
+        get_string_view(diag->suggestion, &suggestionText, &suggestionLength);
+    }
+    if (causeText == ZR_NULL && suggestionText == ZR_NULL) {
+        return diag->message;
+    }
+
+    totalLength = messageLength;
+    if (causeText != ZR_NULL) {
+        totalLength += strlen(causePrefix) + causeLength;
+    }
+    if (suggestionText != ZR_NULL) {
+        totalLength += strlen(suggestionPrefix) + suggestionLength;
+    }
+
+    buffer = (TZrChar *)ZrCore_Memory_RawMalloc(state->global, totalLength + 1);
+    if (buffer == ZR_NULL) {
+        return diag->message;
+    }
+
+    memcpy(buffer + offset, messageText, messageLength);
+    offset += messageLength;
+    if (causeText != ZR_NULL) {
+        TZrSize prefixLength = strlen(causePrefix);
+        memcpy(buffer + offset, causePrefix, prefixLength);
+        offset += prefixLength;
+        memcpy(buffer + offset, causeText, causeLength);
+        offset += causeLength;
+    }
+    if (suggestionText != ZR_NULL) {
+        TZrSize prefixLength = strlen(suggestionPrefix);
+        memcpy(buffer + offset, suggestionPrefix, prefixLength);
+        offset += prefixLength;
+        memcpy(buffer + offset, suggestionText, suggestionLength);
+        offset += suggestionLength;
+    }
+    buffer[offset] = '\0';
+
+    result = ZrCore_String_Create(state, buffer, offset);
+    ZrCore_Memory_RawFree(state->global, buffer, totalLength + 1);
+    return result != ZR_NULL ? result : diag->message;
+}
+
 void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZrDiagnostic *diag) {
     SZrLspDiagnostic *lspDiag;
 
@@ -974,7 +1045,7 @@ void ZrLanguageServer_Lsp_AppendDiagnostic(SZrState *state, SZrArray *result, SZ
     lspDiag->range = ZrLanguageServer_LspRange_FromFileRange(diag->location);
     lspDiag->severity = (TZrInt32)diag->severity + 1;
     lspDiag->code = diag->code;
-    lspDiag->message = diag->message;
+    lspDiag->message = lsp_diagnostic_message_with_context(state, diag);
     ZrCore_Array_Init(state,
                       &lspDiag->relatedInformation,
                       sizeof(SZrLspDiagnosticRelatedInformation),

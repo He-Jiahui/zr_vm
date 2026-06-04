@@ -16,6 +16,7 @@
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/writer.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
 typedef struct SZrRegressionTestTimer {
     clock_t startTime;
@@ -27,11 +28,18 @@ void test_w2_load_typed_arithmetic_probe_reports_residual_candidates(void);
 void test_w2_dispatch_loops_materialized_constant_signed_arithmetic_fuses(void);
 void test_w2_signed_equality_branch_fuses_slot_operands(void);
 void test_w2_signed_greater_equal_branch_reuses_greater_signed_jump(void);
+void test_w2_signed_greater_branch_fuses_to_less_equal_jump(void);
 void test_w2_static_iterator_move_next_branch_fuses(void);
 void test_w2_static_iterator_plain_dest_state_does_not_cross_loop_exit(void);
 void test_w2_super_array_add_variable_value_elides_dead_receiver_setup(void);
 void test_w2_get_member_slot_direct_result_store_elides_temp_copy(void);
 void test_w2_known_native_member_call_skips_argument_loads(void);
+void test_w2_set_member_slot_null_fuses_dead_null_temp(void);
+void test_w2_set_member_slot_null_does_not_kill_slot_zero_forwarding(void);
+void test_w2_set_member_slot_cache_index_does_not_kill_slot_zero_forwarding(void);
+void test_w2_set_member_slot_receiver_forwarding_rewrites_receiver(void);
+void test_w2_null_not_equal_branch_fuses_dead_null_temp(void);
+void test_w2_get_stack_set_member_slot_value_forwards_source(void);
 void test_w2_left_constant_add_mul_fold_to_existing_const_opcodes(void);
 void test_w2_right_constant_mod_fold_uses_cfg_liveness_across_branch(void);
 void test_w2_late_forward_get_stack_after_member_call_specialization(void);
@@ -55,6 +63,22 @@ static TZrUInt32 count_opcode_recursive(const SZrFunction *function, EZrInstruct
     }
 
     return count;
+}
+
+static const TZrInstruction *find_first_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < function->instructionsLength; index++) {
+        if ((EZrInstructionCode)function->instructionsList[index].instruction.operationCode == opcode) {
+            return &function->instructionsList[index];
+        }
+    }
+
+    return ZR_NULL;
 }
 
 static TZrBool function_has_dead_super_array_add_receiver_setup_recursive(const SZrFunction *function) {
@@ -139,6 +163,126 @@ static TZrBool function_has_adjacent_get_member_slot_set_stack_temp_store_recurs
 
     for (index = 0; index < function->childFunctionLength; index++) {
         if (function_has_adjacent_get_member_slot_set_stack_temp_store_recursive(&function->childFunctionList[index])) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool function_has_reset_stack_null_set_member_slot_pair_recursive(const SZrFunction *function) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index + 1u < function->instructionsLength; index++) {
+        const TZrInstruction *nullInstruction = &function->instructionsList[index];
+        const TZrInstruction *setInstruction = &function->instructionsList[index + 1u];
+
+        if ((EZrInstructionCode)nullInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(RESET_STACK_NULL) &&
+            (EZrInstructionCode)setInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT) &&
+            setInstruction->instruction.operandExtra == nullInstruction->instruction.operandExtra) {
+            return ZR_TRUE;
+        }
+    }
+
+    for (index = 0; index < function->childFunctionLength; index++) {
+        if (function_has_reset_stack_null_set_member_slot_pair_recursive(&function->childFunctionList[index])) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool function_has_reset_null_not_equal_jump_pair_recursive(const SZrFunction *function) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index + 2u < function->instructionsLength; index++) {
+        const TZrInstruction *nullInstruction = &function->instructionsList[index];
+        const TZrInstruction *compareInstruction = &function->instructionsList[index + 1u];
+        const TZrInstruction *jumpInstruction = &function->instructionsList[index + 2u];
+        TZrUInt32 nullSlot;
+        TZrUInt32 compareSlot;
+
+        if ((EZrInstructionCode)nullInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(RESET_STACK_NULL) ||
+            (EZrInstructionCode)compareInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL) ||
+            (EZrInstructionCode)jumpInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF)) {
+            continue;
+        }
+
+        nullSlot = nullInstruction->instruction.operandExtra;
+        compareSlot = compareInstruction->instruction.operandExtra;
+        if (jumpInstruction->instruction.operandExtra == compareSlot &&
+            (compareInstruction->instruction.operand.operand1[0] == nullSlot ||
+             compareInstruction->instruction.operand.operand1[1] == nullSlot)) {
+            return ZR_TRUE;
+        }
+    }
+
+    for (index = 0; index < function->childFunctionLength; index++) {
+        if (function_has_reset_null_not_equal_jump_pair_recursive(&function->childFunctionList[index])) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool function_has_get_stack_set_member_slot_value_pair_recursive(const SZrFunction *function) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index + 1u < function->instructionsLength; index++) {
+        const TZrInstruction *copyInstruction = &function->instructionsList[index];
+        const TZrInstruction *setInstruction = &function->instructionsList[index + 1u];
+
+        if ((EZrInstructionCode)copyInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(GET_STACK) &&
+            (EZrInstructionCode)setInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT) &&
+            setInstruction->instruction.operandExtra == copyInstruction->instruction.operandExtra) {
+            return ZR_TRUE;
+        }
+    }
+
+    for (index = 0; index < function->childFunctionLength; index++) {
+        if (function_has_get_stack_set_member_slot_value_pair_recursive(&function->childFunctionList[index])) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool function_has_logical_greater_signed_jump_if_pair_recursive(const SZrFunction *function) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index + 1u < function->instructionsLength; index++) {
+        const TZrInstruction *compareInstruction = &function->instructionsList[index];
+        const TZrInstruction *jumpInstruction = &function->instructionsList[index + 1u];
+
+        if ((EZrInstructionCode)compareInstruction->instruction.operationCode ==
+                    ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED) &&
+            (EZrInstructionCode)jumpInstruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(JUMP_IF) &&
+            jumpInstruction->instruction.operandExtra == compareInstruction->instruction.operandExtra) {
+            return ZR_TRUE;
+        }
+    }
+
+    for (index = 0; index < function->childFunctionLength; index++) {
+        if (function_has_logical_greater_signed_jump_if_pair_recursive(&function->childFunctionList[index])) {
             return ZR_TRUE;
         }
     }
@@ -355,6 +499,7 @@ static TZrBool function_has_post_member_call_get_stack_typed_arithmetic_pair_rec
         if (opcode == ZR_INSTRUCTION_ENUM(JUMP) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
@@ -412,6 +557,7 @@ static TZrBool function_has_post_member_call_get_constant_typed_arithmetic_pair_
         if (opcode == ZR_INSTRUCTION_ENUM(JUMP) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+            opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED) ||
             opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST) ||
             opcode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
@@ -739,6 +885,57 @@ void test_w2_signed_greater_equal_branch_reuses_greater_signed_jump(void) {
     ZR_TEST_DIVIDER();
 }
 
+void test_w2_signed_greater_branch_fuses_to_less_equal_jump(void) {
+    static const char *source =
+            "work(limit: int): int {\n"
+            "    var sum = 0;\n"
+            "    var cursor = limit;\n"
+            "    while (cursor > 0) {\n"
+            "        sum = sum + cursor;\n"
+            "        cursor = cursor - 1;\n"
+            "    }\n"
+            "    return sum;\n"
+            "}\n"
+            "return work(4);\n";
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Signed Greater Branch Fuses To Less Equal Jump");
+    ZR_TEST_INFO("Load/branch fusion",
+                 "Testing that signed > followed by JUMP_IF fuses into a less-equal branch opcode.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+
+    sourceName = ZrCore_String_CreateFromNative(state, "w2_signed_greater_branch_fusion.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(sourceName, "Failed to create source name");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to compile signed greater branch source");
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED)),
+            "Expected signed > plus branch to fuse into JUMP_IF_LESS_EQUAL_SIGNED");
+    TEST_ASSERT_FALSE_MESSAGE(
+            function_has_logical_greater_signed_jump_if_pair_recursive(function),
+            "No adjacent LOGICAL_GREATER_SIGNED -> JUMP_IF pair should remain");
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result),
+            "JUMP_IF_LESS_EQUAL_SIGNED should execute successfully");
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(10, result, "Signed greater fused loop result changed");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Signed Greater Branch Fuses To Less Equal Jump");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
 void test_w2_static_iterator_move_next_branch_fuses(void) {
     static const char *source =
             "var container = %import(\"zr.container\");\n"
@@ -991,6 +1188,334 @@ void test_w2_known_native_member_call_skips_argument_loads(void) {
 
     timer.endTime = clock();
     ZR_TEST_PASS(timer, "W2 Known Native Member Call Skips Argument Loads");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_set_member_slot_null_fuses_dead_null_temp(void) {
+    static const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var queue = new container.LinkedList<int>();\n"
+            "queue.addLast(7);\n"
+            "queue.addLast(9);\n"
+            "var head = queue.first;\n"
+            "var next = head.next;\n"
+            "next.previous = null;\n"
+            "head.next = null;\n"
+            "head.previous = null;\n"
+            "return <int> head.value + <int> next.value;\n";
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Set Member Slot Null Fuses Dead Null Temp");
+    ZR_TEST_INFO("member slot null store fusion",
+                 "Testing that RESET_STACK_NULL plus SET_MEMBER_SLOT lowers to SET_MEMBER_SLOT_NULL when the temp dies.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE_MESSAGE(ZrVmLibContainer_Register(state->global),
+                             "Failed to register zr.container for member slot null fusion test");
+
+    sourceName = ZrCore_String_CreateFromNative(state, "w2_set_member_slot_null_test.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(sourceName, "Failed to create source name");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to compile member slot null fusion source");
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT_NULL)),
+            "Expected null member stores to lower to SET_MEMBER_SLOT_NULL");
+    TEST_ASSERT_FALSE_MESSAGE(
+            function_has_reset_stack_null_set_member_slot_pair_recursive(function),
+            "No adjacent RESET_STACK_NULL -> SET_MEMBER_SLOT dead-temp pair should remain");
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result),
+            "SET_MEMBER_SLOT_NULL should execute successfully");
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(16, result, "LinkedList node value result changed");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Set Member Slot Null Fuses Dead Null Temp");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_set_member_slot_null_does_not_kill_slot_zero_forwarding(void) {
+    const TZrUInt32 instructionCount = 4u;
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrFunction *function;
+    TZrInstruction *instructions;
+    const TZrInstruction *foldedAddInstruction;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Set Member Slot Null Does Not Kill Slot Zero Forwarding");
+    ZR_TEST_INFO("member slot null liveness",
+                 "Testing that SET_MEMBER_SLOT_NULL is not treated as a write to operandExtra slot 0.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to allocate synthetic quickening function");
+    instructions = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                     sizeof(*instructions) * instructionCount,
+                                                                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL_MESSAGE(instructions, "Failed to allocate synthetic quickening instructions");
+
+    function->stackSize = 5u;
+    function->localVariableLength = 2u;
+    function->instructionsLength = instructionCount;
+    function->instructionsList = instructions;
+    instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_STACK), 2u, 0);
+    instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT_NULL), 0u, 1u, 0u);
+    instructions[2] = create_instruction_4(ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK), 3u, 2u, 4u, 0u, 0u);
+    instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1u, 3u, 0u);
+
+    TEST_ASSERT_TRUE_MESSAGE(compiler_quicken_execbc_function(state, function),
+                             "Synthetic quickening stream should optimize successfully");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(GET_STACK)),
+            "GET_STACK copy from slot 0 should be forwarded across SET_MEMBER_SLOT_NULL");
+    foldedAddInstruction = find_first_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK));
+    TEST_ASSERT_NOT_NULL_MESSAGE(foldedAddInstruction, "Expected ADD_SIGNED_LOAD_STACK to remain after forwarding");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            foldedAddInstruction->instruction.operand.operand0[0],
+            "Forwarded ADD_SIGNED_LOAD_STACK should read original slot 0");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Set Member Slot Null Does Not Kill Slot Zero Forwarding");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_set_member_slot_cache_index_does_not_kill_slot_zero_forwarding(void) {
+    const TZrUInt32 instructionCount = 4u;
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrFunction *function;
+    TZrInstruction *instructions;
+    const TZrInstruction *foldedAddInstruction;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Set Member Slot Cache Index Does Not Kill Slot Zero Forwarding");
+    ZR_TEST_INFO("member slot liveness",
+                 "Testing that SET_MEMBER_SLOT cache index 0 is not treated as a stack-slot read or write.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to allocate synthetic quickening function");
+    instructions = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                     sizeof(*instructions) * instructionCount,
+                                                                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL_MESSAGE(instructions, "Failed to allocate synthetic quickening instructions");
+
+    function->stackSize = 5u;
+    function->localVariableLength = 2u;
+    function->instructionsLength = instructionCount;
+    function->instructionsList = instructions;
+    instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_STACK), 2u, 0);
+    instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 4u, 1u, 0u);
+    instructions[2] = create_instruction_4(ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK), 3u, 2u, 4u, 0u, 0u);
+    instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1u, 3u, 0u);
+
+    TEST_ASSERT_TRUE_MESSAGE(compiler_quicken_execbc_function(state, function),
+                             "Synthetic quickening stream should optimize successfully");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(GET_STACK)),
+            "GET_STACK copy from slot 0 should be forwarded across SET_MEMBER_SLOT cache index 0");
+    foldedAddInstruction = find_first_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK));
+    TEST_ASSERT_NOT_NULL_MESSAGE(foldedAddInstruction, "Expected ADD_SIGNED_LOAD_STACK to remain after forwarding");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            foldedAddInstruction->instruction.operand.operand0[0],
+            "Forwarded ADD_SIGNED_LOAD_STACK should read original slot 0");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Set Member Slot Cache Index Does Not Kill Slot Zero Forwarding");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_set_member_slot_receiver_forwarding_rewrites_receiver(void) {
+    const TZrUInt32 instructionCount = 4u;
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrFunction *function;
+    TZrInstruction *instructions;
+    const TZrInstruction *setInstruction;
+    const TZrInstruction *foldedAddInstruction;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Set Member Slot Receiver Forwarding Rewrites Receiver");
+    ZR_TEST_INFO("member slot receiver forwarding",
+                 "Testing that removing a receiver GET_STACK copy also rewrites SET_MEMBER_SLOT receiver reads.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to allocate synthetic quickening function");
+    instructions = (TZrInstruction *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                     sizeof(*instructions) * instructionCount,
+                                                                     ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL_MESSAGE(instructions, "Failed to allocate synthetic quickening instructions");
+
+    function->stackSize = 5u;
+    function->localVariableLength = 2u;
+    function->instructionsLength = instructionCount;
+    function->instructionsList = instructions;
+    instructions[0] = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_STACK), 2u, 0);
+    instructions[1] = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT), 4u, 2u, 0u);
+    instructions[2] = create_instruction_4(ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK), 3u, 2u, 4u, 0u, 0u);
+    instructions[3] = create_instruction_2(ZR_INSTRUCTION_ENUM(FUNCTION_RETURN), 1u, 3u, 0u);
+
+    TEST_ASSERT_TRUE_MESSAGE(compiler_quicken_execbc_function(state, function),
+                             "Synthetic quickening stream should optimize successfully");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(GET_STACK)),
+            "GET_STACK copy should be removable only after all downstream reads are rewritten");
+    setInstruction = find_first_opcode(function, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT));
+    TEST_ASSERT_NOT_NULL_MESSAGE(setInstruction, "Expected SET_MEMBER_SLOT to remain after forwarding");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            setInstruction->instruction.operand.operand1[0],
+            "SET_MEMBER_SLOT receiver should be rewritten to the original source slot");
+    foldedAddInstruction = find_first_opcode(function, ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK));
+    TEST_ASSERT_NOT_NULL_MESSAGE(foldedAddInstruction, "Expected ADD_SIGNED_LOAD_STACK to remain after forwarding");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            foldedAddInstruction->instruction.operand.operand0[0],
+            "Forwarded ADD_SIGNED_LOAD_STACK should read original slot 0");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Set Member Slot Receiver Forwarding Rewrites Receiver");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_null_not_equal_branch_fuses_dead_null_temp(void) {
+    static const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var queue = new container.LinkedList<int>();\n"
+            "queue.addLast(7);\n"
+            "queue.addLast(9);\n"
+            "var head = queue.first;\n"
+            "var next = head.next;\n"
+            "var value = 0;\n"
+            "if (next != null) {\n"
+            "    value = <int> next.value;\n"
+            "} else {\n"
+            "    value = 99;\n"
+            "}\n"
+            "return value;\n";
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Null Not Equal Branch Fuses Dead Null Temp");
+    ZR_TEST_INFO("null branch fusion",
+                 "Testing that null materialization plus != null branch lowers to JUMP_IF_NULL.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE_MESSAGE(ZrVmLibContainer_Register(state->global),
+                             "Failed to register zr.container for null branch fusion test");
+
+    sourceName = ZrCore_String_CreateFromNative(state, "w2_null_not_equal_branch_test.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(sourceName, "Failed to create source name");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to compile null branch fusion source");
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(JUMP_IF_NULL)),
+            "Expected != null branch to lower to JUMP_IF_NULL");
+    TEST_ASSERT_FALSE_MESSAGE(
+            function_has_reset_null_not_equal_jump_pair_recursive(function),
+            "No RESET_STACK_NULL -> LOGICAL_NOT_EQUAL -> JUMP_IF dead-temp branch should remain");
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result),
+            "JUMP_IF_NULL should execute successfully");
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(9, result, "LinkedList null branch result changed");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Null Not Equal Branch Fuses Dead Null Temp");
+    ZrCore_Function_Free(state, function);
+    ZrTests_Runtime_State_Destroy(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_w2_get_stack_set_member_slot_value_forwards_source(void) {
+    static const char *source =
+            "var container = %import(\"zr.container\");\n"
+            "var queue = new container.LinkedList<int>();\n"
+            "queue.addLast(7);\n"
+            "queue.addLast(9);\n"
+            "var head = queue.first;\n"
+            "var next = head.next;\n"
+            "if (next != null) {\n"
+            "    queue.first = next;\n"
+            "}\n"
+            "return <int> queue.first.value;\n";
+    SZrRegressionTestTimer timer;
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *function;
+    TZrInt64 result = 0;
+
+    timer.startTime = clock();
+    ZR_TEST_START("W2 Get Stack Set Member Slot Value Forwards Source");
+    ZR_TEST_INFO("member slot value forwarding",
+                 "Testing that GET_STACK staging before SET_MEMBER_SLOT is forwarded to the original source slot.");
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL_MESSAGE(state, "Failed to create test runtime state");
+    ZrParser_ToGlobalState_Register(state);
+    TEST_ASSERT_TRUE_MESSAGE(ZrVmLibContainer_Register(state->global),
+                             "Failed to register zr.container for member slot value forwarding test");
+
+    sourceName = ZrCore_String_CreateFromNative(state, "w2_get_stack_set_member_slot_value_test.zr");
+    TEST_ASSERT_NOT_NULL_MESSAGE(sourceName, "Failed to create source name");
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL_MESSAGE(function, "Failed to compile member slot value forwarding source");
+
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)),
+            "Expected queue.first assignment to lower to SET_MEMBER_SLOT");
+    TEST_ASSERT_FALSE_MESSAGE(
+            function_has_get_stack_set_member_slot_value_pair_recursive(function),
+            "No adjacent GET_STACK -> SET_MEMBER_SLOT staged value pair should remain");
+    TEST_ASSERT_TRUE_MESSAGE(
+            ZrTests_Runtime_Function_ExecuteExpectInt64(state, function, &result),
+            "SET_MEMBER_SLOT forwarded value should execute successfully");
+    TEST_ASSERT_EQUAL_INT64_MESSAGE(9, result, "LinkedList forwarded first node result changed");
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, "W2 Get Stack Set Member Slot Value Forwards Source");
     ZrCore_Function_Free(state, function);
     ZrTests_Runtime_State_Destroy(state);
     ZR_TEST_DIVIDER();

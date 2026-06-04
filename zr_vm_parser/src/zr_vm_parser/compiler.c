@@ -12,6 +12,10 @@
 
 static TZrBool zr_parser_compile_trace_enabled(void);
 static void zr_parser_compile_trace(const TZrChar *format, ...);
+static void zr_parser_source_compile_capture_error(TZrPtr userData,
+                                                   const SZrFileRange *location,
+                                                   const TZrChar *message,
+                                                   EZrToken token);
 
 static TZrBool compiler_refresh_borrowed_child_function_graph(SZrState *state,
                                                               SZrFunction *function,
@@ -335,6 +339,8 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
     protoInfo->modifierFlags = info->modifierFlags;
     protoInfo->nextVirtualSlotIndex = info->nextVirtualSlotIndex;
     protoInfo->nextPropertyIdentity = info->nextPropertyIdentity;
+    protoInfo->layoutByteSize = info->layoutByteSize;
+    protoInfo->layoutByteAlign = info->layoutByteAlign;
     
     // 复制继承类型索引数组到序列化数据中（紧跟在结构体后面）
     TZrUInt32 *embeddedInheritIndices = (TZrUInt32 *)(serializedData + sizeof(SZrCompiledPrototypeInfo));
@@ -1053,6 +1059,8 @@ struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrCha
     TZrChar importError[ZR_PARSER_ERROR_BUFFER_LENGTH];
     SZrFileRange importErrorLocation;
     SZrString *currentModuleKey = ZR_NULL;
+    SZrParserState parserState;
+    TZrBool hadParserError = ZR_FALSE;
     SZrAstNode *ast;
     SZrFunction *func;
 
@@ -1062,9 +1070,21 @@ struct SZrFunction *ZrParser_Source_Compile(struct SZrState *state, const TZrCha
     zr_parser_compile_trace("source compile start name='%s' len=%llu",
                             sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>",
                             (unsigned long long)sourceLength);
-    
-    // 解析源代码为AST
-    ast = ZrParser_Parse(state, source, sourceLength, sourceName);
+
+    ZrParser_State_Init(&parserState, state, source, sourceLength, sourceName);
+    parserState.errorCallback = zr_parser_source_compile_capture_error;
+    parserState.errorUserData = &hadParserError;
+    ast = ZrParser_ParseWithState(&parserState);
+    if (parserState.hasError || hadParserError) {
+        if (ast != ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+        }
+        ZrParser_State_Free(&parserState);
+        zr_parser_compile_trace("parse reported error name='%s'",
+                                sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
+        return ZR_NULL;
+    }
+    ZrParser_State_Free(&parserState);
     if (ast == ZR_NULL) {
         zr_parser_compile_trace("parse failed name='%s'",
                                 sourceName != ZR_NULL ? ZrCore_String_GetNativeString(sourceName) : "<null>");
@@ -1124,6 +1144,22 @@ void ZrParser_ToGlobalState_Register(struct SZrState *state) {
     // 使用 API 设置 compileSource 函数指针，避免直接访问内部结构
     ZrCore_GlobalState_SetCompileSource(state->global, ZrParser_Source_Compile);
 }
+
+static void zr_parser_source_compile_capture_error(TZrPtr userData,
+                                                   const SZrFileRange *location,
+                                                   const TZrChar *message,
+                                                   EZrToken token) {
+    TZrBool *hadParserError = (TZrBool *)userData;
+
+    ZR_UNUSED_PARAMETER(location);
+    ZR_UNUSED_PARAMETER(message);
+    ZR_UNUSED_PARAMETER(token);
+
+    if (hadParserError != ZR_NULL) {
+        *hadParserError = ZR_TRUE;
+    }
+}
+
 static TZrBool zr_parser_compile_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
     static TZrBool enabled = ZR_FALSE;

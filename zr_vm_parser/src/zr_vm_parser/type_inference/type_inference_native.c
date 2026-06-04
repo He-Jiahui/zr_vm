@@ -284,6 +284,8 @@ static void native_module_info_init_prototype(SZrState *state,
     info->accessModifier = ZR_ACCESS_PUBLIC;
     info->isImportedNative = ZR_TRUE;
     info->protocolMask = 0;
+    info->layoutByteSize = 0;
+    info->layoutByteAlign = 0;
     ZrCore_Array_Init(state, &info->inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
     ZrCore_Array_Init(state, &info->implements, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_PAIR);
     ZrCore_Array_Init(state,
@@ -1835,9 +1837,7 @@ static TZrBool receiver_ownership_can_call_member(EZrOwnershipQualifier receiver
         case ZR_OWNERSHIP_QUALIFIER_NONE:
             return ZR_TRUE;
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK ||
-                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
-                   memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+            return memberQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK;
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
             return memberQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
                    memberQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
@@ -1853,7 +1853,7 @@ static TZrBool receiver_ownership_can_call_member(EZrOwnershipQualifier receiver
 const TZrChar *receiver_ownership_call_error(EZrOwnershipQualifier receiverQualifier) {
     switch (receiverQualifier) {
         case ZR_OWNERSHIP_QUALIFIER_WEAK:
-            return "Weak-owned receivers can only call %weak, %shared, or %borrowed methods";
+            return "Weak-owned receivers must be upgraded before calling non-%weak methods";
         case ZR_OWNERSHIP_QUALIFIER_SHARED:
             return "Shared-owned receivers can only call %shared or %borrowed methods";
         case ZR_OWNERSHIP_QUALIFIER_UNIQUE:

@@ -333,19 +333,29 @@ SZrAstNode *parse_template_string_literal(SZrParserState *ps, SZrString *rawValu
 SZrAstNode *parse_literal(SZrParserState *ps) {
     ZR_UNUSED_PARAMETER(get_current_location(ps));
     EZrToken token = ps->lexer->t.token;
+    SZrFileRange literalLoc = get_current_token_location(ps);
+    SZrAstNode *node;
 
     switch (token) {
         case ZR_TK_BOOLEAN: {
             TZrBool value = ps->lexer->t.seminfo.booleanValue;
+            node = create_boolean_literal_node(ps, value);
+            if (node != ZR_NULL) {
+                node->location = literalLoc;
+            }
             ZrParser_Lexer_Next(ps->lexer);
-            return create_boolean_literal_node(ps, value);
+            return node;
         }
 
         case ZR_TK_INTEGER: {
             TZrInt64 value = ps->lexer->t.seminfo.intValue;
             SZrString *literal = ps->lexer->t.seminfo.stringValue; // 注意：这里需要从 token 中获取原始字符串
+            node = create_integer_literal_node(ps, value, literal);
+            if (node != ZR_NULL) {
+                node->location = literalLoc;
+            }
             ZrParser_Lexer_Next(ps->lexer);
-            return create_integer_literal_node(ps, value, literal);
+            return node;
         }
 
         case ZR_TK_FLOAT: {
@@ -369,21 +379,25 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
                     }
                 }
             }
+            node = create_float_literal_node(ps, value, literal, isSingle);
+            if (node != ZR_NULL) {
+                node->location = literalLoc;
+            }
             ZrParser_Lexer_Next(ps->lexer);
-            return create_float_literal_node(ps, value, literal, isSingle);
+            return node;
         }
 
         case ZR_TK_STRING: {
             SZrString *value = ps->lexer->t.seminfo.stringValue;
             TZrBool hasError = ps->lexer->t.hasLexError;
             SZrString *literal = value; // 原始字符串已经存储在stringValue中
+            node = create_string_literal_node_with_location(ps, value, hasError, literal, literalLoc);
             ZrParser_Lexer_Next(ps->lexer);
-            return create_string_literal_node(ps, value, hasError, literal);
+            return node;
         }
 
         case ZR_TK_TEMPLATE_STRING: {
             SZrString *value = ps->lexer->t.seminfo.stringValue;
-            SZrAstNode *node;
             ZrParser_Lexer_Next(ps->lexer);
             node = parse_template_string_literal(ps, value);
             return node;
@@ -393,31 +407,51 @@ SZrAstNode *parse_literal(SZrParserState *ps) {
             TZrChar value = ps->lexer->t.seminfo.charValue;
             TZrBool hasError = ps->lexer->t.hasLexError;
             SZrString *literal = ps->lexer->t.seminfo.stringValue; // 如果lexer存储了原始字符串，使用它
+            node = create_char_literal_node(ps, value, hasError, literal);
+            if (node != ZR_NULL) {
+                node->location = literalLoc;
+            }
             ZrParser_Lexer_Next(ps->lexer);
-            return create_char_literal_node(ps, value, hasError, literal);
+            return node;
         }
 
         case ZR_TK_NULL: {
+            node = create_null_literal_node(ps);
+            if (node != ZR_NULL) {
+                node->location = literalLoc;
+            }
             ZrParser_Lexer_Next(ps->lexer);
-            return create_null_literal_node(ps);
+            return node;
         }
 
         case ZR_TK_INFINITY: {
-            ZrParser_Lexer_Next(ps->lexer);
             SZrString *literal = ZrCore_String_Create(ps->state, "Infinity", 8);
-            return create_float_literal_node(ps, INFINITY, literal, ZR_FALSE); // 正无穷
+            node = create_float_literal_node(ps, INFINITY, literal, ZR_FALSE); // 正无穷
+            if (node != ZR_NULL) {
+                node->location = literalLoc;
+            }
+            ZrParser_Lexer_Next(ps->lexer);
+            return node;
         }
 
         case ZR_TK_NEG_INFINITY: {
-            ZrParser_Lexer_Next(ps->lexer);
             SZrString *literal = ZrCore_String_Create(ps->state, "NegativeInfinity", 16);
-            return create_float_literal_node(ps, -INFINITY, literal, ZR_FALSE); // 负无穷
+            node = create_float_literal_node(ps, -INFINITY, literal, ZR_FALSE); // 负无穷
+            if (node != ZR_NULL) {
+                node->location = literalLoc;
+            }
+            ZrParser_Lexer_Next(ps->lexer);
+            return node;
         }
 
         case ZR_TK_NAN: {
-            ZrParser_Lexer_Next(ps->lexer);
             SZrString *literal = ZrCore_String_Create(ps->state, "NaN", 3);
-            return create_float_literal_node(ps, NAN, literal, ZR_FALSE); // NaN
+            node = create_float_literal_node(ps, NAN, literal, ZR_FALSE); // NaN
+            if (node != ZR_NULL) {
+                node->location = literalLoc;
+            }
+            ZrParser_Lexer_Next(ps->lexer);
+            return node;
         }
 
         default:
@@ -533,12 +567,14 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
     if (ps->lexer->t.token != ZR_TK_RBRACE) {
         // 解析键
         SZrAstNode *key = ZR_NULL;
+        TZrBool keyIsComputed = ZR_FALSE;
         if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
             key = parse_identifier(ps);
         } else if (ps->lexer->t.token == ZR_TK_STRING) {
             key = parse_literal(ps);
         } else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
             // 计算键
+            keyIsComputed = ZR_TRUE;
             ZrParser_Lexer_Next(ps->lexer);
             key = parse_expression(ps);
             expect_token(ps, ZR_TK_RBRACKET);
@@ -568,6 +604,7 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
         }
         kvNode->data.keyValuePair.key = key;
         kvNode->data.keyValuePair.value = value;
+        kvNode->data.keyValuePair.keyIsComputed = keyIsComputed;
         ZrParser_AstNodeArray_Add(ps->state, properties, kvNode);
 
         // 解析后续键值对
@@ -579,11 +616,13 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
 
             // 解析键
             key = ZR_NULL;
+            keyIsComputed = ZR_FALSE;
             if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
                 key = parse_identifier(ps);
             } else if (ps->lexer->t.token == ZR_TK_STRING) {
                 key = parse_literal(ps);
             } else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
+                keyIsComputed = ZR_TRUE;
                 ZrParser_Lexer_Next(ps->lexer);
                 key = parse_expression(ps);
                 expect_token(ps, ZR_TK_RBRACKET);
@@ -607,6 +646,7 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
             }
             kvNode->data.keyValuePair.key = key;
             kvNode->data.keyValuePair.value = value;
+            kvNode->data.keyValuePair.keyIsComputed = keyIsComputed;
             ZrParser_AstNodeArray_Add(ps->state, properties, kvNode);
         }
     }

@@ -182,6 +182,12 @@ Future Debug/REPL tests:
 - REPL expression snippets can evaluate expressions without wrapping boilerplate
 - REPL parser errors include cause and suggestion
 
+Current follow-up slices already covered by focused tests:
+
+- Debug evaluate and conditional-breakpoint expressions now report concrete missing-right-operand diagnostics for malformed binary/logical expressions.
+- REPL now accepts fresh bare expression submissions such as `1 + 2` and reports parser-backed cause/suggestion diagnostics for incomplete operator expressions such as `1 +`.
+- Source compile now rejects parser-reported expression errors before runtime execution, so recovered ASTs from malformed snippets cannot trigger runtime assertions.
+
 ## Validation
 
 First-stage implementation must run focused tests before broader matrix validation:

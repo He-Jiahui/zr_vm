@@ -22,6 +22,7 @@
 
 #define ZR_DEBUG_WAIT_INFINITE ((TZrUInt32) 0xFFFFFFFFu)
 #define ZR_DEBUG_PROTOCOL_NAME "zrdbg/1"
+#define ZR_DEBUG_INSTANCE_SYNTHETIC_FIELD_COUNT ((TZrSize)1u)
 
 static ZR_FORCE_INLINE void zr_debug_memory_barrier(void) {
 #if defined(_WIN32)
@@ -155,6 +156,11 @@ TZrBool zr_debug_exception_read_frame(ZrDebugAgent *agent, TZrUInt32 frameId, Zr
 TZrSize zr_debug_exception_frame_count(ZrDebugAgent *agent);
 SZrCallInfo *zr_debug_find_call_info_by_frame_id(ZrDebugAgent *agent, TZrUInt32 frameId, SZrFunction **outFunction);
 SZrObjectPrototype *zr_debug_resolve_value_prototype(SZrState *state, const SZrTypeValue *value);
+TZrSize zr_debug_count_visible_object_entries(const SZrHashSet *set);
+void zr_debug_value_child_shape(SZrState *state,
+                                const SZrTypeValue *value,
+                                TZrSize *outNamedVariables,
+                                TZrSize *outIndexedVariables);
 void zr_debug_format_value_text_safe(SZrState *state,
                                      const SZrTypeValue *value,
                                      TZrChar *buffer,

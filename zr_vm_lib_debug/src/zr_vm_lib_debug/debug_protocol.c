@@ -698,6 +698,12 @@ static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent) {
                     cJSON_AddNumberToObject(argumentObject,
                                             "variablesReference",
                                             argumentValues[argumentIndex].variables_reference);
+                    cJSON_AddNumberToObject(argumentObject,
+                                            "namedVariables",
+                                            (double)argumentValues[argumentIndex].named_variables);
+                    cJSON_AddNumberToObject(argumentObject,
+                                            "indexedVariables",
+                                            (double)argumentValues[argumentIndex].indexed_variables);
                     cJSON_AddItemToArray(argumentsObject, argumentObject);
                 }
                 ZrDebug_Free(argumentValues);
@@ -734,6 +740,8 @@ static cJSON *zr_debug_agent_make_evaluate_result(ZrDebugAgent *agent,
     cJSON_AddStringToObject(result, "type", evaluateResult.type_name);
     cJSON_AddStringToObject(result, "value", evaluateResult.value_text);
     cJSON_AddNumberToObject(result, "variablesReference", evaluateResult.variables_reference);
+    cJSON_AddNumberToObject(result, "namedVariables", (double)evaluateResult.named_variables);
+    cJSON_AddNumberToObject(result, "indexedVariables", (double)evaluateResult.indexed_variables);
     return result;
 }
 
@@ -824,6 +832,8 @@ static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent,
         cJSON_AddStringToObject(valueObject, "type", values[index].type_name);
         cJSON_AddStringToObject(valueObject, "value", values[index].value_text);
         cJSON_AddNumberToObject(valueObject, "variablesReference", values[index].variables_reference);
+        cJSON_AddNumberToObject(valueObject, "namedVariables", (double)values[index].named_variables);
+        cJSON_AddNumberToObject(valueObject, "indexedVariables", (double)values[index].indexed_variables);
         cJSON_AddItemToArray(valuesArray, valueObject);
     }
 

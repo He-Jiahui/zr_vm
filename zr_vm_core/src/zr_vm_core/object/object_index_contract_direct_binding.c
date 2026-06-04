@@ -7,6 +7,7 @@
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/value.h"
 #include "zr_vm_library/native_binding.h"
+#include <string.h>
 
 enum {
     ZR_OBJECT_INDEX_DIRECT_BINDING_READONLY_INLINE_RESULT_WRITTEN_FLAGS =
@@ -44,6 +45,7 @@ static ZR_FORCE_INLINE void object_index_contract_init_direct_binding_inline_val
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(dispatch != ZR_NULL);
 
+    memset(context, 0, sizeof(*context));
     context->state = state;
     context->moduleDescriptor = (const struct ZrLibModuleDescriptor *)dispatch->moduleDescriptor;
     context->typeDescriptor = (const struct ZrLibTypeDescriptor *)dispatch->typeDescriptor;
@@ -76,6 +78,7 @@ static ZR_FORCE_INLINE void object_index_contract_init_direct_binding_inline_poi
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(dispatch != ZR_NULL);
 
+    memset(context, 0, sizeof(*context));
     context->state = state;
     context->moduleDescriptor = (const struct ZrLibModuleDescriptor *)dispatch->moduleDescriptor;
     context->typeDescriptor = (const struct ZrLibTypeDescriptor *)dispatch->typeDescriptor;

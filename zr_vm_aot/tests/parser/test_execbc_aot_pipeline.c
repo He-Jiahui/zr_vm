@@ -303,7 +303,7 @@ static TZrBool aot_llvm_text_contains_unsupported_opcode(const char *text, TZrUI
 }
 
 static TZrBool aot_c_text_contains_unsupported_opcode(const char *text, TZrUInt32 opcode) {
-    const char *unsupportedPrefix = "return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state,";
+    const char *unsupportedPrefix = "ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state,";
     const char *cursor = text;
     char opcodeSuffix[32];
 

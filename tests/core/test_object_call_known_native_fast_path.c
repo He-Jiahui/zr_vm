@@ -78,10 +78,23 @@ static TZrUInt32 gReadonlyInlineSetFallbackCallCount = 0;
 static SZrString *gExpectedPrefilledResultString = ZR_NULL;
 static TZrUInt64 gBoundContextSelfStackGetDelta = 0;
 static TZrUInt64 gBoundContextArgumentStackGetDelta = 0;
+static TZrBool gObservedInlineSpanResult = ZR_FALSE;
+static ZrLibInlineSpan gObservedInlineSpan;
 
 static TZrBool test_binding_cache_callback(ZrLibCallContext *context, SZrTypeValue *result) {
     TEST_ASSERT_NOT_NULL(context);
     TEST_ASSERT_NOT_NULL(result);
+    ZrLib_Value_SetNull(result);
+    return ZR_TRUE;
+}
+
+static TZrBool test_native_observe_inline_argument_span_callback(ZrLibCallContext *context, SZrTypeValue *result) {
+    TEST_ASSERT_NOT_NULL(context);
+    TEST_ASSERT_NOT_NULL(result);
+
+    memset(&gObservedInlineSpan, 0, sizeof(gObservedInlineSpan));
+    gObservedInlineSpanResult = ZrLib_CallContext_InlineArgumentSpan(context, 0u, &gObservedInlineSpan);
+    gNativeCallCount++;
     ZrLib_Value_SetNull(result);
     return ZR_TRUE;
 }
@@ -5786,7 +5799,7 @@ static void test_native_binding_stack_root_callback_lane_syncs_rebound_self_valu
 
     context.state = state;
     context.functionBase = functionBase;
-    native_binding_init_call_context_layout_cached(&context, functionBase, 1u, ZR_TRUE);
+    native_binding_init_call_context_layout_cached(&context, state, functionBase, 1u, ZR_TRUE);
     ZrCore_Function_StackAnchorInit(state, functionBase, &functionBaseAnchor);
 
     gExpectedReboundSelfInt = 909;
@@ -5845,7 +5858,7 @@ static void test_native_binding_stack_root_callback_lane_syncs_rebound_self_valu
 
     context.state = state;
     context.functionBase = functionBase;
-    native_binding_init_call_context_layout_cached(&context, functionBase, 1u, ZR_TRUE);
+    native_binding_init_call_context_layout_cached(&context, state, functionBase, 1u, ZR_TRUE);
     ZrCore_Function_StackAnchorInit(state, functionBase, &functionBaseAnchor);
 
     gExpectedReboundSelfInt = 909;
@@ -5951,6 +5964,159 @@ static void test_native_registry_find_binding_promotes_hot_closures_into_two_slo
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_native_call_context_inline_argument_span_points_at_frame_payload(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    ZrLibCallContext context;
+    ZrLibInlineSpan span;
+    SZrFunction function = {0};
+    SZrFunctionFrameSlotLayout layouts[1];
+    SZrStackFramePlace place;
+    TZrStackValuePointer frameBase;
+    TZrByte payload[10] = {0x03u, 0x14u, 0x25u, 0x36u, 0x47u, 0x58u, 0x69u, 0x7au, 0x8bu, 0x9cu};
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->stackBase.valuePointer);
+
+    layouts[0].stackSlot = 3u;
+    layouts[0].byteOffset = 32u;
+    layouts[0].byteSize = sizeof(payload);
+    layouts[0].byteAlign = 2u;
+    layouts[0].typeLayoutId = 19u;
+    layouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    layouts[0].isParameter = ZR_TRUE;
+    layouts[0].reserved0 = 0u;
+
+    function.frameSlotLayouts = layouts;
+    function.frameSlotLayoutLength = ZR_ARRAY_COUNT(layouts);
+    function.frameByteSize = 48u;
+    function.frameByteAlign = 2u;
+
+    frameBase = state->stackBase.valuePointer + 4;
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(state, &function, frameBase, 3u, &place));
+    memcpy(place.address, payload, sizeof(payload));
+
+    memset(&context, 0, sizeof(context));
+    context.state = state;
+    context.argumentCount = 1u;
+    context.inlineFrameFunction = &function;
+    context.inlineFrameBase = frameBase;
+    context.inlineArgumentStartSlot = 3u;
+
+    memset(&span, 0, sizeof(span));
+    TEST_ASSERT_TRUE(ZrLib_CallContext_InlineArgumentSpan(&context, 0u, &span));
+    TEST_ASSERT_TRUE(span.available);
+    TEST_ASSERT_EQUAL_PTR(place.address, span.address);
+    TEST_ASSERT_EQUAL_UINT32(layouts[0].byteSize, span.byteSize);
+    TEST_ASSERT_EQUAL_UINT32(layouts[0].byteAlign, span.byteAlign);
+    TEST_ASSERT_EQUAL_UINT32(layouts[0].typeLayoutId, span.typeLayoutId);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, span.address, sizeof(payload));
+
+    ((TZrByte *)span.address)[0] = 0xeeu;
+    TEST_ASSERT_EQUAL_UINT8(0xeeu, ((TZrByte *)place.address)[0]);
+    TEST_ASSERT_FALSE(ZrLib_CallContext_InlineArgumentSpan(&context, 1u, &span));
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_native_dispatch_callback_inline_argument_span_uses_current_frame_metadata(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    SZrClosureNative *closure;
+    SZrFunctionFrameSlotLayout *layouts;
+    ZrLibCallContext context;
+    ZrLibInlineSpan span;
+    SZrFunctionStackAnchor functionBaseAnchor;
+    SZrTypeValue result;
+    SZrStackFramePlace place;
+    TZrStackValuePointer functionBase;
+    TZrSize frameStorageSlotCount;
+    TZrStackValuePointer slot;
+    TZrBool success;
+    TZrByte payload[12] = {
+            0xa0u, 0xb1u, 0xc2u, 0xd3u, 0xe4u, 0xf5u,
+            0x06u, 0x17u, 0x28u, 0x39u, 0x4au, 0x5bu};
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->stackBase.valuePointer);
+
+    function = ZrCore_Function_New(state);
+    closure = ZrCore_ClosureNative_New(state, 0u);
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_NOT_NULL(closure);
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(function));
+    ZrCore_RawObject_MarkAsPermanent(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    closure->aotShimFunction = function;
+
+    layouts = (SZrFunctionFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+            state->global,
+            sizeof(SZrFunctionFrameSlotLayout),
+            ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    TEST_ASSERT_NOT_NULL(layouts);
+    memset(layouts, 0, sizeof(*layouts));
+    layouts[0].stackSlot = 0u;
+    layouts[0].byteOffset = 0u;
+    layouts[0].byteSize = sizeof(payload);
+    layouts[0].byteAlign = 4u;
+    layouts[0].typeLayoutId = 41u;
+    layouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    layouts[0].isParameter = ZR_TRUE;
+
+    function->frameSlotLayouts = layouts;
+    function->frameSlotLayoutLength = 1u;
+    function->frameByteSize = layouts[0].byteOffset + layouts[0].byteSize;
+    function->frameByteAlign = 4u;
+
+    functionBase = state->stackBase.valuePointer + 8;
+    frameStorageSlotCount = ZrCore_Function_GetFrameStorageSlotCount(function);
+    TEST_ASSERT_TRUE(functionBase + frameStorageSlotCount + 1u < state->stackTail.valuePointer);
+
+    for (slot = functionBase; slot < functionBase + frameStorageSlotCount + 1u; slot++) {
+        ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(slot));
+    }
+
+    ZrCore_Stack_SetRawObjectValue(state, functionBase, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(state, function, functionBase + 1, 0u, &place));
+    memcpy(place.address, payload, sizeof(payload));
+
+    state->baseCallInfo.functionBase.valuePointer = functionBase;
+    state->baseCallInfo.functionTop.valuePointer = functionBase + frameStorageSlotCount + 1u;
+    state->baseCallInfo.callStatus = ZR_CALL_STATUS_NATIVE_CALL;
+    state->baseCallInfo.previous = ZR_NULL;
+    state->baseCallInfo.next = ZR_NULL;
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = functionBase + 2;
+
+    memset(&context, 0, sizeof(context));
+    native_binding_init_cached_stack_root_context_from_closure(&context, state, closure, functionBase, 1u, ZR_FALSE);
+    TEST_ASSERT_EQUAL_PTR(function, context.inlineFrameFunction);
+    TEST_ASSERT_EQUAL_PTR(functionBase + 1, context.inlineFrameBase);
+
+    ZrCore_Function_StackAnchorInit(state, functionBase, &functionBaseAnchor);
+    ZrLib_Value_SetNull(&result);
+    gNativeCallCount = 0u;
+    gObservedInlineSpanResult = ZR_FALSE;
+    memset(&gObservedInlineSpan, 0, sizeof(gObservedInlineSpan));
+
+    success = native_binding_dispatch_stack_root_callback_lane(state,
+                                                               test_native_observe_inline_argument_span_callback,
+                                                               &context,
+                                                               &functionBaseAnchor,
+                                                               &result);
+
+    TEST_ASSERT_TRUE(success);
+    TEST_ASSERT_EQUAL_UINT32(1u, gNativeCallCount);
+    TEST_ASSERT_TRUE(gObservedInlineSpanResult);
+    span = gObservedInlineSpan;
+    TEST_ASSERT_TRUE(span.available);
+    TEST_ASSERT_EQUAL_PTR(place.address, span.address);
+    TEST_ASSERT_EQUAL_UINT32(layouts[0].byteSize, span.byteSize);
+    TEST_ASSERT_EQUAL_UINT32(layouts[0].byteAlign, span.byteAlign);
+    TEST_ASSERT_EQUAL_UINT32(layouts[0].typeLayoutId, span.typeLayoutId);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(payload, span.address, sizeof(payload));
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -6011,6 +6177,8 @@ int main(void) {
     RUN_TEST(test_native_binding_init_cached_stack_root_context_overwrites_dirty_layout_state);
     RUN_TEST(test_native_binding_init_cached_stack_root_context_from_closure_overwrites_dirty_layout_state);
     RUN_TEST(test_native_registry_find_binding_promotes_hot_closures_into_two_slot_cache);
+    RUN_TEST(test_native_call_context_inline_argument_span_points_at_frame_payload);
+    RUN_TEST(test_native_dispatch_callback_inline_argument_span_uses_current_frame_metadata);
 
     return UNITY_END();
 }

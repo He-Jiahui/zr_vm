@@ -30,6 +30,24 @@ void backend_aot_write_c_direct_add_int_const(FILE *file,
                                               TZrUInt32 destinationSlot,
                                               TZrUInt32 leftSlot,
                                               TZrUInt32 constantIndex);
+void backend_aot_write_c_direct_add_signed(FILE *file,
+                                           TZrUInt32 destinationSlot,
+                                           TZrUInt32 leftSlot,
+                                           TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_add_unsigned(FILE *file,
+                                             TZrUInt32 destinationSlot,
+                                             TZrUInt32 leftSlot,
+                                             TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_add_signed_const(FILE *file,
+                                                 const SZrFunction *function,
+                                                 TZrUInt32 destinationSlot,
+                                                 TZrUInt32 leftSlot,
+                                                 TZrUInt32 constantIndex);
+void backend_aot_write_c_direct_add_unsigned_const(FILE *file,
+                                                   const SZrFunction *function,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 leftSlot,
+                                                   TZrUInt32 constantIndex);
 void backend_aot_write_c_direct_add(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
@@ -38,6 +56,32 @@ void backend_aot_write_c_direct_sub(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
                                     TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_sub_signed(FILE *file,
+                                           TZrUInt32 destinationSlot,
+                                           TZrUInt32 leftSlot,
+                                           TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_sub_unsigned(FILE *file,
+                                             TZrUInt32 destinationSlot,
+                                             TZrUInt32 leftSlot,
+                                             TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_sub_signed_const(FILE *file,
+                                                 const SZrFunction *function,
+                                                 TZrUInt32 destinationSlot,
+                                                 TZrUInt32 leftSlot,
+                                                 TZrUInt32 constantIndex);
+void backend_aot_write_c_direct_sub_unsigned_const(FILE *file,
+                                                   const SZrFunction *function,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 leftSlot,
+                                                   TZrUInt32 constantIndex);
+void backend_aot_write_c_direct_add_float(FILE *file,
+                                          TZrUInt32 destinationSlot,
+                                          TZrUInt32 leftSlot,
+                                          TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_sub_float(FILE *file,
+                                          TZrUInt32 destinationSlot,
+                                          TZrUInt32 leftSlot,
+                                          TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_get_global(FILE *file, TZrUInt32 destinationSlot);
 void backend_aot_write_c_direct_create_object(FILE *file, TZrUInt32 destinationSlot);
 void backend_aot_write_c_direct_create_array(FILE *file, TZrUInt32 destinationSlot);
@@ -55,12 +99,22 @@ void backend_aot_write_c_direct_jump_if(FILE *file,
                                         TZrUInt32 functionIndex,
                                         TZrUInt32 conditionSlot,
                                         TZrUInt32 targetInstructionIndex);
+void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
+                                                   TZrUInt32 functionIndex,
+                                                   TZrUInt32 conditionSlot,
+                                                   TZrUInt32 targetInstructionIndex);
 void backend_aot_write_c_direct_jump_if_greater_signed(FILE *file,
                                                        TZrUInt32 functionIndex,
                                                        TZrUInt32 leftSlot,
                                                        TZrUInt32 rightSlot,
                                                        TZrUInt32 targetInstructionIndex);
 void backend_aot_write_c_direct_to_int(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_to_float_signed(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_to_float_unsigned(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_to_int_float(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_to_int_unsigned(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_to_uint_float(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_to_uint_signed(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_return(FILE *file, TZrUInt32 sourceSlot);
 void backend_aot_write_c_tail_return(FILE *file, TZrUInt32 sourceSlot, TZrBool publishExports);
 void backend_aot_write_c_begin_instruction(FILE *file, TZrUInt32 instructionIndex, TZrUInt32 stepFlags);
@@ -77,9 +131,23 @@ void backend_aot_write_c_direct_mul_signed(FILE *file,
                                            TZrUInt32 leftSlot,
                                            TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_mul_signed_const(FILE *file,
+                                                 const SZrFunction *function,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 leftSlot,
                                                  TZrUInt32 constantIndex);
+void backend_aot_write_c_direct_mul_unsigned(FILE *file,
+                                             TZrUInt32 destinationSlot,
+                                             TZrUInt32 leftSlot,
+                                             TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_mul_unsigned_const(FILE *file,
+                                                   const SZrFunction *function,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 leftSlot,
+                                                   TZrUInt32 constantIndex);
+void backend_aot_write_c_direct_mul_float(FILE *file,
+                                          TZrUInt32 destinationSlot,
+                                          TZrUInt32 leftSlot,
+                                          TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_mul(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
@@ -92,11 +160,38 @@ void backend_aot_write_c_direct_sub_int_const(FILE *file,
                                               TZrUInt32 destinationSlot,
                                               TZrUInt32 leftSlot,
                                               TZrUInt32 constantIndex);
+void backend_aot_write_c_direct_bitwise_not(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_bitwise_and(FILE *file,
+                                            TZrUInt32 destinationSlot,
+                                            TZrUInt32 leftSlot,
+                                            TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_bitwise_or(FILE *file,
+                                           TZrUInt32 destinationSlot,
+                                           TZrUInt32 leftSlot,
+                                           TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_bitwise_xor(FILE *file,
                                             TZrUInt32 destinationSlot,
                                             TZrUInt32 leftSlot,
                                             TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_shift_left_int(FILE *file,
+                                               TZrUInt32 destinationSlot,
+                                               TZrUInt32 leftSlot,
+                                               TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_shift_right_int(FILE *file,
+                                                TZrUInt32 destinationSlot,
+                                                TZrUInt32 leftSlot,
+                                                TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_bitwise_shift_left(FILE *file,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 leftSlot,
+                                                   TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_bitwise_shift_right(FILE *file,
+                                                    TZrUInt32 destinationSlot,
+                                                    TZrUInt32 leftSlot,
+                                                    TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_neg(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_neg_signed(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_neg_float(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_meta_get(FILE *file,
                                          TZrUInt32 destinationSlot,
                                          TZrUInt32 receiverSlot,
@@ -129,7 +224,48 @@ void backend_aot_write_c_direct_logical_not_equal(FILE *file,
                                                   TZrUInt32 destinationSlot,
                                                   TZrUInt32 leftSlot,
                                                   TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_equal_bool(FILE *file,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 leftSlot,
+                                                   TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_not_equal_bool(FILE *file,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 leftSlot,
+                                                       TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_not_bool(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
+void backend_aot_write_c_direct_logical_equal_signed(FILE *file,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 leftSlot,
+                                                     TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_not_equal_signed(FILE *file,
+                                                         TZrUInt32 destinationSlot,
+                                                         TZrUInt32 leftSlot,
+                                                         TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_equal_unsigned(FILE *file,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 leftSlot,
+                                                       TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_not_equal_unsigned(FILE *file,
+                                                           TZrUInt32 destinationSlot,
+                                                           TZrUInt32 leftSlot,
+                                                           TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_equal_float(FILE *file,
+                                                    TZrUInt32 destinationSlot,
+                                                    TZrUInt32 leftSlot,
+                                                    TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_not_equal_float(FILE *file,
+                                                        TZrUInt32 destinationSlot,
+                                                        TZrUInt32 leftSlot,
+                                                        TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_logical_less_signed(FILE *file,
+                                                    TZrUInt32 destinationSlot,
+                                                    TZrUInt32 leftSlot,
+                                                    TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_less_unsigned(FILE *file,
+                                                       TZrUInt32 destinationSlot,
+                                                       TZrUInt32 leftSlot,
+                                                       TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_less_float(FILE *file,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 leftSlot,
                                                     TZrUInt32 rightSlot);
@@ -137,22 +273,60 @@ void backend_aot_write_c_direct_logical_greater_signed(FILE *file,
                                                        TZrUInt32 destinationSlot,
                                                        TZrUInt32 leftSlot,
                                                        TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_greater_unsigned(FILE *file,
+                                                         TZrUInt32 destinationSlot,
+                                                         TZrUInt32 leftSlot,
+                                                         TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_greater_float(FILE *file,
+                                                      TZrUInt32 destinationSlot,
+                                                      TZrUInt32 leftSlot,
+                                                      TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_logical_less_equal_signed(FILE *file,
                                                           TZrUInt32 destinationSlot,
                                                           TZrUInt32 leftSlot,
                                                           TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_less_equal_unsigned(FILE *file,
+                                                            TZrUInt32 destinationSlot,
+                                                            TZrUInt32 leftSlot,
+                                                            TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_less_equal_float(FILE *file,
+                                                         TZrUInt32 destinationSlot,
+                                                         TZrUInt32 leftSlot,
+                                                         TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_logical_greater_equal_signed(FILE *file,
                                                              TZrUInt32 destinationSlot,
                                                              TZrUInt32 leftSlot,
                                                              TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_greater_equal_unsigned(FILE *file,
+                                                               TZrUInt32 destinationSlot,
+                                                               TZrUInt32 leftSlot,
+                                                               TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_logical_greater_equal_float(FILE *file,
+                                                            TZrUInt32 destinationSlot,
+                                                            TZrUInt32 leftSlot,
+                                                            TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_mod(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
                                     TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_mod_signed(FILE *file,
+                                           TZrUInt32 destinationSlot,
+                                           TZrUInt32 leftSlot,
+                                           TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_mod_signed_const(FILE *file,
+                                                 const SZrFunction *function,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 leftSlot,
                                                  TZrUInt32 constantIndex);
+void backend_aot_write_c_direct_mod_unsigned(FILE *file,
+                                             TZrUInt32 destinationSlot,
+                                             TZrUInt32 leftSlot,
+                                             TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_mod_unsigned_const(FILE *file,
+                                                   const SZrFunction *function,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 leftSlot,
+                                                   TZrUInt32 constantIndex);
 void backend_aot_write_c_direct_div(FILE *file,
                                     TZrUInt32 destinationSlot,
                                     TZrUInt32 leftSlot,
@@ -162,9 +336,23 @@ void backend_aot_write_c_direct_div_signed(FILE *file,
                                            TZrUInt32 leftSlot,
                                            TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_div_signed_const(FILE *file,
+                                                 const SZrFunction *function,
                                                  TZrUInt32 destinationSlot,
                                                  TZrUInt32 leftSlot,
                                                  TZrUInt32 constantIndex);
+void backend_aot_write_c_direct_div_unsigned(FILE *file,
+                                             TZrUInt32 destinationSlot,
+                                             TZrUInt32 leftSlot,
+                                             TZrUInt32 rightSlot);
+void backend_aot_write_c_direct_div_unsigned_const(FILE *file,
+                                                   const SZrFunction *function,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 leftSlot,
+                                                   TZrUInt32 constantIndex);
+void backend_aot_write_c_direct_div_float(FILE *file,
+                                          TZrUInt32 destinationSlot,
+                                          TZrUInt32 leftSlot,
+                                          TZrUInt32 rightSlot);
 void backend_aot_write_c_direct_to_string(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot);
 void backend_aot_write_c_direct_meta_call(FILE *file,
                                           TZrUInt32 destinationSlot,

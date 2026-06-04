@@ -37,6 +37,7 @@ void native_binding_release_stable_value(SZrState *state, ZrLibStableValueCopy *
 #define native_binding_entry_callback native_binding_entry_callback_inline
 #define native_binding_context_enable_stack_layout_anchor native_binding_context_enable_stack_layout_anchor_inline
 #define native_binding_context_adopt_stack_layout_anchor native_binding_context_adopt_stack_layout_anchor_inline
+#define native_binding_context_adopt_inline_frame_anchor native_binding_context_adopt_inline_frame_anchor_inline
 #define native_binding_sync_self_to_stack_slot native_binding_sync_self_to_stack_slot_inline
 
 TZrBool native_binding_dispatch_stack_root_callback_lane(SZrState *state,
@@ -120,6 +121,7 @@ TZrBool native_binding_dispatch_fast_lane(SZrState *state,
 
     stackBaseBefore = state->stackBase.valuePointer;
     stackTailBefore = state->stackTail.valuePointer;
+    native_binding_context_adopt_inline_frame_anchor(context, functionBaseAnchor);
     success = callback(context, result);
     if (success) {
         native_binding_sync_self_to_stack_slot(state, functionBaseAnchor, context, stackBaseBefore, stackTailBefore);
@@ -185,6 +187,7 @@ static TZrBool native_binding_dispatch_inline_pinned_lane_one_argument(
 
     stackBaseBefore = state->stackBase.valuePointer;
     stackTailBefore = state->stackTail.valuePointer;
+    native_binding_context_adopt_inline_frame_anchor(context, functionBaseAnchor);
     success = callback(context, result);
     if (success) {
         native_binding_sync_self_to_stack_slot(state, functionBaseAnchor, context, stackBaseBefore, stackTailBefore);
@@ -266,6 +269,7 @@ static TZrBool native_binding_dispatch_inline_pinned_lane_two_arguments(
 
     stackBaseBefore = state->stackBase.valuePointer;
     stackTailBefore = state->stackTail.valuePointer;
+    native_binding_context_adopt_inline_frame_anchor(context, functionBaseAnchor);
     success = callback(context, result);
     if (success) {
         native_binding_sync_self_to_stack_slot(state, functionBaseAnchor, context, stackBaseBefore, stackTailBefore);
@@ -359,6 +363,7 @@ static TZrBool native_binding_dispatch_inline_pinned_lane_generic(SZrState *stat
 
     stackBaseBefore = state->stackBase.valuePointer;
     stackTailBefore = state->stackTail.valuePointer;
+    native_binding_context_adopt_inline_frame_anchor(context, functionBaseAnchor);
     success = callback(context, result);
     if (success) {
         native_binding_sync_self_to_stack_slot(state, functionBaseAnchor, context, stackBaseBefore, stackTailBefore);

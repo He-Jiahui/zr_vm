@@ -61,6 +61,60 @@ static TZrBool semantic_text_equals(const TZrChar *value, const TZrChar *expecte
     return value != ZR_NULL && expected != ZR_NULL && strcmp(value, expected) == 0;
 }
 
+static void semantic_record_reachability_fact_at_range(SZrSemanticAnalyzer *analyzer,
+                                                       SZrAstNode *node,
+                                                       SZrFileRange range,
+                                                       EZrSemanticReachabilityCause cause,
+                                                       SZrAstNode *causeNode) {
+    SZrSemanticReachabilityFact fact;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || node == ZR_NULL) {
+        return;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = node;
+    fact.range = range;
+    fact.state = ZR_SEMANTIC_REACHABILITY_UNREACHABLE;
+    fact.cause = cause;
+    fact.causeNode = causeNode;
+    ZrParser_SemanticFacts_AppendReachability(analyzer->semanticContext, &fact);
+}
+
+static void semantic_record_reachability_fact(SZrSemanticAnalyzer *analyzer,
+                                              SZrAstNode *node,
+                                              EZrSemanticReachabilityCause cause,
+                                              SZrAstNode *causeNode) {
+    if (node == ZR_NULL) {
+        return;
+    }
+
+    semantic_record_reachability_fact_at_range(analyzer, node, node->location, cause, causeNode);
+}
+
+static void semantic_record_logical_fact(SZrSemanticAnalyzer *analyzer,
+                                         SZrAstNode *node,
+                                         EZrSemanticLogicalFactKind kind,
+                                         TZrBool hasKnownValue,
+                                         TZrBool knownValue,
+                                         SZrAstNode *relatedNode) {
+    SZrSemanticLogicalFact fact;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || node == ZR_NULL) {
+        return;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = node;
+    fact.range = node->location;
+    fact.kind = kind;
+    fact.exactness = ZR_SEMANTIC_FACT_EXACT;
+    fact.hasKnownValue = hasKnownValue;
+    fact.knownValue = knownValue;
+    fact.relatedNode = relatedNode;
+    ZrParser_SemanticFacts_AppendLogical(analyzer->semanticContext, &fact);
+}
+
 typedef struct SZrSemanticTypecheckContextSnapshot {
     SZrTypePrototypeInfo *typePrototype;
     SZrAstNode *typeNode;
@@ -829,6 +883,313 @@ static void semantic_add_type_mismatch_diagnostic(SZrState *state,
                                                     "type_mismatch");
 }
 
+typedef enum EZrSemanticOwnershipDiagnosticKind {
+    ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE = 0,
+    ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_MISMATCH,
+    ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_UPGRADE,
+    ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_OWNER_TO_PLAIN,
+    ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_BORROW_ESCAPE,
+    ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_LOAN_ESCAPE
+} EZrSemanticOwnershipDiagnosticKind;
+
+typedef struct SZrSemanticOwnershipDiagnosticMatch {
+    EZrSemanticOwnershipDiagnosticKind kind;
+    SZrAstNode *node;
+    SZrFileRange location;
+    EZrOwnershipQualifier qualifier;
+    TZrChar expectedText[ZR_LSP_TYPE_BUFFER_LENGTH];
+    TZrChar actualText[ZR_LSP_TYPE_BUFFER_LENGTH];
+} SZrSemanticOwnershipDiagnosticMatch;
+
+static void semantic_ownership_diagnostic_match_init(SZrSemanticOwnershipDiagnosticMatch *match) {
+    if (match == ZR_NULL) {
+        return;
+    }
+
+    memset(match, 0, sizeof(*match));
+    match->kind = ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE;
+    match->qualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+}
+
+static TZrBool semantic_ownership_is_owned_qualifier(EZrOwnershipQualifier qualifier) {
+    return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+           qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
+}
+
+static TZrBool semantic_ownership_type_surface_matches(const SZrInferredType *expectedType,
+                                                       const SZrInferredType *actualType) {
+    if (expectedType == ZR_NULL || actualType == ZR_NULL ||
+        expectedType->baseType != actualType->baseType) {
+        return ZR_FALSE;
+    }
+
+    if (expectedType->typeName == actualType->typeName) {
+        return ZR_TRUE;
+    }
+    if (expectedType->typeName != ZR_NULL && actualType->typeName != ZR_NULL) {
+        return ZrCore_String_Equal(expectedType->typeName, actualType->typeName);
+    }
+
+    return ZR_FALSE;
+}
+
+static EZrSemanticOwnershipDiagnosticKind semantic_classify_ownership_mismatch(
+        const SZrInferredType *expectedType,
+        const SZrInferredType *actualType) {
+    if (!semantic_ownership_type_surface_matches(expectedType, actualType)) {
+        return ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE;
+    }
+
+    if (expectedType->ownershipQualifier == actualType->ownershipQualifier) {
+        return ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE;
+    }
+    if (expectedType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED &&
+        actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK) {
+        return ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_UPGRADE;
+    }
+    if (expectedType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
+        semantic_ownership_is_owned_qualifier(actualType->ownershipQualifier)) {
+        return ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_OWNER_TO_PLAIN;
+    }
+    if (expectedType->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE ||
+        actualType->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE) {
+        return ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_MISMATCH;
+    }
+
+    return ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE;
+}
+
+static void semantic_format_type_name(SZrState *state,
+                                      const SZrInferredType *type,
+                                      TZrChar *buffer,
+                                      TZrSize bufferSize) {
+    TZrChar localBuffer[ZR_LSP_TYPE_BUFFER_LENGTH];
+    const TZrChar *typeText;
+
+    if (buffer == ZR_NULL || bufferSize == 0) {
+        return;
+    }
+
+    typeText = ZrParser_TypeNameString_Get(state, type, localBuffer, sizeof(localBuffer));
+    snprintf(buffer, bufferSize, "%s", typeText != ZR_NULL ? typeText : "unknown");
+}
+
+static TZrBool semantic_prepare_ownership_mismatch_diagnostic(
+        SZrState *state,
+        SZrAstNode *node,
+        SZrFileRange location,
+        const SZrInferredType *expectedType,
+        const SZrInferredType *actualType,
+        SZrSemanticOwnershipDiagnosticMatch *outMatch) {
+    EZrSemanticOwnershipDiagnosticKind kind;
+
+    if (outMatch == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    kind = semantic_classify_ownership_mismatch(expectedType, actualType);
+    if (kind == ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE) {
+        return ZR_FALSE;
+    }
+
+    semantic_ownership_diagnostic_match_init(outMatch);
+    outMatch->kind = kind;
+    outMatch->node = node;
+    outMatch->location = location;
+    outMatch->qualifier = actualType != ZR_NULL
+                          ? actualType->ownershipQualifier
+                          : ZR_OWNERSHIP_QUALIFIER_NONE;
+    semantic_format_type_name(state, expectedType, outMatch->expectedText, sizeof(outMatch->expectedText));
+    semantic_format_type_name(state, actualType, outMatch->actualText, sizeof(outMatch->actualText));
+    return ZR_TRUE;
+}
+
+static EZrOwnershipBuiltinKind semantic_ownership_builtin_kind_for_node(SZrAstNode *node) {
+    if (node == ZR_NULL || node->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+    }
+
+    return node->data.constructExpression.builtinKind;
+}
+
+static SZrFileRange semantic_line_range_from_range(SZrFileRange range);
+
+static TZrBool semantic_prepare_return_ownership_escape_diagnostic(
+        SZrAstNode *node,
+        const SZrInferredType *expectedType,
+        const SZrInferredType *actualType,
+        SZrSemanticOwnershipDiagnosticMatch *outMatch) {
+    EZrOwnershipBuiltinKind builtinKind;
+
+    if (node == ZR_NULL || expectedType == ZR_NULL || actualType == ZR_NULL || outMatch == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    builtinKind = semantic_ownership_builtin_kind_for_node(node);
+    if (expectedType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED &&
+        actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED &&
+        builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_BORROW) {
+        semantic_ownership_diagnostic_match_init(outMatch);
+        outMatch->kind = ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_BORROW_ESCAPE;
+        outMatch->node = node;
+        outMatch->location = semantic_line_range_from_range(node->location);
+        outMatch->qualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        return ZR_TRUE;
+    }
+    if (expectedType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED &&
+        actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED &&
+        builtinKind == ZR_OWNERSHIP_BUILTIN_KIND_LOAN) {
+        semantic_ownership_diagnostic_match_init(outMatch);
+        outMatch->kind = ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_LOAN_ESCAPE;
+        outMatch->node = node;
+        outMatch->location = semantic_line_range_from_range(node->location);
+        outMatch->qualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrDiagnostic *semantic_add_structured_diagnostic(SZrState *state,
+                                                         SZrSemanticAnalyzer *analyzer,
+                                                         const SZrStructuredDiagnostic *structured) {
+    SZrDiagnostic *diagnostic;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || structured == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    diagnostic = ZrLanguageServer_Diagnostic_FromStructured(state, structured);
+    if (diagnostic == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Array_Push(state, &analyzer->diagnostics, &diagnostic);
+    return diagnostic;
+}
+
+static SZrFileRange semantic_line_range_from_range(SZrFileRange range) {
+    range.start.offset = 0;
+    range.end.offset = 0;
+    range.start.column = 1;
+    range.end.column = 32767;
+    return range;
+}
+
+static void semantic_record_ownership_fact(SZrSemanticAnalyzer *analyzer,
+                                           SZrAstNode *node,
+                                           SZrFileRange range,
+                                           EZrOwnershipQualifier qualifier,
+                                           const SZrDiagnostic *diagnostic) {
+    SZrSemanticOwnershipFact fact;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || node == ZR_NULL) {
+        return;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = node;
+    fact.range = node->location.start.line > 0 ? node->location : range;
+    if (node->type == ZR_AST_CONSTRUCT_EXPRESSION &&
+        node->data.constructExpression.builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_NONE &&
+        fact.range.start.offset >= 2) {
+        fact.range.start.offset -= 2;
+        fact.range.start.column = fact.range.start.column > 2 ? fact.range.start.column - 2 : 1;
+    }
+    fact.kind = ZR_SEMANTIC_OWNERSHIP_FACT_ERROR;
+    fact.qualifier = qualifier;
+    fact.symbolId = ZR_SEMANTIC_ID_INVALID;
+    fact.lifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
+    fact.ownerLifetimeRegionId = ZR_SEMANTIC_ID_INVALID;
+    fact.relatedNode = node;
+    fact.isViolation = ZR_TRUE;
+    fact.diagnosticMessage = diagnostic != ZR_NULL ? diagnostic->message : ZR_NULL;
+    ZrParser_SemanticFacts_AppendOwnership(analyzer->semanticContext, &fact);
+}
+
+static void semantic_clear_compiler_error(SZrSemanticAnalyzer *analyzer) {
+    if (analyzer != ZR_NULL && analyzer->compilerState != ZR_NULL) {
+        analyzer->compilerState->hasError = ZR_FALSE;
+    }
+}
+
+static TZrBool semantic_emit_ownership_diagnostic(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        const SZrSemanticOwnershipDiagnosticMatch *match) {
+    SZrStructuredDiagnostic structured;
+    SZrDiagnostic *diagnostic = ZR_NULL;
+    TZrBool built = ZR_FALSE;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || match == ZR_NULL ||
+        match->kind == ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_StructuredDiagnostic_Init(&structured);
+    switch (match->kind) {
+        case ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_WEAK_REQUIRES_UPGRADE:
+            built = ZrParser_DiagnosticBuilder_BuildWeakUpgrade(state, &structured, match->location);
+            break;
+        case ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_OWNER_TO_PLAIN:
+            built = ZrParser_DiagnosticBuilder_BuildOwnerToPlainEscape(state, &structured, match->location);
+            break;
+        case ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_BORROW_ESCAPE:
+            built = ZrParser_DiagnosticBuilder_BuildBorrowEscape(state, &structured, match->location);
+            break;
+        case ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_LOAN_ESCAPE:
+            built = ZrParser_DiagnosticBuilder_BuildLoanEscape(state, &structured, match->location);
+            break;
+        case ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_MISMATCH:
+            built = ZrParser_DiagnosticBuilder_BuildOwnershipMismatch(
+                    state,
+                    &structured,
+                    match->location,
+                    match->expectedText,
+                    match->actualText);
+            break;
+        case ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE:
+        default:
+            break;
+    }
+
+    if (built) {
+        diagnostic = semantic_add_structured_diagnostic(state, analyzer, &structured);
+    }
+    if (diagnostic != ZR_NULL) {
+        semantic_record_ownership_fact(analyzer,
+                                       match->node,
+                                       match->location,
+                                       match->qualifier,
+                                       diagnostic);
+        semantic_clear_compiler_error(analyzer);
+    }
+    ZrParser_StructuredDiagnostic_Free(state, &structured);
+    return diagnostic != ZR_NULL;
+}
+
+static TZrBool semantic_emit_ownership_compatibility_diagnostic(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *node,
+        SZrFileRange location,
+        const SZrInferredType *expectedType,
+        const SZrInferredType *actualType) {
+    SZrSemanticOwnershipDiagnosticMatch match;
+
+    semantic_ownership_diagnostic_match_init(&match);
+    if (!semantic_prepare_ownership_mismatch_diagnostic(state,
+                                                       node,
+                                                       location,
+                                                       expectedType,
+                                                       actualType,
+                                                       &match)) {
+        return ZR_FALSE;
+    }
+
+    return semantic_emit_ownership_diagnostic(state, analyzer, &match);
+}
+
 typedef enum EZrSemanticVariancePosition {
     ZR_SEMANTIC_VARIANCE_POSITION_INVARIANT = 0,
     ZR_SEMANTIC_VARIANCE_POSITION_OUT = 1,
@@ -1189,9 +1550,14 @@ static TZrBool semantic_infer_node_type(SZrState *state,
 static TZrBool semantic_call_matches_parameters(SZrState *state,
                                                 SZrSemanticAnalyzer *analyzer,
                                                 SZrAstNodeArray *params,
-                                                SZrFunctionCall *call) {
+                                                SZrFunctionCall *call,
+                                                SZrSemanticOwnershipDiagnosticMatch *outOwnershipDiagnostic) {
     if (state == ZR_NULL || analyzer == ZR_NULL || call == ZR_NULL) {
         return ZR_FALSE;
+    }
+
+    if (outOwnershipDiagnostic != ZR_NULL) {
+        semantic_ownership_diagnostic_match_init(outOwnershipDiagnostic);
     }
 
     if (params == ZR_NULL) {
@@ -1236,14 +1602,98 @@ static TZrBool semantic_call_matches_parameters(SZrState *state,
                                                             &expectedType,
                                                             &actualType,
                                                             argNode->location);
-        ZrParser_InferredType_Free(state, &actualType);
-        ZrParser_InferredType_Free(state, &expectedType);
         if (!compatible) {
+            if (outOwnershipDiagnostic != ZR_NULL) {
+                semantic_prepare_ownership_mismatch_diagnostic(state,
+                                                               argNode,
+                                                               argNode->location,
+                                                               &expectedType,
+                                                               &actualType,
+                                                               outOwnershipDiagnostic);
+            }
+            ZrParser_InferredType_Free(state, &actualType);
+            ZrParser_InferredType_Free(state, &expectedType);
             return ZR_FALSE;
         }
+        ZrParser_InferredType_Free(state, &actualType);
+        ZrParser_InferredType_Free(state, &expectedType);
     }
 
     return ZR_TRUE;
+}
+
+static TZrBool semantic_find_function_type_ownership_mismatch(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrTypeEnvironment *typeEnv,
+        SZrString *name,
+        SZrFunctionCall *call,
+        SZrSemanticOwnershipDiagnosticMatch *outOwnershipDiagnostic) {
+    SZrArray candidates;
+    TZrBool found = ZR_FALSE;
+
+    if (outOwnershipDiagnostic != ZR_NULL) {
+        semantic_ownership_diagnostic_match_init(outOwnershipDiagnostic);
+    }
+    if (state == ZR_NULL || analyzer == ZR_NULL || typeEnv == ZR_NULL ||
+        name == ZR_NULL || call == ZR_NULL || outOwnershipDiagnostic == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Construct(&candidates);
+    if (!ZrParser_TypeEnvironment_LookupFunctions(state, typeEnv, name, &candidates)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize candidateIndex = 0; candidateIndex < candidates.length && !found; candidateIndex++) {
+        SZrFunctionTypeInfo **functionTypePtr =
+                (SZrFunctionTypeInfo **)ZrCore_Array_Get(&candidates, candidateIndex);
+        SZrFunctionTypeInfo *functionType =
+                functionTypePtr != ZR_NULL ? *functionTypePtr : ZR_NULL;
+        TZrSize argCount = call->args != ZR_NULL ? call->args->count : 0;
+
+        if (functionType == ZR_NULL || functionType->paramTypes.length != argCount) {
+            continue;
+        }
+
+        for (TZrSize argIndex = 0; argIndex < argCount; argIndex++) {
+            SZrAstNode *argNode = call->args->nodes[argIndex];
+            SZrInferredType *expectedType =
+                    (SZrInferredType *)ZrCore_Array_Get(&functionType->paramTypes, argIndex);
+            SZrInferredType actualType;
+            TZrBool compatible;
+
+            if (argNode == ZR_NULL || expectedType == ZR_NULL) {
+                continue;
+            }
+
+            ZrParser_InferredType_Init(state, &actualType, ZR_VALUE_TYPE_OBJECT);
+            if (!semantic_infer_node_type(state, analyzer, argNode, &actualType)) {
+                ZrParser_InferredType_Free(state, &actualType);
+                continue;
+            }
+
+            compatible = ZrParser_InferredType_IsCompatible(&actualType, expectedType);
+            if (!compatible &&
+                semantic_prepare_ownership_mismatch_diagnostic(state,
+                                                               argNode,
+                                                               argNode->location,
+                                                               expectedType,
+                                                               &actualType,
+                                                               outOwnershipDiagnostic)) {
+                found = ZR_TRUE;
+            }
+            ZrParser_InferredType_Free(state, &actualType);
+            if (found) {
+                break;
+            }
+        }
+    }
+
+    if (candidates.isValid) {
+        ZrCore_Array_Free(state, &candidates);
+    }
+    return found;
 }
 
 static TZrBool semantic_resolve_named_function_call_in_env(SZrState *state,
@@ -1311,6 +1761,7 @@ static void semantic_check_named_function_call(SZrState *state,
     SZrCompilerState *compilerState;
     TZrBool hasRuntimeFunction = ZR_FALSE;
     TZrBool hasCompileTimeFunction = ZR_FALSE;
+    SZrSemanticOwnershipDiagnosticMatch ownershipDiagnostic;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || name == ZR_NULL || call == ZR_NULL) {
         return;
@@ -1320,6 +1771,7 @@ static void semantic_check_named_function_call(SZrState *state,
     if (compilerState == ZR_NULL) {
         return;
     }
+    semantic_ownership_diagnostic_match_init(&ownershipDiagnostic);
 
     if (semantic_resolve_named_function_call_in_env(state,
                                                     compilerState,
@@ -1331,6 +1783,15 @@ static void semantic_check_named_function_call(SZrState *state,
         return;
     }
     if (hasRuntimeFunction) {
+        if (semantic_find_function_type_ownership_mismatch(state,
+                                                           analyzer,
+                                                           compilerState->typeEnv,
+                                                           name,
+                                                           call,
+                                                           &ownershipDiagnostic) &&
+            semantic_emit_ownership_diagnostic(state, analyzer, &ownershipDiagnostic)) {
+            return;
+        }
         semantic_add_type_mismatch_diagnostic(state, analyzer, location, "Type mismatch in function call");
         return;
     }
@@ -1345,6 +1806,15 @@ static void semantic_check_named_function_call(SZrState *state,
         return;
     }
     if (hasCompileTimeFunction) {
+        if (semantic_find_function_type_ownership_mismatch(state,
+                                                           analyzer,
+                                                           compilerState->compileTimeTypeEnv,
+                                                           name,
+                                                           call,
+                                                           &ownershipDiagnostic) &&
+            semantic_emit_ownership_diagnostic(state, analyzer, &ownershipDiagnostic)) {
+            return;
+        }
         semantic_add_type_mismatch_diagnostic(state, analyzer, location, "Type mismatch in function call");
     }
 }
@@ -1360,6 +1830,7 @@ static void semantic_check_method_call(SZrState *state,
     TZrBool sawCandidate = ZR_FALSE;
     TZrBool matchedCandidate = ZR_FALSE;
     const TZrChar *memberName;
+    SZrSemanticOwnershipDiagnosticMatch ownershipDiagnostic;
 
     if (state == ZR_NULL || analyzer == ZR_NULL || receiverNode == ZR_NULL ||
         memberNode == ZR_NULL || call == ZR_NULL) {
@@ -1370,6 +1841,7 @@ static void semantic_check_method_call(SZrState *state,
     if (memberName == ZR_NULL) {
         return;
     }
+    semantic_ownership_diagnostic_match_init(&ownershipDiagnostic);
 
     ZrParser_InferredType_Init(state, &receiverType, ZR_VALUE_TYPE_OBJECT);
     if (!semantic_infer_node_type(state, analyzer, receiverNode, &receiverType)) {
@@ -1394,92 +1866,29 @@ static void semantic_check_method_call(SZrState *state,
             }
 
             sawCandidate = ZR_TRUE;
+            SZrSemanticOwnershipDiagnosticMatch candidateOwnershipDiagnostic;
+            semantic_ownership_diagnostic_match_init(&candidateOwnershipDiagnostic);
             if (semantic_call_matches_parameters(state,
-                                                 analyzer,
-                                                 candidateNode->data.classMethod.params,
-                                                 call)) {
+                                                  analyzer,
+                                                  candidateNode->data.classMethod.params,
+                                                  call,
+                                                  &candidateOwnershipDiagnostic)) {
                 matchedCandidate = ZR_TRUE;
                 break;
+            }
+            if (ownershipDiagnostic.kind == ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE &&
+                candidateOwnershipDiagnostic.kind != ZR_SEMANTIC_OWNERSHIP_DIAGNOSTIC_NONE) {
+                ownershipDiagnostic = candidateOwnershipDiagnostic;
             }
         }
     }
 
     ZrParser_InferredType_Free(state, &receiverType);
     if (sawCandidate && !matchedCandidate) {
-        semantic_add_type_mismatch_diagnostic(state, analyzer, location, "Type mismatch in method call");
-    }
-}
-
-static TZrBool semantic_is_boolean_literal(SZrAstNode *node, TZrBool *outValue) {
-    if (outValue != ZR_NULL) {
-        *outValue = ZR_FALSE;
-    }
-
-    if (node == ZR_NULL || node->type != ZR_AST_BOOLEAN_LITERAL) {
-        return ZR_FALSE;
-    }
-
-    if (outValue != ZR_NULL) {
-        *outValue = node->data.booleanLiteral.value;
-    }
-    return ZR_TRUE;
-}
-
-static TZrBool semantic_statement_definitely_exits(SZrAstNode *node) {
-    if (node == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    switch (node->type) {
-        case ZR_AST_RETURN_STATEMENT:
-        case ZR_AST_THROW_STATEMENT:
-            return ZR_TRUE;
-
-        case ZR_AST_BLOCK:
-            if (node->data.block.body != ZR_NULL && node->data.block.body->nodes != ZR_NULL) {
-                for (TZrSize index = 0; index < node->data.block.body->count; index++) {
-                    if (semantic_statement_definitely_exits(node->data.block.body->nodes[index])) {
-                        return ZR_TRUE;
-                    }
-                }
-            }
-            return ZR_FALSE;
-
-        case ZR_AST_IF_EXPRESSION:
-            return node->data.ifExpression.thenExpr != ZR_NULL &&
-                   node->data.ifExpression.elseExpr != ZR_NULL &&
-                   semantic_statement_definitely_exits(node->data.ifExpression.thenExpr) &&
-                   semantic_statement_definitely_exits(node->data.ifExpression.elseExpr);
-
-        case ZR_AST_TRY_CATCH_FINALLY_STATEMENT: {
-            SZrTryCatchFinallyStatement *tryStatement = &node->data.tryCatchFinallyStatement;
-            TZrBool allCatchClausesExit = ZR_TRUE;
-
-            if (tryStatement->finallyBlock != ZR_NULL &&
-                semantic_statement_definitely_exits(tryStatement->finallyBlock)) {
-                return ZR_TRUE;
-            }
-
-            if (!semantic_statement_definitely_exits(tryStatement->block)) {
-                return ZR_FALSE;
-            }
-
-            if (tryStatement->catchClauses != ZR_NULL) {
-                for (TZrSize index = 0; index < tryStatement->catchClauses->count; index++) {
-                    SZrAstNode *catchNode = tryStatement->catchClauses->nodes[index];
-                    if (catchNode == ZR_NULL || catchNode->type != ZR_AST_CATCH_CLAUSE ||
-                        !semantic_statement_definitely_exits(catchNode->data.catchClause.block)) {
-                        allCatchClausesExit = ZR_FALSE;
-                        break;
-                    }
-                }
-            }
-
-            return allCatchClausesExit;
+        if (semantic_emit_ownership_diagnostic(state, analyzer, &ownershipDiagnostic)) {
+            return;
         }
-
-        default:
-            return ZR_FALSE;
+        semantic_add_type_mismatch_diagnostic(state, analyzer, location, "Type mismatch in method call");
     }
 }
 
@@ -1559,11 +1968,18 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                 if (hasLeftType && hasRightType) {
                     // 检查赋值类型兼容性
                     if (!ZrParser_AssignmentCompatibility_Check(analyzer->compilerState, &leftType, &rightType, node->location)) {
-                        ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state, analyzer,
-                                                        ZR_DIAGNOSTIC_ERROR,
-                                                        node->location,
-                                                        "Type mismatch in assignment: incompatible types",
-                                                        "type_mismatch");
+                        if (!semantic_emit_ownership_compatibility_diagnostic(state,
+                                                                              analyzer,
+                                                                              assignExpr->right,
+                                                                              assignExpr->right->location,
+                                                                              &leftType,
+                                                                              &rightType)) {
+                            ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state, analyzer,
+                                                            ZR_DIAGNOSTIC_ERROR,
+                                                            node->location,
+                                                            "Type mismatch in assignment: incompatible types",
+                                                            "type_mismatch");
+                        }
                     }
                 }
                 if (hasRightType) {
@@ -1628,7 +2044,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                 SZrInferredType expectedType;
                 SZrInferredType valueType;
                 TZrBool hasValueType;
-                TZrBool compatible;
+                TZrBool compatible = ZR_FALSE;
 
                 ZrParser_InferredType_Init(state, &expectedType, ZR_VALUE_TYPE_OBJECT);
                 ZrParser_InferredType_Init(state, &valueType, ZR_VALUE_TYPE_OBJECT);
@@ -1665,7 +2081,14 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                              "Type mismatch in variable initializer (expected: %s, actual: %s)",
                              expectedText != ZR_NULL ? expectedText : "unknown",
                              actualText != ZR_NULL ? actualText : "unknown");
-                    semantic_add_type_mismatch_diagnostic(state, analyzer, node->location, message);
+                    if (!semantic_emit_ownership_compatibility_diagnostic(state,
+                                                                          analyzer,
+                                                                          varDecl->value,
+                                                                          varDecl->value->location,
+                                                                          &expectedType,
+                                                                          &valueType)) {
+                        semantic_add_type_mismatch_diagnostic(state, analyzer, node->location, message);
+                    }
                 }
                 ZrParser_InferredType_Free(state, &valueType);
                 ZrParser_InferredType_Free(state, &expectedType);
@@ -1680,7 +2103,9 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                 if (returnTypeNode != ZR_NULL) {
                     SZrInferredType expectedType;
                     SZrInferredType actualType;
-                    TZrBool compatible;
+                    TZrBool compatible = ZR_FALSE;
+                    TZrBool hasActualType;
+                    TZrBool emittedOwnershipDiagnostic = ZR_FALSE;
 
                     ZrParser_InferredType_Init(state, &expectedType, ZR_VALUE_TYPE_OBJECT);
                     ZrParser_InferredType_Init(state, &actualType, ZR_VALUE_TYPE_OBJECT);
@@ -1693,15 +2118,44 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                         ZrParser_InferredType_Free(state, &expectedType);
                         break;
                     }
-                    compatible = semantic_infer_node_type(state, analyzer, returnStmt->expr, &actualType) &&
+                    hasActualType = semantic_infer_node_type(state, analyzer, returnStmt->expr, &actualType);
+                    compatible = hasActualType &&
                                  analyzer->compilerState != ZR_NULL &&
                                  ZrParser_AssignmentCompatibility_Check(analyzer->compilerState,
-                                                                         &expectedType,
+                                                                        &expectedType,
                                                                         &actualType,
                                                                         returnStmt->expr->location);
+                    if (hasActualType) {
+                        SZrSemanticOwnershipDiagnosticMatch escapeDiagnostic;
+                        semantic_ownership_diagnostic_match_init(&escapeDiagnostic);
+                        if (semantic_prepare_return_ownership_escape_diagnostic(returnStmt->expr,
+                                                                                &expectedType,
+                                                                                &actualType,
+                                                                                &escapeDiagnostic)) {
+                            emittedOwnershipDiagnostic =
+                                    semantic_emit_ownership_diagnostic(state, analyzer, &escapeDiagnostic);
+                            if (emittedOwnershipDiagnostic) {
+                                compatible = ZR_FALSE;
+                            }
+                        }
+                    }
+                    if (!hasActualType) {
+                        semantic_add_cannot_infer_exact_type_diagnostic(state,
+                                                                        analyzer,
+                                                                        returnStmt->expr->location);
+                    }
+                    if (hasActualType && !compatible && !emittedOwnershipDiagnostic) {
+                        emittedOwnershipDiagnostic =
+                                semantic_emit_ownership_compatibility_diagnostic(state,
+                                                                                 analyzer,
+                                                                                 returnStmt->expr,
+                                                                                 node->location,
+                                                                                 &expectedType,
+                                                                                 &actualType);
+                    }
                     ZrParser_InferredType_Free(state, &actualType);
                     ZrParser_InferredType_Free(state, &expectedType);
-                    if (!compatible) {
+                    if (hasActualType && !compatible && !emittedOwnershipDiagnostic) {
                         semantic_add_type_mismatch_diagnostic(state,
                                                               analyzer,
                                                               node->location,
@@ -1724,27 +2178,71 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             break;
         }
 
+        case ZR_AST_EXPRESSION_STATEMENT: {
+            SZrAstNode *expr = node->data.expressionStatement.expr;
+            SZrInferredType exprType;
+
+            if (expr != ZR_NULL) {
+                ZrParser_InferredType_Init(state, &exprType, ZR_VALUE_TYPE_OBJECT);
+                (void)semantic_infer_node_type(state, analyzer, expr, &exprType);
+                ZrParser_InferredType_Free(state, &exprType);
+            }
+            break;
+        }
+
         case ZR_AST_LOGICAL_EXPRESSION: {
             TZrBool leftValue = ZR_FALSE;
-            if (semantic_is_boolean_literal(node->data.logicalExpression.left, &leftValue) &&
+            SZrAstNode *leftEvidence = ZR_NULL;
+            SZrAstNode *left = node->data.logicalExpression.left;
+            SZrAstNode *right = node->data.logicalExpression.right;
+            if (right != ZR_NULL &&
+                ZrLanguageServer_SemanticAnalyzer_TryEvaluateConstantBooleanCondition(
+                        analyzer,
+                        left,
+                        &leftValue,
+                        &leftEvidence) &&
                 ((semantic_text_equals(node->data.logicalExpression.op, "||") && leftValue) ||
                  (semantic_text_equals(node->data.logicalExpression.op, "&&") && !leftValue))) {
                 ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
                                                                 analyzer,
                                                                 ZR_DIAGNOSTIC_WARNING,
-                                                                node->data.logicalExpression.right->location,
+                                                                right->location,
                                                                 "Right-hand branch is unreachable due to deterministic short-circuit",
                                                                 "short_circuit_unreachable");
+                semantic_record_logical_fact(analyzer,
+                                             node,
+                                             ZR_SEMANTIC_LOGICAL_FACT_SHORT_CIRCUIT,
+                                             ZR_TRUE,
+                                             leftValue,
+                                             right);
+                semantic_record_reachability_fact_at_range(analyzer,
+                                                           right,
+                                                           node->location,
+                                                           ZR_SEMANTIC_REACHABILITY_SHORT_CIRCUIT,
+                                                           leftEvidence != ZR_NULL ? leftEvidence : left);
             }
             break;
         }
 
         case ZR_AST_IF_EXPRESSION: {
             TZrBool conditionValue = ZR_FALSE;
-            if (semantic_is_boolean_literal(node->data.ifExpression.condition, &conditionValue)) {
+            SZrAstNode *conditionEvidence = ZR_NULL;
+            if (ZrLanguageServer_SemanticAnalyzer_TryEvaluateConstantBooleanCondition(
+                        analyzer,
+                        node->data.ifExpression.condition,
+                        &conditionValue,
+                        &conditionEvidence)) {
                 SZrAstNode *unreachableBranch = conditionValue
                                                 ? node->data.ifExpression.elseExpr
                                                 : node->data.ifExpression.thenExpr;
+                semantic_record_logical_fact(analyzer,
+                                             node->data.ifExpression.condition,
+                                             conditionValue
+                                            ? ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_TRUE
+                                            : ZR_SEMANTIC_LOGICAL_FACT_ALWAYS_FALSE,
+                                             ZR_TRUE,
+                                             conditionValue,
+                                             conditionEvidence != ZR_NULL ? conditionEvidence : unreachableBranch);
                 if (unreachableBranch != ZR_NULL) {
                     ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
                                                                     analyzer,
@@ -1752,6 +2250,10 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                                     unreachableBranch->location,
                                                                     "Branch is statically unreachable",
                                                                     "unreachable_branch");
+                    semantic_record_reachability_fact(analyzer,
+                                                      unreachableBranch,
+                                                      ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH,
+                                                      node->data.ifExpression.condition);
                 }
             }
             break;
@@ -1876,6 +2378,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             SZrTypeEnvironment *savedTypeEnv =
                 semantic_typecheck_push_runtime_type_binding_scope(state, analyzer);
             TZrBool terminated = ZR_FALSE;
+            SZrAstNode *terminatingNode = ZR_NULL;
             if (block->body != ZR_NULL && block->body->nodes != ZR_NULL) {
                 for (TZrSize i = 0; i < block->body->count; i++) {
                     if (block->body->nodes[i] != ZR_NULL) {
@@ -1886,10 +2389,19 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
                                                                             block->body->nodes[i]->location,
                                                                             "Statement is unreachable",
                                                                             "unreachable_code");
+                            semantic_record_reachability_fact(
+                                    analyzer,
+                                    block->body->nodes[i],
+                                    ZrLanguageServer_SemanticAnalyzer_ReachabilityCauseForExitNode(terminatingNode),
+                                    terminatingNode);
                         }
                         ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, block->body->nodes[i]);
-                        if (!terminated && semantic_statement_definitely_exits(block->body->nodes[i])) {
+                        if (!terminated &&
+                            ZrLanguageServer_SemanticAnalyzer_StatementDefinitelyExits(
+                                    analyzer,
+                                    block->body->nodes[i])) {
                             terminated = ZR_TRUE;
+                            terminatingNode = block->body->nodes[i];
                         }
                     }
                 }
@@ -2096,6 +2608,10 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         case ZR_AST_WHILE_LOOP: {
             SZrWhileLoop *whileLoop = &node->data.whileLoop;
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, whileLoop->cond);
+            ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
+                                                                               analyzer,
+                                                                               whileLoop->cond,
+                                                                               whileLoop->block);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, whileLoop->block);
             break;
         }
@@ -2104,6 +2620,10 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
             SZrForLoop *forLoop = &node->data.forLoop;
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->init);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->cond);
+            ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(state,
+                                                                               analyzer,
+                                                                               forLoop->cond,
+                                                                               forLoop->block);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->step);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, forLoop->block);
             break;

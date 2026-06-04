@@ -52,6 +52,11 @@ void ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(SZrState 
                                                                        SZrSemanticAnalyzer *analyzer,
                                                                        SZrSymbol *symbol);
 
+void ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForRange(SZrState *state,
+                                                                      SZrSemanticAnalyzer *analyzer,
+                                                                      SZrSymbol *symbol,
+                                                                      SZrFileRange range);
+
 TZrSize ZrLanguageServer_SemanticAnalyzer_ComputeAstHash(SZrAstNode *ast);
 
 TZrBool ZrLanguageServer_SemanticAnalyzer_PrepareState(SZrState *state,
@@ -89,6 +94,32 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(SZrState *sta
                                                                    SZrSemanticAnalyzer *analyzer,
                                                                    SZrAstNode *node,
                                                                    SZrInferredType *outType);
+
+TZrBool ZrLanguageServer_SemanticAnalyzer_TryEvaluateConstantBooleanCondition(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *node,
+        TZrBool *outValue,
+        SZrAstNode **outEvidenceNode);
+
+void ZrLanguageServer_SemanticAnalyzer_RecordConstantLoopConditionFacts(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *conditionNode,
+        SZrAstNode *bodyNode);
+
+EZrSemanticReachabilityCause ZrLanguageServer_SemanticAnalyzer_ReachabilityCauseForExitNode(
+        SZrAstNode *node);
+
+TZrBool ZrLanguageServer_SemanticAnalyzer_StatementDefinitelyExits(
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *node);
+
+SZrAstNode *ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(SZrAstNode *node,
+                                                                           SZrFileRange position);
+
+const SZrSemanticExpressionFact *ZrLanguageServer_SemanticAnalyzer_FindExpressionFactAtPosition(
+        SZrSemanticAnalyzer *analyzer,
+        SZrFileRange position);
 
 void ZrLanguageServer_SemanticAnalyzer_RegisterFieldSymbolFromAst(SZrState *state,
                                                                   SZrSemanticAnalyzer *analyzer,

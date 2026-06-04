@@ -135,6 +135,36 @@ static char *read_text_file_owned(const TZrChar *path) {
     return buffer;
 }
 
+static char *read_repo_text_file_owned(const TZrChar *relativePath) {
+    const char *sourceFile = __FILE__;
+    const char *marker;
+    char path[1024];
+    size_t rootLength;
+    size_t relativeLength;
+
+    if (relativePath == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    marker = strstr(sourceFile, "tests/parser/test_semir_pipeline.c");
+    if (marker == ZR_NULL) {
+        marker = strstr(sourceFile, "tests\\parser\\test_semir_pipeline.c");
+    }
+    if (marker == ZR_NULL) {
+        return read_text_file_owned(relativePath);
+    }
+
+    rootLength = (size_t)(marker - sourceFile);
+    relativeLength = strlen(relativePath);
+    if (rootLength + relativeLength + 1 >= sizeof(path)) {
+        return ZR_NULL;
+    }
+
+    memcpy(path, sourceFile, rootLength);
+    memcpy(path + rootLength, relativePath, relativeLength + 1);
+    return read_text_file_owned(path);
+}
+
 static TZrByte *read_binary_file_owned(const TZrChar *path, TZrSize *outLength) {
     FILE *file;
     long fileSize;
@@ -338,6 +368,154 @@ static void test_ownership_builtins_lower_to_ownership_opcodes(void) {
     TEST_DIVIDER();
 }
 
+static void test_struct_value_type_places_emit_semir_metadata(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Struct Value-Type Places Emit SemIR Metadata";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Struct value-type SemIR",
+              "Testing that known struct construction, field assignment, copy, and field load are visible as typed value-place SemIR rows");
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "struct Point {\n"
+                "    pub var x: int;\n"
+                "    pub var y: int;\n"
+                "    pub @constructor(x: int, y: int) {\n"
+                "        this.x = x;\n"
+                "        this.y = y;\n"
+                "    }\n"
+                "}\n"
+                "var p: Point = $Point(1, 2);\n"
+                "var q: Point = p;\n"
+                "q.x = 3;\n"
+                "var sum = q.x + q.y;";
+        const char *intermediatePath = "semir_value_type_places_test.zri";
+        SZrString *sourceName;
+        SZrFunction *func;
+        char *intermediateText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "semir_value_type_places_test.zr", 31);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(func);
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, func, intermediatePath));
+        intermediateText = read_text_file_owned(intermediatePath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "FIELD_ADDR"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "STORE_VALUE"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "COPY_VALUE"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "LOAD_VALUE"));
+
+        free(intermediateText);
+        remove(intermediatePath);
+        ZrCore_Function_Free(state, func);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_struct_value_type_call_and_return_emit_semir_metadata(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Struct Value-Type Call And Return Emit SemIR Metadata";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Struct call/return SemIR",
+              "Testing that a known POD struct return is visible as typed CALL_TYPED and RETURN_TYPED SemIR rows");
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "struct Point {\n"
+                "    pub var x: int;\n"
+                "    pub var y: int;\n"
+                "    pub @constructor(x: int, y: int) {\n"
+                "        this.x = x;\n"
+                "        this.y = y;\n"
+                "    }\n"
+                "}\n"
+                "pub makePoint(seed: int): Point {\n"
+                "    var local: Point = $Point(seed, seed + 1);\n"
+                "    return local;\n"
+                "}\n"
+                "var returned: Point = makePoint(3);\n"
+                "return returned.x + returned.y;";
+        const char *intermediatePath = "semir_value_type_call_return_test.zri";
+        SZrString *sourceName;
+        SZrFunction *func;
+        char *intermediateText;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "semir_value_type_call_return_test.zr", 36);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(func);
+
+        TEST_ASSERT_TRUE(ZrParser_Writer_WriteIntermediateFile(state, func, intermediatePath));
+        intermediateText = read_text_file_owned(intermediatePath);
+        TEST_ASSERT_NOT_NULL(intermediateText);
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "CALL_TYPED"));
+        TEST_ASSERT_NOT_NULL(strstr(intermediateText, "RETURN_TYPED"));
+
+        free(intermediateText);
+        remove(intermediatePath);
+        ZrCore_Function_Free(state, func);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_aot_execir_source_exposes_inline_frame_byte_layout(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "AOT ExecIR Source Exposes Inline Frame Byte Layout";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("AOT ExecIR frame layout",
+              "Testing that archived AotExecIR carries per-slot inline frame byte layout facts for value-type lowering");
+
+    {
+        char *execIrHeaderText = read_repo_text_file_owned(
+                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.h");
+        char *execIrSourceText = read_repo_text_file_owned(
+                "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_exec_ir.c");
+
+        TEST_ASSERT_NOT_NULL(execIrHeaderText);
+        TEST_ASSERT_NOT_NULL(execIrSourceText);
+
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "typedef struct SZrAotExecIrFrameSlotLayout"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 frameByteSize;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 frameByteAlign;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "TZrUInt32 slotLayoutCount;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrHeaderText, "SZrAotExecIrFrameSlotLayout *slotLayouts;"));
+
+        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "outFrameLayout->frameByteSize = function->frameByteSize;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "outFrameLayout->frameByteAlign = function->frameByteAlign;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "function->frameSlotLayoutLength"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "sizeof(SZrAotExecIrFrameSlotLayout)"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "destinationLayout->byteOffset = sourceLayout->byteOffset;"));
+        TEST_ASSERT_NOT_NULL(strstr(execIrSourceText, "frameLayout.slotLayouts"));
+
+        free(execIrHeaderText);
+        free(execIrSourceText);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_binary_roundtrip_preserves_semir_metadata(void) {
     SZrTestTimer timer;
     const char *testSummary = "Binary Roundtrip Preserves SemIR Metadata";
@@ -417,6 +595,9 @@ int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_intermediate_writer_emits_semir_sections);
     RUN_TEST(test_ownership_builtins_lower_to_ownership_opcodes);
+    RUN_TEST(test_struct_value_type_places_emit_semir_metadata);
+    RUN_TEST(test_struct_value_type_call_and_return_emit_semir_metadata);
+    RUN_TEST(test_aot_execir_source_exposes_inline_frame_byte_layout);
     RUN_TEST(test_binary_roundtrip_preserves_semir_metadata);
     return UNITY_END();
 }

@@ -395,7 +395,33 @@ static ZR_FORCE_INLINE TZrBool native_binding_closure_try_get_cached_callback(co
     return *outCallback != ZR_NULL;
 }
 
+static ZR_FORCE_INLINE void native_binding_attach_inline_frame_context(ZrLibCallContext *context,
+                                                                       SZrState *state,
+                                                                       TZrStackValuePointer functionBase) {
+    SZrCallInfo *callInfo;
+    SZrFunction *function;
+
+    if (context == ZR_NULL || state == ZR_NULL || functionBase == ZR_NULL) {
+        return;
+    }
+
+    callInfo = state->callInfoList;
+    if (callInfo == ZR_NULL || callInfo->functionBase.valuePointer != functionBase) {
+        return;
+    }
+
+    function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL ||
+        function->frameSlotLayoutLength == 0u) {
+        return;
+    }
+
+    context->inlineFrameFunction = function;
+    context->inlineFrameBase = callInfo->functionBase.valuePointer + 1;
+}
+
 static ZR_FORCE_INLINE void native_binding_init_call_context_layout_cached(ZrLibCallContext *context,
+                                                                           SZrState *state,
                                                                            TZrStackValuePointer functionBase,
                                                                            TZrSize rawArgumentCount,
                                                                            TZrBool usesReceiver) {
@@ -407,6 +433,10 @@ static ZR_FORCE_INLINE void native_binding_init_call_context_layout_cached(ZrLib
     context->stackLayoutUsesReceiver = usesReceiver;
     context->stackLayoutAnchored = ZR_FALSE;
     context->stackBasePointer = ZR_NULL;
+    context->inlineFrameFunction = ZR_NULL;
+    context->inlineFrameBase = functionBase != ZR_NULL ? functionBase + 1 : ZR_NULL;
+    context->inlineArgumentStartSlot = usesReceiver ? 1u : 0u;
+    native_binding_attach_inline_frame_context(context, state, functionBase);
 
     if (!usesReceiver) {
         context->argumentBase = functionBase + 1;
@@ -447,7 +477,7 @@ static ZR_FORCE_INLINE void native_binding_init_cached_stack_root_context(ZrLibC
     context->ownerPrototype = entry->ownerPrototype;
     context->constructTargetPrototype = entry->ownerPrototype;
     context->functionBase = functionBase;
-    native_binding_init_call_context_layout_cached(context, functionBase, rawArgumentCount, usesReceiver);
+    native_binding_init_call_context_layout_cached(context, state, functionBase, rawArgumentCount, usesReceiver);
 }
 
 static ZR_FORCE_INLINE void native_binding_init_cached_stack_root_context_from_closure(
@@ -479,7 +509,7 @@ static ZR_FORCE_INLINE void native_binding_init_cached_stack_root_context_from_c
                                             ? (const ZrLibMetaMethodDescriptor *)closure->nativeBindingDescriptor
                                             : ZR_NULL;
     context->functionBase = functionBase;
-    native_binding_init_call_context_layout_cached(context, functionBase, rawArgumentCount, usesReceiver);
+    native_binding_init_call_context_layout_cached(context, state, functionBase, rawArgumentCount, usesReceiver);
 }
 
 #define kNativeEnumValueFieldName "__zr_enumValue"

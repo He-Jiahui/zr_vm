@@ -89,6 +89,7 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_document_color.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_completion.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_value.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_value_semantic_text.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_moniker.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_semantic_tokens_cache.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_semantic_tokens.c
@@ -101,6 +102,7 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
 
     target_include_directories(zr_vm_language_server_stdio PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/zr_vm_language_server
         ${CMAKE_SOURCE_DIR}/zr_vm_core/include
         ${CMAKE_SOURCE_DIR}/zr_vm_parser/include
         ${CMAKE_SOURCE_DIR}/zr_vm_common/include

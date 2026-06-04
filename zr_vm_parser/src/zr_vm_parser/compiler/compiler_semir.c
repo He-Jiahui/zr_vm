@@ -11,6 +11,7 @@
 #define ZR_SEMIR_OWNERSHIP_STATE_TABLE_CAPACITY 8U
 #define ZR_SEMIR_OWNERSHIP_STATE_INDEX_FIRST 0U
 #define ZR_SEMIR_DEOPT_ID_FIRST (ZR_RUNTIME_SEMIR_DEOPT_ID_NONE + 1U)
+#define ZR_SEMIR_MAPPED_INSTRUCTION_LIST_CAPACITY 2U
 
 typedef struct SZrSemIrMappedInstruction {
     TZrUInt32 opcode;
@@ -23,6 +24,102 @@ typedef struct SZrSemIrMappedInstruction {
     TZrUInt32 operand0;
     TZrUInt32 operand1;
 } SZrSemIrMappedInstruction;
+
+typedef struct SZrSemIrMappedInstructionList {
+    SZrSemIrMappedInstruction entries[ZR_SEMIR_MAPPED_INSTRUCTION_LIST_CAPACITY];
+    TZrUInt32 count;
+} SZrSemIrMappedInstructionList;
+
+static void semir_mapped_instruction_list_init(SZrSemIrMappedInstructionList *list) {
+    if (list == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Memory_RawSet(list, 0, sizeof(*list));
+}
+
+static SZrSemIrMappedInstruction *semir_mapped_instruction_list_append(SZrSemIrMappedInstructionList *list) {
+    SZrSemIrMappedInstruction *entry;
+
+    if (list == ZR_NULL || list->count >= ZR_SEMIR_MAPPED_INSTRUCTION_LIST_CAPACITY) {
+        return ZR_NULL;
+    }
+
+    entry = &list->entries[list->count];
+    ZrCore_Memory_RawSet(entry, 0, sizeof(*entry));
+    list->count++;
+    return entry;
+}
+
+static TZrBool semir_slot_has_inline_struct_layout(const SZrFunction *function, TZrUInt32 stackSlot) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
+        if (layout->stackSlot == stackSlot && layout->slotKind == ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static const SZrFunctionFrameSlotLayout *semir_find_frame_slot_layout(const SZrFunction *function,
+                                                                      TZrUInt32 stackSlot) {
+    TZrUInt32 index;
+
+    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
+        if (layout->stackSlot == stackSlot) {
+            return layout;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrUInt32 semir_resolve_inline_struct_source_slot(const SZrFunction *function,
+                                                         TZrUInt32 instructionIndex,
+                                                         TZrUInt32 sourceSlot) {
+    const TZrInstruction *previousInstruction;
+
+    if (semir_slot_has_inline_struct_layout(function, sourceSlot)) {
+        return sourceSlot;
+    }
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL || instructionIndex == 0) {
+        return sourceSlot;
+    }
+
+    previousInstruction = &function->instructionsList[instructionIndex - 1];
+    if ((EZrInstructionCode)previousInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(GET_STACK) ||
+        previousInstruction->instruction.operandExtra != sourceSlot) {
+        return sourceSlot;
+    }
+
+    return previousInstruction->instruction.operand.operand1[0];
+}
+
+static void semir_mapped_instruction_set_operands(SZrSemIrMappedInstruction *mapped,
+                                                  TZrUInt32 destinationSlot,
+                                                  TZrUInt32 operand0,
+                                                  TZrUInt32 operand1) {
+    if (mapped == ZR_NULL) {
+        return;
+    }
+
+    mapped->hasExplicitOperands = ZR_TRUE;
+    mapped->destinationSlot = destinationSlot;
+    mapped->operand0 = operand0;
+    mapped->operand1 = operand1;
+}
 
 static SZrString *semir_resolve_member_symbol(const SZrFunction *function, TZrUInt16 memberId) {
     if (function == ZR_NULL || function->memberEntries == ZR_NULL || memberId >= function->memberEntryLength) {
@@ -253,6 +350,30 @@ static TZrUInt32 semir_find_type_index_for_slot(const SZrFunction *function,
         }
     }
 
+    {
+        const SZrFunctionFrameSlotLayout *slotLayout = semir_find_frame_slot_layout(function, slot);
+        if (slotLayout != ZR_NULL &&
+            slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+            slotLayout->typeLayoutId != ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE) {
+            for (bindingIndex = 0; bindingIndex < function->typedLocalBindingLength; bindingIndex++) {
+                const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[bindingIndex];
+                const SZrFunctionFrameSlotLayout *bindingLayout =
+                        semir_find_frame_slot_layout(function, binding->stackSlot);
+                if (bindingLayout == ZR_NULL ||
+                    bindingLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+                    bindingLayout->typeLayoutId != slotLayout->typeLayoutId) {
+                    continue;
+                }
+
+                for (typeIndex = 0; typeIndex < typeCount; typeIndex++) {
+                    if (semir_type_ref_equals(&typeTable[typeIndex], &binding->type)) {
+                        return typeIndex;
+                    }
+                }
+            }
+        }
+    }
+
     return ZR_SEMIR_TYPE_TABLE_DEFAULT_INDEX;
 }
 
@@ -389,6 +510,129 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
     }
 }
 
+static TZrBool semir_map_value_type_instruction(const SZrFunction *function,
+                                                TZrUInt32 instructionIndex,
+                                                SZrSemIrMappedInstructionList *outList) {
+    const TZrInstruction *instruction;
+    EZrInstructionCode opcode;
+    TZrUInt32 valueOrDestinationSlot;
+    TZrUInt32 receiverSlot;
+    TZrUInt32 memberEntryIndex;
+    SZrSemIrMappedInstruction *mapped;
+
+    if (function == ZR_NULL || outList == ZR_NULL || function->instructionsList == ZR_NULL ||
+        instructionIndex >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    instruction = &function->instructionsList[instructionIndex];
+    opcode = (EZrInstructionCode)instruction->instruction.operationCode;
+    switch (opcode) {
+        case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
+            valueOrDestinationSlot = instruction->instruction.operandExtra;
+            receiverSlot = instruction->instruction.operand.operand1[0];
+            memberEntryIndex = instruction->instruction.operand.operand1[1];
+            if (!semir_slot_has_inline_struct_layout(function, receiverSlot)) {
+                return ZR_FALSE;
+            }
+
+            mapped = semir_mapped_instruction_list_append(outList);
+            if (mapped == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            mapped->opcode = ZR_SEMIR_OPCODE_FIELD_ADDR;
+            semir_mapped_instruction_set_operands(mapped, receiverSlot, receiverSlot, memberEntryIndex);
+
+            mapped = semir_mapped_instruction_list_append(outList);
+            if (mapped == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            mapped->opcode = ZR_SEMIR_OPCODE_LOAD_VALUE;
+            semir_mapped_instruction_set_operands(mapped, valueOrDestinationSlot, receiverSlot, memberEntryIndex);
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):
+            valueOrDestinationSlot = instruction->instruction.operandExtra;
+            receiverSlot = instruction->instruction.operand.operand1[0];
+            memberEntryIndex = instruction->instruction.operand.operand1[1];
+            if (!semir_slot_has_inline_struct_layout(function, receiverSlot)) {
+                return ZR_FALSE;
+            }
+
+            mapped = semir_mapped_instruction_list_append(outList);
+            if (mapped == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            mapped->opcode = ZR_SEMIR_OPCODE_FIELD_ADDR;
+            semir_mapped_instruction_set_operands(mapped, receiverSlot, receiverSlot, memberEntryIndex);
+
+            mapped = semir_mapped_instruction_list_append(outList);
+            if (mapped == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            mapped->opcode = ZR_SEMIR_OPCODE_STORE_VALUE;
+            semir_mapped_instruction_set_operands(mapped, receiverSlot, valueOrDestinationSlot, memberEntryIndex);
+            return ZR_TRUE;
+
+        case ZR_INSTRUCTION_ENUM(SET_STACK): {
+            TZrUInt32 destinationSlot = instruction->instruction.operandExtra;
+            TZrUInt32 sourceSlot = semir_resolve_inline_struct_source_slot(function,
+                                                                           instructionIndex,
+                                                                           instruction->instruction.operand
+                                                                                   .operand1[0]);
+            if (!semir_slot_has_inline_struct_layout(function, destinationSlot) ||
+                !semir_slot_has_inline_struct_layout(function, sourceSlot)) {
+                return ZR_FALSE;
+            }
+
+            mapped = semir_mapped_instruction_list_append(outList);
+            if (mapped == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            mapped->opcode = ZR_SEMIR_OPCODE_COPY_VALUE;
+            semir_mapped_instruction_set_operands(mapped, destinationSlot, sourceSlot, 0);
+            return ZR_TRUE;
+        }
+
+        case ZR_INSTRUCTION_ENUM(FUNCTION_CALL):
+        case ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL): {
+            TZrUInt32 resultSlot = instruction->instruction.operandExtra;
+            TZrUInt32 calleeSlot = instruction->instruction.operand.operand1[0];
+            TZrUInt32 argumentCount = instruction->instruction.operand.operand1[1];
+            if (!semir_slot_has_inline_struct_layout(function, resultSlot)) {
+                return ZR_FALSE;
+            }
+
+            mapped = semir_mapped_instruction_list_append(outList);
+            if (mapped == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            mapped->opcode = ZR_SEMIR_OPCODE_CALL_TYPED;
+            semir_mapped_instruction_set_operands(mapped, resultSlot, calleeSlot, argumentCount);
+            return ZR_TRUE;
+        }
+
+        case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN): {
+            TZrUInt32 resultCount = instruction->instruction.operandExtra;
+            TZrUInt32 sourceSlot = instruction->instruction.operand.operand1[0];
+            if (resultCount != 1u || !semir_slot_has_inline_struct_layout(function, sourceSlot)) {
+                return ZR_FALSE;
+            }
+
+            mapped = semir_mapped_instruction_list_append(outList);
+            if (mapped == ZR_NULL) {
+                return ZR_FALSE;
+            }
+            mapped->opcode = ZR_SEMIR_OPCODE_RETURN_TYPED;
+            semir_mapped_instruction_set_operands(mapped, sourceSlot, sourceSlot, 0);
+            return ZR_TRUE;
+        }
+
+        default:
+            return ZR_FALSE;
+    }
+}
+
 static TZrBool semir_allocate_type_table(SZrState *state,
                                          SZrFunction *function,
                                          SZrFunctionTypedTypeRef **outTypeTable,
@@ -447,6 +691,43 @@ static TZrBool semir_allocate_type_table(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool semir_map_instruction_list(const SZrFunction *function,
+                                          TZrUInt32 instructionIndex,
+                                          SZrSemIrMappedInstructionList *outList) {
+    SZrSemIrMappedInstruction mapped;
+    SZrSemIrMappedInstruction *entry;
+
+    if (function == ZR_NULL || outList == ZR_NULL || function->instructionsList == ZR_NULL ||
+        instructionIndex >= function->instructionsLength) {
+        return ZR_FALSE;
+    }
+
+    semir_mapped_instruction_list_init(outList);
+    if (semir_match_meta_accessor_call(function, instructionIndex, &mapped)) {
+        entry = semir_mapped_instruction_list_append(outList);
+        if (entry == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        *entry = mapped;
+        return ZR_TRUE;
+    }
+
+    if (semir_map_value_type_instruction(function, instructionIndex, outList)) {
+        return ZR_TRUE;
+    }
+
+    if (!semir_map_exec_instruction(&function->instructionsList[instructionIndex], &mapped)) {
+        return ZR_FALSE;
+    }
+
+    entry = semir_mapped_instruction_list_append(outList);
+    if (entry == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *entry = mapped;
+    return ZR_TRUE;
+}
+
 static TZrBool semir_build_for_single_function(SZrState *state, SZrFunction *function) {
     SZrGlobalState *global;
     TZrUInt32 semirInstructionCount = 0;
@@ -474,12 +755,14 @@ static TZrBool semir_build_for_single_function(SZrState *state, SZrFunction *fun
     }
 
     for (index = 0; index < function->instructionsLength; index++) {
-        SZrSemIrMappedInstruction mapped;
-        if (semir_match_meta_accessor_call(function, index, &mapped) ||
-            semir_map_exec_instruction(&function->instructionsList[index], &mapped)) {
-            semirInstructionCount++;
-            if (mapped.needsDeopt) {
-                deoptCount++;
+        SZrSemIrMappedInstructionList mappedList;
+        TZrUInt32 mappedIndex;
+        if (semir_map_instruction_list(function, index, &mappedList)) {
+            semirInstructionCount += mappedList.count;
+            for (mappedIndex = 0; mappedIndex < mappedList.count; mappedIndex++) {
+                if (mappedList.entries[mappedIndex].needsDeopt) {
+                    deoptCount++;
+                }
             }
         }
     }
@@ -551,51 +834,56 @@ static TZrBool semir_build_for_single_function(SZrState *state, SZrFunction *fun
     function->semIrDeoptTableLength = deoptCount;
 
     for (index = 0; index < function->instructionsLength; index++) {
-        SZrSemIrMappedInstruction mapped;
-        TZrUInt32 deoptId = ZR_RUNTIME_SEMIR_DEOPT_ID_NONE;
+        SZrSemIrMappedInstructionList mappedList;
+        TZrUInt32 mappedIndex;
 
-        if (!(semir_match_meta_accessor_call(function, index, &mapped) ||
-              semir_map_exec_instruction(&function->instructionsList[index], &mapped))) {
+        if (!semir_map_instruction_list(function, index, &mappedList)) {
             continue;
         }
 
-        function->semIrEffectTable[semirIndex].kind = mapped.effectKind;
-        function->semIrEffectTable[semirIndex].instructionIndex = semirIndex;
-        if (mapped.effectKind == ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION) {
-            function->semIrEffectTable[semirIndex].ownershipInputIndex =
-                    semir_ensure_ownership_state(ownershipStates, &ownershipCount, mapped.ownershipInput);
-            function->semIrEffectTable[semirIndex].ownershipOutputIndex =
-                    semir_ensure_ownership_state(ownershipStates, &ownershipCount, mapped.ownershipOutput);
-        }
+        for (mappedIndex = 0; mappedIndex < mappedList.count; mappedIndex++) {
+            SZrSemIrMappedInstruction *mapped = &mappedList.entries[mappedIndex];
+            TZrUInt32 deoptId = ZR_RUNTIME_SEMIR_DEOPT_ID_NONE;
 
-        if (mapped.needsDeopt && function->semIrDeoptTable != ZR_NULL) {
-            TZrUInt32 deoptIndex = nextDeoptId - ZR_SEMIR_DEOPT_ID_FIRST;
-            deoptId = nextDeoptId++;
-            function->semIrDeoptTable[deoptIndex].deoptId = deoptId;
-            function->semIrDeoptTable[deoptIndex].execInstructionIndex = index;
-        }
+            function->semIrEffectTable[semirIndex].kind = mapped->effectKind;
+            function->semIrEffectTable[semirIndex].instructionIndex = semirIndex;
+            if (mapped->effectKind == ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION) {
+                function->semIrEffectTable[semirIndex].ownershipInputIndex =
+                        semir_ensure_ownership_state(ownershipStates, &ownershipCount, mapped->ownershipInput);
+                function->semIrEffectTable[semirIndex].ownershipOutputIndex =
+                        semir_ensure_ownership_state(ownershipStates, &ownershipCount, mapped->ownershipOutput);
+            }
 
-        function->semIrInstructions[semirIndex].opcode = mapped.opcode;
-        function->semIrInstructions[semirIndex].execInstructionIndex = index;
-        function->semIrInstructions[semirIndex].typeTableIndex =
-                semir_find_type_index_for_slot(function,
-                                               mapped.hasExplicitOperands ? mapped.destinationSlot
-                                                                          : function->instructionsList[index]
-                                                                                    .instruction.operandExtra,
-                                               function->semIrTypeTable,
-                                               function->semIrTypeTableLength);
-        function->semIrInstructions[semirIndex].effectTableIndex = semirIndex;
-        function->semIrInstructions[semirIndex].destinationSlot =
-                mapped.hasExplicitOperands ? mapped.destinationSlot
-                                           : function->instructionsList[index].instruction.operandExtra;
-        function->semIrInstructions[semirIndex].operand0 =
-                mapped.hasExplicitOperands ? mapped.operand0
-                                           : function->instructionsList[index].instruction.operand.operand1[0];
-        function->semIrInstructions[semirIndex].operand1 =
-                mapped.hasExplicitOperands ? mapped.operand1
-                                           : function->instructionsList[index].instruction.operand.operand1[1];
-        function->semIrInstructions[semirIndex].deoptId = deoptId;
-        semirIndex++;
+            if (mapped->needsDeopt && function->semIrDeoptTable != ZR_NULL) {
+                TZrUInt32 deoptIndex = nextDeoptId - ZR_SEMIR_DEOPT_ID_FIRST;
+                deoptId = nextDeoptId++;
+                function->semIrDeoptTable[deoptIndex].deoptId = deoptId;
+                function->semIrDeoptTable[deoptIndex].execInstructionIndex = index;
+            }
+
+            function->semIrInstructions[semirIndex].opcode = mapped->opcode;
+            function->semIrInstructions[semirIndex].execInstructionIndex = index;
+            function->semIrInstructions[semirIndex].typeTableIndex =
+                    semir_find_type_index_for_slot(function,
+                                                   mapped->hasExplicitOperands
+                                                           ? mapped->destinationSlot
+                                                           : function->instructionsList[index].instruction
+                                                                     .operandExtra,
+                                                   function->semIrTypeTable,
+                                                   function->semIrTypeTableLength);
+            function->semIrInstructions[semirIndex].effectTableIndex = semirIndex;
+            function->semIrInstructions[semirIndex].destinationSlot =
+                    mapped->hasExplicitOperands ? mapped->destinationSlot
+                                                : function->instructionsList[index].instruction.operandExtra;
+            function->semIrInstructions[semirIndex].operand0 =
+                    mapped->hasExplicitOperands ? mapped->operand0
+                                                : function->instructionsList[index].instruction.operand.operand1[0];
+            function->semIrInstructions[semirIndex].operand1 =
+                    mapped->hasExplicitOperands ? mapped->operand1
+                                                : function->instructionsList[index].instruction.operand.operand1[1];
+            function->semIrInstructions[semirIndex].deoptId = deoptId;
+            semirIndex++;
+        }
     }
 
     if (ownershipCount > 0) {

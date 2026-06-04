@@ -645,6 +645,34 @@ static void test_binary_expression(void) {
     TEST_DIVIDER();
 }
 
+static void test_source_compile_rejects_reported_expression_error(void) {
+    SZrTestTimer timer;
+    const char* testSummary = "Source Compile Rejects Reported Expression Errors";
+    SZrState* state;
+    SZrString* sourceName;
+    SZrFunction* function;
+    const char* source = "1 +\n";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("Source compile error gate",
+              "Testing that source compilation stops after parser reports an incomplete expression");
+
+    sourceName = ZrCore_String_Create(state, "test.zr", 7);
+    TEST_ASSERT_NOT_NULL(sourceName);
+    function = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NULL(function);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    destroy_test_state(state);
+    TEST_DIVIDER();
+}
+
 // 测试一元表达式解析
 static void test_unary_expression(void) {
     SZrTestTimer timer;
@@ -3345,6 +3373,7 @@ int main(void) {
     
     // 表达式测试
     RUN_TEST(test_binary_expression);
+    RUN_TEST(test_source_compile_rejects_reported_expression_error);
     RUN_TEST(test_unary_expression);
     RUN_TEST(test_reserved_import_expression_variants);
     RUN_TEST(test_reserved_import_expression_member_chain_parsing);

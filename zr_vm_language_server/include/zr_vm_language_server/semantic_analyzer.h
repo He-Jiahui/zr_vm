@@ -12,6 +12,7 @@
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_parser/compiler.h"
+#include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/string.h"
@@ -37,6 +38,8 @@ typedef struct SZrDiagnostic {
     SZrFileRange location;
     SZrString *message;
     SZrString *code;                   // 错误代码（可选）
+    SZrString *cause;                  // 具体原因（可选）
+    SZrString *suggestion;             // 修复建议（可选）
     SZrArray relatedInformation;       // SZrDiagnosticRelatedInformation
 } SZrDiagnostic;
 
@@ -137,10 +140,13 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(S
 
 // 创建诊断
 ZR_LANGUAGE_SERVER_API SZrDiagnostic *ZrLanguageServer_Diagnostic_New(SZrState *state,
-                                                        EZrDiagnosticSeverity severity,
-                                                        SZrFileRange location,
-                                                        const TZrChar *message,
-                                                        const TZrChar *code);
+                                                         EZrDiagnosticSeverity severity,
+                                                         SZrFileRange location,
+                                                         const TZrChar *message,
+                                                         const TZrChar *code);
+ZR_LANGUAGE_SERVER_API SZrDiagnostic *ZrLanguageServer_Diagnostic_FromStructured(
+    SZrState *state,
+    const SZrStructuredDiagnostic *structured);
 ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_Diagnostic_AddRelatedInformation(
     SZrState *state,
     SZrDiagnostic *diagnostic,

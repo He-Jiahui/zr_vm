@@ -933,8 +933,9 @@ static TZrBool analyze_constructor_const_field_expression(SZrCompilerState *cs,
 
         case ZR_AST_KEY_VALUE_PAIR:
             if (node->data.keyValuePair.key != ZR_NULL &&
-                node->data.keyValuePair.key->type != ZR_AST_IDENTIFIER_LITERAL &&
-                node->data.keyValuePair.key->type != ZR_AST_STRING_LITERAL &&
+                (node->data.keyValuePair.keyIsComputed ||
+                 (node->data.keyValuePair.key->type != ZR_AST_IDENTIFIER_LITERAL &&
+                  node->data.keyValuePair.key->type != ZR_AST_STRING_LITERAL)) &&
                 !analyze_constructor_const_field_expression(cs,
                                                             tracked,
                                                             node->data.keyValuePair.key,

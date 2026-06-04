@@ -47,6 +47,12 @@
     Z(TO_INT)                                                                                                          \
     Z(TO_UINT)                                                                                                         \
     Z(TO_FLOAT)                                                                                                        \
+    Z(TO_FLOAT_SIGNED)                                                                                                 \
+    Z(TO_FLOAT_UNSIGNED)                                                                                               \
+    Z(TO_INT_FLOAT)                                                                                                    \
+    Z(TO_INT_UNSIGNED)                                                                                                 \
+    Z(TO_UINT_FLOAT)                                                                                                   \
+    Z(TO_UINT_SIGNED)                                                                                                  \
     Z(TO_STRING)                                                                                                       \
     Z(TO_STRUCT)                                                                                                       \
     Z(TO_OBJECT)                                                                                                       \
@@ -127,9 +133,12 @@
     Z(GET_SUB_FUNCTION)                                                                                                \
     Z(JUMP)                                                                                                            \
     Z(JUMP_IF)                                                                                                         \
+    Z(JUMP_IF_BOOL_FALSE)                                                                                              \
     Z(JUMP_IF_GREATER_SIGNED)                                                                                          \
+    Z(JUMP_IF_LESS_EQUAL_SIGNED)                                                                                       \
     Z(JUMP_IF_NOT_EQUAL_SIGNED)                                                                                        \
     Z(JUMP_IF_NOT_EQUAL_SIGNED_CONST)                                                                                  \
+    Z(JUMP_IF_NULL)                                                                                                    \
     Z(CREATE_CLOSURE)                                                                                                  \
     Z(CREATE_OBJECT)                                                                                                   \
     Z(CREATE_ARRAY)                                                                                                    \
@@ -202,12 +211,15 @@
     Z(MUL_UNSIGNED_PLAIN_DEST)                                                                                         \
     Z(MUL_UNSIGNED_CONST)                                                                                              \
     Z(MUL_UNSIGNED_CONST_PLAIN_DEST)                                                                                   \
+    Z(NEG_SIGNED)                                                                                                      \
+    Z(NEG_FLOAT)                                                                                                       \
     Z(DIV_UNSIGNED_CONST)                                                                                              \
     Z(DIV_UNSIGNED_CONST_PLAIN_DEST)                                                                                   \
     Z(MOD_UNSIGNED_CONST)                                                                                              \
     Z(MOD_UNSIGNED_CONST_PLAIN_DEST)                                                                                   \
     Z(LOGICAL_EQUAL_BOOL)                                                                                              \
     Z(LOGICAL_NOT_EQUAL_BOOL)                                                                                          \
+    Z(LOGICAL_NOT_BOOL)                                                                                                \
     Z(LOGICAL_EQUAL_SIGNED)                                                                                            \
     Z(LOGICAL_EQUAL_SIGNED_CONST)                                                                                      \
     Z(LOGICAL_NOT_EQUAL_SIGNED)                                                                                        \
@@ -229,6 +241,7 @@
     Z(SUPER_KNOWN_NATIVE_TAIL_CALL_NO_ARGS)                                                                            \
     Z(GET_MEMBER_SLOT)                                                                                                 \
     Z(SET_MEMBER_SLOT)                                                                                                 \
+    Z(SET_MEMBER_SLOT_NULL)                                                                                            \
     Z(KNOWN_VM_MEMBER_CALL_LOAD1_U8)                                                                                   \
     Z(KNOWN_NATIVE_MEMBER_CALL_RECV_U8)                                                                                \
     Z(RESET_STACK_NULL)                                                                                                \

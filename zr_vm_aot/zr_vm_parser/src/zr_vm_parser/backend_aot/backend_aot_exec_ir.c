@@ -23,7 +23,8 @@ static TZrBool backend_aot_exec_ir_instruction_ends_block(TZrUInt16 opcode);
 static TZrBool backend_aot_exec_ir_branch_target(const SZrFunction *function,
                                                  TZrUInt32 instructionIndex,
                                                  TZrUInt32 *outTargetIndex);
-static TZrBool backend_aot_exec_ir_build_frame_layout(const SZrFunction *function,
+static TZrBool backend_aot_exec_ir_build_frame_layout(SZrState *state,
+                                                      const SZrFunction *function,
                                                       SZrAotExecIrFrameLayout *outFrameLayout);
 static void backend_aot_exec_ir_find_block_successors(const SZrFunction *function,
                                                       const TZrUInt32 *instructionToBlockIndex,
@@ -83,6 +84,22 @@ const TZrChar *backend_aot_exec_ir_semir_opcode_name(TZrUInt32 opcode) {
             return "DYN_ITER_INIT";
         case ZR_SEMIR_OPCODE_DYN_ITER_MOVE_NEXT:
             return "DYN_ITER_MOVE_NEXT";
+        case ZR_SEMIR_OPCODE_VALUE_ADDR:
+            return "VALUE_ADDR";
+        case ZR_SEMIR_OPCODE_FIELD_ADDR:
+            return "FIELD_ADDR";
+        case ZR_SEMIR_OPCODE_LOAD_VALUE:
+            return "LOAD_VALUE";
+        case ZR_SEMIR_OPCODE_STORE_VALUE:
+            return "STORE_VALUE";
+        case ZR_SEMIR_OPCODE_INIT_VALUE:
+            return "INIT_VALUE";
+        case ZR_SEMIR_OPCODE_COPY_VALUE:
+            return "COPY_VALUE";
+        case ZR_SEMIR_OPCODE_CALL_TYPED:
+            return "CALL_TYPED";
+        case ZR_SEMIR_OPCODE_RETURN_TYPED:
+            return "RETURN_TYPED";
         case ZR_SEMIR_OPCODE_NOP:
         default:
             return "NOP";
@@ -118,6 +135,14 @@ static TZrUInt32 backend_aot_exec_ir_runtime_contracts_for_opcode(TZrUInt32 opco
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE;
         case ZR_SEMIR_OPCODE_OWN_RELEASE:
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE;
+        case ZR_SEMIR_OPCODE_VALUE_ADDR:
+        case ZR_SEMIR_OPCODE_FIELD_ADDR:
+        case ZR_SEMIR_OPCODE_LOAD_VALUE:
+        case ZR_SEMIR_OPCODE_STORE_VALUE:
+        case ZR_SEMIR_OPCODE_INIT_VALUE:
+        case ZR_SEMIR_OPCODE_COPY_VALUE:
+        case ZR_SEMIR_OPCODE_CALL_TYPED:
+        case ZR_SEMIR_OPCODE_RETURN_TYPED:
         case ZR_SEMIR_OPCODE_OWN_UNIQUE:
         case ZR_SEMIR_OPCODE_NOP:
         default:
@@ -313,6 +338,7 @@ static TZrUInt32 backend_aot_exec_ir_terminator_kind_for_instruction(TZrUInt16 o
         case ZR_INSTRUCTION_ENUM(JUMP):
             return ZR_AOT_EXEC_IR_TERMINATOR_KIND_BRANCH;
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             return ZR_AOT_EXEC_IR_TERMINATOR_KIND_CONDITIONAL_BRANCH;
@@ -371,6 +397,7 @@ static TZrBool backend_aot_exec_ir_branch_target(const SZrFunction *function,
     switch ((EZrInstructionCode)instruction->instruction.operationCode) {
         case ZR_INSTRUCTION_ENUM(JUMP):
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
             targetIndex = (TZrInt32)instructionIndex + 1 + instruction->instruction.operand.operand2[0];
             break;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
@@ -393,9 +420,10 @@ static TZrBool backend_aot_exec_ir_branch_target(const SZrFunction *function,
     return ZR_TRUE;
 }
 
-static TZrBool backend_aot_exec_ir_build_frame_layout(const SZrFunction *function,
+static TZrBool backend_aot_exec_ir_build_frame_layout(SZrState *state,
+                                                      const SZrFunction *function,
                                                       SZrAotExecIrFrameLayout *outFrameLayout) {
-    if (function == ZR_NULL || outFrameLayout == ZR_NULL) {
+    if (state == ZR_NULL || state->global == ZR_NULL || function == ZR_NULL || outFrameLayout == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -406,6 +434,37 @@ static TZrBool backend_aot_exec_ir_build_frame_layout(const SZrFunction *functio
     outFrameLayout->closureValueCount = function->closureValueLength;
     outFrameLayout->localVariableCount = function->localVariableLength;
     outFrameLayout->exportedValueCount = function->exportedVariableLength;
+    outFrameLayout->frameByteSize = function->frameByteSize;
+    outFrameLayout->frameByteAlign = function->frameByteAlign;
+    outFrameLayout->slotLayoutCount = function->frameSlotLayoutLength;
+
+    if (function->frameSlotLayoutLength > 0) {
+        outFrameLayout->slotLayouts = (SZrAotExecIrFrameSlotLayout *)ZrCore_Memory_RawMallocWithType(
+                state->global,
+                sizeof(SZrAotExecIrFrameSlotLayout) * function->frameSlotLayoutLength,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (outFrameLayout->slotLayouts == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawSet(outFrameLayout->slotLayouts,
+                             0,
+                             sizeof(SZrAotExecIrFrameSlotLayout) * function->frameSlotLayoutLength);
+        for (TZrUInt32 layoutIndex = 0; layoutIndex < function->frameSlotLayoutLength; layoutIndex++) {
+            const SZrFunctionFrameSlotLayout *sourceLayout = &function->frameSlotLayouts[layoutIndex];
+            SZrAotExecIrFrameSlotLayout *destinationLayout = &outFrameLayout->slotLayouts[layoutIndex];
+
+            destinationLayout->stackSlot = sourceLayout->stackSlot;
+            destinationLayout->byteOffset = sourceLayout->byteOffset;
+            destinationLayout->byteSize = sourceLayout->byteSize;
+            destinationLayout->byteAlign = sourceLayout->byteAlign;
+            destinationLayout->typeLayoutId = sourceLayout->typeLayoutId;
+            destinationLayout->slotKind = sourceLayout->slotKind;
+            destinationLayout->isParameter = sourceLayout->isParameter;
+            destinationLayout->reserved0 = sourceLayout->reserved0;
+        }
+    }
+
     return ZR_TRUE;
 }
 
@@ -654,7 +713,7 @@ static TZrBool backend_aot_exec_ir_build_function(SZrState *state,
     outFunction->instructionCount = entry->function->semIrInstructionLength;
     outFunction->execInstructionCount = entry->function->instructionsLength;
 
-    if (!backend_aot_exec_ir_build_frame_layout(entry->function, &outFunction->frameLayout) ||
+    if (!backend_aot_exec_ir_build_frame_layout(state, entry->function, &outFunction->frameLayout) ||
         !backend_aot_exec_ir_build_basic_blocks(state, entry->function, outFunction, &instructionToBlockIndex)) {
         return ZR_FALSE;
     }
@@ -791,6 +850,15 @@ void backend_aot_exec_ir_release_module(SZrState *state, SZrAotExecIrModule *mod
 
     if (module->functions != ZR_NULL) {
         for (TZrUInt32 functionIndex = 0; functionIndex < module->functionCount; functionIndex++) {
+            if (module->functions[functionIndex].frameLayout.slotLayouts != ZR_NULL &&
+                module->functions[functionIndex].frameLayout.slotLayoutCount > 0) {
+                ZrCore_Memory_RawFreeWithType(
+                        state->global,
+                        module->functions[functionIndex].frameLayout.slotLayouts,
+                        sizeof(SZrAotExecIrFrameSlotLayout) *
+                                module->functions[functionIndex].frameLayout.slotLayoutCount,
+                        ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+            }
             if (module->functions[functionIndex].basicBlocks != ZR_NULL &&
                 module->functions[functionIndex].basicBlockCount > 0) {
                 ZrCore_Memory_RawFreeWithType(state->global,

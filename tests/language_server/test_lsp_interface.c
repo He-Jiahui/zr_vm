@@ -19,6 +19,7 @@
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_library/file.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_semantic_query.h"
+#include "../../zr_vm_language_server/src/zr_vm_language_server/semantic/lsp_local_semantic_query.h"
 #include "../../zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface_internal.h"
 #include "path_support.h"
 
@@ -104,6 +105,7 @@ static TZrBool diagnostic_array_contains_range(SZrArray *diagnostics,
                                                TZrInt32 startCharacter,
                                                TZrInt32 endLine,
                                                TZrInt32 endCharacter);
+static TZrBool diagnostic_array_contains_code(SZrArray *diagnostics, const TZrChar *expectedCode);
 static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZrChar *needle);
 static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                const TZrChar *needle,
@@ -258,16 +260,75 @@ static void test_lsp_get_parser_diagnostics(SZrState *state) {
 
     if (diagnostics.length == 0 ||
         !diagnostic_array_contains_range(&diagnostics, 0, 8, 0, 9) ||
-        !diagnostic_array_contains_message(&diagnostics, "Expected primary expression")) {
+        !diagnostic_array_contains_code(&diagnostics, "missing_expression_after_assignment") ||
+        !diagnostic_array_contains_message(&diagnostics, "Missing expression after '='") ||
+        !diagnostic_array_contains_message(&diagnostics, "Add an expression before ';'")) {
         ZrCore_Array_Free(state, &diagnostics);
         ZrLanguageServer_LspContext_Free(state, context);
-        TEST_FAIL(timer, "LSP Get Parser Diagnostics", "Expected syntax diagnostics to carry the parser message and the semicolon token span");
+        TEST_FAIL(timer,
+                  "LSP Get Parser Diagnostics",
+                  "Expected structured parser diagnostics to carry code, problem, suggestion, and semicolon span");
         return;
     }
 
     ZrCore_Array_Free(state, &diagnostics);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Get Parser Diagnostics");
+}
+
+static void test_lsp_get_missing_right_operand_parser_diagnostic(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content = "1 +\n";
+    SZrArray diagnostics;
+
+    TEST_START("LSP Missing Right Operand Parser Diagnostic");
+    TEST_INFO("Parser Diagnostics",
+              "Publishing a concrete missing-right-operand diagnostic instead of a generic expected-token error");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Missing Right Operand Parser Diagnostic", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///parser_missing_right_operand.zr", 39);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Right Operand Parser Diagnostic", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Right Operand Parser Diagnostic", "Failed to update document");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Right Operand Parser Diagnostic", "Diagnostics request failed");
+        return;
+    }
+
+    if (diagnostics.length == 0 ||
+        !diagnostic_array_contains_code(&diagnostics, "missing_right_operand") ||
+        !diagnostic_array_contains_message(&diagnostics, "Missing expression after '+'") ||
+        !diagnostic_array_contains_message(&diagnostics, "Add the right-hand expression after '+'")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Missing Right Operand Parser Diagnostic",
+                  "Expected missing-right-operand diagnostic to carry code, problem, and suggestion");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &diagnostics);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Missing Right Operand Parser Diagnostic");
 }
 
 static void test_lsp_incomplete_edit_preserves_prior_semantic_snapshot(SZrState *state) {
@@ -969,6 +1030,19 @@ static TZrBool diagnostic_array_contains_range(SZrArray *diagnostics,
         SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
         if (diagnosticPtr != ZR_NULL && *diagnosticPtr != ZR_NULL &&
             lsp_range_equals((*diagnosticPtr)->range, startLine, startCharacter, endLine, endCharacter)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool diagnostic_array_contains_code(SZrArray *diagnostics, const TZrChar *expectedCode) {
+    for (TZrSize index = 0; diagnostics != ZR_NULL && index < diagnostics->length; index++) {
+        SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
+        if (diagnosticPtr != ZR_NULL && *diagnosticPtr != ZR_NULL &&
+            (*diagnosticPtr)->code != ZR_NULL &&
+            strcmp(test_string_ptr((*diagnosticPtr)->code), expectedCode) == 0) {
             return ZR_TRUE;
         }
     }
@@ -4192,6 +4266,7 @@ static void test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(SZ
     SZrLspPosition resultDeclPosition;
     SZrLspPosition resultUsePosition;
     SZrLspSemanticQuery query;
+    SZrLspLocalSemanticQueryResult localReferenceQuery;
     SZrLspHover *hover = ZR_NULL;
     SZrArray definitions;
     SZrArray references;
@@ -4288,9 +4363,233 @@ static void test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(SZ
     }
     ZrCore_Array_Free(state, &highlights);
 
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&localReferenceQuery);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ReferenceAt(state,
+                                                            context,
+                                                            uri,
+                                                            resultUsePosition,
+                                                            &localReferenceQuery) ||
+        localReferenceQuery.status != ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT ||
+        localReferenceQuery.referenceFact == ZR_NULL ||
+        localReferenceQuery.referenceFact->kind != ZR_SEMANTIC_REFERENCE_READ ||
+        localReferenceQuery.referenceFact->declarationRange.start.line != resultDeclPosition.line + 1 ||
+        localReferenceQuery.referenceFact->declarationRange.start.column != resultDeclPosition.character + 1) {
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&localReferenceQuery);
+        ZrLanguageServer_LspSemanticQuery_Free(state, &query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Query Unifies Local Symbol Navigation And Hover",
+                  "Local reference query should return the reference fact that links the usage back to its declaration token");
+        return;
+    }
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&localReferenceQuery);
+
     ZrLanguageServer_LspSemanticQuery_Free(state, &query);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Semantic Query Unifies Local Symbol Navigation And Hover");
+}
+
+static void test_lsp_hover_includes_local_reference_fact_payload(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "func run(seed: int): int {\n"
+        "    var result = seed + 1;\n"
+        "    return result;\n"
+        "}\n";
+    SZrLspPosition resultUsePosition;
+    SZrLspHover *hover = ZR_NULL;
+    const TZrChar *hoverText;
+    TZrChar reason[512];
+
+    TEST_START("LSP Hover Includes Local Reference Fact Payload");
+    TEST_INFO("Reference fact hover",
+              "Hover on a local symbol use should keep the symbol hover and append the shared reference fact payload.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Hover Includes Local Reference Fact Payload",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///hover_reference_fact_payload.zr", 39);
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "return result;", 0, 7, &resultUsePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover Includes Local Reference Fact Payload",
+                  "Failed to prepare hover reference fact fixture");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, resultUsePosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "result") ||
+        !hover_contains_text(hover, "int") ||
+        !hover_contains_text(hover, "Reference: read") ||
+        !hover_contains_text(hover, "Declared at: 2:9")) {
+        hoverText = hover_first_text(hover);
+        snprintf(reason,
+                 sizeof(reason),
+                 "Hover should include symbol type plus shared reference fact payload, actual=%s",
+                 hoverText != ZR_NULL ? hoverText : "<null>");
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover Includes Local Reference Fact Payload",
+                  reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Hover Includes Local Reference Fact Payload");
+}
+
+static void test_lsp_local_semantic_query_returns_expression_fact(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *uriText = "file:///local_semantic_expression_fact.zr";
+    const TZrChar *content =
+        "func run(): int {\n"
+        "    return 1 + 2;\n"
+        "}\n";
+    SZrLspPosition expressionPosition;
+    SZrLspLocalSemanticQueryResult query;
+    SZrLspHover *hover = ZR_NULL;
+    TZrChar reason[256];
+
+    TEST_START("LSP Local Semantic Query Returns Expression Fact");
+    TEST_INFO("Local expression facts",
+              "A VSCode-style local semantic query should expose the semantic expression fact and exact inferred type for the hovered expression.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Local Semantic Query Returns Expression Fact",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "1 + 2", 0, 2, &expressionPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Local Semantic Query Returns Expression Fact",
+                  "Failed to prepare the local expression fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, expressionPosition, &query)) {
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Local Semantic Query Returns Expression Fact",
+                  "Local expression query call failed");
+        return;
+    }
+    if (query.status != ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT ||
+        query.expressionFact == ZR_NULL ||
+        query.expressionFact->exactness != ZR_SEMANTIC_FACT_EXACT ||
+        query.expressionFact->inferredType.baseType != ZR_VALUE_TYPE_INT64) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Local expression query should return an exact int64 expression fact for 1 + 2; status=%d expressionFact=%p exactness=%d baseType=%d",
+                 (int)query.status,
+                 (void *)query.expressionFact,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->exactness : -1,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->inferredType.baseType : -1);
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Local Semantic Query Returns Expression Fact",
+                  reason);
+        return;
+    }
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+
+    if (!ZrLanguageServer_Lsp_GetHover(state, context, uri, expressionPosition, &hover) ||
+        hover == ZR_NULL ||
+        !hover_contains_text(hover, "**expression**") ||
+        !hover_contains_text(hover, "int") ||
+        !hover_contains_text(hover, "Numeric range: 3..3") ||
+        hover_contains_text(hover, "cannot infer exact type")) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Local Semantic Query Returns Expression Fact",
+                  "Hover for the same local expression should reuse the exact expression type and shared numeric fact instead of an unresolved fallback");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Local Semantic Query Returns Expression Fact");
+}
+
+static void test_lsp_local_semantic_query_reports_diagnostic_failure_for_incomplete_expression(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *uriText = "file:///local_semantic_incomplete_expression.zr";
+    const TZrChar *content = "var x = ;\n";
+    SZrLspPosition semicolonPosition;
+    SZrLspLocalSemanticQueryResult query;
+    SZrLspHover *hover = ZR_NULL;
+
+    TEST_START("LSP Local Semantic Query Reports Diagnostic Failure For Incomplete Expression");
+    TEST_INFO("Local query diagnostic status",
+              "Incomplete syntax should return a diagnostic-backed local query result instead of crashing or fabricating an unknown expression type.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Local Semantic Query Reports Diagnostic Failure For Incomplete Expression",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, ";", 0, 0, &semicolonPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Local Semantic Query Reports Diagnostic Failure For Incomplete Expression",
+                  "Failed to prepare the incomplete expression fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, semicolonPosition, &query) ||
+        query.status != ZR_LSP_LOCAL_SEMANTIC_QUERY_DIAGNOSTIC_FAILURE ||
+        query.diagnostic == ZR_NULL ||
+        query.diagnostic->code == ZR_NULL ||
+        strcmp(test_string_ptr(query.diagnostic->code), "missing_expression_after_assignment") != 0) {
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Local Semantic Query Reports Diagnostic Failure For Incomplete Expression",
+                  "Local query should surface the parser diagnostic that blocks expression inference");
+        return;
+    }
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&query);
+
+    if (ZrLanguageServer_Lsp_GetHover(state, context, uri, semicolonPosition, &hover) ||
+        hover != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Local Semantic Query Reports Diagnostic Failure For Incomplete Expression",
+                  "Hover at the parser-blocked expression should not keep searching fallback semantic paths");
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Local Semantic Query Reports Diagnostic Failure For Incomplete Expression");
 }
 
 static void test_lsp_web_uri_local_symbol_navigation(SZrState *state) {
@@ -6078,6 +6377,9 @@ int main(void) {
     test_lsp_get_parser_diagnostics(state);
     TEST_DIVIDER();
 
+    test_lsp_get_missing_right_operand_parser_diagnostic(state);
+    TEST_DIVIDER();
+
     test_lsp_incomplete_edit_preserves_prior_semantic_snapshot(state);
     TEST_DIVIDER();
     
@@ -6190,6 +6492,15 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(state);
+    TEST_DIVIDER();
+
+    test_lsp_hover_includes_local_reference_fact_payload(state);
+    TEST_DIVIDER();
+
+    test_lsp_local_semantic_query_returns_expression_fact(state);
+    TEST_DIVIDER();
+
+    test_lsp_local_semantic_query_reports_diagnostic_failure_for_incomplete_expression(state);
     TEST_DIVIDER();
 
     test_lsp_web_uri_local_symbol_navigation(state);

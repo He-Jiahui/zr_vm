@@ -81,6 +81,11 @@ struct ZR_STRUCT_ALIGN SZrCallInfo {
     TZrStackValuePointer returnDestination;
     TZrMemoryOffset returnDestinationReusableOffset;
     TZrBool hasReturnDestination;
+
+    TZrStackPointer argumentSourceFrameBase;
+    TZrMemoryOffset argumentSourceFrameBaseReusableOffset;
+    TZrUInt32 argumentSourceStartSlot;
+    TZrBool hasArgumentSourceFrame;
 };
 
 typedef struct SZrCallInfo SZrCallInfo;

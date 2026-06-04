@@ -455,6 +455,28 @@ static void write_function_exception_metadata(SZrState *state, FILE *file, SZrFu
     }
 }
 
+static void write_function_frame_layout(FILE *file, const SZrFunction *function) {
+    TZrUInt32 frameByteSize = function != ZR_NULL ? function->frameByteSize : 0;
+    TZrUInt32 frameByteAlign = function != ZR_NULL ? function->frameByteAlign : 0;
+    TZrUInt64 frameSlotLayoutLength =
+            (function != ZR_NULL && function->frameSlotLayouts != ZR_NULL) ? function->frameSlotLayoutLength : 0;
+
+    fwrite(&frameByteSize, sizeof(TZrUInt32), 1, file);
+    fwrite(&frameByteAlign, sizeof(TZrUInt32), 1, file);
+    fwrite(&frameSlotLayoutLength, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
+        fwrite(&layout->stackSlot, sizeof(TZrUInt32), 1, file);
+        fwrite(&layout->byteOffset, sizeof(TZrUInt32), 1, file);
+        fwrite(&layout->byteSize, sizeof(TZrUInt32), 1, file);
+        fwrite(&layout->byteAlign, sizeof(TZrUInt32), 1, file);
+        fwrite(&layout->typeLayoutId, sizeof(TZrUInt32), 1, file);
+        fwrite(&layout->slotKind, sizeof(TZrUInt8), 1, file);
+        fwrite(&layout->isParameter, sizeof(TZrUInt8), 1, file);
+        fwrite(&layout->reserved0, sizeof(TZrUInt16), 1, file);
+    }
+}
+
 static TZrBool write_embedded_value(FILE *file, SZrState *state, const SZrTypeValue *value);
 
 static TZrInt32 writer_compare_native_strings(TZrNativeString left, TZrNativeString right) {
@@ -1342,6 +1364,7 @@ static TZrBool write_io_function_internal(SZrState *state,
         fwrite(&parametersLength, sizeof(TZrUInt64), 1, file);
         fwrite(&hasVarArgs, sizeof(TZrUInt64), 1, file);
         fwrite(&stackSize, sizeof(TZrUInt32), 1, file);
+        write_function_frame_layout(file, function);
         fwrite(&instructionsLength, sizeof(TZrUInt64), 1, file);
 
         for (TZrUInt64 i = 0; i < instructionsLength; i++) {

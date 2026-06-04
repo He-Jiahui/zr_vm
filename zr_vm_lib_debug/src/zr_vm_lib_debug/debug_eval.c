@@ -1,21 +1,4 @@
-#include "debug_internal.h"
-
-typedef struct ZrDebugEvalParser {
-    ZrDebugAgent *agent;
-    TZrUInt32 frame_id;
-    const TZrChar *cursor;
-    TZrChar *error_buffer;
-    TZrSize error_buffer_size;
-} ZrDebugEvalParser;
-
-static void zr_debug_eval_set_error(ZrDebugEvalParser *parser, const TZrChar *message) {
-    if (parser == ZR_NULL) {
-        return;
-    }
-    zr_debug_copy_text(parser->error_buffer,
-                       parser->error_buffer_size,
-                       message != ZR_NULL ? message : "debug evaluate error");
-}
+#include "debug_eval_internal.h"
 
 static void zr_debug_eval_skip_ws(ZrDebugEvalParser *parser) {
     while (parser != ZR_NULL && parser->cursor != ZR_NULL &&
@@ -235,7 +218,7 @@ static TZrBool zr_debug_eval_parse_string(ZrDebugEvalParser *parser, SZrTypeValu
                 case '"':
                     break;
                 default:
-                    zr_debug_eval_set_error(parser, "unsupported string escape in debug evaluate");
+                    zr_debug_eval_set_unsupported_string_escape_error(parser, ch);
                     return ZR_FALSE;
             }
         }
@@ -247,7 +230,7 @@ static TZrBool zr_debug_eval_parse_string(ZrDebugEvalParser *parser, SZrTypeValu
     }
 
     if (*parser->cursor != '"') {
-        zr_debug_eval_set_error(parser, "unterminated string literal in debug evaluate");
+        zr_debug_eval_set_unterminated_string_error(parser);
         return ZR_FALSE;
     }
 
@@ -309,7 +292,7 @@ static TZrBool zr_debug_eval_parse_primary(ZrDebugEvalParser *parser, SZrTypeVal
             return ZR_FALSE;
         }
         if (!zr_debug_eval_match_char(parser, ')')) {
-            zr_debug_eval_set_error(parser, "missing ')' in debug evaluate expression");
+            zr_debug_eval_set_missing_group_close_error(parser);
             return ZR_FALSE;
         }
         return ZR_TRUE;
@@ -320,7 +303,15 @@ static TZrBool zr_debug_eval_parse_primary(ZrDebugEvalParser *parser, SZrTypeVal
     }
 
     if (!zr_debug_eval_parse_identifier(parser, identifier, sizeof(identifier))) {
-        zr_debug_eval_set_error(parser, "expected expression in debug evaluate");
+        if (parser->error_buffer == ZR_NULL || parser->error_buffer[0] == '\0') {
+            zr_debug_eval_set_error(parser, "expected expression in debug evaluate");
+        }
+        return ZR_FALSE;
+    }
+
+    zr_debug_eval_skip_ws(parser);
+    if (zr_debug_eval_cursor_starts_assignment(parser)) {
+        zr_debug_eval_set_assignment_error(parser);
         return ZR_FALSE;
     }
 
@@ -333,6 +324,16 @@ static TZrBool zr_debug_eval_parse_primary(ZrDebugEvalParser *parser, SZrTypeVal
         return ZR_TRUE;
     }
     if (strcmp(identifier, "null") == 0) {
+        ZrCore_Value_ResetAsNull(outValue);
+        return ZR_TRUE;
+    }
+
+    if (parser->cursor != ZR_NULL && *parser->cursor == '(') {
+        zr_debug_eval_set_function_call_error(parser);
+        return ZR_FALSE;
+    }
+
+    if (parser->skip_evaluation) {
         ZrCore_Value_ResetAsNull(outValue);
         return ZR_TRUE;
     }
@@ -356,8 +357,13 @@ static TZrBool zr_debug_eval_parse_postfix(ZrDebugEvalParser *parser, SZrTypeVal
             SZrTypeValue memberValue;
 
             if (!zr_debug_eval_parse_identifier(parser, memberName, sizeof(memberName))) {
-                zr_debug_eval_set_error(parser, "expected member name after '.' in debug evaluate");
+                zr_debug_eval_set_missing_member_name_error(parser);
                 return ZR_FALSE;
+            }
+
+            if (parser->skip_evaluation) {
+                ZrCore_Value_ResetAsNull(outValue);
+                continue;
             }
 
             ZrCore_Value_ResetAsNull(&memberValue);
@@ -383,8 +389,12 @@ static TZrBool zr_debug_eval_parse_postfix(ZrDebugEvalParser *parser, SZrTypeVal
                 return ZR_FALSE;
             }
             if (!zr_debug_eval_match_char(parser, ']')) {
-                zr_debug_eval_set_error(parser, "missing ']' in debug evaluate");
+                zr_debug_eval_set_missing_index_close_error(parser);
                 return ZR_FALSE;
+            }
+            if (parser->skip_evaluation) {
+                ZrCore_Value_ResetAsNull(outValue);
+                continue;
             }
             if (!zr_debug_safe_get_index_value(parser->agent,
                                                outValue,
@@ -400,7 +410,7 @@ static TZrBool zr_debug_eval_parse_postfix(ZrDebugEvalParser *parser, SZrTypeVal
 
         zr_debug_eval_skip_ws(parser);
         if (parser->cursor != ZR_NULL && *parser->cursor == '(') {
-            zr_debug_eval_set_error(parser, "function calls are not allowed in safe debug evaluate");
+            zr_debug_eval_set_function_call_error(parser);
             return ZR_FALSE;
         }
 
@@ -416,6 +426,10 @@ static TZrBool zr_debug_eval_parse_unary(ZrDebugEvalParser *parser, SZrTypeValue
         if (!zr_debug_eval_parse_unary(parser, &operand)) {
             return ZR_FALSE;
         }
+        if (parser->skip_evaluation) {
+            ZrCore_Value_ResetAsNull(outValue);
+            return ZR_TRUE;
+        }
         ZrCore_Value_InitAsBool(parser->agent->state, outValue, zr_debug_eval_truthy(&operand) ? ZR_FALSE : ZR_TRUE);
         return ZR_TRUE;
     }
@@ -427,8 +441,19 @@ static TZrBool zr_debug_eval_parse_unary(ZrDebugEvalParser *parser, SZrTypeValue
         if (!zr_debug_eval_parse_unary(parser, &operand)) {
             return ZR_FALSE;
         }
+        if (parser->skip_evaluation) {
+            ZrCore_Value_ResetAsNull(outValue);
+            return ZR_TRUE;
+        }
         if (!zr_debug_eval_to_number(&operand, &number, &isInteger)) {
-            zr_debug_eval_set_error(parser, "unary '-' expects a numeric value");
+            TZrChar message[ZR_DEBUG_TEXT_CAPACITY];
+            snprintf(message,
+                     sizeof(message),
+                     "Unary '-' expects a numeric value. Cause: operand is %s. Suggestion: Use a numeric operand "
+                     "or convert the value before applying unary '-'.",
+                     zr_debug_eval_value_type_name(&operand));
+            message[sizeof(message) - 1u] = '\0';
+            zr_debug_eval_set_error(parser, message);
             return ZR_FALSE;
         }
         zr_debug_eval_assign_number(parser->agent->state, outValue, -number, isInteger);
@@ -450,7 +475,7 @@ static TZrBool zr_debug_eval_apply_numeric_binary(ZrDebugEvalParser *parser,
 
     if (!zr_debug_eval_to_number(left, &leftNumber, &leftIsInteger) ||
         !zr_debug_eval_to_number(right, &rightNumber, &rightIsInteger)) {
-        zr_debug_eval_set_error(parser, "numeric operator expects numeric operands");
+        zr_debug_eval_set_numeric_operand_error(parser, op, left, right);
         return ZR_FALSE;
     }
 
@@ -462,7 +487,7 @@ static TZrBool zr_debug_eval_apply_numeric_binary(ZrDebugEvalParser *parser,
         zr_debug_eval_assign_number(parser->agent->state, outValue, leftNumber * rightNumber, leftIsInteger && rightIsInteger);
     } else if (strcmp(op, "/") == 0) {
         if (rightNumber == 0.0) {
-            zr_debug_eval_set_error(parser, "division by zero in debug evaluate");
+            zr_debug_eval_set_division_by_zero_error(parser, op);
             return ZR_FALSE;
         }
         zr_debug_eval_assign_number(parser->agent->state, outValue, leftNumber / rightNumber, ZR_FALSE);
@@ -470,7 +495,12 @@ static TZrBool zr_debug_eval_apply_numeric_binary(ZrDebugEvalParser *parser,
         TZrInt64 leftInt = (TZrInt64)leftNumber;
         TZrInt64 rightInt = (TZrInt64)rightNumber;
         if (!leftIsInteger || !rightIsInteger || rightInt == 0) {
-            zr_debug_eval_set_error(parser, "modulo expects non-zero integer operands");
+            zr_debug_eval_set_modulo_operand_error(parser,
+                                                   left,
+                                                   right,
+                                                   leftIsInteger,
+                                                   rightIsInteger,
+                                                   rightInt == 0 ? ZR_TRUE : ZR_FALSE);
             return ZR_FALSE;
         }
         ZrCore_Value_InitAsInt(parser->agent->state, outValue, leftInt % rightInt);
@@ -499,31 +529,46 @@ static TZrBool zr_debug_eval_parse_multiplicative(ZrDebugEvalParser *parser, SZr
         if (zr_debug_eval_match_text(parser, "*")) {
             SZrTypeValue rhs;
             SZrTypeValue result;
-            if (!zr_debug_eval_parse_unary(parser, &rhs) ||
-                !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, "*", &result)) {
+            ZrCore_Value_ResetAsNull(&result);
+            if (!zr_debug_eval_parse_right_operand(parser, "*", zr_debug_eval_parse_unary, &rhs) ||
+                (!parser->skip_evaluation && !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, "*", &result))) {
                 return ZR_FALSE;
             }
-            *outValue = result;
+            if (parser->skip_evaluation) {
+                ZrCore_Value_ResetAsNull(outValue);
+            } else {
+                *outValue = result;
+            }
             continue;
         }
         if (zr_debug_eval_match_text(parser, "/")) {
             SZrTypeValue rhs;
             SZrTypeValue result;
-            if (!zr_debug_eval_parse_unary(parser, &rhs) ||
-                !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, "/", &result)) {
+            ZrCore_Value_ResetAsNull(&result);
+            if (!zr_debug_eval_parse_right_operand(parser, "/", zr_debug_eval_parse_unary, &rhs) ||
+                (!parser->skip_evaluation && !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, "/", &result))) {
                 return ZR_FALSE;
             }
-            *outValue = result;
+            if (parser->skip_evaluation) {
+                ZrCore_Value_ResetAsNull(outValue);
+            } else {
+                *outValue = result;
+            }
             continue;
         }
         if (zr_debug_eval_match_text(parser, "%")) {
             SZrTypeValue rhs;
             SZrTypeValue result;
-            if (!zr_debug_eval_parse_unary(parser, &rhs) ||
-                !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, "%", &result)) {
+            ZrCore_Value_ResetAsNull(&result);
+            if (!zr_debug_eval_parse_right_operand(parser, "%", zr_debug_eval_parse_unary, &rhs) ||
+                (!parser->skip_evaluation && !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, "%", &result))) {
                 return ZR_FALSE;
             }
-            *outValue = result;
+            if (parser->skip_evaluation) {
+                ZrCore_Value_ResetAsNull(outValue);
+            } else {
+                *outValue = result;
+            }
             continue;
         }
         break;
@@ -541,21 +586,31 @@ static TZrBool zr_debug_eval_parse_additive(ZrDebugEvalParser *parser, SZrTypeVa
         if (zr_debug_eval_match_text(parser, "+")) {
             SZrTypeValue rhs;
             SZrTypeValue result;
-            if (!zr_debug_eval_parse_multiplicative(parser, &rhs) ||
-                !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, "+", &result)) {
+            ZrCore_Value_ResetAsNull(&result);
+            if (!zr_debug_eval_parse_right_operand(parser, "+", zr_debug_eval_parse_multiplicative, &rhs) ||
+                (!parser->skip_evaluation && !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, "+", &result))) {
                 return ZR_FALSE;
             }
-            *outValue = result;
+            if (parser->skip_evaluation) {
+                ZrCore_Value_ResetAsNull(outValue);
+            } else {
+                *outValue = result;
+            }
             continue;
         }
         if (zr_debug_eval_match_text(parser, "-")) {
             SZrTypeValue rhs;
             SZrTypeValue result;
-            if (!zr_debug_eval_parse_multiplicative(parser, &rhs) ||
-                !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, "-", &result)) {
+            ZrCore_Value_ResetAsNull(&result);
+            if (!zr_debug_eval_parse_right_operand(parser, "-", zr_debug_eval_parse_multiplicative, &rhs) ||
+                (!parser->skip_evaluation && !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, "-", &result))) {
                 return ZR_FALSE;
             }
-            *outValue = result;
+            if (parser->skip_evaluation) {
+                ZrCore_Value_ResetAsNull(outValue);
+            } else {
+                *outValue = result;
+            }
             continue;
         }
         break;
@@ -587,11 +642,16 @@ static TZrBool zr_debug_eval_parse_relational(ZrDebugEvalParser *parser, SZrType
 
         SZrTypeValue rhs;
         SZrTypeValue result;
-        if (!zr_debug_eval_parse_additive(parser, &rhs) ||
-            !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, op, &result)) {
+        ZrCore_Value_ResetAsNull(&result);
+        if (!zr_debug_eval_parse_right_operand(parser, op, zr_debug_eval_parse_additive, &rhs) ||
+            (!parser->skip_evaluation && !zr_debug_eval_apply_numeric_binary(parser, outValue, &rhs, op, &result))) {
             return ZR_FALSE;
         }
-        *outValue = result;
+        if (parser->skip_evaluation) {
+            ZrCore_Value_ResetAsNull(outValue);
+        } else {
+            *outValue = result;
+        }
     }
 
     return ZR_TRUE;
@@ -614,8 +674,17 @@ static TZrBool zr_debug_eval_parse_equality(ZrDebugEvalParser *parser, SZrTypeVa
 
         SZrTypeValue rhs;
         TZrBool isEqual;
-        if (!zr_debug_eval_parse_relational(parser, &rhs) ||
-            !zr_debug_eval_equal_values(parser->agent->state, outValue, &rhs, &isEqual)) {
+        if (!zr_debug_eval_parse_right_operand(parser,
+                                               expect_equal ? "==" : "!=",
+                                               zr_debug_eval_parse_relational,
+                                               &rhs)) {
+            return ZR_FALSE;
+        }
+        if (parser->skip_evaluation) {
+            ZrCore_Value_ResetAsNull(outValue);
+            continue;
+        }
+        if (!zr_debug_eval_equal_values(parser->agent->state, outValue, &rhs, &isEqual)) {
             zr_debug_eval_set_error(parser, "failed to compare values in debug evaluate");
             return ZR_FALSE;
         }
@@ -633,34 +702,102 @@ static TZrBool zr_debug_eval_parse_logical_and(ZrDebugEvalParser *parser, SZrTyp
 
     while (zr_debug_eval_match_text(parser, "&&")) {
         SZrTypeValue rhs;
+        TZrBool leftTruthy;
+        TZrBool skipRhs;
+
         ZrCore_Value_ResetAsNull(&rhs);
-        if (!zr_debug_eval_parse_equality(parser, &rhs)) {
+        leftTruthy = zr_debug_eval_truthy(outValue);
+        skipRhs = (TZrBool)(parser->skip_evaluation || !leftTruthy);
+        if (!zr_debug_eval_parse_right_operand_with_skip(parser, "&&", zr_debug_eval_parse_equality, &rhs, skipRhs)) {
             return ZR_FALSE;
         }
-        ZrCore_Value_InitAsBool(parser->agent->state,
-                                outValue,
-                                (zr_debug_eval_truthy(outValue) && zr_debug_eval_truthy(&rhs)) ? ZR_TRUE : ZR_FALSE);
+        if (parser->skip_evaluation) {
+            ZrCore_Value_ResetAsNull(outValue);
+        } else if (!leftTruthy) {
+            ZrCore_Value_InitAsBool(parser->agent->state, outValue, ZR_FALSE);
+        } else {
+            ZrCore_Value_InitAsBool(parser->agent->state, outValue, zr_debug_eval_truthy(&rhs) ? ZR_TRUE : ZR_FALSE);
+        }
     }
 
     return ZR_TRUE;
 }
 
-static TZrBool zr_debug_eval_parse_expression(ZrDebugEvalParser *parser, SZrTypeValue *outValue) {
+static TZrBool zr_debug_eval_parse_logical_or(ZrDebugEvalParser *parser, SZrTypeValue *outValue) {
     if (!zr_debug_eval_parse_logical_and(parser, outValue)) {
         return ZR_FALSE;
     }
 
     while (zr_debug_eval_match_text(parser, "||")) {
         SZrTypeValue rhs;
+        TZrBool leftTruthy;
+        TZrBool skipRhs;
+
         ZrCore_Value_ResetAsNull(&rhs);
-        if (!zr_debug_eval_parse_logical_and(parser, &rhs)) {
+        leftTruthy = zr_debug_eval_truthy(outValue);
+        skipRhs = (TZrBool)(parser->skip_evaluation || leftTruthy);
+        if (!zr_debug_eval_parse_right_operand_with_skip(parser, "||", zr_debug_eval_parse_logical_and, &rhs, skipRhs)) {
             return ZR_FALSE;
         }
-        ZrCore_Value_InitAsBool(parser->agent->state,
-                                outValue,
-                                (zr_debug_eval_truthy(outValue) || zr_debug_eval_truthy(&rhs)) ? ZR_TRUE : ZR_FALSE);
+        if (parser->skip_evaluation) {
+            ZrCore_Value_ResetAsNull(outValue);
+        } else if (leftTruthy) {
+            ZrCore_Value_InitAsBool(parser->agent->state, outValue, ZR_TRUE);
+        } else {
+            ZrCore_Value_InitAsBool(parser->agent->state, outValue, zr_debug_eval_truthy(&rhs) ? ZR_TRUE : ZR_FALSE);
+        }
     }
 
+    return ZR_TRUE;
+}
+
+static TZrBool zr_debug_eval_parse_expression(ZrDebugEvalParser *parser, SZrTypeValue *outValue) {
+    SZrTypeValue consequent;
+    SZrTypeValue alternate;
+    TZrBool conditionTruthy;
+    TZrBool skipConsequent;
+    TZrBool skipAlternate;
+
+    if (!zr_debug_eval_parse_logical_or(parser, outValue)) {
+        return ZR_FALSE;
+    }
+
+    if (!zr_debug_eval_match_char(parser, '?')) {
+        return ZR_TRUE;
+    }
+
+    ZrCore_Value_ResetAsNull(&consequent);
+    ZrCore_Value_ResetAsNull(&alternate);
+    conditionTruthy = zr_debug_eval_truthy(outValue);
+    skipConsequent = (TZrBool)(parser->skip_evaluation || !conditionTruthy);
+    if (!zr_debug_eval_parse_right_operand_with_skip(parser,
+                                                     "?",
+                                                     zr_debug_eval_parse_expression,
+                                                     &consequent,
+                                                     skipConsequent)) {
+        return ZR_FALSE;
+    }
+    if (!zr_debug_eval_match_char(parser, ':')) {
+        zr_debug_eval_set_missing_conditional_separator_error(parser);
+        return ZR_FALSE;
+    }
+
+    skipAlternate = (TZrBool)(parser->skip_evaluation || conditionTruthy);
+    if (!zr_debug_eval_parse_right_operand_with_skip(parser,
+                                                     ":",
+                                                     zr_debug_eval_parse_expression,
+                                                     &alternate,
+                                                     skipAlternate)) {
+        return ZR_FALSE;
+    }
+
+    if (parser->skip_evaluation) {
+        ZrCore_Value_ResetAsNull(outValue);
+    } else if (conditionTruthy) {
+        *outValue = consequent;
+    } else {
+        *outValue = alternate;
+    }
     return ZR_TRUE;
 }
 
@@ -696,7 +833,11 @@ TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
 
     zr_debug_eval_skip_ws(&parser);
     if (parser.cursor != ZR_NULL && *parser.cursor != '\0') {
-        zr_debug_copy_text(errorBuffer, errorBufferSize, "unexpected trailing tokens in debug evaluate");
+        if (zr_debug_eval_cursor_starts_assignment(&parser)) {
+            zr_debug_eval_set_assignment_error(&parser);
+        } else {
+            zr_debug_copy_text(errorBuffer, errorBufferSize, "unexpected trailing tokens in debug evaluate");
+        }
         return ZR_FALSE;
     }
 

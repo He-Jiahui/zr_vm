@@ -36,6 +36,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrAstNode *oldFunctionNode = cs->currentFunctionNode;
     TZrSize oldConstLocalVarLength = cs->constLocalVars.length;
     TZrSize oldConstParameterLength = cs->constParameters.length;
+    TZrSize oldStackSlotTypeHintLength = cs->stackSlotTypeHints.length;
     TZrInstruction *savedParentInstructions = ZR_NULL;
     SZrFunctionLocalVariable *savedParentLocalVars = ZR_NULL;
     SZrTypeValue *savedParentConstants = ZR_NULL;
@@ -137,6 +138,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
+        compiler_clear_stack_slot_type_hints_from(cs, oldStackSlotTypeHintLength);
         return;
     }
 
@@ -206,6 +208,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             cs->currentFunctionNode = oldFunctionNode;
             cs->constLocalVars.length = oldConstLocalVarLength;
             cs->constParameters.length = oldConstParameterLength;
+            compiler_clear_stack_slot_type_hints_from(cs, oldStackSlotTypeHintLength);
             return;
         }
 
@@ -357,6 +360,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
+        compiler_clear_stack_slot_type_hints_from(cs, oldStackSlotTypeHintLength);
         return;
     }
 
@@ -438,6 +442,9 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     newFunc->hasVariableArguments = hasVariableArguments;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TZrUInt32) node->location.start.line : 0;
     newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TZrUInt32) node->location.end.line : 0;
+    if (!compiler_build_function_frame_layout_metadata(cs, newFunc)) {
+        ZrParser_Compiler_Error(cs, "Failed to build test function frame layout metadata", node->location);
+    }
     if (!compiler_copy_function_exception_metadata_slice(cs,
                                                          newFunc,
                                                          oldExecutionLocationLength,
@@ -487,6 +494,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = oldConstLocalVarLength;
     cs->constParameters.length = oldConstParameterLength;
+    compiler_clear_stack_slot_type_hints_from(cs, oldStackSlotTypeHintLength);
 
     // 将测试函数添加到测试函数列表
     ZrCore_Array_Push(cs->state, &cs->testFunctions, &newFunc);

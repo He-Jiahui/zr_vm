@@ -254,6 +254,17 @@ typedef struct SZrIoFunctionMemberEntry {
     TZrUInt32 descriptorIndex;
 } SZrIoFunctionMemberEntry;
 
+typedef struct SZrIoFunctionFrameSlotLayout {
+    TZrUInt32 stackSlot;
+    TZrUInt32 byteOffset;
+    TZrUInt32 byteSize;
+    TZrUInt32 byteAlign;
+    TZrUInt32 typeLayoutId;
+    TZrUInt8 slotKind;
+    TZrUInt8 isParameter;
+    TZrUInt16 reserved0;
+} SZrIoFunctionFrameSlotLayout;
+
 typedef struct SZrIoSemIrOwnershipEntry {
     TZrUInt32 state;
 } SZrIoSemIrOwnershipEntry;
@@ -354,6 +365,10 @@ struct SZrIoFunction {
     TZrSize parametersLength;
     TZrUInt64 hasVarArgs;
     TZrUInt32 stackSize;
+    TZrUInt32 frameByteSize;
+    TZrUInt32 frameByteAlign;
+    TZrSize frameSlotLayoutsLength;
+    SZrIoFunctionFrameSlotLayout *frameSlotLayouts;
     TZrSize instructionsLength;
     TZrInstruction *instructions;
     TZrSize localVariablesLength;

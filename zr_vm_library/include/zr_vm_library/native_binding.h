@@ -83,6 +83,14 @@ typedef struct ZrLibValueView {
     const TZrChar *typeName;
 } ZrLibValueView;
 
+typedef struct ZrLibInlineSpan {
+    TZrPtr address;
+    TZrUInt32 byteSize;
+    TZrUInt32 byteAlign;
+    TZrUInt32 typeLayoutId;
+    TZrBool available;
+} ZrLibInlineSpan;
+
 typedef struct ZrLibCallContext {
     SZrState *state;
     const struct ZrLibModuleDescriptor *moduleDescriptor;
@@ -103,6 +111,9 @@ typedef struct ZrLibCallContext {
     TZrSize rawArgumentCount;
     TZrBool stackLayoutUsesReceiver;
     TZrBool stackLayoutAnchored;
+    const SZrFunction *inlineFrameFunction;
+    TZrStackValuePointer inlineFrameBase;
+    TZrUInt32 inlineArgumentStartSlot;
 } ZrLibCallContext;
 
 typedef struct ZrLibTempValueRoot {
@@ -399,6 +410,9 @@ typedef struct ZrLibModuleDescriptor {
 ZR_LIBRARY_API TZrSize ZrLib_CallContext_ArgumentCount(const ZrLibCallContext *context);
 ZR_LIBRARY_API SZrTypeValue *ZrLib_CallContext_Self(const ZrLibCallContext *context);
 ZR_LIBRARY_API SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSize index);
+ZR_LIBRARY_API TZrBool ZrLib_CallContext_InlineArgumentSpan(const ZrLibCallContext *context,
+                                                            TZrSize index,
+                                                            ZrLibInlineSpan *outSpan);
 ZR_LIBRARY_API struct SZrObjectPrototype *ZrLib_CallContext_OwnerPrototype(const ZrLibCallContext *context);
 ZR_LIBRARY_API struct SZrObjectPrototype *ZrLib_CallContext_GetConstructTargetPrototype(const ZrLibCallContext *context);
 ZR_LIBRARY_API TZrBool ZrLib_CallContext_CheckArity(const ZrLibCallContext *context,

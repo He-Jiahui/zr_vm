@@ -557,280 +557,6 @@ static const SZrType *semantic_find_type_node_at_position(SZrAstNode *node, SZrF
     }
 }
 
-static TZrBool semantic_node_contains_position(SZrAstNode *node, SZrFileRange position) {
-    return node != ZR_NULL && semantic_file_range_contains_position(node->location, position);
-}
-
-static SZrAstNode *semantic_find_expression_node_in_array(SZrAstNodeArray *nodes, SZrFileRange position);
-
-static SZrAstNode *semantic_find_expression_node_at_position(SZrAstNode *node, SZrFileRange position) {
-    SZrAstNode *nested = ZR_NULL;
-
-    if (node == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    switch (node->type) {
-        case ZR_AST_SCRIPT:
-            return semantic_find_expression_node_in_array(node->data.script.statements, position);
-
-        case ZR_AST_BLOCK:
-            return semantic_find_expression_node_in_array(node->data.block.body, position);
-
-        case ZR_AST_VARIABLE_DECLARATION:
-            return semantic_find_expression_node_at_position(node->data.variableDeclaration.value, position);
-
-        case ZR_AST_FUNCTION_DECLARATION:
-            return semantic_find_expression_node_at_position(node->data.functionDeclaration.body, position);
-
-        case ZR_AST_TEST_DECLARATION:
-            return semantic_find_expression_node_at_position(node->data.testDeclaration.body, position);
-
-        case ZR_AST_COMPILE_TIME_DECLARATION:
-            return semantic_find_expression_node_at_position(node->data.compileTimeDeclaration.declaration, position);
-
-        case ZR_AST_CLASS_DECLARATION:
-            return semantic_find_expression_node_in_array(node->data.classDeclaration.members, position);
-
-        case ZR_AST_STRUCT_DECLARATION:
-            return semantic_find_expression_node_in_array(node->data.structDeclaration.members, position);
-
-        case ZR_AST_INTERFACE_DECLARATION:
-            return semantic_find_expression_node_in_array(node->data.interfaceDeclaration.members, position);
-
-        case ZR_AST_CLASS_FIELD:
-            return semantic_find_expression_node_at_position(node->data.classField.init, position);
-
-        case ZR_AST_STRUCT_FIELD:
-            return semantic_find_expression_node_at_position(node->data.structField.init, position);
-
-        case ZR_AST_ENUM_MEMBER:
-            return semantic_find_expression_node_at_position(node->data.enumMember.value, position);
-
-        case ZR_AST_CLASS_METHOD:
-            return semantic_find_expression_node_at_position(node->data.classMethod.body, position);
-
-        case ZR_AST_STRUCT_METHOD:
-            return semantic_find_expression_node_at_position(node->data.structMethod.body, position);
-
-        case ZR_AST_CLASS_META_FUNCTION:
-            return semantic_find_expression_node_at_position(node->data.classMetaFunction.body, position);
-
-        case ZR_AST_STRUCT_META_FUNCTION:
-            return semantic_find_expression_node_at_position(node->data.structMetaFunction.body, position);
-
-        case ZR_AST_CLASS_PROPERTY:
-            return semantic_find_expression_node_at_position(node->data.classProperty.modifier, position);
-
-        case ZR_AST_PROPERTY_GET:
-            return semantic_find_expression_node_at_position(node->data.propertyGet.body, position);
-
-        case ZR_AST_PROPERTY_SET:
-            return semantic_find_expression_node_at_position(node->data.propertySet.body, position);
-
-        case ZR_AST_EXPRESSION_STATEMENT:
-            return semantic_find_expression_node_at_position(node->data.expressionStatement.expr, position);
-
-        case ZR_AST_RETURN_STATEMENT:
-            return semantic_find_expression_node_at_position(node->data.returnStatement.expr, position);
-
-        case ZR_AST_PRIMARY_EXPRESSION:
-            nested = semantic_find_expression_node_at_position(node->data.primaryExpression.property, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_in_array(node->data.primaryExpression.members, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_node_contains_position(node, position) ? node : ZR_NULL;
-
-        case ZR_AST_MEMBER_EXPRESSION:
-            nested = semantic_find_expression_node_at_position(node->data.memberExpression.property, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_node_contains_position(node, position) ? node : ZR_NULL;
-
-        case ZR_AST_CONSTRUCT_EXPRESSION:
-            nested = semantic_find_expression_node_at_position(node->data.constructExpression.target, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_in_array(node->data.constructExpression.args, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_node_contains_position(node, position) ? node : ZR_NULL;
-
-        case ZR_AST_ASSIGNMENT_EXPRESSION:
-            nested = semantic_find_expression_node_at_position(node->data.assignmentExpression.left, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_at_position(node->data.assignmentExpression.right, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_node_contains_position(node, position) ? node : ZR_NULL;
-
-        case ZR_AST_BINARY_EXPRESSION:
-            nested = semantic_find_expression_node_at_position(node->data.binaryExpression.left, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_at_position(node->data.binaryExpression.right, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_node_contains_position(node, position) ? node : ZR_NULL;
-
-        case ZR_AST_LOGICAL_EXPRESSION:
-            nested = semantic_find_expression_node_at_position(node->data.logicalExpression.left, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_at_position(node->data.logicalExpression.right, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_node_contains_position(node, position) ? node : ZR_NULL;
-
-        case ZR_AST_UNARY_EXPRESSION:
-            nested = semantic_find_expression_node_at_position(node->data.unaryExpression.argument, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_node_contains_position(node, position) ? node : ZR_NULL;
-
-        case ZR_AST_FUNCTION_CALL:
-            nested = semantic_find_expression_node_in_array(node->data.functionCall.args, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_in_array(node->data.functionCall.genericArguments, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_node_contains_position(node, position) ? node : ZR_NULL;
-
-        case ZR_AST_ARRAY_LITERAL:
-            nested = semantic_find_expression_node_in_array(node->data.arrayLiteral.elements, position);
-            return nested != ZR_NULL ? nested : (semantic_node_contains_position(node, position) ? node : ZR_NULL);
-
-        case ZR_AST_OBJECT_LITERAL:
-            nested = semantic_find_expression_node_in_array(node->data.objectLiteral.properties, position);
-            return nested != ZR_NULL ? nested : (semantic_node_contains_position(node, position) ? node : ZR_NULL);
-
-        case ZR_AST_KEY_VALUE_PAIR:
-            nested = semantic_find_expression_node_at_position(node->data.keyValuePair.key, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_at_position(node->data.keyValuePair.value, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_node_contains_position(node, position) ? node : ZR_NULL;
-
-        case ZR_AST_IF_EXPRESSION:
-            nested = semantic_find_expression_node_at_position(node->data.ifExpression.condition, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_at_position(node->data.ifExpression.thenExpr, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_at_position(node->data.ifExpression.elseExpr, position);
-            return nested != ZR_NULL ? nested : (semantic_node_contains_position(node, position) ? node : ZR_NULL);
-
-        case ZR_AST_SWITCH_EXPRESSION:
-            nested = semantic_find_expression_node_at_position(node->data.switchExpression.expr, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_in_array(node->data.switchExpression.cases, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_at_position(node->data.switchExpression.defaultCase, position);
-            return nested != ZR_NULL ? nested : (semantic_node_contains_position(node, position) ? node : ZR_NULL);
-
-        case ZR_AST_SWITCH_CASE:
-            nested = semantic_find_expression_node_at_position(node->data.switchCase.value, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_find_expression_node_at_position(node->data.switchCase.block, position);
-
-        case ZR_AST_SWITCH_DEFAULT:
-            return semantic_find_expression_node_at_position(node->data.switchDefault.block, position);
-
-        case ZR_AST_WHILE_LOOP:
-            nested = semantic_find_expression_node_at_position(node->data.whileLoop.cond, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_find_expression_node_at_position(node->data.whileLoop.block, position);
-
-        case ZR_AST_FOR_LOOP:
-            nested = semantic_find_expression_node_at_position(node->data.forLoop.init, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_at_position(node->data.forLoop.cond, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            nested = semantic_find_expression_node_at_position(node->data.forLoop.step, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_find_expression_node_at_position(node->data.forLoop.block, position);
-
-        case ZR_AST_FOREACH_LOOP:
-            nested = semantic_find_expression_node_at_position(node->data.foreachLoop.expr, position);
-            if (nested != ZR_NULL) {
-                return nested;
-            }
-            return semantic_find_expression_node_at_position(node->data.foreachLoop.block, position);
-
-        case ZR_AST_LAMBDA_EXPRESSION:
-            nested = semantic_find_expression_node_at_position(node->data.lambdaExpression.block, position);
-            return nested != ZR_NULL ? nested : (semantic_node_contains_position(node, position) ? node : ZR_NULL);
-
-        case ZR_AST_IMPORT_EXPRESSION:
-        case ZR_AST_BOOLEAN_LITERAL:
-        case ZR_AST_INTEGER_LITERAL:
-        case ZR_AST_FLOAT_LITERAL:
-        case ZR_AST_STRING_LITERAL:
-        case ZR_AST_TEMPLATE_STRING_LITERAL:
-        case ZR_AST_CHAR_LITERAL:
-        case ZR_AST_NULL_LITERAL:
-        case ZR_AST_IDENTIFIER_LITERAL:
-            return semantic_node_contains_position(node, position) ? node : ZR_NULL;
-
-        default:
-            return ZR_NULL;
-    }
-}
-
-static SZrAstNode *semantic_find_expression_node_in_array(SZrAstNodeArray *nodes, SZrFileRange position) {
-    if (nodes == ZR_NULL || nodes->nodes == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    for (TZrSize index = 0; index < nodes->count; index++) {
-        SZrAstNode *nested = semantic_find_expression_node_at_position(nodes->nodes[index], position);
-        if (nested != ZR_NULL) {
-            return nested;
-        }
-    }
-
-    return ZR_NULL;
-}
-
 static const SZrSemanticTypeRecord *semantic_find_type_record_by_id(const SZrSemanticContext *context,
                                                                     TZrTypeId typeId) {
     if (context == ZR_NULL || typeId == ZR_SEMANTIC_ID_INVALID) {
@@ -2443,16 +2169,19 @@ void ZrLanguageServer_SemanticAnalyzer_Free(SZrState *state, SZrSemanticAnalyzer
 TZrBool ZrLanguageServer_SemanticAnalyzer_Analyze(SZrState *state, 
                                  SZrSemanticAnalyzer *analyzer,
                                  SZrAstNode *ast) {
+    SZrAstNode *previousAst;
+
     if (state == ZR_NULL || analyzer == ZR_NULL || ast == ZR_NULL) {
         return ZR_FALSE;
     }
 
+    previousAst = analyzer->ast;
     analyzer->ast = ast;
     
     TZrSize astHash = 0;
     if (analyzer->enableCache && analyzer->cache != ZR_NULL) {
         astHash = ZrLanguageServer_SemanticAnalyzer_ComputeAstHash(ast);
-        if (analyzer->cache->isValid && analyzer->cache->astHash == astHash) {
+        if (previousAst == ast && analyzer->cache->isValid && analyzer->cache->astHash == astHash) {
             return ZR_TRUE;
         }
     }
@@ -2554,6 +2283,7 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(SZrState *state,
                                                                 SZrFileRange position,
                                                                 SZrInferredType *outType) {
     const SZrType *typeInfo;
+    const SZrSemanticExpressionFact *expressionFact;
     SZrAstNode *expressionNode;
     SZrSymbol *symbol;
 
@@ -2564,7 +2294,16 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_ResolveTypeAtPosition(SZrState *state,
 
     typeInfo = semantic_find_type_node_at_position(analyzer->ast, position);
     if (typeInfo == ZR_NULL) {
-        expressionNode = semantic_find_expression_node_at_position(analyzer->ast, position);
+        expressionFact =
+            ZrLanguageServer_SemanticAnalyzer_FindExpressionFactAtPosition(analyzer, position);
+        if (expressionFact != ZR_NULL &&
+            expressionFact->exactness == ZR_SEMANTIC_FACT_EXACT &&
+            ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(&expressionFact->inferredType)) {
+            ZrParser_InferredType_Copy(state, outType, &expressionFact->inferredType);
+            return ZR_TRUE;
+        }
+
+        expressionNode = ZrLanguageServer_SemanticAnalyzer_FindExpressionNodeAtPosition(analyzer->ast, position);
         if (expressionNode != ZR_NULL &&
             ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(state, analyzer, expressionNode, outType)) {
             return ZR_TRUE;
@@ -2795,6 +2534,36 @@ TZrBool ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(SZrState *state,
 }
 
 // 创建诊断
+static EZrDiagnosticSeverity semantic_diagnostic_severity_from_structured(
+        EZrStructuredDiagnosticSeverity severity) {
+    switch (severity) {
+        case ZR_STRUCTURED_DIAGNOSTIC_WARNING:
+            return ZR_DIAGNOSTIC_WARNING;
+        case ZR_STRUCTURED_DIAGNOSTIC_INFO:
+            return ZR_DIAGNOSTIC_INFO;
+        case ZR_STRUCTURED_DIAGNOSTIC_HINT:
+            return ZR_DIAGNOSTIC_HINT;
+        case ZR_STRUCTURED_DIAGNOSTIC_ERROR:
+        default:
+            return ZR_DIAGNOSTIC_ERROR;
+    }
+}
+
+static SZrString *semantic_diagnostic_clone_string(SZrState *state, SZrString *value) {
+    TZrNativeString text;
+
+    if (state == ZR_NULL || value == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    text = ZrCore_String_GetNativeString(value);
+    if (text == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZrCore_String_Create(state, text, ZrCore_String_GetByteLength(value));
+}
+
 SZrDiagnostic *ZrLanguageServer_Diagnostic_New(SZrState *state,
                                 EZrDiagnosticSeverity severity,
                                 SZrFileRange location,
@@ -2813,6 +2582,8 @@ SZrDiagnostic *ZrLanguageServer_Diagnostic_New(SZrState *state,
     diagnostic->location = location;
     diagnostic->message = ZrCore_String_Create(state, (TZrNativeString)message, strlen(message));
     diagnostic->code = code != ZR_NULL ? ZrCore_String_Create(state, (TZrNativeString)code, strlen(code)) : ZR_NULL;
+    diagnostic->cause = ZR_NULL;
+    diagnostic->suggestion = ZR_NULL;
     ZrCore_Array_Construct(&diagnostic->relatedInformation);
     
     if (diagnostic->message == ZR_NULL) {
@@ -2820,6 +2591,53 @@ SZrDiagnostic *ZrLanguageServer_Diagnostic_New(SZrState *state,
         return ZR_NULL;
     }
     
+    return diagnostic;
+}
+
+SZrDiagnostic *ZrLanguageServer_Diagnostic_FromStructured(
+        SZrState *state,
+        const SZrStructuredDiagnostic *structured) {
+    const TZrChar *messageText;
+    const TZrChar *codeText = ZR_NULL;
+    SZrDiagnostic *diagnostic;
+
+    if (state == ZR_NULL || structured == ZR_NULL || structured->message == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    messageText = ZrCore_String_GetNativeString(structured->message);
+    if (messageText == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (structured->code != ZR_NULL) {
+        codeText = ZrCore_String_GetNativeString(structured->code);
+    }
+
+    diagnostic = ZrLanguageServer_Diagnostic_New(
+            state,
+            semantic_diagnostic_severity_from_structured(structured->severity),
+            structured->location,
+            messageText,
+            codeText);
+    if (diagnostic == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (structured->cause != ZR_NULL) {
+        diagnostic->cause = semantic_diagnostic_clone_string(state, structured->cause);
+        if (diagnostic->cause == ZR_NULL) {
+            ZrLanguageServer_Diagnostic_Free(state, diagnostic);
+            return ZR_NULL;
+        }
+    }
+    if (structured->suggestion != ZR_NULL) {
+        diagnostic->suggestion = semantic_diagnostic_clone_string(state, structured->suggestion);
+        if (diagnostic->suggestion == ZR_NULL) {
+            ZrLanguageServer_Diagnostic_Free(state, diagnostic);
+            return ZR_NULL;
+        }
+    }
+
     return diagnostic;
 }
 
@@ -2861,6 +2679,12 @@ void ZrLanguageServer_Diagnostic_Free(SZrState *state, SZrDiagnostic *diagnostic
         // SZrString 由 GC 管理，不需要手动释放
     }
     if (diagnostic->code != ZR_NULL) {
+        // SZrString 由 GC 管理，不需要手动释放
+    }
+    if (diagnostic->cause != ZR_NULL) {
+        // SZrString 由 GC 管理，不需要手动释放
+    }
+    if (diagnostic->suggestion != ZR_NULL) {
         // SZrString 由 GC 管理，不需要手动释放
     }
     if (diagnostic->relatedInformation.isValid) {

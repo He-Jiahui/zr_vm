@@ -72,7 +72,11 @@ void native_binding_init_call_context_layout(ZrLibCallContext *context,
     } else if (context->metaMethodDescriptor != ZR_NULL) {
         usesReceiver = ZR_TRUE;
     }
-    native_binding_init_call_context_layout_cached(context, functionBase, rawArgumentCount, usesReceiver);
+    native_binding_init_call_context_layout_cached(context,
+                                                   context->state,
+                                                   functionBase,
+                                                   rawArgumentCount,
+                                                   usesReceiver);
 }
 
 void native_binding_trace_import(SZrState *state, const TZrChar *format, ...) {

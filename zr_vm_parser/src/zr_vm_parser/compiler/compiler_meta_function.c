@@ -37,6 +37,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     TZrUInt32 oldCachedNullConstantIndex = cs->cachedNullConstantIndex;
     TZrBool oldHasCachedNullConstantIndex = cs->hasCachedNullConstantIndex;
     TZrBool oldIsInConstructor = cs->isInConstructor;
+    TZrSize oldStackSlotTypeHintScopeStart = compiler_enter_stack_slot_type_hint_scope(cs);
     
     // 设置 isInConstructor 标志（如果是构造函数）
     cs->isInConstructor = (metaType == ZR_META_CONSTRUCTOR) ? ZR_TRUE : ZR_FALSE;
@@ -51,6 +52,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     if (cs->currentFunction == ZR_NULL) {
         ZrParser_Compiler_Error(cs, "Failed to create meta function object", node->location);
         cs->isInConstructor = oldIsInConstructor;
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return;
     }
     
@@ -215,6 +217,7 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
         cs->closureVars.length = 0;
         cs->childFunctions.length = oldChildFunctionLength;
         cs->childFunctionNameMap.length = oldChildFunctionNameMapLength;
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return;
     }
     
@@ -287,6 +290,9 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     newFunc->hasVariableArguments = ZR_FALSE;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TZrUInt32) node->location.start.line : 0;
     newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TZrUInt32) node->location.end.line : 0;
+    if (!compiler_build_function_frame_layout_metadata(cs, newFunc)) {
+        ZrParser_Compiler_Error(cs, "Failed to build meta function frame layout metadata", node->location);
+    }
     
     // 将新函数添加到子函数列表
     // 注意：对于元函数，即使 oldFunction 为 ZR_NULL（在类型声明编译时），
@@ -325,5 +331,6 @@ void compile_meta_function(SZrCompilerState *cs, SZrAstNode *node, EZrMetaType m
     cs->localVars.length = 0;
     cs->constants.length = 0;
     cs->closureVars.length = 0;
+    compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
 }
 

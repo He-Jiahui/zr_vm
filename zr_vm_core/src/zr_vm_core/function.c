@@ -16,6 +16,8 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
+#include "zr_vm_core/string.h"
+#include "zr_vm_core/type_layout.h"
 
 #include "zr_vm_core/call_info.h"
 
@@ -102,7 +104,10 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
                                                                            TZrSize argumentsCount,
                                                                            TZrSize resultCount,
                                                                            TZrStackValuePointer returnDestination,
-                                                                           TZrBool stackTopPrepared);
+                                                                           TZrBool stackTopPrepared,
+                                                                           TZrStackValuePointer argumentSourceFrameBase,
+                                                                           TZrUInt32 argumentSourceStartSlot,
+                                                                           TZrBool hasArgumentSourceFrame);
 
 static ZR_FORCE_INLINE TZrBool function_native_frame_has_pending_close_work(
         const SZrState *state,
@@ -174,6 +179,16 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->hasVariableArguments = ZR_FALSE;
     function->stackSize = 0;
     function->vmEntryClearStackSizePlusOne = 0;
+    function->frameByteSize = 0;
+    function->frameByteAlign = 0;
+    function->frameSlotLayoutLength = 0;
+    function->frameSlotLayouts = ZR_NULL;
+    function->prototypeFrameTypeLayouts = ZR_NULL;
+    function->prototypeFrameTypeLayoutFields = ZR_NULL;
+    function->prototypeFrameTypeLayoutStates = ZR_NULL;
+    function->prototypeFrameTypeLayoutLength = 0;
+    function->prototypeFrameTypeLayoutFieldCount = 0;
+    function->prototypeFrameTypeLayoutFieldCapacity = 0;
     function->localVariableList = ZR_NULL;
     function->localVariableLength = 0;
     function->lineInSourceStart = 0;
@@ -424,14 +439,23 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(TO_INT):
             case ZR_INSTRUCTION_ENUM(TO_UINT):
             case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
+            case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
+            case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
+            case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
             case ZR_INSTRUCTION_ENUM(TO_STRING):
             case ZR_INSTRUCTION_ENUM(TO_STRUCT):
             case ZR_INSTRUCTION_ENUM(TO_OBJECT):
             case ZR_INSTRUCTION_ENUM(NEG):
+            case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
+            case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
             case ZR_INSTRUCTION_ENUM(ITER_INIT):
             case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
             case ZR_INSTRUCTION_ENUM(ITER_CURRENT):
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):
             case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
             case ZR_INSTRUCTION_ENUM(OWN_UNIQUE):
             case ZR_INSTRUCTION_ENUM(OWN_BORROW):
@@ -461,6 +485,9 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
             case ZR_INSTRUCTION_ENUM(SUPER_META_SET_CACHED):
             case ZR_INSTRUCTION_ENUM(SUPER_META_SET_STATIC_CACHED):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
+                function_note_generated_frame_slot(operandA1, &slotCount);
+                break;
+            case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT_NULL):
                 function_note_generated_frame_slot(operandA1, &slotCount);
                 break;
 
@@ -622,6 +649,8 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
                 break;
 
             case ZR_INSTRUCTION_ENUM(JUMP_IF):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
             case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 break;
@@ -635,6 +664,7 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
                 function_note_generated_frame_slot(instruction->instruction.operand.operand0[1], &slotCount);
                 break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(operandA1, &slotCount);
                 break;
@@ -660,6 +690,21 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
     }
 
     return slotCount;
+}
+
+const SZrFunctionFrameSlotLayout *ZrCore_Function_FindFrameSlotLayout(const SZrFunction *function,
+                                                                      TZrUInt32 stackSlot) {
+    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0; index < function->frameSlotLayoutLength; index++) {
+        if (function->frameSlotLayouts[index].stackSlot == stackSlot) {
+            return &function->frameSlotLayouts[index];
+        }
+    }
+
+    return ZR_NULL;
 }
 
 static TZrBool function_has_return_escape_slot(const SZrFunction *function, TZrUInt32 stackSlot) {
@@ -914,6 +959,16 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->hasVariableArguments = ZR_FALSE;
     function->stackSize = 0;
     function->vmEntryClearStackSizePlusOne = 0;
+    function->frameByteSize = 0;
+    function->frameByteAlign = 0;
+    function->frameSlotLayoutLength = 0;
+    function->frameSlotLayouts = ZR_NULL;
+    function->prototypeFrameTypeLayouts = ZR_NULL;
+    function->prototypeFrameTypeLayoutFields = ZR_NULL;
+    function->prototypeFrameTypeLayoutStates = ZR_NULL;
+    function->prototypeFrameTypeLayoutLength = 0;
+    function->prototypeFrameTypeLayoutFieldCount = 0;
+    function->prototypeFrameTypeLayoutFieldCapacity = 0;
     function->lineInSourceStart = 0;
     function->lineInSourceEnd = 0;
     function->cachedStatelessClosure = ZR_NULL;
@@ -956,6 +1011,7 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
             ZrCore_Function_Free(state, &function->childFunctionList[childIndex]);
         }
     }
+    ZrCore_Function_FreePrototypeFrameTypeLayoutCache(state, function);
     if (function->instructionsList != ZR_NULL && function->instructionsLength > 0) {
         ZR_MEMORY_RAW_FREE_LIST(global, function->instructionsList, function->instructionsLength);
     }
@@ -967,6 +1023,12 @@ void ZrCore_Function_Free(struct SZrState *state, SZrFunction *function) {
     }
     if (function->localVariableList != ZR_NULL && function->localVariableLength > 0) {
         ZR_MEMORY_RAW_FREE_LIST(global, function->localVariableList, function->localVariableLength);
+    }
+    if (function->frameSlotLayouts != ZR_NULL && function->frameSlotLayoutLength > 0) {
+        ZrCore_Memory_RawFreeWithType(global,
+                                      function->frameSlotLayouts,
+                                      sizeof(SZrFunctionFrameSlotLayout) * function->frameSlotLayoutLength,
+                                      ZR_MEMORY_NATIVE_TYPE_FUNCTION);
     }
     if (function->closureValueList != ZR_NULL && function->closureValueLength > 0) {
         ZR_MEMORY_RAW_FREE_LIST(global, function->closureValueList, function->closureValueLength);
@@ -1469,6 +1531,10 @@ static ZR_FORCE_INLINE void function_reinitialize_native_call_info_runtime_state
     callInfo->returnDestination = returnDestination;
     callInfo->returnDestinationReusableOffset = 0;
     callInfo->hasReturnDestination = returnDestination != ZR_NULL;
+    callInfo->argumentSourceFrameBase.valuePointer = ZR_NULL;
+    callInfo->argumentSourceFrameBaseReusableOffset = 0;
+    callInfo->argumentSourceStartSlot = 0;
+    callInfo->hasArgumentSourceFrame = ZR_FALSE;
 }
 
 static ZR_FORCE_INLINE void function_reinitialize_vm_call_info_runtime_state(SZrCallInfo *callInfo,
@@ -1486,6 +1552,10 @@ static ZR_FORCE_INLINE void function_reinitialize_vm_call_info_runtime_state(SZr
     callInfo->returnDestination = returnDestination;
     callInfo->returnDestinationReusableOffset = 0;
     callInfo->hasReturnDestination = returnDestination != ZR_NULL;
+    callInfo->argumentSourceFrameBase.valuePointer = ZR_NULL;
+    callInfo->argumentSourceFrameBaseReusableOffset = 0;
+    callInfo->argumentSourceStartSlot = 0;
+    callInfo->hasArgumentSourceFrame = ZR_FALSE;
 }
 
 static ZR_FORCE_INLINE void function_init_native_call_info(SZrCallInfo *callInfo,
@@ -1614,8 +1684,63 @@ static ZR_FORCE_INLINE void function_initialize_vm_frame_slots(TZrStackValuePoin
     function_reset_stack_slots_to_null(functionBase + 1 + preservedArgumentCount, functionBase + 1 + stackSize);
 }
 
+static ZR_FORCE_INLINE void function_initialize_vm_frame_storage_padding(TZrStackValuePointer functionBase,
+                                                                         TZrSize stackSize,
+                                                                         TZrSize frameStorageSlotCount) {
+    ZR_ASSERT(functionBase != ZR_NULL);
+
+    if (frameStorageSlotCount <= stackSize) {
+        return;
+    }
+
+    function_reset_stack_slots_to_null(functionBase + 1 + stackSize, functionBase + 1 + frameStorageSlotCount);
+}
+
+static ZR_FORCE_INLINE void function_initialize_vm_frame_layout_value_slots(struct SZrState *state,
+                                                                            TZrStackValuePointer functionBase,
+                                                                            const SZrFunction *function,
+                                                                            TZrSize preservedArgumentCount) {
+    TZrStackValuePointer frameBase;
+
+    ZR_ASSERT(state != ZR_NULL);
+    ZR_ASSERT(functionBase != ZR_NULL);
+
+    if (function == ZR_NULL ||
+        function->frameSlotLayouts == ZR_NULL ||
+        function->frameSlotLayoutLength == 0u ||
+        function->frameByteSize == 0u) {
+        return;
+    }
+
+    frameBase = functionBase + 1;
+    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[index];
+        SZrStackFramePlace place;
+
+        if (slotLayout->stackSlot < preservedArgumentCount ||
+            !ZrCore_Function_MakeFrameSlotPlace(state, function, frameBase, slotLayout->stackSlot, &place)) {
+            continue;
+        }
+
+        if (slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
+            slotLayout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {
+            ZrCore_Value_ResetAsNull((SZrTypeValue *)place.address);
+            continue;
+        }
+
+        if (slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            (void)ZrCore_Function_InitInlineStorage(state,
+                                                    function,
+                                                    slotLayout->typeLayoutId,
+                                                    place.address,
+                                                    place.byteSize);
+        }
+    }
+}
+
 static ZR_FORCE_INLINE void function_reuse_vm_frame_slots(struct SZrState *state,
                                                           TZrStackValuePointer functionBase,
+                                                          const SZrFunction *previousFunction,
                                                           TZrSize preservedArgumentCount,
                                                           TZrSize previousStackSize,
                                                           TZrSize nextStackSize) {
@@ -1629,7 +1754,14 @@ static ZR_FORCE_INLINE void function_reuse_vm_frame_slots(struct SZrState *state
     }
 
     for (slotIndex = preservedArgumentCount; slotIndex < previousStackSize; slotIndex++) {
-        ZrCore_Ownership_ReleaseValue(state, ZrCore_Stack_GetValue(functionBase + 1 + slotIndex));
+        TZrStackValuePointer stackSlot = functionBase + 1 + slotIndex;
+
+        if (ZrCore_Function_FrameStackSlotIntersectsInlineStruct(previousFunction, functionBase + 1, stackSlot)) {
+            *stackSlot = CZrFunctionNullStackSlotTemplate;
+            continue;
+        }
+
+        ZrCore_Ownership_ReleaseValue(state, ZrCore_Stack_GetValue(stackSlot));
     }
 
     if (nextStackSize <= previousStackSize) {
@@ -1637,6 +1769,469 @@ static ZR_FORCE_INLINE void function_reuse_vm_frame_slots(struct SZrState *state
     }
 
     function_reset_stack_slots_to_null(functionBase + 1 + previousStackSize, functionBase + 1 + nextStackSize);
+}
+
+static ZR_FORCE_INLINE TZrStackValuePointer function_inline_frame_base_from_call_info(const SZrCallInfo *callInfo) {
+    if (callInfo == ZR_NULL || callInfo->functionBase.valuePointer == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return callInfo->functionBase.valuePointer + 1;
+}
+
+void ZrCore_Function_SetCallInfoArgumentSourceFrame(struct SZrCallInfo *callInfo,
+                                                    TZrStackValuePointer sourceFrameBase,
+                                                    TZrUInt32 sourceStartSlot) {
+    if (callInfo == ZR_NULL) {
+        return;
+    }
+
+    callInfo->argumentSourceFrameBase.valuePointer = sourceFrameBase;
+    callInfo->argumentSourceFrameBaseReusableOffset = 0;
+    callInfo->argumentSourceStartSlot = sourceStartSlot;
+    callInfo->hasArgumentSourceFrame = sourceFrameBase != ZR_NULL;
+}
+
+TZrStackValuePointer ZrCore_Function_GetCallInfoFrameStorageTop(struct SZrState *state,
+                                                                const struct SZrCallInfo *callInfo) {
+    SZrFunction *function;
+    TZrStackValuePointer frameBase;
+
+    if (state == ZR_NULL || callInfo == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, (SZrCallInfo *)callInfo);
+    frameBase = function_inline_frame_base_from_call_info(callInfo);
+    if (function == ZR_NULL || frameBase == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return frameBase + ZrCore_Function_GetFrameStorageSlotCount(function);
+}
+
+static ZR_FORCE_INLINE TZrBool function_stack_slot_from_frame_pointer(TZrStackValuePointer frameBase,
+                                                                      TZrStackValuePointer stackPointer,
+                                                                      TZrUInt32 *outStackSlot) {
+    TZrMemoryOffset stackSlot;
+
+    if (frameBase == ZR_NULL || stackPointer == ZR_NULL || outStackSlot == ZR_NULL ||
+        stackPointer < frameBase) {
+        return ZR_FALSE;
+    }
+
+    stackSlot = stackPointer - frameBase;
+    if (stackSlot < 0 || stackSlot > UINT32_MAX) {
+        return ZR_FALSE;
+    }
+
+    *outStackSlot = (TZrUInt32)stackSlot;
+    return ZR_TRUE;
+}
+
+static TZrBool function_frame_layout_slot_from_frame_pointer(SZrState *state,
+                                                             const SZrFunction *function,
+                                                             TZrStackValuePointer frameBase,
+                                                             TZrStackValuePointer stackPointer,
+                                                             TZrUInt32 *outStackSlot) {
+    const TZrByte *stackAddress;
+
+    if (state == ZR_NULL ||
+        function == ZR_NULL ||
+        frameBase == ZR_NULL ||
+        stackPointer == ZR_NULL ||
+        outStackSlot == ZR_NULL ||
+        function->frameSlotLayouts == ZR_NULL ||
+        function->frameSlotLayoutLength == 0u) {
+        return ZR_FALSE;
+    }
+
+    stackAddress = (const TZrByte *)stackPointer;
+    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[index];
+        SZrStackFramePlace place;
+        const TZrByte *placeStart;
+        const TZrByte *placeEnd;
+
+        if (!ZrCore_Function_MakeFrameSlotPlace(state, function, frameBase, slotLayout->stackSlot, &place)) {
+            continue;
+        }
+
+        placeStart = (const TZrByte *)place.address;
+        placeEnd = placeStart + place.byteSize;
+        if (stackAddress >= placeStart && stackAddress < placeEnd) {
+            *outStackSlot = slotLayout->stackSlot;
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE const SZrTypeValue *function_get_frame_return_source_value(
+        SZrState *state,
+        const SZrCallInfo *callInfo,
+        TZrStackValuePointer returnSource) {
+    SZrFunction *calleeFunction;
+    TZrStackValuePointer calleeFrameBase;
+    TZrUInt32 sourceStackSlot;
+    const SZrFunctionFrameSlotLayout *sourceSlotLayout;
+    SZrStackFramePlace sourcePlace;
+
+    if (state == ZR_NULL || callInfo == ZR_NULL || returnSource == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    calleeFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, (SZrCallInfo *)callInfo);
+    calleeFrameBase = function_inline_frame_base_from_call_info(callInfo);
+    if (calleeFunction == ZR_NULL || calleeFrameBase == ZR_NULL) {
+        return ZrCore_Stack_GetValue(returnSource);
+    }
+
+    if (!function_frame_layout_slot_from_frame_pointer(state,
+                                                       calleeFunction,
+                                                       calleeFrameBase,
+                                                       returnSource,
+                                                       &sourceStackSlot) &&
+        !function_stack_slot_from_frame_pointer(calleeFrameBase, returnSource, &sourceStackSlot)) {
+        return ZrCore_Stack_GetValue(returnSource);
+    }
+
+    sourceSlotLayout = ZrCore_Function_FindFrameSlotLayout(calleeFunction, sourceStackSlot);
+    if (sourceSlotLayout != ZR_NULL &&
+        sourceSlotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
+        sourceSlotLayout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue) &&
+        ZrCore_Function_MakeFrameSlotPlace(state,
+                                           calleeFunction,
+                                           calleeFrameBase,
+                                           sourceStackSlot,
+                                           &sourcePlace)) {
+        return (const SZrTypeValue *)sourcePlace.address;
+    }
+
+    return ZrCore_Stack_GetValue(returnSource);
+}
+
+static ZR_FORCE_INLINE TZrBool function_type_layout_fields_are_compatible(const SZrTypeLayout *left,
+                                                                          const SZrTypeLayout *right) {
+    if (left->fieldCount != right->fieldCount) {
+        return ZR_FALSE;
+    }
+    if (left->fieldCount > 0u && (left->fields == ZR_NULL || right->fields == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < left->fieldCount; index++) {
+        const SZrTypeLayoutField *leftField = &left->fields[index];
+        const SZrTypeLayoutField *rightField = &right->fields[index];
+
+        if (leftField->byteOffset != rightField->byteOffset ||
+            leftField->byteSize != rightField->byteSize ||
+            leftField->typeLayoutIndex != rightField->typeLayoutIndex ||
+            leftField->flags != rightField->flags) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE TZrBool function_type_layouts_are_return_copy_compatible(const SZrTypeLayout *source,
+                                                                                const SZrTypeLayout *destination) {
+    if (source == ZR_NULL || destination == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(source->byteSize == destination->byteSize &&
+                     source->byteAlign == destination->byteAlign &&
+                     source->kind == destination->kind &&
+                     source->copyKind == destination->copyKind &&
+                     source->dropKind == destination->dropKind &&
+                     source->gcFieldCount == destination->gcFieldCount &&
+                     source->ownershipFieldCount == destination->ownershipFieldCount &&
+                     function_type_layout_fields_are_compatible(source, destination));
+}
+
+TZrBool ZrCore_Function_TryCopyInlineFrameReturnValue(struct SZrState *state,
+                                                      const struct SZrCallInfo *callInfo,
+                                                      TZrStackValuePointer returnSource,
+                                                      TZrStackValuePointer returnDestination,
+                                                      FZrFunctionFrameTypeLayoutResolver resolver,
+                                                      TZrPtr resolverUserData) {
+    SZrFunction *calleeFunction;
+    SZrFunction *callerFunction;
+    TZrStackValuePointer calleeFrameBase;
+    TZrStackValuePointer callerFrameBase;
+    TZrUInt32 sourceStackSlot;
+    TZrUInt32 destinationStackSlot;
+    const SZrFunctionFrameSlotLayout *sourceSlotLayout;
+    const SZrFunctionFrameSlotLayout *destinationSlotLayout;
+    const SZrTypeLayout *sourceTypeLayout;
+    const SZrTypeLayout *destinationTypeLayout;
+
+    if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->previous == ZR_NULL ||
+        returnSource == ZR_NULL || returnDestination == ZR_NULL || resolver == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    calleeFrameBase = function_inline_frame_base_from_call_info(callInfo);
+    callerFrameBase = function_inline_frame_base_from_call_info(callInfo->previous);
+    if (calleeFrameBase == ZR_NULL || callerFrameBase == ZR_NULL ||
+        returnSource < calleeFrameBase ||
+        returnDestination < callerFrameBase ||
+        (callInfo->functionTop.valuePointer != ZR_NULL &&
+         returnSource >= callInfo->functionTop.valuePointer) ||
+        (callInfo->previous->functionTop.valuePointer != ZR_NULL &&
+         returnDestination >= callInfo->previous->functionTop.valuePointer)) {
+        return ZR_FALSE;
+    }
+
+    calleeFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, (SZrCallInfo *)callInfo);
+    callerFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo->previous);
+    if (calleeFunction == ZR_NULL || callerFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!function_frame_layout_slot_from_frame_pointer(state,
+                                                       calleeFunction,
+                                                       calleeFrameBase,
+                                                       returnSource,
+                                                       &sourceStackSlot) &&
+        !function_stack_slot_from_frame_pointer(calleeFrameBase, returnSource, &sourceStackSlot)) {
+        return ZR_FALSE;
+    }
+    if (!function_frame_layout_slot_from_frame_pointer(state,
+                                                       callerFunction,
+                                                       callerFrameBase,
+                                                       returnDestination,
+                                                       &destinationStackSlot) &&
+        !function_stack_slot_from_frame_pointer(callerFrameBase, returnDestination, &destinationStackSlot)) {
+        return ZR_FALSE;
+    }
+
+    sourceSlotLayout = ZrCore_Function_FindFrameSlotLayout(calleeFunction, sourceStackSlot);
+    destinationSlotLayout = ZrCore_Function_FindFrameSlotLayout(callerFunction, destinationStackSlot);
+    if (sourceSlotLayout == ZR_NULL || destinationSlotLayout == ZR_NULL ||
+        sourceSlotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+        destinationSlotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+        return ZR_FALSE;
+    }
+
+    sourceTypeLayout = resolver(calleeFunction, sourceSlotLayout->typeLayoutId, resolverUserData);
+    destinationTypeLayout = resolver(callerFunction, destinationSlotLayout->typeLayoutId, resolverUserData);
+    if (!function_type_layouts_are_return_copy_compatible(sourceTypeLayout, destinationTypeLayout)) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_Function_CopyFrameSlotInline(state,
+                                               sourceTypeLayout,
+                                               callerFunction,
+                                               callerFrameBase,
+                                               destinationStackSlot,
+                                               calleeFunction,
+                                               calleeFrameBase,
+                                               sourceStackSlot);
+}
+
+static ZR_FORCE_INLINE void function_try_copy_inline_frame_parameters_from_caller(
+        SZrState *state,
+        const SZrFunction *calleeFunction,
+        TZrStackValuePointer calleeFunctionBase,
+        TZrStackValuePointer callStackPointer,
+        SZrCallInfo *callInfo) {
+    SZrFunction *callerFunction;
+    SZrCallInfo *previousCallInfo;
+    TZrStackValuePointer calleeFrameBase;
+    TZrStackValuePointer callerFrameBase;
+    TZrStackValuePointer callerArgumentStart;
+    TZrMemoryOffset callerArgumentStartSlot;
+
+    if (!function_precall_has_inline_frame_parameters(calleeFunction)) {
+        return;
+    }
+    if (state == ZR_NULL || calleeFunction == ZR_NULL ||
+        calleeFunctionBase == ZR_NULL || callStackPointer == ZR_NULL ||
+        callInfo == ZR_NULL || callInfo->previous == ZR_NULL) {
+        return;
+    }
+
+    previousCallInfo = callInfo->previous;
+    callerFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, previousCallInfo);
+    calleeFrameBase = calleeFunctionBase + 1;
+    if (callInfo->hasArgumentSourceFrame) {
+        callerFrameBase = callInfo->argumentSourceFrameBase.valuePointer;
+        callerArgumentStartSlot = callInfo->argumentSourceStartSlot;
+    } else {
+        callerFrameBase = function_inline_frame_base_from_call_info(previousCallInfo);
+        callerArgumentStart = callStackPointer + 1;
+        if (callerArgumentStart < callerFrameBase ||
+            (previousCallInfo->functionTop.valuePointer != ZR_NULL &&
+             callerArgumentStart > previousCallInfo->functionTop.valuePointer)) {
+            return;
+        }
+
+        callerArgumentStartSlot = callerArgumentStart - callerFrameBase;
+    }
+    if (callerFunction == ZR_NULL || callerFrameBase == ZR_NULL) {
+        return;
+    }
+
+    if (callerArgumentStartSlot < 0 || callerArgumentStartSlot > UINT32_MAX) {
+        return;
+    }
+
+    (void)ZrCore_Function_CopyInlineFrameParameters(state,
+                                                    calleeFunction,
+                                                    calleeFrameBase,
+                                                    callerFunction,
+                                                    callerFrameBase,
+                                                    (TZrUInt32)callerArgumentStartSlot,
+                                                    ZrCore_Function_ResolvePrototypeFrameTypeLayout,
+                                                    state);
+}
+
+static ZR_FORCE_INLINE void function_copy_value_frame_parameters_from_call_window(
+        SZrState *state,
+        const SZrFunction *calleeFunction,
+        TZrStackValuePointer calleeFunctionBase,
+        TZrStackValuePointer callStackPointer,
+        TZrSize argumentsCount) {
+    if (state == ZR_NULL || calleeFunction == ZR_NULL ||
+        calleeFunctionBase == ZR_NULL || callStackPointer == ZR_NULL ||
+        calleeFunction->frameSlotLayouts == ZR_NULL ||
+        calleeFunction->frameSlotLayoutLength == 0u) {
+        return;
+    }
+
+    (void)ZrCore_Function_CopyValueFrameParameters(state,
+                                                   calleeFunction,
+                                                   calleeFunctionBase + 1,
+                                                   callStackPointer + 1,
+                                                   argumentsCount);
+}
+
+static ZR_FORCE_INLINE void function_drop_inline_frame_values_for_function_if_available(SZrState *state,
+                                                                                       const SZrFunction *function,
+                                                                                       TZrStackValuePointer frameBase) {
+    if (state == ZR_NULL || function == ZR_NULL || frameBase == ZR_NULL ||
+        function->frameSlotLayouts == ZR_NULL ||
+        function->frameSlotLayoutLength == 0u) {
+        return;
+    }
+
+    (void)ZrCore_Function_DropInlineFrameValues(state,
+                                                function,
+                                                frameBase,
+                                                ZrCore_Function_ResolvePrototypeFrameTypeLayout,
+                                                state);
+}
+
+static ZR_FORCE_INLINE void function_drop_call_info_inline_frame_values_if_available(SZrState *state,
+                                                                                     SZrCallInfo *callInfo) {
+    SZrFunction *function;
+    TZrStackValuePointer frameBase;
+
+    if (state == ZR_NULL || callInfo == ZR_NULL) {
+        return;
+    }
+
+    function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+    frameBase = function_inline_frame_base_from_call_info(callInfo);
+    function_drop_inline_frame_values_for_function_if_available(state, function, frameBase);
+}
+
+static ZR_FORCE_INLINE TZrBool function_is_constructor_meta_method(const SZrFunction *function) {
+    TZrNativeString name;
+
+    if (function == ZR_NULL || function->functionName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    name = ZrCore_String_GetNativeString(function->functionName);
+    return name != ZR_NULL && ZrCore_NativeString_Compare(name, "constructor") == 0;
+}
+
+void ZrCore_Function_TryCopyInlineConstructorReceiverBack(SZrState *state,
+                                                          const SZrCallInfo *callInfo) {
+    SZrFunction *calleeFunction;
+    SZrFunction *callerFunction;
+    TZrStackValuePointer calleeFrameBase;
+    TZrStackValuePointer callerFrameBase;
+    TZrMemoryOffset callerArgumentStartSlot;
+    const SZrFunctionFrameSlotLayout *receiverLayout;
+    const SZrFunctionFrameSlotLayout *destinationLayout;
+    const SZrTypeLayout *typeLayout;
+
+    if (state == ZR_NULL || callInfo == ZR_NULL || callInfo->previous == ZR_NULL) {
+        return;
+    }
+
+    calleeFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, (SZrCallInfo *)callInfo);
+    if (!function_is_constructor_meta_method(calleeFunction)) {
+        return;
+    }
+    callerFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo->previous);
+    calleeFrameBase = function_inline_frame_base_from_call_info(callInfo);
+    callerFrameBase = callInfo->hasArgumentSourceFrame
+                              ? callInfo->argumentSourceFrameBase.valuePointer
+                              : function_inline_frame_base_from_call_info(callInfo->previous);
+    if (calleeFunction == ZR_NULL ||
+        callerFunction == ZR_NULL ||
+        calleeFrameBase == ZR_NULL ||
+        callerFrameBase == ZR_NULL ||
+        callInfo->functionBase.valuePointer == ZR_NULL) {
+        return;
+    }
+
+    callerArgumentStartSlot = callInfo->hasArgumentSourceFrame
+                                      ? (TZrMemoryOffset)callInfo->argumentSourceStartSlot
+                                      : (callInfo->functionBase.valuePointer + 1) - callerFrameBase;
+    if (callerArgumentStartSlot < 0 || callerArgumentStartSlot > UINT32_MAX) {
+        return;
+    }
+
+    receiverLayout = ZrCore_Function_FindFrameSlotLayout(calleeFunction, 0u);
+    destinationLayout = ZrCore_Function_FindFrameSlotLayout(callerFunction, (TZrUInt32)callerArgumentStartSlot);
+    if (receiverLayout == ZR_NULL ||
+        destinationLayout == ZR_NULL ||
+        receiverLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+        return;
+    }
+
+    if (destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+        receiverLayout->typeLayoutId == destinationLayout->typeLayoutId) {
+        typeLayout = ZrCore_Function_ResolvePrototypeFrameTypeLayout(calleeFunction, receiverLayout->typeLayoutId, state);
+        (void)ZrCore_Function_CopyFrameSlotInline(state,
+                                                  typeLayout,
+                                                  callerFunction,
+                                                  callerFrameBase,
+                                                  (TZrUInt32)callerArgumentStartSlot,
+                                                  calleeFunction,
+                                                  calleeFrameBase,
+                                                  0u);
+        return;
+    }
+
+    if (destinationLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
+        destinationLayout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {
+        SZrStackFramePlace destinationPlace;
+        SZrTypeValue materializedValue;
+
+        ZrCore_Value_ResetAsNull(&materializedValue);
+        if (ZrCore_Function_CopyFrameSlotInlineToObjectValue(state,
+                                                             calleeFunction,
+                                                             calleeFrameBase,
+                                                             0u,
+                                                             &materializedValue) &&
+            ZrCore_Function_MakeFrameSlotPlace(state,
+                                               callerFunction,
+                                               callerFrameBase,
+                                               (TZrUInt32)callerArgumentStartSlot,
+                                               &destinationPlace)) {
+            ZrCore_Value_Copy(state, (SZrTypeValue *)destinationPlace.address, &materializedValue);
+        }
+        ZrCore_Value_ResetAsNull(&materializedValue);
+    }
 }
 
 
@@ -1825,6 +2420,7 @@ static ZR_FORCE_INLINE TZrSize function_call_resolved_native_prepared_frame_sing
             returnDestination = ZrCore_Function_StackAnchorRestore(state, &returnDestinationAnchor);
             target = returnDestination;
         }
+        function_drop_call_info_inline_frame_values_if_available(state, callInfo);
         if (returnCount == 0) {
             ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(target));
         } else if (returnSource != target) {
@@ -1904,12 +2500,13 @@ TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
                                      TZrStackValuePointer stackPointer) {
     SZrTypeValue *value;
     SZrFunction *function;
+    SZrFunction *previousFunction;
     TZrStackValuePointer reuseBase;
     TZrSize callValueCount;
     TZrSize argumentsCount;
     TZrSize parametersCount;
     TZrSize previousStackSize;
-    TZrSize stackSize;
+    TZrSize frameStorageSlotCount;
     TZrStackValuePointer effectiveReturnDestination;
     EZrCallStatus preservedCallStatus;
     TZrUInt32 debugHookSignal;
@@ -1922,6 +2519,7 @@ TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
     if (value == ZR_NULL) {
         return ZR_FALSE;
     }
+    previousFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
 
     if (ZR_LIKELY(value->type == ZR_VALUE_TYPE_CLOSURE)) {
         if (value->isNative) {
@@ -1941,12 +2539,16 @@ TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
         return ZR_FALSE;
     }
 
+    if (function_precall_has_inline_frame_parameters(function)) {
+        return ZR_FALSE;
+    }
+
     reuseBase = callInfo->functionBase.valuePointer;
     callValueCount = ZR_CAST_INT64(state->stackTop.valuePointer - stackPointer);
     argumentsCount = callValueCount - 1;
     parametersCount = function->parameterCount;
     previousStackSize = (TZrSize)(callInfo->functionTop.valuePointer - reuseBase - 1);
-    stackSize = function->stackSize;
+    frameStorageSlotCount = ZrCore_Function_GetFrameStorageSlotCount(function);
     effectiveReturnDestination = callInfo->hasReturnDestination
                                          ? callInfo->returnDestination
                                          : callInfo->functionBase.valuePointer;
@@ -1957,6 +2559,7 @@ TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
         state->stackTop.valuePointer = callInfo->functionTop.valuePointer;
     }
     ZrCore_Closure_CloseStackValue(state, callInfo->functionBase.valuePointer + 1);
+    function_drop_call_info_inline_frame_values_if_available(state, callInfo);
 
     if (stackPointer != reuseBase) {
         for (TZrSize index = 0; index < callValueCount; index++) {
@@ -1968,20 +2571,25 @@ TZrBool ZrCore_Function_TryReuseTailVmCall(struct SZrState *state,
 
     function_restore_call_pointers_after_stack_check(
             state,
-            stackSize + 1,
+            frameStorageSlotCount + 1,
             stackPointer,
             &stackPointer,
             &effectiveReturnDestination);
 
     callInfo->functionBase.valuePointer = stackPointer;
-    callInfo->functionTop.valuePointer = stackPointer + 1 + stackSize;
+    callInfo->functionTop.valuePointer = stackPointer + 1 + frameStorageSlotCount;
     function_reinitialize_vm_call_info_runtime_state(callInfo,
                                                      preservedCallStatus,
                                                      effectiveReturnDestination,
                                                      function->instructionsList,
                                                      function_debug_trap_from_hook_signal(debugHookSignal));
     state->callInfoList = callInfo;
-    function_reuse_vm_frame_slots(state, stackPointer, argumentsCount, previousStackSize, stackSize);
+    function_reuse_vm_frame_slots(state,
+                                  stackPointer,
+                                  previousFunction,
+                                  argumentsCount,
+                                  previousStackSize,
+                                  frameStorageSlotCount);
     state->stackTop.valuePointer = stackPointer + 1 + parametersCount;
 
     ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
@@ -2314,6 +2922,9 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm(struct SZrStat
             argumentsCount,
             resultCount,
             returnDestination,
+            ZR_FALSE,
+            ZR_NULL,
+            0u,
             ZR_FALSE);
 }
 
@@ -2323,16 +2934,22 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
                                                                            TZrSize argumentsCount,
                                                                            TZrSize resultCount,
                                                                            TZrStackValuePointer returnDestination,
-                                                                           TZrBool stackTopPrepared) {
+                                                                           TZrBool stackTopPrepared,
+                                                                           TZrStackValuePointer argumentSourceFrameBase,
+                                                                           TZrUInt32 argumentSourceStartSlot,
+                                                                           TZrBool hasArgumentSourceFrame) {
     SZrCallInfo *callInfo;
     SZrCallInfo *previousCallInfo;
     TZrSize parametersCount;
     TZrSize stackSize;
+    TZrSize frameStorageSlotCount;
     TZrSize entryClearStackSize;
     TZrStackValuePointer argumentTop;
     TZrUInt32 cachedEntryClearStackSizePlusOne;
     TZrUInt32 exactArgsClearStackSizePlusOne;
     TZrUInt32 debugHookSignal;
+    SZrFunctionStackAnchor argumentSourceFrameBaseAnchor;
+    TZrBool hasArgumentSourceFrameAnchor = ZR_FALSE;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(stackPointer != ZR_NULL);
@@ -2340,6 +2957,7 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
 
     parametersCount = function->parameterCount;
     stackSize = function->stackSize;
+    frameStorageSlotCount = ZrCore_Function_GetFrameStorageSlotCount(function);
     cachedEntryClearStackSizePlusOne = function->vmEntryClearStackSizePlusOne;
     debugHookSignal = state->debugHookSignal;
     argumentTop = stackPointer + 1 + argumentsCount;
@@ -2355,7 +2973,8 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
     if (ZR_LIKELY(debugHookSignal == 0u &&
                   parametersCount == argumentsCount &&
                   cachedEntryClearStackSizePlusOne == exactArgsClearStackSizePlusOne &&
-                  state->stackTail.valuePointer - stackPointer >= (TZrMemoryOffset)(stackSize + 1u))) {
+                  !function_precall_has_inline_frame_parameters(function) &&
+                  state->stackTail.valuePointer - stackPointer >= (TZrMemoryOffset)(frameStorageSlotCount + 1u))) {
         callInfo = previousCallInfo->next;
         if (ZR_UNLIKELY(callInfo == ZR_NULL)) {
             callInfo = ZrCore_CallInfo_Extend(state);
@@ -2367,16 +2986,37 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
         function_init_vm_call_info_exact_args_steady_state_inline(callInfo,
                                                                   previousCallInfo,
                                                                   stackPointer,
-                                                                  stackPointer + 1 + stackSize,
+                                                                  stackPointer + 1 + frameStorageSlotCount,
                                                                   resultCount,
                                                                   returnDestination,
                                                                   function->instructionsList);
+        if (hasArgumentSourceFrame) {
+            ZrCore_Function_SetCallInfoArgumentSourceFrame(callInfo,
+                                                           argumentSourceFrameBase,
+                                                           argumentSourceStartSlot);
+        }
+        function_initialize_vm_frame_storage_padding(stackPointer, stackSize, frameStorageSlotCount);
+        function_initialize_vm_frame_layout_value_slots(state, stackPointer, function, argumentsCount);
+        function_copy_value_frame_parameters_from_call_window(state, function, stackPointer, stackPointer, argumentsCount);
+        function_try_copy_inline_frame_parameters_from_caller(state, function, stackPointer, stackPointer, callInfo);
         state->callInfoList = callInfo;
         ZR_ASSERT(callInfo->functionTop.valuePointer <= state->stackTail.valuePointer);
         return callInfo;
     }
 
-    function_restore_call_pointers_after_stack_check(state, stackSize + 1, stackPointer, &stackPointer, &returnDestination);
+    if (hasArgumentSourceFrame && argumentSourceFrameBase != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(state, argumentSourceFrameBase, &argumentSourceFrameBaseAnchor);
+        hasArgumentSourceFrameAnchor = ZR_TRUE;
+    }
+    function_restore_call_pointers_after_stack_check(
+            state,
+            frameStorageSlotCount + 1,
+            stackPointer,
+            &stackPointer,
+            &returnDestination);
+    if (hasArgumentSourceFrameAnchor) {
+        argumentSourceFrameBase = ZrCore_Function_StackAnchorRestore(state, &argumentSourceFrameBaseAnchor);
+    }
     entryClearStackSize = cachedEntryClearStackSizePlusOne != 0u
                                   ? (TZrSize)(cachedEntryClearStackSizePlusOne - 1u)
                                   : function_resolve_vm_entry_clear_stack_size(function);
@@ -2391,15 +3031,24 @@ static ZR_FORCE_INLINE SZrCallInfo *function_pre_call_resolved_vm_internal(struc
     function_init_vm_call_info(callInfo,
                                previousCallInfo,
                                stackPointer,
-                               stackPointer + 1 + stackSize,
+                               stackPointer + 1 + frameStorageSlotCount,
                                resultCount,
                                returnDestination,
                                function->instructionsList,
                                function_debug_trap_from_hook_signal(debugHookSignal));
+    if (hasArgumentSourceFrame) {
+        ZrCore_Function_SetCallInfoArgumentSourceFrame(callInfo,
+                                                       argumentSourceFrameBase,
+                                                       argumentSourceStartSlot);
+    }
     state->callInfoList = callInfo;
     if (entryClearStackSize > argumentsCount) {
         function_initialize_vm_frame_slots(stackPointer, argumentsCount, entryClearStackSize);
     }
+    function_initialize_vm_frame_storage_padding(stackPointer, stackSize, frameStorageSlotCount);
+    function_initialize_vm_frame_layout_value_slots(state, stackPointer, function, argumentsCount);
+    function_copy_value_frame_parameters_from_call_window(state, function, stackPointer, stackPointer, argumentsCount);
+    function_try_copy_inline_frame_parameters_from_caller(state, function, stackPointer, stackPointer, callInfo);
     if (parametersCount != argumentsCount) {
         state->stackTop.valuePointer = stackPointer + 1 + parametersCount;
     }
@@ -2493,7 +3142,32 @@ SZrCallInfo *ZrCore_Function_PreCallPreparedResolvedVmFunction(struct SZrState *
             argumentsCount,
             resultCount,
             returnDestination,
-            ZR_TRUE);
+            ZR_TRUE,
+            ZR_NULL,
+            0u,
+            ZR_FALSE);
+}
+
+SZrCallInfo *ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        struct SZrFunction *function,
+        TZrSize argumentsCount,
+        TZrSize resultCount,
+        TZrStackValuePointer returnDestination,
+        TZrStackValuePointer argumentSourceFrameBase,
+        TZrUInt32 argumentSourceStartSlot) {
+    return function_pre_call_resolved_vm_internal(
+            state,
+            stackPointer,
+            function,
+            argumentsCount,
+            resultCount,
+            returnDestination,
+            ZR_TRUE,
+            argumentSourceFrameBase,
+            argumentSourceStartSlot,
+            argumentSourceFrameBase != ZR_NULL);
 }
 
 SZrCallInfo *ZrCore_Function_TryPreCallPreparedResolvedVmFunctionExactArgsSteadyState(
@@ -2605,6 +3279,7 @@ TZrBool ZrCore_Function_CallPreparedResolvedNativeFunctionSingleResultFastRestor
         if (returnCount > 0) {
             returnSource = state->stackTop.valuePointer - returnCount;
         }
+        function_drop_call_info_inline_frame_values_if_available(state, callInfo);
         state->callInfoList = callInfo->previous;
     } else {
         ZrCore_Function_PostCall(state, callInfo, returnCount);
@@ -2721,7 +3396,9 @@ SZrCallInfo *ZrCore_Function_PreCall(struct SZrState *state, TZrStackValuePointe
             returnDestination);
 }
 
-static ZR_FORCE_INLINE void function_move_returns(SZrState *state, TZrStackValuePointer stackPointer,
+static ZR_FORCE_INLINE void function_move_returns(SZrState *state,
+                                                  SZrCallInfo *callInfo,
+                                                  TZrStackValuePointer stackPointer,
                                                   TZrSize returnCount, TZrSize expectedReturnCount) {
     switch (expectedReturnCount) {
         case 0: {
@@ -2732,7 +3409,17 @@ static ZR_FORCE_INLINE void function_move_returns(SZrState *state, TZrStackValue
             if (returnCount == 0) {
                 ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(stackPointer));
             } else {
-                ZrCore_Stack_CopyValue(state, stackPointer, ZrCore_Stack_GetValue(state->stackTop.valuePointer - returnCount));
+                TZrStackValuePointer returnSource = state->stackTop.valuePointer - returnCount;
+                const SZrTypeValue *returnSourceValue =
+                        function_get_frame_return_source_value(state, callInfo, returnSource);
+                if (!ZrCore_Function_TryCopyInlineFrameReturnValue(state,
+                                                                   callInfo,
+                                                                   returnSource,
+                                                                   stackPointer,
+                                                                   ZrCore_Function_ResolvePrototypeFrameTypeLayout,
+                                                                   state)) {
+                    ZrCore_Stack_CopyValue(state, stackPointer, returnSourceValue);
+                }
             }
             state->stackTop.valuePointer = stackPointer + 1;
             return;
@@ -2746,7 +3433,9 @@ static ZR_FORCE_INLINE void function_move_returns(SZrState *state, TZrStackValue
         returnCount = expectedReturnCount;
     }
     for (TZrSize i = 0; i < returnCount; i++) {
-        ZrCore_Stack_CopyValue(state, stackPointer + i, ZrCore_Stack_GetValue(first + i));
+        ZrCore_Stack_CopyValue(state,
+                               stackPointer + i,
+                               function_get_frame_return_source_value(state, callInfo, first + i));
     }
     for (TZrSize i = returnCount; i < expectedReturnCount; i++) {
         ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(stackPointer + i));
@@ -2760,6 +3449,7 @@ static ZR_FORCE_INLINE void function_post_call_single_result_no_debug_fast(
         TZrSize resultCount) {
     TZrStackValuePointer destination;
     TZrStackValuePointer returnSource = ZR_NULL;
+    TZrStackValuePointer previousFrameStorageTop;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(callInfo != ZR_NULL);
@@ -2771,22 +3461,49 @@ static ZR_FORCE_INLINE void function_post_call_single_result_no_debug_fast(
 
     destination = callInfo->hasReturnDestination ? callInfo->returnDestination : callInfo->functionBase.valuePointer;
     ZR_ASSERT(destination != ZR_NULL);
+    previousFrameStorageTop = ZrCore_Function_GetCallInfoFrameStorageTop(state, callInfo->previous);
     if (resultCount > 0u) {
         returnSource = state->stackTop.valuePointer - resultCount;
+    }
+
+    if (returnSource != ZR_NULL &&
+        ZrCore_Function_TryCopyInlineFrameReturnValue(state,
+                                                      callInfo,
+                                                      returnSource,
+                                                      destination,
+                                                      ZrCore_Function_ResolvePrototypeFrameTypeLayout,
+                                                      state)) {
+        ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, callInfo);
+        function_drop_call_info_inline_frame_values_if_available(state, callInfo);
+        state->stackTop.valuePointer = previousFrameStorageTop != ZR_NULL &&
+                                       previousFrameStorageTop > destination + 1
+                                               ? previousFrameStorageTop
+                                               : destination + 1;
+        state->callInfoList = callInfo->previous;
+        return;
     }
 
     if (returnSource == ZR_NULL) {
         ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(destination));
     } else if (returnSource != destination) {
-        ZrCore_Stack_CopyValue(state, destination, ZrCore_Stack_GetValue(returnSource));
+        ZrCore_Stack_CopyValue(state,
+                               destination,
+                               function_get_frame_return_source_value(state, callInfo, returnSource));
     }
+    ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, callInfo);
+    function_drop_call_info_inline_frame_values_if_available(state, callInfo);
 
-    state->stackTop.valuePointer = destination + 1;
+    state->stackTop.valuePointer = previousFrameStorageTop != ZR_NULL &&
+                                   previousFrameStorageTop > destination + 1
+                                           ? previousFrameStorageTop
+                                           : destination + 1;
     state->callInfoList = callInfo->previous;
 }
 
 void ZrCore_Function_PostCall(struct SZrState *state, struct SZrCallInfo *callInfo, TZrSize resultCount) {
     TZrSize expectedReturnCount = callInfo->expectedReturnCount;
+    SZrFunction *inlineDropFunction;
+    TZrStackValuePointer inlineDropFrameBase;
 
     if (ZR_UNLIKELY(state->debugHookSignal)) {
         ZrCore_Debug_HookReturn(state, callInfo, resultCount);
@@ -2795,7 +3512,10 @@ void ZrCore_Function_PostCall(struct SZrState *state, struct SZrCallInfo *callIn
     TZrStackValuePointer dest = (callInfo->hasReturnDestination)
                                     ? callInfo->returnDestination
                                     : callInfo->functionBase.valuePointer;
-    function_move_returns(state, dest, resultCount, expectedReturnCount);
+    inlineDropFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+    inlineDropFrameBase = function_inline_frame_base_from_call_info(callInfo);
+    function_move_returns(state, callInfo, dest, resultCount, expectedReturnCount);
+    function_drop_inline_frame_values_for_function_if_available(state, inlineDropFunction, inlineDropFrameBase);
 
     ZR_ASSERT(!(callInfo->callStatus &
                 (ZR_CALL_STATUS_DEBUG_HOOK | ZR_CALL_STATUS_HOOK_YIELD | ZR_CALL_STATUS_DECONSTRUCTOR_CALL |

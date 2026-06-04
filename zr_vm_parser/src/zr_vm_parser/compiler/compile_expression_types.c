@@ -575,6 +575,34 @@ static TZrBool type_name_is_registered_prototype(SZrCompilerState *cs, SZrString
     return info != ZR_NULL && info->type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
 }
 
+static TZrBool note_inline_struct_result_slot(SZrCompilerState *cs,
+                                              TZrUInt32 stackSlot,
+                                              SZrString *typeName) {
+    SZrTypePrototypeInfo *prototypeInfo;
+    SZrInferredType resultType;
+    TZrBool ok;
+
+    if (cs == ZR_NULL || stackSlot == ZR_PARSER_SLOT_NONE || typeName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    prototypeInfo = find_compiler_type_prototype(cs, typeName);
+    if (prototypeInfo == ZR_NULL || prototypeInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+        return ZR_TRUE;
+    }
+
+    ZrParser_InferredType_InitFull(cs->state, &resultType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, typeName);
+    ok = compiler_register_stack_slot_type_hint(cs, stackSlot, &resultType);
+    ZrParser_InferredType_Free(cs->state, &resultType);
+    return ok;
+}
+
+static TZrBool note_inline_struct_member_result_slot(SZrCompilerState *cs,
+                                                     TZrUInt32 stackSlot,
+                                                     SZrString *fieldTypeName) {
+    return note_inline_struct_result_slot(cs, stackSlot, fieldTypeName);
+}
+
 static const SZrTypeMemberInfo *find_compiler_type_meta_member_recursive(SZrCompilerState *cs,
                                                                          SZrString *typeName,
                                                                          EZrMetaType metaType,
@@ -634,20 +662,38 @@ static const SZrTypeMemberInfo *find_compiler_type_meta_member(SZrCompilerState 
     return find_compiler_type_meta_member_recursive(cs, typeName, metaType, 0);
 }
 
-static TZrBool type_has_constructor(SZrCompilerState *cs, SZrString *typeName) {
+static const SZrTypeMemberInfo *find_compiler_type_constructor_member(SZrCompilerState *cs, SZrString *typeName) {
     SZrTypePrototypeInfo *info = find_compiler_type_prototype(cs, typeName);
     if (info == ZR_NULL) {
-        return ZR_FALSE;
+        return ZR_NULL;
     }
 
     for (TZrSize i = 0; i < info->members.length; i++) {
         SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&info->members, i);
         if (memberInfo != ZR_NULL && memberInfo->isMetaMethod && memberInfo->metaType == ZR_META_CONSTRUCTOR) {
-            return ZR_TRUE;
+            return memberInfo;
         }
     }
 
-    return ZR_FALSE;
+    return ZR_NULL;
+}
+
+static TZrBool type_has_constructor(SZrCompilerState *cs, SZrString *typeName) {
+    return find_compiler_type_constructor_member(cs, typeName) != ZR_NULL;
+}
+
+static TZrBool type_is_struct_constructor_member(SZrCompilerState *cs,
+                                                 SZrString *typeName,
+                                                 const SZrTypeMemberInfo *memberInfo) {
+    SZrTypePrototypeInfo *prototypeInfo;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL || memberInfo == ZR_NULL ||
+        !memberInfo->isMetaMethod || memberInfo->metaType != ZR_META_CONSTRUCTOR) {
+        return ZR_FALSE;
+    }
+
+    prototypeInfo = find_compiler_type_prototype(cs, typeName);
+    return (TZrBool)(prototypeInfo != ZR_NULL && prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT);
 }
 
 static SZrString *resolve_expression_type_name(SZrCompilerState *cs, SZrAstNode *node) {
@@ -852,6 +898,14 @@ TZrBool resolve_expression_root_type(SZrCompilerState *cs, SZrAstNode *node, SZr
 
     if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
         SZrString *candidateType = node->data.identifier.name;
+        if (candidateType != ZR_NULL && cs->currentTypeName != ZR_NULL) {
+            const TZrChar *candidateText = ZrCore_String_GetNativeStringShort(candidateType);
+            if (candidateText != ZR_NULL && strcmp(candidateText, "this") == 0) {
+                *outTypeName = cs->currentTypeName;
+                *outIsTypeReference = ZR_FALSE;
+                return ZR_TRUE;
+            }
+        }
         SZrTypePrototypeInfo *prototype = find_compiler_type_prototype(cs, candidateType);
         if (prototype != ZR_NULL) {
             *outTypeName = candidateType;
@@ -952,16 +1006,24 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
                                             TZrUInt32 instanceSlot,
                                             SZrAstNodeArray *constructorArgs,
                                             SZrString *typeName,
+                                            TZrBool splitStructValueResult,
+                                            TZrUInt32 *outResultSlot,
                                             SZrFileRange location) {
     TZrUInt32 functionSlot;
     TZrUInt32 receiverSlot;
+    TZrUInt32 resultSlot = instanceSlot;
     TZrUInt32 argCount = 1;
     TZrUInt32 constructorMemberId;
     TZrBool syncStructReceiver = ZR_FALSE;
+    const SZrTypeMemberInfo *constructorMemberInfo;
 
+    if (outResultSlot != ZR_NULL) {
+        *outResultSlot = instanceSlot;
+    }
     if (cs == ZR_NULL || cs->hasError || typeName == ZR_NULL || !type_has_constructor(cs, typeName)) {
         return ZR_TRUE;
     }
+    constructorMemberInfo = find_compiler_type_constructor_member(cs, typeName);
 
     {
         SZrTypePrototypeInfo *prototypeInfo = find_compiler_type_prototype(cs, typeName);
@@ -988,6 +1050,9 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
                                           (TZrUInt16)constructorMemberId));
 
     receiverSlot = allocate_stack_slot(cs);
+    if (syncStructReceiver && !note_inline_struct_result_slot(cs, receiverSlot, typeName)) {
+        return ZR_FALSE;
+    }
     emit_instruction(cs,
                      create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                           (TZrUInt16)receiverSlot,
@@ -996,8 +1061,18 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
     if (constructorArgs != ZR_NULL) {
         for (TZrSize i = 0; i < constructorArgs->count; i++) {
             SZrAstNode *argNode = constructorArgs->nodes[i];
+            TZrUInt32 argSlot = receiverSlot + 1 + (TZrUInt32)i;
+            const SZrInferredType *expectedType =
+                    (constructorMemberInfo != ZR_NULL && i < constructorMemberInfo->parameterTypes.length)
+                            ? (const SZrInferredType *)ZrCore_Array_Get(
+                                      (SZrArray *)&constructorMemberInfo->parameterTypes,
+                                      i)
+                            : ZR_NULL;
             if (argNode != ZR_NULL &&
-                compile_expression_into_slot(cs, argNode, receiverSlot + 1 + (TZrUInt32)i) == ZR_PARSER_SLOT_NONE) {
+                compile_expression_into_slot(cs, argNode, argSlot) == ZR_PARSER_SLOT_NONE) {
+                return ZR_FALSE;
+            }
+            if (expectedType != ZR_NULL && !compiler_register_stack_slot_type_hint(cs, argSlot, expectedType)) {
                 return ZR_FALSE;
             }
         }
@@ -1010,13 +1085,22 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
                                           (TZrUInt16)functionSlot,
                                           (TZrUInt16)argCount));
     if (syncStructReceiver) {
-        /* Struct constructors may mutate the bound receiver without returning it. */
+        /* Struct value construction keeps the object seed separate from the inline result slot. */
+        if (splitStructValueResult) {
+            resultSlot = allocate_stack_slot(cs);
+            if (!note_inline_struct_result_slot(cs, resultSlot, typeName)) {
+                return ZR_FALSE;
+            }
+        }
         emit_instruction(cs,
                          create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
-                                              (TZrUInt16)instanceSlot,
+                                              (TZrUInt16)resultSlot,
                                               (TZrInt32)receiverSlot));
     }
-    collapse_stack_to_slot(cs, instanceSlot);
+    collapse_stack_to_slot(cs, resultSlot);
+    if (outResultSlot != ZR_NULL) {
+        *outResultSlot = resultSlot;
+    }
     if (cs->hasError) {
         ZrParser_Compiler_Error(cs, "Failed to invoke prototype constructor", location);
         return ZR_FALSE;
@@ -1064,11 +1148,13 @@ static TZrBool emit_construct_seed_instance(SZrCompilerState *cs,
 TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrChar *op, SZrString *typeName,
                                               SZrAstNodeArray *constructorArgs, SZrFileRange location) {
     TZrUInt32 destSlot;
+    TZrUInt32 resultSlot;
     SZrTypePrototypeInfo *prototypeInfo;
     SZrAstNode *typeDecl;
     EZrObjectPrototypeType prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_INVALID;
     TZrBool allowValueConstruction = ZR_FALSE;
     TZrBool allowBoxedConstruction = ZR_FALSE;
+    TZrBool splitStructValueResult = ZR_FALSE;
     SZrTypeValue typeNameValue;
     TZrUInt32 typeNameConstantIndex;
 
@@ -1151,12 +1237,31 @@ TZrUInt32 emit_shorthand_constructor_instance(SZrCompilerState *cs, const TZrCha
         return ZR_PARSER_SLOT_NONE;
     }
 
-    if (!emit_hidden_constructor_call(cs, destSlot, constructorArgs, typeName, location)) {
+    splitStructValueResult = strcmp(op, "$") == 0 && prototypeType == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT;
+    resultSlot = destSlot;
+    if (!emit_hidden_constructor_call(cs,
+                                      destSlot,
+                                      constructorArgs,
+                                      typeName,
+                                      splitStructValueResult,
+                                      &resultSlot,
+                                      location)) {
         return ZR_PARSER_SLOT_NONE;
     }
 
-    collapse_stack_to_slot(cs, destSlot);
-    return destSlot;
+    if (splitStructValueResult && resultSlot == destSlot) {
+        resultSlot = allocate_stack_slot(cs);
+        if (!note_inline_struct_result_slot(cs, resultSlot, typeName)) {
+            return ZR_PARSER_SLOT_NONE;
+        }
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)resultSlot,
+                                              (TZrInt32)destSlot));
+    }
+
+    collapse_stack_to_slot(cs, resultSlot);
+    return resultSlot;
 }
 
 SZrTypeMemberInfo *find_hidden_property_accessor_member(SZrCompilerState *cs, SZrString *typeName,
@@ -1252,6 +1357,26 @@ static TZrBool emit_argument_conversion_if_needed(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static TZrBool note_argument_stack_slot_type(SZrCompilerState *cs,
+                                             TZrUInt32 argSlot,
+                                             const SZrInferredType *expectedType) {
+    if (expectedType == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    return compiler_register_stack_slot_type_hint(cs, argSlot, expectedType);
+}
+
+static TZrBool note_call_result_stack_slot_type(SZrCompilerState *cs,
+                                                TZrUInt32 resultSlot,
+                                                const SZrInferredType *returnType) {
+    if (returnType == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    return compiler_register_stack_slot_type_hint(cs, resultSlot, returnType);
+}
+
 static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
                                                          SZrAstNodeArray *argsToCompile,
                                                          const SZrArray *parameterTypes,
@@ -1297,6 +1422,9 @@ static TZrBool compile_arguments_against_parameter_types(SZrCompilerState *cs,
         expectedType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)parameterTypes, index);
         if (expectedType != ZR_NULL &&
             !emit_argument_conversion_if_needed(cs, argNode, argSlot, expectedType)) {
+            return ZR_FALSE;
+        }
+        if (!note_argument_stack_slot_type(cs, argSlot, expectedType)) {
             return ZR_FALSE;
         }
     }
@@ -1636,6 +1764,9 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
             if (expectedType != ZR_NULL && !emit_argument_conversion_if_needed(cs, argNode, argSlot, expectedType)) {
                 goto cleanup;
             }
+            if (!note_argument_stack_slot_type(cs, argSlot, expectedType)) {
+                goto cleanup;
+            }
             continue;
         }
 
@@ -1651,6 +1782,9 @@ static TZrBool compile_arguments_against_imported_member_metadata(SZrCompilerSta
         if (member_call_parameter_has_default_at(memberInfo, index)) {
             const SZrTypeValue *defaultValue = member_call_parameter_default_value_at(memberInfo, index);
             if (defaultValue == ZR_NULL || !emit_default_constant_argument(cs, argSlot, defaultValue)) {
+                goto cleanup;
+            }
+            if (!note_argument_stack_slot_type(cs, argSlot, expectedType)) {
                 goto cleanup;
             }
             continue;
@@ -1801,10 +1935,16 @@ static TZrBool compile_arguments_against_function_resolved_signature(SZrCompiler
                                                                     argNode,
                                                                     index,
                                                                     expectedType)) {
+            if (!note_argument_stack_slot_type(cs, argSlot, expectedType)) {
+                return ZR_FALSE;
+            }
             continue;
         }
 
         if (!emit_argument_conversion_if_needed(cs, argNode, argSlot, expectedType)) {
+            return ZR_FALSE;
+        }
+        if (!note_argument_stack_slot_type(cs, argSlot, expectedType)) {
             return ZR_FALSE;
         }
     }
@@ -1828,6 +1968,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
     SZrString *pendingCallResultTypeName = ZR_NULL;
     const SZrTypeMemberInfo *pendingCallMemberInfo = ZR_NULL;
     TZrBool pendingReceiverRequiresBinding = ZR_FALSE;
+    TZrBool pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
     SZrString *rootTypeName = ioRootTypeName != ZR_NULL ? *ioRootTypeName : ZR_NULL;
     TZrBool rootIsTypeReference = ioRootIsTypeReference != ZR_NULL ? *ioRootIsTypeReference : ZR_FALSE;
     EZrOwnershipQualifier rootOwnershipQualifier =
@@ -1865,6 +2006,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverRequiresBinding = ZR_FALSE;
+            pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
 
             if (!memberExpr->computed && memberExpr->property != ZR_NULL &&
                 memberExpr->property->type == ZR_AST_IDENTIFIER_LITERAL) {
@@ -1892,6 +2034,10 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 pendingCallResultTypeName =
                         nextIsFunctionCall && typeMember != ZR_NULL ? typeMember->returnTypeName : ZR_NULL;
                 pendingCallMemberInfo = nextIsFunctionCall ? typeMember : ZR_NULL;
+                pendingDirectMemberCallIsStructConstructor =
+                        (TZrBool)(nextIsFunctionCall &&
+                                  bindReceiverForCall &&
+                                  type_is_struct_constructor_member(cs, rootTypeName, typeMember));
 
                 getterAccessor = find_hidden_property_accessor_member(cs, rootTypeName, memberName, ZR_FALSE);
                 if (!can_use_property_accessor(rootIsTypeReference, getterAccessor)) {
@@ -2040,6 +2186,13 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                                                           member->location)) {
                                     return;
                                 }
+                                if (!note_inline_struct_member_result_slot(cs,
+                                                                           currentSlot,
+                                                                           typeMember != ZR_NULL
+                                                                                   ? typeMember->fieldTypeName
+                                                                                   : declaredFieldTypeName)) {
+                                    return;
+                                }
                             } else {
                                 if (pendingReceiverRequiresBinding &&
                                     !stage_pending_receiver_binding(cs,
@@ -2116,6 +2269,7 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             TZrBool hasResolvedMemberSignature = ZR_FALSE;
             TZrBool hasContractReturnType = ZR_FALSE;
             TZrBool useMetaCallOpcode = ZR_FALSE;
+            TZrBool syncStructConstructorReceiverToResult = ZR_FALSE;
 
             memset(&resolvedFunctionSignature, 0, sizeof(resolvedFunctionSignature));
             ZrParser_InferredType_Init(cs->state, &resolvedFunctionSignature.returnType, ZR_VALUE_TYPE_OBJECT);
@@ -2202,11 +2356,15 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                     return;
                 }
             }
+            syncStructConstructorReceiverToResult =
+                    pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
+                    pendingDirectMemberCallIsStructConstructor;
 
             TZrUInt32 argCount = 0;
             TZrUInt32 argBaseSlot = currentSlot + 1;
             TZrUInt32 compiledMemberArgCount = 0;
             TZrUInt32 callResultSlot = currentSlot;
+            TZrBool usePreferredCallResultSlot = ZR_FALSE;
             if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE) {
                 argCount = 1;
                 argBaseSlot = pendingReceiverSlot + 1;
@@ -2309,6 +2467,13 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                         !useMetaCallOpcode &&
                         activeCallMemberInfo->compiledFunction != ZR_NULL;
                 TZrBool emitMetaCallOpcode = useMetaCallOpcode || useResolvedFunctionMetaCallOpcode;
+                usePreferredCallResultSlot =
+                        preferredDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE &&
+                        pendingReceiverSlot == ZR_PARSER_SLOT_NONE &&
+                        currentSlot == preferredDirectMemberCallResultSlot + 1u;
+                if (usePreferredCallResultSlot) {
+                    callResultSlot = preferredDirectMemberCallResultSlot;
+                }
                 if (pendingDirectMemberCallMemberEntryIndex != ZR_PARSER_MEMBER_ID_NONE &&
                     activeCallMemberInfo != ZR_NULL &&
                     !emitMetaCallOpcode &&
@@ -2390,10 +2555,16 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
                 } else {
                     emit_instruction(cs,
                                      create_instruction_2(callOpcode,
-                                                          (TZrUInt16)currentSlot,
+                                                          (TZrUInt16)callResultSlot,
                                                           (TZrUInt16)currentSlot,
                                                           (TZrUInt16)argCount));
                 }
+            }
+            if (syncStructConstructorReceiverToResult) {
+                emit_instruction(cs,
+                                 create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                                      (TZrUInt16)callResultSlot,
+                                                      (TZrInt32)pendingReceiverSlot));
             }
             if (pendingReceiverSlot != ZR_PARSER_SLOT_NONE &&
                 pendingReceiverWritebackSlot != ZR_PARSER_SLOT_NONE) {
@@ -2404,6 +2575,31 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             }
             if (pendingDirectMemberCallResultSlot != ZR_PARSER_SLOT_NONE) {
                 currentSlot = pendingDirectMemberCallResultSlot;
+            } else if (usePreferredCallResultSlot) {
+                currentSlot = callResultSlot;
+            }
+            if (activeCallMemberInfo != ZR_NULL) {
+                hasContractReturnType =
+                        infer_member_call_contract_return_type(cs, activeCallMemberInfo, call, &contractReturnType);
+            }
+            if (!note_call_result_stack_slot_type(
+                        cs,
+                        currentSlot,
+                        hasResolvedMemberSignature
+                                ? &resolvedMemberSignature.returnType
+                                : (hasResolvedFunctionSignature
+                                           ? &resolvedFunctionSignature.returnType
+                                           : (hasContractReturnType
+                                                      ? &contractReturnType
+                                                      : (resolvedFunctionType != ZR_NULL ? &resolvedFunctionType->returnType
+                                                                                         : ZR_NULL))))) {
+                if (argsToCompile != call->args && argsToCompile != ZR_NULL) {
+                    ZrParser_AstNodeArray_Free(cs->state, argsToCompile);
+                }
+                free_resolved_call_signature(cs->state, &resolvedFunctionSignature);
+                free_resolved_call_signature(cs->state, &resolvedMemberSignature);
+                ZrParser_InferredType_Free(cs->state, &contractReturnType);
+                return;
             }
             collapse_stack_to_slot(cs, currentSlot);
             pendingReceiverSlot = ZR_PARSER_SLOT_NONE;
@@ -2411,11 +2607,8 @@ void compile_primary_member_chain(SZrCompilerState *cs, SZrAstNode *propertyNode
             pendingReceiverSourceSlot = ZR_PARSER_SLOT_NONE;
             pendingDirectMemberCallResultSlot = ZR_PARSER_SLOT_NONE;
             pendingReceiverRequiresBinding = ZR_FALSE;
+            pendingDirectMemberCallIsStructConstructor = ZR_FALSE;
             pendingDirectMemberCallMemberEntryIndex = ZR_PARSER_MEMBER_ID_NONE;
-            if (activeCallMemberInfo != ZR_NULL) {
-                hasContractReturnType =
-                        infer_member_call_contract_return_type(cs, activeCallMemberInfo, call, &contractReturnType);
-            }
             if (hasResolvedMemberSignature) {
                 rootTypeName = get_type_name_from_inferred_type(cs, &resolvedMemberSignature.returnType);
             } else if (hasResolvedFunctionSignature) {

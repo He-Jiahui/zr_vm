@@ -39,6 +39,8 @@ typedef struct SZrCompiledPrototypeInfo {
     TZrUInt32 modifierFlags;                // abstract/final 等类型修饰符
     TZrUInt32 nextVirtualSlotIndex;         // 当前类型累计 virtual slot 数
     TZrUInt32 nextPropertyIdentity;         // 当前类型累计 property identity 数
+    TZrUInt32 layoutByteSize;               // inline struct/class 布局总大小（字节）
+    TZrUInt32 layoutByteAlign;              // inline struct/class 布局最大对齐（字节）
     // 注意：inheritStringIndices数组紧跟在结构体后面（不是指针）
     // 运行时通过 inheritsCount 和固定偏移量访问：offsetof(SZrCompiledPrototypeInfo) + sizeof(SZrCompiledPrototypeInfo)
     // decorator 名称数组紧跟在继承数组后面：

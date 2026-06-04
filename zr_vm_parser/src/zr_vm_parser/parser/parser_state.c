@@ -771,4 +771,89 @@ void report_error(SZrParserState *ps, const TZrChar *msg) {
     }
 }
 
+void report_structured_parser_error(SZrParserState *ps,
+                                    const SZrStructuredDiagnostic *diagnostic,
+                                    EZrToken token) {
+    const TZrChar *message;
+    const TZrChar *cause = ZR_NULL;
+    const TZrChar *suggestion = ZR_NULL;
+    TZrChar formattedMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
+
+    if (ps == ZR_NULL || diagnostic == ZR_NULL || diagnostic->message == ZR_NULL) {
+        return;
+    }
+
+    message = ZrCore_String_GetNativeString(diagnostic->message);
+    if (message == ZR_NULL) {
+        return;
+    }
+    if (diagnostic->cause != ZR_NULL) {
+        cause = ZrCore_String_GetNativeString(diagnostic->cause);
+    }
+    if (diagnostic->suggestion != ZR_NULL) {
+        suggestion = ZrCore_String_GetNativeString(diagnostic->suggestion);
+    }
+
+    if (ps->structuredErrorCallback != ZR_NULL) {
+        ps->structuredErrorCallback(ps->errorUserData, diagnostic, token);
+    }
+
+    if (cause != ZR_NULL || suggestion != ZR_NULL) {
+        if (cause != ZR_NULL && suggestion != ZR_NULL) {
+            snprintf(formattedMessage,
+                     sizeof(formattedMessage),
+                     "%s\nCause: %s\nSuggestion: %s",
+                     message,
+                     cause,
+                     suggestion);
+        } else if (cause != ZR_NULL) {
+            snprintf(formattedMessage, sizeof(formattedMessage), "%s\nCause: %s", message, cause);
+        } else {
+            snprintf(formattedMessage, sizeof(formattedMessage), "%s\nSuggestion: %s", message, suggestion);
+        }
+        report_error_with_token(ps, formattedMessage, token);
+        ps->errorMessage = message;
+    } else {
+        report_error_with_token(ps, message, token);
+    }
+}
+
+void report_missing_expression_after_assignment(SZrParserState *ps) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingExpressionAfterAssignment(
+            ps->state,
+            &diagnostic,
+            get_current_token_location(ps))) {
+        report_error_with_token(ps, "Missing expression after '='", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_right_operand(SZrParserState *ps, const TZrChar *operatorText, SZrFileRange operatorLocation) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingRightOperand(ps->state,
+                                                             &diagnostic,
+                                                             operatorLocation,
+                                                             operatorText)) {
+        report_error_with_token(ps, "Missing expression after operator", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
 // ==================== AST 节点创建辅助函数 ====================

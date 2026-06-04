@@ -119,6 +119,8 @@ void compile_interface_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.allowBoxedConstruction = ZR_FALSE;
     info.nextVirtualSlotIndex = 0;
     info.nextPropertyIdentity = 0;
+    info.layoutByteSize = 0;
+    info.layoutByteAlign = 0;
 
     ZrCore_Array_Init(cs->state, &info.inherits, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_TINY);
     ZrCore_Array_Init(cs->state, &info.implements, sizeof(SZrString *), 1);

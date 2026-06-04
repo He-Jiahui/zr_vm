@@ -92,6 +92,14 @@ void report_error_with_token(SZrParserState *ps, const TZrChar *msg, EZrToken to
 
 void report_error(SZrParserState *ps, const TZrChar *msg);
 
+void report_structured_parser_error(SZrParserState *ps,
+                                    const SZrStructuredDiagnostic *diagnostic,
+                                    EZrToken token);
+
+void report_missing_expression_after_assignment(SZrParserState *ps);
+
+void report_missing_right_operand(SZrParserState *ps, const TZrChar *operatorText, SZrFileRange operatorLocation);
+
 SZrAstNode *create_ast_node(SZrParserState *ps, EZrAstNodeType type, SZrFileRange location);
 
 SZrAstNode *create_identifier_node_with_location(SZrParserState *ps, SZrString *name, SZrFileRange location);

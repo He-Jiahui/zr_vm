@@ -568,11 +568,13 @@ static void test_compiler_basic_type_cast(void) {
     TZrBool hasConversionInstruction = ZR_FALSE;
     
     if (func != ZR_NULL && func->instructionsList != ZR_NULL && func->instructionsLength > 0) {
-        // 查找 TO_INT 指令
+        // 查找 int 转换指令
         for (TZrUInt32 i = 0; i < func->instructionsLength; i++) {
             TZrInstruction *inst = &func->instructionsList[i];
             EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
-            if (opcode == ZR_INSTRUCTION_ENUM(TO_INT)) {
+            if (opcode == ZR_INSTRUCTION_ENUM(TO_INT) ||
+                opcode == ZR_INSTRUCTION_ENUM(TO_INT_FLOAT) ||
+                opcode == ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED)) {
                 hasConversionInstruction = ZR_TRUE;
                 break;
             }
@@ -972,7 +974,13 @@ static void test_type_cast_full_pipeline(void) {
             TZrInstruction *inst = &func->instructionsList[i];
             EZrInstructionCode opcode = (EZrInstructionCode)inst->instruction.operationCode;
             if (opcode == ZR_INSTRUCTION_ENUM(TO_INT) ||
+                opcode == ZR_INSTRUCTION_ENUM(TO_INT_FLOAT) ||
+                opcode == ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED) ||
+                opcode == ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT) ||
+                opcode == ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED) ||
                 opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT) ||
+                opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED) ||
+                opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED) ||
                 opcode == ZR_INSTRUCTION_ENUM(TO_STRING) ||
                 opcode == ZR_INSTRUCTION_ENUM(TO_BOOL)) {
                 hasConversionInstructions = ZR_TRUE;

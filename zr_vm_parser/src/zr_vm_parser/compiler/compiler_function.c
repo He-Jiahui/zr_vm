@@ -63,6 +63,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     SZrFunctionClosureVariable *savedParentClosureVars = ZR_NULL;
     SZrCompilerArraySnapshot savedParentChildFunctions = {0};
     SZrCompilerArraySnapshot savedParentChildFunctionNameMap = {0};
+    TZrSize oldStackSlotTypeHintScopeStart = 0;
     TZrSize savedParentInstructionsSize = oldInstructionLength * sizeof(TZrInstruction);
     TZrSize savedParentLocalVarsSize = oldLocalVarLength * sizeof(SZrFunctionLocalVariable);
     TZrSize savedParentConstantsSize = oldConstantLength * sizeof(SZrTypeValue);
@@ -177,6 +178,8 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
+    oldStackSlotTypeHintScopeStart = compiler_enter_stack_slot_type_hint_scope(cs);
+
     // 创建新的函数对象
     cs->isInConstructor = ZR_FALSE;
     cs->currentFunctionNode = node;
@@ -205,6 +208,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return;
     }
 
@@ -432,6 +436,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = oldConstLocalVarLength;
         cs->constParameters.length = oldConstParameterLength;
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return;
     }
 
@@ -524,6 +529,9 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     newFunc->hasVariableArguments = hasVariableArguments;
     newFunc->lineInSourceStart = (node->location.start.line > 0) ? (TZrUInt32) node->location.start.line : 0;
     newFunc->lineInSourceEnd = (node->location.end.line > 0) ? (TZrUInt32) node->location.end.line : 0;
+    if (!compiler_build_function_frame_layout_metadata(cs, newFunc)) {
+        ZrParser_Compiler_Error(cs, "Failed to build function frame layout metadata", node->location);
+    }
     if (!compiler_copy_function_exception_metadata_slice(cs,
                                                          newFunc,
                                                          oldExecutionLocationLength,
@@ -601,6 +609,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = 0;
         cs->constParameters.length = oldConstParameterLength;
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return;
     }
 
@@ -659,6 +668,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->currentFunctionNode = oldFunctionNode;
         cs->constLocalVars.length = 0;
         cs->constParameters.length = oldConstParameterLength;
+        compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
         return;
     }
 
@@ -706,6 +716,7 @@ void compile_function_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->currentFunctionNode = oldFunctionNode;
     cs->constLocalVars.length = 0;
     cs->constParameters.length = oldConstParameterLength;
+    compiler_restore_stack_slot_type_hint_scope(cs, oldStackSlotTypeHintScopeStart);
 
     // 将新函数添加到子函数列表
     // 注意：这里需要在父编译器的上下文中操作

@@ -4,6 +4,7 @@ static SZrAstNode *try_parse_prefixed_function_declaration(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
     TZrParserErrorCallback savedErrorCallback;
+    TZrParserStructuredErrorCallback savedStructuredErrorCallback;
     TZrPtr savedErrorUserData;
     SZrAstNode *funcDecl;
 
@@ -14,9 +15,11 @@ static SZrAstNode *try_parse_prefixed_function_declaration(SZrParserState *ps) {
     save_parser_cursor(ps, &cursor);
     savedSuppressErrorOutput = ps->suppressErrorOutput;
     savedErrorCallback = ps->errorCallback;
+    savedStructuredErrorCallback = ps->structuredErrorCallback;
     savedErrorUserData = ps->errorUserData;
     ps->suppressErrorOutput = ZR_TRUE;
     ps->errorCallback = ZR_NULL;
+    ps->structuredErrorCallback = ZR_NULL;
     ps->errorUserData = ZR_NULL;
     ps->hasError = ZR_FALSE;
     ps->errorMessage = ZR_NULL;
@@ -24,6 +27,7 @@ static SZrAstNode *try_parse_prefixed_function_declaration(SZrParserState *ps) {
     funcDecl = parse_function_declaration(ps);
     ps->suppressErrorOutput = savedSuppressErrorOutput;
     ps->errorCallback = savedErrorCallback;
+    ps->structuredErrorCallback = savedStructuredErrorCallback;
     ps->errorUserData = savedErrorUserData;
     if (funcDecl != ZR_NULL && !ps->hasError) {
         ps->hasError = cursor.hasError;
@@ -104,6 +108,7 @@ static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *p
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
     TZrParserErrorCallback savedErrorCallback;
+    TZrParserStructuredErrorCallback savedStructuredErrorCallback;
     TZrPtr savedErrorUserData;
     SZrAstNode *funcDecl;
 
@@ -114,9 +119,11 @@ static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *p
     save_parser_cursor(ps, &cursor);
     savedSuppressErrorOutput = ps->suppressErrorOutput;
     savedErrorCallback = ps->errorCallback;
+    savedStructuredErrorCallback = ps->structuredErrorCallback;
     savedErrorUserData = ps->errorUserData;
     ps->suppressErrorOutput = ZR_TRUE;
     ps->errorCallback = ZR_NULL;
+    ps->structuredErrorCallback = ZR_NULL;
     ps->errorUserData = ZR_NULL;
     ps->hasError = ZR_FALSE;
     ps->errorMessage = ZR_NULL;
@@ -124,6 +131,7 @@ static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *p
     funcDecl = parse_function_declaration(ps);
     ps->suppressErrorOutput = savedSuppressErrorOutput;
     ps->errorCallback = savedErrorCallback;
+    ps->structuredErrorCallback = savedStructuredErrorCallback;
     ps->errorUserData = savedErrorUserData;
     if (funcDecl != ZR_NULL && !ps->hasError) {
         ps->hasError = cursor.hasError;
@@ -1391,12 +1399,14 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                     SZrParserCursor cursor;
                     TZrBool savedSuppressErrorOutput = ps->suppressErrorOutput;
                     TZrParserErrorCallback savedErrorCallback = ps->errorCallback;
+                    TZrParserStructuredErrorCallback savedStructuredErrorCallback = ps->structuredErrorCallback;
                     TZrPtr savedErrorUserData = ps->errorUserData;
                     SZrAstNode *funcDecl;
 
                     save_parser_cursor(ps, &cursor);
                     ps->suppressErrorOutput = ZR_TRUE;
                     ps->errorCallback = ZR_NULL;
+                    ps->structuredErrorCallback = ZR_NULL;
                     ps->errorUserData = ZR_NULL;
                     ps->hasError = ZR_FALSE;
                     ps->errorMessage = ZR_NULL;
@@ -1404,6 +1414,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                     funcDecl = parse_function_declaration(ps);
                     ps->suppressErrorOutput = savedSuppressErrorOutput;
                     ps->errorCallback = savedErrorCallback;
+                    ps->structuredErrorCallback = savedStructuredErrorCallback;
                     ps->errorUserData = savedErrorUserData;
                     if (funcDecl != ZR_NULL && !ps->hasError) {
                         ps->hasError = cursor.hasError;

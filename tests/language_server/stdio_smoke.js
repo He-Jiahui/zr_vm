@@ -29,6 +29,20 @@ function diagnosticRelatedUriMatches(expectedUri, actualUri) {
     }
 }
 
+function assertDiagnosticIncludes(diagnostics, code, messageFragment, reason) {
+    assert(diagnostics && Array.isArray(diagnostics.diagnostics),
+        `${reason}: diagnostics must be an array`);
+
+    const matchingDiagnostic = diagnostics.diagnostics.find((diagnostic) =>
+        diagnostic &&
+        diagnostic.code === code &&
+        typeof diagnostic.message === 'string' &&
+        diagnostic.message.includes(messageFragment));
+    assert(matchingDiagnostic,
+        `${reason}: expected diagnostic ${code} containing "${messageFragment}"`);
+    return matchingDiagnostic;
+}
+
 async function waitForDiagnosticsUri(client, uri, message) {
     for (let attempt = 0; attempt < 16; attempt += 1) {
         const diagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
@@ -284,6 +298,7 @@ class LspClient {
         this.notificationBacklog = new Map();
         this.closed = false;
         this.exitCode = null;
+        this.exitSignal = null;
         this.stderrChunks = [];
 
         this.child = spawn(serverPath, [], {
@@ -295,25 +310,33 @@ class LspClient {
         this.child.stderr.on('data', (chunk) => {
             this.stderrChunks.push(chunk.toString('utf8'));
         });
-        this.child.on('exit', (code) => {
+        this.child.on('exit', (code, signal) => {
             this.exitCode = code;
+            this.exitSignal = signal;
         });
-        this.child.on('close', (code) => {
+        this.child.on('close', (code, signal) => {
             this.closed = true;
             if (this.exitCode === null) {
                 this.exitCode = code;
             }
+            if (this.exitSignal === null) {
+                this.exitSignal = signal;
+            }
 
-            for (const { reject, timer } of this.pendingResponses.values()) {
+            for (const { reject, timer, method } of this.pendingResponses.values()) {
                 clearTimeout(timer);
-                reject(new Error(`Server closed before responding. stderr=${this.stderr()}`));
+                reject(new Error(
+                    `Server closed before responding to ${method}. ` +
+                    `exitCode=${this.exitCode} signal=${this.exitSignal} stderr=${this.stderr()}`));
             }
             this.pendingResponses.clear();
 
-            for (const waiters of this.pendingNotifications.values()) {
+            for (const [method, waiters] of this.pendingNotifications.entries()) {
                 for (const { reject, timer } of waiters) {
                     clearTimeout(timer);
-                    reject(new Error(`Server closed before notification. stderr=${this.stderr()}`));
+                    reject(new Error(
+                        `Server closed before notification ${method}. ` +
+                        `exitCode=${this.exitCode} signal=${this.exitSignal} stderr=${this.stderr()}`));
                 }
             }
             this.pendingNotifications.clear();
@@ -430,7 +453,7 @@ class LspClient {
                 reject(new Error(`Timed out waiting for response to ${method}. stderr=${this.stderr()}`));
             }, timeoutMs);
 
-            this.pendingResponses.set(id, { resolve, reject, timer });
+            this.pendingResponses.set(id, { resolve, reject, timer, method });
             this.child.stdin.write(message);
         });
     }
@@ -513,6 +536,8 @@ async function main() {
     const documentUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-smoke.zr';
     const docsUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-docs.zr';
     const genericUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr';
+    const parserDiagnosticUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-parser-diagnostic.zr';
     const formatEditUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-format-edit.zr';
     const noopFormatUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-format-noop.zr';
     const importFoldingUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-import-folding.zr';
@@ -521,11 +546,29 @@ async function main() {
     const colorUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-colors.zr';
     const inlineCompletionUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-completion.zr';
-    const initialText = 'var x = 10; var y = x;';
+    const inlineReturnUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-return.zr';
+    const inlineExpressionUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-expression.zr';
+    const initialText = 'var x = 10; var y = x; var flag = true || false;';
+    const parserDiagnosticText = 'var x = ;\n';
     const colorText = 'var accent = "#336699";';
     const inlineCompletionText = [
         'func main(): int {',
         '    ret',
+        '}',
+        '',
+    ].join('\n');
+    const inlineReturnText = [
+        'func main(): int {',
+        '    return 1 + 2;',
+        '}',
+        '',
+    ].join('\n');
+    const inlineExpressionText = [
+        'func main(): void {',
+        '    1 + 2;',
+        '    true || false;',
         '}',
         '',
     ].join('\n');
@@ -560,6 +603,9 @@ async function main() {
         'class Box<T> {',
         '    func shape<const N: int>(value: Matrix<T, N>): Matrix<T, N> { return value; }',
         '}',
+        'func pick(value: int, flag: bool): int {',
+        '    return value;',
+        '}',
         'func inferNumber() {',
         '    return 42;',
         '}',
@@ -569,6 +615,7 @@ async function main() {
         '    var m = new Matrix<int, 2 + 2>();',
         '    value;',
         '    box.shape(m);',
+        '    pick(1 + 2, true || false);',
         '}',
         '',
     ].join('\n');
@@ -853,6 +900,101 @@ async function main() {
             value.range.start.line === 0 &&
             value.range.start.character === 16),
     'textDocument/inlineValue must expose local variable lookups in the requested range');
+    assert(inlineValues.some((value) =>
+            value &&
+            typeof value.text === 'string' &&
+            value.text.includes('range 20..20') &&
+            value.range &&
+            value.range.start.line === 0 &&
+            value.range.start.character === 4),
+    'textDocument/inlineValue must expose semantic numeric facts for local initializers');
+    assert(inlineValues.some((value) =>
+            value &&
+            value.text === 'logical true, short-circuits' &&
+            value.range &&
+            value.range.start.line === 0 &&
+            value.range.start.character === 27),
+    'textDocument/inlineValue must expose semantic logical facts for local initializers');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: inlineReturnUri,
+            languageId: 'zr',
+            version: 1,
+            text: inlineReturnText,
+        },
+    });
+    const inlineReturnDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(inlineReturnDiagnostics.uri === inlineReturnUri, 'inline return diagnostics uri mismatch');
+    const returnInlineValues = await client.request('textDocument/inlineValue', {
+        textDocument: { uri: inlineReturnUri },
+        range: {
+            start: { line: 1, character: 0 },
+            end: { line: 1, character: 17 },
+        },
+        context: {
+            frameId: 1,
+            stoppedLocation: {
+                start: { line: 1, character: 0 },
+                end: { line: 1, character: 17 },
+            },
+        },
+    });
+    assert(Array.isArray(returnInlineValues) &&
+        returnInlineValues.some((value) =>
+            value &&
+            typeof value.text === 'string' &&
+            value.text.includes('range 3..3') &&
+            value.range &&
+            value.range.start.line === 1 &&
+            value.range.start.character === 11 &&
+            value.range.end.line === 1 &&
+            value.range.end.character === 16),
+    'textDocument/inlineValue must expose semantic numeric facts for return expressions');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: inlineExpressionUri,
+            languageId: 'zr',
+            version: 1,
+            text: inlineExpressionText,
+        },
+    });
+    const inlineExpressionDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(inlineExpressionDiagnostics.uri === inlineExpressionUri,
+        'inline expression diagnostics uri mismatch');
+    const expressionInlineValues = await client.request('textDocument/inlineValue', {
+        textDocument: { uri: inlineExpressionUri },
+        range: {
+            start: { line: 1, character: 0 },
+            end: { line: 2, character: 18 },
+        },
+        context: {
+            frameId: 1,
+            stoppedLocation: {
+                start: { line: 1, character: 0 },
+                end: { line: 2, character: 18 },
+            },
+        },
+    });
+    assert(Array.isArray(expressionInlineValues) &&
+        expressionInlineValues.some((value) =>
+            value &&
+            typeof value.text === 'string' &&
+            value.text.includes('range 3..3') &&
+            value.range &&
+            value.range.start.line === 1 &&
+            value.range.start.character === 4 &&
+            value.range.end.line === 1 &&
+            value.range.end.character === 9),
+    'textDocument/inlineValue must expose semantic numeric facts for expression statements');
+    assert(expressionInlineValues.some((value) =>
+            value &&
+            value.text === 'logical true, short-circuits' &&
+            value.range &&
+            value.range.start.line === 2 &&
+            value.range.start.character === 4 &&
+            value.range.end.line === 2 &&
+            value.range.end.character === 17),
+    'textDocument/inlineValue must expose semantic logical facts for expression statements');
     client.notify('textDocument/didOpen', {
         textDocument: {
             uri: colorUri,
@@ -966,6 +1108,55 @@ async function main() {
         position: { line: 0, character: 0 },
     });
     assert(Array.isArray(completions), 'completion must return an array');
+    const localCompletionPosition = { line: 0, character: initialText.length };
+    const localCompletions = await client.request('textDocument/completion', {
+        textDocument: { uri: documentUri },
+        position: localCompletionPosition,
+    });
+    assert(Array.isArray(localCompletions), 'local completion must return an array');
+    const xCompletion = localCompletions.find((item) => item && item.label === 'x');
+    assert(xCompletion &&
+        typeof xCompletion.detail === 'string' &&
+        xCompletion.detail.includes('Semantic facts: range 20..20') &&
+        xCompletion.data && xCompletion.data.uri === documentUri,
+    'local completion detail should include numeric initializer semantic facts and resolve data');
+    const resolvedXCompletion = await client.request('completionItem/resolve', {
+        label: xCompletion.label,
+        kind: xCompletion.kind,
+        insertText: xCompletion.insertText,
+        insertTextFormat: xCompletion.insertTextFormat,
+        data: xCompletion.data,
+    });
+    assert(resolvedXCompletion &&
+        typeof resolvedXCompletion.detail === 'string' &&
+        resolvedXCompletion.detail.includes('Semantic facts: range 20..20') &&
+        resolvedXCompletion.labelDetails &&
+        typeof resolvedXCompletion.labelDetails.detail === 'string' &&
+        resolvedXCompletion.labelDetails.detail.includes('Semantic facts: range 20..20'),
+    'completionItem/resolve must preserve local numeric semantic facts and labelDetails');
+    const flagCompletion = localCompletions.find((item) => item && item.label === 'flag');
+    assert(flagCompletion &&
+        typeof flagCompletion.detail === 'string' &&
+        flagCompletion.detail.includes('logical true') &&
+        flagCompletion.detail.includes('short-circuits') &&
+        flagCompletion.data && flagCompletion.data.uri === documentUri,
+    'local completion detail should include logical initializer semantic facts and resolve data');
+    const resolvedFlagCompletion = await client.request('completionItem/resolve', {
+        label: flagCompletion.label,
+        kind: flagCompletion.kind,
+        insertText: flagCompletion.insertText,
+        insertTextFormat: flagCompletion.insertTextFormat,
+        data: flagCompletion.data,
+    });
+    assert(resolvedFlagCompletion &&
+        typeof resolvedFlagCompletion.detail === 'string' &&
+        resolvedFlagCompletion.detail.includes('logical true') &&
+        resolvedFlagCompletion.detail.includes('short-circuits') &&
+        resolvedFlagCompletion.labelDetails &&
+        typeof resolvedFlagCompletion.labelDetails.detail === 'string' &&
+        resolvedFlagCompletion.labelDetails.detail.includes('logical true') &&
+        resolvedFlagCompletion.labelDetails.detail.includes('short-circuits'),
+    'completionItem/resolve must preserve local logical semantic facts and labelDetails');
 
     const documentSymbols = await client.request('textDocument/documentSymbol', {
         textDocument: { uri: documentUri },
@@ -1187,6 +1378,26 @@ async function main() {
 
     client.notify('textDocument/didOpen', {
         textDocument: {
+            uri: parserDiagnosticUri,
+            languageId: 'zr',
+            version: 1,
+            text: parserDiagnosticText,
+        },
+    });
+
+    const parserDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(parserDiagnostics.uri === parserDiagnosticUri, 'parser diagnostics uri mismatch');
+    const missingExpressionDiagnostic = assertDiagnosticIncludes(
+        parserDiagnostics,
+        'missing_expression_after_assignment',
+        "Missing expression after '='",
+        'structured parser diagnostic should reach stdio'
+    );
+    assert(missingExpressionDiagnostic.message.includes("Add an expression before ';'"),
+        'structured parser diagnostic should serialize the parser suggestion');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
             uri: genericUri,
             languageId: 'zr',
             version: 1,
@@ -1196,12 +1407,20 @@ async function main() {
 
     const genericDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
     assert(genericDiagnostics.uri === genericUri, 'generic diagnostics uri mismatch');
-    assert(Array.isArray(genericDiagnostics.diagnostics) && genericDiagnostics.diagnostics.length === 0,
-        'generic fixture should open without diagnostics');
+    const genericShortCircuitDiagnostic = assertDiagnosticIncludes(
+        genericDiagnostics,
+        'short_circuit_unreachable',
+        'Right-hand branch is unreachable due to deterministic short-circuit',
+        'generic fixture should publish its intentional short-circuit warning'
+    );
+    assert(genericShortCircuitDiagnostic.severity === 2,
+        'generic short-circuit diagnostic should remain a warning');
 
     const genericTypePosition = findPosition(genericText, 'Derived<Item, 2 + 2>', 0, 0);
     const genericDefinitionPosition = findPosition(genericText, 'class Derived<T, const N: int>', 0, 6);
     const genericCallPosition = findPosition(genericText, 'box.shape(m);', 0, 10);
+    const signatureNumericFactPosition = findPosition(genericText, 'pick(1 + 2, true || false);', 0, 7);
+    const signatureLogicalFactPosition = findPosition(genericText, 'true || false', 0, 5);
 
     const genericCompletions = await client.request('textDocument/completion', {
         textDocument: { uri: genericUri },
@@ -1216,6 +1435,22 @@ async function main() {
         typeof derivedCompletion.labelDetails.detail === 'string' &&
         derivedCompletion.labelDetails.detail.includes('Resolved Type: Derived<Item, 4>'),
     'completion items with detail must expose labelDetails for modern completion UIs');
+    assert(derivedCompletion.data && derivedCompletion.data.uri === genericUri && derivedCompletion.data.position,
+        'generic completion items with semantic detail must include resolve data');
+    const resolvedDerivedCompletion = await client.request('completionItem/resolve', {
+        label: derivedCompletion.label,
+        kind: derivedCompletion.kind,
+        insertText: derivedCompletion.insertText,
+        insertTextFormat: derivedCompletion.insertTextFormat,
+        data: derivedCompletion.data,
+    });
+    assert(resolvedDerivedCompletion &&
+        typeof resolvedDerivedCompletion.detail === 'string' &&
+        resolvedDerivedCompletion.detail.includes('Resolved Type: Derived<Item, 4>') &&
+        resolvedDerivedCompletion.labelDetails &&
+        typeof resolvedDerivedCompletion.labelDetails.detail === 'string' &&
+        resolvedDerivedCompletion.labelDetails.detail.includes('Resolved Type: Derived<Item, 4>'),
+    'completionItem/resolve must preserve semantic detail and labelDetails for generic completions');
 
     const genericDefinition = await client.request('textDocument/definition', {
         textDocument: { uri: genericUri },
@@ -1245,6 +1480,37 @@ async function main() {
         typeof signature.label === 'string' &&
         signature.label.includes('shape<const N: int>(value: Matrix<int, 4>): Matrix<int, 4>')),
         'signatureHelp should show the closed generic method signature with normalized const generics');
+
+    const numericFactSignatureHelp = await client.request('textDocument/signatureHelp', {
+        textDocument: { uri: genericUri },
+        position: signatureNumericFactPosition,
+    });
+    assert(numericFactSignatureHelp &&
+        Array.isArray(numericFactSignatureHelp.signatures) &&
+        numericFactSignatureHelp.signatures.some((signature) =>
+            signature &&
+            Array.isArray(signature.parameters) &&
+            signature.parameters[0] &&
+            signature.parameters[0].documentation &&
+            typeof signature.parameters[0].documentation.value === 'string' &&
+            signature.parameters[0].documentation.value.includes('range 3..3')),
+    'signatureHelp parameter documentation should serialize argument numeric semantic facts');
+
+    const logicalFactSignatureHelp = await client.request('textDocument/signatureHelp', {
+        textDocument: { uri: genericUri },
+        position: signatureLogicalFactPosition,
+    });
+    assert(logicalFactSignatureHelp &&
+        Array.isArray(logicalFactSignatureHelp.signatures) &&
+        logicalFactSignatureHelp.signatures.some((signature) =>
+            signature &&
+            Array.isArray(signature.parameters) &&
+            signature.parameters[1] &&
+            signature.parameters[1].documentation &&
+            typeof signature.parameters[1].documentation.value === 'string' &&
+            signature.parameters[1].documentation.value.includes('logical true') &&
+            signature.parameters[1].documentation.value.includes('short-circuits')),
+    'signatureHelp parameter documentation should serialize argument logical semantic facts');
 
     const genericInlayHints = await client.request('textDocument/inlayHint', {
         textDocument: { uri: genericUri },
@@ -1720,7 +1986,8 @@ async function main() {
         Array.isArray(action.edit.changes[rangeMissingImportFixtureUri]) &&
         action.edit.changes[rangeMissingImportFixtureUri].some((edit) =>
             edit.newText === 'var math = %import("zr.math");\n')) &&
-        !rangeMissingImportActions.some((action) => action?.title === 'Import zr.system as system'),
+        !rangeMissingImportActions.some((action) =>
+            action && action.title === 'Import zr.system as system'),
     'textDocument/codeAction must use the requested range for missing import quickfixes');
 
     const missingProjectImportModulePath = path.join(importDiagnosticsFixture.rootPath, 'src', 'helper.zr');
@@ -2437,6 +2704,11 @@ async function main() {
     });
     client.notify('textDocument/didClose', {
         textDocument: {
+            uri: parserDiagnosticUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
             uri: semanticDeltaUri,
         },
     });
@@ -2460,6 +2732,7 @@ async function main() {
         colorUri,
         inlineCompletionUri,
         importDiagnosticsFixture.mainUri,
+        parserDiagnosticUri,
     ]);
     let clearedCloseCount = 0;
     while (clearedCloseCount < expectedClosedUris.size) {

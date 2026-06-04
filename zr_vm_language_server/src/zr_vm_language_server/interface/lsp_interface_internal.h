@@ -47,6 +47,14 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemMetadata(SZrState *state,
                                                        SZrString *resolvedTypeText,
                                                        const TZrChar *content,
                                                        TZrSize contentLength);
+void ZrLanguageServer_Lsp_EnrichCompletionItemSemanticFacts(SZrState *state,
+                                                            SZrSemanticAnalyzer *analyzer,
+                                                            SZrSymbol *symbol,
+                                                            SZrCompletionItem *item);
+SZrString *ZrLanguageServer_Lsp_BuildSignatureArgumentSemanticFactDocumentation(
+        SZrState *state,
+        SZrSemanticAnalyzer *analyzer,
+        SZrAstNode *argumentNode);
 SZrString *ZrLanguageServer_Lsp_ExtractLeadingCommentMarkdown(SZrState *state,
                                                               SZrSymbol *symbol,
                                                               const TZrChar *content,

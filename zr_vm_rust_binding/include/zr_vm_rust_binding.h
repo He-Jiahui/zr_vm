@@ -183,6 +183,7 @@ typedef struct ZrRustBindingNativeModuleLinkDescriptor {
 
 typedef struct ZrRustBindingRuntime ZrRustBindingRuntime;
 typedef struct ZrRustBindingProjectWorkspace ZrRustBindingProjectWorkspace;
+typedef struct ZrRustBindingProjectSession ZrRustBindingProjectSession;
 typedef struct ZrRustBindingCompileResult ZrRustBindingCompileResult;
 typedef struct ZrRustBindingManifestSnapshot ZrRustBindingManifestSnapshot;
 typedef struct ZrRustBindingNativeCallContext ZrRustBindingNativeCallContext;
@@ -388,6 +389,20 @@ ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_Project_CallModuleExport(
         ZrRustBindingValue *const *arguments,
         TZrSize argumentCount,
         ZrRustBindingValue **outResult);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_Start(
+        ZrRustBindingRuntime *runtime,
+        const ZrRustBindingProjectWorkspace *workspace,
+        const ZrRustBindingRunOptions *options,
+        ZrRustBindingProjectSession **outSession);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleExport(
+        ZrRustBindingProjectSession *session,
+        const TZrChar *moduleName,
+        const TZrChar *exportName,
+        ZrRustBindingValue *const *arguments,
+        TZrSize argumentCount,
+        ZrRustBindingValue **outResult);
+ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_ProjectSession_Free(
+        ZrRustBindingProjectSession *session);
 
 ZR_RUST_BINDING_API ZrRustBindingStatus ZrRustBinding_NativeModuleBuilder_New(
         const TZrChar *moduleName,

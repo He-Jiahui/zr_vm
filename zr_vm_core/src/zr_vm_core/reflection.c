@@ -1577,6 +1577,7 @@ static void reflection_populate_type_layout(SZrState *state,
     TZrUInt32 fieldCount = 0;
     TZrUInt32 size = 0;
     TZrUInt32 alignment = 0;
+    TZrBool hasPrototypeLayout = ZR_FALSE;
 
     if (state == ZR_NULL || typeReflection == ZR_NULL) {
         return;
@@ -1587,15 +1588,21 @@ static void reflection_populate_type_layout(SZrState *state,
         return;
     }
 
+    if (prototype != ZR_NULL) {
+        size = prototype->layoutByteSize;
+        alignment = prototype->layoutByteAlign;
+        hasPrototypeLayout = size > 0 || alignment > 0;
+    }
+
     if (prototype != ZR_NULL && prototype->managedFields != ZR_NULL && prototype->managedFieldCount > 0) {
         fieldCount = prototype->managedFieldCount;
         for (TZrUInt32 index = 0; index < prototype->managedFieldCount; index++) {
             const SZrManagedFieldInfo *fieldInfo = &prototype->managedFields[index];
             TZrUInt32 fieldEnd = fieldInfo->fieldOffset + fieldInfo->fieldSize;
-            if (fieldEnd > size) {
+            if (!hasPrototypeLayout && fieldEnd > size) {
                 size = fieldEnd;
             }
-            if (fieldInfo->fieldSize > alignment) {
+            if (!hasPrototypeLayout && fieldInfo->fieldSize > alignment) {
                 alignment = fieldInfo->fieldSize;
             }
         }
@@ -2599,6 +2606,7 @@ static void reflection_populate_script_members(SZrState *state,
     TZrUInt32 scriptFieldCount = 0;
     TZrUInt32 scriptSize = 0;
     TZrUInt32 scriptAlignment = 0;
+    TZrBool hasScriptLayout = ZR_FALSE;
 
     if (state == ZR_NULL || typeReflection == ZR_NULL || entryFunction == ZR_NULL || prototype == ZR_NULL) {
         return;
@@ -2612,6 +2620,10 @@ static void reflection_populate_script_members(SZrState *state,
     reflection_populate_type_decorator_metadata(state, typeReflection, entryFunction, prototypeInfo);
     reflection_populate_type_oop_metadata(state, typeReflection, prototypeInfo);
     ZrCore_RuntimeDecorator_OverlayTypeReflection(state, typeReflection, prototype);
+
+    scriptSize = prototypeInfo->layoutByteSize;
+    scriptAlignment = prototypeInfo->layoutByteAlign;
+    hasScriptLayout = scriptSize > 0 || scriptAlignment > 0;
 
     membersObject = reflection_get_field_object(state, typeReflection, "members", ZR_VALUE_TYPE_OBJECT);
     layoutObject = reflection_get_field_object(state, typeReflection, "layout", ZR_VALUE_TYPE_OBJECT);
@@ -2677,10 +2689,10 @@ static void reflection_populate_script_members(SZrState *state,
                 TZrUInt32 fieldSize = member->fieldSize > 0 ? member->fieldSize : 1u;
                 TZrUInt32 fieldEnd = member->fieldOffset + fieldSize;
                 scriptFieldCount++;
-                if (fieldEnd > scriptSize) {
+                if (!hasScriptLayout && fieldEnd > scriptSize) {
                     scriptSize = fieldEnd;
                 }
-                if (fieldSize > scriptAlignment) {
+                if (!hasScriptLayout && fieldSize > scriptAlignment) {
                     scriptAlignment = fieldSize;
                 }
             }

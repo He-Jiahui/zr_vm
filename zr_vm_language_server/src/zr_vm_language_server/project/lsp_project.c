@@ -832,6 +832,11 @@ static TZrBool project_resolve_source_path(SZrLspProjectIndex *projectIndex,
                                            const TZrChar *moduleName,
                                            TZrChar *buffer,
                                            TZrSize bufferSize) {
+    if (moduleName != ZR_NULL && moduleName[0] == '$' && projectIndex != ZR_NULL && projectIndex->project != ZR_NULL &&
+        ZrLibrary_Project_ResolveSourcePath(projectIndex->project, moduleName, buffer, bufferSize)) {
+        return ZR_TRUE;
+    }
+
     TZrChar normalizedModule[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar relativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrSize writeIndex = 0;
@@ -860,6 +865,11 @@ static TZrBool project_resolve_binary_path(SZrLspProjectIndex *projectIndex,
                                            const TZrChar *moduleName,
                                            TZrChar *buffer,
                                            TZrSize bufferSize) {
+    if (moduleName != ZR_NULL && moduleName[0] == '$' && projectIndex != ZR_NULL && projectIndex->project != ZR_NULL &&
+        ZrLibrary_Project_ResolveBinaryPath(projectIndex->project, moduleName, buffer, bufferSize)) {
+        return ZrLibrary_File_Exist(buffer) == ZR_LIBRARY_FILE_IS_FILE;
+    }
+
     TZrChar normalizedModule[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar relativePath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar binaryRoot[ZR_LIBRARY_MAX_PATH_LENGTH];

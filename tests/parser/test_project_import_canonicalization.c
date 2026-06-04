@@ -20,6 +20,12 @@ typedef struct SZrProjectImportFixture {
     TZrChar sharedPath[ZR_TESTS_PATH_MAX];
 } SZrProjectImportFixture;
 
+typedef struct SZrProjectDependencyImportFixture {
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar rootMainPath[ZR_TESTS_PATH_MAX];
+    TZrChar mathMainPath[ZR_TESTS_PATH_MAX];
+} SZrProjectDependencyImportFixture;
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -164,6 +170,102 @@ static TZrBool prepare_project_import_fixture(SZrProjectImportFixture *fixture) 
            write_text_file(fixture->sharedPath, sharedContent);
 }
 
+static TZrBool prepare_project_dependency_import_fixture(SZrProjectDependencyImportFixture *fixture) {
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"name\": \"dependency_import_root\",\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"dependencies\": {\n"
+            "    \"$math\": { \"path\": \"deps/math/math.zrp\", \"version\": \"1.0.0\" }\n"
+            "  }\n"
+            "}\n";
+    static const TZrChar *mathProjectContent =
+            "{\n"
+            "  \"name\": \"math\",\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"feature/main\",\n"
+            "  \"version\": \"1.0.0\",\n"
+            "  \"pathAliases\": { \"@core\": \"core\" },\n"
+            "  \"dependencies\": { \"$trig\": \"../trig/trig.zrp\" }\n"
+            "}\n";
+    static const TZrChar *trigProjectContent =
+            "{\n"
+            "  \"name\": \"trig\",\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"version\": \"1.0.0\"\n"
+            "}\n";
+    static const TZrChar *rootMainContent =
+            "var math = %import(\"&math.ops.sum\");\n"
+            "pub func run(): i32 { return 1; }\n";
+    static const TZrChar *mathMainContent =
+            "var core = %import(\"@core.util\");\n"
+            "var helper = %import(\".helper\");\n"
+            "var bare = %import(\"bare.local\");\n"
+            "var trig = %import(\"&trig.wave\");\n"
+            "pub func run(): i32 { return 2; }\n";
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mathProjectPath[ZR_TESTS_PATH_MAX];
+    TZrChar trigProjectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mathSourceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar trigSourceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mathOpsPath[ZR_TESTS_PATH_MAX];
+    TZrChar mathCorePath[ZR_TESTS_PATH_MAX];
+    TZrChar mathHelperPath[ZR_TESTS_PATH_MAX];
+    TZrChar mathBarePath[ZR_TESTS_PATH_MAX];
+    TZrChar trigWavePath[ZR_TESTS_PATH_MAX];
+    TZrChar *lastSeparator;
+
+    if (fixture == ZR_NULL ||
+        !ZrTests_Path_GetGeneratedArtifact("parser",
+                                           "project_import_canonicalization",
+                                           "dependency_imports",
+                                           ".zrp",
+                                           fixture->projectPath,
+                                           sizeof(fixture->projectPath))) {
+        return ZR_FALSE;
+    }
+
+    memset(fixture->rootMainPath, 0, sizeof(fixture->rootMainPath));
+    memset(fixture->mathMainPath, 0, sizeof(fixture->mathMainPath));
+
+    snprintf(rootPath, sizeof(rootPath), "%s", fixture->projectPath);
+    lastSeparator = find_last_path_separator(rootPath);
+    if (lastSeparator == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    *lastSeparator = '\0';
+
+    ZrLibrary_File_PathJoin(rootPath, "src", sourceRoot);
+    ZrLibrary_File_PathJoin(sourceRoot, "main.zr", fixture->rootMainPath);
+    ZrLibrary_File_PathJoin(rootPath, "deps/math/math.zrp", mathProjectPath);
+    ZrLibrary_File_PathJoin(rootPath, "deps/trig/trig.zrp", trigProjectPath);
+    ZrLibrary_File_PathJoin(rootPath, "deps/math/src", mathSourceRoot);
+    ZrLibrary_File_PathJoin(rootPath, "deps/trig/src", trigSourceRoot);
+    ZrLibrary_File_PathJoin(mathSourceRoot, "feature/main.zr", fixture->mathMainPath);
+    ZrLibrary_File_PathJoin(mathSourceRoot, "ops/sum.zr", mathOpsPath);
+    ZrLibrary_File_PathJoin(mathSourceRoot, "core/util.zr", mathCorePath);
+    ZrLibrary_File_PathJoin(mathSourceRoot, "feature/helper.zr", mathHelperPath);
+    ZrLibrary_File_PathJoin(mathSourceRoot, "bare/local.zr", mathBarePath);
+    ZrLibrary_File_PathJoin(trigSourceRoot, "wave.zr", trigWavePath);
+
+    return write_text_file(fixture->projectPath, projectContent) &&
+           write_text_file(fixture->rootMainPath, rootMainContent) &&
+           write_text_file(mathProjectPath, mathProjectContent) &&
+           write_text_file(trigProjectPath, trigProjectContent) &&
+           write_text_file(fixture->mathMainPath, mathMainContent) &&
+           write_text_file(mathOpsPath, "pub var value = 1;\n") &&
+           write_text_file(mathCorePath, "pub var value = 2;\n") &&
+           write_text_file(mathHelperPath, "pub var value = 3;\n") &&
+           write_text_file(mathBarePath, "pub var value = 4;\n") &&
+           write_text_file(trigWavePath, "pub var value = 5;\n");
+}
+
 static TZrSize count_static_imports_named(const SZrFunction *function, const TZrChar *moduleName) {
     TZrSize count = 0;
 
@@ -274,6 +376,60 @@ static void test_project_compile_canonicalizes_relative_and_alias_imports(void) 
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+static void test_project_compile_canonicalizes_dependency_imports(void) {
+    SZrProjectDependencyImportFixture fixture;
+    SZrGlobalState *global;
+    SZrState *state;
+    SZrFunction *rootFunction;
+    SZrFunction *mathFunction;
+    SZrString *rootSourceName;
+    SZrString *mathSourceName;
+    TZrSize rootLength = 0;
+    TZrSize mathLength = 0;
+    TZrChar *rootContent;
+    TZrChar *mathContent;
+
+    TEST_ASSERT_TRUE(prepare_project_dependency_import_fixture(&fixture));
+
+    global = ZrLibrary_CommonState_CommonGlobalState_New(fixture.projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    state = global->mainThreadState;
+    TEST_ASSERT_NOT_NULL(state);
+    ZrParser_ToGlobalState_Register(state);
+
+    rootContent = ZrTests_ReadTextFile(fixture.rootMainPath, &rootLength);
+    TEST_ASSERT_NOT_NULL(rootContent);
+    rootSourceName = ZrCore_String_CreateFromNative(state, fixture.rootMainPath);
+    TEST_ASSERT_NOT_NULL(rootSourceName);
+    rootFunction = ZrParser_Source_Compile(state, rootContent, rootLength, rootSourceName);
+    free(rootContent);
+    TEST_ASSERT_NOT_NULL(rootFunction);
+    TEST_ASSERT_EQUAL_UINT32(1u, rootFunction->staticImportLength);
+    TEST_ASSERT_EQUAL_UINT32(1u,
+                             (TZrUInt32)count_static_imports_named(rootFunction, "$math@1.0.0/ops/sum"));
+
+    mathContent = ZrTests_ReadTextFile(fixture.mathMainPath, &mathLength);
+    TEST_ASSERT_NOT_NULL(mathContent);
+    mathSourceName = ZrCore_String_CreateFromNative(state, fixture.mathMainPath);
+    TEST_ASSERT_NOT_NULL(mathSourceName);
+    mathFunction = ZrParser_Source_Compile(state, mathContent, mathLength, mathSourceName);
+    free(mathContent);
+    TEST_ASSERT_NOT_NULL(mathFunction);
+    TEST_ASSERT_EQUAL_UINT32(4u, mathFunction->staticImportLength);
+    TEST_ASSERT_EQUAL_UINT32(1u,
+                             (TZrUInt32)count_static_imports_named(mathFunction, "$math@1.0.0/core/util"));
+    TEST_ASSERT_EQUAL_UINT32(1u,
+                             (TZrUInt32)count_static_imports_named(mathFunction, "$math@1.0.0/feature/helper"));
+    TEST_ASSERT_EQUAL_UINT32(1u,
+                             (TZrUInt32)count_static_imports_named(mathFunction, "$math@1.0.0/bare/local"));
+    TEST_ASSERT_EQUAL_UINT32(1u,
+                             (TZrUInt32)count_static_imports_named(mathFunction, "$trig@1.0.0/wave"));
+
+    ZrCore_Function_Free(state, mathFunction);
+    ZrCore_Function_Free(state, rootFunction);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+}
+
 static void test_project_derive_current_module_key_accepts_mixed_windows_separators(void) {
     SZrProjectImportFixture fixture;
     SZrGlobalState *global;
@@ -339,6 +495,7 @@ int main(void) {
     UNITY_BEGIN();
 
     RUN_TEST(test_project_compile_canonicalizes_relative_and_alias_imports);
+    RUN_TEST(test_project_compile_canonicalizes_dependency_imports);
     RUN_TEST(test_project_derive_current_module_key_accepts_mixed_windows_separators);
     RUN_TEST(test_project_compile_rejects_explicit_module_key_path_mismatch);
 

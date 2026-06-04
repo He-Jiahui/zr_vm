@@ -23,6 +23,10 @@ void ZrCore_CallInfo_EntryNativeInit(SZrState *state, SZrCallInfo *callInfo, TZr
     callInfo->returnDestination = ZR_NULL;
     callInfo->returnDestinationReusableOffset = 0;
     callInfo->hasReturnDestination = ZR_FALSE;
+    callInfo->argumentSourceFrameBase.valuePointer = ZR_NULL;
+    callInfo->argumentSourceFrameBaseReusableOffset = 0;
+    callInfo->argumentSourceStartSlot = 0;
+    callInfo->hasArgumentSourceFrame = ZR_FALSE;
     // ready to call native function
     ZrCore_Value_ResetAsNull(&functionIndex.valuePointer->value);
     callInfo->functionTop.valuePointer = functionTop.valuePointer;

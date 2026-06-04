@@ -32,6 +32,27 @@ static ZR_FORCE_INLINE void function_init_vm_call_info_exact_args_steady_state_i
     callInfo->returnDestination = returnDestination;
     callInfo->returnDestinationReusableOffset = 0;
     callInfo->hasReturnDestination = returnDestination != ZR_NULL;
+    callInfo->argumentSourceFrameBase.valuePointer = ZR_NULL;
+    callInfo->argumentSourceFrameBaseReusableOffset = 0;
+    callInfo->argumentSourceStartSlot = 0;
+    callInfo->hasArgumentSourceFrame = ZR_FALSE;
+}
+
+static ZR_FORCE_INLINE TZrBool function_precall_has_inline_frame_parameters(const struct SZrFunction *function) {
+    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
+
+        if (layout->isParameter &&
+            layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
 }
 
 static ZR_FORCE_INLINE SZrCallInfo *function_try_pre_call_prepared_resolved_vm_exact_args_steady_state_inline(
@@ -44,6 +65,7 @@ static ZR_FORCE_INLINE SZrCallInfo *function_try_pre_call_prepared_resolved_vm_e
     SZrCallInfo *callInfo;
     SZrCallInfo *previousCallInfo;
     TZrSize stackSize;
+    TZrSize frameStorageSlotCount;
     TZrUInt32 exactArgsClearStackSizePlusOne;
 
     ZR_ASSERT(state != ZR_NULL);
@@ -53,11 +75,17 @@ static ZR_FORCE_INLINE SZrCallInfo *function_try_pre_call_prepared_resolved_vm_e
     exactArgsClearStackSizePlusOne = (TZrUInt32)argumentsCount + 1u;
     if (ZR_UNLIKELY(state->debugHookSignal != 0u ||
                     function->parameterCount != argumentsCount ||
-                    function->vmEntryClearStackSizePlusOne != exactArgsClearStackSizePlusOne)) {
+                    function->vmEntryClearStackSizePlusOne != exactArgsClearStackSizePlusOne ||
+                    function_precall_has_inline_frame_parameters(function))) {
         return ZR_NULL;
     }
 
     stackSize = function->stackSize;
+    frameStorageSlotCount = ZrCore_Function_GetFrameStorageSlotCount(function);
+    if (ZR_UNLIKELY(frameStorageSlotCount != stackSize)) {
+        return ZR_NULL;
+    }
+
     ZR_ASSERT(state->stackTop.valuePointer == stackPointer + 1 + argumentsCount);
     if (ZR_UNLIKELY(state->stackTail.valuePointer - stackPointer < (TZrMemoryOffset)(stackSize + 1u))) {
         return ZR_NULL;

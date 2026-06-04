@@ -92,6 +92,11 @@ static TZrBool normalize_module_key(const TZrChar *modulePath, TZrChar *buffer, 
     return ZrLibrary_Project_NormalizeModuleKey(modulePath, buffer, bufferSize);
 }
 
+static TZrBool import_module_key_is_already_canonical(const TZrChar *modulePath) {
+    return modulePath != ZR_NULL && modulePath[0] != '\0' &&
+           modulePath[0] != '.' && modulePath[0] != '@' && modulePath[0] != '&';
+}
+
 void ZrLanguageServer_LspProject_FreeImportBindings(SZrState *state, SZrArray *bindings) {
     for (TZrSize index = 0; bindings != ZR_NULL && index < bindings->length; index++) {
         SZrLspImportBinding **bindingPtr =
@@ -205,7 +210,11 @@ static TZrBool append_import_binding_from_literal(SZrState *state,
 
     memcpy(rawModule, moduleText, moduleLength);
     rawModule[moduleLength] = '\0';
-    if (!normalize_module_key(rawModule, normalizedModule, sizeof(normalizedModule))) {
+    if (import_module_key_is_already_canonical(rawModule)) {
+        if (!normalize_module_key(rawModule, normalizedModule, sizeof(normalizedModule))) {
+            return ZR_FALSE;
+        }
+    } else if (!normalize_module_key(rawModule, normalizedModule, sizeof(normalizedModule))) {
         return ZR_FALSE;
     }
 

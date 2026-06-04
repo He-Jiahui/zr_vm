@@ -57,6 +57,10 @@ struct ZrRustBindingProjectWorkspace {
     SZrCliProjectContext context;
 };
 
+struct ZrRustBindingProjectSession {
+    ZrRustBindingExecutionOwner *owner;
+};
+
 struct ZrRustBindingCompileResult {
     TZrSize compiledCount;
     TZrSize skippedCount;

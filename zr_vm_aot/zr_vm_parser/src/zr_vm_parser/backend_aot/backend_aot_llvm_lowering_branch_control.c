@@ -143,6 +143,7 @@ TZrBool backend_aot_llvm_lower_branch_control_family(const SZrAotLlvmLoweringCon
         case ZR_INSTRUCTION_ENUM(JUMP):
             return backend_aot_llvm_lower_jump_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
             return backend_aot_llvm_lower_jump_if_instruction(context, instruction);
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
             return backend_aot_llvm_lower_jump_if_greater_signed_instruction(context, instruction);

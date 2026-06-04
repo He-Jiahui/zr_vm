@@ -942,6 +942,52 @@ static void io_read_function_debug_infos(SZrIo *io, SZrIoFunctionDebugInfo *debu
     }
 }
 
+static void io_read_function_frame_layout(SZrIo *io, SZrIoFunction *function) {
+    SZrGlobalState *global = io->state->global;
+
+    if (function == ZR_NULL) {
+        return;
+    }
+
+    ZR_IO_READ_NATIVE_TYPE(io, function->frameByteSize, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, function->frameByteAlign, TZrUInt32);
+    ZR_IO_READ_NATIVE_TYPE(io, function->frameSlotLayoutsLength, TZrSize);
+    if (function->frameSlotLayoutsLength == 0) {
+        function->frameSlotLayouts = ZR_NULL;
+        return;
+    }
+
+    function->frameSlotLayouts =
+            ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrIoFunctionFrameSlotLayout) * function->frameSlotLayoutsLength);
+    if (function->frameSlotLayouts == ZR_NULL) {
+        SZrIoFunctionFrameSlotLayout ignoredLayout;
+        for (TZrSize index = 0; index < function->frameSlotLayoutsLength; index++) {
+            ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.stackSlot, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.byteOffset, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.byteSize, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.byteAlign, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.typeLayoutId, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.slotKind, TZrUInt8);
+            ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.isParameter, TZrUInt8);
+            ZR_IO_READ_NATIVE_TYPE(io, ignoredLayout.reserved0, TZrUInt16);
+        }
+        function->frameSlotLayoutsLength = 0;
+        return;
+    }
+
+    for (TZrSize index = 0; index < function->frameSlotLayoutsLength; index++) {
+        SZrIoFunctionFrameSlotLayout *layout = &function->frameSlotLayouts[index];
+        ZR_IO_READ_NATIVE_TYPE(io, layout->stackSlot, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, layout->byteOffset, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, layout->byteSize, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, layout->byteAlign, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, layout->typeLayoutId, TZrUInt32);
+        ZR_IO_READ_NATIVE_TYPE(io, layout->slotKind, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, layout->isParameter, TZrUInt8);
+        ZR_IO_READ_NATIVE_TYPE(io, layout->reserved0, TZrUInt16);
+    }
+}
+
 
 static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count) {
     SZrGlobalState *global = io->state->global;
@@ -953,6 +999,13 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         ZR_IO_READ_NATIVE_TYPE(io, function->parametersLength, TZrSize);
         ZR_IO_READ_NATIVE_TYPE(io, function->hasVarArgs, TZrUInt64);
         ZR_IO_READ_NATIVE_TYPE(io, function->stackSize, TZrUInt32);
+        function->frameByteSize = 0;
+        function->frameByteAlign = 0;
+        function->frameSlotLayoutsLength = 0;
+        function->frameSlotLayouts = ZR_NULL;
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_FUNCTION_FRAME_LAYOUT) {
+            io_read_function_frame_layout(io, function);
+        }
         ZR_IO_READ_NATIVE_TYPE(io, function->instructionsLength, TZrSize);
         // read instructions ...
         if (function->instructionsLength > 0) {

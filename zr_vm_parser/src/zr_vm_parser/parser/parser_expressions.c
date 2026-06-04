@@ -27,6 +27,65 @@ static SZrAstNode *parse_type_literal_expression(SZrParserState *ps) {
     return node;
 }
 
+static SZrFileRange parser_expression_node_range(SZrAstNode *left, SZrAstNode *right) {
+    if (left == ZR_NULL) {
+        return right != ZR_NULL ? right->location : (SZrFileRange){{0, 1, 1}, {0, 1, 1}, ZR_NULL};
+    }
+    if (right == ZR_NULL) {
+        return left->location;
+    }
+    return ZrParser_FileRange_Merge(left->location, right->location);
+}
+
+static TZrBool parser_token_can_start_expression(EZrToken token) {
+    switch (token) {
+        case ZR_TK_IDENTIFIER:
+        case ZR_TK_TEST:
+        case ZR_TK_BOOLEAN:
+        case ZR_TK_INTEGER:
+        case ZR_TK_FLOAT:
+        case ZR_TK_STRING:
+        case ZR_TK_TEMPLATE_STRING:
+        case ZR_TK_CHAR:
+        case ZR_TK_NULL:
+        case ZR_TK_INFINITY:
+        case ZR_TK_NEG_INFINITY:
+        case ZR_TK_NAN:
+        case ZR_TK_LPAREN:
+        case ZR_TK_LBRACKET:
+        case ZR_TK_LBRACE:
+        case ZR_TK_BANG:
+        case ZR_TK_TILDE:
+        case ZR_TK_PLUS:
+        case ZR_TK_MINUS:
+        case ZR_TK_DOLLAR:
+        case ZR_TK_NEW:
+        case ZR_TK_USING:
+        case ZR_TK_PERCENT:
+        case ZR_TK_SUPER:
+        case ZR_TK_LESS_THAN:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static SZrAstNode *parse_required_right_operand(SZrParserState *ps,
+                                                const TZrChar *operatorText,
+                                                SZrFileRange operatorLocation,
+                                                SZrAstNode *(*parseOperand)(SZrParserState *)) {
+    if (ps == ZR_NULL || ps->lexer == ZR_NULL || parseOperand == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (!parser_token_can_start_expression(ps->lexer->t.token)) {
+        report_missing_right_operand(ps, operatorText, operatorLocation);
+        return ZR_NULL;
+    }
+
+    return parseOperand(ps);
+}
+
 SZrAstNode *parse_unary_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
@@ -35,6 +94,7 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
         SZrParserCursor cursor;
         TZrBool savedSuppressErrorOutput;
         TZrParserErrorCallback savedErrorCallback;
+        TZrParserStructuredErrorCallback savedStructuredErrorCallback;
         TZrPtr savedErrorUserData;
 
         // 可能是类型转换，需要向前看以区分泛型类型和类型转换
@@ -45,9 +105,11 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
         save_parser_cursor(ps, &cursor);
         savedSuppressErrorOutput = ps->suppressErrorOutput;
         savedErrorCallback = ps->errorCallback;
+        savedStructuredErrorCallback = ps->structuredErrorCallback;
         savedErrorUserData = ps->errorUserData;
         ps->suppressErrorOutput = ZR_TRUE;
         ps->errorCallback = ZR_NULL;
+        ps->structuredErrorCallback = ZR_NULL;
         ps->errorUserData = ZR_NULL;
         ps->hasError = ZR_FALSE;
         ps->errorMessage = ZR_NULL;
@@ -78,6 +140,7 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
                     if (node != ZR_NULL) {
                         ps->suppressErrorOutput = savedSuppressErrorOutput;
                         ps->errorCallback = savedErrorCallback;
+                        ps->structuredErrorCallback = savedStructuredErrorCallback;
                         ps->errorUserData = savedErrorUserData;
                         ps->hasError = cursor.hasError;
                         ps->errorMessage = cursor.errorMessage;
@@ -93,12 +156,14 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
                 }
                 ps->suppressErrorOutput = savedSuppressErrorOutput;
                 ps->errorCallback = savedErrorCallback;
+                ps->structuredErrorCallback = savedStructuredErrorCallback;
                 ps->errorUserData = savedErrorUserData;
             } else {
                 // 不是类型转换，恢复状态
                 restore_parser_cursor(ps, &cursor);
                 ps->suppressErrorOutput = savedSuppressErrorOutput;
                 ps->errorCallback = savedErrorCallback;
+                ps->structuredErrorCallback = savedStructuredErrorCallback;
                 ps->errorUserData = savedErrorUserData;
                 if (targetType != ZR_NULL) {
                     free_owned_type(ps->state, targetType);
@@ -109,6 +174,7 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
             restore_parser_cursor(ps, &cursor);
             ps->suppressErrorOutput = savedSuppressErrorOutput;
             ps->errorCallback = savedErrorCallback;
+            ps->structuredErrorCallback = savedStructuredErrorCallback;
             ps->errorUserData = savedErrorUserData;
             if (targetType != ZR_NULL) {
                 free_owned_type(ps->state, targetType);
@@ -157,14 +223,17 @@ SZrAstNode *parse_unary_expression(SZrParserState *ps) {
 
     // 检查一元操作符
     if (token == ZR_TK_BANG || token == ZR_TK_TILDE || token == ZR_TK_PLUS || token == ZR_TK_MINUS) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange startLoc = get_current_token_location(ps);
         SZrUnaryOperator op;
         op.op = ZrParser_Lexer_TokenToString(ps->lexer, token);
 
         ZrParser_Lexer_Next(ps->lexer);
         SZrAstNode *argument = parse_unary_expression(ps); // 右结合
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_UNARY_EXPRESSION, startLoc);
+        SZrFileRange unaryLoc = argument != ZR_NULL
+                                     ? ZrParser_FileRange_Merge(startLoc, argument->location)
+                                     : startLoc;
+        SZrAstNode *node = create_ast_node(ps, ZR_AST_UNARY_EXPRESSION, unaryLoc);
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -187,14 +256,18 @@ SZrAstNode *parse_multiplicative_expression(SZrParserState *ps) {
 
     while (ps->lexer->t.token == ZR_TK_STAR || ps->lexer->t.token == ZR_TK_SLASH ||
            ps->lexer->t.token == ZR_TK_PERCENT) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
         SZrBinaryOperator op;
         op.op = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_unary_expression(ps);
+        SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_unary_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -217,14 +290,18 @@ SZrAstNode *parse_additive_expression(SZrParserState *ps) {
     }
 
     while (ps->lexer->t.token == ZR_TK_PLUS || ps->lexer->t.token == ZR_TK_MINUS) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
         SZrBinaryOperator op;
         op.op = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_multiplicative_expression(ps);
+        SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_multiplicative_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -247,14 +324,18 @@ SZrAstNode *parse_shift_expression(SZrParserState *ps) {
     }
 
     while (ps->lexer->t.token == ZR_TK_LEFT_SHIFT || ps->lexer->t.token == ZR_TK_RIGHT_SHIFT) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
         SZrBinaryOperator op;
         op.op = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_additive_expression(ps);
+        SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_additive_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -278,14 +359,18 @@ SZrAstNode *parse_relational_expression(SZrParserState *ps) {
 
     while (ps->lexer->t.token == ZR_TK_LESS_THAN || ps->lexer->t.token == ZR_TK_GREATER_THAN ||
            ps->lexer->t.token == ZR_TK_LESS_THAN_EQUALS || ps->lexer->t.token == ZR_TK_GREATER_THAN_EQUALS) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
         SZrBinaryOperator op;
         op.op = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_shift_expression(ps);
+        SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_shift_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -308,14 +393,18 @@ SZrAstNode *parse_equality_expression(SZrParserState *ps) {
     }
 
     while (ps->lexer->t.token == ZR_TK_DOUBLE_EQUALS || ps->lexer->t.token == ZR_TK_BANG_EQUALS) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
         SZrBinaryOperator op;
         op.op = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_relational_expression(ps);
+        SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_relational_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -338,14 +427,18 @@ SZrAstNode *parse_binary_and_expression(SZrParserState *ps) {
     }
 
     while (ps->lexer->t.token == ZR_TK_AND) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
         SZrBinaryOperator op;
         op.op = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_equality_expression(ps);
+        SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_equality_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -368,14 +461,18 @@ SZrAstNode *parse_binary_xor_expression(SZrParserState *ps) {
     }
 
     while (ps->lexer->t.token == ZR_TK_XOR) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
         SZrBinaryOperator op;
         op.op = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_binary_and_expression(ps);
+        SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_binary_and_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -398,14 +495,18 @@ SZrAstNode *parse_binary_or_expression(SZrParserState *ps) {
     }
 
     while (ps->lexer->t.token == ZR_TK_OR) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
         SZrBinaryOperator op;
         op.op = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_binary_xor_expression(ps);
+        SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_binary_xor_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_BINARY_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -428,12 +529,16 @@ SZrAstNode *parse_logical_and_expression(SZrParserState *ps) {
     }
 
     while (ps->lexer->t.token == ZR_TK_AMPERSAND_AMPERSAND) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_binary_or_expression(ps);
+        SZrAstNode *right = parse_required_right_operand(ps, "&&", operatorLoc, parse_binary_or_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_LOGICAL_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_LOGICAL_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -456,12 +561,16 @@ SZrAstNode *parse_logical_or_expression(SZrParserState *ps) {
     }
 
     while (ps->lexer->t.token == ZR_TK_PIPE_PIPE) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_logical_and_expression(ps);
+        SZrAstNode *right = parse_required_right_operand(ps, "||", operatorLoc, parse_logical_and_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_LOGICAL_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_LOGICAL_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -484,13 +593,14 @@ SZrAstNode *parse_conditional_expression(SZrParserState *ps) {
     }
 
     if (consume_token(ps, ZR_TK_QUESTIONMARK)) {
-        SZrFileRange startLoc = get_current_location(ps);
         SZrAstNode *consequent = parse_expression(ps);
         expect_token(ps, ZR_TK_COLON);
         consume_token(ps, ZR_TK_COLON);
         SZrAstNode *alternate = parse_conditional_expression(ps); // 右结合
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_CONDITIONAL_EXPRESSION, startLoc);
+        SZrAstNode *node = create_ast_node(ps,
+                                           ZR_AST_CONDITIONAL_EXPRESSION,
+                                           parser_expression_node_range(test, alternate));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }
@@ -516,14 +626,18 @@ SZrAstNode *parse_assignment_expression(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
     if (token == ZR_TK_EQUALS || token == ZR_TK_PLUS_EQUALS || token == ZR_TK_MINUS_EQUALS ||
         token == ZR_TK_STAR_EQUALS || token == ZR_TK_SLASH_EQUALS || token == ZR_TK_PERCENT_EQUALS) {
-        SZrFileRange startLoc = get_current_location(ps);
+        SZrFileRange operatorLoc = get_current_token_location(ps);
         SZrAssignmentOperator op;
         op.op = ZrParser_Lexer_TokenToString(ps->lexer, token);
 
         ZrParser_Lexer_Next(ps->lexer);
-        SZrAstNode *right = parse_assignment_expression(ps); // 右结合
+        SZrAstNode *right = parse_required_right_operand(ps, op.op, operatorLoc, parse_assignment_expression);
+        if (right == ZR_NULL) {
+            return ZR_NULL;
+        }
 
-        SZrAstNode *node = create_ast_node(ps, ZR_AST_ASSIGNMENT_EXPRESSION, startLoc);
+        SZrAstNode *node =
+            create_ast_node(ps, ZR_AST_ASSIGNMENT_EXPRESSION, parser_expression_node_range(left, right));
         if (node == ZR_NULL) {
             return ZR_NULL;
         }

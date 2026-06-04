@@ -6,6 +6,7 @@
 #include "zr_vm_parser/compiler.h"
 #include "compiler_internal.h"
 #include "type_inference_internal.h"
+#include "type_inference_semantic_facts.h"
 #include "zr_vm_parser/ast.h"
 
 #include "zr_vm_core/array.h"
@@ -2540,6 +2541,8 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
         closedPrototype.constructorSignature = openPrototypeSnapshot.constructorSignature;
         closedPrototype.nextVirtualSlotIndex = openPrototypeSnapshot.nextVirtualSlotIndex;
         closedPrototype.nextPropertyIdentity = openPrototypeSnapshot.nextPropertyIdentity;
+        closedPrototype.layoutByteSize = openPrototypeSnapshot.layoutByteSize;
+        closedPrototype.layoutByteAlign = openPrototypeSnapshot.layoutByteAlign;
         ZrCore_Array_Init(cs->state, &closedPrototype.inherits, sizeof(SZrString *), openPrototypeSnapshot.inherits.length);
         ZrCore_Array_Init(cs->state, &closedPrototype.implements, sizeof(SZrString *), openPrototypeSnapshot.implements.length);
         ZrCore_Array_Init(cs->state, &closedPrototype.genericParameters, sizeof(SZrTypeGenericParameterInfo), 1);
@@ -4116,6 +4119,7 @@ TZrBool infer_construct_expression_type(SZrCompilerState *cs,
                 result->ownershipQualifier = construct->ownershipQualifier;
                 break;
         }
+        type_inference_record_ownership_builtin_fact(cs, node, builtinKind, result->ownershipQualifier);
         return ZR_TRUE;
     }
 

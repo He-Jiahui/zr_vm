@@ -228,6 +228,48 @@ static void test_derived_exception_prefers_first_matching_catch_clause(void) {
     TEST_DIVIDER();
 }
 
+static void test_qualified_exception_catch_uses_member_type_name(void) {
+    SZrTestTimer timer = {0};
+    const TZrChar *source =
+            "var exception = %import(\"zr.system.exception\");\n"
+            "try {\n"
+            "    throw \"boom\";\n"
+            "} catch (e: exception.RuntimeError) {\n"
+            "    return 1;\n"
+            "} catch (e: Error) {\n"
+            "    return 2;\n"
+            "}\n"
+            "return 0;\n";
+    SZrFunction *function = ZR_NULL;
+    SZrState *state;
+    TZrNativeString typeName;
+
+    TEST_START("Qualified Exception Catch Uses Member Type Name");
+    timer.startTime = clock();
+
+    state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    TEST_INFO("qualified typed catch",
+              "Testing that catch (e: exception.RuntimeError) matches the RuntimeError prototype, not the module.");
+
+    TEST_ASSERT_TRUE(compile_source_to_function(state, source, "exception_qualified_catch_test.zr", &function));
+    TEST_ASSERT_NOT_NULL(function);
+    TEST_ASSERT_EQUAL_UINT32(2, function->catchClauseCount);
+    TEST_ASSERT_NOT_NULL(function->catchClauseList);
+    TEST_ASSERT_NOT_NULL(function->catchClauseList[0].typeName);
+    typeName = ZrCore_String_GetNativeString(function->catchClauseList[0].typeName);
+    TEST_ASSERT_NOT_NULL(typeName);
+    TEST_ASSERT_EQUAL_STRING("RuntimeError", typeName);
+
+    ZrCore_Function_Free(state, function);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, "Qualified Exception Catch Uses Member Type Name");
+    TEST_DIVIDER();
+}
+
 static void test_finally_runs_for_normal_return_and_throw_paths(void) {
     SZrTestTimer timer = {0};
     const TZrChar *normalSource =
@@ -491,6 +533,7 @@ int main(void) {
 
     RUN_TEST(test_throw_string_is_boxed_and_caught_by_base_error);
     RUN_TEST(test_derived_exception_prefers_first_matching_catch_clause);
+    RUN_TEST(test_qualified_exception_catch_uses_member_type_name);
     RUN_TEST(test_finally_runs_for_normal_return_and_throw_paths);
     RUN_TEST(test_named_function_finally_closure_and_sibling_function_metadata);
     RUN_TEST(test_return_from_catch_discards_frame_exception_handlers);

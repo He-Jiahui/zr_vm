@@ -13,6 +13,8 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
   - zr_vm_cli/src/zr_vm_cli/repl/repl.h
   - zr_vm_cli/src/zr_vm_cli/repl/repl.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_facts.h
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_facts.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/include/zr_vm_core/module.h
   - zr_vm_core/src/zr_vm_core/io_runtime.c
@@ -29,6 +31,8 @@ implementation_files:
   - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
   - zr_vm_cli/src/zr_vm_cli/runtime/runtime.h
   - zr_vm_cli/src/zr_vm_cli/repl/repl.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_facts.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_facts.h
   - tests/cli/test_cli_args.c
   - tests/cmake/run_cli_suite.cmake
   - tests/fixtures/projects/cli_args/cli_args.zrp
@@ -148,15 +152,21 @@ doc_type: module-detail
 - `:help`
 - `:quit`
 - `:reset`
+- `:type <expression>`
 - 多行缓冲，空行提交
-- 每次提交都创建新的瞬时 global/state
+- 每次提交仍创建新的瞬时 global/state，但会把本次 REPL 会话中已成功提交的声明源码作为上下文前缀重新编译
+- 裸表达式提交会在 REPL 内包装成瞬时 `return <expr>;` 执行，例如 `1 + 2` 会输出 `3`
 
-它不承诺跨提交保留变量、副作用或模块状态。像下面这种序列会故意失败：
+它现在承诺跨提交保留成功声明出的源码级绑定，例如：
 
-- 第一次提交：`var s = %import("zr.system");`
-- 第二次提交：`s.console.print("xxx");`
+- 第一次提交：`var seed = 2;`
+- 第二次提交：`seed + 3`
 
-第二次提交不会继承第一次的局部变量，因此会得到运行时缺成员错误。
+第二次提交会在同一会话源码前缀下重新编译并输出 `5`。这不是完整的长生命周期运行时 cell 存储：每次提交仍使用 fresh VM runtime，声明 initializer 可能随源码 replay 重新执行，`:reset` 会清空当前会话源码上下文。
+
+裸表达式包装只用于“看起来是表达式”的输入。声明、控制流、函数/类定义、显式 `return`、包含语句分号的提交不会被包装。像 `1 +` 或 `true &&` 这种以操作符结尾的不完整表达式也不会套入内部 `return` 文本，而是直接交给 parser 报出具体问题、原因和建议，例如 `Missing expression after '+'`、`Cause: ...`、`Suggestion: ...`。这样 REPL 可以提升表达式运行能力，同时避免用户在错误信息里看到内部包装细节。
+
+`:type <expression>` 是 REPL 的局部语义查询入口。它创建 fresh analysis state，把当前会话声明源码和参数表达式一起解析，先把 prior variable declarations 注册进 parser type environment，再调用 `ZrParser_ExpressionType_Infer` 推断最后一个 expression statement，并从同一个 `SZrSemanticContext` 读取 numeric/logical/reachability/ownership、reference 和 expression payload facts 输出。`1 + 2` 会显示 `Type: int` 和 `Numeric range: 3..3`；在同一会话内先提交 `var seed = 2;` 后，`:type seed + 3` 会显示 `Numeric range: 5..5`；`:type true || false` 会显示 `Logical flow: short-circuits right operand` 和 `Reachability: unreachable because short-circuit skips evaluation`；若先声明 `var owner: %unique int;`，`:type %borrow(owner)` 会显示 `Type: %borrowed int` 和 `Ownership: borrow %borrowed`；若查询 `pick(42)` 这类调用表达式，会显示 `Call: pick args=1`；`:type seed.value` 会显示 `Member: value` 和 `Reference: member value`；`:type seed[index]` 会显示 `Member: index` 和 `Reference: member index`；`:type seed.value = 3` 会显示 `Reference: member write value`。这个命令不会执行目标表达式，只暴露当前表达式的编译期推断结果和已发射的局部语义事实；unresolved member-access/member-write facts 不会伪造 `Declared at:` 位置。
 
 REPL v1 还支持两条扩展约束：
 
@@ -285,6 +295,36 @@ CLI 自己管理的增量缓存清单仍然固定落在 `binary/.zr_cli_manifest
 - manifest 首次创建、缓存命中、依赖传播、旧产物清理
 - REPL 的 native import、runtime error 透出和退出稳定性
 
+`tests/cli/test_cli_repl_e2e.c` 额外覆盖了：
+
+- banner/help 在退出前可见
+- 裸表达式 `1 + 2` 会输出 `3`
+- `var seed = 2;` 后的裸表达式 `seed + 3` 会通过会话源码上下文输出 `5`
+- 不完整表达式 `1 +` 会输出具体缺右操作数诊断，并且不会泄露内部 `return 1 +` 包装文本
+- `:type 1 + 2` 会显示 `Type: int` 和 `Numeric range: 3..3`，并且不会执行表达式打印 `3`
+- `var seed = 2;` 后的 `:type seed + 3` 会显示 `Numeric range: 5..5`，并且不会执行表达式打印 `5`
+
+`tests/cli/repl_type_ownership_smoke.js` 覆盖了：
+
+- `var owner: %unique int;` 后的 `:type %borrow(owner)` 会显示 `Type: %borrowed int`
+- 同一次查询还会显示 `Ownership: borrow %borrowed`
+- 查询不会退化成只打印 `int`，也不会报 `failed to infer expression type`
+
+`tests/cli/repl_type_call_member_smoke.js` 覆盖了：
+
+- `:type pick(42)` 会显示 `Call: pick args=1`
+- `:type seed.value` 会显示 `Member: value` 和 `Reference: member value`
+- `:type seed[index]` 会显示 `Member: index` 和 `Reference: member index`
+- `:type seed.value = 3` 会显示 `Reference: member write value`，并且不会对 unresolved member-write fact 输出 `Declared at:`
+- 查询不会执行 `pick(42)`，也不会退化成 `failed to infer expression type`
+
+`tests/cli/repl_type_reachability_smoke.js` 覆盖了：
+
+- `:type true || false` 会显示 `Type: bool`
+- 同一次查询还会显示 `Logical flow: short-circuits right operand`
+- 同一次查询还会显示 `Reachability: unreachable because short-circuit skips evaluation`
+- 查询不会执行表达式打印 `true`，也不会退化成 `failed to infer expression type`
+
 `tests/fixtures/projects/cli_args` 是这轮新增的专用夹具，用来验证：
 
 - 位置参数运行时 `main_arg0` 是 `.zrp` 路径
@@ -295,6 +335,6 @@ CLI 自己管理的增量缓存清单仍然固定落在 `binary/.zr_cli_manifest
 ## Follow-up Constraints
 
 - manifest 仍然是 CLI 私有纯文本格式，不对外承诺兼容别的工具。
-- REPL 仍是无状态瞬时执行，不应把它误当成交互式工程会话。
+- REPL 只保存本会话成功声明的源码上下文；它仍不是持久工程会话，也不保留长期 runtime object/module cell 状态。
 - `zr.system.process.arguments` 现在是用户可依赖接口，后续改动必须先考虑兼容性和现有夹具。
 - 如果未来要从 `zr_vm_aot/` 重新引入独立执行后端，必须走新的公开设计和测试入口，不能偷偷回退到 interp/binary。

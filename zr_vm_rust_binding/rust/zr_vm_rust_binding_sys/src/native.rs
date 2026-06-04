@@ -157,8 +157,7 @@ pub type FZrRustBindingNativeCallback = Option<
     ) -> ZrRustBindingStatus,
 >;
 
-pub type FZrRustBindingDestroyCallback =
-    Option<unsafe extern "C" fn(userData: TZrPtr)>;
+pub type FZrRustBindingDestroyCallback = Option<unsafe extern "C" fn(userData: TZrPtr)>;
 
 #[repr(C)]
 #[derive(Clone, Copy)]

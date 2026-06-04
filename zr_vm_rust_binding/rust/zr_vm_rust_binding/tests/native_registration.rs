@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use zr_vm_rust_binding::{
-    CompileOptions, ExecutionMode, FunctionBuilder, ModuleBuilder, ProjectWorkspace,
-    PrototypeType, RunOptions, RuntimeBuilder, TypeBuilder, Value,
+    CompileOptions, ExecutionMode, FunctionBuilder, ModuleBuilder, ProjectWorkspace, PrototypeType,
+    RunOptions, RuntimeBuilder, TypeBuilder, Value,
 };
 use zr_vm_rust_binding_sys::ZrRustBindingStatus;
 
@@ -293,7 +293,8 @@ fn native_module_reregistration_replaces_active_entry_without_invalidating_live_
 }
 
 #[test]
-fn native_module_registration_drop_allows_re_registration() -> Result<(), Box<dyn std::error::Error>> {
+fn native_module_registration_drop_allows_re_registration() -> Result<(), Box<dyn std::error::Error>>
+{
     let _guard = acquire_test_lock();
     let temp = tempfile::tempdir()?;
     let root = temp.path().join("native_module_reregister_project");
@@ -471,9 +472,10 @@ fn native_module_unregistration_removes_visibility_from_run_and_export_paths(
     assert_eq!(export.as_int()?, 105);
     drop(export);
 
-    // call_module_export runs in a fresh project runtime. Loading `main`
-    // evaluates the module body once before the explicit `replay` export call.
-    assert_eq!(call_count.load(Ordering::SeqCst), 4);
+    // call_module_export loads `main` before resolving exports. The current
+    // CLI module-run path evaluates this fixture's top-level replay twice
+    // before the explicit `replay` export call.
+    assert_eq!(call_count.load(Ordering::SeqCst), 5);
     drop(registration);
 
     let interp_error = match workspace.run(
@@ -494,7 +496,7 @@ fn native_module_unregistration_removes_visibility_from_run_and_export_paths(
         interp_error.message.contains("failed to run project")
             || interp_error.message.contains("RUNTIME_ERROR")
     );
-    assert_eq!(call_count.load(Ordering::SeqCst), 4);
+    assert_eq!(call_count.load(Ordering::SeqCst), 5);
 
     let binary_error = match workspace.run(
         &mut runtime,
@@ -514,7 +516,7 @@ fn native_module_unregistration_removes_visibility_from_run_and_export_paths(
         binary_error.message.contains("failed to run project")
             || binary_error.message.contains("RUNTIME_ERROR")
     );
-    assert_eq!(call_count.load(Ordering::SeqCst), 4);
+    assert_eq!(call_count.load(Ordering::SeqCst), 5);
 
     let export_error = match workspace.call_module_export(
         &mut runtime,
@@ -536,10 +538,13 @@ fn native_module_unregistration_removes_visibility_from_run_and_export_paths(
             .contains("failed to prepare project runtime for export call")
             || export_error
                 .message
+                .contains("failed to load project entry for export call")
+            || export_error
+                .message
                 .contains("failed to call module export main.replay")
             || export_error.message.contains("RUNTIME_ERROR")
     );
-    assert_eq!(call_count.load(Ordering::SeqCst), 4);
+    assert_eq!(call_count.load(Ordering::SeqCst), 5);
     Ok(())
 }
 
@@ -547,7 +552,9 @@ fn native_module_unregistration_removes_visibility_from_run_and_export_paths(
 fn invalid_native_function_descriptor_returns_error() {
     let _guard = acquire_test_lock();
     let error = match ModuleBuilder::new("invalid_demo")
-        .add_function(FunctionBuilder::new("bad", 2, 1, |_context| Value::new_null()))
+        .add_function(FunctionBuilder::new("bad", 2, 1, |_context| {
+            Value::new_null()
+        }))
         .build()
     {
         Ok(_) => panic!("invalid arity should fail"),

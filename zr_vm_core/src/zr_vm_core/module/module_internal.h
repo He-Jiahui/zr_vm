@@ -36,6 +36,8 @@ typedef struct {
     TZrUInt32 modifierFlags;
     TZrUInt32 nextVirtualSlotIndex;
     TZrUInt32 nextPropertyIdentity;
+    TZrUInt32 layoutByteSize;
+    TZrUInt32 layoutByteAlign;
     TZrBool hasDecoratorMetadata;
     SZrTypeValue decoratorMetadataValue;
     SZrArray inheritTypeNames;

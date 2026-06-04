@@ -409,7 +409,8 @@ static void print_instructions(SZrFunction *function) {
             if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF)) {
                 printf(", condition=%u", operandExtra);
             }
-        } else if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED)) {
+        } else if (opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED) ||
+                   opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED)) {
             printf(" left=%u, right=%u, jump_offset=%d", operandExtra, op1_0, (TZrInt16)op1_1);
         } else if (opcode == ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION)) {
             printf(" dst=%u, func_index=%d", operandExtra, op2_0);
@@ -424,6 +425,12 @@ static void print_instructions(SZrFunction *function) {
             printf(" dst=%u, closure_var_index=%u", operandExtra, op1_0);
         } else if (opcode == ZR_INSTRUCTION_ENUM(TO_BOOL) || opcode == ZR_INSTRUCTION_ENUM(TO_INT) ||
                    opcode == ZR_INSTRUCTION_ENUM(TO_UINT) || opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED) ||
+                   opcode == ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED) ||
+                   opcode == ZR_INSTRUCTION_ENUM(TO_INT_FLOAT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED) ||
+                   opcode == ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT) ||
+                   opcode == ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED) ||
                    opcode == ZR_INSTRUCTION_ENUM(TO_STRING) || opcode == ZR_INSTRUCTION_ENUM(NEG) ||
                    opcode == ZR_INSTRUCTION_ENUM(LOGICAL_NOT) || opcode == ZR_INSTRUCTION_ENUM(BITWISE_NOT) ||
                    opcode == ZR_INSTRUCTION_ENUM(THROW)) {

@@ -1462,10 +1462,18 @@ static TZrBool test_instruction_supports_get_stack_copy_forward_rewrite(const TZ
         case ZR_INSTRUCTION_ENUM(TO_INT):
         case ZR_INSTRUCTION_ENUM(TO_UINT):
         case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
         case ZR_INSTRUCTION_ENUM(TO_STRING):
         case ZR_INSTRUCTION_ENUM(TO_STRUCT):
         case ZR_INSTRUCTION_ENUM(TO_OBJECT):
         case ZR_INSTRUCTION_ENUM(NEG):
+        case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
+        case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
         case ZR_INSTRUCTION_ENUM(TYPEOF):
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_INT_CONST_PLAIN_DEST):
@@ -1621,6 +1629,12 @@ static TZrBool test_instruction_writes_slot(const TZrInstruction *instruction, T
         case ZR_INSTRUCTION_ENUM(TO_INT):
         case ZR_INSTRUCTION_ENUM(TO_UINT):
         case ZR_INSTRUCTION_ENUM(TO_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
+        case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
         case ZR_INSTRUCTION_ENUM(TO_STRING):
         case ZR_INSTRUCTION_ENUM(TO_STRUCT):
         case ZR_INSTRUCTION_ENUM(TO_OBJECT):
@@ -1664,6 +1678,8 @@ static TZrBool test_instruction_writes_slot(const TZrInstruction *instruction, T
         case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
         case ZR_INSTRUCTION_ENUM(NEG):
+        case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
+        case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
         case ZR_INSTRUCTION_ENUM(DIV):
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED):
         case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
@@ -3346,16 +3362,20 @@ void test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_opcodes(v
             "var sg: float = 1.5;\n"
             "var signedSum: int = si + sj;\n"
             "var signedDiff: int = si - sj;\n"
+            "var signedNeg: int = -si;\n"
             "var unsignedSum: uint = su + sv;\n"
             "var unsignedDiff: uint = su - sv;\n"
             "var boolEq: bool = sb == true;\n"
             "var signedNe: bool = si != sj;\n"
             "var unsignedNe: bool = su != sv;\n"
             "var floatEq: bool = sf == sg;\n"
+            "var floatNeg: float = -sf;\n"
             "var stringEq: bool = ss == st;\n"
-            "return signedSum + signedDiff + <int> unsignedSum + <int> unsignedDiff +\n"
+            "var boolNot: bool = !sb;\n"
+            "var boolBranch: int = sb ? 1 : 0;\n"
+            "return signedSum + signedDiff + signedNeg + <int> unsignedSum + <int> unsignedDiff + <int> floatNeg +\n"
             "       (boolEq ? 1 : 0) + (signedNe ? 1 : 0) + (unsignedNe ? 1 : 0) +\n"
-            "       (floatEq ? 1 : 0) + (stringEq ? 1 : 0);\n";
+            "       (floatEq ? 1 : 0) + (stringEq ? 1 : 0) + (boolNot ? 1 : 0) + boolBranch;\n";
     SZrState *state;
     SZrString *sourceName;
     SZrFunction *function = ZR_NULL;
@@ -3384,6 +3404,14 @@ void test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_opcodes(v
             "Strongly typed signed subtractions should lower to SUB_SIGNED-family opcodes");
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(NEG_SIGNED), 0),
+            "Strongly typed signed negation should lower to NEG_SIGNED");
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(NEG_FLOAT), 0),
+            "Strongly typed float negation should lower to NEG_FLOAT");
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
             count_typed_unsigned_add_family_recursive(function, 0),
             "Strongly typed unsigned additions should lower to ADD_UNSIGNED-family opcodes");
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
@@ -3394,6 +3422,14 @@ void test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_opcodes(v
             0u,
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL), 0),
             "Strongly typed bool equality should lower to LOGICAL_EQUAL_BOOL");
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL), 0),
+            "Strongly typed bool logical-not should lower to LOGICAL_NOT_BOOL");
+    TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE), 0),
+            "Strongly typed bool conditions should lower to JUMP_IF_BOOL_FALSE");
     TEST_ASSERT_GREATER_THAN_UINT32_MESSAGE(
             0u,
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED), 0),
@@ -3430,6 +3466,10 @@ void test_strongly_typed_compile_prefers_typed_arithmetic_and_equality_opcodes(v
             count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL), 0) +
                     count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL), 0),
             "Strongly typed equality comparisons should not fall back to LOGICAL_EQUAL/LOGICAL_NOT_EQUAL");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+            0u,
+            count_opcode_recursive(function, ZR_INSTRUCTION_ENUM(NEG), 0),
+            "Strongly typed numeric negation should not fall back to NEG");
 
     ZrCore_Function_Free(state, function);
     timer.endTime = clock();

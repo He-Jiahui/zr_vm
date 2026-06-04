@@ -365,6 +365,213 @@ static TZrBool project_resolver_apply_relative_import(const TZrChar *currentModu
     return project_resolver_join_module_paths(currentDirectory, suffixPath, buffer, bufferSize);
 }
 
+static TZrBool project_resolver_parse_dependency_module_key(const TZrChar *moduleKey,
+                                                            TZrChar *nameBuffer,
+                                                            TZrSize nameBufferSize,
+                                                            TZrChar *versionBuffer,
+                                                            TZrSize versionBufferSize,
+                                                            const TZrChar **outModulePath) {
+    TZrSize nameStart = 1;
+    TZrSize nameEnd;
+    TZrSize versionStart;
+    TZrSize versionEnd;
+    TZrSize nameLength;
+    TZrSize versionLength;
+
+    if (outModulePath != ZR_NULL) {
+        *outModulePath = ZR_NULL;
+    }
+    if (moduleKey == ZR_NULL || moduleKey[0] != '$' || nameBuffer == ZR_NULL || nameBufferSize == 0 ||
+        versionBuffer == ZR_NULL || versionBufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    nameEnd = nameStart;
+    while (moduleKey[nameEnd] != '\0' && moduleKey[nameEnd] != '@') {
+        if (moduleKey[nameEnd] == '/' || moduleKey[nameEnd] == '\\') {
+            return ZR_FALSE;
+        }
+        nameEnd++;
+    }
+    if (moduleKey[nameEnd] != '@' || nameEnd == nameStart) {
+        return ZR_FALSE;
+    }
+
+    versionStart = nameEnd + 1;
+    versionEnd = versionStart;
+    while (moduleKey[versionEnd] != '\0' && moduleKey[versionEnd] != '/') {
+        if (moduleKey[versionEnd] == '\\') {
+            return ZR_FALSE;
+        }
+        versionEnd++;
+    }
+    if (versionEnd == versionStart) {
+        return ZR_FALSE;
+    }
+
+    nameLength = nameEnd - nameStart;
+    versionLength = versionEnd - versionStart;
+    if (nameLength + 1 > nameBufferSize || versionLength + 1 > versionBufferSize) {
+        return ZR_FALSE;
+    }
+
+    memcpy(nameBuffer, moduleKey + nameStart, nameLength);
+    nameBuffer[nameLength] = '\0';
+    memcpy(versionBuffer, moduleKey + versionStart, versionLength);
+    versionBuffer[versionLength] = '\0';
+    if (outModulePath != ZR_NULL) {
+        *outModulePath = moduleKey[versionEnd] == '/' ? moduleKey + versionEnd + 1 : "";
+    }
+    return ZR_TRUE;
+}
+
+static const SZrLibrary_ProjectDependencyPackage *project_resolver_find_dependency_package(
+        const SZrLibrary_Project *project,
+        const TZrChar *name,
+        const TZrChar *version,
+        TZrSize *outIndex) {
+    if (outIndex != ZR_NULL) {
+        *outIndex = 0;
+    }
+    if (project == ZR_NULL || name == ZR_NULL || version == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < project->dependencyPackageCount; index++) {
+        const TZrChar *packageName = project_resolver_string_text(project->dependencyPackages[index].name);
+        const TZrChar *packageVersion = project_resolver_string_text(project->dependencyPackages[index].version);
+        if (packageName != ZR_NULL && packageVersion != ZR_NULL &&
+            strcmp(packageName, name) == 0 && strcmp(packageVersion, version) == 0) {
+            if (outIndex != ZR_NULL) {
+                *outIndex = index;
+            }
+            return &project->dependencyPackages[index];
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const SZrLibrary_ProjectDependencyPackage *project_resolver_current_dependency_package(
+        const SZrLibrary_Project *project,
+        const TZrChar *currentModuleKey,
+        const TZrChar **outModulePath) {
+    TZrChar name[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar version[ZR_LIBRARY_MAX_PATH_LENGTH];
+
+    if (outModulePath != ZR_NULL) {
+        *outModulePath = ZR_NULL;
+    }
+    if (project == ZR_NULL || currentModuleKey == ZR_NULL || currentModuleKey[0] != '$' ||
+        !project_resolver_parse_dependency_module_key(currentModuleKey,
+                                                      name,
+                                                      sizeof(name),
+                                                      version,
+                                                      sizeof(version),
+                                                      outModulePath)) {
+        return ZR_NULL;
+    }
+
+    return project_resolver_find_dependency_package(project, name, version, ZR_NULL);
+}
+
+static const SZrLibrary_ProjectDependencyReference *project_resolver_find_dependency_ref(
+        const SZrLibrary_Project *project,
+        const SZrLibrary_ProjectDependencyPackage *ownerPackage,
+        const TZrChar *name,
+        TZrSize nameLength) {
+    const SZrLibrary_ProjectDependencyReference *refs;
+    TZrSize refCount;
+
+    if (project == ZR_NULL || name == ZR_NULL || nameLength == 0) {
+        return ZR_NULL;
+    }
+
+    if (ownerPackage != ZR_NULL) {
+        refs = ownerPackage->dependencyRefs;
+        refCount = ownerPackage->dependencyRefCount;
+    } else {
+        refs = project->dependencyRefs;
+        refCount = project->dependencyRefCount;
+    }
+
+    for (TZrSize index = 0; index < refCount; index++) {
+        const TZrChar *refName = project_resolver_string_text(refs[index].name);
+        if (refName != ZR_NULL && strlen(refName) == nameLength && strncmp(refName, name, nameLength) == 0) {
+            return &refs[index];
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool project_resolver_dependency_package_key(const SZrLibrary_ProjectDependencyPackage *package,
+                                                       const TZrChar *modulePath,
+                                                       TZrChar *buffer,
+                                                       TZrSize bufferSize) {
+    TZrChar normalizedModule[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *name;
+    const TZrChar *version;
+    const TZrChar *effectiveModule;
+    TZrSize nameLength;
+    TZrSize versionLength;
+    TZrSize moduleLength;
+    TZrSize totalLength;
+
+    if (package == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    buffer[0] = '\0';
+    name = project_resolver_string_text(package->name);
+    version = project_resolver_string_text(package->version);
+    effectiveModule = modulePath != ZR_NULL && modulePath[0] != '\0'
+                    ? modulePath
+                    : project_resolver_string_text(package->entry);
+    if (name == ZR_NULL || version == ZR_NULL || effectiveModule == ZR_NULL ||
+        !ZrLibrary_Project_NormalizeModuleKey(effectiveModule, normalizedModule, sizeof(normalizedModule))) {
+        return ZR_FALSE;
+    }
+
+    nameLength = strlen(name);
+    versionLength = strlen(version);
+    moduleLength = strlen(normalizedModule);
+    totalLength = 1 + nameLength + 1 + versionLength + 1 + moduleLength;
+    if (totalLength + 1 > bufferSize) {
+        return ZR_FALSE;
+    }
+
+    buffer[0] = '$';
+    memcpy(buffer + 1, name, nameLength);
+    buffer[1 + nameLength] = '@';
+    memcpy(buffer + 1 + nameLength + 1, version, versionLength);
+    buffer[1 + nameLength + 1 + versionLength] = '/';
+    memcpy(buffer + 1 + nameLength + 1 + versionLength + 1, normalizedModule, moduleLength);
+    buffer[totalLength] = '\0';
+    return ZR_TRUE;
+}
+
+static TZrBool project_resolver_build_package_source_root(const SZrLibrary_ProjectDependencyPackage *package,
+                                                          TZrChar *buffer,
+                                                          TZrSize bufferSize) {
+    TZrChar joinedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *directory;
+    const TZrChar *sourceRoot;
+
+    if (package == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    directory = project_resolver_string_text(package->directory);
+    sourceRoot = project_resolver_string_text(package->source);
+    if (directory == ZR_NULL || sourceRoot == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrLibrary_File_PathJoin(directory, sourceRoot, joinedPath);
+    return ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
+}
+
 static const SZrLibrary_Project *project_resolver_from_candidate(TZrPtr candidate) {
     const SZrLibrary_Project *project = (const SZrLibrary_Project *)candidate;
 
@@ -441,7 +648,33 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_DeriveCurrentModuleKey(const SZrLibrary
                 return ZR_FALSE;
             }
             hasDerived = ZR_TRUE;
-        } else if (project_resolver_is_absolute_path(sourceName)) {
+        } else {
+            for (TZrSize packageIndex = 0; packageIndex < project->dependencyPackageCount; packageIndex++) {
+                const SZrLibrary_ProjectDependencyPackage *package = &project->dependencyPackages[packageIndex];
+                if (project_resolver_build_package_source_root(package, sourceRoot, sizeof(sourceRoot)) &&
+                    ZrLibrary_File_NormalizePath(sourceName, normalizedSourceName, sizeof(normalizedSourceName)) &&
+                    project_resolver_relative_path_from_root(sourceRoot,
+                                                            normalizedSourceName,
+                                                            relativeSourcePath,
+                                                            sizeof(relativeSourcePath))) {
+                    if (relativeSourcePath[0] == '\0' ||
+                        !project_resolver_dependency_package_key(package,
+                                                                 relativeSourcePath,
+                                                                 derivedFromPath,
+                                                                 sizeof(derivedFromPath))) {
+                        project_resolver_set_error(errorBuffer,
+                                                   errorBufferSize,
+                                                   "failed to derive a dependency module key from '%s'",
+                                                   sourceName);
+                        return ZR_FALSE;
+                    }
+                    hasDerived = ZR_TRUE;
+                    break;
+                }
+            }
+        }
+
+        if (!hasDerived && project_resolver_is_absolute_path(sourceName)) {
             project_resolver_set_error(errorBuffer,
                                        errorBufferSize,
                                        "source '%s' is outside the project source root",
@@ -492,6 +725,8 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
                                                                 TZrChar *errorBuffer,
                                                                 TZrSize errorBufferSize) {
     TZrChar normalized[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *currentDependencyModulePath = ZR_NULL;
+    const SZrLibrary_ProjectDependencyPackage *currentDependencyPackage;
 
     if (buffer == ZR_NULL || bufferSize == 0) {
         return ZR_FALSE;
@@ -505,6 +740,63 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
     if (rawSpecifier == ZR_NULL || rawSpecifier[0] == '\0') {
         project_resolver_set_error(errorBuffer, errorBufferSize, "import specifier cannot be empty");
         return ZR_FALSE;
+    }
+
+    currentDependencyPackage = project_resolver_current_dependency_package(project,
+                                                                          currentModuleKey,
+                                                                          &currentDependencyModulePath);
+
+    if (rawSpecifier[0] == '&') {
+        const TZrChar *suffix = rawSpecifier + 1;
+        TZrSize dependencyNameLength = 0;
+        const SZrLibrary_ProjectDependencyReference *dependencyRef;
+        const SZrLibrary_ProjectDependencyPackage *dependencyPackage;
+        const TZrChar *moduleSuffix;
+
+        while (suffix[dependencyNameLength] != '\0' && suffix[dependencyNameLength] != '.' &&
+               suffix[dependencyNameLength] != '/' && suffix[dependencyNameLength] != '\\') {
+            dependencyNameLength++;
+        }
+
+        if (dependencyNameLength == 0) {
+            project_resolver_set_error(errorBuffer, errorBufferSize, "invalid dependency import '%s'", rawSpecifier);
+            return ZR_FALSE;
+        }
+        if (suffix[dependencyNameLength] == '/' || suffix[dependencyNameLength] == '\\') {
+            project_resolver_set_error(errorBuffer,
+                                       errorBufferSize,
+                                       "dependency imports must use dotted suffixes: '%s'",
+                                       rawSpecifier);
+            return ZR_FALSE;
+        }
+
+        dependencyRef = project_resolver_find_dependency_ref(project,
+                                                            currentDependencyPackage,
+                                                            suffix,
+                                                            dependencyNameLength);
+        if (dependencyRef == ZR_NULL || project == ZR_NULL || dependencyRef->packageIndex >= project->dependencyPackageCount) {
+            project_resolver_set_error(errorBuffer,
+                                       errorBufferSize,
+                                       "unknown dependency import '&%.*s'",
+                                       (int)dependencyNameLength,
+                                       suffix);
+            return ZR_FALSE;
+        }
+
+        dependencyPackage = &project->dependencyPackages[dependencyRef->packageIndex];
+        if (suffix[dependencyNameLength] == '\0') {
+            return project_resolver_dependency_package_key(dependencyPackage, ZR_NULL, buffer, bufferSize);
+        }
+
+        moduleSuffix = suffix + dependencyNameLength + 1;
+        if (moduleSuffix[0] == '\0' ||
+            !project_resolver_convert_dot_suffix(moduleSuffix, normalized, sizeof(normalized)) ||
+            !project_resolver_dependency_package_key(dependencyPackage, normalized, buffer, bufferSize)) {
+            project_resolver_set_error(errorBuffer, errorBufferSize, "invalid dependency import '%s'", rawSpecifier);
+            return ZR_FALSE;
+        }
+
+        return ZR_TRUE;
     }
 
     if (rawSpecifier[0] == '@') {
@@ -529,7 +821,18 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
             return ZR_FALSE;
         }
 
-        if (project != ZR_NULL && project->pathAliases != ZR_NULL) {
+        if (currentDependencyPackage != ZR_NULL && currentDependencyPackage->pathAliases != ZR_NULL) {
+            for (TZrSize index = 0; index < currentDependencyPackage->pathAliasCount; index++) {
+                const TZrChar *aliasText = project_resolver_string_text(currentDependencyPackage->pathAliases[index].alias);
+                if (aliasText != ZR_NULL &&
+                    aliasText[0] == '@' &&
+                    strlen(aliasText) == aliasLength + 1 &&
+                    strncmp(aliasText + 1, suffix, aliasLength) == 0) {
+                    matchedAlias = &currentDependencyPackage->pathAliases[index];
+                    break;
+                }
+            }
+        } else if (project != ZR_NULL && project->pathAliases != ZR_NULL) {
             for (TZrSize index = 0; index < project->pathAliasCount; index++) {
                 const TZrChar *aliasText = project_resolver_string_text(project->pathAliases[index].alias);
                 if (aliasText != ZR_NULL &&
@@ -548,6 +851,12 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
         }
 
         if (suffix[aliasLength] == '\0') {
+            if (currentDependencyPackage != ZR_NULL) {
+                return project_resolver_dependency_package_key(currentDependencyPackage,
+                                                               project_resolver_string_text(matchedAlias->modulePrefix),
+                                                               buffer,
+                                                               bufferSize);
+            }
             return project_resolver_copy_text(project_resolver_string_text(matchedAlias->modulePrefix),
                                               buffer,
                                               bufferSize);
@@ -561,6 +870,18 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
                                                bufferSize)) {
             project_resolver_set_error(errorBuffer, errorBufferSize, "invalid alias import '%s'", rawSpecifier);
             return ZR_FALSE;
+        }
+
+        if (currentDependencyPackage != ZR_NULL) {
+            TZrChar aliasResolved[ZR_LIBRARY_MAX_PATH_LENGTH];
+            if (!project_resolver_copy_text(buffer, aliasResolved, sizeof(aliasResolved)) ||
+                !project_resolver_dependency_package_key(currentDependencyPackage,
+                                                         aliasResolved,
+                                                         buffer,
+                                                         bufferSize)) {
+                project_resolver_set_error(errorBuffer, errorBufferSize, "invalid alias import '%s'", rawSpecifier);
+                return ZR_FALSE;
+            }
         }
 
         return ZR_TRUE;
@@ -591,7 +912,9 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
         }
 
         parentLevels = dotCount > 0 ? dotCount - 1 : 0;
-        if (!project_resolver_apply_relative_import(currentModuleKey,
+        if (!project_resolver_apply_relative_import(currentDependencyPackage != ZR_NULL
+                                                            ? currentDependencyModulePath
+                                                            : currentModuleKey,
                                                     parentLevels,
                                                     normalized,
                                                     buffer,
@@ -603,6 +926,29 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
             return ZR_FALSE;
         }
 
+        if (currentDependencyPackage != ZR_NULL) {
+            TZrChar relativeResolved[ZR_LIBRARY_MAX_PATH_LENGTH];
+            if (!project_resolver_copy_text(buffer, relativeResolved, sizeof(relativeResolved)) ||
+                !project_resolver_dependency_package_key(currentDependencyPackage,
+                                                         relativeResolved,
+                                                         buffer,
+                                                         bufferSize)) {
+                project_resolver_set_error(errorBuffer, errorBufferSize, "invalid relative import '%s'", rawSpecifier);
+                return ZR_FALSE;
+            }
+        }
+
+        return ZR_TRUE;
+    }
+
+    if (currentDependencyPackage != ZR_NULL && strncmp(rawSpecifier, "zr.", 3) != 0 && strcmp(rawSpecifier, "zr") != 0) {
+        if (!((strchr(rawSpecifier, '/') != ZR_NULL || strchr(rawSpecifier, '\\') != ZR_NULL)
+                      ? ZrLibrary_Project_NormalizeModuleKey(rawSpecifier, normalized, sizeof(normalized))
+                      : project_resolver_convert_dot_suffix(rawSpecifier, normalized, sizeof(normalized))) ||
+            !project_resolver_dependency_package_key(currentDependencyPackage, normalized, buffer, bufferSize)) {
+            project_resolver_set_error(errorBuffer, errorBufferSize, "invalid import specifier '%s'", rawSpecifier);
+            return ZR_FALSE;
+        }
         return ZR_TRUE;
     }
 
@@ -612,4 +958,174 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
     }
 
     return ZR_TRUE;
+}
+
+static TZrBool project_resolver_module_file_from_root(const TZrChar *rootDirectory,
+                                                      const TZrChar *modulePath,
+                                                      const TZrChar *extension,
+                                                      TZrChar *buffer,
+                                                      TZrSize bufferSize) {
+    TZrChar normalizedModule[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar moduleFile[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrSize normalizedLength;
+    TZrSize extensionLength;
+    TZrSize totalLength;
+
+    if (rootDirectory == ZR_NULL || modulePath == ZR_NULL || extension == ZR_NULL ||
+        buffer == ZR_NULL || bufferSize == 0 ||
+        !ZrLibrary_Project_NormalizeModuleKey(modulePath, normalizedModule, sizeof(normalizedModule))) {
+        return ZR_FALSE;
+    }
+
+    normalizedLength = strlen(normalizedModule);
+    extensionLength = strlen(extension);
+    totalLength = normalizedLength + extensionLength;
+    if (totalLength + 1 > sizeof(moduleFile)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < normalizedLength; index++) {
+        moduleFile[index] = normalizedModule[index] == '/' ? ZR_SEPARATOR : normalizedModule[index];
+    }
+    memcpy(moduleFile + normalizedLength, extension, extensionLength);
+    moduleFile[totalLength] = '\0';
+
+    ZrLibrary_File_PathJoin(rootDirectory, moduleFile, buffer);
+    return buffer[0] != '\0';
+}
+
+static TZrBool project_resolver_build_project_root_path(const SZrLibrary_Project *project,
+                                                        SZrString *root,
+                                                        TZrChar *buffer,
+                                                        TZrSize bufferSize) {
+    TZrChar joinedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *projectDirectory;
+    const TZrChar *rootText;
+
+    if (project == ZR_NULL || root == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    projectDirectory = project_resolver_string_text(project->directory);
+    rootText = project_resolver_string_text(root);
+    if (projectDirectory == ZR_NULL || rootText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrLibrary_File_PathJoin(projectDirectory, rootText, joinedPath);
+    return ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
+}
+
+static TZrBool project_resolver_build_package_root_path(const SZrLibrary_ProjectDependencyPackage *package,
+                                                        SZrString *root,
+                                                        TZrChar *buffer,
+                                                        TZrSize bufferSize) {
+    TZrChar joinedPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *packageDirectory;
+    const TZrChar *rootText;
+
+    if (package == ZR_NULL || root == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    packageDirectory = project_resolver_string_text(package->directory);
+    rootText = project_resolver_string_text(root);
+    if (packageDirectory == ZR_NULL || rootText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrLibrary_File_PathJoin(packageDirectory, rootText, joinedPath);
+    return ZrLibrary_File_NormalizePath(joinedPath, buffer, bufferSize);
+}
+
+static TZrBool project_resolver_resolve_module_path(const SZrLibrary_Project *project,
+                                                    const TZrChar *moduleName,
+                                                    const TZrChar *extension,
+                                                    TZrBool useBinaryRoot,
+                                                    TZrChar *buffer,
+                                                    TZrSize bufferSize) {
+    TZrChar dependencyName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar dependencyVersion[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar rootPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const TZrChar *dependencyModulePath;
+    const SZrLibrary_ProjectDependencyPackage *package;
+
+    if (project == ZR_NULL || moduleName == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+    buffer[0] = '\0';
+
+    if (moduleName[0] == '$') {
+        if (!project_resolver_parse_dependency_module_key(moduleName,
+                                                          dependencyName,
+                                                          sizeof(dependencyName),
+                                                          dependencyVersion,
+                                                          sizeof(dependencyVersion),
+                                                          &dependencyModulePath)) {
+            return ZR_FALSE;
+        }
+        package = project_resolver_find_dependency_package(project, dependencyName, dependencyVersion, ZR_NULL);
+        if (package == ZR_NULL || dependencyModulePath == ZR_NULL || dependencyModulePath[0] == '\0' ||
+            !project_resolver_build_package_root_path(package,
+                                                      useBinaryRoot ? package->binary : package->source,
+                                                      rootPath,
+                                                      sizeof(rootPath))) {
+            return ZR_FALSE;
+        }
+
+        return project_resolver_module_file_from_root(rootPath,
+                                                      dependencyModulePath,
+                                                      extension,
+                                                      buffer,
+                                                      bufferSize);
+    }
+
+    if (!project_resolver_build_project_root_path(project,
+                                                  useBinaryRoot ? project->binary : project->source,
+                                                  rootPath,
+                                                  sizeof(rootPath))) {
+        return ZR_FALSE;
+    }
+
+    return project_resolver_module_file_from_root(rootPath,
+                                                  moduleName,
+                                                  extension,
+                                                  buffer,
+                                                  bufferSize);
+}
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveSourcePath(const SZrLibrary_Project *project,
+                                                           const TZrChar *moduleName,
+                                                           TZrChar *buffer,
+                                                           TZrSize bufferSize) {
+    return project_resolver_resolve_module_path(project,
+                                                moduleName,
+                                                ZR_VM_SOURCE_MODULE_FILE_EXTENSION,
+                                                ZR_FALSE,
+                                                buffer,
+                                                bufferSize);
+}
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveBinaryPath(const SZrLibrary_Project *project,
+                                                           const TZrChar *moduleName,
+                                                           TZrChar *buffer,
+                                                           TZrSize bufferSize) {
+    return project_resolver_resolve_module_path(project,
+                                                moduleName,
+                                                ZR_VM_BINARY_MODULE_FILE_EXTENSION,
+                                                ZR_TRUE,
+                                                buffer,
+                                                bufferSize);
+}
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveIntermediatePath(const SZrLibrary_Project *project,
+                                                                 const TZrChar *moduleName,
+                                                                 TZrChar *buffer,
+                                                                 TZrSize bufferSize) {
+    return project_resolver_resolve_module_path(project,
+                                                moduleName,
+                                                ZR_VM_INTERMEDIATE_MODULE_FILE_EXTENSION,
+                                                ZR_TRUE,
+                                                buffer,
+                                                bufferSize);
 }

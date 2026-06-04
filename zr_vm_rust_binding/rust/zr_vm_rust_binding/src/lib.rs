@@ -206,10 +206,16 @@ fn to_sys_run_options(options: &RunOptions) -> Result<RunOptionsOwned, Error> {
     let arg_ptrs = args.iter().map(|arg| arg.as_ptr()).collect::<Vec<_>>();
     let sys_options = sys::ZrRustBindingRunOptions {
         executionMode: match options.execution_mode {
-            ExecutionMode::Interp => sys::ZrRustBindingExecutionMode::ZR_RUST_BINDING_EXECUTION_MODE_INTERP,
-            ExecutionMode::Binary => sys::ZrRustBindingExecutionMode::ZR_RUST_BINDING_EXECUTION_MODE_BINARY,
+            ExecutionMode::Interp => {
+                sys::ZrRustBindingExecutionMode::ZR_RUST_BINDING_EXECUTION_MODE_INTERP
+            }
+            ExecutionMode::Binary => {
+                sys::ZrRustBindingExecutionMode::ZR_RUST_BINDING_EXECUTION_MODE_BINARY
+            }
         },
-        moduleName: module_name.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+        moduleName: module_name
+            .as_ref()
+            .map_or(ptr::null(), |value| value.as_ptr()),
         programArgs: if arg_ptrs.is_empty() {
             ptr::null()
         } else {
@@ -336,7 +342,9 @@ impl ProjectWorkspace {
         check_status(unsafe {
             sys::ZrRustBinding_ProjectWorkspace_ResolveArtifacts(
                 self.raw,
-                module_name.as_ref().map_or(ptr::null(), |name| name.as_ptr()),
+                module_name
+                    .as_ref()
+                    .map_or(ptr::null(), |name| name.as_ptr()),
                 zro.as_mut_ptr(),
                 zro.len(),
                 zri.as_mut_ptr(),
@@ -344,41 +352,82 @@ impl ProjectWorkspace {
             )
         })?;
         Ok(ArtifactPaths {
-            zro: PathBuf::from(unsafe { CStr::from_ptr(zro.as_ptr()) }.to_string_lossy().into_owned()),
-            zri: PathBuf::from(unsafe { CStr::from_ptr(zri.as_ptr()) }.to_string_lossy().into_owned()),
+            zro: PathBuf::from(
+                unsafe { CStr::from_ptr(zro.as_ptr()) }
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
+            zri: PathBuf::from(
+                unsafe { CStr::from_ptr(zri.as_ptr()) }
+                    .to_string_lossy()
+                    .into_owned(),
+            ),
         })
     }
 
     pub fn load_manifest(&self) -> Result<Manifest, Error> {
         let mut raw = ptr::null_mut();
-        check_status(unsafe { sys::ZrRustBinding_ProjectWorkspace_LoadManifest(self.raw, &mut raw) })?;
+        check_status(unsafe {
+            sys::ZrRustBinding_ProjectWorkspace_LoadManifest(self.raw, &mut raw)
+        })?;
 
         let mut version = 0u32;
         let mut entry_count = 0usize;
         check_status(unsafe { sys::ZrRustBinding_ManifestSnapshot_GetVersion(raw, &mut version) })?;
-        check_status(unsafe { sys::ZrRustBinding_ManifestSnapshot_GetEntryCount(raw, &mut entry_count) })?;
+        check_status(unsafe {
+            sys::ZrRustBinding_ManifestSnapshot_GetEntryCount(raw, &mut entry_count)
+        })?;
 
         let manifest_result = (|| {
             let mut entries = Vec::with_capacity(entry_count);
             for entry_index in 0..entry_count {
                 let module_name = read_string_with(|buffer, len| unsafe {
-                    sys::ZrRustBinding_ManifestSnapshot_GetEntryModuleName(raw, entry_index, buffer, len)
+                    sys::ZrRustBinding_ManifestSnapshot_GetEntryModuleName(
+                        raw,
+                        entry_index,
+                        buffer,
+                        len,
+                    )
                 })?;
                 let source_hash = read_string_with(|buffer, len| unsafe {
-                    sys::ZrRustBinding_ManifestSnapshot_GetEntrySourceHash(raw, entry_index, buffer, len)
+                    sys::ZrRustBinding_ManifestSnapshot_GetEntrySourceHash(
+                        raw,
+                        entry_index,
+                        buffer,
+                        len,
+                    )
                 })?;
                 let zro_hash = read_string_with(|buffer, len| unsafe {
-                    sys::ZrRustBinding_ManifestSnapshot_GetEntryZroHash(raw, entry_index, buffer, len)
+                    sys::ZrRustBinding_ManifestSnapshot_GetEntryZroHash(
+                        raw,
+                        entry_index,
+                        buffer,
+                        len,
+                    )
                 })?;
                 let zro_path = PathBuf::from(read_string_with(|buffer, len| unsafe {
-                    sys::ZrRustBinding_ManifestSnapshot_GetEntryZroPath(raw, entry_index, buffer, len)
+                    sys::ZrRustBinding_ManifestSnapshot_GetEntryZroPath(
+                        raw,
+                        entry_index,
+                        buffer,
+                        len,
+                    )
                 })?);
                 let zri_path = PathBuf::from(read_string_with(|buffer, len| unsafe {
-                    sys::ZrRustBinding_ManifestSnapshot_GetEntryZriPath(raw, entry_index, buffer, len)
+                    sys::ZrRustBinding_ManifestSnapshot_GetEntryZriPath(
+                        raw,
+                        entry_index,
+                        buffer,
+                        len,
+                    )
                 })?);
                 let mut import_count = 0usize;
                 check_status(unsafe {
-                    sys::ZrRustBinding_ManifestSnapshot_GetEntryImportCount(raw, entry_index, &mut import_count)
+                    sys::ZrRustBinding_ManifestSnapshot_GetEntryImportCount(
+                        raw,
+                        entry_index,
+                        &mut import_count,
+                    )
                 })?;
                 let mut imports = Vec::with_capacity(import_count);
                 for import_index in 0..import_count {
@@ -412,18 +461,29 @@ impl ProjectWorkspace {
         manifest_result
     }
 
-    pub fn compile(&self, runtime: &mut Runtime, options: &CompileOptions) -> Result<CompileResult, Error> {
+    pub fn compile(
+        &self,
+        runtime: &mut Runtime,
+        options: &CompileOptions,
+    ) -> Result<CompileResult, Error> {
         let options = sys::ZrRustBindingCompileOptions {
             emitIntermediate: options.emit_intermediate as u8,
             incremental: options.incremental as u8,
         };
         let mut raw = ptr::null_mut();
-        check_status(unsafe { sys::ZrRustBinding_Project_Compile(runtime.raw, self.raw, &options, &mut raw) })?;
+        check_status(unsafe {
+            sys::ZrRustBinding_Project_Compile(runtime.raw, self.raw, &options, &mut raw)
+        })?;
         let mut compiled = 0;
         let mut skipped = 0;
         let mut removed = 0;
         check_status(unsafe {
-            sys::ZrRustBinding_CompileResult_GetCounts(raw, &mut compiled, &mut skipped, &mut removed)
+            sys::ZrRustBinding_CompileResult_GetCounts(
+                raw,
+                &mut compiled,
+                &mut skipped,
+                &mut removed,
+            )
         })?;
         unsafe {
             let _ = sys::ZrRustBinding_CompileResult_Free(raw);
@@ -438,7 +498,9 @@ impl ProjectWorkspace {
     pub fn run(&self, runtime: &mut Runtime, options: &RunOptions) -> Result<Value, Error> {
         let owned = to_sys_run_options(options)?;
         let mut raw = ptr::null_mut();
-        check_status(unsafe { sys::ZrRustBinding_Project_Run(runtime.raw, self.raw, &owned.sys_options, &mut raw) })?;
+        check_status(unsafe {
+            sys::ZrRustBinding_Project_Run(runtime.raw, self.raw, &owned.sys_options, &mut raw)
+        })?;
         Ok(Value { raw })
     }
 
@@ -473,6 +535,24 @@ impl ProjectWorkspace {
         })?;
         Ok(Value { raw })
     }
+
+    pub fn start_session(
+        &self,
+        runtime: &mut Runtime,
+        options: &RunOptions,
+    ) -> Result<ProjectSession, Error> {
+        let owned = to_sys_run_options(options)?;
+        let mut raw = ptr::null_mut();
+        check_status(unsafe {
+            sys::ZrRustBinding_ProjectSession_Start(
+                runtime.raw,
+                self.raw,
+                &owned.sys_options,
+                &mut raw,
+            )
+        })?;
+        Ok(ProjectSession { raw })
+    }
 }
 
 impl Drop for ProjectWorkspace {
@@ -480,6 +560,50 @@ impl Drop for ProjectWorkspace {
         if !self.raw.is_null() {
             unsafe {
                 let _ = sys::ZrRustBinding_ProjectWorkspace_Free(self.raw);
+            }
+            self.raw = ptr::null_mut();
+        }
+    }
+}
+
+pub struct ProjectSession {
+    raw: *mut sys::ZrRustBindingProjectSession,
+}
+
+impl ProjectSession {
+    pub fn call_module_export(
+        &mut self,
+        module_name: &str,
+        export_name: &str,
+        arguments: &[Value],
+    ) -> Result<Value, Error> {
+        let module_name = string_to_cstring(module_name)?;
+        let export_name = string_to_cstring(export_name)?;
+        let arg_ptrs = arguments.iter().map(|value| value.raw).collect::<Vec<_>>();
+        let mut raw = ptr::null_mut();
+        check_status(unsafe {
+            sys::ZrRustBinding_ProjectSession_CallModuleExport(
+                self.raw,
+                module_name.as_ptr(),
+                export_name.as_ptr(),
+                if arg_ptrs.is_empty() {
+                    ptr::null()
+                } else {
+                    arg_ptrs.as_ptr()
+                },
+                arg_ptrs.len(),
+                &mut raw,
+            )
+        })?;
+        Ok(Value { raw })
+    }
+}
+
+impl Drop for ProjectSession {
+    fn drop(&mut self) {
+        if !self.raw.is_null() {
+            unsafe {
+                let _ = sys::ZrRustBinding_ProjectSession_Free(self.raw);
             }
             self.raw = ptr::null_mut();
         }
@@ -544,18 +668,30 @@ impl Value {
             sys::ZrRustBindingValueKind::ZR_RUST_BINDING_VALUE_KIND_ARRAY => ValueKind::Array,
             sys::ZrRustBindingValueKind::ZR_RUST_BINDING_VALUE_KIND_OBJECT => ValueKind::Object,
             sys::ZrRustBindingValueKind::ZR_RUST_BINDING_VALUE_KIND_FUNCTION => ValueKind::Function,
-            sys::ZrRustBindingValueKind::ZR_RUST_BINDING_VALUE_KIND_NATIVE_POINTER => ValueKind::NativePointer,
+            sys::ZrRustBindingValueKind::ZR_RUST_BINDING_VALUE_KIND_NATIVE_POINTER => {
+                ValueKind::NativePointer
+            }
             _ => ValueKind::Unknown,
         }
     }
 
     pub fn ownership_kind(&self) -> OwnershipKind {
         match unsafe { sys::ZrRustBinding_Value_GetOwnershipKind(self.raw) } {
-            sys::ZrRustBindingOwnershipKind::ZR_RUST_BINDING_OWNERSHIP_KIND_UNIQUE => OwnershipKind::Unique,
-            sys::ZrRustBindingOwnershipKind::ZR_RUST_BINDING_OWNERSHIP_KIND_SHARED => OwnershipKind::Shared,
-            sys::ZrRustBindingOwnershipKind::ZR_RUST_BINDING_OWNERSHIP_KIND_WEAK => OwnershipKind::Weak,
-            sys::ZrRustBindingOwnershipKind::ZR_RUST_BINDING_OWNERSHIP_KIND_BORROWED => OwnershipKind::Borrowed,
-            sys::ZrRustBindingOwnershipKind::ZR_RUST_BINDING_OWNERSHIP_KIND_LOANED => OwnershipKind::Loaned,
+            sys::ZrRustBindingOwnershipKind::ZR_RUST_BINDING_OWNERSHIP_KIND_UNIQUE => {
+                OwnershipKind::Unique
+            }
+            sys::ZrRustBindingOwnershipKind::ZR_RUST_BINDING_OWNERSHIP_KIND_SHARED => {
+                OwnershipKind::Shared
+            }
+            sys::ZrRustBindingOwnershipKind::ZR_RUST_BINDING_OWNERSHIP_KIND_WEAK => {
+                OwnershipKind::Weak
+            }
+            sys::ZrRustBindingOwnershipKind::ZR_RUST_BINDING_OWNERSHIP_KIND_BORROWED => {
+                OwnershipKind::Borrowed
+            }
+            sys::ZrRustBindingOwnershipKind::ZR_RUST_BINDING_OWNERSHIP_KIND_LOANED => {
+                OwnershipKind::Loaned
+            }
             _ => OwnershipKind::None,
         }
     }
@@ -579,7 +715,9 @@ impl Value {
     }
 
     pub fn as_string(&self) -> Result<String, Error> {
-        read_string_with(|buffer, len| unsafe { sys::ZrRustBinding_Value_ReadString(self.raw, buffer, len) })
+        read_string_with(|buffer, len| unsafe {
+            sys::ZrRustBinding_Value_ReadString(self.raw, buffer, len)
+        })
     }
 
     pub fn array_len(&self) -> Result<usize, Error> {
@@ -601,13 +739,17 @@ impl Value {
     pub fn object_get(&self, field_name: &str) -> Result<Value, Error> {
         let field_name = string_to_cstring(field_name)?;
         let mut raw = ptr::null_mut();
-        check_status(unsafe { sys::ZrRustBinding_Value_Object_Get(self.raw, field_name.as_ptr(), &mut raw) })?;
+        check_status(unsafe {
+            sys::ZrRustBinding_Value_Object_Get(self.raw, field_name.as_ptr(), &mut raw)
+        })?;
         Ok(Value { raw })
     }
 
     pub fn object_set(&mut self, field_name: &str, value: &Value) -> Result<(), Error> {
         let field_name = string_to_cstring(field_name)?;
-        check_status(unsafe { sys::ZrRustBinding_Value_Object_Set(self.raw, field_name.as_ptr(), value.raw) })
+        check_status(unsafe {
+            sys::ZrRustBinding_Value_Object_Set(self.raw, field_name.as_ptr(), value.raw)
+        })
     }
 }
 
@@ -647,10 +789,16 @@ mod tests {
         let workspace = ProjectWorkspace::scaffold(&root, "roundtrip_project")?;
         let main_source = workspace.project_root()?.join("src").join("main.zr");
         fs::write(&main_source, "return \"rust safe roundtrip\";\n")?;
-        assert_eq!(workspace.project_path()?, root.join("roundtrip_project.zrp"));
+        assert_eq!(
+            workspace.project_path()?,
+            root.join("roundtrip_project.zrp")
+        );
         assert_eq!(workspace.project_root()?, root);
         assert_eq!(workspace.entry_module()?, "main");
-        assert_eq!(workspace.manifest_path()?, root.join("bin").join(".zr_cli_manifest"));
+        assert_eq!(
+            workspace.manifest_path()?,
+            root.join("bin").join(".zr_cli_manifest")
+        );
 
         let mut runtime = RuntimeBuilder::standard().build()?;
         let compile = workspace.compile(
@@ -712,8 +860,7 @@ mod tests {
             sys::ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_NOT_FOUND
         );
         assert!(
-            error.message.contains("failed to load project")
-                || error.message.contains("NOT_FOUND")
+            error.message.contains("failed to load project") || error.message.contains("NOT_FOUND")
         );
         Ok(())
     }
@@ -724,7 +871,10 @@ mod tests {
         let temp = tempfile::tempdir()?;
         let root = temp.path().join("bare_runtime_project");
         let workspace = ProjectWorkspace::scaffold(&root, "bare_runtime_project")?;
-        fs::write(workspace.project_root()?.join("src").join("main.zr"), "return 99;\n")?;
+        fs::write(
+            workspace.project_root()?.join("src").join("main.zr"),
+            "return 99;\n",
+        )?;
 
         let mut runtime = RuntimeBuilder::bare().build()?;
         let error = match workspace.run(&mut runtime, &RunOptions::default()) {
@@ -736,7 +886,9 @@ mod tests {
             sys::ZrRustBindingStatus::ZR_RUST_BINDING_STATUS_UNSUPPORTED
         );
         assert!(
-            error.message.contains("bare runtime execution is not implemented yet")
+            error
+                .message
+                .contains("bare runtime execution is not implemented yet")
                 || error.message.contains("UNSUPPORTED")
         );
         Ok(())
@@ -989,7 +1141,8 @@ mod tests {
     }
 
     #[test]
-    fn named_module_run_preserves_module_name_and_program_args() -> Result<(), Box<dyn std::error::Error>> {
+    fn named_module_run_preserves_module_name_and_program_args(
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let _guard = acquire_test_lock();
         let temp = tempfile::tempdir()?;
         let root = temp.path().join("module_run_project");
@@ -1023,8 +1176,14 @@ mod tests {
         )?;
 
         let artifacts = workspace.resolve_artifacts(Some("tools.seed"))?;
-        assert_eq!(artifacts.zro, root.join("bin").join("tools").join("seed.zro"));
-        assert_eq!(artifacts.zri, root.join("bin").join("tools").join("seed.zri"));
+        assert_eq!(
+            artifacts.zro,
+            root.join("bin").join("tools").join("seed.zro")
+        );
+        assert_eq!(
+            artifacts.zri,
+            root.join("bin").join("tools").join("seed.zri")
+        );
 
         let mut runtime = RuntimeBuilder::standard().build()?;
         let interp = workspace.run(
@@ -1077,7 +1236,8 @@ mod tests {
     }
 
     #[test]
-    fn scalar_value_kind_and_ownership_metadata_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+    fn scalar_value_kind_and_ownership_metadata_roundtrip() -> Result<(), Box<dyn std::error::Error>>
+    {
         let _guard = acquire_test_lock();
         let null_value = Value::new_null()?;
         assert_eq!(null_value.kind(), ValueKind::Null);
@@ -1123,6 +1283,51 @@ mod tests {
         assert_eq!(result.kind(), ValueKind::Float);
         assert_eq!(result.ownership_kind(), OwnershipKind::None);
         assert!((result.as_float()? - 3.0).abs() < 1e-9);
+        Ok(())
+    }
+
+    #[test]
+    fn project_session_preserves_module_state_between_export_calls(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
+        let temp = tempfile::tempdir()?;
+        let root = temp.path().join("session_state_project");
+        let workspace = ProjectWorkspace::scaffold(&root, "session_state_project")?;
+        fs::write(
+            workspace.project_root()?.join("src").join("main.zr"),
+            concat!(
+                "var savedState = \"created\";\n",
+                "\n",
+                "pub activate(): void {\n",
+                "    savedState = savedState + \":activated\";\n",
+                "}\n",
+                "\n",
+                "pub saveState(): string {\n",
+                "    return savedState;\n",
+                "}\n",
+                "\n",
+                "pub restoreState(state: string): void {\n",
+                "    savedState = state + \":restored\";\n",
+                "}\n",
+                "\n",
+                "return 0;\n",
+            ),
+        )?;
+
+        let mut runtime = RuntimeBuilder::standard().build()?;
+        let mut session = workspace.start_session(&mut runtime, &RunOptions::default())?;
+        session.call_module_export("main", "activate", &[])?;
+
+        let activated = session.call_module_export("main", "saveState", &[])?;
+        assert_eq!(activated.kind(), ValueKind::String);
+        assert_eq!(activated.as_string()?, "created:activated");
+
+        let restored_arg = Value::new_string("hot")?;
+        session.call_module_export("main", "restoreState", &[restored_arg])?;
+
+        let restored = session.call_module_export("main", "saveState", &[])?;
+        assert_eq!(restored.kind(), ValueKind::String);
+        assert_eq!(restored.as_string()?, "hot:restored");
         Ok(())
     }
 }

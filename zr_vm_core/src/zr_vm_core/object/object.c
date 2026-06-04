@@ -1822,6 +1822,8 @@ SZrObjectPrototype *ZrCore_ObjectPrototype_New(SZrState *state, SZrString *name,
     prototype->modifierFlags = 0;
     prototype->nextVirtualSlotIndex = 0;
     prototype->nextPropertyIdentity = 0;
+    prototype->layoutByteSize = 0;
+    prototype->layoutByteAlign = 0;
     prototype->managedFields = ZR_NULL;
     prototype->managedFieldCount = 0;
     prototype->managedFieldCapacity = 0;
@@ -1869,6 +1871,8 @@ SZrStructPrototype *ZrCore_StructPrototype_New(SZrState *state, SZrString *name)
     prototype->super.modifierFlags = 0;
     prototype->super.nextVirtualSlotIndex = 0;
     prototype->super.nextPropertyIdentity = 0;
+    prototype->super.layoutByteSize = 0;
+    prototype->super.layoutByteAlign = 0;
     prototype->super.managedFields = ZR_NULL;
     prototype->super.managedFieldCount = 0;
     prototype->super.managedFieldCapacity = 0;

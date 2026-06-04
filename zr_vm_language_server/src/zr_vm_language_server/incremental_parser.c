@@ -19,6 +19,7 @@
 typedef struct SZrParserDiagnosticCollector {
     SZrState *state;
     SZrFileVersion *fileVersion;
+    TZrBool suppressNextLegacyDiagnostic;
 } SZrParserDiagnosticCollector;
 
 static void clear_parser_diagnostics(SZrState *state, SZrFileVersion *fileVersion) {
@@ -50,6 +51,11 @@ static void collect_parser_diagnostic(TZrPtr userData,
         return;
     }
 
+    if (collector->suppressNextLegacyDiagnostic) {
+        collector->suppressNextLegacyDiagnostic = ZR_FALSE;
+        return;
+    }
+
     diagnostic = ZrLanguageServer_Diagnostic_New(collector->state,
                                                  ZR_DIAGNOSTIC_ERROR,
                                                  *location,
@@ -57,6 +63,26 @@ static void collect_parser_diagnostic(TZrPtr userData,
                                                  "parser_syntax_error");
     if (diagnostic != ZR_NULL) {
         ZrCore_Array_Push(collector->state, &collector->fileVersion->parserDiagnostics, &diagnostic);
+    }
+}
+
+static void collect_structured_parser_diagnostic(TZrPtr userData,
+                                                 const SZrStructuredDiagnostic *structured,
+                                                 EZrToken token) {
+    SZrParserDiagnosticCollector *collector = (SZrParserDiagnosticCollector *)userData;
+    SZrDiagnostic *diagnostic;
+
+    ZR_UNUSED_PARAMETER(token);
+
+    if (collector == ZR_NULL || collector->state == ZR_NULL || collector->fileVersion == ZR_NULL ||
+        structured == ZR_NULL) {
+        return;
+    }
+
+    diagnostic = ZrLanguageServer_Diagnostic_FromStructured(collector->state, structured);
+    if (diagnostic != ZR_NULL) {
+        ZrCore_Array_Push(collector->state, &collector->fileVersion->parserDiagnostics, &diagnostic);
+        collector->suppressNextLegacyDiagnostic = ZR_TRUE;
     }
 }
 
@@ -405,7 +431,9 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
 
         collector.state = state;
         collector.fileVersion = fileVersion;
+        collector.suppressNextLegacyDiagnostic = ZR_FALSE;
         parserState.errorCallback = collect_parser_diagnostic;
+        parserState.structuredErrorCallback = collect_structured_parser_diagnostic;
         parserState.errorUserData = &collector;
         parserState.suppressErrorOutput = ZR_TRUE;
         parsedAst = ZrParser_ParseWithState(&parserState);

@@ -3,6 +3,7 @@
 //
 
 #include "semantic/semantic_analyzer_internal.h"
+#include "interface/lsp_interface_internal.h"
 
 static SZrFileRange semantic_make_identifier_reference_range(SZrString *name, SZrFileRange fallback) {
     const TZrChar *text = semantic_string_native(name);
@@ -30,6 +31,63 @@ static SZrFileRange semantic_make_identifier_reference_range(SZrString *name, SZ
     return fallback;
 }
 
+static EZrSemanticReferenceKind semantic_reference_kind_from_lsp(EZrReferenceType type) {
+    switch (type) {
+        case ZR_REFERENCE_WRITE:
+            return ZR_SEMANTIC_REFERENCE_WRITE;
+        case ZR_REFERENCE_DEFINITION:
+            return ZR_SEMANTIC_REFERENCE_DECLARATION;
+        case ZR_REFERENCE_CALL:
+            return ZR_SEMANTIC_REFERENCE_CALL;
+        case ZR_REFERENCE_READ:
+        default:
+            return ZR_SEMANTIC_REFERENCE_READ;
+    }
+}
+
+static void semantic_record_reference_fact(SZrSemanticAnalyzer *analyzer,
+                                           SZrSymbol *symbol,
+                                           SZrAstNode *node,
+                                           SZrFileRange location,
+                                           EZrReferenceType type) {
+    SZrSemanticReferenceFact fact;
+
+    if (analyzer == ZR_NULL || analyzer->semanticContext == ZR_NULL || symbol == ZR_NULL) {
+        return;
+    }
+
+    memset(&fact, 0, sizeof(fact));
+    fact.node = node;
+    fact.range = semantic_make_identifier_reference_range(symbol->name, location);
+    fact.declarationRange = ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol);
+    fact.kind = semantic_reference_kind_from_lsp(type);
+    fact.symbolId = symbol->semanticId;
+    fact.typeId = symbol->semanticTypeId;
+    fact.name = symbol->name;
+    fact.isResolved = ZR_TRUE;
+
+    ZrParser_SemanticFacts_AppendReference(analyzer->semanticContext, &fact);
+}
+
+static void semantic_add_reference(SZrState *state,
+                                   SZrSemanticAnalyzer *analyzer,
+                                   SZrSymbol *symbol,
+                                   SZrAstNode *node,
+                                   SZrFileRange location,
+                                   EZrReferenceType type) {
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->referenceTracker == ZR_NULL ||
+        symbol == ZR_NULL) {
+        return;
+    }
+
+    ZrLanguageServer_ReferenceTracker_AddReference(state,
+                                                   analyzer->referenceTracker,
+                                                   symbol,
+                                                   location,
+                                                   type);
+    semantic_record_reference_fact(analyzer, symbol, node, location, type);
+}
+
 static void semantic_add_type_reference(SZrState *state,
                                         SZrSemanticAnalyzer *analyzer,
                                         SZrString *name,
@@ -42,11 +100,7 @@ static void semantic_add_type_reference(SZrState *state,
 
     symbol = ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, name, location);
     if (symbol != ZR_NULL) {
-        ZrLanguageServer_ReferenceTracker_AddReference(state,
-                                                       analyzer->referenceTracker,
-                                                       symbol,
-                                                       location,
-                                                       ZR_REFERENCE_READ);
+        semantic_add_reference(state, analyzer, symbol, ZR_NULL, location, ZR_REFERENCE_READ);
     }
 }
 
@@ -138,8 +192,12 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
                 // 可以通过检查当前处理的节点类型来判断
                 // TODO: 这里暂时使用默认的读引用，实际实现需要更复杂的上下文分析
                 
-                ZrLanguageServer_ReferenceTracker_AddReference(state, analyzer->referenceTracker,
-                                               symbol, node->location, refType);
+                semantic_add_reference(state,
+                                       analyzer,
+                                       symbol,
+                                       node,
+                                       node->location,
+                                       refType);
             } else if (ZrLanguageServer_SemanticAnalyzer_IsImplicitRuntimeIdentifier(name)) {
                 return;
             }
@@ -369,9 +427,12 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
                             TZrBool isCall = (primaryExpr->members != ZR_NULL && 
                                            primaryExpr->members->count > 0);
                             EZrReferenceType refType = isCall ? ZR_REFERENCE_CALL : ZR_REFERENCE_READ;
-                            ZrLanguageServer_ReferenceTracker_AddReference(state, analyzer->referenceTracker,
-                                                           symbol, primaryExpr->property->location, 
-                                                           refType);
+                            semantic_add_reference(state,
+                                                   analyzer,
+                                                   symbol,
+                                                   primaryExpr->property,
+                                                   primaryExpr->property->location,
+                                                   refType);
                         } else {
                             ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(state, analyzer, primaryExpr->property);
                         }
@@ -563,9 +624,12 @@ void ZrLanguageServer_SemanticAnalyzer_CollectReferencesFromAst(SZrState *state,
                                                                                           name,
                                                                                           assignExpr->left->location);
                         if (symbol != ZR_NULL) {
-                            ZrLanguageServer_ReferenceTracker_AddReference(state, analyzer->referenceTracker,
-                                                           symbol, assignExpr->left->location, 
-                                                           ZR_REFERENCE_WRITE);
+                            semantic_add_reference(state,
+                                                   analyzer,
+                                                   symbol,
+                                                   assignExpr->left,
+                                                   assignExpr->left->location,
+                                                   ZR_REFERENCE_WRITE);
                         }
                     }
                 } else {

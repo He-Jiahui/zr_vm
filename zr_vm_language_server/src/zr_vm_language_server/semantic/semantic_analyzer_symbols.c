@@ -903,16 +903,7 @@ static void add_definition_reference_for_range(SZrState *state,
                                                SZrSemanticAnalyzer *analyzer,
                                                SZrSymbol *symbol,
                                                SZrFileRange range) {
-    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->referenceTracker == ZR_NULL ||
-        symbol == ZR_NULL) {
-        return;
-    }
-
-    ZrLanguageServer_ReferenceTracker_AddReference(state,
-                                                   analyzer->referenceTracker,
-                                                   symbol,
-                                                   range,
-                                                   ZR_REFERENCE_DEFINITION);
+    ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForRange(state, analyzer, symbol, range);
 }
 
 static SZrSymbol *find_matching_class_property_symbol(SZrState *state,

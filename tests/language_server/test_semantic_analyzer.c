@@ -13,6 +13,7 @@
 #include "zr_vm_core/callback.h"
 #include "zr_vm_parser/parser.h"
 #include "zr_vm_parser/semantic.h"
+#include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_common/zr_common_conf.h"
 #include "zr_vm_lib_container/module.h"
@@ -260,6 +261,43 @@ static SZrFileRange file_range_for_nth_substring(const char *content,
     return ZrParser_FileRange_Create(position, position, ZR_NULL);
 }
 
+static SZrFileRange file_range_for_nth_substring_offset(const char *content,
+                                                        const char *needle,
+                                                        TZrSize occurrence,
+                                                        TZrSize extraOffset) {
+    SZrFileRange range = file_range_for_nth_substring(content, needle, occurrence, ZR_FALSE);
+    range.start.offset += extraOffset;
+    range.end.offset = range.start.offset;
+    range.start.column += extraOffset;
+    range.end.column = range.start.column;
+    return range;
+}
+
+static TZrSize count_logical_facts_with_known_value(const SZrSemanticContext *context,
+                                                    EZrSemanticLogicalFactKind kind,
+                                                    TZrBool knownValue) {
+    TZrSize count = 0;
+
+    if (context == ZR_NULL || !context->logicalFacts.isValid) {
+        return 0;
+    }
+
+    for (TZrSize i = 0; i < context->logicalFacts.length; i++) {
+        const SZrSemanticLogicalFact *fact =
+            (const SZrSemanticLogicalFact *)ZrCore_Array_Get((SZrArray *)&context->logicalFacts, i);
+        if (fact != ZR_NULL &&
+            fact->kind == kind &&
+            fact->exactness == ZR_SEMANTIC_FACT_EXACT &&
+            fact->hasKnownValue &&
+            fact->knownValue == knownValue &&
+            fact->relatedNode != ZR_NULL) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
 static TZrBool has_completion_label(SZrArray *completions, const char *label) {
     TZrSize i;
 
@@ -327,15 +365,31 @@ static SZrDiagnostic *find_diagnostic_by_code_and_line(SZrSemanticAnalyzer *anal
     return ZR_NULL;
 }
 
-static TZrBool diagnostic_message_contains(SZrDiagnostic *diagnostic, const char *fragment) {
-    const char *messageText;
+static TZrBool diagnostic_string_contains(SZrString *value, const char *fragment) {
+    const char *text;
 
-    if (diagnostic == ZR_NULL || diagnostic->message == ZR_NULL || fragment == ZR_NULL) {
+    if (value == ZR_NULL || fragment == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    messageText = ZrCore_String_GetNativeString(diagnostic->message);
-    return messageText != ZR_NULL && strstr(messageText, fragment) != ZR_NULL;
+    text = ZrCore_String_GetNativeString(value);
+    return text != ZR_NULL && strstr(text, fragment) != ZR_NULL;
+}
+
+static TZrBool diagnostic_message_contains(SZrDiagnostic *diagnostic, const char *fragment) {
+    return diagnostic != ZR_NULL && diagnostic_string_contains(diagnostic->message, fragment);
+}
+
+static TZrBool diagnostic_cause_contains(SZrDiagnostic *diagnostic, const char *fragment) {
+    return diagnostic != ZR_NULL && diagnostic_string_contains(diagnostic->cause, fragment);
+}
+
+static TZrBool diagnostic_suggestion_contains(SZrDiagnostic *diagnostic, const char *fragment) {
+    return diagnostic != ZR_NULL && diagnostic_string_contains(diagnostic->suggestion, fragment);
+}
+
+static TZrBool ownership_fact_message_contains(const SZrSemanticOwnershipFact *fact, const char *fragment) {
+    return fact != ZR_NULL && diagnostic_string_contains(fact->diagnosticMessage, fragment);
 }
 
 static TZrBool has_completion_detail_fragment(SZrArray *completions,
@@ -1405,6 +1459,104 @@ static void test_semantic_analyzer_populates_semantic_context(SZrState *state) {
     ZrParser_Ast_Free(state, ast);
     ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
     TEST_PASS(timer, "Semantic Analyzer Populates Semantic Context");
+}
+
+static void test_semantic_analyzer_records_reference_facts_with_precise_ranges(SZrState *state) {
+    SZrTestTimer timer;
+    const char *summary = "Semantic Analyzer Records Reference Facts With Precise Ranges";
+
+    TEST_START(summary);
+    TEST_INFO("Reference semantic facts",
+              "Analyzing an identifier use should populate shared semantic reference facts with token ranges");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const char *source =
+            "var value = 1;\n"
+            "read(): int {\n"
+            "    return value;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "reference_fact_test.zr", 22);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFileRange declarationRange = file_range_for_nth_substring(source, "value", 0, ZR_FALSE);
+        SZrFileRange useRange = file_range_for_nth_substring(source, "value", 1, ZR_FALSE);
+        const SZrSemanticReferenceFact *declarationFact;
+        const SZrSemanticReferenceFact *fact;
+
+        declarationRange.end.offset = declarationRange.start.offset + strlen("value");
+        declarationRange.end.line = declarationRange.start.line;
+        declarationRange.end.column = declarationRange.start.column + (TZrInt32)strlen("value");
+        useRange.end.offset = useRange.start.offset + strlen("value");
+        useRange.end.line = useRange.start.line;
+        useRange.end.column = useRange.start.column + (TZrInt32)strlen("value");
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer, summary, "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Failed to analyze AST");
+            return;
+        }
+
+        if (analyzer->semanticContext == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Semantic context was not attached");
+            return;
+        }
+
+        declarationFact = ZrParser_SemanticFacts_FindReferenceAtPosition(analyzer->semanticContext, declarationRange);
+        if (declarationFact == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Declaration reference fact lookup returned null");
+            return;
+        }
+
+        if (declarationFact->kind != ZR_SEMANTIC_REFERENCE_DECLARATION ||
+            declarationFact->symbolId == ZR_SEMANTIC_ID_INVALID ||
+            declarationFact->range.start.offset != declarationRange.start.offset ||
+            declarationFact->range.end.offset != declarationRange.end.offset) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Declaration reference fact did not preserve declaration kind, symbol id, and range");
+            return;
+        }
+
+        fact = ZrParser_SemanticFacts_FindReferenceAtPosition(analyzer->semanticContext, useRange);
+        if (fact == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Reference fact lookup returned null");
+            return;
+        }
+
+        if (fact->kind != ZR_SEMANTIC_REFERENCE_READ ||
+            fact->symbolId == ZR_SEMANTIC_ID_INVALID ||
+            fact->range.start.offset != useRange.start.offset ||
+            fact->range.end.offset != useRange.end.offset ||
+            fact->declarationRange.start.offset == useRange.start.offset) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Reference fact did not preserve read kind, symbol id, use range, and declaration range");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, summary);
 }
 
 static void test_semantic_analyzer_records_using_cleanup_and_template_segments(SZrState *state) {
@@ -2896,6 +3048,169 @@ static void test_semantic_analyzer_preserves_owner_generic_context_in_member_sig
     TEST_PASS(timer, "Semantic Analyzer Preserves Owner Generic Context In Member Signatures");
 }
 
+static void test_semantic_analyzer_records_reachability_facts_for_unreachable_statements(SZrState *state) {
+    SZrTestTimer timer;
+    const char *summary = "Semantic Analyzer Records Reachability Facts For Unreachable Statements";
+
+    TEST_START(summary);
+    TEST_INFO("Reachability semantic facts",
+              "Analyzing statements after return/throw should record shared reachability facts with precise causes");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "returnFlow() {\n"
+            "    return 1;\n"
+            "    var deadAfterReturn = 2;\n"
+            "}\n"
+            "throwFlow() {\n"
+            "    throw \"boom\";\n"
+            "    var deadAfterThrow = 3;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "reachability_fact_test.zr", 25);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange deadAfterReturnRange =
+            file_range_for_nth_substring(testCode, "deadAfterReturn", 0, ZR_FALSE);
+        SZrFileRange deadAfterThrowRange =
+            file_range_for_nth_substring(testCode, "deadAfterThrow", 0, ZR_FALSE);
+        const SZrSemanticReachabilityFact *returnFact;
+        const SZrSemanticReachabilityFact *throwFact;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer, summary, "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Failed to analyze AST");
+            return;
+        }
+
+        if (analyzer->semanticContext == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Semantic context was not attached");
+            return;
+        }
+
+        returnFact =
+            ZrParser_SemanticFacts_FindReachabilityAtPosition(analyzer->semanticContext, deadAfterReturnRange);
+        throwFact =
+            ZrParser_SemanticFacts_FindReachabilityAtPosition(analyzer->semanticContext, deadAfterThrowRange);
+        if (returnFact == ZR_NULL || throwFact == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Reachability fact lookup returned null for unreachable statements");
+            return;
+        }
+
+        if (returnFact->state != ZR_SEMANTIC_REACHABILITY_UNREACHABLE ||
+            returnFact->cause != ZR_SEMANTIC_REACHABILITY_AFTER_RETURN ||
+            returnFact->causeNode == ZR_NULL ||
+            throwFact->state != ZR_SEMANTIC_REACHABILITY_UNREACHABLE ||
+            throwFact->cause != ZR_SEMANTIC_REACHABILITY_AFTER_THROW ||
+            throwFact->causeNode == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Reachability facts did not preserve unreachable state, cause, and cause node");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, summary);
+}
+
+static void test_semantic_analyzer_records_short_circuit_logical_facts(SZrState *state) {
+    SZrTestTimer timer;
+    const char *summary = "Semantic Analyzer Records Short Circuit Logical Facts";
+
+    TEST_START(summary);
+    TEST_INFO("Logical semantic facts",
+              "Analyzing deterministic boolean short-circuit expressions should record the known result and skipped branch");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "shorts() {\n"
+            "    var skippedOr = true || false;\n"
+            "    var skippedAnd = false && true;\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "logical_fact_test.zr", 20);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrFileRange skippedOrRange = file_range_for_nth_substring(testCode, "false;", 0, ZR_FALSE);
+        SZrFileRange skippedAndRange = file_range_for_nth_substring(testCode, "true;", 0, ZR_FALSE);
+        const SZrSemanticReachabilityFact *orReachability;
+        const SZrSemanticReachabilityFact *andReachability;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer, summary, "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Failed to analyze AST");
+            return;
+        }
+
+        if (analyzer->semanticContext == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Semantic context was not attached");
+            return;
+        }
+
+        if (count_logical_facts_with_known_value(analyzer->semanticContext,
+                                                 ZR_SEMANTIC_LOGICAL_FACT_SHORT_CIRCUIT,
+                                                 ZR_TRUE) < 1 ||
+            count_logical_facts_with_known_value(analyzer->semanticContext,
+                                                 ZR_SEMANTIC_LOGICAL_FACT_SHORT_CIRCUIT,
+                                                 ZR_FALSE) < 1) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Short-circuit logical facts did not record both known true and known false results");
+            return;
+        }
+
+        orReachability =
+            ZrParser_SemanticFacts_FindReachabilityAtPosition(analyzer->semanticContext, skippedOrRange);
+        andReachability =
+            ZrParser_SemanticFacts_FindReachabilityAtPosition(analyzer->semanticContext, skippedAndRange);
+        if (orReachability == ZR_NULL ||
+            andReachability == ZR_NULL ||
+            orReachability->cause != ZR_SEMANTIC_REACHABILITY_SHORT_CIRCUIT ||
+            andReachability->cause != ZR_SEMANTIC_REACHABILITY_SHORT_CIRCUIT) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer, summary, "Short-circuit reachability facts did not preserve skipped right-hand branches");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, summary);
+}
+
 static void test_semantic_analyzer_warns_on_unreachable_statements_after_return_or_throw(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Warns On Unreachable Statements After Return Or Throw");
@@ -3108,7 +3423,7 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
     TEST_START("Semantic Analyzer Reports Declared Ownership Initializer Mismatch");
 
     TEST_INFO("Ownership compatibility in variable declarations",
-              "Analyzing an explicit %unique T declaration initialized from %shared T should emit a type_mismatch diagnostic");
+              "Analyzing an explicit %unique T declaration initialized from %shared T should emit a specific ownership_mismatch diagnostic and fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -3120,6 +3435,7 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_decl_mismatch_test.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrDiagnostic *diagnostic;
+        const SZrSemanticOwnershipFact *fact;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
@@ -3145,13 +3461,38 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
             return;
         }
 
-        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 4);
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "ownership_mismatch", 4);
         if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Reports Declared Ownership Initializer Mismatch",
-                      "Expected type_mismatch diagnostic on the explicit unique<Resource> initializer");
+                      "Expected ownership_mismatch diagnostic on the explicit unique<Resource> initializer");
+            return;
+        }
+        if (!diagnostic_message_contains(diagnostic, "Ownership") ||
+            !diagnostic_cause_contains(diagnostic, "%shared") ||
+            !diagnostic_suggestion_contains(diagnostic, "%unique")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Declared Ownership Initializer Mismatch",
+                      "Expected ownership diagnostic to include message, cause, and suggestion");
+            return;
+        }
+        fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+                analyzer->semanticContext,
+                file_range_for_nth_substring(testCode, "borrowed", 1, ZR_FALSE));
+        if (fact == ZR_NULL ||
+            fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
+            fact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
+            !fact->isViolation ||
+            !ownership_fact_message_contains(fact, "Ownership")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Declared Ownership Initializer Mismatch",
+                      "Expected ownership mismatch fact at the initializer expression");
             return;
         }
 
@@ -3162,12 +3503,108 @@ static void test_semantic_analyzer_reports_declared_ownership_initializer_mismat
     TEST_PASS(timer, "Semantic Analyzer Reports Declared Ownership Initializer Mismatch");
 }
 
+static void test_semantic_analyzer_reports_owner_to_plain_initializer_escape(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Owner To Plain Initializer Escape");
+
+    TEST_INFO("Ownership compatibility in variable declarations",
+              "Analyzing %unique/%shared values assigned to plain GC declarations should emit owner_to_plain_escape diagnostics and facts");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "class Resource {\n"
+            "}\n"
+            "var owner: %unique Resource;\n"
+            "var plainFromUnique: Resource = owner;\n"
+            "var sharedOwner: %shared Resource;\n"
+            "var plainFromShared: Resource = sharedOwner;\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_plain_escape_test.zr", 30);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *uniqueDiagnostic;
+        SZrDiagnostic *sharedDiagnostic;
+        const SZrSemanticOwnershipFact *uniqueFact;
+        const SZrSemanticOwnershipFact *sharedFact;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Owner To Plain Initializer Escape",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Owner To Plain Initializer Escape",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Owner To Plain Initializer Escape",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        uniqueDiagnostic = find_diagnostic_by_code_and_line(analyzer, "owner_to_plain_escape", 4);
+        sharedDiagnostic = find_diagnostic_by_code_and_line(analyzer, "owner_to_plain_escape", 6);
+        if (uniqueDiagnostic == ZR_NULL || sharedDiagnostic == ZR_NULL ||
+            uniqueDiagnostic->severity != ZR_DIAGNOSTIC_ERROR ||
+            sharedDiagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Owner To Plain Initializer Escape",
+                      "Expected owner_to_plain_escape diagnostics for implicit owner-to-plain assignments");
+            return;
+        }
+        if (!diagnostic_suggestion_contains(uniqueDiagnostic, "%detach") ||
+            !diagnostic_suggestion_contains(sharedDiagnostic, "%detach")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Owner To Plain Initializer Escape",
+                      "Expected owner-to-plain diagnostics to suggest explicit detach");
+            return;
+        }
+        uniqueFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+                analyzer->semanticContext,
+                file_range_for_nth_substring(testCode, "owner;", 0, ZR_FALSE));
+        sharedFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+                analyzer->semanticContext,
+                file_range_for_nth_substring(testCode, "sharedOwner;", 0, ZR_FALSE));
+        if (uniqueFact == ZR_NULL || sharedFact == ZR_NULL ||
+            uniqueFact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
+            sharedFact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
+            uniqueFact->qualifier != ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+            sharedFact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
+            !uniqueFact->isViolation ||
+            !sharedFact->isViolation) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Owner To Plain Initializer Escape",
+                      "Expected owner-to-plain ownership facts at both initializer expressions");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Owner To Plain Initializer Escape");
+}
+
 static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Return Ownership Mismatch");
 
     TEST_INFO("Ownership compatibility in return statements",
-              "Analyzing a function that promises %unique T but returns %shared T should emit a type_mismatch diagnostic");
+              "Analyzing a function that promises %unique T but returns %shared T should emit a specific ownership_mismatch diagnostic and fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -3180,6 +3617,7 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_return_mismatch_test.zr", 33);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrDiagnostic *diagnostic;
+        const SZrSemanticOwnershipFact *fact;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
@@ -3205,13 +3643,36 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
             return;
         }
 
-        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 4);
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "ownership_mismatch", 4);
         if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Reports Return Ownership Mismatch",
-                      "Expected type_mismatch diagnostic on the incompatible return ownership");
+                      "Expected ownership_mismatch diagnostic on the incompatible return ownership");
+            return;
+        }
+        if (!diagnostic_cause_contains(diagnostic, "%shared") ||
+            !diagnostic_suggestion_contains(diagnostic, "%unique")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Ownership Mismatch",
+                      "Expected return ownership diagnostic to include cause and suggestion");
+            return;
+        }
+        fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+                analyzer->semanticContext,
+                file_range_for_nth_substring(testCode, "resource", 1, ZR_FALSE));
+        if (fact == ZR_NULL ||
+            fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
+            fact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
+            !fact->isViolation) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Return Ownership Mismatch",
+                      "Expected ownership mismatch fact at the return expression");
             return;
         }
 
@@ -3222,12 +3683,112 @@ static void test_semantic_analyzer_reports_return_ownership_mismatch(SZrState *s
     TEST_PASS(timer, "Semantic Analyzer Reports Return Ownership Mismatch");
 }
 
+static void test_semantic_analyzer_reports_borrowed_return_escape(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Borrowed Return Escape");
+
+    TEST_INFO("Ownership borrow escape in return statements",
+              "Analyzing a function that returns %borrow(owner) should emit a borrow_escape diagnostic and ownership fact");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "class Resource {\n"
+            "}\n"
+            "leak(resource: %shared Resource): %borrowed Resource {\n"
+            "    return %borrow(resource);\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_borrowed_return_escape_test.zr", 39);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagnostic;
+        const SZrSemanticOwnershipFact *fact;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Borrowed Return Escape",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Borrowed Return Escape",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Borrowed Return Escape",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "borrow_escape", 4);
+        if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Borrowed Return Escape",
+                      "Expected borrow_escape diagnostic for borrowed return escape");
+            return;
+        }
+        if (!diagnostic_message_contains(diagnostic, "Borrowed value cannot escape") ||
+            !diagnostic_cause_contains(diagnostic, "%borrow") ||
+            !diagnostic_suggestion_contains(diagnostic, "Return")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Borrowed Return Escape",
+                      "Expected borrow escape diagnostic to include message, cause, and suggestion");
+            return;
+        }
+        fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+                analyzer->semanticContext,
+                file_range_for_nth_substring(testCode, "%borrow(resource)", 0, ZR_FALSE));
+        if (fact == ZR_NULL) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Borrowed Return Escape",
+                      "Expected borrow escape ownership fact to cover the ownership builtin");
+            return;
+        }
+        if (fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
+            fact->qualifier != ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+            !fact->isViolation) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Borrowed Return Escape",
+                      "Expected borrow escape ownership fact to be a borrowed violation");
+            return;
+        }
+        if (!ownership_fact_message_contains(fact, "Borrowed")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Borrowed Return Escape",
+                      "Expected borrow escape ownership fact to keep the diagnostic message");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Borrowed Return Escape");
+}
+
 static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Function Argument Ownership Mismatch");
 
     TEST_INFO("Ownership compatibility in function calls",
-              "Analyzing a direct function call that passes %shared T into %unique T should emit a type_mismatch diagnostic");
+              "Analyzing a direct function call that passes %shared T into %unique T should emit an ownership_mismatch diagnostic and fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -3242,6 +3803,7 @@ static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_call_mismatch_test.zr", 31);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrDiagnostic *diagnostic;
+        const SZrSemanticOwnershipFact *fact;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
@@ -3267,13 +3829,27 @@ static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(
             return;
         }
 
-        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 6);
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "ownership_mismatch", 6);
         if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Reports Function Argument Ownership Mismatch",
-                      "Expected type_mismatch diagnostic on the incompatible function argument ownership");
+                      "Expected ownership_mismatch diagnostic on the incompatible function argument ownership");
+            return;
+        }
+        fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+                analyzer->semanticContext,
+                file_range_for_nth_substring_offset(testCode, "consume(resource);", 0, strlen("consume(")));
+        if (fact == ZR_NULL ||
+            fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
+            fact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
+            !fact->isViolation) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Function Argument Ownership Mismatch",
+                      "Expected ownership mismatch fact at the function argument");
             return;
         }
 
@@ -3284,12 +3860,100 @@ static void test_semantic_analyzer_reports_function_argument_ownership_mismatch(
     TEST_PASS(timer, "Semantic Analyzer Reports Function Argument Ownership Mismatch");
 }
 
+static void test_semantic_analyzer_reports_weak_argument_requires_upgrade(SZrState *state) {
+    SZrTestTimer timer;
+    TEST_START("Semantic Analyzer Reports Weak Argument Requires Upgrade");
+
+    TEST_INFO("Ownership compatibility in function calls",
+              "Analyzing a direct function call that passes %weak T into %borrowed T should emit a weak_value_requires_upgrade diagnostic and fact");
+
+    {
+        SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
+        const TZrChar *testCode =
+            "class Resource {\n"
+            "}\n"
+            "observe(resource: %borrowed Resource) {\n"
+            "}\n"
+            "run(resource: %weak Resource) {\n"
+            "    observe(resource);\n"
+            "}\n";
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_weak_upgrade_required_test.zr", 38);
+        SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
+        SZrDiagnostic *diagnostic;
+        const SZrSemanticOwnershipFact *fact;
+
+        if (analyzer == ZR_NULL) {
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
+                      "Failed to create semantic analyzer");
+            return;
+        }
+
+        if (ast == ZR_NULL) {
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
+                      "Failed to parse test code");
+            return;
+        }
+
+        if (!ZrLanguageServer_SemanticAnalyzer_Analyze(state, analyzer, ast)) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
+                      "Failed to analyze AST");
+            return;
+        }
+
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "weak_value_requires_upgrade", 6);
+        if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
+                      "Expected weak_value_requires_upgrade diagnostic for implicit weak-to-borrowed argument use");
+            return;
+        }
+        if (!diagnostic_message_contains(diagnostic, "Weak value must be upgraded") ||
+            !diagnostic_cause_contains(diagnostic, "%weak") ||
+            !diagnostic_suggestion_contains(diagnostic, "%upgrade")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
+                      "Expected weak upgrade diagnostic to include message, cause, and suggestion");
+            return;
+        }
+        fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+                analyzer->semanticContext,
+                file_range_for_nth_substring_offset(testCode, "observe(resource);", 0, strlen("observe(")));
+        if (fact == ZR_NULL ||
+            fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
+            fact->qualifier != ZR_OWNERSHIP_QUALIFIER_WEAK ||
+            !fact->isViolation ||
+            !ownership_fact_message_contains(fact, "Weak")) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Weak Argument Requires Upgrade",
+                      "Expected weak upgrade ownership fact at the function argument");
+            return;
+        }
+
+        ZrParser_Ast_Free(state, ast);
+        ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+    }
+
+    TEST_PASS(timer, "Semantic Analyzer Reports Weak Argument Requires Upgrade");
+}
+
 static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZrState *state) {
     SZrTestTimer timer;
     TEST_START("Semantic Analyzer Reports Method Argument Ownership Mismatch");
 
     TEST_INFO("Ownership compatibility in method calls",
-              "Analyzing an instance method call that passes %shared T into %unique T should emit a type_mismatch diagnostic");
+              "Analyzing an instance method call that passes %shared T into %unique T should emit an ownership_mismatch diagnostic and fact");
 
     {
         SZrSemanticAnalyzer *analyzer = ZrLanguageServer_SemanticAnalyzer_New(state);
@@ -3307,6 +3971,7 @@ static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZ
         SZrString *sourceName = ZrCore_String_Create(state, "ownership_method_call_mismatch_test.zr", 38);
         SZrAstNode *ast = ZrParser_Parse(state, testCode, strlen(testCode), sourceName);
         SZrDiagnostic *diagnostic;
+        const SZrSemanticOwnershipFact *fact;
 
         if (analyzer == ZR_NULL) {
             TEST_FAIL(timer,
@@ -3332,13 +3997,27 @@ static void test_semantic_analyzer_reports_method_argument_ownership_mismatch(SZ
             return;
         }
 
-        diagnostic = find_diagnostic_by_code_and_line(analyzer, "type_mismatch", 9);
+        diagnostic = find_diagnostic_by_code_and_line(analyzer, "ownership_mismatch", 9);
         if (diagnostic == ZR_NULL || diagnostic->severity != ZR_DIAGNOSTIC_ERROR) {
             ZrParser_Ast_Free(state, ast);
             ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
             TEST_FAIL(timer,
                       "Semantic Analyzer Reports Method Argument Ownership Mismatch",
-                      "Expected type_mismatch diagnostic on the incompatible method argument ownership");
+                      "Expected ownership_mismatch diagnostic on the incompatible method argument ownership");
+            return;
+        }
+        fact = ZrParser_SemanticFacts_FindOwnershipAtPosition(
+                analyzer->semanticContext,
+                file_range_for_nth_substring_offset(testCode, "box.consume(resource);", 0, strlen("box.consume(")));
+        if (fact == ZR_NULL ||
+            fact->kind != ZR_SEMANTIC_OWNERSHIP_FACT_ERROR ||
+            fact->qualifier != ZR_OWNERSHIP_QUALIFIER_SHARED ||
+            !fact->isViolation) {
+            ZrParser_Ast_Free(state, ast);
+            ZrLanguageServer_SemanticAnalyzer_Free(state, analyzer);
+            TEST_FAIL(timer,
+                      "Semantic Analyzer Reports Method Argument Ownership Mismatch",
+                      "Expected ownership mismatch fact at the method argument");
             return;
         }
 
@@ -3927,6 +4606,9 @@ int main(void) {
     test_semantic_analyzer_populates_semantic_context(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_records_reference_facts_with_precise_ranges(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_records_using_cleanup_and_template_segments(state);
     TEST_DIVIDER();
     test_semantic_analyzer_records_owned_field_cleanup_metadata(state);
@@ -3977,6 +4659,12 @@ int main(void) {
     test_semantic_analyzer_preserves_owner_generic_context_in_member_signatures(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_records_reachability_facts_for_unreachable_statements(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_records_short_circuit_logical_facts(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_warns_on_unreachable_statements_after_return_or_throw(state);
     TEST_DIVIDER();
 
@@ -3989,10 +4677,19 @@ int main(void) {
     test_semantic_analyzer_reports_declared_ownership_initializer_mismatch(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_reports_owner_to_plain_initializer_escape(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_reports_return_ownership_mismatch(state);
     TEST_DIVIDER();
 
+    test_semantic_analyzer_reports_borrowed_return_escape(state);
+    TEST_DIVIDER();
+
     test_semantic_analyzer_reports_function_argument_ownership_mismatch(state);
+    TEST_DIVIDER();
+
+    test_semantic_analyzer_reports_weak_argument_requires_upgrade(state);
     TEST_DIVIDER();
 
     test_semantic_analyzer_reports_method_argument_ownership_mismatch(state);

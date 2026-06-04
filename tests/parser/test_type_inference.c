@@ -21,6 +21,7 @@
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/compiler.h"
 #include "zr_vm_parser/semantic.h"
+#include "zr_vm_parser/semantic_facts.h"
 #include "zr_vm_parser/type_inference.h"
 #include "zr_vm_library/native_registry.h"
 #include "test_support.h"
@@ -871,6 +872,24 @@ void tearDown(void) {}
 
 // ==================== 类型推断测试 ====================
 
+static SZrAstNode *test_type_inference_first_expression(SZrAstNode *ast) {
+    SZrAstNode *stmt;
+
+    if (ast == ZR_NULL ||
+        ast->type != ZR_AST_SCRIPT ||
+        ast->data.script.statements == ZR_NULL ||
+        ast->data.script.statements->count == 0) {
+        return ZR_NULL;
+    }
+
+    stmt = ast->data.script.statements->nodes[0];
+    if (stmt == ZR_NULL || stmt->type != ZR_AST_EXPRESSION_STATEMENT) {
+        return ZR_NULL;
+    }
+
+    return stmt->data.expressionStatement.expr;
+}
+
 // 测试整数字面量类型推断
 static void test_type_inference_integer_literal(void) {
     SZrTestTimer timer = {0};
@@ -991,6 +1010,88 @@ static void test_type_inference_small_integer_literal_defaults_to_int64(void) {
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
     TEST_DIVIDER();
+}
+
+static void test_type_inference_records_literal_expression_and_numeric_facts(void) {
+    SZrState *state = create_test_state();
+    SZrCompilerState *cs = ZR_NULL;
+    SZrString *sourceName = ZR_NULL;
+    SZrAstNode *ast = ZR_NULL;
+    SZrAstNode *expr = ZR_NULL;
+    SZrInferredType result;
+    const SZrSemanticExpressionFact *expressionFact;
+    const SZrSemanticNumericFact *numericFact;
+    const char *source = "42;";
+
+    TEST_ASSERT_NOT_NULL(state);
+    cs = create_test_compiler_state(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    sourceName = ZrCore_String_Create(state, "literal_fact_test.zr", 20);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    expr = test_type_inference_first_expression(ast);
+
+    TEST_ASSERT_NOT_NULL(expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_INTEGER_LITERAL, expr->type);
+
+    ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+    expressionFact = ZrParser_SemanticFacts_FindExpressionByNode(cs->semanticContext, expr);
+    numericFact = ZrParser_SemanticFacts_FindNumericByNode(cs->semanticContext, expr);
+
+    TEST_ASSERT_NOT_NULL(expressionFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_LITERAL, expressionFact->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_FACT_EXACT, expressionFact->exactness);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, expressionFact->inferredType.baseType);
+    TEST_ASSERT_TRUE(expressionFact->hasConstant);
+    TEST_ASSERT_EQUAL_INT64(42, expressionFact->constantValue.int64Value);
+    TEST_ASSERT_NOT_NULL(numericFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_NUMERIC_FACT_LITERAL, numericFact->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, numericFact->targetType);
+    TEST_ASSERT_FALSE(numericFact->mayOverflow);
+
+    ZrParser_InferredType_Free(state, &result);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
+}
+
+static void test_type_inference_records_binary_expression_and_numeric_facts(void) {
+    SZrState *state = create_test_state();
+    SZrCompilerState *cs = ZR_NULL;
+    SZrString *sourceName = ZR_NULL;
+    SZrAstNode *ast = ZR_NULL;
+    SZrAstNode *expr = ZR_NULL;
+    SZrInferredType result;
+    const SZrSemanticExpressionFact *expressionFact;
+    const SZrSemanticNumericFact *numericFact;
+    const char *source = "1 + 2;";
+
+    TEST_ASSERT_NOT_NULL(state);
+    cs = create_test_compiler_state(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    sourceName = ZrCore_String_Create(state, "binary_fact_test.zr", 19);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    expr = test_type_inference_first_expression(ast);
+
+    TEST_ASSERT_NOT_NULL(expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BINARY_EXPRESSION, expr->type);
+
+    ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+    expressionFact = ZrParser_SemanticFacts_FindExpressionByNode(cs->semanticContext, expr);
+    numericFact = ZrParser_SemanticFacts_FindNumericByNode(cs->semanticContext, expr);
+
+    TEST_ASSERT_NOT_NULL(expressionFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_BINARY, expressionFact->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, expressionFact->inferredType.baseType);
+    TEST_ASSERT_NOT_NULL(numericFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_NUMERIC_FACT_PROMOTION, numericFact->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, numericFact->targetType);
+
+    ZrParser_InferredType_Free(state, &result);
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
 }
 
 static void test_compiler_state_initializes_semantic_context(void) {
@@ -1745,6 +1846,144 @@ static void test_unique_value_is_compatible_with_borrowed_parameter(void) {
     TEST_DIVIDER();
 }
 
+static void test_weak_value_requires_upgrade_before_borrowed_parameter(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Weak Value Requires Upgrade Before Borrowed Parameter";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var seed = %unique new Holder();"
+                "var owner = %shared(seed);"
+                "var watcher = %weak(owner);"
+                "return Observe(watcher);";
+        SZrString *sourceName = ZrCore_String_Create(state, "weak_requires_upgrade_param_test.zr", 32);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+        SZrTypePrototypeInfo holderInfo;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
+
+        init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        register_test_type_prototype(state, cs, &holderInfo);
+        register_test_function_with_one_param(state,
+                                              cs,
+                                              "Observe",
+                                              ZR_VALUE_TYPE_INT64,
+                                              ZR_NULL,
+                                              ZR_VALUE_TYPE_OBJECT,
+                                              "Holder",
+                                              ZR_OWNERSHIP_QUALIFIER_BORROWED);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[3]->data.returnStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_TRUE(strstr(cs->errorMessage, "Argument type mismatch") != ZR_NULL ||
+                         strstr(cs->errorMessage, "No matching overload") != ZR_NULL);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_weak_receiver_requires_upgrade_before_borrowed_method(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Weak Receiver Requires Upgrade Before Borrowed Method";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "var seed = %unique new Holder();"
+                "var owner = %shared(seed);"
+                "var watcher = %weak(owner);"
+                "watcher.peek();";
+        SZrString *sourceName = ZrCore_String_Create(state, "weak_requires_upgrade_method_test.zr", 33);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+        SZrTypePrototypeInfo holderInfo;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
+
+        init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        add_test_method_member(state, &holderInfo, "peek", "int", ZR_OWNERSHIP_QUALIFIER_BORROWED);
+        register_test_type_prototype(state, cs, &holderInfo);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[2]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        expr = ast->data.script.statements->nodes[3]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Weak-owned receivers"));
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_borrowed_value_cannot_flow_to_plain_parameter(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Borrowed Value Cannot Flow To Plain Parameter";
@@ -1802,6 +2041,54 @@ static void test_borrowed_value_cannot_flow_to_plain_parameter(void) {
         ZrParser_InferredType_Free(state, &result);
 
         ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_owned_value_requires_detach_before_plain_flow(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Owned Value Requires Detach Before Plain Flow";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        SZrInferredType plainType;
+        SZrInferredType uniqueType;
+        SZrInferredType sharedType;
+        SZrFileRange location = {{0, 1, 1}, {0, 1, 8}, ZR_NULL};
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+
+        init_test_object_type(state, &plainType, "Resource", ZR_OWNERSHIP_QUALIFIER_NONE);
+        init_test_object_type(state, &uniqueType, "Resource", ZR_OWNERSHIP_QUALIFIER_UNIQUE);
+        init_test_object_type(state, &sharedType, "Resource", ZR_OWNERSHIP_QUALIFIER_SHARED);
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &plainType, &uniqueType, location));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Type mismatch"));
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &plainType, &sharedType, location));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Type mismatch"));
+
+        ZrParser_InferredType_Free(state, &plainType);
+        ZrParser_InferredType_Free(state, &uniqueType);
+        ZrParser_InferredType_Free(state, &sharedType);
         destroy_test_compiler_state(cs);
         destroy_test_state(state);
     }
@@ -6760,6 +7047,7 @@ int main(void) {
     printf("==========\n");
     RUN_TEST(test_type_inference_integer_literal);
     RUN_TEST(test_type_inference_small_integer_literal_defaults_to_int64);
+    RUN_TEST(test_type_inference_records_literal_expression_and_numeric_facts);
     RUN_TEST(test_compiler_state_initializes_semantic_context);
     RUN_TEST(test_type_environment_registers_semantic_records);
     RUN_TEST(test_type_environment_registers_function_overloads);
@@ -6771,7 +7059,10 @@ int main(void) {
     RUN_TEST(test_ownership_builtin_type_inference_rejects_invalid_operands);
     RUN_TEST(test_unique_instance_only_calls_borrowed_methods);
     RUN_TEST(test_unique_value_is_compatible_with_borrowed_parameter);
+    RUN_TEST(test_weak_value_requires_upgrade_before_borrowed_parameter);
+    RUN_TEST(test_weak_receiver_requires_upgrade_before_borrowed_method);
     RUN_TEST(test_borrowed_value_cannot_flow_to_plain_parameter);
+    RUN_TEST(test_owned_value_requires_detach_before_plain_flow);
     RUN_TEST(test_move_only_struct_assignment_rejects_implicit_copy);
     RUN_TEST(test_move_only_struct_argument_rejects_by_value_call);
     RUN_TEST(test_parser_supports_ownership_types_and_template_strings);
@@ -6860,6 +7151,7 @@ int main(void) {
     printf("==========\n");
     printf("Expression Type Inference Tests\n");
     printf("==========\n");
+    RUN_TEST(test_type_inference_records_binary_expression_and_numeric_facts);
     RUN_TEST(test_type_inference_binary_expression);
 
     printf("\n");

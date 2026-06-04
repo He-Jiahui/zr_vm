@@ -485,6 +485,51 @@ static EZrValueType semantic_type_prototypes_base_type_from_name(SZrString *type
     return ZR_VALUE_TYPE_OBJECT;
 }
 
+static void semantic_type_prototypes_apply_primitive_numeric_range(SZrInferredType *type) {
+    if (type == ZR_NULL || !ZR_VALUE_IS_TYPE_INT(type->baseType)) {
+        return;
+    }
+
+    switch (type->baseType) {
+        case ZR_VALUE_TYPE_INT8:
+            type->minValue = ZR_TYPE_RANGE_INT8_MIN;
+            type->maxValue = ZR_TYPE_RANGE_INT8_MAX;
+            break;
+        case ZR_VALUE_TYPE_INT16:
+            type->minValue = ZR_TYPE_RANGE_INT16_MIN;
+            type->maxValue = ZR_TYPE_RANGE_INT16_MAX;
+            break;
+        case ZR_VALUE_TYPE_INT32:
+            type->minValue = ZR_TYPE_RANGE_INT32_MIN;
+            type->maxValue = ZR_TYPE_RANGE_INT32_MAX;
+            break;
+        case ZR_VALUE_TYPE_INT64:
+            type->minValue = ZR_TYPE_RANGE_INT64_MIN;
+            type->maxValue = ZR_TYPE_RANGE_INT64_MAX;
+            break;
+        case ZR_VALUE_TYPE_UINT8:
+            type->minValue = 0;
+            type->maxValue = ZR_TYPE_RANGE_UINT8_MAX;
+            break;
+        case ZR_VALUE_TYPE_UINT16:
+            type->minValue = 0;
+            type->maxValue = ZR_TYPE_RANGE_UINT16_MAX;
+            break;
+        case ZR_VALUE_TYPE_UINT32:
+            type->minValue = 0;
+            type->maxValue = ZR_TYPE_RANGE_UINT32_MAX;
+            break;
+        case ZR_VALUE_TYPE_UINT64:
+            type->minValue = 0;
+            type->maxValue = ZR_TYPE_RANGE_UINT64_MAX;
+            break;
+        default:
+            return;
+    }
+
+    type->hasRangeConstraint = ZR_TRUE;
+}
+
 static TZrBool semantic_type_prototypes_parse_size_text(SZrString *sizeText, TZrSize *outSize) {
     const TZrChar *text;
     TZrChar *endPtr = ZR_NULL;
@@ -596,6 +641,7 @@ static TZrBool semantic_type_prototypes_build_inferred_type(SZrSemanticAnalyzer 
                                    ZR_FALSE,
                                    renderedTypeName);
     outType->ownershipQualifier = typeNode->ownershipQualifier;
+    semantic_type_prototypes_apply_primitive_numeric_range(outType);
 
     if (typeNode->name->type == ZR_AST_GENERIC_TYPE) {
         SZrGenericType *genericType = &typeNode->name->data.genericType;

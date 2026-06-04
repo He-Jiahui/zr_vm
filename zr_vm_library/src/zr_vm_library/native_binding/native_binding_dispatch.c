@@ -25,6 +25,7 @@
 #define native_binding_can_use_stack_root_lane native_binding_can_use_stack_root_lane_inline
 #define native_binding_can_use_fast_lane native_binding_can_use_fast_lane_inline
 #define native_binding_can_use_inline_pinned_lane native_binding_can_use_inline_pinned_lane_inline
+#define native_binding_context_adopt_inline_frame_anchor native_binding_context_adopt_inline_frame_anchor_inline
 
 #if defined(_MSC_VER)
     #define ZR_LIB_THREAD_LOCAL __declspec(thread)
@@ -339,6 +340,7 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
                                            : ZR_NULL;
     context.functionBase = functionBase;
     native_binding_init_call_context_layout_cached(&context,
+                                                   state,
                                                    functionBase,
                                                    rawArgumentCount,
                                                    closure != ZR_NULL
@@ -594,10 +596,13 @@ TZrInt64 native_binding_dispatcher(SZrState *state) {
     }
     success = ZR_FALSE;
     if (context.functionDescriptor != ZR_NULL && context.functionDescriptor->callback != ZR_NULL) {
+        native_binding_context_adopt_inline_frame_anchor(&context, &functionBaseAnchor);
         success = context.functionDescriptor->callback(&context, &result);
     } else if (context.methodDescriptor != ZR_NULL && context.methodDescriptor->callback != ZR_NULL) {
+        native_binding_context_adopt_inline_frame_anchor(&context, &functionBaseAnchor);
         success = context.methodDescriptor->callback(&context, &result);
     } else if (context.metaMethodDescriptor != ZR_NULL && context.metaMethodDescriptor->callback != ZR_NULL) {
+        native_binding_context_adopt_inline_frame_anchor(&context, &functionBaseAnchor);
         success = context.metaMethodDescriptor->callback(&context, &result);
     }
 
@@ -677,6 +682,25 @@ TZrSize ZrLib_CallContext_ArgumentCount(const ZrLibCallContext *context) {
     return context != ZR_NULL ? context->argumentCount : 0;
 }
 
+static TZrBool native_binding_context_argument_is_inline_struct_parameter(ZrLibCallContext *context,
+                                                                          TZrSize index) {
+    const SZrFunctionFrameSlotLayout *slotLayout;
+    TZrUInt32 stackSlot;
+
+    if (context == ZR_NULL || index >= context->argumentCount ||
+        context->inlineFrameFunction == ZR_NULL ||
+        context->inlineFrameBase == ZR_NULL ||
+        index > (TZrSize)(UINT32_MAX - context->inlineArgumentStartSlot)) {
+        return ZR_FALSE;
+    }
+
+    stackSlot = context->inlineArgumentStartSlot + (TZrUInt32)index;
+    slotLayout = ZrCore_Function_FindFrameSlotLayout(context->inlineFrameFunction, stackSlot);
+    return slotLayout != ZR_NULL &&
+           slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT &&
+           slotLayout->isParameter;
+}
+
 SZrTypeValue *ZrLib_CallContext_Self(const ZrLibCallContext *context) {
     ZrLibCallContext *mutableContext = (ZrLibCallContext *)context;
     native_binding_context_refresh_stack_layout_inline(mutableContext);
@@ -687,7 +711,11 @@ SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSiz
     ZrLibCallContext *mutableContext = (ZrLibCallContext *)context;
 
     native_binding_context_refresh_stack_layout_inline(mutableContext);
+    native_binding_context_refresh_inline_frame_layout_inline(mutableContext);
     if (mutableContext == ZR_NULL || index >= mutableContext->argumentCount) {
+        return ZR_NULL;
+    }
+    if (native_binding_context_argument_is_inline_struct_parameter(mutableContext, index)) {
         return ZR_NULL;
     }
     if (mutableContext->argumentValues != ZR_NULL) {
@@ -697,6 +725,49 @@ SZrTypeValue *ZrLib_CallContext_Argument(const ZrLibCallContext *context, TZrSiz
         return mutableContext->argumentValuePointers[index];
     }
     return ZrCore_Stack_GetValueNoProfile(mutableContext->argumentBase + index);
+}
+
+TZrBool ZrLib_CallContext_InlineArgumentSpan(const ZrLibCallContext *context,
+                                             TZrSize index,
+                                             ZrLibInlineSpan *outSpan) {
+    ZrLibCallContext *mutableContext = (ZrLibCallContext *)context;
+    const SZrFunctionFrameSlotLayout *slotLayout;
+    SZrStackFramePlace place;
+    TZrUInt32 stackSlot;
+
+    if (outSpan != ZR_NULL) {
+        memset(outSpan, 0, sizeof(*outSpan));
+    }
+
+    native_binding_context_refresh_stack_layout_inline(mutableContext);
+    native_binding_context_refresh_inline_frame_layout_inline(mutableContext);
+    if (mutableContext == ZR_NULL || outSpan == ZR_NULL ||
+        index >= mutableContext->argumentCount ||
+        mutableContext->inlineFrameFunction == ZR_NULL ||
+        mutableContext->inlineFrameBase == ZR_NULL ||
+        index > (TZrSize)(UINT32_MAX - mutableContext->inlineArgumentStartSlot)) {
+        return ZR_FALSE;
+    }
+
+    stackSlot = mutableContext->inlineArgumentStartSlot + (TZrUInt32)index;
+    slotLayout = ZrCore_Function_FindFrameSlotLayout(mutableContext->inlineFrameFunction, stackSlot);
+    if (slotLayout == ZR_NULL ||
+        slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT ||
+        !slotLayout->isParameter ||
+        !ZrCore_Function_MakeFrameSlotPlace(mutableContext->state,
+                                            mutableContext->inlineFrameFunction,
+                                            mutableContext->inlineFrameBase,
+                                            stackSlot,
+                                            &place)) {
+        return ZR_FALSE;
+    }
+
+    outSpan->address = place.address;
+    outSpan->byteSize = place.byteSize;
+    outSpan->byteAlign = place.byteAlign;
+    outSpan->typeLayoutId = slotLayout->typeLayoutId;
+    outSpan->available = ZR_TRUE;
+    return ZR_TRUE;
 }
 
 SZrObjectPrototype *ZrLib_CallContext_OwnerPrototype(const ZrLibCallContext *context) {
@@ -1281,6 +1352,50 @@ const SZrTypeValue *ZrLib_Object_GetFieldCString(SZrState *state,
     return result;
 }
 
+static TZrBool native_binding_array_try_push_dense_pair_pool_pinned(SZrState *state,
+                                                                    SZrObject *array,
+                                                                    const SZrTypeValue *value) {
+    SZrHashSet *nodeMap;
+    SZrHashKeyValuePair *pair;
+    TZrSize index;
+
+    if (state == ZR_NULL || array == ZR_NULL || value == ZR_NULL ||
+        array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        array->superArrayRawIntData != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    nodeMap = &array->nodeMap;
+    if (!nodeMap->isValid || nodeMap->buckets == ZR_NULL || nodeMap->capacity == 0) {
+        return ZR_FALSE;
+    }
+
+    index = nodeMap->elementCount;
+    if (!ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacity(state, nodeMap, index + 1) ||
+        !ZrCore_HashSet_EnsurePairPoolForElementCount(state, nodeMap, nodeMap->pairPoolUsed + 1) ||
+        index >= nodeMap->capacity ||
+        nodeMap->buckets[index] != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pair = ZrCore_HashSet_TakeReservedPair(nodeMap);
+    if (pair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pair->next = ZR_NULL;
+    ZR_VALUE_FAST_SET(&pair->key, nativeInt64, (TZrInt64)index, ZR_VALUE_TYPE_INT64);
+    ZrCore_Value_ResetAsNull(&pair->value);
+    ZrCore_Value_Copy(state, &pair->value, value);
+    nodeMap->buckets[index] = pair;
+    nodeMap->elementCount++;
+    if (ZrCore_Value_IsGarbageCollectable(&pair->value)) {
+        ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(array), &pair->value);
+    }
+    array->memberVersion++;
+    return ZR_TRUE;
+}
+
 TZrBool ZrLib_Array_PushValue(SZrState *state, SZrObject *array, const SZrTypeValue *value) {
     SZrTypeValue arrayValue;
     TZrBool arrayPinAdded = ZR_FALSE;
@@ -1301,9 +1416,13 @@ TZrBool ZrLib_Array_PushValue(SZrState *state, SZrObject *array, const SZrTypeVa
         return ZR_FALSE;
     }
 
-    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)ZrLib_Array_Length(array));
-    ZrCore_Object_SetValue(state, array, &key, value);
-    success = state->threadStatus == ZR_THREAD_STATUS_FINE;
+    if (native_binding_array_try_push_dense_pair_pool_pinned(state, array, value)) {
+        success = state->threadStatus == ZR_THREAD_STATUS_FINE;
+    } else {
+        ZrCore_Value_InitAsInt(state, &key, (TZrInt64)ZrLib_Array_Length(array));
+        ZrCore_Object_SetValue(state, array, &key, value);
+        success = state->threadStatus == ZR_THREAD_STATUS_FINE;
+    }
 
     native_binding_unpin_value_object(state->global, value, valuePinAdded);
     native_binding_unpin_value_object(state->global, &arrayValue, arrayPinAdded);

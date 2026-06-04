@@ -171,6 +171,8 @@ static void import_type_prototype_init(SZrState *state,
     info->accessModifier = ZR_ACCESS_PUBLIC;
     info->isImportedNative = ZR_TRUE;
     info->protocolMask = 0;
+    info->layoutByteSize = 0;
+    info->layoutByteAlign = 0;
     info->allowValueConstruction = type != ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE &&
                                    type != ZR_OBJECT_PROTOTYPE_TYPE_MODULE;
     info->allowBoxedConstruction = info->allowValueConstruction;
@@ -922,6 +924,8 @@ static TZrBool register_runtime_prototypes_from_function(SZrCompilerState *cs, c
                                        (EZrObjectPrototypeType)protoInfo->type);
             typePrototype.accessModifier = (EZrAccessModifier)protoInfo->accessModifier;
             typePrototype.protocolMask = protoInfo->protocolMask;
+            typePrototype.layoutByteSize = protoInfo->layoutByteSize;
+            typePrototype.layoutByteAlign = protoInfo->layoutByteAlign;
             if (protoInfo->hasDecoratorMetadata &&
                 protoInfo->decoratorMetadataConstantIndex < function->constantValueLength) {
                 typePrototype.decoratorMetadataValue = function->constantValueList[protoInfo->decoratorMetadataConstantIndex];

@@ -315,7 +315,8 @@ impl FunctionBuilder {
     }
 
     pub fn parameter(mut self, name: &str, type_name: &str, documentation: &str) -> Self {
-        self.parameters.push(ParameterDescriptor::new(name, type_name).documentation(documentation));
+        self.parameters
+            .push(ParameterDescriptor::new(name, type_name).documentation(documentation));
         self
     }
 
@@ -347,7 +348,12 @@ pub struct MetaMethodBuilder {
 }
 
 impl MetaMethodBuilder {
-    pub fn new<F>(meta_type: MetaMethodType, min_argument_count: u16, max_argument_count: u16, callback: F) -> Self
+    pub fn new<F>(
+        meta_type: MetaMethodType,
+        min_argument_count: u16,
+        max_argument_count: u16,
+        callback: F,
+    ) -> Self
     where
         F: Fn(&NativeCallContext) -> Result<Value, Error> + Send + Sync + 'static,
     {
@@ -374,7 +380,8 @@ impl MetaMethodBuilder {
     }
 
     pub fn parameter(mut self, name: &str, type_name: &str, documentation: &str) -> Self {
-        self.parameters.push(ParameterDescriptor::new(name, type_name).documentation(documentation));
+        self.parameters
+            .push(ParameterDescriptor::new(name, type_name).documentation(documentation));
         self
     }
 
@@ -455,7 +462,13 @@ impl TypeBuilder {
         self
     }
 
-    pub fn field(mut self, name: &str, type_name: &str, documentation: &str, contract_role: u32) -> Self {
+    pub fn field(
+        mut self,
+        name: &str,
+        type_name: &str,
+        documentation: &str,
+        contract_role: u32,
+    ) -> Self {
         self.fields.push(
             FieldDescriptor::new(name, type_name)
                 .documentation(documentation)
@@ -572,7 +585,11 @@ impl ModuleBuilder {
         self
     }
 
-    pub fn runtime_requirements(mut self, min_runtime_abi: u32, required_capabilities: u64) -> Self {
+    pub fn runtime_requirements(
+        mut self,
+        min_runtime_abi: u32,
+        required_capabilities: u64,
+    ) -> Self {
         self.min_runtime_abi = min_runtime_abi;
         self.required_capabilities = required_capabilities;
         self
@@ -593,7 +610,13 @@ impl ModuleBuilder {
         self
     }
 
-    pub fn int_constant(mut self, name: &str, value: i64, type_name: &str, documentation: &str) -> Self {
+    pub fn int_constant(
+        mut self,
+        name: &str,
+        value: i64,
+        type_name: &str,
+        documentation: &str,
+    ) -> Self {
         self.constants.push(
             ConstantDescriptor::new(name, value)
                 .type_name(type_name)
@@ -618,19 +641,28 @@ impl ModuleBuilder {
         if let Some(documentation) = &self.documentation {
             let documentation = string_to_cstring(documentation)?;
             check_status(unsafe {
-                sys::ZrRustBinding_NativeModuleBuilder_SetDocumentation(raw_builder.raw, documentation.as_ptr())
+                sys::ZrRustBinding_NativeModuleBuilder_SetDocumentation(
+                    raw_builder.raw,
+                    documentation.as_ptr(),
+                )
             })?;
         }
         if let Some(module_version) = &self.module_version {
             let module_version = string_to_cstring(module_version)?;
             check_status(unsafe {
-                sys::ZrRustBinding_NativeModuleBuilder_SetModuleVersion(raw_builder.raw, module_version.as_ptr())
+                sys::ZrRustBinding_NativeModuleBuilder_SetModuleVersion(
+                    raw_builder.raw,
+                    module_version.as_ptr(),
+                )
             })?;
         }
         if let Some(type_hints_json) = &self.type_hints_json {
             let type_hints_json = string_to_cstring(type_hints_json)?;
             check_status(unsafe {
-                sys::ZrRustBinding_NativeModuleBuilder_SetTypeHintsJson(raw_builder.raw, type_hints_json.as_ptr())
+                sys::ZrRustBinding_NativeModuleBuilder_SetTypeHintsJson(
+                    raw_builder.raw,
+                    type_hints_json.as_ptr(),
+                )
             })?;
         }
         if self.min_runtime_abi != 0 || self.required_capabilities != 0 {
@@ -652,7 +684,10 @@ impl ModuleBuilder {
         for module_link in &self.module_links {
             let serialized = SerializedModuleLinkDescriptor::new(module_link)?;
             check_status(unsafe {
-                sys::ZrRustBinding_NativeModuleBuilder_AddModuleLink(raw_builder.raw, &serialized.raw)
+                sys::ZrRustBinding_NativeModuleBuilder_AddModuleLink(
+                    raw_builder.raw,
+                    &serialized.raw,
+                )
             })?;
         }
         for constant in &self.constants {
@@ -677,7 +712,9 @@ impl ModuleBuilder {
         }
 
         let mut raw_module = ptr::null_mut();
-        check_status(unsafe { sys::ZrRustBinding_NativeModuleBuilder_Build(raw_builder.raw, &mut raw_module) })?;
+        check_status(unsafe {
+            sys::ZrRustBinding_NativeModuleBuilder_Build(raw_builder.raw, &mut raw_module)
+        })?;
         Ok(NativeModule { raw: raw_module })
     }
 }
@@ -738,11 +775,17 @@ impl NativeCallContext {
 
     pub fn argument_count(&self) -> Result<usize, Error> {
         let mut count = 0usize;
-        check_status(unsafe { sys::ZrRustBinding_NativeCallContext_GetArgumentCount(self.raw, &mut count) })?;
+        check_status(unsafe {
+            sys::ZrRustBinding_NativeCallContext_GetArgumentCount(self.raw, &mut count)
+        })?;
         Ok(count)
     }
 
-    pub fn check_arity(&self, min_argument_count: usize, max_argument_count: usize) -> Result<(), Error> {
+    pub fn check_arity(
+        &self,
+        min_argument_count: usize,
+        max_argument_count: usize,
+    ) -> Result<(), Error> {
         check_status(unsafe {
             sys::ZrRustBinding_NativeCallContext_CheckArity(
                 self.raw,
@@ -754,7 +797,9 @@ impl NativeCallContext {
 
     pub fn argument(&self, index: usize) -> Result<Value, Error> {
         let mut raw = ptr::null_mut();
-        check_status(unsafe { sys::ZrRustBinding_NativeCallContext_GetArgument(self.raw, index, &mut raw) })?;
+        check_status(unsafe {
+            sys::ZrRustBinding_NativeCallContext_GetArgument(self.raw, index, &mut raw)
+        })?;
         Ok(Value { raw })
     }
 
@@ -770,7 +815,10 @@ impl NativeCallContext {
 }
 
 impl Runtime {
-    pub fn register_native_module(&mut self, module: NativeModule) -> Result<NativeModuleRegistration, Error> {
+    pub fn register_native_module(
+        &mut self,
+        module: NativeModule,
+    ) -> Result<NativeModuleRegistration, Error> {
         let mut module = module;
         let mut raw = ptr::null_mut();
         check_status(unsafe {
@@ -793,7 +841,9 @@ impl RawModuleBuilder {
     fn new(module_name: &str) -> Result<Self, Error> {
         let module_name = string_to_cstring(module_name)?;
         let mut raw = ptr::null_mut();
-        check_status(unsafe { sys::ZrRustBinding_NativeModuleBuilder_New(module_name.as_ptr(), &mut raw) })?;
+        check_status(unsafe {
+            sys::ZrRustBinding_NativeModuleBuilder_New(module_name.as_ptr(), &mut raw)
+        })?;
         Ok(Self { raw })
     }
 }
@@ -820,7 +870,10 @@ impl SerializedCStringArray {
             .iter()
             .map(|value| string_to_cstring(value))
             .collect::<Result<Vec<_>, _>>()?;
-        let ptrs = c_values.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
+        let ptrs = c_values
+            .iter()
+            .map(|value| value.as_ptr())
+            .collect::<Vec<_>>();
         Ok(Self {
             _values: c_values,
             ptrs,
@@ -862,7 +915,9 @@ impl SerializedTypeHintDescriptor {
             symbolName: symbol_name.as_ptr(),
             symbolKind: symbol_kind.as_ptr(),
             signature: signature.as_ptr(),
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
         };
         Ok(Self {
             _symbol_name: symbol_name,
@@ -893,7 +948,9 @@ impl SerializedModuleLinkDescriptor {
         let raw = sys::ZrRustBindingNativeModuleLinkDescriptor {
             name: name.as_ptr(),
             moduleName: module_name.as_ptr(),
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
         };
         Ok(Self {
             _name: name,
@@ -931,7 +988,12 @@ impl SerializedConstantDescriptor {
         };
 
         let (kind, int_value, float_value, bool_value) = match &descriptor.value {
-            ConstantValue::Null => (sys::ZrRustBindingNativeConstantKind::ZR_RUST_BINDING_NATIVE_CONSTANT_KIND_NULL, 0, 0.0, 0),
+            ConstantValue::Null => (
+                sys::ZrRustBindingNativeConstantKind::ZR_RUST_BINDING_NATIVE_CONSTANT_KIND_NULL,
+                0,
+                0.0,
+                0,
+            ),
             ConstantValue::Bool(value) => (
                 sys::ZrRustBindingNativeConstantKind::ZR_RUST_BINDING_NATIVE_CONSTANT_KIND_BOOL,
                 0,
@@ -963,10 +1025,16 @@ impl SerializedConstantDescriptor {
             kind,
             intValue: int_value,
             floatValue: float_value,
-            stringValue: string_value.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            stringValue: string_value
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
             boolValue: bool_value,
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
-            typeName: type_name.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            typeName: type_name
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
         };
 
         Ok(Self {
@@ -998,7 +1066,9 @@ impl SerializedFieldDescriptor {
         let raw = sys::ZrRustBindingNativeFieldDescriptor {
             name: name.as_ptr(),
             typeName: type_name.as_ptr(),
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
             contractRole: descriptor.contract_role,
         };
         Ok(Self {
@@ -1029,7 +1099,9 @@ impl SerializedParameterDescriptor {
         let raw = sys::ZrRustBindingNativeParameterDescriptor {
             name: name.as_ptr(),
             typeName: type_name.as_ptr(),
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
         };
         Ok(Self {
             _name: name,
@@ -1058,7 +1130,9 @@ impl SerializedGenericParameterDescriptor {
         let constraint_type_names = SerializedCStringArray::new(&descriptor.constraint_type_names)?;
         let raw = sys::ZrRustBindingNativeGenericParameterDescriptor {
             name: name.as_ptr(),
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
             constraintTypeNames: constraint_type_names.as_ptr(),
             constraintTypeCount: constraint_type_names.len(),
         };
@@ -1091,7 +1165,12 @@ impl SerializedEnumMemberDescriptor {
             _ => None,
         };
         let (kind, int_value, float_value, bool_value) = match &descriptor.value {
-            ConstantValue::Null => (sys::ZrRustBindingNativeConstantKind::ZR_RUST_BINDING_NATIVE_CONSTANT_KIND_NULL, 0, 0.0, 0),
+            ConstantValue::Null => (
+                sys::ZrRustBindingNativeConstantKind::ZR_RUST_BINDING_NATIVE_CONSTANT_KIND_NULL,
+                0,
+                0.0,
+                0,
+            ),
             ConstantValue::Bool(value) => (
                 sys::ZrRustBindingNativeConstantKind::ZR_RUST_BINDING_NATIVE_CONSTANT_KIND_BOOL,
                 0,
@@ -1122,9 +1201,13 @@ impl SerializedEnumMemberDescriptor {
             kind,
             intValue: int_value,
             floatValue: float_value,
-            stringValue: string_value.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            stringValue: string_value
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
             boolValue: bool_value,
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
         };
         Ok(Self {
             _name: name,
@@ -1207,7 +1290,10 @@ impl SerializedFunctionDescriptor {
             .iter()
             .map(SerializedGenericParameterDescriptor::new)
             .collect::<Result<Vec<_>, _>>()?;
-        let raw_generic_parameters = generic_parameters.iter().map(|value| value.raw).collect::<Vec<_>>();
+        let raw_generic_parameters = generic_parameters
+            .iter()
+            .map(|value| value.raw)
+            .collect::<Vec<_>>();
         let callback_user_data = PendingCallbackUserData::new(function.callback);
         let raw = sys::ZrRustBindingNativeFunctionDescriptor {
             name: name.as_ptr(),
@@ -1216,8 +1302,12 @@ impl SerializedFunctionDescriptor {
             callback: Some(native_callback_trampoline),
             userData: callback_user_data.user_data(),
             destroyUserData: Some(native_callback_destroy_trampoline),
-            returnTypeName: return_type_name.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            returnTypeName: return_type_name
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
             parameters: if raw_parameters.is_empty() {
                 ptr::null()
             } else {
@@ -1290,7 +1380,10 @@ impl SerializedMethodDescriptor {
             .iter()
             .map(SerializedGenericParameterDescriptor::new)
             .collect::<Result<Vec<_>, _>>()?;
-        let raw_generic_parameters = generic_parameters.iter().map(|value| value.raw).collect::<Vec<_>>();
+        let raw_generic_parameters = generic_parameters
+            .iter()
+            .map(|value| value.raw)
+            .collect::<Vec<_>>();
         let callback_user_data = PendingCallbackUserData::new(method.function.callback);
         let raw = sys::ZrRustBindingNativeMethodDescriptor {
             name: name.as_ptr(),
@@ -1299,8 +1392,12 @@ impl SerializedMethodDescriptor {
             callback: Some(native_callback_trampoline),
             userData: callback_user_data.user_data(),
             destroyUserData: Some(native_callback_destroy_trampoline),
-            returnTypeName: return_type_name.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            returnTypeName: return_type_name
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
             isStatic: u8::from(method.is_static),
             parameters: if raw_parameters.is_empty() {
                 ptr::null()
@@ -1368,7 +1465,10 @@ impl SerializedMetaMethodDescriptor {
             .iter()
             .map(SerializedGenericParameterDescriptor::new)
             .collect::<Result<Vec<_>, _>>()?;
-        let raw_generic_parameters = generic_parameters.iter().map(|value| value.raw).collect::<Vec<_>>();
+        let raw_generic_parameters = generic_parameters
+            .iter()
+            .map(|value| value.raw)
+            .collect::<Vec<_>>();
         let callback_user_data = PendingCallbackUserData::new(method.callback);
         let raw = sys::ZrRustBindingNativeMetaMethodDescriptor {
             metaType: map_meta_method_type(method.meta_type),
@@ -1377,8 +1477,12 @@ impl SerializedMetaMethodDescriptor {
             callback: Some(native_callback_trampoline),
             userData: callback_user_data.user_data(),
             destroyUserData: Some(native_callback_destroy_trampoline),
-            returnTypeName: return_type_name.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            returnTypeName: return_type_name
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
             parameters: if raw_parameters.is_empty() {
                 ptr::null()
             } else {
@@ -1447,7 +1551,8 @@ impl SerializedTypeDescriptor {
             .as_ref()
             .map(|value| string_to_cstring(value))
             .transpose()?;
-        let implements_type_names = SerializedCStringArray::new(&type_builder.implements_type_names)?;
+        let implements_type_names =
+            SerializedCStringArray::new(&type_builder.implements_type_names)?;
         let enum_value_type_name = type_builder
             .enum_value_type_name
             .as_ref()
@@ -1505,46 +1610,93 @@ impl SerializedTypeDescriptor {
             .into_iter()
             .map(SerializedMetaMethodDescriptor::new)
             .collect::<Result<Vec<_>, _>>()?;
-        let raw_meta_methods = meta_methods.iter().map(|value| value.raw).collect::<Vec<_>>();
+        let raw_meta_methods = meta_methods
+            .iter()
+            .map(|value| value.raw)
+            .collect::<Vec<_>>();
         let enum_members = type_builder
             .enum_members
             .iter()
             .map(SerializedEnumMemberDescriptor::new)
             .collect::<Result<Vec<_>, _>>()?;
-        let raw_enum_members = enum_members.iter().map(|value| value.raw).collect::<Vec<_>>();
+        let raw_enum_members = enum_members
+            .iter()
+            .map(|value| value.raw)
+            .collect::<Vec<_>>();
         let generic_parameters = type_builder
             .generic_parameters
             .iter()
             .map(SerializedGenericParameterDescriptor::new)
             .collect::<Result<Vec<_>, _>>()?;
-        let raw_generic_parameters = generic_parameters.iter().map(|value| value.raw).collect::<Vec<_>>();
+        let raw_generic_parameters = generic_parameters
+            .iter()
+            .map(|value| value.raw)
+            .collect::<Vec<_>>();
         let raw = sys::ZrRustBindingNativeTypeDescriptor {
             name: name.as_ptr(),
             prototypeType: map_prototype_type(type_builder.prototype_type),
-            fields: if raw_fields.is_empty() { ptr::null() } else { raw_fields.as_ptr() },
+            fields: if raw_fields.is_empty() {
+                ptr::null()
+            } else {
+                raw_fields.as_ptr()
+            },
             fieldCount: raw_fields.len(),
-            methods: if raw_methods.is_empty() { ptr::null() } else { raw_methods.as_ptr() },
+            methods: if raw_methods.is_empty() {
+                ptr::null()
+            } else {
+                raw_methods.as_ptr()
+            },
             methodCount: raw_methods.len(),
-            metaMethods: if raw_meta_methods.is_empty() { ptr::null() } else { raw_meta_methods.as_ptr() },
+            metaMethods: if raw_meta_methods.is_empty() {
+                ptr::null()
+            } else {
+                raw_meta_methods.as_ptr()
+            },
             metaMethodCount: raw_meta_methods.len(),
-            documentation: documentation.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
-            extendsTypeName: extends_type_name.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            documentation: documentation
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            extendsTypeName: extends_type_name
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
             implementsTypeNames: implements_type_names.as_ptr(),
             implementsTypeCount: implements_type_names.len(),
-            enumMembers: if raw_enum_members.is_empty() { ptr::null() } else { raw_enum_members.as_ptr() },
+            enumMembers: if raw_enum_members.is_empty() {
+                ptr::null()
+            } else {
+                raw_enum_members.as_ptr()
+            },
             enumMemberCount: raw_enum_members.len(),
-            enumValueTypeName: enum_value_type_name.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            enumValueTypeName: enum_value_type_name
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
             allowValueConstruction: u8::from(type_builder.allow_value_construction),
             allowBoxedConstruction: u8::from(type_builder.allow_boxed_construction),
-            constructorSignature: constructor_signature.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
-            genericParameters: if raw_generic_parameters.is_empty() { ptr::null() } else { raw_generic_parameters.as_ptr() },
+            constructorSignature: constructor_signature
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            genericParameters: if raw_generic_parameters.is_empty() {
+                ptr::null()
+            } else {
+                raw_generic_parameters.as_ptr()
+            },
             genericParameterCount: raw_generic_parameters.len(),
             protocolMask: type_builder.protocol_mask,
-            ffiLoweringKind: ffi_lowering_kind.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
-            ffiViewTypeName: ffi_view_type_name.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
-            ffiUnderlyingTypeName: ffi_underlying_type_name.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
-            ffiOwnerMode: ffi_owner_mode.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
-            ffiReleaseHook: ffi_release_hook.as_ref().map_or(ptr::null(), |value| value.as_ptr()),
+            ffiLoweringKind: ffi_lowering_kind
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            ffiViewTypeName: ffi_view_type_name
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            ffiUnderlyingTypeName: ffi_underlying_type_name
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            ffiOwnerMode: ffi_owner_mode
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
+            ffiReleaseHook: ffi_release_hook
+                .as_ref()
+                .map_or(ptr::null(), |value| value.as_ptr()),
         };
         Ok(Self {
             _name: name,
@@ -1601,20 +1753,36 @@ where
 
 fn map_prototype_type(value: PrototypeType) -> sys::ZrRustBindingPrototypeType {
     match value {
-        PrototypeType::Invalid => sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_INVALID,
-        PrototypeType::Module => sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_MODULE,
-        PrototypeType::Class => sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_CLASS,
-        PrototypeType::Interface => sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_INTERFACE,
-        PrototypeType::Struct => sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_STRUCT,
+        PrototypeType::Invalid => {
+            sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_INVALID
+        }
+        PrototypeType::Module => {
+            sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_MODULE
+        }
+        PrototypeType::Class => {
+            sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_CLASS
+        }
+        PrototypeType::Interface => {
+            sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_INTERFACE
+        }
+        PrototypeType::Struct => {
+            sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_STRUCT
+        }
         PrototypeType::Enum => sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_ENUM,
-        PrototypeType::Native => sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_NATIVE,
+        PrototypeType::Native => {
+            sys::ZrRustBindingPrototypeType::ZR_RUST_BINDING_PROTOTYPE_TYPE_NATIVE
+        }
     }
 }
 
 fn map_meta_method_type(value: MetaMethodType) -> sys::ZrRustBindingMetaMethodType {
     match value {
-        MetaMethodType::Constructor => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_CONSTRUCTOR,
-        MetaMethodType::Destructor => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_DESTRUCTOR,
+        MetaMethodType::Constructor => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_CONSTRUCTOR
+        }
+        MetaMethodType::Destructor => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_DESTRUCTOR
+        }
         MetaMethodType::Add => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_ADD,
         MetaMethodType::Sub => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_SUB,
         MetaMethodType::Mul => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_MUL,
@@ -1622,25 +1790,61 @@ fn map_meta_method_type(value: MetaMethodType) -> sys::ZrRustBindingMetaMethodTy
         MetaMethodType::Mod => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_MOD,
         MetaMethodType::Pow => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_POW,
         MetaMethodType::Neg => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_NEG,
-        MetaMethodType::Compare => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_COMPARE,
-        MetaMethodType::ToBool => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_TO_BOOL,
-        MetaMethodType::ToString => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_TO_STRING,
-        MetaMethodType::ToInt => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_TO_INT,
-        MetaMethodType::ToUint => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_TO_UINT,
-        MetaMethodType::ToFloat => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_TO_FLOAT,
+        MetaMethodType::Compare => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_COMPARE
+        }
+        MetaMethodType::ToBool => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_TO_BOOL
+        }
+        MetaMethodType::ToString => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_TO_STRING
+        }
+        MetaMethodType::ToInt => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_TO_INT
+        }
+        MetaMethodType::ToUint => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_TO_UINT
+        }
+        MetaMethodType::ToFloat => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_TO_FLOAT
+        }
         MetaMethodType::Call => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_CALL,
-        MetaMethodType::Getter => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_GETTER,
-        MetaMethodType::Setter => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_SETTER,
-        MetaMethodType::ShiftLeft => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_SHIFT_LEFT,
-        MetaMethodType::ShiftRight => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_SHIFT_RIGHT,
-        MetaMethodType::BitAnd => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_BIT_AND,
-        MetaMethodType::BitOr => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_BIT_OR,
-        MetaMethodType::BitXor => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_BIT_XOR,
-        MetaMethodType::BitNot => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_BIT_NOT,
-        MetaMethodType::GetItem => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_GET_ITEM,
-        MetaMethodType::SetItem => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_SET_ITEM,
-        MetaMethodType::Close => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_CLOSE,
-        MetaMethodType::Decorate => sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_DECORATE,
+        MetaMethodType::Getter => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_GETTER
+        }
+        MetaMethodType::Setter => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_SETTER
+        }
+        MetaMethodType::ShiftLeft => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_SHIFT_LEFT
+        }
+        MetaMethodType::ShiftRight => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_SHIFT_RIGHT
+        }
+        MetaMethodType::BitAnd => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_BIT_AND
+        }
+        MetaMethodType::BitOr => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_BIT_OR
+        }
+        MetaMethodType::BitXor => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_BIT_XOR
+        }
+        MetaMethodType::BitNot => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_BIT_NOT
+        }
+        MetaMethodType::GetItem => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_GET_ITEM
+        }
+        MetaMethodType::SetItem => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_SET_ITEM
+        }
+        MetaMethodType::Close => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_CLOSE
+        }
+        MetaMethodType::Decorate => {
+            sys::ZrRustBindingMetaMethodType::ZR_RUST_BINDING_META_METHOD_DECORATE
+        }
     }
 }
 

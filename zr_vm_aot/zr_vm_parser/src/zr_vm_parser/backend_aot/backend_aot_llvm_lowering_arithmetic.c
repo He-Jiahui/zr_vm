@@ -961,6 +961,8 @@ static const TZrChar *backend_aot_llvm_unary_value_helper_name(TZrUInt32 opcode)
             return "ZrLibrary_AotRuntime_Neg";
         case ZR_INSTRUCTION_ENUM(LOGICAL_NOT):
             return "ZrLibrary_AotRuntime_LogicalNot";
+        case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):
+            return "ZrLibrary_AotRuntime_LogicalNot";
         case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
             return "ZrLibrary_AotRuntime_BitwiseNot";
         case ZR_INSTRUCTION_ENUM(TO_INT):

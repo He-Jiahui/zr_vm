@@ -354,6 +354,7 @@ static TZrBool binding_collect_from_object_literal(SZrCompileTimeBindingResolver
 
         if (propertyNode == ZR_NULL || propertyNode->type != ZR_AST_KEY_VALUE_PAIR ||
             propertyNode->data.keyValuePair.value == ZR_NULL ||
+            propertyNode->data.keyValuePair.keyIsComputed ||
             !binding_extract_property_name(resolver->state, propertyNode->data.keyValuePair.key, &propertyName)) {
             continue;
         }

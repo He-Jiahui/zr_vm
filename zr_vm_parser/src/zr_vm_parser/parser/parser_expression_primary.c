@@ -868,6 +868,7 @@ static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState 
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
     TZrParserErrorCallback savedErrorCallback;
+    TZrParserStructuredErrorCallback savedStructuredErrorCallback;
     TZrPtr savedErrorUserData;
     SZrType *typeInfo;
     SZrAstNode *node;
@@ -880,9 +881,11 @@ static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState 
     save_parser_cursor(ps, &cursor);
     savedSuppressErrorOutput = ps->suppressErrorOutput;
     savedErrorCallback = ps->errorCallback;
+    savedStructuredErrorCallback = ps->structuredErrorCallback;
     savedErrorUserData = ps->errorUserData;
     ps->suppressErrorOutput = ZR_TRUE;
     ps->errorCallback = ZR_NULL;
+    ps->structuredErrorCallback = ZR_NULL;
     ps->errorUserData = ZR_NULL;
     ps->hasError = ZR_FALSE;
     ps->errorMessage = ZR_NULL;
@@ -897,12 +900,14 @@ static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState 
         restore_parser_cursor(ps, &cursor);
         ps->suppressErrorOutput = savedSuppressErrorOutput;
         ps->errorCallback = savedErrorCallback;
+        ps->structuredErrorCallback = savedStructuredErrorCallback;
         ps->errorUserData = savedErrorUserData;
         return ZR_NULL;
     }
 
     ps->suppressErrorOutput = savedSuppressErrorOutput;
     ps->errorCallback = savedErrorCallback;
+    ps->structuredErrorCallback = savedStructuredErrorCallback;
     ps->errorUserData = savedErrorUserData;
     ps->hasError = cursor.hasError;
     ps->errorMessage = cursor.errorMessage;
@@ -914,6 +919,7 @@ static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState 
         restore_parser_cursor(ps, &cursor);
         ps->suppressErrorOutput = savedSuppressErrorOutput;
         ps->errorCallback = savedErrorCallback;
+        ps->structuredErrorCallback = savedStructuredErrorCallback;
         ps->errorUserData = savedErrorUserData;
         return ZR_NULL;
     }
@@ -953,21 +959,25 @@ SZrAstNode *parse_reserved_type_expression(SZrParserState *ps) {
         SZrParserCursor cursor;
         TZrBool savedSuppressErrorOutput;
         TZrParserErrorCallback savedErrorCallback;
+        TZrParserStructuredErrorCallback savedStructuredErrorCallback;
         TZrPtr savedErrorUserData;
         SZrType *parsedType = ZR_NULL;
 
         save_parser_cursor(ps, &cursor);
         savedSuppressErrorOutput = ps->suppressErrorOutput;
         savedErrorCallback = ps->errorCallback;
+        savedStructuredErrorCallback = ps->structuredErrorCallback;
         savedErrorUserData = ps->errorUserData;
         ps->suppressErrorOutput = ZR_TRUE;
         ps->errorCallback = ZR_NULL;
+        ps->structuredErrorCallback = ZR_NULL;
         ps->errorUserData = ZR_NULL;
         ps->hasError = ZR_FALSE;
         ps->errorMessage = ZR_NULL;
         parsedType = parse_type(ps);
         ps->suppressErrorOutput = savedSuppressErrorOutput;
         ps->errorCallback = savedErrorCallback;
+        ps->structuredErrorCallback = savedStructuredErrorCallback;
         ps->errorUserData = savedErrorUserData;
         if (parsedType != ZR_NULL &&
             ps->lexer->t.token == ZR_TK_RPAREN &&
@@ -989,6 +999,7 @@ SZrAstNode *parse_reserved_type_expression(SZrParserState *ps) {
             restore_parser_cursor(ps, &cursor);
             ps->suppressErrorOutput = savedSuppressErrorOutput;
             ps->errorCallback = savedErrorCallback;
+            ps->structuredErrorCallback = savedStructuredErrorCallback;
             ps->errorUserData = savedErrorUserData;
         }
     }
@@ -1093,6 +1104,7 @@ static SZrAstNodeArray *try_parse_explicit_generic_call_arguments(SZrParserState
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
     TZrParserErrorCallback savedErrorCallback;
+    TZrParserStructuredErrorCallback savedStructuredErrorCallback;
     TZrPtr savedErrorUserData;
     SZrAstNodeArray *genericArguments;
 
@@ -1103,9 +1115,11 @@ static SZrAstNodeArray *try_parse_explicit_generic_call_arguments(SZrParserState
     save_parser_cursor(ps, &cursor);
     savedSuppressErrorOutput = ps->suppressErrorOutput;
     savedErrorCallback = ps->errorCallback;
+    savedStructuredErrorCallback = ps->structuredErrorCallback;
     savedErrorUserData = ps->errorUserData;
     ps->suppressErrorOutput = ZR_TRUE;
     ps->errorCallback = ZR_NULL;
+    ps->structuredErrorCallback = ZR_NULL;
     ps->errorUserData = ZR_NULL;
     ps->hasError = ZR_FALSE;
     ps->errorMessage = ZR_NULL;
@@ -1118,12 +1132,14 @@ static SZrAstNodeArray *try_parse_explicit_generic_call_arguments(SZrParserState
         restore_parser_cursor(ps, &cursor);
         ps->suppressErrorOutput = savedSuppressErrorOutput;
         ps->errorCallback = savedErrorCallback;
+        ps->structuredErrorCallback = savedStructuredErrorCallback;
         ps->errorUserData = savedErrorUserData;
         return ZR_NULL;
     }
 
     ps->suppressErrorOutput = savedSuppressErrorOutput;
     ps->errorCallback = savedErrorCallback;
+    ps->structuredErrorCallback = savedStructuredErrorCallback;
     ps->errorUserData = savedErrorUserData;
     ps->hasError = cursor.hasError;
     ps->errorMessage = cursor.errorMessage;

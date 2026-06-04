@@ -68,23 +68,47 @@ SZrString *ZrLanguageServer_SemanticAnalyzer_GetClassPropertySymbolName(SZrAstNo
     return ZR_NULL;
 }
 
-void ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(SZrState *state,
-                                                SZrSemanticAnalyzer *analyzer,
-                                                SZrSymbol *symbol) {
-    SZrFileRange range;
-
+void ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForRange(SZrState *state,
+                                                                      SZrSemanticAnalyzer *analyzer,
+                                                                      SZrSymbol *symbol,
+                                                                      SZrFileRange range) {
     if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->referenceTracker == ZR_NULL ||
         symbol == ZR_NULL) {
         return;
     }
-
-    range = ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol);
 
     ZrLanguageServer_ReferenceTracker_AddReference(state,
                                                    analyzer->referenceTracker,
                                                    symbol,
                                                    range,
                                                    ZR_REFERENCE_DEFINITION);
+
+    if (analyzer->semanticContext != ZR_NULL) {
+        SZrSemanticReferenceFact fact;
+        memset(&fact, 0, sizeof(fact));
+        fact.node = symbol->astNode;
+        fact.range = range;
+        fact.declarationRange = range;
+        fact.kind = ZR_SEMANTIC_REFERENCE_DECLARATION;
+        fact.symbolId = symbol->semanticId;
+        fact.typeId = symbol->semanticTypeId;
+        fact.name = symbol->name;
+        fact.isResolved = ZR_TRUE;
+        ZrParser_SemanticFacts_AppendReference(analyzer->semanticContext, &fact);
+    }
+}
+
+void ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(SZrState *state,
+                                                SZrSemanticAnalyzer *analyzer,
+                                                SZrSymbol *symbol) {
+    SZrFileRange range;
+
+    if (symbol == ZR_NULL) {
+        return;
+    }
+
+    range = ZrLanguageServer_Lsp_GetSymbolLookupRange(symbol);
+    ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForRange(state, analyzer, symbol, range);
 }
 
 // 辅助函数：递归计算 AST 节点的哈希值

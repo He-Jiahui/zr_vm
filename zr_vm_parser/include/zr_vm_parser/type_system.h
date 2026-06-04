@@ -16,6 +16,14 @@
 struct SZrCompilerState;
 struct SZrSemanticContext;
 
+#ifndef ZR_VM_PARSER_SEMANTIC_ID_TYPES_DECLARED
+#define ZR_VM_PARSER_SEMANTIC_ID_TYPES_DECLARED
+typedef TZrUInt32 TZrTypeId;
+typedef TZrUInt32 TZrSymbolId;
+typedef TZrUInt32 TZrOverloadSetId;
+typedef TZrUInt32 TZrLifetimeRegionId;
+#endif
+
 // 推断的类型结构体
 typedef struct SZrInferredType {
     EZrValueType baseType;           // 基础类型（对应EZrValueType枚举）
@@ -40,6 +48,10 @@ typedef struct SZrInferredType {
 typedef struct SZrTypeBinding {
     SZrString *name;                 // 变量名
     SZrInferredType type;            // 变量类型
+    SZrFileRange declarationRange;   // 声明 token/source range（可选）
+    TZrBool hasDeclarationRange;     // declarationRange 是否有效
+    TZrTypeId typeId;                // 共享语义类型 ID（可选）
+    TZrSymbolId symbolId;            // 共享语义符号 ID（可选）
 } SZrTypeBinding;
 
 // 函数类型信息
@@ -50,6 +62,10 @@ typedef struct SZrFunctionTypeInfo {
     SZrArray genericParameters;      // 泛型参数数组（SZrTypeGenericParameterInfo）
     SZrArray parameterPassingModes;  // 参数传递模式数组（EZrParameterPassingMode）
     SZrAstNode *declarationNode;     // 源声明节点（可选）
+    SZrFileRange declarationRange;   // 函数名 token/source range（可选）
+    TZrBool hasDeclarationRange;     // declarationRange 是否有效
+    TZrTypeId typeId;                // 共享语义类型 ID（可选）
+    TZrSymbolId symbolId;            // 共享语义符号 ID（可选）
 } SZrFunctionTypeInfo;
 
 // 类型环境结构体
@@ -98,9 +114,17 @@ ZR_PARSER_API void ZrParser_TypeEnvironment_Free(SZrState *state, SZrTypeEnviron
 
 // 注册变量类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterVariable(SZrState *state, SZrTypeEnvironment *env, SZrString *name, const SZrInferredType *type);
+ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterVariableEx(SZrState *state,
+                                                                  SZrTypeEnvironment *env,
+                                                                  SZrString *name,
+                                                                  const SZrInferredType *type,
+                                                                  SZrAstNode *declarationNode,
+                                                                  SZrFileRange declarationRange);
 
 // 查找变量类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_LookupVariable(SZrState *state, SZrTypeEnvironment *env, SZrString *name, SZrInferredType *result);
+ZR_PARSER_API const SZrTypeBinding *ZrParser_TypeEnvironment_FindVariableBinding(SZrTypeEnvironment *env,
+                                                                                 SZrString *name);
 
 // 注册函数类型
 ZR_PARSER_API TZrBool ZrParser_TypeEnvironment_RegisterFunction(SZrState *state, SZrTypeEnvironment *env, SZrString *name, const SZrInferredType *returnType, SZrArray *paramTypes);

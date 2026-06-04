@@ -671,6 +671,58 @@ void compiler_collect_generic_parameter_info(SZrCompilerState *cs,
 
 // 辅助函数：计算类型的大小（字节数）
 // 返回0表示未知类型，需要在运行时确定
+static TZrBool compiler_type_name_is_inline_value_slot(const TZrChar *typeNameStr) {
+    if (typeNameStr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(strcmp(typeNameStr, "string") == 0 ||
+                     strcmp(typeNameStr, "str") == 0 ||
+                     strcmp(typeNameStr, "String") == 0 ||
+                     strcmp(typeNameStr, "zr.builtin.String") == 0 ||
+                     strcmp(typeNameStr, "object") == 0 ||
+                     strcmp(typeNameStr, "obj") == 0 ||
+                     strcmp(typeNameStr, "Object") == 0 ||
+                     strcmp(typeNameStr, "zr.builtin.Object") == 0 ||
+                     strcmp(typeNameStr, "array") == 0 ||
+                     strcmp(typeNameStr, "Array") == 0 ||
+                     strcmp(typeNameStr, "function") == 0 ||
+                     strcmp(typeNameStr, "Function") == 0 ||
+                     strcmp(typeNameStr, "closure") == 0 ||
+                     strcmp(typeNameStr, "Closure") == 0 ||
+                     strcmp(typeNameStr, "buffer") == 0 ||
+                     strcmp(typeNameStr, "Buffer") == 0 ||
+                     strcmp(typeNameStr, "thread") == 0 ||
+                     strcmp(typeNameStr, "Thread") == 0 ||
+                     strcmp(typeNameStr, "Module") == 0 ||
+                     strcmp(typeNameStr, "zr.builtin.Module") == 0 ||
+                     strcmp(typeNameStr, "TypeInfo") == 0 ||
+                     strcmp(typeNameStr, "zr.builtin.TypeInfo") == 0);
+}
+
+static TZrUInt32 compiler_inferred_type_field_size(EZrValueType baseType) {
+    switch (baseType) {
+        case ZR_VALUE_TYPE_INT8: return sizeof(TZrInt8);
+        case ZR_VALUE_TYPE_INT16: return sizeof(TZrInt16);
+        case ZR_VALUE_TYPE_INT32: return sizeof(TZrInt32);
+        case ZR_VALUE_TYPE_INT64: return sizeof(TZrInt64);
+        case ZR_VALUE_TYPE_UINT8: return sizeof(TZrUInt8);
+        case ZR_VALUE_TYPE_UINT16: return sizeof(TZrUInt16);
+        case ZR_VALUE_TYPE_UINT32: return sizeof(TZrUInt32);
+        case ZR_VALUE_TYPE_UINT64: return sizeof(TZrUInt64);
+        case ZR_VALUE_TYPE_FLOAT: return sizeof(TZrFloat32);
+        case ZR_VALUE_TYPE_DOUBLE: return sizeof(TZrDouble);
+        case ZR_VALUE_TYPE_BOOL: return sizeof(TZrBool);
+        case ZR_VALUE_TYPE_STRING:
+        case ZR_VALUE_TYPE_OBJECT:
+        case ZR_VALUE_TYPE_ARRAY:
+        case ZR_VALUE_TYPE_CLOSURE:
+            return sizeof(SZrTypeValue);
+        default:
+            return sizeof(SZrTypeValue);
+    }
+}
+
 TZrUInt32 calculate_type_size(SZrCompilerState *cs, SZrType *type) {
     if (cs == ZR_NULL || type == ZR_NULL || type->name == ZR_NULL) {
         return 0;
@@ -729,11 +781,15 @@ TZrUInt32 calculate_type_size(SZrCompilerState *cs, SZrType *type) {
         if (strcmp(typeNameStr, "bool") == 0) {
             return sizeof(TZrBool); // 1 byte
         }
-        if (strcmp(typeNameStr, "string") == 0 || strcmp(typeNameStr, "str") == 0) {
-            return sizeof(TZrPtr); // 指针大小 8 bytes
+        if (compiler_type_name_is_inline_value_slot(typeNameStr)) {
+            return sizeof(SZrTypeValue);
         }
-        if (strcmp(typeNameStr, "object") == 0 || strcmp(typeNameStr, "obj") == 0) {
-            return sizeof(TZrPtr); // 指针大小 8 bytes
+
+        {
+            SZrTypePrototypeInfo *prototype = find_compiler_type_prototype(cs, typeName);
+            if (prototype != ZR_NULL && prototype->layoutByteSize > 0) {
+                return prototype->layoutByteSize;
+            }
         }
         
         // 如果是自定义类型（struct/class），大小未知，需要在运行时确定
@@ -754,6 +810,15 @@ TZrUInt32 align_offset(TZrUInt32 offset, TZrUInt32 align) {
 TZrUInt32 get_type_alignment(SZrCompilerState *cs, SZrType *type) {
     if (cs == ZR_NULL || type == ZR_NULL) {
         return ZR_ALIGN_SIZE; // 默认对齐
+    }
+
+    if (type->name != ZR_NULL && type->name->type == ZR_AST_IDENTIFIER_LITERAL) {
+        SZrString *typeName = type->name->data.identifier.name;
+        SZrTypePrototypeInfo *prototype =
+                typeName != ZR_NULL ? find_compiler_type_prototype(cs, typeName) : ZR_NULL;
+        if (prototype != ZR_NULL && prototype->layoutByteAlign > 0) {
+            return prototype->layoutByteAlign;
+        }
     }
     
     TZrUInt32 size = calculate_type_size(cs, type);
@@ -810,6 +875,8 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.allowValueConstruction = ZR_TRUE;
     info.allowBoxedConstruction = ZR_TRUE;
     info.hasDecoratorMetadata = ZR_FALSE;
+    info.layoutByteSize = 0;
+    info.layoutByteAlign = 0;
     ZrCore_Value_ResetAsNull(&info.decoratorMetadataValue);
 
     if (!ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(cs, node, node->location)) {
@@ -917,35 +984,17 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                         if (ZrParser_ExpressionType_Infer(cs, field->init, &inferredType)) {
                             memberInfo.fieldTypeName = get_type_name_from_inferred_type(cs, &inferredType);
                             memberInfo.ownershipQualifier = inferredType.ownershipQualifier;
-                            // 根据推断类型计算字段大小
-                            switch (inferredType.baseType) {
-                                case ZR_VALUE_TYPE_INT8: memberInfo.fieldSize = sizeof(TZrInt8); break;
-                                case ZR_VALUE_TYPE_INT16: memberInfo.fieldSize = sizeof(TZrInt16); break;
-                                case ZR_VALUE_TYPE_INT32: memberInfo.fieldSize = sizeof(TZrInt32); break;
-                                case ZR_VALUE_TYPE_INT64: memberInfo.fieldSize = sizeof(TZrInt64); break;
-                                case ZR_VALUE_TYPE_UINT8: memberInfo.fieldSize = sizeof(TZrUInt8); break;
-                                case ZR_VALUE_TYPE_UINT16: memberInfo.fieldSize = sizeof(TZrUInt16); break;
-                                case ZR_VALUE_TYPE_UINT32: memberInfo.fieldSize = sizeof(TZrUInt32); break;
-                                case ZR_VALUE_TYPE_UINT64: memberInfo.fieldSize = sizeof(TZrUInt64); break;
-                                case ZR_VALUE_TYPE_FLOAT: memberInfo.fieldSize = sizeof(TZrFloat32); break;
-                                case ZR_VALUE_TYPE_DOUBLE: memberInfo.fieldSize = sizeof(TZrDouble); break;
-                                case ZR_VALUE_TYPE_BOOL: memberInfo.fieldSize = sizeof(TZrBool); break;
-                                case ZR_VALUE_TYPE_STRING:
-                                case ZR_VALUE_TYPE_OBJECT:
-                                default:
-                                    memberInfo.fieldSize = sizeof(TZrPtr); // 指针大小
-                                    break;
-                            }
+                            memberInfo.fieldSize = compiler_inferred_type_field_size(inferredType.baseType);
                             ZrParser_InferredType_Free(cs->state, &inferredType);
                         } else {
                             // 类型推断失败，默认为object类型
                             memberInfo.fieldTypeName = ZrCore_String_CreateFromNative(cs->state, "object");
-                            memberInfo.fieldSize = sizeof(TZrPtr);
+                            memberInfo.fieldSize = sizeof(SZrTypeValue);
                         }
                     } else {
-                        // 没有类型注解和初始值，默认为object类型（8字节指针）
+                        // 没有类型注解和初始值，默认为object类型（完整Value槽）
                         memberInfo.fieldTypeName = ZrCore_String_CreateFromNative(cs->state, "object");
-                        memberInfo.fieldSize = sizeof(TZrPtr);
+                        memberInfo.fieldSize = sizeof(SZrTypeValue);
                     }
 
                     if (memberInfo.ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
@@ -1110,6 +1159,7 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 计算struct字段偏移量（仅对非静态字段）
     TZrUInt32 currentOffset = 0;
+    TZrUInt32 maxAlign = 0;
     for (TZrSize i = 0; i < info.members.length; i++) {
         SZrTypeMemberInfo *memberInfo = (SZrTypeMemberInfo *)ZrCore_Array_Get(&info.members, i);
         if (memberInfo == ZR_NULL) {
@@ -1122,6 +1172,9 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             TZrUInt32 align = ZR_ALIGN_SIZE; // 默认对齐
             if (memberInfo->fieldType != ZR_NULL) {
                 align = get_type_alignment(cs, memberInfo->fieldType);
+            }
+            if (align > maxAlign) {
+                maxAlign = align;
             }
             
             // 应用对齐
@@ -1138,6 +1191,8 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             currentOffset += fieldSize;
         }
     }
+    info.layoutByteAlign = maxAlign;
+    info.layoutByteSize = maxAlign > 0 ? align_offset(currentOffset, maxAlign) : 0;
     
     if (!ZrParser_Compiler_ApplyCompileTimeTypeDecorators(cs, node, structDecl->decorators, &info)) {
         cs->currentTypeName = oldTypeName;

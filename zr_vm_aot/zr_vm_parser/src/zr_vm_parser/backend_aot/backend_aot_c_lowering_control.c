@@ -20,7 +20,7 @@ void backend_aot_write_c_dispatch_loop(FILE *file, TZrUInt32 functionFlatIndex, 
                 (unsigned)instructionIndex);
     }
     fprintf(file,
-            "        default: return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, zr_aot_next_instruction, 0);\n",
+            "        default: ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, zr_aot_next_instruction, 0));\n",
             (unsigned)functionFlatIndex);
     fprintf(file, "    }\n");
 }
@@ -182,6 +182,32 @@ void backend_aot_write_c_direct_jump_if(FILE *file,
             (unsigned)targetInstructionIndex);
 }
 
+void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
+                                                   TZrUInt32 functionIndex,
+                                                   TZrUInt32 conditionSlot,
+                                                   TZrUInt32 targetInstructionIndex) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_jump_if_bool_false */\n"
+            "        const SZrTypeValue *zr_aot_condition = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        TZrBool zr_aot_condition_bool;\n"
+            "        if (zr_aot_condition == ZR_NULL || !ZR_VALUE_IS_TYPE_BOOL(zr_aot_condition->type)) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        zr_aot_condition_bool = (TZrBool)(zr_aot_condition->value.nativeObject.nativeBool != 0u);\n"
+            "        if (!zr_aot_condition_bool) {\n"
+            "            goto zr_aot_fn_%u_ins_%u;\n"
+            "        }\n"
+            "    }\n",
+            (unsigned)conditionSlot,
+            (unsigned)functionIndex,
+            (unsigned)targetInstructionIndex);
+}
+
 void backend_aot_write_c_direct_jump_if_greater_signed(FILE *file,
                                                        TZrUInt32 functionIndex,
                                                        TZrUInt32 leftSlot,
@@ -222,7 +248,7 @@ void backend_aot_write_c_direct_return(FILE *file, TZrUInt32 sourceSlot) {
             "                          ZrCore_Stack_GetValue(zr_aot_call_info->functionBase.valuePointer),\n"
             "                          ZrCore_Stack_GetValue(zr_aot_result_slot));\n"
             "        state->stackTop.valuePointer = zr_aot_call_info->functionBase.valuePointer + 1;\n"
-            "        return 1;\n"
+            "        ZR_AOT_C_RETURN(1);\n"
             "    }\n",
             (unsigned)sourceSlot);
 }
@@ -234,7 +260,7 @@ void backend_aot_write_c_tail_return(FILE *file, TZrUInt32 sourceSlot, TZrBool p
 
     if (publishExports) {
         fprintf(file,
-                "    return ZrLibrary_AotRuntime_Return(state, &frame, %u, ZR_TRUE);\n",
+                "    ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_Return(state, &frame, %u, ZR_TRUE));\n",
                 (unsigned)sourceSlot);
         return;
     }

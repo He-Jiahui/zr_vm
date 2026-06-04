@@ -277,6 +277,9 @@ static ZR_FORCE_INLINE void native_binding_context_enable_stack_layout_anchor_in
 
     ZrCore_Function_StackAnchorInit(context->state, context->functionBase, &context->functionBaseAnchor);
     context->stackBasePointer = context->state->stackBase.valuePointer;
+    if (context->inlineFrameBase == ZR_NULL) {
+        context->inlineFrameBase = context->functionBase + 1;
+    }
     context->stackLayoutAnchored = ZR_TRUE;
 }
 
@@ -289,23 +292,46 @@ static ZR_FORCE_INLINE void native_binding_context_adopt_stack_layout_anchor_inl
 
     context->functionBaseAnchor = *functionBaseAnchor;
     context->stackBasePointer = context->state->stackBase.valuePointer;
+    if (context->inlineFrameBase == ZR_NULL) {
+        context->inlineFrameBase = context->functionBase + 1;
+    }
     context->stackLayoutAnchored = ZR_TRUE;
+}
+
+static ZR_FORCE_INLINE void native_binding_context_adopt_inline_frame_anchor_inline(
+        ZrLibCallContext *context,
+        const SZrFunctionStackAnchor *functionBaseAnchor) {
+    if (context == ZR_NULL || context->state == ZR_NULL || context->functionBase == ZR_NULL ||
+        functionBaseAnchor == ZR_NULL || context->inlineFrameFunction == ZR_NULL) {
+        return;
+    }
+
+    context->functionBaseAnchor = *functionBaseAnchor;
+    context->stackBasePointer = context->state->stackBase.valuePointer;
+    if (context->inlineFrameBase == ZR_NULL) {
+        context->inlineFrameBase = context->functionBase + 1;
+    }
 }
 
 static ZR_FORCE_INLINE void native_binding_context_refresh_stack_layout_inline(ZrLibCallContext *context) {
     TZrStackValuePointer functionBase;
+    TZrStackValuePointer oldFunctionBase;
 
     if (context == ZR_NULL || !context->stackLayoutAnchored || context->state == ZR_NULL ||
         context->stackBasePointer == context->state->stackBase.valuePointer) {
         return;
     }
 
+    oldFunctionBase = context->functionBase;
     functionBase = ZrCore_Function_StackAnchorRestore(context->state, &context->functionBaseAnchor);
     if (functionBase == ZR_NULL) {
         return;
     }
 
     context->functionBase = functionBase;
+    if (context->inlineFrameBase == oldFunctionBase + 1) {
+        context->inlineFrameBase = functionBase + 1;
+    }
     context->stackBasePointer = context->state->stackBase.valuePointer;
     context->argumentValues = ZR_NULL;
     context->argumentValuePointers = ZR_NULL;
@@ -320,6 +346,29 @@ static ZR_FORCE_INLINE void native_binding_context_refresh_stack_layout_inline(Z
     context->selfValue = context->rawArgumentCount > 0 ? ZrCore_Stack_GetValueNoProfile(functionBase + 1) : ZR_NULL;
     context->argumentBase = context->rawArgumentCount > 0 ? functionBase + 2 : functionBase + 1;
     context->argumentCount = context->rawArgumentCount > 0 ? context->rawArgumentCount - 1u : 0u;
+}
+
+static ZR_FORCE_INLINE void native_binding_context_refresh_inline_frame_layout_inline(ZrLibCallContext *context) {
+    TZrStackValuePointer functionBase;
+    TZrStackValuePointer oldFunctionBase;
+
+    if (context == ZR_NULL || context->stackLayoutAnchored || context->state == ZR_NULL ||
+        context->stackBasePointer == ZR_NULL || context->stackBasePointer == context->state->stackBase.valuePointer ||
+        context->inlineFrameFunction == ZR_NULL) {
+        return;
+    }
+
+    oldFunctionBase = context->functionBase;
+    functionBase = ZrCore_Function_StackAnchorRestore(context->state, &context->functionBaseAnchor);
+    if (functionBase == ZR_NULL) {
+        return;
+    }
+
+    context->functionBase = functionBase;
+    if (context->inlineFrameBase == ZR_NULL || context->inlineFrameBase == oldFunctionBase + 1) {
+        context->inlineFrameBase = functionBase + 1;
+    }
+    context->stackBasePointer = context->state->stackBase.valuePointer;
 }
 
 static ZR_FORCE_INLINE void native_binding_sync_self_to_stack_slot_inline(

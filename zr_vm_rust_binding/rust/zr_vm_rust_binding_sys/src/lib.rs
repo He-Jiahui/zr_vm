@@ -115,6 +115,11 @@ pub struct ZrRustBindingProjectWorkspace {
 }
 
 #[repr(C)]
+pub struct ZrRustBindingProjectSession {
+    _private: [u8; 0],
+}
+
+#[repr(C)]
 pub struct ZrRustBindingCompileResult {
     _private: [u8; 0],
 }
@@ -276,6 +281,23 @@ extern "C" {
         arguments: *const *mut ZrRustBindingValue,
         argumentCount: TZrSize,
         outResult: *mut *mut ZrRustBindingValue,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_ProjectSession_Start(
+        runtime: *mut ZrRustBindingRuntime,
+        workspace: *const ZrRustBindingProjectWorkspace,
+        options: *const ZrRustBindingRunOptions,
+        outSession: *mut *mut ZrRustBindingProjectSession,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_ProjectSession_CallModuleExport(
+        session: *mut ZrRustBindingProjectSession,
+        moduleName: *const c_char,
+        exportName: *const c_char,
+        arguments: *const *mut ZrRustBindingValue,
+        argumentCount: TZrSize,
+        outResult: *mut *mut ZrRustBindingValue,
+    ) -> ZrRustBindingStatus;
+    pub fn ZrRustBinding_ProjectSession_Free(
+        session: *mut ZrRustBindingProjectSession,
     ) -> ZrRustBindingStatus;
 
     pub fn ZrRustBinding_Value_NewNull(

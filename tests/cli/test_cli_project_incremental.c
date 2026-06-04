@@ -313,6 +313,94 @@ static TZrBool prepare_cli_args_fixture(TZrChar *projectRoot,
     return ZR_TRUE;
 }
 
+static TZrBool prepare_dependency_path_fixture(TZrChar *projectRoot,
+                                               TZrSize projectRootSize,
+                                               TZrChar *projectPath,
+                                               TZrSize projectPathSize) {
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"name\": \"cli_dependency_path\",\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"dependencies\": {\n"
+            "    \"$math\": { \"path\": \"deps/math/math.zrp\", \"version\": \"1.0.0\" }\n"
+            "  }\n"
+            "}\n";
+    static const TZrChar *mathProjectContent =
+            "{\n"
+            "  \"name\": \"math\",\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"index\",\n"
+            "  \"version\": \"1.0.0\"\n"
+            "}\n";
+    TZrChar mathProjectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+
+    if (projectRoot == ZR_NULL || projectPath == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    build_generated_project_root("dependency_path", projectRoot, projectRootSize);
+    clean_directory_tree(projectRoot);
+
+    snprintf(projectPath, projectPathSize, "%s/dependency_path.zrp", projectRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", projectRoot);
+    snprintf(mathProjectPath, sizeof(mathProjectPath), "%s/deps/math/math.zrp", projectRoot);
+
+    return write_text_file(projectPath, projectContent) &&
+           write_text_file(mainPath, "pub func run(): i32 { return 0; }\n") &&
+           write_text_file(mathProjectPath, mathProjectContent);
+}
+
+static TZrBool prepare_dependency_compile_fixture(TZrChar *projectRoot,
+                                                  TZrSize projectRootSize,
+                                                  TZrChar *projectPath,
+                                                  TZrSize projectPathSize) {
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"name\": \"cli_dependency_compile\",\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"dependencies\": {\n"
+            "    \"$math\": { \"path\": \"deps/math/math.zrp\", \"version\": \"1.0.0\" }\n"
+            "  }\n"
+            "}\n";
+    static const TZrChar *mainContent =
+            "var sum = %import(\"&math.ops.sum\");\n"
+            "pub func run(): i32 { return 0; }\n";
+    static const TZrChar *mathProjectContent =
+            "{\n"
+            "  \"name\": \"math\",\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"index\",\n"
+            "  \"version\": \"1.0.0\"\n"
+            "}\n";
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    TZrChar mathProjectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mathModulePath[ZR_TESTS_PATH_MAX];
+
+    if (projectRoot == ZR_NULL || projectPath == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    build_generated_project_root("dependency_compile", projectRoot, projectRootSize);
+    clean_directory_tree(projectRoot);
+
+    snprintf(projectPath, projectPathSize, "%s/dependency_compile.zrp", projectRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", projectRoot);
+    snprintf(mathProjectPath, sizeof(mathProjectPath), "%s/deps/math/math.zrp", projectRoot);
+    snprintf(mathModulePath, sizeof(mathModulePath), "%s/deps/math/src/ops/sum.zr", projectRoot);
+
+    return write_text_file(projectPath, projectContent) &&
+           write_text_file(mainPath, mainContent) &&
+           write_text_file(mathProjectPath, mathProjectContent) &&
+           write_text_file(mathModulePath, "pub var value = 1;\n");
+}
+
 static TZrBool load_manifest_for_project(const TZrChar *projectPath,
                                          SZrCliProjectContext *projectContext,
                                          SZrCliIncrementalManifest *manifest) {
@@ -895,6 +983,124 @@ static void test_cli_project_path_resolution_maps_dotted_module_name_to_nested_a
     ZrLibrary_CommonState_CommonGlobalState_Free(global);
 }
 
+static void test_cli_project_path_resolution_maps_dependency_module_to_package_roots(void) {
+    TZrChar projectRoot[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_TESTS_PATH_MAX];
+    TZrChar zroPath[ZR_TESTS_PATH_MAX];
+    TZrChar zriPath[ZR_TESTS_PATH_MAX];
+    SZrGlobalState *global = ZR_NULL;
+    SZrCliProjectContext projectContext;
+
+    memset(&projectContext, 0, sizeof(projectContext));
+    memset(sourcePath, 0, sizeof(sourcePath));
+    memset(zroPath, 0, sizeof(zroPath));
+    memset(zriPath, 0, sizeof(zriPath));
+
+    TEST_ASSERT_TRUE(prepare_dependency_path_fixture(projectRoot,
+                                                     sizeof(projectRoot),
+                                                     projectPath,
+                                                     sizeof(projectPath)));
+
+    global = ZrCli_Project_CreateProjectGlobal(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    TEST_ASSERT_TRUE(ZrCli_ProjectContext_FromGlobal(&projectContext, global, projectPath));
+    TEST_ASSERT_TRUE(ZrCli_Project_ResolveSourcePath(&projectContext,
+                                                     "$math@1.0.0/ops/sum",
+                                                     sourcePath,
+                                                     sizeof(sourcePath)));
+    TEST_ASSERT_TRUE(ZrCli_Project_ResolveBinaryPath(&projectContext,
+                                                     "$math@1.0.0/ops/sum",
+                                                     zroPath,
+                                                     sizeof(zroPath)));
+    TEST_ASSERT_TRUE(ZrCli_Project_ResolveIntermediatePath(&projectContext,
+                                                           "$math@1.0.0/ops/sum",
+                                                           zriPath,
+                                                           sizeof(zriPath)));
+    normalize_path_text(sourcePath);
+    normalize_path_text(zroPath);
+    normalize_path_text(zriPath);
+    TEST_ASSERT_TRUE(text_ends_with(sourcePath, "/deps/math/src/ops/sum.zr"));
+    TEST_ASSERT_TRUE(text_ends_with(zroPath, "/deps/math/bin/ops/sum.zro"));
+    TEST_ASSERT_TRUE(text_ends_with(zriPath, "/deps/math/bin/ops/sum.zri"));
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+}
+
+static void test_cli_incremental_compiles_dependency_modules_into_package_binary_root(void) {
+    TZrChar projectRoot[ZR_TESTS_PATH_MAX];
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar mainZroPath[ZR_TESTS_PATH_MAX];
+    TZrChar dependencyZroPath[ZR_TESTS_PATH_MAX];
+    TZrChar dependencyZriPath[ZR_TESTS_PATH_MAX];
+    SZrCliCommand compileCommand;
+    SZrCliCompileSummary firstSummary;
+    SZrCliCompileSummary secondSummary;
+    SZrCliProjectContext projectContext;
+    SZrCliIncrementalManifest manifest;
+    const SZrCliManifestEntry *mainEntry;
+    const SZrCliManifestEntry *dependencyEntry;
+    SZrGlobalState *global = ZR_NULL;
+
+    memset(&firstSummary, 0, sizeof(firstSummary));
+    memset(&secondSummary, 0, sizeof(secondSummary));
+    memset(&projectContext, 0, sizeof(projectContext));
+    memset(&manifest, 0, sizeof(manifest));
+    memset(mainZroPath, 0, sizeof(mainZroPath));
+    memset(dependencyZroPath, 0, sizeof(dependencyZroPath));
+    memset(dependencyZriPath, 0, sizeof(dependencyZriPath));
+
+    TEST_ASSERT_TRUE(prepare_dependency_compile_fixture(projectRoot,
+                                                        sizeof(projectRoot),
+                                                        projectPath,
+                                                        sizeof(projectPath)));
+
+    init_incremental_compile_command(&compileCommand, projectPath);
+    TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&compileCommand, &firstSummary));
+    TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)firstSummary.compiledCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)firstSummary.skippedCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)firstSummary.removedCount);
+
+    global = ZrCli_Project_CreateProjectGlobal(projectPath);
+    TEST_ASSERT_NOT_NULL(global);
+    TEST_ASSERT_TRUE(ZrCli_ProjectContext_FromGlobal(&projectContext, global, projectPath));
+    TEST_ASSERT_TRUE(ZrCli_Project_LoadManifest(&projectContext, &manifest));
+    TEST_ASSERT_TRUE(ZrCli_Project_ResolveBinaryPath(&projectContext, "main", mainZroPath, sizeof(mainZroPath)));
+    TEST_ASSERT_TRUE(ZrCli_Project_ResolveBinaryPath(&projectContext,
+                                                     "$math@1.0.0/ops/sum",
+                                                     dependencyZroPath,
+                                                     sizeof(dependencyZroPath)));
+    TEST_ASSERT_TRUE(ZrCli_Project_ResolveIntermediatePath(&projectContext,
+                                                           "$math@1.0.0/ops/sum",
+                                                           dependencyZriPath,
+                                                           sizeof(dependencyZriPath)));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(mainZroPath));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(dependencyZroPath));
+    TEST_ASSERT_TRUE(ZrTests_File_Exists(dependencyZriPath));
+    normalize_path_text(dependencyZroPath);
+    normalize_path_text(dependencyZriPath);
+    TEST_ASSERT_TRUE(text_ends_with(dependencyZroPath, "/deps/math/bin/ops/sum.zro"));
+    TEST_ASSERT_TRUE(text_ends_with(dependencyZriPath, "/deps/math/bin/ops/sum.zri"));
+
+    TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)manifest.count);
+    mainEntry = ZrCli_Project_FindManifestEntryConst(&manifest, "main");
+    dependencyEntry = ZrCli_Project_FindManifestEntryConst(&manifest, "$math@1.0.0/ops/sum");
+    TEST_ASSERT_NOT_NULL(mainEntry);
+    TEST_ASSERT_NOT_NULL(dependencyEntry);
+    assert_manifest_entry_has_single_import(mainEntry, "$math@1.0.0/ops/sum");
+    assert_manifest_entry_has_no_imports(dependencyEntry);
+    ZrCli_Project_Manifest_Free(&manifest);
+    ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    global = ZR_NULL;
+
+    TEST_ASSERT_TRUE(ZrCli_Compiler_CompileProjectWithSummary(&compileCommand, &secondSummary));
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)secondSummary.compiledCount);
+    TEST_ASSERT_EQUAL_UINT32(2u, (unsigned int)secondSummary.skippedCount);
+    TEST_ASSERT_EQUAL_UINT32(0u, (unsigned int)secondSummary.removedCount);
+    if (global != ZR_NULL) {
+        ZrLibrary_CommonState_CommonGlobalState_Free(global);
+    }
+}
+
 int main(void) {
     UNITY_BEGIN();
 
@@ -903,6 +1109,8 @@ int main(void) {
     RUN_TEST(test_cli_incremental_decorator_import_rename_reuses_clean_dependencies_and_prunes_old_artifacts);
     RUN_TEST(test_cli_incremental_disabling_intermediate_prunes_stale_zri_for_reachable_modules);
     RUN_TEST(test_cli_project_path_resolution_maps_dotted_module_name_to_nested_artifacts);
+    RUN_TEST(test_cli_project_path_resolution_maps_dependency_module_to_package_roots);
+    RUN_TEST(test_cli_incremental_compiles_dependency_modules_into_package_binary_root);
 
     return UNITY_END();
 }

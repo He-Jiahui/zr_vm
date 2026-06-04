@@ -1050,6 +1050,8 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     info.hasDecoratorMetadata = ZR_FALSE;
     info.nextVirtualSlotIndex = 0;
     info.nextPropertyIdentity = 0;
+    info.layoutByteSize = 0;
+    info.layoutByteAlign = 0;
     ZrCore_Value_ResetAsNull(&info.decoratorMetadataValue);
 
     if (!ZrParser_CompileTime_RegisterDecoratorTypeIfAvailable(cs, node, node->location)) {

@@ -1215,6 +1215,73 @@ static TZrSize garbage_collector_rewrite_string_table_keys_minor(SZrGlobalState 
     return work;
 }
 
+typedef struct SZrGcInlineFrameRewriteWork {
+    TZrSize work;
+} SZrGcInlineFrameRewriteWork;
+
+static TZrBool garbage_collector_function_has_resolved_inline_frame_layouts(SZrState *threadState,
+                                                                           const SZrFunction *function) {
+    TZrBool hasInlineStruct = ZR_FALSE;
+
+    if (threadState == ZR_NULL || function == ZR_NULL ||
+        function->frameSlotLayouts == ZR_NULL ||
+        function->frameSlotLayoutLength == 0u) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < function->frameSlotLayoutLength; index++) {
+        const SZrFunctionFrameSlotLayout *slotLayout = &function->frameSlotLayouts[index];
+
+        if (slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+            continue;
+        }
+
+        hasInlineStruct = ZR_TRUE;
+        if (ZrCore_Function_ResolvePrototypeFrameTypeLayout(function,
+                                                            slotLayout->typeLayoutId,
+                                                            threadState) == ZR_NULL) {
+            return ZR_FALSE;
+        }
+    }
+
+    return hasInlineStruct;
+}
+
+static void garbage_collector_rewrite_inline_frame_value(SZrState *state, SZrTypeValue *value, TZrPtr userData) {
+    SZrGcInlineFrameRewriteWork *rewriteWork = ZR_CAST(SZrGcInlineFrameRewriteWork *, userData);
+
+    ZR_UNUSED_PARAMETER(state);
+    if (garbage_collector_rewrite_value_if_forwarded(value) && rewriteWork != ZR_NULL) {
+        rewriteWork->work++;
+    }
+}
+
+static TZrBool garbage_collector_rewrite_resolved_inline_frame_values(SZrState *threadState,
+                                                                      const SZrFunction *function,
+                                                                      TZrStackValuePointer frameBase,
+                                                                      TZrSize *work) {
+    SZrGcInlineFrameRewriteWork rewriteWork = {0u};
+
+    if (!garbage_collector_function_has_resolved_inline_frame_layouts(threadState, function)) {
+        return ZR_FALSE;
+    }
+
+    if (!ZrCore_Function_VisitInlineFrameGcValues(threadState,
+                                                  function,
+                                                  frameBase,
+                                                  ZrCore_Function_ResolvePrototypeFrameTypeLayout,
+                                                  threadState,
+                                                  garbage_collector_rewrite_inline_frame_value,
+                                                  &rewriteWork)) {
+        return ZR_FALSE;
+    }
+
+    if (work != ZR_NULL) {
+        *work += rewriteWork.work;
+    }
+    return ZR_TRUE;
+}
+
 static TZrSize garbage_collector_rewrite_thread_frame_slots(SZrState *threadState) {
     TZrSize work = 0;
     SZrCallInfo *callInfo;
@@ -1227,8 +1294,16 @@ static TZrSize garbage_collector_rewrite_thread_frame_slots(SZrState *threadStat
     callInfo = threadState->callInfoList;
     while (callInfo != ZR_NULL) {
         if (callInfo->functionBase.valuePointer != ZR_NULL) {
-            TZrStackValuePointer funcBase = callInfo->functionBase.valuePointer;
+            TZrStackValuePointer functionBase = callInfo->functionBase.valuePointer;
+            TZrStackValuePointer frameBase = functionBase + 1;
+            TZrStackValuePointer funcBase = functionBase;
             TZrStackValuePointer funcTop = youngerFrameBase;
+            SZrFunction *metadataFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(threadState, callInfo);
+            TZrBool inlineFrameRewritten =
+                    garbage_collector_rewrite_resolved_inline_frame_values(threadState,
+                                                                           metadataFunction,
+                                                                           frameBase,
+                                                                           &work);
 
             if (funcTop == ZR_NULL) {
                 funcTop = ZR_CALL_INFO_IS_VM(callInfo) && callInfo->functionTop.valuePointer != ZR_NULL
@@ -1238,7 +1313,11 @@ static TZrSize garbage_collector_rewrite_thread_frame_slots(SZrState *threadStat
 
             if (funcTop != ZR_NULL && funcTop > funcBase) {
                 while (funcBase < funcTop) {
-                    if (garbage_collector_rewrite_value_if_forwarded(&funcBase->value)) {
+                    if ((!inlineFrameRewritten ||
+                         !ZrCore_Function_FrameStackSlotIntersectsInlineStruct(metadataFunction,
+                                                                               frameBase,
+                                                                               funcBase)) &&
+                        garbage_collector_rewrite_value_if_forwarded(&funcBase->value)) {
                         work++;
                     }
                     funcBase++;

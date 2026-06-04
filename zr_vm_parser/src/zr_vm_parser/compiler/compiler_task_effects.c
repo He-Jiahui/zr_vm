@@ -693,8 +693,10 @@ static void task_effects_validate_node(ZrTaskEffectContext *context, SZrAstNode 
             task_effects_validate_node_array(context, node->data.objectLiteral.properties);
             break;
         case ZR_AST_KEY_VALUE_PAIR:
-            if (node->data.keyValuePair.key != ZR_NULL && node->data.keyValuePair.key->type != ZR_AST_IDENTIFIER_LITERAL &&
-                node->data.keyValuePair.key->type != ZR_AST_STRING_LITERAL) {
+            if (node->data.keyValuePair.key != ZR_NULL &&
+                (node->data.keyValuePair.keyIsComputed ||
+                 (node->data.keyValuePair.key->type != ZR_AST_IDENTIFIER_LITERAL &&
+                  node->data.keyValuePair.key->type != ZR_AST_STRING_LITERAL))) {
                 task_effects_validate_node(context, node->data.keyValuePair.key);
             }
             task_effects_validate_node(context, node->data.keyValuePair.value);

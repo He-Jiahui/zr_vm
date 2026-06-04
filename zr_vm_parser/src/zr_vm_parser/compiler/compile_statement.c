@@ -2033,6 +2033,38 @@ static void compile_expression_statement(SZrCompilerState *cs, SZrAstNode *node)
     }
 }
 
+static TZrBool ownership_qualifier_is_borrow_escape(EZrOwnershipQualifier qualifier) {
+    return qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+           qualifier == ZR_OWNERSHIP_QUALIFIER_LOANED;
+}
+
+static TZrBool validate_return_ownership_escape(SZrCompilerState *cs, SZrAstNode *expr) {
+    SZrInferredType returnType;
+    TZrBool success;
+
+    if (cs == ZR_NULL || expr == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &returnType, ZR_VALUE_TYPE_OBJECT);
+    success = ZrParser_ExpressionType_Infer(cs, expr, &returnType);
+    if (!success) {
+        ZrParser_InferredType_Free(cs->state, &returnType);
+        return ZR_FALSE;
+    }
+
+    if (ownership_qualifier_is_borrow_escape(returnType.ownershipQualifier)) {
+        ZrParser_InferredType_Free(cs->state, &returnType);
+        ZrParser_Compiler_Error(cs,
+                                "Borrowed and loaned owners cannot escape through return",
+                                expr->location);
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Free(cs->state, &returnType);
+    return ZR_TRUE;
+}
+
 // 编译返回语句
 static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
     SZrCompilerTryContext finallyContext;
@@ -2052,6 +2084,10 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     stmt = &node->data.returnStatement;
+    if (stmt->expr != ZR_NULL && !validate_return_ownership_escape(cs, stmt->expr)) {
+        return;
+    }
+
     hasFinallyContext = try_context_find_innermost_finally(cs, &finallyContext);
 
     oldTailCallContext = cs->isInTailCallContext;
@@ -2226,7 +2262,7 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize endLabelId = create_label(cs);
     
     // JUMP_IF false -> else
-    TZrInstruction jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)condSlot, 0);  // 偏移将在后面填充
+    TZrInstruction jumpIfInst = compiler_create_jump_if_false_for_condition(cs, ifExpr->condition, condSlot);
     TZrSize jumpIfIndex = cs->instructionCount;
     emit_instruction(cs, jumpIfInst);
     add_pending_jump(cs, jumpIfIndex, elseLabelId);

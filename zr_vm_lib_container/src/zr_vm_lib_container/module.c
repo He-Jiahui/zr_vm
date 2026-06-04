@@ -1951,6 +1951,49 @@ static TZrBool zr_container_storage_push_raw_int_fast(SZrState *state, SZrObject
     return ZR_TRUE;
 }
 
+static TZrBool zr_container_storage_push_gc_value_dense_pair_pool_fast(SZrState *state,
+                                                                       SZrObject *array,
+                                                                       const SZrTypeValue *value) {
+    SZrHashSet *nodeMap;
+    SZrHashKeyValuePair *pair;
+    TZrSize index;
+
+    if (state == ZR_NULL || array == ZR_NULL || value == ZR_NULL ||
+        array->internalType != ZR_OBJECT_INTERNAL_TYPE_ARRAY ||
+        array->superArrayRawIntData != ZR_NULL ||
+        !ZrCore_Value_IsGarbageCollectable(value)) {
+        return ZR_FALSE;
+    }
+
+    nodeMap = &array->nodeMap;
+    if (!nodeMap->isValid || nodeMap->buckets == ZR_NULL || nodeMap->capacity == 0) {
+        return ZR_FALSE;
+    }
+
+    index = nodeMap->elementCount;
+    if (!ZrCore_HashSet_EnsureDenseSequentialIntKeyCapacity(state, nodeMap, index + 1) ||
+        !ZrCore_HashSet_EnsurePairPoolForElementCount(state, nodeMap, nodeMap->pairPoolUsed + 1) ||
+        index >= nodeMap->capacity ||
+        nodeMap->buckets[index] != ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pair = ZrCore_HashSet_TakeReservedPair(nodeMap);
+    if (pair == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    pair->next = ZR_NULL;
+    ZR_VALUE_FAST_SET(&pair->key, nativeInt64, (TZrInt64)index, ZR_VALUE_TYPE_INT64);
+    ZrCore_Value_ResetAsNullNoProfile(&pair->value);
+    ZrCore_Value_CopyNoProfile(state, &pair->value, value);
+    nodeMap->buckets[index] = pair;
+    nodeMap->elementCount++;
+    ZrCore_Value_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(array), &pair->value);
+    array->memberVersion++;
+    return ZR_TRUE;
+}
+
 static TZrBool zr_container_storage_push(SZrState *state, SZrObject *array, const SZrTypeValue *value) {
     if (state == ZR_NULL || array == ZR_NULL || value == ZR_NULL) {
         return ZR_FALSE;
@@ -3029,9 +3072,14 @@ static TZrBool zr_container_array_add(ZrLibCallContext *context, SZrTypeValue *r
     }
 
     length = zr_container_array_length_fast(items);
-    if (value == ZR_NULL || !zr_container_array_ensure_capacity(context->state, self, length + 1) ||
-        !zr_container_storage_push(context->state, items, value) ||
-        !zr_container_set_int_field_fast(context->state, self, kContainerLengthField, (TZrInt64)(length + 1))) {
+    if (value == ZR_NULL || !zr_container_array_ensure_capacity(context->state, self, length + 1)) {
+        return ZR_FALSE;
+    }
+    if (!zr_container_storage_push_gc_value_dense_pair_pool_fast(context->state, items, value) &&
+        !zr_container_storage_push(context->state, items, value)) {
+        return ZR_FALSE;
+    }
+    if (!zr_container_set_int_field_fast(context->state, self, kContainerLengthField, (TZrInt64)(length + 1))) {
         return ZR_FALSE;
     }
 

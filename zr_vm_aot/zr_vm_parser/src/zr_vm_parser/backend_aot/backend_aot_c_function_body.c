@@ -1,15 +1,19 @@
 #include "backend_aot_c_function_body.h"
 
 #include "backend_aot_c_emitter.h"
+#include "backend_aot_c_frame_cleanup.h"
+#include "backend_aot_c_value_semir.h"
 #include "backend_aot_internal.h"
 
 void backend_aot_write_c_function_body(FILE *file,
                                        SZrState *state,
                                        const SZrAotFunctionTable *functionTable,
+                                       const SZrAotExecIrModule *module,
                                        const SZrAotFunctionEntry *entry) {
     TZrUInt32 instructionIndex;
     TZrBool publishExports;
     TZrUInt32 *callableSlotFunctionIndices;
+    const SZrAotExecIrFunction *functionIr = ZR_NULL;
 
     if (file == ZR_NULL || entry == ZR_NULL || entry->function == ZR_NULL) {
         return;
@@ -20,8 +24,18 @@ void backend_aot_write_c_function_body(FILE *file,
 
     fprintf(file, "static TZrInt64 zr_aot_fn_%u(struct SZrState *state) {\n", (unsigned)entry->flatIndex);
     fprintf(file, "    ZrAotGeneratedFrame frame;\n");
+    fprintf(file, "    TZrInt64 zr_aot_return_value = 0;\n");
+    fprintf(file, "    TZrBool zr_aot_frame_started = ZR_FALSE;\n");
+    fprintf(file, "    TZrUInt32 zr_aot_skip_drop_slot = ZR_AOT_RUNTIME_RESUME_FALLTHROUGH;\n");
     fprintf(file, "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BeginGeneratedFunction(state, %u, &frame));\n",
             (unsigned)entry->flatIndex);
+    fprintf(file, "    zr_aot_frame_started = ZR_TRUE;\n");
+    if (module != ZR_NULL) {
+        functionIr = backend_aot_exec_ir_find_function(module, entry->flatIndex);
+    }
+    if (functionIr != ZR_NULL) {
+        backend_aot_write_c_value_semir_for_function(file, state, module, functionIr, &functionIr->frameLayout);
+    }
     backend_aot_write_c_dispatch_loop(file, entry->flatIndex, entry->function->instructionsLength);
     callableSlotFunctionIndices = backend_aot_allocate_callable_slot_function_indices(state, entry->function);
 
@@ -194,6 +208,15 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(GET_STACK):
             case ZR_INSTRUCTION_ENUM(SET_STACK):
+                if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
+                                                                             state,
+                                                                             module,
+                                                                             functionIr,
+                                                                             instructionIndex,
+                                                                             ZR_AOT_INVALID_FUNCTION_INDEX,
+                                                                             ZR_FALSE)) {
+                    break;
+                }
                 backend_aot_write_c_direct_stack_copy(file, destinationSlot, (TZrUInt32)operandA2);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
@@ -221,11 +244,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED):
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_AddSigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_add_signed(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -233,11 +252,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_AddSignedConst(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_add_signed_const(file, entry->function, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -245,11 +260,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
             case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_AddUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_add_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -257,11 +268,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_AddUnsignedConst(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_add_unsigned_const(file, entry->function, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -285,11 +292,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(SUB_SIGNED):
             case ZR_INSTRUCTION_ENUM(SUB_SIGNED_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SubSigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_sub_signed(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -297,11 +300,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(SUB_SIGNED_CONST_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SubSignedConst(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_sub_signed_const(file, entry->function, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -309,11 +308,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED):
             case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SubUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_sub_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -321,11 +316,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(SUB_UNSIGNED_CONST_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SubUnsignedConst(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_sub_unsigned_const(file, entry->function, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -340,11 +331,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(ADD_FLOAT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_AddFloat(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_add_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -358,11 +345,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SUB_FLOAT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SubFloat(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_sub_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -385,29 +368,15 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(MUL_SIGNED_CONST_PLAIN_DEST):
-                backend_aot_write_c_direct_mul_signed_const(file, destinationSlot, operandA1, operandB1);
+                backend_aot_write_c_direct_mul_signed_const(file, entry->function, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_MulUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
-                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
-                                                             entry->function,
-                                                             destinationSlot,
-                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
-                break;
             case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_MulUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_mul_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -415,22 +384,14 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(MUL_UNSIGNED_CONST_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_MulUnsignedConst(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_mul_unsigned_const(file, entry->function, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(MUL_FLOAT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_MulFloat(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_mul_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -452,18 +413,14 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(DIV_SIGNED_CONST_PLAIN_DEST):
-                backend_aot_write_c_direct_div_signed_const(file, destinationSlot, operandA1, operandB1);
+                backend_aot_write_c_direct_div_signed_const(file, entry->function, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_DivUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_div_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -471,30 +428,28 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_DivUnsignedConst(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_div_unsigned_const(file, entry->function, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(DIV_FLOAT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_DivFloat(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_div_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(MOD):
-            case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
                 backend_aot_write_c_direct_mod(file, destinationSlot, operandA1, operandB1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
+                backend_aot_write_c_direct_mod_signed(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -502,18 +457,14 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
-                backend_aot_write_c_direct_mod_signed_const(file, destinationSlot, operandA1, operandB1);
+                backend_aot_write_c_direct_mod_signed_const(file, entry->function, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ModUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_mod_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -521,11 +472,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
             case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ModUnsignedConst(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_mod_unsigned_const(file, entry->function, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -544,6 +491,20 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             case ZR_INSTRUCTION_ENUM(NEG):
                 backend_aot_write_c_direct_neg(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
+                backend_aot_write_c_direct_neg_signed(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
+                backend_aot_write_c_direct_neg_float(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -605,11 +566,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SHIFT_LEFT_INT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ShiftLeftInt(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_shift_left_int(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -627,11 +584,7 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT_INT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_ShiftRightInt(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_shift_right_int(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -642,6 +595,13 @@ void backend_aot_write_c_function_body(FILE *file,
                         "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalNot(state, &frame, %u, %u));\n",
                         (unsigned)destinationSlot,
                         (unsigned)operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_BOOL):
+                backend_aot_write_c_direct_logical_not_bool(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -684,6 +644,48 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT_SIGNED):
+                backend_aot_write_c_direct_to_float_signed(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_FLOAT_UNSIGNED):
+                backend_aot_write_c_direct_to_float_unsigned(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_INT_FLOAT):
+                backend_aot_write_c_direct_to_int_float(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_INT_UNSIGNED):
+                backend_aot_write_c_direct_to_int_unsigned(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_UINT_FLOAT):
+                backend_aot_write_c_direct_to_uint_float(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
+            case ZR_INSTRUCTION_ENUM(TO_UINT_SIGNED):
+                backend_aot_write_c_direct_to_uint_signed(file, destinationSlot, operandA1);
+                backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                             entry->function,
+                                                             destinationSlot,
+                                                             ZR_AOT_INVALID_FUNCTION_INDEX);
+                break;
             case ZR_INSTRUCTION_ENUM(TO_STRING):
                 backend_aot_write_c_direct_to_string(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
@@ -713,88 +715,56 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_BOOL):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalEqualBool(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_equal_bool(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_BOOL):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalNotEqualBool(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_not_equal_bool(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalEqualSigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_equal_signed(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_SIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalNotEqualSigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_not_equal_signed(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_UNSIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalEqualUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_equal_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_UNSIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalNotEqualUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_not_equal_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_FLOAT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalEqualFloat(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_equal_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_NOT_EQUAL_FLOAT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalNotEqualFloat(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_not_equal_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -852,22 +822,14 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_UNSIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalGreaterUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_greater_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_FLOAT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalGreaterFloat(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_greater_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -881,22 +843,14 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_UNSIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalLessUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_less_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_FLOAT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalLessFloat(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_less_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -910,22 +864,14 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_UNSIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalGreaterEqualUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_greater_equal_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_FLOAT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalGreaterEqualFloat(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_greater_equal_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -939,54 +885,35 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_UNSIGNED):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalLessEqualUnsigned(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_less_equal_unsigned(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_FLOAT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_LogicalLessEqualFloat(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_logical_less_equal_float(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(BITWISE_NOT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BitwiseNot(state, &frame, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1);
+                backend_aot_write_c_direct_bitwise_not(file, destinationSlot, operandA1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(BITWISE_AND):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BitwiseAnd(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_bitwise_and(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(BITWISE_OR):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BitwiseOr(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_bitwise_or(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -1000,22 +927,14 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_LEFT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BitwiseShiftLeft(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_bitwise_shift_left(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(BITWISE_SHIFT_RIGHT):
-                fprintf(file,
-                        "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_BitwiseShiftRight(state, &frame, %u, %u, %u));\n",
-                        (unsigned)destinationSlot,
-                        (unsigned)operandA1,
-                        (unsigned)operandB1);
+                backend_aot_write_c_direct_bitwise_shift_right(file, destinationSlot, operandA1, operandB1);
                 backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
                                                              entry->function,
                                                              destinationSlot,
@@ -1255,6 +1174,19 @@ void backend_aot_write_c_function_body(FILE *file,
                                                              ZR_AOT_INVALID_FUNCTION_INDEX);
                 break;
             case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
+                if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
+                                                                             state,
+                                                                             module,
+                                                                             functionIr,
+                                                                             instructionIndex,
+                                                                             ZR_AOT_INVALID_FUNCTION_INDEX,
+                                                                             ZR_FALSE)) {
+                    backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                                 entry->function,
+                                                                 destinationSlot,
+                                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
+                    break;
+                }
                 fprintf(file,
                         "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_GetMemberSlot(state, &frame, %u, %u, %u));\n",
                         (unsigned)destinationSlot,
@@ -1306,6 +1238,15 @@ void backend_aot_write_c_function_body(FILE *file,
                         (unsigned)operandB1);
                 break;
             case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):
+                if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
+                                                                             state,
+                                                                             module,
+                                                                             functionIr,
+                                                                             instructionIndex,
+                                                                             ZR_AOT_INVALID_FUNCTION_INDEX,
+                                                                             ZR_FALSE)) {
+                    break;
+                }
                 fprintf(file,
                         "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_SetMemberSlot(state, &frame, %u, %u, %u));\n",
                         (unsigned)destinationSlot,
@@ -1393,7 +1334,7 @@ void backend_aot_write_c_function_body(FILE *file,
                     (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)operandB1 + 1) >=
                             entry->function->instructionsLength) {
                     fprintf(file,
-                            "    return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u);\n",
+                            "    ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u));\n",
                             (unsigned)entry->flatIndex,
                             (unsigned)instructionIndex,
                             (unsigned)instruction->instruction.operationCode);
@@ -1423,7 +1364,7 @@ void backend_aot_write_c_function_body(FILE *file,
                     (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)operandA2 + 1) >=
                             entry->function->instructionsLength) {
                     fprintf(file,
-                            "    return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u);\n",
+                            "    ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u));\n",
                             (unsigned)entry->flatIndex,
                             (unsigned)instructionIndex,
                             (unsigned)instruction->instruction.operationCode);
@@ -1438,7 +1379,7 @@ void backend_aot_write_c_function_body(FILE *file,
                     (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)operandA2 + 1) >=
                             entry->function->instructionsLength) {
                     fprintf(file,
-                            "    return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u);\n",
+                            "    ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u));\n",
                             (unsigned)entry->flatIndex,
                             (unsigned)instructionIndex,
                             (unsigned)instruction->instruction.operationCode);
@@ -1450,12 +1391,29 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                    (TZrInt64)operandA2 + 1));
                 }
                 break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
+                if ((TZrInt64)instructionIndex + (TZrInt64)operandA2 + 1 < 0 ||
+                    (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)operandA2 + 1) >=
+                            entry->function->instructionsLength) {
+                    fprintf(file,
+                            "    ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u));\n",
+                            (unsigned)entry->flatIndex,
+                            (unsigned)instructionIndex,
+                            (unsigned)instruction->instruction.operationCode);
+                } else {
+                    backend_aot_write_c_direct_jump_if_bool_false(
+                            file,
+                            entry->flatIndex,
+                            destinationSlot,
+                            (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)operandA2 + 1));
+                }
+                break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
                 if ((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1 < 0 ||
                     (TZrUInt32)((TZrInt64)instructionIndex + (TZrInt64)(TZrInt16)operandB1 + 1) >=
                             entry->function->instructionsLength) {
                     fprintf(file,
-                            "    return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u);\n",
+                            "    ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u));\n",
                             (unsigned)entry->flatIndex,
                             (unsigned)instructionIndex,
                             (unsigned)instruction->instruction.operationCode);
@@ -1488,6 +1446,19 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                                                 instructionIndex,
                                                                                                 operandA1,
                                                                                                 0);
+                }
+                if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
+                                                                             state,
+                                                                             module,
+                                                                             functionIr,
+                                                                             instructionIndex,
+                                                                             calleeFunctionIndex,
+                                                                             ZR_FALSE)) {
+                    backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                                 entry->function,
+                                                                 destinationSlot,
+                                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
+                    break;
                 }
                 if (calleeFunctionIndex != ZR_AOT_INVALID_FUNCTION_INDEX) {
                     backend_aot_write_c_static_direct_function_call(file,
@@ -1529,6 +1500,19 @@ void backend_aot_write_c_function_body(FILE *file,
                                                                                                 operandA1,
                                                                                                 0);
                 }
+                if (backend_aot_try_write_c_value_semir_for_exec_instruction(file,
+                                                                             state,
+                                                                             module,
+                                                                             functionIr,
+                                                                             instructionIndex,
+                                                                             calleeFunctionIndex,
+                                                                             ZR_FALSE)) {
+                    backend_aot_set_callable_slot_function_index(callableSlotFunctionIndices,
+                                                                 entry->function,
+                                                                 destinationSlot,
+                                                                 ZR_AOT_INVALID_FUNCTION_INDEX);
+                    break;
+                }
                 if (calleeFunctionIndex != ZR_AOT_INVALID_FUNCTION_INDEX) {
                     backend_aot_write_c_static_direct_function_call(file,
                                                                     destinationSlot,
@@ -1568,9 +1552,19 @@ void backend_aot_write_c_function_body(FILE *file,
                         (unsigned)destinationSlot);
                 break;
             case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
+                if (backend_aot_try_write_c_value_semir_for_exec_instruction(
+                            file,
+                            state,
+                            module,
+                            functionIr,
+                            instructionIndex,
+                            ZR_AOT_INVALID_FUNCTION_INDEX,
+                            (TZrBool)(!publishExports && entry->function->exceptionHandlerCount == 0))) {
+                    break;
+                }
                 if (publishExports || entry->function->exceptionHandlerCount > 0) {
                     fprintf(file,
-                            "    return ZrLibrary_AotRuntime_Return(state, &frame, %u, %s);\n",
+                            "    ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_Return(state, &frame, %u, %s));\n",
                             (unsigned)operandA1,
                             publishExports ? "ZR_TRUE" : "ZR_FALSE");
                 } else {
@@ -1579,7 +1573,7 @@ void backend_aot_write_c_function_body(FILE *file,
                 break;
             default:
                 fprintf(file,
-                        "    return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u);\n",
+                        "    ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, %u));\n",
                         (unsigned)entry->flatIndex,
                         (unsigned)instructionIndex,
                         (unsigned)instruction->instruction.operationCode);
@@ -1588,9 +1582,16 @@ void backend_aot_write_c_function_body(FILE *file,
     }
 
     fprintf(file,
-            "    return ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, 0);\n",
+            "    ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_ReportUnsupportedInstruction(state, %u, %u, 0));\n",
             (unsigned)entry->flatIndex,
             (unsigned)entry->function->instructionsLength);
+    fprintf(file, "zr_aot_function_exit:\n");
+    fprintf(file, "    if (zr_aot_frame_started) {\n");
+    if (functionIr != ZR_NULL) {
+        backend_aot_write_c_frame_cleanup(file, &functionIr->frameLayout);
+    }
+    fprintf(file, "    }\n");
+    fprintf(file, "    return zr_aot_return_value;\n");
     fprintf(file, "}\n");
     backend_aot_release_callable_slot_function_indices(state, entry->function, callableSlotFunctionIndices);
 }

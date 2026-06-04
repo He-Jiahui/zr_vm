@@ -19,6 +19,11 @@
 #include "zr_vm_common/zr_object_conf.h"
 #include "zr_vm_common/zr_meta_conf.h"
 
+typedef struct SZrCompilerStackSlotTypeHint {
+    TZrUInt32 stackSlot;
+    SZrInferredType type;
+} SZrCompilerStackSlotTypeHint;
+
 // 编译器状态结构
 typedef struct SZrCompilerState {
     SZrState *state;                    // VM 状态
@@ -38,6 +43,8 @@ typedef struct SZrCompilerState {
     TZrSize localVarCount;              // 局部变量数量
     TZrSize stackSlotCount;             // 当前栈槽数量
     TZrSize maxStackSlotCount;          // 当前函数编译过程中的栈槽峰值
+    SZrArray stackSlotTypeHints;         // 临时栈槽类型提示（SZrCompilerStackSlotTypeHint）
+    TZrSize stackSlotTypeHintScopeStart; // 当前函数的类型提示起始索引
     
     // 闭包管理
     SZrArray closureVars;               // 闭包变量数组（SZrFunctionClosureVariable）
@@ -287,6 +294,8 @@ typedef struct SZrTypePrototypeInfo {
     SZrString *constructorSignature;    // 构造签名提示
     TZrUInt32 nextVirtualSlotIndex;     // 当前类型分配到的下一个 virtual slot
     TZrUInt32 nextPropertyIdentity;     // 当前类型分配到的下一个 property identity
+    TZrUInt32 layoutByteSize;           // inline 布局总大小（字节）
+    TZrUInt32 layoutByteAlign;          // inline 布局最大对齐（字节）
 } SZrTypePrototypeInfo;
 
 #ifndef ZR_MEMBER_PARAMETER_COUNT_UNKNOWN

@@ -64,6 +64,27 @@ TZrSize ZrParser_Compiler_GetLocalStackFloor(const SZrCompilerState *cs) {
     return floor;
 }
 
+static TZrSize compiler_get_inline_stack_slot_hint_floor(const SZrCompilerState *cs) {
+    TZrSize floor = 0;
+
+    if (cs == ZR_NULL || !cs->stackSlotTypeHints.isValid) {
+        return 0;
+    }
+
+    for (TZrSize index = cs->stackSlotTypeHintScopeStart; index < cs->stackSlotTypeHints.length; index++) {
+        const SZrCompilerStackSlotTypeHint *hint =
+                (const SZrCompilerStackSlotTypeHint *)ZrCore_Array_Get((SZrArray *)&cs->stackSlotTypeHints, index);
+        if (hint != ZR_NULL) {
+            TZrSize nextSlot = (TZrSize)hint->stackSlot + 1;
+            if (nextSlot > floor) {
+                floor = nextSlot;
+            }
+        }
+    }
+
+    return floor;
+}
+
 TZrUInt32 compiler_get_cached_null_constant_index(SZrCompilerState *cs) {
     SZrTypeValue nullValue;
 
@@ -83,6 +104,7 @@ TZrUInt32 compiler_get_cached_null_constant_index(SZrCompilerState *cs) {
 
 void ZrParser_Compiler_TrimStackToCount(SZrCompilerState *cs, TZrSize targetCount) {
     TZrSize localFloor;
+    TZrSize inlineHintFloor;
 
     if (cs == ZR_NULL) {
         return;
@@ -91,6 +113,10 @@ void ZrParser_Compiler_TrimStackToCount(SZrCompilerState *cs, TZrSize targetCoun
     localFloor = ZrParser_Compiler_GetLocalStackFloor(cs);
     if (targetCount < localFloor) {
         targetCount = localFloor;
+    }
+    inlineHintFloor = compiler_get_inline_stack_slot_hint_floor(cs);
+    if (targetCount < inlineHintFloor) {
+        targetCount = inlineHintFloor;
     }
 
     if (cs->stackSlotCount > targetCount) {

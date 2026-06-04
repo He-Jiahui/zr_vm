@@ -16,6 +16,7 @@ struct SZrString;
 struct SZrObject;
 struct SZrObjectPrototype;
 struct SZrClosure;
+struct SZrTypeLayoutField;
 
 typedef enum EZrFunctionMemberEntryKind {
     ZR_FUNCTION_MEMBER_ENTRY_KIND_SYMBOL = 0,
@@ -60,6 +61,35 @@ struct ZR_STRUCT_ALIGN SZrFunctionLocalVariable {
 };
 
 typedef struct SZrFunctionLocalVariable SZrFunctionLocalVariable;
+
+#define ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE ((TZrUInt32)0xFFFFFFFFu)
+
+typedef enum EZrFunctionFrameSlotKind {
+    ZR_FUNCTION_FRAME_SLOT_KIND_VALUE = 0,
+    ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT = 1,
+    ZR_FUNCTION_FRAME_SLOT_KIND_UNKNOWN = 2
+} EZrFunctionFrameSlotKind;
+
+typedef struct SZrFunctionFrameSlotLayout {
+    TZrUInt32 stackSlot;
+    TZrUInt32 byteOffset;
+    TZrUInt32 byteSize;
+    TZrUInt32 byteAlign;
+    TZrUInt32 typeLayoutId;
+    TZrUInt8 slotKind;
+    TZrUInt8 isParameter;
+    TZrUInt16 reserved0;
+} SZrFunctionFrameSlotLayout;
+
+typedef struct SZrFunctionFrameFieldLayout {
+    TZrUInt32 byteOffset;
+    TZrUInt32 byteSize;
+    TZrUInt32 typeLayoutId;
+    EZrValueType valueType;
+    TZrUInt8 isPrimitivePod;
+    TZrUInt8 isValueSlot;
+    TZrUInt16 reserved0;
+} SZrFunctionFrameFieldLayout;
 
 struct ZR_STRUCT_ALIGN SZrFunctionExecutionLocationInfo {
     TZrMemoryOffset currentInstructionOffset;
@@ -277,7 +307,15 @@ typedef enum EZrSemIrOpcode {
     ZR_SEMIR_OPCODE_DYN_ITER_MOVE_NEXT = 14,
     ZR_SEMIR_OPCODE_OWN_DETACH = 15,
     ZR_SEMIR_OPCODE_OWN_UPGRADE = 16,
-    ZR_SEMIR_OPCODE_OWN_RELEASE = 17
+    ZR_SEMIR_OPCODE_OWN_RELEASE = 17,
+    ZR_SEMIR_OPCODE_VALUE_ADDR = 18,
+    ZR_SEMIR_OPCODE_FIELD_ADDR = 19,
+    ZR_SEMIR_OPCODE_LOAD_VALUE = 20,
+    ZR_SEMIR_OPCODE_STORE_VALUE = 21,
+    ZR_SEMIR_OPCODE_INIT_VALUE = 22,
+    ZR_SEMIR_OPCODE_COPY_VALUE = 23,
+    ZR_SEMIR_OPCODE_CALL_TYPED = 24,
+    ZR_SEMIR_OPCODE_RETURN_TYPED = 25
 } EZrSemIrOpcode;
 
 typedef enum EZrSemIrEffectKind {
@@ -490,9 +528,34 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     struct SZrObject *runtimeDecoratorMetadata;
     struct SZrObject *runtimeDecoratorDecorators;
     struct SZrClosure *cachedStatelessClosure;
+    // Append-only sidecar: keep existing SZrFunction field offsets stable for
+    // native fixtures and copied function graphs that may observe the public ABI.
+    TZrUInt32 frameByteSize;
+    TZrUInt32 frameByteAlign;
+    TZrUInt32 frameSlotLayoutLength;
+    SZrFunctionFrameSlotLayout *frameSlotLayouts;
+    SZrTypeLayout *prototypeFrameTypeLayouts;
+    struct SZrTypeLayoutField *prototypeFrameTypeLayoutFields;
+    TZrUInt8 *prototypeFrameTypeLayoutStates;
+    TZrUInt32 prototypeFrameTypeLayoutLength;
+    TZrUInt32 prototypeFrameTypeLayoutFieldCount;
+    TZrUInt32 prototypeFrameTypeLayoutFieldCapacity;
 };
 
 typedef struct SZrFunction SZrFunction;
+
+typedef const SZrTypeLayout *(*FZrFunctionFrameTypeLayoutResolver)(const SZrFunction *function,
+                                                                   TZrUInt32 typeLayoutId,
+                                                                   TZrPtr userData);
+typedef TZrBool (*FZrFunctionPrototypeFrameFieldVisitor)(struct SZrState *state,
+                                                         const SZrFunction *function,
+                                                         TZrUInt32 typeLayoutId,
+                                                         struct SZrString *fieldName,
+                                                         const SZrFunctionFrameFieldLayout *fieldLayout,
+                                                         TZrPtr userData);
+typedef void (*FZrFunctionFrameGcValueVisitor)(struct SZrState *state,
+                                               SZrTypeValue *value,
+                                               TZrPtr userData);
 
 // struct ZR_STRUCT_ALIGN SZrFunctionOverload {
 //     TZrSize functionOverloadsLength;
@@ -539,6 +602,109 @@ ZR_CORE_API void ZrCore_Function_DetachOwnedBuffers(SZrFunction *function);
 ZR_CORE_API TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(const SZrFunction *function);
 
 ZR_CORE_API TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function);
+ZR_CORE_API const SZrFunctionFrameSlotLayout *ZrCore_Function_FindFrameSlotLayout(const SZrFunction *function,
+                                                                                  TZrUInt32 stackSlot);
+ZR_CORE_API const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFunction *function,
+                                                                                 TZrUInt32 typeLayoutId,
+                                                                                 TZrPtr userData);
+ZR_CORE_API struct SZrObjectPrototype *ZrCore_Function_ResolvePrototypeFrameStructPrototype(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 typeLayoutId);
+ZR_CORE_API TZrBool ZrCore_Function_ResolvePrototypeFrameFieldLayout(struct SZrState *state,
+                                                                     const SZrFunction *function,
+                                                                     TZrUInt32 typeLayoutId,
+                                                                     struct SZrString *fieldName,
+                                                                     SZrFunctionFrameFieldLayout *outFieldLayout);
+ZR_CORE_API TZrBool ZrCore_Function_VisitPrototypeFrameFieldLayouts(
+        struct SZrState *state,
+        const SZrFunction *function,
+        TZrUInt32 typeLayoutId,
+        FZrFunctionPrototypeFrameFieldVisitor visitor,
+        TZrPtr userData);
+ZR_CORE_API void ZrCore_Function_FreePrototypeFrameTypeLayoutCache(struct SZrState *state, SZrFunction *function);
+ZR_CORE_API TZrSize ZrCore_Function_GetFrameStorageSlotCount(const SZrFunction *function);
+ZR_CORE_API TZrBool ZrCore_Function_MakeFrameSlotPlace(struct SZrState *state,
+                                                       const SZrFunction *function,
+                                                       TZrStackValuePointer frameBase,
+                                                       TZrUInt32 stackSlot,
+                                                       SZrStackFramePlace *outPlace);
+ZR_CORE_API TZrBool ZrCore_Function_FrameStackSlotIntersectsInlineStruct(const SZrFunction *function,
+                                                                         TZrStackValuePointer frameBase,
+                                                                         TZrStackValuePointer stackSlot);
+ZR_CORE_API TZrBool ZrCore_Function_CopyFrameSlotInline(struct SZrState *state,
+                                                        const SZrTypeLayout *layout,
+                                                        const SZrFunction *destinationFunction,
+                                                        TZrStackValuePointer destinationFrameBase,
+                                                        TZrUInt32 destinationStackSlot,
+                                                        const SZrFunction *sourceFunction,
+                                                        TZrStackValuePointer sourceFrameBase,
+                                                        TZrUInt32 sourceStackSlot);
+ZR_CORE_API TZrBool ZrCore_Function_CopyObjectValueToFrameSlotInline(struct SZrState *state,
+                                                                     const SZrFunction *destinationFunction,
+                                                                     TZrStackValuePointer destinationFrameBase,
+                                                                     TZrUInt32 destinationStackSlot,
+                                                                     const struct SZrTypeValue *sourceValue);
+ZR_CORE_API TZrBool ZrCore_Function_CopyObjectValueToInlineStorage(struct SZrState *state,
+                                                                   const SZrFunction *destinationFunction,
+                                                                   TZrUInt32 destinationTypeLayoutId,
+                                                                   TZrPtr destinationAddress,
+                                                                   TZrUInt32 destinationByteSize,
+                                                                   const struct SZrTypeValue *sourceValue);
+ZR_CORE_API TZrBool ZrCore_Function_InitInlineStorage(struct SZrState *state,
+                                                      const SZrFunction *function,
+                                                      TZrUInt32 typeLayoutId,
+                                                      TZrPtr address,
+                                                      TZrUInt32 byteSize);
+ZR_CORE_API TZrBool ZrCore_Function_CopyFrameSlotInlineToObjectValue(struct SZrState *state,
+                                                                     const SZrFunction *sourceFunction,
+                                                                     TZrStackValuePointer sourceFrameBase,
+                                                                     TZrUInt32 sourceStackSlot,
+                                                                     struct SZrTypeValue *outValue);
+ZR_CORE_API TZrBool ZrCore_Function_CopyInlineStorageToObjectValue(struct SZrState *state,
+                                                                   const SZrFunction *sourceFunction,
+                                                                   TZrUInt32 sourceTypeLayoutId,
+                                                                   const void *sourceAddress,
+                                                                   TZrUInt32 sourceByteSize,
+                                                                   struct SZrTypeValue *outValue);
+ZR_CORE_API TZrBool ZrCore_Function_CopyInlineFrameParameters(struct SZrState *state,
+                                                              const SZrFunction *calleeFunction,
+                                                              TZrStackValuePointer calleeFrameBase,
+                                                              const SZrFunction *callerFunction,
+                                                              TZrStackValuePointer callerFrameBase,
+                                                              TZrUInt32 callerArgumentStartSlot,
+                                                              FZrFunctionFrameTypeLayoutResolver resolver,
+                                                              TZrPtr resolverUserData);
+ZR_CORE_API TZrBool ZrCore_Function_CopyValueFrameParameters(struct SZrState *state,
+                                                             const SZrFunction *calleeFunction,
+                                                             TZrStackValuePointer calleeFrameBase,
+                                                             TZrStackValuePointer argumentBase,
+                                                             TZrSize argumentsCount);
+ZR_CORE_API TZrBool ZrCore_Function_TryCopyInlineFrameReturnValue(struct SZrState *state,
+                                                                  const struct SZrCallInfo *callInfo,
+                                                                  TZrStackValuePointer returnSource,
+                                                                  TZrStackValuePointer returnDestination,
+                                                                  FZrFunctionFrameTypeLayoutResolver resolver,
+                                                                  TZrPtr resolverUserData);
+ZR_CORE_API void ZrCore_Function_TryCopyInlineConstructorReceiverBack(struct SZrState *state,
+                                                                      const struct SZrCallInfo *callInfo);
+ZR_CORE_API TZrStackValuePointer ZrCore_Function_GetCallInfoFrameStorageTop(struct SZrState *state,
+                                                                            const struct SZrCallInfo *callInfo);
+ZR_CORE_API void ZrCore_Function_SetCallInfoArgumentSourceFrame(struct SZrCallInfo *callInfo,
+                                                                TZrStackValuePointer sourceFrameBase,
+                                                                TZrUInt32 sourceStartSlot);
+ZR_CORE_API TZrBool ZrCore_Function_VisitInlineFrameGcValues(struct SZrState *state,
+                                                             const SZrFunction *function,
+                                                             TZrStackValuePointer frameBase,
+                                                             FZrFunctionFrameTypeLayoutResolver resolver,
+                                                             TZrPtr resolverUserData,
+                                                             FZrFunctionFrameGcValueVisitor visitor,
+                                                             TZrPtr visitorUserData);
+ZR_CORE_API TZrBool ZrCore_Function_DropInlineFrameValues(struct SZrState *state,
+                                                          const SZrFunction *function,
+                                                          TZrStackValuePointer frameBase,
+                                                          FZrFunctionFrameTypeLayoutResolver resolver,
+                                                          TZrPtr resolverUserData);
 ZR_CORE_API TZrBool ZrCore_Function_ApplyReturnEscape(struct SZrState *state,
                                                       const SZrFunction *function,
                                                       TZrUInt32 stackSlot,
@@ -611,6 +777,15 @@ ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallPreparedResolvedVmFunctio
                                                                              TZrSize argumentsCount,
                                                                              TZrSize resultCount,
                                                                              TZrStackValuePointer returnDestination);
+ZR_CORE_API struct SZrCallInfo *ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource(
+        struct SZrState *state,
+        TZrStackValuePointer stackPointer,
+        struct SZrFunction *function,
+        TZrSize argumentsCount,
+        TZrSize resultCount,
+        TZrStackValuePointer returnDestination,
+        TZrStackValuePointer argumentSourceFrameBase,
+        TZrUInt32 argumentSourceStartSlot);
 
 /*
  * Hot prepared resolved-VM call sites can often prove the exact-args,

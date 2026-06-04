@@ -54,6 +54,156 @@ static const SZrCliManifestEntry *zr_rust_binding_manifest_entry_at(
     return &manifestSnapshot->manifest.entries[entryIndex];
 }
 
+static void zr_rust_binding_copy_current_exception_message(SZrState *state,
+                                                           TZrChar *buffer,
+                                                           TZrSize bufferSize) {
+    SZrObject *errorObject;
+    const SZrTypeValue *messageValue;
+    const TZrChar *message;
+
+    if (buffer == ZR_NULL || bufferSize == 0U) {
+        return;
+    }
+    buffer[0] = '\0';
+    if (state == ZR_NULL || !state->hasCurrentException ||
+        state->currentException.type != ZR_VALUE_TYPE_OBJECT ||
+        state->currentException.value.object == ZR_NULL) {
+        return;
+    }
+
+    errorObject = (SZrObject *)state->currentException.value.object;
+    messageValue = ZrLib_Object_GetFieldCString(state, errorObject, "message");
+    if (messageValue == ZR_NULL || messageValue->type != ZR_VALUE_TYPE_STRING ||
+        messageValue->value.object == ZR_NULL) {
+        return;
+    }
+
+    message = ZrCore_String_GetNativeString((SZrString *)messageValue->value.object);
+    if (message != ZR_NULL) {
+        (void)zr_rust_binding_copy_string_to_buffer(message, buffer, bufferSize);
+    }
+}
+
+static void zr_rust_binding_init_project_command(SZrCliCommand *command,
+                                                 const ZrRustBindingProjectWorkspace *workspace,
+                                                 const ZrRustBindingRunOptions *options) {
+    memset(command, 0, sizeof(*command));
+    command->mode = (options != ZR_NULL && options->moduleName != ZR_NULL)
+                            ? ZR_CLI_MODE_RUN_PROJECT_MODULE
+                            : ZR_CLI_MODE_RUN_PROJECT;
+    command->executionMode = options != ZR_NULL && options->executionMode == ZR_RUST_BINDING_EXECUTION_MODE_BINARY
+                                     ? ZR_CLI_EXECUTION_MODE_BINARY
+                                     : ZR_CLI_EXECUTION_MODE_INTERP;
+    command->projectPath = workspace->context.projectPath;
+    command->moduleName = options != ZR_NULL ? options->moduleName : ZR_NULL;
+    command->programArgs = options != ZR_NULL ? options->programArgs : ZR_NULL;
+    command->programArgCount = options != ZR_NULL ? options->programArgCount : 0U;
+}
+
+static ZrRustBindingStatus zr_rust_binding_call_module_export_with_owner(
+        ZrRustBindingExecutionOwner *owner,
+        const TZrChar *moduleName,
+        const TZrChar *exportName,
+        ZrRustBindingValue *const *arguments,
+        TZrSize argumentCount,
+        ZrRustBindingValue **outResult) {
+    SZrState *state;
+    ZrLibTempValueRoot *argumentRoots = ZR_NULL;
+    SZrTypeValue *materializedArguments = ZR_NULL;
+    SZrTypeValue resultValue;
+    ZrRustBindingValue *resultHandle = ZR_NULL;
+    TZrChar exceptionMessage[512];
+    TZrSize index;
+
+    if (owner == ZR_NULL || owner->global == ZR_NULL || moduleName == ZR_NULL || exportName == ZR_NULL || outResult == ZR_NULL) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
+                                         "session owner, moduleName, exportName, or outResult is null");
+    }
+
+    *outResult = ZR_NULL;
+    exceptionMessage[0] = '\0';
+    ZrCore_Value_ResetAsNull(&resultValue);
+    state = owner->global->mainThreadState;
+
+    if (ZrLib_Module_GetExport(state, moduleName, exportName) == ZR_NULL) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_NOT_FOUND,
+                                         "module export %s.%s not found",
+                                         moduleName,
+                                         exportName);
+    }
+
+    if (argumentCount > 0U) {
+        argumentRoots = (ZrLibTempValueRoot *)calloc(argumentCount, sizeof(*argumentRoots));
+        materializedArguments = (SZrTypeValue *)calloc(argumentCount, sizeof(*materializedArguments));
+        if (argumentRoots == ZR_NULL || materializedArguments == ZR_NULL) {
+            free(argumentRoots);
+            free(materializedArguments);
+            return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INTERNAL_ERROR,
+                                             "failed to allocate module export arguments");
+        }
+
+        for (index = 0; index < argumentCount; index++) {
+            SZrTypeValue *rootedArgument;
+
+            if (arguments == ZR_NULL || arguments[index] == ZR_NULL || !ZrLib_TempValueRoot_Begin(state, &argumentRoots[index])) {
+                goto zr_rust_binding_call_module_export_with_owner_cleanup_error;
+            }
+
+            rootedArgument = ZrLib_TempValueRoot_Value(&argumentRoots[index]);
+            if (rootedArgument == ZR_NULL ||
+                !zr_rust_binding_materialize_value(state, arguments[index], &materializedArguments[index]) ||
+                !ZrLib_TempValueRoot_SetValue(&argumentRoots[index], &materializedArguments[index])) {
+                goto zr_rust_binding_call_module_export_with_owner_cleanup_error;
+            }
+
+            materializedArguments[index] = *rootedArgument;
+        }
+    }
+
+    if (!ZrLib_CallModuleExport(state, moduleName, exportName, materializedArguments, argumentCount, &resultValue)) {
+        goto zr_rust_binding_call_module_export_with_owner_cleanup_error;
+    }
+
+    resultHandle = zr_rust_binding_value_new_live(owner, &resultValue);
+    if (resultHandle == ZR_NULL) {
+        for (index = 0; index < argumentCount; index++) {
+            ZrLib_TempValueRoot_End(&argumentRoots[index]);
+        }
+        free(argumentRoots);
+        free(materializedArguments);
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INTERNAL_ERROR, "failed to create result value");
+    }
+
+    for (index = 0; index < argumentCount; index++) {
+        ZrLib_TempValueRoot_End(&argumentRoots[index]);
+    }
+    free(argumentRoots);
+    free(materializedArguments);
+
+    *outResult = resultHandle;
+    zr_rust_binding_clear_error();
+    return ZR_RUST_BINDING_STATUS_OK;
+
+zr_rust_binding_call_module_export_with_owner_cleanup_error:
+    zr_rust_binding_copy_current_exception_message(state, exceptionMessage, sizeof(exceptionMessage));
+    for (index = 0; index < argumentCount; index++) {
+        ZrLib_TempValueRoot_End(&argumentRoots[index]);
+    }
+    free(argumentRoots);
+    free(materializedArguments);
+    if (exceptionMessage[0] != '\0') {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_RUNTIME_ERROR,
+                                         "failed to call module export %s.%s: %s",
+                                         moduleName,
+                                         exportName,
+                                         exceptionMessage);
+    }
+    return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_RUNTIME_ERROR,
+                                     "failed to call module export %s.%s",
+                                     moduleName,
+                                     exportName);
+}
+
 static ZrRustBindingStatus zr_rust_binding_manifest_copy_entry_string(
         const ZrRustBindingManifestSnapshot *manifestSnapshot,
         TZrSize entryIndex,
@@ -701,6 +851,7 @@ ZrRustBindingStatus ZrRustBinding_Project_Run(ZrRustBindingRuntime *runtime,
     }
 
     zr_rust_binding_apply_runtime_options(runtime, prepared.global);
+    /* Project exports become visible only after the entry module has been loaded into this global. */
     if (!ZrCli_Runtime_RunPreparedProjectCapture(&prepared, &command, &capture)) {
         ZrCli_Runtime_PreparedProject_Free(&prepared);
         return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_RUNTIME_ERROR,
@@ -737,12 +888,15 @@ ZrRustBindingStatus ZrRustBinding_Project_CallModuleExport(ZrRustBindingRuntime 
                                                            ZrRustBindingValue **outResult) {
     SZrCliCommand command;
     SZrCliPreparedProjectRuntime prepared;
-    SZrState *state;
+    SZrCliRunCapture capture;
+    SZrState *state = ZR_NULL;
     ZrLibTempValueRoot *argumentRoots = ZR_NULL;
     SZrTypeValue *materializedArguments = ZR_NULL;
     SZrTypeValue resultValue;
     ZrRustBindingExecutionOwner *owner = ZR_NULL;
     ZrRustBindingValue *resultHandle = ZR_NULL;
+    TZrChar exceptionMessage[512];
+    TZrBool captureActive = ZR_FALSE;
     TZrSize index;
 
     if (runtime == ZR_NULL || workspace == ZR_NULL || moduleName == ZR_NULL || exportName == ZR_NULL || outResult == ZR_NULL) {
@@ -754,18 +908,15 @@ ZrRustBindingStatus ZrRustBinding_Project_CallModuleExport(ZrRustBindingRuntime 
                                          "bare runtime execution is not implemented yet");
     }
 
-    memset(&command, 0, sizeof(command));
+    exceptionMessage[0] = '\0';
     ZrCore_Value_ResetAsNull(&resultValue);
-    command.mode = (options != ZR_NULL && options->moduleName != ZR_NULL)
-                           ? ZR_CLI_MODE_RUN_PROJECT_MODULE
-                           : ZR_CLI_MODE_RUN_PROJECT;
-    command.executionMode = options != ZR_NULL && options->executionMode == ZR_RUST_BINDING_EXECUTION_MODE_BINARY
-                                    ? ZR_CLI_EXECUTION_MODE_BINARY
-                                    : ZR_CLI_EXECUTION_MODE_INTERP;
-    command.projectPath = workspace->context.projectPath;
-    command.moduleName = options != ZR_NULL ? options->moduleName : ZR_NULL;
-    command.programArgs = options != ZR_NULL ? options->programArgs : ZR_NULL;
-    command.programArgCount = options != ZR_NULL ? options->programArgCount : 0U;
+    zr_rust_binding_init_project_command(&command, workspace, options);
+    if ((options == ZR_NULL || options->moduleName == ZR_NULL) &&
+        workspace->context.entryModule[0] != '\0' &&
+        strcmp(moduleName, workspace->context.entryModule) == 0) {
+        command.mode = ZR_CLI_MODE_RUN_PROJECT_MODULE;
+        command.moduleName = moduleName;
+    }
 
     if (!ZrCli_Runtime_PrepareProjectExecutionWithBootstrap(&command,
                                                             &prepared,
@@ -777,14 +928,34 @@ ZrRustBindingStatus ZrRustBinding_Project_CallModuleExport(ZrRustBindingRuntime 
     }
 
     zr_rust_binding_apply_runtime_options(runtime, prepared.global);
-    state = prepared.global->mainThreadState;
+    if (!ZrCli_Runtime_RunPreparedProjectCapture(&prepared, &command, &capture)) {
+        ZrCli_Runtime_PreparedProject_Free(&prepared);
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_RUNTIME_ERROR,
+                                         "failed to load project entry for export call: %s",
+                                         workspace->context.projectPath);
+    }
+
+    captureActive = ZR_TRUE;
+    state = capture.global->mainThreadState;
+    if (ZrLib_Module_GetExport(state, moduleName, exportName) == ZR_NULL) {
+        ZrCli_Runtime_RunCapture_Free(&capture);
+        ZrCli_Runtime_PreparedProject_Free(&prepared);
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_NOT_FOUND,
+                                         "module export %s.%s not found",
+                                         moduleName,
+                                         exportName);
+    }
+
     if (argumentCount > 0U) {
         argumentRoots = (ZrLibTempValueRoot *)calloc(argumentCount, sizeof(*argumentRoots));
         materializedArguments = (SZrTypeValue *)calloc(argumentCount, sizeof(*materializedArguments));
         if (argumentRoots == ZR_NULL || materializedArguments == ZR_NULL) {
-            ZrCli_Runtime_PreparedProject_Free(&prepared);
             free(argumentRoots);
             free(materializedArguments);
+            if (captureActive) {
+                ZrCli_Runtime_RunCapture_Free(&capture);
+            }
+            ZrCli_Runtime_PreparedProject_Free(&prepared);
             return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INTERNAL_ERROR,
                                              "failed to allocate module export arguments");
         }
@@ -811,11 +982,12 @@ ZrRustBindingStatus ZrRustBinding_Project_CallModuleExport(ZrRustBindingRuntime 
         goto zr_rust_binding_call_module_export_cleanup_error;
     }
 
-    owner = zr_rust_binding_execution_owner_new(prepared.global, runtime);
+    owner = zr_rust_binding_execution_owner_new(capture.global, runtime);
     if (owner == ZR_NULL) {
         goto zr_rust_binding_call_module_export_cleanup_error;
     }
 
+    capture.global = ZR_NULL;
     resultHandle = zr_rust_binding_value_new_live(owner, &resultValue);
     zr_rust_binding_execution_owner_release(owner);
     owner = ZR_NULL;
@@ -828,7 +1000,7 @@ ZrRustBindingStatus ZrRustBinding_Project_CallModuleExport(ZrRustBindingRuntime 
     }
     free(argumentRoots);
     free(materializedArguments);
-    prepared.global = ZR_NULL;
+    ZrCli_Runtime_RunCapture_Free(&capture);
     ZrCli_Runtime_PreparedProject_Free(&prepared);
 
     *outResult = resultHandle;
@@ -836,15 +1008,122 @@ ZrRustBindingStatus ZrRustBinding_Project_CallModuleExport(ZrRustBindingRuntime 
     return ZR_RUST_BINDING_STATUS_OK;
 
 zr_rust_binding_call_module_export_cleanup_error:
+    if (captureActive && state != ZR_NULL) {
+        zr_rust_binding_copy_current_exception_message(state, exceptionMessage, sizeof(exceptionMessage));
+    }
     for (index = 0; index < argumentCount; index++) {
         ZrLib_TempValueRoot_End(&argumentRoots[index]);
     }
     free(argumentRoots);
     free(materializedArguments);
     zr_rust_binding_execution_owner_release(owner);
+    if (captureActive) {
+        ZrCli_Runtime_RunCapture_Free(&capture);
+    }
     ZrCli_Runtime_PreparedProject_Free(&prepared);
+    if (exceptionMessage[0] != '\0') {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_RUNTIME_ERROR,
+                                         "failed to call module export %s.%s: %s",
+                                         moduleName,
+                                         exportName,
+                                         exceptionMessage);
+    }
     return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_RUNTIME_ERROR,
                                      "failed to call module export %s.%s",
                                      moduleName,
                                      exportName);
+}
+
+ZrRustBindingStatus ZrRustBinding_ProjectSession_Start(ZrRustBindingRuntime *runtime,
+                                                       const ZrRustBindingProjectWorkspace *workspace,
+                                                       const ZrRustBindingRunOptions *options,
+                                                       ZrRustBindingProjectSession **outSession) {
+    SZrCliCommand command;
+    SZrCliPreparedProjectRuntime prepared;
+    SZrCliRunCapture capture;
+    ZrRustBindingExecutionOwner *owner = ZR_NULL;
+    ZrRustBindingProjectSession *session;
+
+    if (runtime == ZR_NULL || workspace == ZR_NULL || outSession == ZR_NULL) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
+                                         "runtime, workspace, or outSession is null");
+    }
+    if (!runtime->standardProfile) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_UNSUPPORTED,
+                                         "bare runtime execution is not implemented yet");
+    }
+
+    *outSession = ZR_NULL;
+    zr_rust_binding_init_project_command(&command, workspace, options);
+
+    if (!ZrCli_Runtime_PrepareProjectExecutionWithBootstrap(&command,
+                                                            &prepared,
+                                                            zr_rust_binding_runtime_bootstrap_callback,
+                                                            runtime)) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_RUNTIME_ERROR,
+                                         "failed to prepare project session: %s",
+                                         workspace->context.projectPath);
+    }
+
+    zr_rust_binding_apply_runtime_options(runtime, prepared.global);
+    if (!ZrCli_Runtime_RunPreparedProjectCapture(&prepared, &command, &capture)) {
+        ZrCli_Runtime_PreparedProject_Free(&prepared);
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_RUNTIME_ERROR,
+                                         "failed to load project entry for session: %s",
+                                         workspace->context.projectPath);
+    }
+
+    owner = zr_rust_binding_execution_owner_new(capture.global, runtime);
+    if (owner == ZR_NULL) {
+        ZrCli_Runtime_RunCapture_Free(&capture);
+        ZrCli_Runtime_PreparedProject_Free(&prepared);
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INTERNAL_ERROR,
+                                         "failed to retain project session owner");
+    }
+
+    capture.global = ZR_NULL;
+    session = (ZrRustBindingProjectSession *)calloc(1, sizeof(*session));
+    if (session == ZR_NULL) {
+        zr_rust_binding_execution_owner_release(owner);
+        ZrCli_Runtime_RunCapture_Free(&capture);
+        ZrCli_Runtime_PreparedProject_Free(&prepared);
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INTERNAL_ERROR,
+                                         "failed to allocate project session");
+    }
+
+    session->owner = owner;
+    ZrCli_Runtime_RunCapture_Free(&capture);
+    ZrCli_Runtime_PreparedProject_Free(&prepared);
+
+    *outSession = session;
+    zr_rust_binding_clear_error();
+    return ZR_RUST_BINDING_STATUS_OK;
+}
+
+ZrRustBindingStatus ZrRustBinding_ProjectSession_CallModuleExport(ZrRustBindingProjectSession *session,
+                                                                  const TZrChar *moduleName,
+                                                                  const TZrChar *exportName,
+                                                                  ZrRustBindingValue *const *arguments,
+                                                                  TZrSize argumentCount,
+                                                                  ZrRustBindingValue **outResult) {
+    if (session == ZR_NULL || session->owner == ZR_NULL) {
+        return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INVALID_ARGUMENT,
+                                         "project session is null");
+    }
+
+    return zr_rust_binding_call_module_export_with_owner(session->owner,
+                                                         moduleName,
+                                                         exportName,
+                                                         arguments,
+                                                         argumentCount,
+                                                         outResult);
+}
+
+ZrRustBindingStatus ZrRustBinding_ProjectSession_Free(ZrRustBindingProjectSession *session) {
+    if (session != ZR_NULL) {
+        zr_rust_binding_execution_owner_release(session->owner);
+        free(session);
+    }
+    zr_rust_binding_clear_error();
+    return ZR_RUST_BINDING_STATUS_OK;
 }

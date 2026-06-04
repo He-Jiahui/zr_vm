@@ -120,6 +120,11 @@ static SZrTypeValue *init_function_callable_value(SZrState *state,
     return callableValue;
 }
 
+static TZrSize test_frame_storage_slots_for_bytes(TZrUInt32 byteSize) {
+    TZrSize slotByteSize = sizeof(SZrTypeValueOnStack);
+    return (byteSize + slotByteSize - 1u) / slotByteSize;
+}
+
 static SZrTypeValue *init_vm_closure_callable_value(SZrState *state,
                                                     TZrStackValuePointer callBase,
                                                     SZrClosure *closure) {
@@ -528,6 +533,102 @@ static void test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_o
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_resolved_vm_precall_reserves_byte_frame_storage_beyond_logical_slots(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrInstruction instructions[1] = {0};
+    TZrStackValuePointer callBase;
+    TZrSize expectedStorageSlots;
+    SZrCallInfo *callInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->stackSize = 1;
+    function->parameterCount = 0;
+    function->instructionsList = instructions;
+    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    function->localVariableList = ZR_NULL;
+    function->localVariableLength = 0;
+    function->vmEntryClearStackSizePlusOne = 1u;
+    function->frameByteSize = (TZrUInt32)(sizeof(SZrTypeValueOnStack) * 4u - 1u);
+    function->frameByteAlign = ZR_ALIGN_SIZE;
+
+    expectedStorageSlots = test_frame_storage_slots_for_bytes(function->frameByteSize);
+    TEST_ASSERT_EQUAL_UINT32(4u, expectedStorageSlots);
+    TEST_ASSERT_GREATER_THAN_UINT32(function->stackSize, expectedStorageSlots);
+
+    callBase = state->stackTop.valuePointer;
+    callBase = ZrCore_Function_CheckStackAndGc(state, 1 + expectedStorageSlots, callBase);
+    init_function_callable_value(state, callBase, function);
+    for (TZrSize index = function->stackSize; index < expectedStorageSlots; index++) {
+        ZrCore_Value_InitAsInt(state, &callBase[1 + index].value, (TZrInt64)(900 + index));
+        callBase[1 + index].toBeClosedValueOffset = (TZrUInt32)(30u + index);
+    }
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = callBase + 1;
+    callInfo = ZrCore_Function_PreCallResolvedVmFunction(state, callBase, function, 0, 1, ZR_NULL);
+
+    TEST_ASSERT_NOT_NULL(callInfo);
+    TEST_ASSERT_EQUAL_PTR(callBase + 1 + expectedStorageSlots, callInfo->functionTop.valuePointer);
+    TEST_ASSERT_EQUAL_PTR(callBase + 1, state->stackTop.valuePointer);
+    for (TZrSize index = function->stackSize; index < expectedStorageSlots; index++) {
+        TEST_ASSERT_EQUAL_UINT32(0u, callBase[1 + index].toBeClosedValueOffset);
+        TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_NULL(callBase[1 + index].value.type));
+    }
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_prepared_resolved_vm_precall_reserves_byte_frame_storage_after_fast_probe_fallback(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *function;
+    TZrInstruction instructions[1] = {0};
+    TZrStackValuePointer callBase;
+    TZrSize expectedStorageSlots;
+    SZrCallInfo *callInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    function = ZrCore_Function_New(state);
+    TEST_ASSERT_NOT_NULL(function);
+    function->stackSize = 1;
+    function->parameterCount = 0;
+    function->instructionsList = instructions;
+    function->instructionsLength = ZR_ARRAY_COUNT(instructions);
+    function->localVariableList = ZR_NULL;
+    function->localVariableLength = 0;
+    function->vmEntryClearStackSizePlusOne = 1u;
+    function->frameByteSize = (TZrUInt32)(sizeof(SZrTypeValueOnStack) * 3u + 1u);
+    function->frameByteAlign = ZR_ALIGN_SIZE;
+
+    expectedStorageSlots = test_frame_storage_slots_for_bytes(function->frameByteSize);
+    TEST_ASSERT_EQUAL_UINT32(4u, expectedStorageSlots);
+
+    callBase = state->stackTop.valuePointer;
+    callBase = ZrCore_Function_CheckStackAndGc(state, 1 + expectedStorageSlots, callBase);
+    init_function_callable_value(state, callBase, function);
+
+    state->callInfoList = &state->baseCallInfo;
+    state->stackTop.valuePointer = callBase + 1;
+    TEST_ASSERT_NULL(ZrCore_Function_TryPreCallPreparedResolvedVmFunctionExactArgsSteadyState(
+            state,
+            callBase,
+            function,
+            0,
+            1,
+            ZR_NULL));
+    callInfo = ZrCore_Function_PreCallPreparedResolvedVmFunction(state, callBase, function, 0, 1, ZR_NULL);
+
+    TEST_ASSERT_NOT_NULL(callInfo);
+    TEST_ASSERT_EQUAL_PTR(callBase + 1 + expectedStorageSlots, callInfo->functionTop.valuePointer);
+    TEST_ASSERT_EQUAL_PTR(callBase + 1, state->stackTop.valuePointer);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_precall_growth_clears_newly_exposed_entry_local_slots_with_dirty_allocator(void) {
     TestDirtyAllocatorContext allocatorContext = {0};
     SZrState *state = test_create_state_with_dirty_allocator(&allocatorContext);
@@ -791,6 +892,8 @@ int main(void) {
     RUN_TEST(test_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info);
     RUN_TEST(test_prepared_resolved_vm_precall_exact_args_cached_path_reinitializes_dirty_reused_call_info);
     RUN_TEST(test_prepared_resolved_vm_precall_try_exact_args_steady_state_hits_on_cached_path);
+    RUN_TEST(test_resolved_vm_precall_reserves_byte_frame_storage_beyond_logical_slots);
+    RUN_TEST(test_prepared_resolved_vm_precall_reserves_byte_frame_storage_after_fast_probe_fallback);
     RUN_TEST(test_precall_growth_clears_newly_exposed_entry_local_slots_with_dirty_allocator);
     RUN_TEST(test_precall_growth_reuses_cached_zero_capture_closure_across_repeated_growths_with_dirty_allocator);
     RUN_TEST(test_precall_growth_with_existing_vm_closure_clears_newly_exposed_entry_local_slots_with_dirty_allocator);

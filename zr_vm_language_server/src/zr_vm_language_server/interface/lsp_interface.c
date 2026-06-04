@@ -5,10 +5,12 @@
 #include "interface/lsp_interface_internal.h"
 #include "lsp_virtual_documents.h"
 #include "project/lsp_project_internal.h"
+#include "semantic/lsp_local_semantic_query.h"
 #include "semantic/lsp_semantic_query.h"
 #include "semantic/semantic_analyzer_internal.h"
 
 #include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "zr_vm_core/task_runtime.h"
@@ -50,9 +52,10 @@ static TZrBool lsp_should_include_document_symbol(SZrSymbolTable *table,
                                                   SZrSymbol *symbol,
                                                   SZrString *uri);
 static TZrBool lsp_project_has_indexed_record_for_uri(SZrLspContext *context, SZrString *uri);
-static int lsp_compare_position(SZrLspPosition left, SZrLspPosition right);
-static TZrBool lsp_position_in_range(SZrLspPosition position, SZrLspRange range);
 static TZrBool lsp_is_identifier_char(TZrChar value);
+static TZrBool lsp_position_is_identifier_char(SZrLspContext *context,
+                                               SZrString *uri,
+                                               SZrLspPosition position);
 static SZrFilePosition lsp_file_position_from_offset(const TZrChar *content,
                                                      TZrSize contentLength,
                                                      TZrSize offset);
@@ -67,20 +70,6 @@ static TZrBool lsp_semantic_query_append_rename_locations(SZrState *state,
                                                           SZrLspSemanticQuery *query,
                                                           SZrArray *result);
 static SZrString *lsp_semantic_query_rename_placeholder(SZrLspSemanticQuery *query);
-static TZrBool lsp_symbol_has_exact_type_text(SZrState *state,
-                                              SZrSymbol *symbol,
-                                              TZrChar *buffer,
-                                              TZrSize bufferSize,
-                                              const TZrChar **outTypeText);
-static TZrBool lsp_append_inlay_hint(SZrState *state,
-                                     SZrArray *result,
-                                     SZrLspPosition position,
-                                     TZrInt32 kind,
-                                     const TZrChar *typeText);
-static TZrBool lsp_try_append_symbol_inlay_hint(SZrState *state,
-                                                SZrSymbol *symbol,
-                                                SZrLspRange range,
-                                                SZrArray *result);
 static void lsp_hover_free_internal(SZrState *state, SZrLspHover *hover);
 static const TZrChar *lsp_rich_hover_role_for_label(const TZrChar *label);
 static TZrBool lsp_rich_hover_append_section(SZrState *state,
@@ -334,29 +323,31 @@ static TZrBool lsp_project_has_indexed_record_for_uri(SZrLspContext *context, SZ
     return ZR_FALSE;
 }
 
-static int lsp_compare_position(SZrLspPosition left, SZrLspPosition right) {
-    if (left.line < right.line) {
-        return -1;
-    }
-    if (left.line > right.line) {
-        return 1;
-    }
-    if (left.character < right.character) {
-        return -1;
-    }
-    if (left.character > right.character) {
-        return 1;
-    }
-    return 0;
-}
-
-static TZrBool lsp_position_in_range(SZrLspPosition position, SZrLspRange range) {
-    return lsp_compare_position(position, range.start) >= 0 &&
-           lsp_compare_position(position, range.end) <= 0;
-}
-
 static TZrBool lsp_is_identifier_char(TZrChar value) {
     return isalnum((unsigned char)value) || value == '_';
+}
+
+static TZrBool lsp_position_is_identifier_char(SZrLspContext *context,
+                                               SZrString *uri,
+                                               SZrLspPosition position) {
+    SZrFileVersion *fileVersion;
+    TZrSize offset;
+
+    if (context == ZR_NULL || uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || fileVersion->contentLength == 0) {
+        return ZR_FALSE;
+    }
+
+    offset = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position).offset;
+    if (offset >= fileVersion->contentLength) {
+        return ZR_FALSE;
+    }
+
+    return lsp_is_identifier_char(fileVersion->content[offset]);
 }
 
 static SZrFilePosition lsp_file_position_from_offset(const TZrChar *content,
@@ -513,147 +504,6 @@ static SZrString *lsp_semantic_query_rename_placeholder(SZrLspSemanticQuery *que
     return ZR_NULL;
 }
 
-static TZrBool lsp_symbol_has_exact_type_text(SZrState *state,
-                                              SZrSymbol *symbol,
-                                              TZrChar *buffer,
-                                              TZrSize bufferSize,
-                                              const TZrChar **outTypeText) {
-    if (outTypeText != ZR_NULL) {
-        *outTypeText = ZR_NULL;
-    }
-    if (state == ZR_NULL || symbol == ZR_NULL || buffer == ZR_NULL || bufferSize == 0 || outTypeText == ZR_NULL ||
-        symbol->typeInfo == ZR_NULL || !ZrLanguageServer_SemanticAnalyzer_IsPreciseInferredType(symbol->typeInfo)) {
-        return ZR_FALSE;
-    }
-
-    *outTypeText = ZrParser_TypeNameString_Get(state, symbol->typeInfo, buffer, bufferSize);
-    return *outTypeText != ZR_NULL && (*outTypeText)[0] != '\0';
-}
-
-static TZrBool lsp_append_inlay_hint(SZrState *state,
-                                     SZrArray *result,
-                                     SZrLspPosition position,
-                                     TZrInt32 kind,
-                                     const TZrChar *typeText) {
-    TZrChar labelBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
-    int labelLength;
-    SZrLspInlayHint *hint;
-
-    if (state == ZR_NULL || result == ZR_NULL || typeText == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspInlayHint *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    }
-
-    labelLength = (TZrSize)snprintf(labelBuffer, sizeof(labelBuffer), ": %s", typeText);
-    if (labelLength <= 0 || (TZrSize)labelLength >= sizeof(labelBuffer)) {
-        return ZR_FALSE;
-    }
-
-    hint = (SZrLspInlayHint *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspInlayHint));
-    if (hint == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    memset(hint, 0, sizeof(*hint));
-    hint->position = position;
-    hint->kind = kind;
-    hint->paddingLeft = ZR_TRUE;
-    hint->paddingRight = ZR_FALSE;
-    hint->label = ZrCore_String_Create(state, labelBuffer, (TZrSize)labelLength);
-    if (hint->label == ZR_NULL) {
-        ZrCore_Memory_RawFree(state->global, hint, sizeof(SZrLspInlayHint));
-        return ZR_FALSE;
-    }
-
-    ZrCore_Array_Push(state, result, &hint);
-    return ZR_TRUE;
-}
-
-static TZrBool lsp_try_append_symbol_inlay_hint(SZrState *state,
-                                                SZrSymbol *symbol,
-                                                SZrLspRange range,
-                                                SZrArray *result) {
-    TZrChar typeBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
-    const TZrChar *typeText = ZR_NULL;
-    SZrLspPosition position;
-    SZrAstNode *astNode;
-
-    if (!lsp_symbol_has_exact_type_text(state, symbol, typeBuffer, sizeof(typeBuffer), &typeText)) {
-        return ZR_TRUE;
-    }
-
-    astNode = symbol != ZR_NULL ? symbol->astNode : ZR_NULL;
-    if (astNode == ZR_NULL) {
-        return ZR_TRUE;
-    }
-
-    switch (astNode->type) {
-        case ZR_AST_VARIABLE_DECLARATION:
-            if (astNode->data.variableDeclaration.typeInfo != ZR_NULL ||
-                astNode->data.variableDeclaration.pattern == ZR_NULL ||
-                astNode->data.variableDeclaration.pattern->type != ZR_AST_IDENTIFIER_LITERAL) {
-                return ZR_TRUE;
-            }
-            position = ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
-            break;
-
-        case ZR_AST_CLASS_FIELD:
-            if (astNode->data.classField.typeInfo != ZR_NULL) {
-                return ZR_TRUE;
-            }
-            position = ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
-            break;
-
-        case ZR_AST_STRUCT_FIELD:
-            if (astNode->data.structField.typeInfo != ZR_NULL) {
-                return ZR_TRUE;
-            }
-            position = ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
-            break;
-
-        case ZR_AST_FUNCTION_DECLARATION:
-            if (astNode->data.functionDeclaration.returnType != ZR_NULL) {
-                return ZR_TRUE;
-            }
-            position = astNode->data.functionDeclaration.body != ZR_NULL
-                           ? ZrLanguageServer_LspPosition_FromFilePosition(
-                                 astNode->data.functionDeclaration.body->location.start)
-                           : ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
-            break;
-
-        case ZR_AST_CLASS_METHOD:
-            if (astNode->data.classMethod.returnType != ZR_NULL) {
-                return ZR_TRUE;
-            }
-            position = astNode->data.classMethod.body != ZR_NULL
-                           ? ZrLanguageServer_LspPosition_FromFilePosition(astNode->data.classMethod.body->location.start)
-                           : ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
-            break;
-
-        case ZR_AST_STRUCT_METHOD:
-            if (astNode->data.structMethod.returnType != ZR_NULL) {
-                return ZR_TRUE;
-            }
-            position =
-                astNode->data.structMethod.body != ZR_NULL
-                    ? ZrLanguageServer_LspPosition_FromFilePosition(astNode->data.structMethod.body->location.start)
-                    : ZrLanguageServer_LspPosition_FromFilePosition(symbol->selectionRange.end);
-            break;
-
-        default:
-            return ZR_TRUE;
-    }
-
-    if (!lsp_position_in_range(position, range)) {
-        return ZR_TRUE;
-    }
-
-    return lsp_append_inlay_hint(state, result, position, ZR_LSP_INLAY_HINT_KIND_TYPE, typeText);
-}
-
 static SZrString *lsp_append_markdown_section(SZrState *state, SZrString *base, SZrString *appendix) {
     TZrNativeString baseText;
     TZrNativeString appendixText;
@@ -724,6 +574,38 @@ static const TZrChar *lsp_rich_hover_role_for_label(const TZrChar *label) {
     }
     if (strcmp(label, "Resolved Type") == 0 || strcmp(label, "Type") == 0) {
         return "resolvedType";
+    }
+    if (strcmp(label, "Numeric range") == 0 ||
+        strcmp(label, "Unsigned range") == 0 ||
+        strcmp(label, "Numeric warning") == 0) {
+        return "numericRange";
+    }
+    if (strcmp(label, "Logical value") == 0) {
+        return "logicalValue";
+    }
+    if (strcmp(label, "Logical flow") == 0) {
+        return "logicalFlow";
+    }
+    if (strcmp(label, "Reference") == 0) {
+        return "reference";
+    }
+    if (strcmp(label, "Symbol") == 0) {
+        return "symbol";
+    }
+    if (strcmp(label, "Declared at") == 0) {
+        return "declaration";
+    }
+    if (strcmp(label, "Reachability") == 0) {
+        return "reachability";
+    }
+    if (strcmp(label, "Ownership") == 0) {
+        return "ownership";
+    }
+    if (strcmp(label, "Call") == 0) {
+        return "call";
+    }
+    if (strcmp(label, "Member") == 0) {
+        return "member";
     }
     if (strcmp(label, "Access") == 0) {
         return "access";
@@ -1556,6 +1438,8 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
     SZrLspSignatureHelp *signatureHelp = ZR_NULL;
     const TZrChar *signatureLabel = ZR_NULL;
     TZrChar signatureHoverBuffer[ZR_LSP_LONG_TEXT_BUFFER_LENGTH];
+    SZrLspLocalSemanticQueryResult localQuery;
+    TZrBool hasLocalQuery;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -1582,13 +1466,31 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     symbol = ZrLanguageServer_Lsp_FindSymbolAtUsageOrDefinition(analyzer, fileRange);
 
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&localQuery);
+    hasLocalQuery = ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state,
+                                                                        context,
+                                                                        uri,
+                                                                        position,
+                                                                        &localQuery);
+    if (hasLocalQuery &&
+        localQuery.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_DIAGNOSTIC_FAILURE) {
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
+        return ZR_FALSE;
+    }
+
     {
         SZrLspSemanticQuery semanticQuery;
 
         ZrLanguageServer_LspSemanticQuery_Init(&semanticQuery);
         if (ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, position, &semanticQuery)) {
             if (ZrLanguageServer_LspSemanticQuery_BuildHover(state, context, &semanticQuery, result)) {
+                if (result != ZR_NULL && *result != ZR_NULL) {
+                    ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(state,
+                                                                               &localQuery,
+                                                                               *result);
+                }
                 ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
+                ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
                 return ZR_TRUE;
             }
         }
@@ -1605,6 +1507,7 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
         if (content != ZR_NULL) {
             lspHover = (SZrLspHover *)ZrCore_Memory_RawMalloc(state->global, sizeof(SZrLspHover));
             if (lspHover == ZR_NULL) {
+                ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
                 return ZR_FALSE;
             }
 
@@ -1612,12 +1515,27 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
             ZrCore_Array_Push(state, &lspHover->contents, &content);
             lspHover->range = ZrLanguageServer_LspRange_FromFileRange(fileRange);
             *result = lspHover;
+            ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
             return ZR_TRUE;
         }
     }
     if (signatureHelp != ZR_NULL) {
         ZrLanguageServer_LspSignatureHelp_Free(state, signatureHelp);
         signatureHelp = ZR_NULL;
+    }
+
+    if (hasLocalQuery &&
+        !lsp_position_is_identifier_char(context, uri, position) &&
+        ZrLanguageServer_LspLocalSemanticQuery_BuildHover(state, &localQuery, result)) {
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
+        return ZR_TRUE;
+    }
+
+    if (symbol == ZR_NULL &&
+        hasLocalQuery &&
+        ZrLanguageServer_LspLocalSemanticQuery_BuildHover(state, &localQuery, result)) {
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
+        return ZR_TRUE;
     }
 
     if (ZrLanguageServer_SemanticAnalyzer_GetHoverInfo(state, analyzer, fileRange, &hoverInfo) &&
@@ -1630,9 +1548,11 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                                                                         fileVersion->content,
                                                                         fileVersion->contentLength);
         if (content == ZR_NULL) {
+            ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
             return ZR_FALSE;
         }
     } else {
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
         return ZR_FALSE;
     }
 
@@ -1650,6 +1570,7 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
         if (hoverInfo != ZR_NULL) {
             ZrLanguageServer_HoverInfo_Free(state, hoverInfo);
         }
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
         return ZR_FALSE;
     }
     
@@ -1660,6 +1581,8 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                           : (hoverInfo != ZR_NULL ? hoverInfo->range : fileRange));
     
     *result = lspHover;
+    ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(state, &localQuery, *result);
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
     return ZR_TRUE;
 }
 
@@ -2190,54 +2113,6 @@ TZrBool ZrLanguageServer_Lsp_GetProjectModules(SZrState *state,
     return ZR_TRUE;
 }
 
-TZrBool ZrLanguageServer_Lsp_GetInlayHints(SZrState *state,
-                                           SZrLspContext *context,
-                                           SZrString *uri,
-                                           SZrLspRange range,
-                                           SZrArray *result) {
-    SZrSemanticAnalyzer *analyzer;
-
-    if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    if (!result->isValid) {
-        ZrCore_Array_Init(state, result, sizeof(SZrLspInlayHint *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
-    }
-
-    analyzer = ZrLanguageServer_Lsp_GetOrCreateAnalyzer(state, context, uri);
-    if (analyzer == ZR_NULL || analyzer->symbolTable == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (TZrSize scopeIndex = 0; scopeIndex < analyzer->symbolTable->allScopes.length; scopeIndex++) {
-        SZrSymbolScope **scopePtr =
-            (SZrSymbolScope **)ZrCore_Array_Get(&analyzer->symbolTable->allScopes, scopeIndex);
-        if (scopePtr == ZR_NULL || *scopePtr == ZR_NULL) {
-            continue;
-        }
-
-        for (TZrSize symbolIndex = 0; symbolIndex < (*scopePtr)->symbols.length; symbolIndex++) {
-            SZrSymbol **symbolPtr = (SZrSymbol **)ZrCore_Array_Get(&(*scopePtr)->symbols, symbolIndex);
-            if (symbolPtr == ZR_NULL || *symbolPtr == ZR_NULL || (*symbolPtr)->location.source == ZR_NULL) {
-                continue;
-            }
-
-            if (!ZrLanguageServer_Lsp_StringsEqual((*symbolPtr)->location.source, uri) &&
-                !ZrLanguageServer_Lsp_UrisResolveToSameNativePath((*symbolPtr)->location.source, uri)) {
-                continue;
-            }
-
-            if (!lsp_try_append_symbol_inlay_hint(state, *symbolPtr, range, result)) {
-                ZrLanguageServer_Lsp_FreeInlayHints(state, result);
-                return ZR_FALSE;
-            }
-        }
-    }
-
-    return ZR_TRUE;
-}
-
 void ZrLanguageServer_Lsp_FreeProjectModules(SZrState *state, SZrArray *result) {
     if (state == ZR_NULL || result == ZR_NULL) {
         return;
@@ -2269,19 +2144,4 @@ void ZrLanguageServer_Lsp_FreeRichHover(SZrState *state, SZrLspRichHover *result
 
     ZrCore_Array_Free(state, &result->sections);
     ZrCore_Memory_RawFree(state->global, result, sizeof(SZrLspRichHover));
-}
-
-void ZrLanguageServer_Lsp_FreeInlayHints(SZrState *state, SZrArray *result) {
-    if (state == ZR_NULL || result == ZR_NULL) {
-        return;
-    }
-
-    for (TZrSize index = 0; index < result->length; index++) {
-        SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(result, index);
-        if (hintPtr != ZR_NULL && *hintPtr != ZR_NULL) {
-            ZrCore_Memory_RawFree(state->global, *hintPtr, sizeof(SZrLspInlayHint));
-        }
-    }
-
-    ZrCore_Array_Free(state, result);
 }

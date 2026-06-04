@@ -8,6 +8,7 @@
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/lexer.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/location.h"
 #include "zr_vm_core/state.h"
 
@@ -15,6 +16,10 @@ typedef void (*TZrParserErrorCallback)(TZrPtr userData,
                                        const SZrFileRange *location,
                                        const TZrChar *message,
                                        EZrToken token);
+
+typedef void (*TZrParserStructuredErrorCallback)(TZrPtr userData,
+                                                const SZrStructuredDiagnostic *diagnostic,
+                                                EZrToken token);
 
 // 解析器状态
 // 参考: lua/src/lparser.h (FuncState, LexState)
@@ -24,7 +29,8 @@ typedef struct SZrParserState {
     SZrFileRange currentLocation; // 当前位置
     TZrBool hasError;               // 是否有错误
     const TZrChar *errorMessage;    // 错误消息
-    TZrParserErrorCallback errorCallback; // 结构化错误回调（可选）
+    TZrParserErrorCallback errorCallback; // 旧错误回调（可选）
+    TZrParserStructuredErrorCallback structuredErrorCallback; // 结构化错误回调（可选）
     TZrPtr errorUserData;             // 错误回调用户数据
     TZrBool suppressErrorOutput;      // 是否抑制 stderr 输出
 } SZrParserState;

@@ -8,6 +8,7 @@
 void backend_aot_write_c_function_body(FILE *file,
                                        SZrState *state,
                                        const SZrAotFunctionTable *functionTable,
+                                       const SZrAotExecIrModule *module,
                                        const SZrAotFunctionEntry *entry);
 
 #endif

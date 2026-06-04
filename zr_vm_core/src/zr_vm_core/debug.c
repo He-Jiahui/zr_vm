@@ -633,6 +633,8 @@ ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, st
         // 输出访问修饰符名称
         const char *accessName = get_access_modifier_name(accessModifier);
         fprintf(output, "  access: %s (%u),\n", accessName, (unsigned int) accessModifier);
+        fprintf(output, "  layoutByteSize: %u,\n", (unsigned int) protoInfo->layoutByteSize);
+        fprintf(output, "  layoutByteAlign: %u,\n", (unsigned int) protoInfo->layoutByteAlign);
 
         // 计算成员数据的起始位置
         const TZrByte *membersData =

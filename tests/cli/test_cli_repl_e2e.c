@@ -644,8 +644,423 @@ cleanup:
     return status;
 }
 
+static int test_repl_evaluates_bare_expression_before_quit(void) {
+    const char *testName = "repl_evaluates_bare_expression_before_quit";
+    ZrCliReplE2eProcess process;
+    char cliPath[CLI_REPL_E2E_PATH_CAPACITY];
+    char cliWorkingDirectory[CLI_REPL_E2E_PATH_CAPACITY];
+    char error[CLI_REPL_E2E_ERROR_CAPACITY];
+    const char *command[2];
+    int status = 1;
+
+    memset(&process, 0, sizeof(process));
+#if !defined(_WIN32)
+    process.stdinFd = -1;
+    process.stdoutFd = -1;
+#endif
+
+    if (!cli_build_cli_executable_path(cliPath, sizeof(cliPath), cliWorkingDirectory, sizeof(cliWorkingDirectory))) {
+        return cli_fail(testName, "failed to resolve zr_vm_cli beside test executable");
+    }
+
+    command[0] = cliPath;
+    command[1] = NULL;
+    if (!cli_process_start(&process, cliWorkingDirectory, command, error, sizeof(error))) {
+        return cli_fail(testName, "%s", error);
+    }
+
+    if (!cli_process_wait_for_substring(&process, "ZR VM REPL", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for REPL banner\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, "1 + 2") || !cli_process_write_line(&process, "")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to submit bare expression to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_substring(&process, "\n3\n", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "bare expression did not print result 3\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (strstr(cli_process_output(&process), "期望 ';'") != NULL ||
+        strstr(cli_process_output(&process), "Expected ';'") != NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "bare expression still reported a missing semicolon\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":quit")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to write :quit to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_exit(&process, CLI_REPL_E2E_EXIT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for repl exit after :quit\nOutput:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (process.exitCode != 0) {
+        status = cli_fail(testName, "repl exited with code %d\nOutput:\n%s", process.exitCode, cli_process_output(&process));
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    if (!process.hasExited) {
+        cli_process_terminate(&process);
+    }
+    cli_process_close(&process);
+    return status;
+}
+
+static int test_repl_expression_can_use_previous_session_binding(void) {
+    const char *testName = "repl_expression_can_use_previous_session_binding";
+    ZrCliReplE2eProcess process;
+    char cliPath[CLI_REPL_E2E_PATH_CAPACITY];
+    char cliWorkingDirectory[CLI_REPL_E2E_PATH_CAPACITY];
+    char error[CLI_REPL_E2E_ERROR_CAPACITY];
+    const char *command[2];
+    int status = 1;
+
+    memset(&process, 0, sizeof(process));
+#if !defined(_WIN32)
+    process.stdinFd = -1;
+    process.stdoutFd = -1;
+#endif
+
+    if (!cli_build_cli_executable_path(cliPath, sizeof(cliPath), cliWorkingDirectory, sizeof(cliWorkingDirectory))) {
+        return cli_fail(testName, "failed to resolve zr_vm_cli beside test executable");
+    }
+
+    command[0] = cliPath;
+    command[1] = NULL;
+    if (!cli_process_start(&process, cliWorkingDirectory, command, error, sizeof(error))) {
+        return cli_fail(testName, "%s", error);
+    }
+
+    if (!cli_process_wait_for_substring(&process, "ZR VM REPL", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for REPL banner\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, "var seed = 2;") ||
+        !cli_process_write_line(&process, "") ||
+        !cli_process_write_line(&process, "seed + 3") ||
+        !cli_process_write_line(&process, "")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to submit persistent binding scenario to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_substring(&process, "\n5\n", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "REPL expression could not use a previous session binding\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":quit")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to write :quit to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_exit(&process, CLI_REPL_E2E_EXIT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for repl exit after :quit\nOutput:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (process.exitCode != 0) {
+        status = cli_fail(testName, "repl exited with code %d\nOutput:\n%s", process.exitCode, cli_process_output(&process));
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    if (!process.hasExited) {
+        cli_process_terminate(&process);
+    }
+    cli_process_close(&process);
+    return status;
+}
+
+static int test_repl_incomplete_expression_reports_user_input(void) {
+    const char *testName = "repl_incomplete_expression_reports_user_input";
+    ZrCliReplE2eProcess process;
+    char cliPath[CLI_REPL_E2E_PATH_CAPACITY];
+    char cliWorkingDirectory[CLI_REPL_E2E_PATH_CAPACITY];
+    char error[CLI_REPL_E2E_ERROR_CAPACITY];
+    const char *command[2];
+    int status = 1;
+
+    memset(&process, 0, sizeof(process));
+#if !defined(_WIN32)
+    process.stdinFd = -1;
+    process.stdoutFd = -1;
+#endif
+
+    if (!cli_build_cli_executable_path(cliPath, sizeof(cliPath), cliWorkingDirectory, sizeof(cliWorkingDirectory))) {
+        return cli_fail(testName, "failed to resolve zr_vm_cli beside test executable");
+    }
+
+    command[0] = cliPath;
+    command[1] = NULL;
+    if (!cli_process_start(&process, cliWorkingDirectory, command, error, sizeof(error))) {
+        return cli_fail(testName, "%s", error);
+    }
+
+    if (!cli_process_wait_for_substring(&process, "ZR VM REPL", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for REPL banner\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, "1 +") || !cli_process_write_line(&process, "")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to submit incomplete expression to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_substring(&process, "Missing expression after '+'", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "incomplete expression did not report the missing right operand\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (strstr(cli_process_output(&process), "Suggestion: Add the right-hand expression after '+'") == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "incomplete expression diagnostic did not include an actionable suggestion\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (strstr(cli_process_output(&process), "return 1 +") != NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "incomplete expression diagnostic exposed internal REPL return wrapper\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":quit")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to write :quit to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_exit(&process, CLI_REPL_E2E_EXIT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for repl exit after :quit\nOutput:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (process.exitCode != 0) {
+        status = cli_fail(testName, "repl exited with code %d\nOutput:\n%s", process.exitCode, cli_process_output(&process));
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    if (!process.hasExited) {
+        cli_process_terminate(&process);
+    }
+    cli_process_close(&process);
+    return status;
+}
+
+static int test_repl_type_command_reports_expression_inference(void) {
+    const char *testName = "repl_type_command_reports_expression_inference";
+    ZrCliReplE2eProcess process;
+    char cliPath[CLI_REPL_E2E_PATH_CAPACITY];
+    char cliWorkingDirectory[CLI_REPL_E2E_PATH_CAPACITY];
+    char error[CLI_REPL_E2E_ERROR_CAPACITY];
+    const char *command[2];
+    int status = 1;
+
+    memset(&process, 0, sizeof(process));
+#if !defined(_WIN32)
+    process.stdinFd = -1;
+    process.stdoutFd = -1;
+#endif
+
+    if (!cli_build_cli_executable_path(cliPath, sizeof(cliPath), cliWorkingDirectory, sizeof(cliWorkingDirectory))) {
+        return cli_fail(testName, "failed to resolve zr_vm_cli beside test executable");
+    }
+
+    command[0] = cliPath;
+    command[1] = NULL;
+    if (!cli_process_start(&process, cliWorkingDirectory, command, error, sizeof(error))) {
+        return cli_fail(testName, "%s", error);
+    }
+
+    if (!cli_process_wait_for_substring(&process, "ZR VM REPL", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for REPL banner\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":type 1 + 2")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to submit :type command to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_substring(&process, "Type: int", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          ":type command did not report inferred int type\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (strstr(cli_process_output(&process), "Numeric range: 3..3") == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          ":type command did not report exact numeric range\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (strstr(cli_process_output(&process), "\n3\n") != NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          ":type command executed the expression instead of only inferring it\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":type true || false")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to submit logical :type command to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_substring(&process, "Logical value: true", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          ":type command did not report the deterministic logical value\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (strstr(cli_process_output(&process), "Logical flow: short-circuits right operand") == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          ":type command did not report short-circuit semantic flow\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, "var seed = 2;") ||
+        !cli_process_write_line(&process, "") ||
+        !cli_process_write_line(&process, ":type seed + 3")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to submit persistent :type scenario to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_substring(&process, "Numeric range: 5..5", CLI_REPL_E2E_OUTPUT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          ":type command could not use a previous session binding\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (strstr(cli_process_output(&process), "Reference: read seed") == NULL ||
+        strstr(cli_process_output(&process), "Declared at:") == NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          ":type command did not report the shared reference fact for the previous session binding\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (strstr(cli_process_output(&process), "\n5\n") != NULL) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          ":type command executed the persistent binding expression instead of only inferring it\nOutput so far:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (!cli_process_write_line(&process, ":quit")) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName, "failed to write :quit to repl stdin");
+        goto cleanup;
+    }
+
+    if (!cli_process_wait_for_exit(&process, CLI_REPL_E2E_EXIT_TIMEOUT_MS)) {
+        cli_process_terminate(&process);
+        status = cli_fail(testName,
+                          "timed out waiting for repl exit after :quit\nOutput:\n%s",
+                          cli_process_output(&process));
+        goto cleanup;
+    }
+
+    if (process.exitCode != 0) {
+        status = cli_fail(testName, "repl exited with code %d\nOutput:\n%s", process.exitCode, cli_process_output(&process));
+        goto cleanup;
+    }
+
+    status = 0;
+
+cleanup:
+    if (!process.hasExited) {
+        cli_process_terminate(&process);
+    }
+    cli_process_close(&process);
+    return status;
+}
+
 int main(void) {
     if (test_repl_help_is_visible_before_quit() != 0) {
+        return 1;
+    }
+    if (test_repl_evaluates_bare_expression_before_quit() != 0) {
+        return 1;
+    }
+    if (test_repl_expression_can_use_previous_session_binding() != 0) {
+        return 1;
+    }
+    if (test_repl_incomplete_expression_reports_user_input() != 0) {
+        return 1;
+    }
+    if (test_repl_type_command_reports_expression_inference() != 0) {
         return 1;
     }
     return 0;

@@ -52,7 +52,7 @@ doc_type: testing-guide
 
 | CLI 形式 | 主模式来源 | 最终 `EZrCliMode` | 默认执行路径 | `-i` 含义 | `-- <args...>` | `process.arguments[0]` | 覆盖证据 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `zr_vm_cli` | 无主模式 | `ZR_CLI_MODE_REPL` | REPL | 不适用 | 不支持 | `<repl>` | Parse: `test_no_args_enters_repl`、`test_interactive_modifier_parse_and_validate`；Integration: `run_repl`、`run_repl_native_import`、`run_repl_runtime_error`；E2E: `test_repl_help_is_visible_before_quit` |
+| `zr_vm_cli` | 无主模式 | `ZR_CLI_MODE_REPL` | REPL | 不适用 | 不支持 | `<repl>` | Parse: `test_no_args_enters_repl`、`test_interactive_modifier_parse_and_validate`；Integration: `run_repl`、`run_repl_native_import`、`run_repl_runtime_error`；E2E: `test_repl_help_is_visible_before_quit`、`test_repl_evaluates_bare_expression_before_quit`、`test_repl_incomplete_expression_reports_user_input` |
 | `zr_vm_cli -i` | 无主模式 | `ZR_CLI_MODE_REPL` | REPL | 单独使用时等价于 REPL | 不支持 | `<repl>` | Parse: `test_interactive_modifier_parse_and_validate`；E2E: `test_repl_help_is_visible_before_quit` |
 | `zr_vm_cli <project.zrp>` | 位置参数项目 | `ZR_CLI_MODE_RUN_PROJECT` | `interp` | 运行成功后进入 fresh REPL | 支持 | 传入的 `.zrp` 路径文本 | Parse: `test_positional_project_keeps_run_compatibility`、`test_passthrough_arguments_stop_cli_parsing`；Integration: `run_positional`、`run_positional_args`、`run_interactive_after_run` |
 | `zr_vm_cli --compile <project.zrp>` | `--compile` | `ZR_CLI_MODE_COMPILE_PROJECT` | 无 active run path | 非法 | 不支持 | 不注入 | Parse: `test_compile_flag_combinations_parse`、`test_compile_only_modifiers_require_compile`；Integration: `run_compile_hello`、`run_compile_intermediate` |
