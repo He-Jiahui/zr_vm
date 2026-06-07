@@ -43,6 +43,7 @@ typedef struct {
 typedef struct {
     const char *opcodeName;
     const char *runtimeHelperName;
+    const char *cDirectLoweringName;
 } SZrAotSourceSyncExpectation;
 
 typedef struct {
@@ -332,12 +333,20 @@ static void assert_generated_aot_c_begin_instruction_step_flags(const char *text
     TEST_ASSERT_NOT_NULL(text);
     TEST_ASSERT_NOT_NULL(stepFlagsText);
 
+    TEST_ASSERT_NOT_NULL(strstr(text, "/* zr_aot_begin_instruction */"));
     snprintf(expected,
              sizeof(expected),
-             "ZrLibrary_AotRuntime_BeginInstruction(state, &frame, %u, %s)",
-             (unsigned)instructionIndex,
-             stepFlagsText);
+             "frame.currentInstructionIndex = %u;",
+             (unsigned)instructionIndex);
     TEST_ASSERT_NOT_NULL(strstr(text, expected));
+    snprintf(expected,
+             sizeof(expected),
+             "frame.function->instructionsList + %u;",
+             (unsigned)instructionIndex);
+    TEST_ASSERT_NOT_NULL(strstr(text, expected));
+    snprintf(expected, sizeof(expected), "frame.observationMask & (%s))", stepFlagsText);
+    TEST_ASSERT_NOT_NULL(strstr(text, expected));
+    TEST_ASSERT_NULL(strstr(text, "ZrLibrary_AotRuntime_BeginInstruction(state, &frame"));
 }
 
 static void assert_generated_aot_llvm_begin_instruction_step_flags(const char *text,
@@ -2723,7 +2732,14 @@ static void test_aot_c_backend_directly_lowers_non_export_return(void) {
         cText = read_text_file_owned(cPath);
         TEST_ASSERT_NOT_NULL(cText);
 
+        TEST_ASSERT_NOT_NULL(strstr(cText, "#include \"zr_vm_core/execution_control.h\""));
         TEST_ASSERT_NOT_NULL(strstr(cText, "SZrCallInfo *zr_aot_call_info = frame.callInfo;"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "/* zr_aot_direct_return */"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "frame.generatedFrameSlotCount"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "execution_discard_exception_handlers_for_callinfo(state, zr_aot_call_info);"));
+        TEST_ASSERT_NOT_NULL(strstr(cText,
+                                    "ZrCore_Function_ApplyReturnEscape(state, frame.function,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Closure_CloseClosure(state,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Value_Copy(state,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_call_info->functionBase.valuePointer"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "state->stackTop.valuePointer = zr_aot_call_info->functionBase.valuePointer + 1;"));
@@ -9038,10 +9054,19 @@ static void test_aot_backends_lower_manual_state_and_scope_opcode_fixture(void) 
         TEST_ASSERT_NOT_NULL(cText);
         TEST_ASSERT_NOT_NULL(llvmText);
         TEST_ASSERT_NULL(strstr(cText, "aot_c lowering unsupported"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SetConstant"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_GetSubFunction"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MarkToBeClosed"));
-        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CloseScope"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_value_exec_set_constant"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "*zr_aot_constant = *zr_aot_source;"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_SetConstant"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_value_exec_get_sub_function_native_closure"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_closure->nativeFunction = zr_aot_fn_1;"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_GetSubFunction"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_scope_mark_to_be_closed"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Closure_ToBeClosedValueClosureNew(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "zr_aot_scope_close_scope"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Closure_CloseStackValue(state,"));
+        TEST_ASSERT_NOT_NULL(strstr(cText, "ZrCore_Closure_CloseRegisteredValues(state, 1, ZR_THREAD_STATUS_INVALID, ZR_FALSE)"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_MarkToBeClosed"));
+        TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_CloseScope"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,"));
         TEST_ASSERT_NOT_NULL(strstr(cText, "ZR_AOT_C_GUARD(zr_aot_fn_1(state));"));
         TEST_ASSERT_NULL(strstr(cText, "ZrLibrary_AotRuntime_PrepareDirectCall(state,"));
@@ -9115,8 +9140,10 @@ static void test_aot_source_sync_keeps_extended_opcode_surfaces_aligned(void) {
             {"BITWISE_SHIFT_RIGHT", "ZrLibrary_AotRuntime_BitwiseShiftRight"},
             {"GET_MEMBER_SLOT", "ZrLibrary_AotRuntime_GetMemberSlot"},
             {"SET_MEMBER_SLOT", "ZrLibrary_AotRuntime_SetMemberSlot"},
-            {"MARK_TO_BE_CLOSED", "ZrLibrary_AotRuntime_MarkToBeClosed"},
-            {"CLOSE_SCOPE", "ZrLibrary_AotRuntime_CloseScope"}};
+            {"MARK_TO_BE_CLOSED",
+             "ZrLibrary_AotRuntime_MarkToBeClosed",
+             "backend_aot_write_c_direct_mark_to_be_closed"},
+            {"CLOSE_SCOPE", "ZrLibrary_AotRuntime_CloseScope", "backend_aot_write_c_direct_close_scope"}};
     static const char *const llvmLoweringPaths[] = {
             "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_constants.c",
             "zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_llvm_lowering_closures.c",
@@ -9163,6 +9190,12 @@ static void test_aot_source_sync_keeps_extended_opcode_surfaces_aligned(void) {
                  expectations[index].opcodeName);
         TEST_ASSERT_TRUE_MESSAGE(count_substring_occurrences(backendSupportText, opcodeToken) >= 2, opcodeToken);
         TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cLoweringText, opcodeToken), opcodeToken);
+        if (expectations[index].cDirectLoweringName != ZR_NULL) {
+            TEST_ASSERT_NOT_NULL_MESSAGE(strstr(cLoweringText, expectations[index].cDirectLoweringName),
+                                         expectations[index].cDirectLoweringName);
+            TEST_ASSERT_NULL_MESSAGE(strstr(cLoweringText, expectations[index].runtimeHelperName),
+                                     expectations[index].runtimeHelperName);
+        }
         TEST_ASSERT_NOT_NULL_MESSAGE(strstr(llvmLoweringText, opcodeToken), opcodeToken);
         TEST_ASSERT_NOT_NULL_MESSAGE(strstr(llvmPreludeText, expectations[index].runtimeHelperName),
                                      expectations[index].runtimeHelperName);

@@ -63,6 +63,209 @@ static TZrBool completion_fact_append_format(TZrChar *buffer,
     return ZR_TRUE;
 }
 
+static TZrBool completion_fact_append_separator(TZrChar *buffer,
+                                                TZrSize bufferSize,
+                                                TZrSize *used) {
+    if (used != ZR_NULL &&
+        *used > 0 &&
+        !completion_fact_append_format(buffer, bufferSize, used, ", ")) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static const TZrChar *completion_fact_expression_kind(EZrSemanticExpressionFactKind kind) {
+    switch (kind) {
+        case ZR_SEMANTIC_EXPRESSION_FACT_LITERAL:
+            return "literal";
+        case ZR_SEMANTIC_EXPRESSION_FACT_IDENTIFIER:
+            return "identifier";
+        case ZR_SEMANTIC_EXPRESSION_FACT_BINARY:
+            return "binary";
+        case ZR_SEMANTIC_EXPRESSION_FACT_UNARY:
+            return "unary";
+        case ZR_SEMANTIC_EXPRESSION_FACT_CALL:
+            return "call";
+        case ZR_SEMANTIC_EXPRESSION_FACT_MEMBER:
+            return "member";
+        case ZR_SEMANTIC_EXPRESSION_FACT_ASSIGNMENT:
+            return "assignment";
+        case ZR_SEMANTIC_EXPRESSION_FACT_CONDITIONAL:
+            return "conditional";
+        case ZR_SEMANTIC_EXPRESSION_FACT_ARRAY:
+            return "array";
+        case ZR_SEMANTIC_EXPRESSION_FACT_OBJECT:
+            return "object";
+        case ZR_SEMANTIC_EXPRESSION_FACT_LAMBDA:
+            return "lambda";
+        case ZR_SEMANTIC_EXPRESSION_FACT_OWNERSHIP_BUILTIN:
+            return "ownership builtin";
+        case ZR_SEMANTIC_EXPRESSION_FACT_CONVERSION:
+            return "conversion";
+        case ZR_SEMANTIC_EXPRESSION_FACT_ERROR:
+            return "error";
+        case ZR_SEMANTIC_EXPRESSION_FACT_UNKNOWN:
+        default:
+            return "unknown";
+    }
+}
+
+static const TZrChar *completion_fact_exactness(EZrSemanticFactExactness exactness) {
+    switch (exactness) {
+        case ZR_SEMANTIC_FACT_EXACT:
+            return "exact";
+        case ZR_SEMANTIC_FACT_APPROXIMATE:
+            return "approximate";
+        case ZR_SEMANTIC_FACT_UNKNOWN:
+        default:
+            return "unknown";
+    }
+}
+
+static TZrBool completion_fact_append_escaped_string_constant(TZrChar *buffer,
+                                                              TZrSize bufferSize,
+                                                              TZrSize *used,
+                                                              SZrString *value) {
+    TZrNativeString text;
+    TZrSize length;
+    TZrSize index;
+    unsigned char byte;
+
+    completion_fact_get_string_view(value, &text, &length);
+    if (!completion_fact_append_format(buffer, bufferSize, used, "constant \"")) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; text != ZR_NULL && index < length; index++) {
+        byte = (unsigned char)text[index];
+        switch (byte) {
+            case '"':
+                if (!completion_fact_append_format(buffer, bufferSize, used, "\\\"")) {
+                    return ZR_FALSE;
+                }
+                break;
+            case '\\':
+                if (!completion_fact_append_format(buffer, bufferSize, used, "\\\\")) {
+                    return ZR_FALSE;
+                }
+                break;
+            case '\n':
+                if (!completion_fact_append_format(buffer, bufferSize, used, "\\n")) {
+                    return ZR_FALSE;
+                }
+                break;
+            case '\r':
+                if (!completion_fact_append_format(buffer, bufferSize, used, "\\r")) {
+                    return ZR_FALSE;
+                }
+                break;
+            case '\t':
+                if (!completion_fact_append_format(buffer, bufferSize, used, "\\t")) {
+                    return ZR_FALSE;
+                }
+                break;
+            default:
+                if (byte < 0x20u || byte == 0x7Fu) {
+                    if (!completion_fact_append_format(buffer, bufferSize, used, "\\x%02X", (unsigned int)byte)) {
+                        return ZR_FALSE;
+                    }
+                } else if (!completion_fact_append_format(buffer, bufferSize, used, "%c", (int)byte)) {
+                    return ZR_FALSE;
+                }
+                break;
+        }
+    }
+
+    return completion_fact_append_format(buffer, bufferSize, used, "\"");
+}
+
+static TZrBool completion_fact_append_expression_constant(TZrChar *buffer,
+                                                          TZrSize bufferSize,
+                                                          TZrSize *used,
+                                                          const SZrSemanticExpressionFact *fact) {
+    if (fact == ZR_NULL || !fact->hasConstant) {
+        return ZR_TRUE;
+    }
+
+    switch (fact->valueKind) {
+        case ZR_SEMANTIC_VALUE_KIND_BOOL:
+            if (!completion_fact_append_separator(buffer, bufferSize, used)) {
+                return ZR_FALSE;
+            }
+            return completion_fact_append_format(buffer,
+                                                 bufferSize,
+                                                 used,
+                                                 "constant %s",
+                                                 fact->constantValue.boolValue ? "true" : "false");
+        case ZR_SEMANTIC_VALUE_KIND_INT64:
+            if (!completion_fact_append_separator(buffer, bufferSize, used)) {
+                return ZR_FALSE;
+            }
+            return completion_fact_append_format(buffer,
+                                                 bufferSize,
+                                                 used,
+                                                 "constant %lld",
+                                                 (long long)fact->constantValue.int64Value);
+        case ZR_SEMANTIC_VALUE_KIND_UINT64:
+            if (!completion_fact_append_separator(buffer, bufferSize, used)) {
+                return ZR_FALSE;
+            }
+            return completion_fact_append_format(buffer,
+                                                 bufferSize,
+                                                 used,
+                                                 "constant %llu",
+                                                 (unsigned long long)fact->constantValue.uint64Value);
+        case ZR_SEMANTIC_VALUE_KIND_DOUBLE:
+            if (!completion_fact_append_separator(buffer, bufferSize, used)) {
+                return ZR_FALSE;
+            }
+            return completion_fact_append_format(buffer,
+                                                 bufferSize,
+                                                 used,
+                                                 "constant %.17g",
+                                                 fact->constantValue.doubleValue);
+        case ZR_SEMANTIC_VALUE_KIND_NULL:
+            if (!completion_fact_append_separator(buffer, bufferSize, used)) {
+                return ZR_FALSE;
+            }
+            return completion_fact_append_format(buffer, bufferSize, used, "constant null");
+        case ZR_SEMANTIC_VALUE_KIND_STRING:
+            if (!completion_fact_append_separator(buffer, bufferSize, used)) {
+                return ZR_FALSE;
+            }
+            return completion_fact_append_escaped_string_constant(buffer,
+                                                                  bufferSize,
+                                                                  used,
+                                                                  fact->constantValue.stringValue);
+        case ZR_SEMANTIC_VALUE_KIND_UNKNOWN:
+        default:
+            return ZR_TRUE;
+    }
+}
+
+static TZrBool completion_fact_append_expression_detail(TZrChar *buffer,
+                                                        TZrSize bufferSize,
+                                                        TZrSize *used,
+                                                        const SZrSemanticExpressionFact *fact) {
+    if (fact == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (!completion_fact_append_separator(buffer, bufferSize, used) ||
+        !completion_fact_append_format(buffer,
+                                       bufferSize,
+                                       used,
+                                       "expression %s %s",
+                                       completion_fact_expression_kind(fact->kind),
+                                       completion_fact_exactness(fact->exactness)) ||
+        !completion_fact_append_expression_constant(buffer, bufferSize, used, fact)) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool completion_fact_append_numeric_detail(TZrChar *buffer,
                                                      TZrSize bufferSize,
                                                      TZrSize *used,
@@ -72,6 +275,9 @@ static TZrBool completion_fact_append_numeric_detail(TZrChar *buffer,
     }
 
     if (fact->hasRange) {
+        if (!completion_fact_append_separator(buffer, bufferSize, used)) {
+            return ZR_FALSE;
+        }
         if (completion_fact_is_float_numeric_fact(fact)) {
             if (!completion_fact_append_format(buffer,
                                                bufferSize,
@@ -92,8 +298,7 @@ static TZrBool completion_fact_append_numeric_detail(TZrChar *buffer,
     }
 
     if (fact->hasUnsignedRange) {
-        if (*used > 0 &&
-            !completion_fact_append_format(buffer, bufferSize, used, ", ")) {
+        if (!completion_fact_append_separator(buffer, bufferSize, used)) {
             return ZR_FALSE;
         }
         if (!completion_fact_append_format(buffer,
@@ -107,8 +312,7 @@ static TZrBool completion_fact_append_numeric_detail(TZrChar *buffer,
     }
 
     if (fact->mayOverflow) {
-        if (*used > 0 &&
-            !completion_fact_append_format(buffer, bufferSize, used, ", ")) {
+        if (!completion_fact_append_separator(buffer, bufferSize, used)) {
             return ZR_FALSE;
         }
         if (!completion_fact_append_format(buffer, bufferSize, used, "may overflow")) {
@@ -128,8 +332,7 @@ static TZrBool completion_fact_append_logical_detail(TZrChar *buffer,
     }
 
     if (fact->hasKnownValue) {
-        if (*used > 0 &&
-            !completion_fact_append_format(buffer, bufferSize, used, ", ")) {
+        if (!completion_fact_append_separator(buffer, bufferSize, used)) {
             return ZR_FALSE;
         }
         if (!completion_fact_append_format(buffer,
@@ -142,8 +345,7 @@ static TZrBool completion_fact_append_logical_detail(TZrChar *buffer,
     }
 
     if (fact->kind == ZR_SEMANTIC_LOGICAL_FACT_SHORT_CIRCUIT) {
-        if (*used > 0 &&
-            !completion_fact_append_format(buffer, bufferSize, used, ", ")) {
+        if (!completion_fact_append_separator(buffer, bufferSize, used)) {
             return ZR_FALSE;
         }
         if (!completion_fact_append_format(buffer, bufferSize, used, "short-circuits")) {
@@ -181,8 +383,7 @@ static TZrBool completion_fact_append_ownership_detail(TZrChar *buffer,
     }
 
     message = completion_fact_string_text(fact->diagnosticMessage);
-    if (*used > 0 &&
-        !completion_fact_append_format(buffer, bufferSize, used, ", ")) {
+    if (!completion_fact_append_separator(buffer, bufferSize, used)) {
         return ZR_FALSE;
     }
 
@@ -260,6 +461,7 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemSemanticFacts(SZrState *state,
                                                             SZrSymbol *symbol,
                                                             SZrCompletionItem *item) {
     SZrAstNode *initializer;
+    const SZrSemanticExpressionFact *expressionFact;
     const SZrSemanticNumericFact *numericFact;
     const SZrSemanticLogicalFact *logicalFact;
     const SZrSemanticOwnershipFact *ownershipFact;
@@ -282,12 +484,14 @@ void ZrLanguageServer_Lsp_EnrichCompletionItemSemanticFacts(SZrState *state,
     }
 
     completion_fact_materialize_initializer(state, analyzer, initializer);
+    expressionFact = ZrParser_SemanticFacts_FindExpressionByNode(analyzer->semanticContext, initializer);
     numericFact = ZrParser_SemanticFacts_FindNumericByNode(analyzer->semanticContext, initializer);
     logicalFact = ZrParser_SemanticFacts_FindLogicalByNode(analyzer->semanticContext, initializer);
     ownershipFact = ZrParser_SemanticFacts_FindOwnershipAtPosition(analyzer->semanticContext, initializer->location);
 
     factDetail[0] = '\0';
-    if (!completion_fact_append_numeric_detail(factDetail, sizeof(factDetail), &used, numericFact) ||
+    if (!completion_fact_append_expression_detail(factDetail, sizeof(factDetail), &used, expressionFact) ||
+        !completion_fact_append_numeric_detail(factDetail, sizeof(factDetail), &used, numericFact) ||
         !completion_fact_append_logical_detail(factDetail, sizeof(factDetail), &used, logicalFact) ||
         !completion_fact_append_ownership_detail(factDetail, sizeof(factDetail), &used, ownershipFact) ||
         used == 0) {

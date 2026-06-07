@@ -9,6 +9,8 @@ typedef struct ZrDebugEvalParser {
     const TZrChar *cursor;
     TZrChar *error_buffer;
     TZrSize error_buffer_size;
+    TZrChar *reference_buffer;
+    TZrSize reference_buffer_size;
     TZrBool skip_evaluation;
 } ZrDebugEvalParser;
 
@@ -25,8 +27,11 @@ void zr_debug_eval_set_missing_member_name_error(ZrDebugEvalParser *parser);
 void zr_debug_eval_set_missing_index_close_error(ZrDebugEvalParser *parser);
 void zr_debug_eval_set_missing_group_close_error(ZrDebugEvalParser *parser);
 void zr_debug_eval_set_missing_conditional_separator_error(ZrDebugEvalParser *parser);
+void zr_debug_eval_set_missing_conditional_consequent_error(ZrDebugEvalParser *parser);
+void zr_debug_eval_set_missing_conditional_alternate_error(ZrDebugEvalParser *parser);
 void zr_debug_eval_set_unterminated_string_error(ZrDebugEvalParser *parser);
 void zr_debug_eval_set_unsupported_string_escape_error(ZrDebugEvalParser *parser, TZrChar escapeChar);
+void zr_debug_eval_set_invalid_numeric_literal_error(ZrDebugEvalParser *parser);
 void zr_debug_eval_set_function_call_error(ZrDebugEvalParser *parser);
 void zr_debug_eval_set_assignment_error(ZrDebugEvalParser *parser);
 TZrBool zr_debug_eval_cursor_starts_assignment(const ZrDebugEvalParser *parser);

@@ -72,6 +72,36 @@ static SZrFilePosition super_navigation_file_position_from_offset(const TZrChar 
     return position;
 }
 
+static TZrSize super_navigation_offset_from_file_position(const TZrChar *content,
+                                                          TZrSize contentLength,
+                                                          SZrFilePosition targetPosition) {
+    TZrSize offset = 0;
+    TZrInt32 line = 1;
+    TZrInt32 column = 1;
+
+    if (content == ZR_NULL || contentLength == 0) {
+        return 0;
+    }
+    if (targetPosition.offset > 0 && targetPosition.offset < contentLength) {
+        return targetPosition.offset;
+    }
+
+    while (offset < contentLength) {
+        if (line == targetPosition.line && column == targetPosition.column) {
+            return offset;
+        }
+        if (content[offset] == '\n') {
+            line++;
+            column = 1;
+        } else if (content[offset] != '\r') {
+            column++;
+        }
+        offset++;
+    }
+
+    return contentLength - 1;
+}
+
 static TZrBool super_navigation_find_super_token_range(const TZrChar *content,
                                                        TZrSize contentLength,
                                                        SZrFileRange scope,
@@ -94,6 +124,9 @@ static TZrBool super_navigation_find_super_token_range(const TZrChar *content,
             continue;
         }
         if (index + 5 < contentLength && super_navigation_is_identifier_char(content[index + 5])) {
+            continue;
+        }
+        if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(content, contentLength, index)) {
             continue;
         }
 
@@ -137,6 +170,10 @@ static TZrBool super_navigation_position_is_super_token(const TZrChar *content,
     end = offset + 1;
     while (end < contentLength && super_navigation_is_identifier_char(content[end])) {
         end++;
+    }
+
+    if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(content, contentLength, start)) {
+        return ZR_FALSE;
     }
 
     return end - start == 5 && memcmp(content + start, "super", 5) == 0;
@@ -566,6 +603,7 @@ static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
     SZrAstNode *metaFunctionNode = ZR_NULL;
     SZrAstNode *baseTypeDeclaration;
     SZrString *baseTypeName;
+    TZrSize positionOffset;
 
     if (targetBaseTypeName != ZR_NULL) {
         *targetBaseTypeName = ZR_NULL;
@@ -577,6 +615,8 @@ static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
         targetConstructorDeclaration == ZR_NULL) {
         return ZR_FALSE;
     }
+
+    positionOffset = super_navigation_offset_from_file_position(content, contentLength, position.start);
 
     if (super_navigation_find_super_constructor_context(analyzer->ast,
                                                         position,
@@ -604,7 +644,7 @@ static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
         ownerTypeNode != ZR_NULL && metaFunctionNode != ZR_NULL) {
         if (metaFunctionNode->type == ZR_AST_CLASS_META_FUNCTION &&
             metaFunctionNode->data.classMetaFunction.hasSuperCall &&
-            super_navigation_position_is_super_token(content, contentLength, position.start.offset)) {
+            super_navigation_position_is_super_token(content, contentLength, positionOffset)) {
             baseTypeName = super_navigation_get_direct_base_declaration_name(ownerTypeNode);
             if (baseTypeName == ZR_NULL) {
                 return ZR_FALSE;
@@ -614,6 +654,10 @@ static TZrBool super_navigation_resolve_target(SZrSemanticAnalyzer *analyzer,
             *targetConstructorDeclaration = super_navigation_find_constructor_declaration_in_type(baseTypeDeclaration);
             *targetBaseTypeName = baseTypeName;
             return *targetConstructorDeclaration != ZR_NULL;
+        }
+
+        if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(content, contentLength, positionOffset)) {
+            return ZR_FALSE;
         }
 
         *targetBaseTypeName = super_navigation_get_declared_type_name(ownerTypeNode);

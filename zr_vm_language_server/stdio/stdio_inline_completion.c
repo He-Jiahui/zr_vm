@@ -51,6 +51,91 @@ static int inline_completion_is_identifier_part(char ch) {
     return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_';
 }
 
+static int inline_completion_offset_is_in_code(const char *content,
+                                               size_t contentLength,
+                                               size_t targetOffset) {
+    int inLineComment = 0;
+    int inBlockComment = 0;
+    char quote = '\0';
+    int escaped = 0;
+
+    if (content == NULL || targetOffset >= contentLength) {
+        return 0;
+    }
+
+    for (size_t offset = 0; offset <= targetOffset && offset < contentLength; offset++) {
+        char current = content[offset];
+        char next = offset + 1 < contentLength ? content[offset + 1] : '\0';
+
+        if (inLineComment) {
+            if (offset == targetOffset) {
+                return 0;
+            }
+            if (current == '\n' || current == '\r') {
+                inLineComment = 0;
+            }
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (offset == targetOffset) {
+                return 0;
+            }
+            if (current == '*' && next == '/') {
+                if (offset + 1 >= targetOffset) {
+                    return 0;
+                }
+                inBlockComment = 0;
+                offset++;
+            }
+            continue;
+        }
+
+        if (quote != '\0') {
+            if (offset == targetOffset) {
+                return 0;
+            }
+            if (escaped) {
+                escaped = 0;
+                continue;
+            }
+            if (current == '\\') {
+                escaped = 1;
+                continue;
+            }
+            if (current == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+
+        if (offset == targetOffset) {
+            return 1;
+        }
+        if (current == '/' && next == '/') {
+            if (offset + 1 >= targetOffset) {
+                return 0;
+            }
+            inLineComment = 1;
+            offset++;
+            continue;
+        }
+        if (current == '/' && next == '*') {
+            if (offset + 1 >= targetOffset) {
+                return 0;
+            }
+            inBlockComment = 1;
+            offset++;
+            continue;
+        }
+        if (current == '"' || current == '\'' || current == '`') {
+            quote = current;
+        }
+    }
+
+    return 0;
+}
+
 static cJSON *inline_completion_create_item(SZrLspPosition position,
                                             TZrInt32 prefixLength,
                                             const char *filterText,
@@ -110,6 +195,9 @@ cJSON *handle_inline_completion_request(SZrStdioServer *server, const cJSON *par
     }
     prefixLength = offset - prefixStart;
     if (prefixLength == 0 || prefixLength > 16) {
+        return cJSON_CreateArray();
+    }
+    if (!inline_completion_offset_is_in_code(content, contentLength, offset - 1)) {
         return cJSON_CreateArray();
     }
 

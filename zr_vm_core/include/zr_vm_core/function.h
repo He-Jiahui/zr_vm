@@ -540,6 +540,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 prototypeFrameTypeLayoutLength;
     TZrUInt32 prototypeFrameTypeLayoutFieldCount;
     TZrUInt32 prototypeFrameTypeLayoutFieldCapacity;
+    struct SZrFunction *prototypeContextFunction;
 };
 
 typedef struct SZrFunction SZrFunction;

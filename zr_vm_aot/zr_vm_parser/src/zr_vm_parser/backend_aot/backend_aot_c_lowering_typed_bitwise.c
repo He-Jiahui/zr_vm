@@ -222,6 +222,57 @@ static void backend_aot_write_c_direct_unsigned_left_shift(FILE *file,
             "    }\n");
 }
 
+static void backend_aot_write_c_direct_generic_shift(FILE *file,
+                                                     const char *marker,
+                                                     const char *expressionText,
+                                                     TZrBool useUnsignedLeft,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 leftSlot,
+                                                     TZrUInt32 rightSlot) {
+    if (file == ZR_NULL || marker == ZR_NULL || expressionText == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* %s */\n"
+            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_right = ZrCore_Stack_GetValue(frame.slotBase + %u);\n",
+            marker,
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot);
+    if (useUnsignedLeft) {
+        fprintf(file, "        TZrUInt64 zr_aot_left_unsigned;\n");
+    } else {
+        fprintf(file, "        TZrInt64 zr_aot_left_scalar;\n");
+    }
+    fprintf(file,
+            "        TZrInt64 zr_aot_shift_count;\n"
+            "        if (zr_aot_destination == ZR_NULL || zr_aot_left == ZR_NULL || zr_aot_right == ZR_NULL) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (!ZR_VALUE_IS_TYPE_INT(zr_aot_left->type) || !ZR_VALUE_IS_TYPE_INT(zr_aot_right->type)) {\n"
+            "            ZrCore_Debug_RunError(state, \"unsupported AOT generic integer shift\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n");
+    if (useUnsignedLeft) {
+        backend_aot_write_c_unsigned_integer_like_extract(file, "zr_aot_left", "zr_aot_left_unsigned");
+    } else {
+        backend_aot_write_c_integer_like_extract(file, "zr_aot_left", "zr_aot_left_scalar");
+    }
+    backend_aot_write_c_integer_like_extract(file, "zr_aot_right", "zr_aot_shift_count");
+    backend_aot_write_c_shift_count_guard(file, "zr_aot_shift_count");
+    fprintf(file,
+            "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
+            "                          nativeInt64,\n"
+            "                          %s,\n"
+            "                          ZR_VALUE_TYPE_INT64);\n"
+            "    }\n",
+            expressionText);
+}
+
 void backend_aot_write_c_direct_bitwise_not(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     backend_aot_write_c_direct_bitwise_unary(file, "~zr_aot_source_scalar", destinationSlot, sourceSlot);
 }
@@ -275,6 +326,32 @@ void backend_aot_write_c_direct_shift_right_int(FILE *file,
                                             destinationSlot,
                                             leftSlot,
                                             rightSlot);
+}
+
+void backend_aot_write_c_direct_shift_left(FILE *file,
+                                           TZrUInt32 destinationSlot,
+                                           TZrUInt32 leftSlot,
+                                           TZrUInt32 rightSlot) {
+    backend_aot_write_c_direct_generic_shift(file,
+                                             "zr_aot_shift_exec_generic_left",
+                                             "(TZrInt64)(zr_aot_left_unsigned << zr_aot_shift_count)",
+                                             ZR_TRUE,
+                                             destinationSlot,
+                                             leftSlot,
+                                             rightSlot);
+}
+
+void backend_aot_write_c_direct_shift_right(FILE *file,
+                                            TZrUInt32 destinationSlot,
+                                            TZrUInt32 leftSlot,
+                                            TZrUInt32 rightSlot) {
+    backend_aot_write_c_direct_generic_shift(file,
+                                             "zr_aot_shift_exec_generic_right",
+                                             "zr_aot_left_scalar >> zr_aot_shift_count",
+                                             ZR_FALSE,
+                                             destinationSlot,
+                                             leftSlot,
+                                             rightSlot);
 }
 
 void backend_aot_write_c_direct_bitwise_shift_left(FILE *file,

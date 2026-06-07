@@ -335,6 +335,7 @@ static void test_binary_integer_numeric_fact_records_exact_range(void) {
     SZrAstNode *ast;
     SZrAstNode *expr;
     SZrInferredType result;
+    const SZrSemanticExpressionFact *expressionFact;
     const SZrSemanticNumericFact *numericFact;
     const char *source = "1 + 2;";
 
@@ -347,8 +348,15 @@ static void test_binary_integer_numeric_fact_records_exact_range(void) {
 
     ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
     TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+    expressionFact = ZrParser_SemanticFacts_FindExpressionByNode(cs->semanticContext, expr);
     numericFact = ZrParser_SemanticFacts_FindNumericByNode(cs->semanticContext, expr);
 
+    TEST_ASSERT_NOT_NULL(expressionFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_BINARY, expressionFact->kind);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_FACT_EXACT, expressionFact->exactness);
+    TEST_ASSERT_TRUE(expressionFact->hasConstant);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_VALUE_KIND_INT64, expressionFact->valueKind);
+    TEST_ASSERT_EQUAL_INT64(3, expressionFact->constantValue.int64Value);
     TEST_ASSERT_NOT_NULL(numericFact);
     TEST_ASSERT_EQUAL_UINT64(0, expr->location.start.offset);
     TEST_ASSERT_EQUAL_UINT64(5, expr->location.end.offset);
@@ -784,6 +792,77 @@ static void test_lambda_expression_fact_records_callable_type(void) {
     TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, lambdaFact->inferredType.baseType);
     TEST_ASSERT_NOT_NULL(lambdaFact->inferredType.typeName);
     TEST_ASSERT_EQUAL_STRING("%func(int)->int", ZrCore_String_GetNativeString(lambdaFact->inferredType.typeName));
+
+    ZrParser_InferredType_Free(g_state, &result);
+    ZrParser_Ast_Free(g_state, ast);
+    destroy_compiler_state(cs);
+}
+
+static void test_lambda_constant_true_loop_return_records_callable_type_and_body_facts(void) {
+    SZrCompilerState *cs = create_compiler_state();
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrAstNode *lambdaExpr;
+    SZrAstNode *lambdaBlock;
+    SZrAstNode *whileLoop;
+    SZrAstNode *whileBlock;
+    SZrAstNode *returnStatement;
+    SZrAstNode *returnExpr;
+    SZrInferredType result;
+    const SZrSemanticExpressionFact *lambdaFact;
+    const SZrSemanticExpressionFact *returnExprFact;
+    const SZrSemanticNumericFact *returnNumericFact;
+    const char *source = "var worker = ()->{ while (true) { return 1 + 2; } };";
+
+    sourceName = ZrCore_String_Create(g_state,
+                                      "lambda_loop_return_fact_test.zr",
+                                      strlen("lambda_loop_return_fact_test.zr"));
+    ast = ZrParser_Parse(g_state, source, strlen(source), sourceName);
+    lambdaExpr = first_declaration_initializer(ast);
+
+    TEST_ASSERT_NOT_NULL(lambdaExpr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_LAMBDA_EXPRESSION, lambdaExpr->type);
+    lambdaBlock = lambdaExpr->data.lambdaExpression.block;
+    TEST_ASSERT_NOT_NULL(lambdaBlock);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BLOCK, lambdaBlock->type);
+    TEST_ASSERT_NOT_NULL(lambdaBlock->data.block.body);
+    TEST_ASSERT_EQUAL_INT(1, (int)lambdaBlock->data.block.body->count);
+    whileLoop = lambdaBlock->data.block.body->nodes[0];
+    TEST_ASSERT_NOT_NULL(whileLoop);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_WHILE_LOOP, whileLoop->type);
+    whileBlock = whileLoop->data.whileLoop.block;
+    TEST_ASSERT_NOT_NULL(whileBlock);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BLOCK, whileBlock->type);
+    TEST_ASSERT_NOT_NULL(whileBlock->data.block.body);
+    TEST_ASSERT_EQUAL_INT(1, (int)whileBlock->data.block.body->count);
+    returnStatement = whileBlock->data.block.body->nodes[0];
+    TEST_ASSERT_NOT_NULL(returnStatement);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_RETURN_STATEMENT, returnStatement->type);
+    returnExpr = returnStatement->data.returnStatement.expr;
+    TEST_ASSERT_NOT_NULL(returnExpr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_BINARY_EXPRESSION, returnExpr->type);
+
+    ZrParser_InferredType_Init(g_state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, lambdaExpr, &result));
+    lambdaFact = ZrParser_SemanticFacts_FindExpressionByNode(cs->semanticContext, lambdaExpr);
+    returnExprFact = ZrParser_SemanticFacts_FindExpressionByNode(cs->semanticContext, returnExpr);
+    returnNumericFact = ZrParser_SemanticFacts_FindNumericByNode(cs->semanticContext, returnExpr);
+
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_CLOSURE, result.baseType);
+    TEST_ASSERT_NOT_NULL(result.typeName);
+    TEST_ASSERT_EQUAL_STRING("%func()->int", ZrCore_String_GetNativeString(result.typeName));
+    TEST_ASSERT_NOT_NULL(lambdaFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_LAMBDA, lambdaFact->kind);
+    TEST_ASSERT_NOT_NULL(lambdaFact->inferredType.typeName);
+    TEST_ASSERT_EQUAL_STRING("%func()->int", ZrCore_String_GetNativeString(lambdaFact->inferredType.typeName));
+    TEST_ASSERT_NOT_NULL(returnExprFact);
+    TEST_ASSERT_EQUAL_INT(ZR_SEMANTIC_EXPRESSION_FACT_BINARY, returnExprFact->kind);
+    TEST_ASSERT_TRUE(returnExprFact->hasConstant);
+    TEST_ASSERT_EQUAL_INT64(3, returnExprFact->constantValue.int64Value);
+    TEST_ASSERT_NOT_NULL(returnNumericFact);
+    TEST_ASSERT_TRUE(returnNumericFact->hasRange);
+    TEST_ASSERT_EQUAL_INT64(3, returnNumericFact->minValue);
+    TEST_ASSERT_EQUAL_INT64(3, returnNumericFact->maxValue);
 
     ZrParser_InferredType_Free(g_state, &result);
     ZrParser_Ast_Free(g_state, ast);
@@ -1278,6 +1357,7 @@ int main(void) {
     RUN_TEST(test_float_literal_numeric_fact_records_exact_double_range);
     RUN_TEST(test_binary_float_numeric_fact_records_exact_double_range);
     RUN_TEST(test_lambda_expression_fact_records_callable_type);
+    RUN_TEST(test_lambda_constant_true_loop_return_records_callable_type_and_body_facts);
     RUN_TEST(test_ownership_builtin_expression_fact_records_builtin_kind);
     RUN_TEST(test_binary_variable_numeric_fact_propagates_exact_integer_range);
     RUN_TEST(test_binary_variable_numeric_fact_propagates_integer_interval_range);

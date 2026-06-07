@@ -15,6 +15,7 @@
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
+#include "zr_vm_library/aot_runtime.h"
 #include "zr_vm_library/conf.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
@@ -859,6 +860,7 @@ void ZrLibrary_Project_Free(SZrState *state, SZrLibrary_Project *project) {
         return;
     }
     SZrGlobalState *global = state->global;
+    ZrLibrary_AotRuntime_FreeProjectState(state, project);
     library_project_free_dependencies(global, project);
     library_project_free_path_aliases(global, project);
     ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);

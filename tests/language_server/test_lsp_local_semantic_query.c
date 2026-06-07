@@ -720,6 +720,85 @@ static void test_local_expression_query_returns_logical_short_circuit_fact(SZrSt
     TEST_PASS(timer, summary);
 }
 
+static void test_local_expression_query_returns_conditional_branch_fact(SZrState *state) {
+    const TZrChar *summary = "LSP Local Expression Query Returns Conditional Branch Fact";
+    const TZrChar *uriText = "file:///local_conditional_branch_fact.zr";
+    const TZrChar *content =
+        "choose() {\n"
+        "    var selected = true ? 1 : 2;\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition position;
+    SZrLspLocalSemanticQueryResult query;
+    TZrChar reason[768];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, ": 2", 0, 2, &position)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare local conditional branch query fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, position, &query)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "ExpressionAt returned false");
+        return;
+    }
+
+    if (query.status != ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT ||
+        query.expressionFact == ZR_NULL ||
+        query.expressionFact->kind != ZR_SEMANTIC_EXPRESSION_FACT_CONDITIONAL ||
+        query.expressionFact->inferredType.baseType != ZR_VALUE_TYPE_INT64 ||
+        query.numericFact == ZR_NULL ||
+        query.numericFact->kind != ZR_SEMANTIC_NUMERIC_FACT_RANGE ||
+        !query.numericFact->hasRange ||
+        query.numericFact->minValue != 1 ||
+        query.numericFact->maxValue != 1 ||
+        query.reachabilityFact == ZR_NULL ||
+        query.reachabilityFact->cause != ZR_SEMANTIC_REACHABILITY_CONSTANT_BRANCH ||
+        query.logicalFact == ZR_NULL ||
+        !query.logicalFact->hasKnownValue ||
+        !query.logicalFact->knownValue) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected conditional branch fact; status=%d query=(%lld,%d,%d) expr=%p kind=%d exprType=%d numeric=%p numericKind=%d hasRange=%d min=%lld max=%lld reachability=%p cause=%d logical=%p hasKnown=%d known=%d",
+                 (int)query.status,
+                 (long long)query.queryRange.start.offset,
+                 (int)query.queryRange.start.line,
+                 (int)query.queryRange.start.column,
+                 (void *)query.expressionFact,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->kind : -1,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->inferredType.baseType : -1,
+                 (void *)query.numericFact,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->kind : -1,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->hasRange : -1,
+                 query.numericFact != ZR_NULL ? (long long)query.numericFact->minValue : -1,
+                 query.numericFact != ZR_NULL ? (long long)query.numericFact->maxValue : -1,
+                 (void *)query.reachabilityFact,
+                 query.reachabilityFact != ZR_NULL ? (int)query.reachabilityFact->cause : -1,
+                 (void *)query.logicalFact,
+                 query.logicalFact != ZR_NULL ? (int)query.logicalFact->hasKnownValue : -1,
+                 query.logicalFact != ZR_NULL ? (int)query.logicalFact->knownValue : -1);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 static void test_local_expression_query_returns_unary_logical_not_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Unary Logical Not Fact";
     const TZrChar *uriText = "file:///local_unary_logical_not_fact.zr";
@@ -1264,6 +1343,103 @@ static void test_local_expression_query_includes_reference_fact(SZrState *state)
     TEST_PASS(timer, summary);
 }
 
+static void test_local_expression_query_reaches_type_query_operands(SZrState *state) {
+    const TZrChar *summary = "LSP Local Expression Query Reaches Type Query Operands";
+    const TZrChar *uriText = "file:///local_type_query_operand_facts.zr";
+    const TZrChar *content =
+        "var owner: %unique int;\n"
+        "probe() {\n"
+        "    var ownerType = %type(owner);\n"
+        "    var foldedType = %type(1 + 2);\n"
+        "}\n";
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition ownerPosition;
+    SZrLspPosition plusPosition;
+    SZrLspLocalSemanticQueryResult query;
+    TZrChar reason[768];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "owner)", 0, 0, &ownerPosition) ||
+        !lsp_find_position_for_substring(content, "+", 0, 0, &plusPosition)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare local type-query operand fixture");
+        return;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, ownerPosition, &query)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "ExpressionAt returned false for %type(owner)");
+        return;
+    }
+
+    if (query.status != ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT ||
+        query.referenceFact == ZR_NULL ||
+        query.referenceFact->kind != ZR_SEMANTIC_REFERENCE_READ ||
+        !query.referenceFact->isResolved ||
+        query.referenceFact->name == ZR_NULL ||
+        strcmp(test_string_ptr(query.referenceFact->name), "owner") != 0) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected %type(owner) operand read reference; status=%d expr=%p reference=%p kind=%d resolved=%d name=%s",
+                 (int)query.status,
+                 (void *)query.expressionFact,
+                 (void *)query.referenceFact,
+                 query.referenceFact != ZR_NULL ? (int)query.referenceFact->kind : -1,
+                 query.referenceFact != ZR_NULL ? (int)query.referenceFact->isResolved : -1,
+                 query.referenceFact != ZR_NULL && query.referenceFact->name != ZR_NULL
+                         ? test_string_ptr(query.referenceFact->name)
+                         : "<null>");
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Init(&query);
+    if (!ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, plusPosition, &query)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "ExpressionAt returned false for %type(1 + 2)");
+        return;
+    }
+
+    if (query.status != ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT ||
+        query.expressionFact == ZR_NULL ||
+        query.expressionFact->kind != ZR_SEMANTIC_EXPRESSION_FACT_BINARY ||
+        query.numericFact == ZR_NULL ||
+        query.numericFact->kind != ZR_SEMANTIC_NUMERIC_FACT_PROMOTION ||
+        !query.numericFact->hasRange ||
+        query.numericFact->minValue != 3 ||
+        query.numericFact->maxValue != 3) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected %type(1 + 2) operand binary numeric fact; status=%d expr=%p kind=%d numeric=%p numericKind=%d hasRange=%d min=%lld max=%lld",
+                 (int)query.status,
+                 (void *)query.expressionFact,
+                 query.expressionFact != ZR_NULL ? (int)query.expressionFact->kind : -1,
+                 (void *)query.numericFact,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->kind : -1,
+                 query.numericFact != ZR_NULL ? (int)query.numericFact->hasRange : -1,
+                 query.numericFact != ZR_NULL ? (long long)query.numericFact->minValue : -1,
+                 query.numericFact != ZR_NULL ? (long long)query.numericFact->maxValue : -1);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
 static void test_local_expression_query_returns_ownership_violation_fact(SZrState *state) {
     const TZrChar *summary = "LSP Local Expression Query Returns Ownership Violation Fact";
     const TZrChar *uriText = "file:///local_ownership_violation_fact.zr";
@@ -1409,6 +1585,8 @@ int main(void) {
     TEST_DIVIDER();
     test_local_expression_query_returns_logical_short_circuit_fact(state);
     TEST_DIVIDER();
+    test_local_expression_query_returns_conditional_branch_fact(state);
+    TEST_DIVIDER();
     test_local_expression_query_returns_unary_logical_not_fact(state);
     TEST_DIVIDER();
     test_local_reference_query_returns_write_fact(state);
@@ -1422,6 +1600,8 @@ int main(void) {
     test_local_reference_query_returns_call_fact(state);
     TEST_DIVIDER();
     test_local_expression_query_includes_reference_fact(state);
+    TEST_DIVIDER();
+    test_local_expression_query_reaches_type_query_operands(state);
     TEST_DIVIDER();
     test_local_expression_query_returns_ownership_violation_fact(state);
     TEST_DIVIDER();

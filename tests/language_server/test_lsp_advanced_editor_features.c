@@ -1114,6 +1114,50 @@ static void test_lsp_code_action_inserts_semicolon_before_line_comment(SZrState 
     }
 }
 
+static void test_lsp_code_action_skips_semicolon_inside_block_comment(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code action skips semicolon quickfix inside block comment";
+    const TZrChar *content =
+        "/*\n"
+        "return answer\n"
+        "*/\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray actions = {0};
+    SZrLspRange range = {{1, 0}, {1, 0}};
+    TZrBool foundSemicolonAction = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_semicolon_block_comment_action.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeActions(state, context, uri, range, &actions)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeAction failed for block-comment semicolon fixture");
+    } else {
+        for (TZrSize index = 0; index < actions.length; index++) {
+            SZrLspCodeAction **actionPtr = (SZrLspCodeAction **)ZrCore_Array_Get(&actions, index);
+            const TZrChar *title = (actionPtr != ZR_NULL && *actionPtr != ZR_NULL)
+                                       ? test_string_text((*actionPtr)->title)
+                                       : ZR_NULL;
+            if (title != ZR_NULL && strstr(title, "semicolon") != ZR_NULL) {
+                foundSemicolonAction = ZR_TRUE;
+                break;
+            }
+        }
+        if (foundSemicolonAction) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "semicolon quick fix was offered inside a block comment");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeActions(state, &actions);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 static void test_lsp_code_action_inserts_missing_native_import(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code action inserts a missing native module import";
@@ -1397,6 +1441,54 @@ static void test_lsp_code_lens_exposes_test_command(SZrState *state, int *failur
     }
 }
 
+static void test_lsp_code_lens_ignores_non_code_test_markers(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP code lens ignores test markers in comments and strings";
+    const TZrChar *content =
+        "func run(): int {\n"
+        "    var text = \"%test(\\\"string\\\")\";\n"
+        "    // %test(\"line\") { }\n"
+        "    /*\n"
+        "    %test(\"block\") { }\n"
+        "    */\n"
+        "    return 0;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray lenses = {0};
+    TZrBool foundRunLens = ZR_FALSE;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_lens_non_code_tests.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !ZrLanguageServer_Lsp_GetCodeLens(state, context, uri, &lenses)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "codeLens failed for non-code test marker fixture");
+    } else {
+        for (TZrSize index = 0; index < lenses.length; index++) {
+            SZrLspCodeLens **lensPtr = (SZrLspCodeLens **)ZrCore_Array_Get(&lenses, index);
+            const TZrChar *command = (lensPtr != ZR_NULL && *lensPtr != ZR_NULL)
+                                         ? test_string_text((*lensPtr)->command)
+                                         : ZR_NULL;
+            if (command != ZR_NULL && strcmp(command, "zr.runCurrentProject") == 0) {
+                foundRunLens = ZR_TRUE;
+                break;
+            }
+        }
+        if (foundRunLens) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "non-code %test text produced a run CodeLens");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeCodeLens(state, &lenses);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 static void test_lsp_code_lens_exposes_reference_count(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP code lens exposes function reference counts";
@@ -1599,6 +1691,67 @@ static void test_lsp_call_hierarchy_incoming_returns_direct_callers(SZrState *st
     }
 }
 
+static void test_lsp_call_hierarchy_ignores_non_code_call_mentions(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP call hierarchy ignores call-looking text in comments and strings";
+    const TZrChar *content =
+        "func helper(value: int): int {\n"
+        "    return value;\n"
+        "}\n"
+        "\n"
+        "func run(value: int): int {\n"
+        "    // helper(value) is prose\n"
+        "    var text = \"helper(value) is text\";\n"
+        "    return value;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrArray runItems = {0};
+    SZrArray helperItems = {0};
+    SZrArray outgoing = {0};
+    SZrArray incoming = {0};
+    SZrLspPosition runPosition;
+    SZrLspPosition helperPosition;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_call_hierarchy_non_code_calls.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !test_find_position(content, "run(value", 1, &runPosition) ||
+        !test_find_position(content, "helper(value", 1, &helperPosition) ||
+        !ZrLanguageServer_Lsp_PrepareCallHierarchy(state, context, uri, runPosition, &runItems) ||
+        runItems.length != 1 ||
+        !ZrLanguageServer_Lsp_PrepareCallHierarchy(state, context, uri, helperPosition, &helperItems) ||
+        helperItems.length != 1) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "failed to prepare call hierarchy non-code fixture");
+    } else {
+        SZrLspHierarchyItem **runItemPtr = (SZrLspHierarchyItem **)ZrCore_Array_Get(&runItems, 0);
+        SZrLspHierarchyItem **helperItemPtr = (SZrLspHierarchyItem **)ZrCore_Array_Get(&helperItems, 0);
+        if (runItemPtr == ZR_NULL ||
+            *runItemPtr == ZR_NULL ||
+            helperItemPtr == ZR_NULL ||
+            *helperItemPtr == ZR_NULL ||
+            !ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(state, context, *runItemPtr, &outgoing) ||
+            !ZrLanguageServer_Lsp_GetCallHierarchyIncomingCalls(state, context, *helperItemPtr, &incoming)) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "call hierarchy requests failed for non-code fixture");
+        } else if (outgoing.length != 0 || incoming.length != 0) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "call hierarchy counted comment or string text as a call");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrLanguageServer_Lsp_FreeHierarchyCalls(state, &outgoing);
+    ZrLanguageServer_Lsp_FreeHierarchyCalls(state, &incoming);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &runItems);
+    ZrLanguageServer_Lsp_FreeHierarchyItems(state, &helperItems);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
 static void test_lsp_type_hierarchy_prepare_returns_type_item(SZrState *state, int *failures) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP type hierarchy prepare returns a type symbol item";
@@ -1738,6 +1891,66 @@ static void test_lsp_type_hierarchy_subtypes_returns_direct_derived(SZrState *st
 
     ZrLanguageServer_Lsp_FreeHierarchyItems(state, &subtypes);
     ZrLanguageServer_Lsp_FreeHierarchyItems(state, &items);
+    if (context != ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+    }
+}
+
+static void test_lsp_definition_ignores_non_code_receiver_member_text(SZrState *state, int *failures) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP definition ignores receiver member text in comments and strings";
+    const TZrChar *content =
+        "class Box {\n"
+        "    pub var value: int = 0;\n"
+        "}\n"
+        "\n"
+        "func read(): int {\n"
+        "    var box = new Box();\n"
+        "    // box.value should stay prose\n"
+        "    var text = \"box.value should stay text\";\n"
+        "    return box.value;\n"
+        "}\n";
+    SZrString *uri = ZR_NULL;
+    SZrLspContext *context;
+    SZrLspPosition commentPosition;
+    SZrLspPosition stringPosition;
+    SZrLspPosition realPosition;
+    SZrArray commentDefinitions = {0};
+    SZrArray stringDefinitions = {0};
+    SZrArray realDefinitions = {0};
+    TZrBool commentResolved;
+    TZrBool stringResolved;
+
+    TEST_START(summary);
+    context = test_open_document(state, "file:///tmp/zr_lsp_non_code_definition.zr", content, &uri);
+    if (context == ZR_NULL ||
+        !test_find_position(content, "// box.value", (TZrInt32)strlen("// box."), &commentPosition) ||
+        !test_find_position(content, "\"box.value", (TZrInt32)strlen("\"box."), &stringPosition) ||
+        !test_find_position(content, "return box.value", (TZrInt32)strlen("return box."), &realPosition)) {
+        (*failures)++;
+        TEST_FAIL(timer, summary, "failed to prepare receiver-member definition fixture");
+    } else {
+        commentResolved =
+            ZrLanguageServer_Lsp_GetDefinition(state, context, uri, commentPosition, &commentDefinitions);
+        stringResolved =
+            ZrLanguageServer_Lsp_GetDefinition(state, context, uri, stringPosition, &stringDefinitions);
+
+        if ((commentResolved && commentDefinitions.length != 0) ||
+            (stringResolved && stringDefinitions.length != 0)) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "definition resolved receiver-member text from a non-code span");
+        } else if (!ZrLanguageServer_Lsp_GetDefinition(state, context, uri, realPosition, &realDefinitions) ||
+                   realDefinitions.length == 0) {
+            (*failures)++;
+            TEST_FAIL(timer, summary, "real receiver-member definition stopped resolving");
+        } else {
+            TEST_PASS(timer, summary);
+        }
+    }
+
+    ZrCore_Array_Free(state, &commentDefinitions);
+    ZrCore_Array_Free(state, &stringDefinitions);
+    ZrCore_Array_Free(state, &realDefinitions);
     if (context != ZR_NULL) {
         ZrLanguageServer_LspContext_Free(state, context);
     }
@@ -1909,19 +2122,23 @@ int main(void) {
     test_lsp_code_action_ignores_text_mentions_when_removing_unused_alias_imports(state, &failures);
     test_lsp_code_action_inserts_missing_semicolon(state, &failures);
     test_lsp_code_action_inserts_semicolon_before_line_comment(state, &failures);
+    test_lsp_code_action_skips_semicolon_inside_block_comment(state, &failures);
     test_lsp_code_action_inserts_missing_native_import(state, &failures);
     test_lsp_code_action_uses_requested_range_for_missing_import(state, &failures);
     test_lsp_code_action_skips_existing_import_alias(state, &failures);
     test_lsp_code_action_ignores_non_code_missing_import_text(state, &failures);
     test_lsp_code_action_ignores_multiline_block_comment_missing_import(state, &failures);
     test_lsp_code_lens_exposes_test_command(state, &failures);
+    test_lsp_code_lens_ignores_non_code_test_markers(state, &failures);
     test_lsp_code_lens_exposes_reference_count(state, &failures);
     test_lsp_call_hierarchy_prepare_returns_symbol_item(state, &failures);
     test_lsp_call_hierarchy_outgoing_returns_direct_calls(state, &failures);
     test_lsp_call_hierarchy_incoming_returns_direct_callers(state, &failures);
+    test_lsp_call_hierarchy_ignores_non_code_call_mentions(state, &failures);
     test_lsp_type_hierarchy_prepare_returns_type_item(state, &failures);
     test_lsp_type_hierarchy_supertypes_returns_direct_base(state, &failures);
     test_lsp_type_hierarchy_subtypes_returns_direct_derived(state, &failures);
+    test_lsp_definition_ignores_non_code_receiver_member_text(state, &failures);
     test_lsp_advanced_editor_features_return_empty_for_empty_document(state, &failures);
     test_lsp_advanced_editor_features_return_empty_for_unopened_documents(state, &failures);
 

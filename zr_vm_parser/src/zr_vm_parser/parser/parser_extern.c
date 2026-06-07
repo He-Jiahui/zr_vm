@@ -82,8 +82,11 @@ SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     }
 
     // 期望左大括号
-    expect_token(ps, ZR_TK_LBRACE);
-    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_LBRACE) {
+        report_missing_declaration_body_open(ps, "enum declaration", get_current_token_location(ps));
+    } else {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
 
     // 解析成员列表
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
@@ -135,6 +138,26 @@ SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     return node;
 }
 
+static TZrBool consume_extern_parameter_list_close_or_report(SZrParserState *ps,
+                                                             SZrAstNodeArray **params,
+                                                             SZrAstNodeArray **decorators) {
+    if (ps->lexer->t.token == ZR_TK_RPAREN) {
+        consume_token(ps, ZR_TK_RPAREN);
+        return ZR_TRUE;
+    }
+
+    report_missing_parameter_list_close(ps, get_current_token_location(ps));
+    if (params != ZR_NULL && *params != ZR_NULL) {
+        ZrParser_AstNodeArray_Free(ps->state, *params);
+        *params = ZR_NULL;
+    }
+    if (decorators != ZR_NULL && *decorators != ZR_NULL) {
+        ZrParser_AstNodeArray_Free(ps->state, *decorators);
+        *decorators = ZR_NULL;
+    }
+    return ZR_FALSE;
+}
+
 SZrAstNode *parse_extern_function_declaration(SZrParserState *ps, SZrAstNodeArray *decorators) {
     SZrFileRange startLoc = get_current_location(ps);
     SZrAstNode *nameNode;
@@ -172,8 +195,9 @@ SZrAstNode *parse_extern_function_declaration(SZrParserState *ps, SZrAstNodeArra
         }
     }
 
-    expect_token(ps, ZR_TK_RPAREN);
-    consume_token(ps, ZR_TK_RPAREN);
+    if (!consume_extern_parameter_list_close_or_report(ps, &params, &decorators)) {
+        return ZR_NULL;
+    }
 
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
@@ -248,8 +272,9 @@ SZrAstNode *parse_extern_delegate_declaration(SZrParserState *ps, SZrAstNodeArra
         }
     }
 
-    expect_token(ps, ZR_TK_RPAREN);
-    consume_token(ps, ZR_TK_RPAREN);
+    if (!consume_extern_parameter_list_close_or_report(ps, &params, &decorators)) {
+        return ZR_NULL;
+    }
 
     if (consume_token(ps, ZR_TK_COLON)) {
         returnType = parse_type(ps);
@@ -334,7 +359,12 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
     }
     libraryName = parse_literal(ps);
 
-    expect_token(ps, ZR_TK_RPAREN);
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_extern_spec_close(ps, get_current_token_location(ps));
+        ZrParser_Ast_Free(ps->state, libraryName);
+        return ZR_NULL;
+    }
+
     consume_token(ps, ZR_TK_RPAREN);
 
     declarations = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
@@ -352,6 +382,10 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
         }
         expect_token(ps, ZR_TK_RBRACE);
         consume_token(ps, ZR_TK_RBRACE);
+    } else if (ps->lexer->t.token == ZR_TK_EOS || ps->lexer->t.token == ZR_TK_RBRACE) {
+        report_missing_declaration_body_open(ps, "extern block", get_current_token_location(ps));
+        ZrParser_AstNodeArray_Free(ps->state, declarations);
+        return ZR_NULL;
     } else {
         SZrAstNode *declaration = parse_extern_member_declaration(ps);
         if (declaration == ZR_NULL) {
@@ -458,10 +492,19 @@ SZrAstNode *parse_test_declaration(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    expect_token(ps, ZR_TK_RPAREN);
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_test_name_close(ps, get_current_token_location(ps));
+        return ZR_NULL;
+    }
+
     consume_token(ps, ZR_TK_RPAREN);
 
     // 解析测试体
+    if (ps->lexer->t.token != ZR_TK_LBRACE) {
+        report_missing_declaration_body_open(ps, "test declaration", get_current_token_location(ps));
+        return ZR_NULL;
+    }
+
     SZrAstNode *body = parse_block(ps);
     if (body == ZR_NULL) {
         return ZR_NULL;

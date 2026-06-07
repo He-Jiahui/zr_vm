@@ -122,6 +122,8 @@ void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *type, EZrValue
     type->minValue = 0;
     type->maxValue = 0;
     type->hasRangeConstraint = ZR_FALSE;
+    type->knownBoolValue = ZR_FALSE;
+    type->hasKnownBoolValue = ZR_FALSE;
     
     // 初始化数组大小约束
     type->arrayFixedSize = 0;
@@ -146,6 +148,8 @@ void ZrParser_InferredType_InitFull(SZrState *state, SZrInferredType *type, EZrV
     type->minValue = 0;
     type->maxValue = 0;
     type->hasRangeConstraint = ZR_FALSE;
+    type->knownBoolValue = ZR_FALSE;
+    type->hasKnownBoolValue = ZR_FALSE;
     
     // 初始化数组大小约束
     type->arrayFixedSize = 0;
@@ -208,6 +212,8 @@ void ZrParser_InferredType_Copy(SZrState *state, SZrInferredType *dest, const SZ
     dest->minValue = src->minValue;
     dest->maxValue = src->maxValue;
     dest->hasRangeConstraint = src->hasRangeConstraint;
+    dest->knownBoolValue = src->knownBoolValue;
+    dest->hasKnownBoolValue = src->hasKnownBoolValue;
     
     // 复制数组大小约束
     dest->arrayFixedSize = src->arrayFixedSize;
@@ -239,6 +245,14 @@ TZrBool ZrParser_InferredType_Equal(const SZrInferredType *type1, const SZrInfer
     }
 
     if (type1->hasArraySizeConstraint != type2->hasArraySizeConstraint) {
+        return ZR_FALSE;
+    }
+
+    if (type1->hasKnownBoolValue != type2->hasKnownBoolValue) {
+        return ZR_FALSE;
+    }
+
+    if (type1->hasKnownBoolValue && type1->knownBoolValue != type2->knownBoolValue) {
         return ZR_FALSE;
     }
 

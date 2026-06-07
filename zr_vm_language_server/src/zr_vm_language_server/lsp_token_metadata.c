@@ -278,6 +278,11 @@ TZrBool ZrLanguageServer_Lsp_TryGetMetaMethodHover(SZrState *state,
                                                            &tokenEnd)) {
         return ZR_FALSE;
     }
+    if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(fileVersion->content,
+                                                 fileVersion->contentLength,
+                                                 tokenStart)) {
+        return ZR_FALSE;
+    }
 
     tokenLength = tokenEnd - tokenStart;
     descriptor = token_metadata_find_meta_method_descriptor(fileVersion->content + tokenStart, tokenLength);

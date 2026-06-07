@@ -244,10 +244,8 @@ void ZrLanguageServer_IncrementalParser_Free(SZrState *state, SZrIncrementalPars
                         }
                     }
                 }
-                // 释放节点本身
                 SZrHashKeyValuePair *next = pair->next;
-                ZrCore_Memory_RawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
-                                       ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+                /* HashSet pairs are owned by the pair pool released by Deconstruct. */
                 pair = next;
             }
             parser->uriToFileMap.buckets[i] = ZR_NULL;

@@ -346,6 +346,9 @@ SZrString *ZrCore_Value_ConvertToString(struct SZrState *state, SZrTypeValue *va
             snprintf(buffer, sizeof(buffer), "[object type=%d]", (int) object->internalType);
             return ZrCore_String_CreateFromNative(state, buffer);
         } break;
+        case ZR_VALUE_TYPE_ARRAY: {
+            return ZrCore_Value_ToDebugString(state, &stableValue);
+        } break;
         case ZR_VALUE_TYPE_FUNCTION: {
             return ZrCore_String_CreateFromNative(state, "[function]");
         } break;

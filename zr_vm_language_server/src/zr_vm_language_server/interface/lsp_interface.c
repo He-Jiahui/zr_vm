@@ -85,6 +85,11 @@ static TZrBool lsp_build_rich_hover_from_markdown(SZrState *state,
                                                   const TZrChar *markdown,
                                                   SZrLspRange range,
                                                   SZrLspRichHover **result);
+static TZrBool lsp_refresh_local_hover_query(SZrState *state,
+                                             SZrLspContext *context,
+                                             SZrString *uri,
+                                             SZrLspPosition position,
+                                             SZrLspLocalSemanticQueryResult *localQuery);
 
 static void lsp_register_builtin_native_libraries(SZrState *state) {
     if (state == ZR_NULL || state->global == ZR_NULL) {
@@ -575,6 +580,12 @@ static const TZrChar *lsp_rich_hover_role_for_label(const TZrChar *label) {
     if (strcmp(label, "Resolved Type") == 0 || strcmp(label, "Type") == 0) {
         return "resolvedType";
     }
+    if (strcmp(label, "Expression") == 0) {
+        return "expression";
+    }
+    if (strcmp(label, "Constant") == 0) {
+        return "constant";
+    }
     if (strcmp(label, "Numeric range") == 0 ||
         strcmp(label, "Unsigned range") == 0 ||
         strcmp(label, "Numeric warning") == 0) {
@@ -837,6 +848,19 @@ static TZrBool lsp_build_rich_hover_from_markdown(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool lsp_refresh_local_hover_query(SZrState *state,
+                                             SZrLspContext *context,
+                                             SZrString *uri,
+                                             SZrLspPosition position,
+                                             SZrLspLocalSemanticQueryResult *localQuery) {
+    if (localQuery == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrLanguageServer_LspLocalSemanticQuery_Clear(localQuery);
+    return ZrLanguageServer_LspLocalSemanticQuery_ExpressionAt(state, context, uri, position, localQuery);
+}
+
 SZrLspContext *ZrLanguageServer_LspContext_New(SZrState *state) {
     if (state == ZR_NULL) {
         return ZR_NULL;
@@ -894,10 +918,8 @@ void ZrLanguageServer_LspContext_Free(SZrState *state, SZrLspContext *context) {
                         }
                     }
                 }
-                // 释放节点本身
                 SZrHashKeyValuePair *next = pair->next;
-                ZrCore_Memory_RawFreeWithType(state->global, pair, sizeof(SZrHashKeyValuePair), 
-                                       ZR_MEMORY_NATIVE_TYPE_HASH_PAIR);
+                /* HashSet pairs are owned by the pair pool released by Deconstruct. */
                 pair = next;
             }
             context->uriToAnalyzerMap.buckets[i] = ZR_NULL;
@@ -1336,6 +1358,8 @@ TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
                          SZrLspPosition position,
                          SZrArray *result) {
     SZrArray completions;
+    SZrFileVersion *fileVersion;
+    SZrFilePosition filePosition;
 
     if (state == ZR_NULL || context == ZR_NULL || uri == ZR_NULL || result == ZR_NULL) {
         return ZR_FALSE;
@@ -1344,6 +1368,18 @@ TZrBool ZrLanguageServer_Lsp_GetCompletion(SZrState *state,
     // 初始化结果数组
     if (!result->isValid) {
         ZrCore_Array_Init(state, result, sizeof(SZrLspCompletionItem *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion != ZR_NULL && fileVersion->content != ZR_NULL) {
+        filePosition = ZrLanguageServer_LspPosition_ToFilePositionWithContent(position,
+                                                                              fileVersion->content,
+                                                                              fileVersion->contentLength);
+        if (!ZrLanguageServer_Lsp_IsCursorOffsetInCodeSpan(fileVersion->content,
+                                                           fileVersion->contentLength,
+                                                           filePosition.offset)) {
+            return ZR_TRUE;
+        }
     }
     
     ZrCore_Array_Init(state, &completions, sizeof(SZrCompletionItem *), ZR_LSP_ARRAY_INITIAL_CAPACITY);
@@ -1485,9 +1521,13 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
         if (ZrLanguageServer_LspSemanticQuery_ResolveAtPosition(state, context, uri, position, &semanticQuery)) {
             if (ZrLanguageServer_LspSemanticQuery_BuildHover(state, context, &semanticQuery, result)) {
                 if (result != ZR_NULL && *result != ZR_NULL) {
-                    ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(state,
-                                                                               &localQuery,
-                                                                               *result);
+                    hasLocalQuery = lsp_refresh_local_hover_query(state, context, uri, position, &localQuery);
+                    if (hasLocalQuery &&
+                        localQuery.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT) {
+                        ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(state,
+                                                                                   &localQuery,
+                                                                                   *result);
+                    }
                 }
                 ZrLanguageServer_LspSemanticQuery_Free(state, &semanticQuery);
                 ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
@@ -1522,6 +1562,13 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
     if (signatureHelp != ZR_NULL) {
         ZrLanguageServer_LspSignatureHelp_Free(state, signatureHelp);
         signatureHelp = ZR_NULL;
+    }
+
+    hasLocalQuery = lsp_refresh_local_hover_query(state, context, uri, position, &localQuery);
+    if (hasLocalQuery &&
+        localQuery.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_DIAGNOSTIC_FAILURE) {
+        ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
+        return ZR_FALSE;
     }
 
     if (hasLocalQuery &&
@@ -1581,7 +1628,11 @@ TZrBool ZrLanguageServer_Lsp_GetHover(SZrState *state,
                           : (hoverInfo != ZR_NULL ? hoverInfo->range : fileRange));
     
     *result = lspHover;
-    ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(state, &localQuery, *result);
+    hasLocalQuery = lsp_refresh_local_hover_query(state, context, uri, position, &localQuery);
+    if (hasLocalQuery &&
+        localQuery.status == ZR_LSP_LOCAL_SEMANTIC_QUERY_FACT) {
+        ZrLanguageServer_LspLocalSemanticQuery_AppendFactsToHover(state, &localQuery, *result);
+    }
     ZrLanguageServer_LspLocalSemanticQuery_Clear(&localQuery);
     return ZR_TRUE;
 }

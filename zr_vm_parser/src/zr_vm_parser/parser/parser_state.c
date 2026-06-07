@@ -856,4 +856,234 @@ void report_missing_right_operand(SZrParserState *ps, const TZrChar *operatorTex
     ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
 }
 
+void report_missing_condition(SZrParserState *ps, const TZrChar *statementKind, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingCondition(ps->state,
+                                                          &diagnostic,
+                                                          location,
+                                                          statementKind)) {
+        report_error_with_token(ps, "Missing condition expression", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_condition_close(SZrParserState *ps, const TZrChar *statementKind, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingConditionClose(ps->state,
+                                                               &diagnostic,
+                                                               location,
+                                                               statementKind)) {
+        report_error_with_token(ps, "Missing ')' after condition", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_member_name(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingMemberName(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing member name after '.'", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_index_close(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingIndexClose(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing closing ']' in index access", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_call_close(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingCallClose(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing closing ')' in function call", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_parameter_list_close(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingParameterListClose(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing closing ')' in function declaration parameters", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_group_close(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingGroupClose(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing closing ')' in grouped expression", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_array_element_assignment(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildArrayElementAssignment(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Array element cannot be an assignment expression", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_array_close(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingArrayClose(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing closing ']' in array literal", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_array_element_separator(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingArrayElementSeparator(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing separator between array elements", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_object_close(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingObjectClose(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing closing '}' in object literal", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_object_computed_key_close(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingObjectComputedKeyClose(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing closing ']' in computed object key", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_object_property_colon(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingObjectPropertyColon(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing ':' after object property key", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_missing_object_property_separator(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingObjectPropertySeparator(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "Missing separator between object properties", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
 // ==================== AST 节点创建辅助函数 ====================

@@ -7204,6 +7204,11 @@ static TZrBool compiler_quickening_forward_get_stack_copy_reads(SZrFunction *fun
     return success;
 }
 
+static TZrBool compiler_quickening_opcode_is_false_branch(EZrInstructionCode opcode) {
+    return (TZrBool)(opcode == ZR_INSTRUCTION_ENUM(JUMP_IF) ||
+                     opcode == ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE));
+}
+
 static TZrBool compiler_quickening_try_fuse_jump_if_greater_signed(SZrFunction *function,
                                                                    const TZrBool *blockStarts,
                                                                    TZrUInt32 instructionIndex) {
@@ -7223,7 +7228,7 @@ static TZrBool compiler_quickening_try_fuse_jump_if_greater_signed(SZrFunction *
     compareOpcode = (EZrInstructionCode)compareInstruction->instruction.operationCode;
     if ((compareOpcode != ZR_INSTRUCTION_ENUM(LOGICAL_LESS_EQUAL_SIGNED) &&
          compareOpcode != ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_EQUAL_SIGNED)) ||
-        (EZrInstructionCode)jumpIfInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF) ||
+        !compiler_quickening_opcode_is_false_branch((EZrInstructionCode)jumpIfInstruction->instruction.operationCode) ||
         blockStarts[instructionIndex + 1]) {
         return ZR_FALSE;
     }
@@ -7304,7 +7309,7 @@ static TZrBool compiler_quickening_try_fuse_jump_if_less_equal_signed(SZrFunctio
     jumpIfInstruction = &function->instructionsList[instructionIndex + 1];
     if ((EZrInstructionCode)compareInstruction->instruction.operationCode !=
                 ZR_INSTRUCTION_ENUM(LOGICAL_GREATER_SIGNED) ||
-        (EZrInstructionCode)jumpIfInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF) ||
+        !compiler_quickening_opcode_is_false_branch((EZrInstructionCode)jumpIfInstruction->instruction.operationCode) ||
         blockStarts[instructionIndex + 1]) {
         return ZR_FALSE;
     }
@@ -7381,7 +7386,7 @@ static TZrBool compiler_quickening_try_fuse_jump_if_not_equal_signed_const(SZrFu
     jumpIfInstruction = &function->instructionsList[instructionIndex + 1];
     if ((EZrInstructionCode)compareInstruction->instruction.operationCode !=
                 ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST) ||
-        (EZrInstructionCode)jumpIfInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF) ||
+        !compiler_quickening_opcode_is_false_branch((EZrInstructionCode)jumpIfInstruction->instruction.operationCode) ||
         blockStarts[instructionIndex + 1]) {
         return ZR_FALSE;
     }
@@ -7427,7 +7432,7 @@ static TZrBool compiler_quickening_try_fuse_jump_if_not_equal_signed(SZrFunction
     compareInstruction = &function->instructionsList[instructionIndex];
     jumpIfInstruction = &function->instructionsList[instructionIndex + 1];
     if ((EZrInstructionCode)compareInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED) ||
-        (EZrInstructionCode)jumpIfInstruction->instruction.operationCode != ZR_INSTRUCTION_ENUM(JUMP_IF) ||
+        !compiler_quickening_opcode_is_false_branch((EZrInstructionCode)jumpIfInstruction->instruction.operationCode) ||
         blockStarts[instructionIndex + 1]) {
         return ZR_FALSE;
     }

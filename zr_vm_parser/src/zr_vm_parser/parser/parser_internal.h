@@ -100,6 +100,72 @@ void report_missing_expression_after_assignment(SZrParserState *ps);
 
 void report_missing_right_operand(SZrParserState *ps, const TZrChar *operatorText, SZrFileRange operatorLocation);
 
+void report_missing_condition(SZrParserState *ps, const TZrChar *statementKind, SZrFileRange location);
+
+void report_missing_condition_close(SZrParserState *ps, const TZrChar *statementKind, SZrFileRange location);
+
+void report_missing_member_name(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_index_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_call_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_parameter_list_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_group_close(SZrParserState *ps, SZrFileRange location);
+
+void report_array_element_assignment(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_array_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_array_element_separator(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_object_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_object_computed_key_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_object_property_colon(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_object_property_separator(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_conditional_consequent(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_conditional_colon(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_conditional_alternate(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_statement_semicolon(SZrParserState *ps, const TZrChar *statementKind, SZrFileRange location);
+
+void report_missing_declaration_body_open(SZrParserState *ps,
+                                          const TZrChar *declarationKind,
+                                          SZrFileRange location);
+
+void report_missing_statement_body_open(SZrParserState *ps,
+                                        const TZrChar *statementKind,
+                                        SZrFileRange location);
+
+void report_missing_block_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_catch_pattern_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_using_resource_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_for_header_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_for_header_separator(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_foreach_header_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_foreach_in_keyword(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_switch_case_header_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_switch_body_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_extern_spec_close(SZrParserState *ps, SZrFileRange location);
+
+void report_missing_test_name_close(SZrParserState *ps, SZrFileRange location);
+
 SZrAstNode *create_ast_node(SZrParserState *ps, EZrAstNodeType type, SZrFileRange location);
 
 SZrAstNode *create_identifier_node_with_location(SZrParserState *ps, SZrString *name, SZrFileRange location);
@@ -260,6 +326,8 @@ SZrAstNodeArray *parse_parameter_list(SZrParserState *ps);
 SZrAstNode *parse_module_declaration(SZrParserState *ps);
 
 SZrAstNode *parse_variable_declaration(SZrParserState *ps);
+
+SZrAstNode *parse_variable_declaration_for_header(SZrParserState *ps);
 
 SZrAstNode *parse_function_declaration(SZrParserState *ps);
 

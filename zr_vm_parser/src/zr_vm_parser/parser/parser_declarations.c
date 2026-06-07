@@ -25,8 +25,11 @@ SZrAstNode *parse_module_declaration(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    expect_token(ps, ZR_TK_SEMICOLON);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        report_missing_statement_semicolon(ps, "module declaration", get_current_token_location(ps));
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
 
     node = create_ast_node(ps, ZR_AST_MODULE_DECLARATION, ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
     if (node == ZR_NULL) {
@@ -40,7 +43,7 @@ SZrAstNode *parse_module_declaration(SZrParserState *ps) {
 
 // 解析变量声明
 
-SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
+static SZrAstNode *parse_variable_declaration_impl(SZrParserState *ps, TZrBool reportMissingSemicolon) {
     SZrFileRange startLoc = get_current_location(ps);
 
     // 解析可见性修饰符（可选，默认 private）
@@ -108,24 +111,11 @@ SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
         }
     }
 
-    // 分号是可选的（在某些情况下）
-    // 注意：在检查分号之前，表达式应该已经完全解析（包括成员访问和函数调用）
     if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
         consume_token(ps, ZR_TK_SEMICOLON);
-    } else if (ps->lexer->t.token != ZR_TK_EOS && ps->lexer->t.token != ZR_TK_VAR &&
-               ps->lexer->t.token != ZR_TK_USING && ps->lexer->t.token != ZR_TK_STRUCT &&
-               ps->lexer->t.token != ZR_TK_CLASS && ps->lexer->t.token != ZR_TK_INTERFACE &&
-               ps->lexer->t.token != ZR_TK_ENUM && ps->lexer->t.token != ZR_TK_TEST &&
-               ps->lexer->t.token != ZR_TK_INTERMEDIATE && ps->lexer->t.token != ZR_TK_MODULE &&
-               ps->lexer->t.token != ZR_TK_DOT && // 允许成员访问继续
-               ps->lexer->t.token != ZR_TK_LBRACKET && // 允许计算属性访问
-               ps->lexer->t.token != ZR_TK_LPAREN) { // 允许函数调用
-        // 如果下一个 token 不是语句开始关键字或表达式继续符号，期望分号
-        const TZrChar *tokenStr = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
-        TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
-        snprintf(errorMsg, sizeof(errorMsg), "期望 ';'，但遇到 '%s'", tokenStr);
-        report_error_with_token(ps, errorMsg, ps->lexer->t.token);
-        // 不立即返回，允许错误恢复
+    } else if (reportMissingSemicolon && ps->lexer->t.token != ZR_TK_EOS && ps->lexer->t.token != ZR_TK_DOT &&
+               ps->lexer->t.token != ZR_TK_LBRACKET && ps->lexer->t.token != ZR_TK_LPAREN) {
+        report_missing_statement_semicolon(ps, "variable declaration", get_current_token_location(ps));
     }
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_VARIABLE_DECLARATION, startLoc);
@@ -139,6 +129,14 @@ SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
     node->data.variableDeclaration.accessModifier = accessModifier;
     node->data.variableDeclaration.isConst = isConst;
     return node;
+}
+
+SZrAstNode *parse_variable_declaration(SZrParserState *ps) {
+    return parse_variable_declaration_impl(ps, ZR_TRUE);
+}
+
+SZrAstNode *parse_variable_declaration_for_header(SZrParserState *ps) {
+    return parse_variable_declaration_impl(ps, ZR_FALSE);
 }
 
 // 解析函数声明
@@ -225,7 +223,14 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
         }
     }
 
-    expect_token(ps, ZR_TK_RPAREN);
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_parameter_list_close(ps, get_current_token_location(ps));
+        if (params != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+        }
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        return ZR_NULL;
+    }
     consume_token(ps, ZR_TK_RPAREN);
 
     // 解析返回类型（可选）
@@ -235,6 +240,15 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     }
 
     if (!parse_optional_where_clauses(ps, generic)) {
+        if (params != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+        }
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token != ZR_TK_LBRACE) {
+        report_missing_declaration_body_open(ps, "function declaration", get_current_token_location(ps));
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);
         }

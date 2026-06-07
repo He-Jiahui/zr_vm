@@ -1,0 +1,15 @@
+/mnt/e/Git/zr_vm/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet/BenchmarkRunner
+/mnt/e/Git/zr_vm/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet/BenchmarkRunner.deps.json
+/mnt/e/Git/zr_vm/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet/BenchmarkRunner.runtimeconfig.json
+/mnt/e/Git/zr_vm/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet/BenchmarkRunner.dll
+/mnt/e/Git/zr_vm/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet/BenchmarkRunner.pdb
+/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet_intermediate/obj/Release/net8.0/BenchmarkRunner.GeneratedMSBuildEditorConfig.editorconfig
+/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet_intermediate/obj/Release/net8.0/BenchmarkRunner.AssemblyInfoInputs.cache
+/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet_intermediate/obj/Release/net8.0/BenchmarkRunner.AssemblyInfo.cs
+/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet_intermediate/obj/Release/net8.0/BenchmarkRunner.csproj.CoreCompileInputs.cache
+/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet_intermediate/obj/Release/net8.0/BenchmarkRunner.sourcelink.json
+/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet_intermediate/obj/Release/net8.0/BenchmarkRunner.dll
+/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet_intermediate/obj/Release/net8.0/refint/BenchmarkRunner.dll
+/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet_intermediate/obj/Release/net8.0/BenchmarkRunner.pdb
+/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet_intermediate/obj/Release/net8.0/BenchmarkRunner.genruntimeconfig.cache
+/mnt/e/Git/zr_vm/tests/benchmarks/dotnet_runner/build/benchmark-gcc-release/tests_generated/performance_suite/toolchains/dotnet_intermediate/obj/Release/net8.0/ref/BenchmarkRunner.dll

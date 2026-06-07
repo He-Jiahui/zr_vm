@@ -55,6 +55,8 @@ static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruc
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(GET_STACK):
         case ZR_INSTRUCTION_ENUM(SET_STACK):
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL):
+        case ZR_INSTRUCTION_ENUM(RESET_STACK_NULL2):
         case ZR_INSTRUCTION_ENUM(GET_CLOSURE):
         case ZR_INSTRUCTION_ENUM(SET_CLOSURE):
         case ZR_INSTRUCTION_ENUM(GETUPVAL):
@@ -68,6 +70,9 @@ static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruc
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(ITER_INIT):
         case ZR_INSTRUCTION_ENUM(ITER_MOVE_NEXT):
@@ -128,6 +133,7 @@ static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruc
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(MOD_FLOAT):
         case ZR_INSTRUCTION_ENUM(POW):
@@ -206,6 +212,19 @@ static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruc
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(SUB_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(DIV_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(MOD_SIGNED_LOAD_STACK_CONST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(MUL_SIGNED_LOAD_STACK):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_STACK_LOAD_CONST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(ADD_UNSIGNED_CONST):
@@ -375,6 +394,7 @@ static TZrBool backend_aot_instruction_const_div_mod_is_known_non_zero(const SZr
         case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
             return backend_aot_constant_int_is_known_non_zero(function, instruction->instruction.operand.operand1[1]);
@@ -441,8 +461,6 @@ ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFuncti
         case ZR_INSTRUCTION_ENUM(SHIFT_LEFT):
         case ZR_INSTRUCTION_ENUM(SHIFT_RIGHT):
         case ZR_INSTRUCTION_ENUM(NEG):
-        case ZR_INSTRUCTION_ENUM(NEG_SIGNED):
-        case ZR_INSTRUCTION_ENUM(NEG_FLOAT):
         case ZR_INSTRUCTION_ENUM(TO_STRUCT):
         case ZR_INSTRUCTION_ENUM(TO_OBJECT):
         case ZR_INSTRUCTION_ENUM(SET_MEMBER):
@@ -465,6 +483,7 @@ ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFuncti
         case ZR_INSTRUCTION_ENUM(DIV_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_SIGNED_CONST_PLAIN_DEST):
+        case ZR_INSTRUCTION_ENUM(ADD_SIGNED_MOD_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
             return backend_aot_instruction_const_div_mod_is_known_non_zero(function, instruction)
@@ -474,6 +493,9 @@ ZR_PARSER_API TZrUInt32 backend_aot_c_step_flags_for_instruction(const SZrFuncti
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
         case ZR_INSTRUCTION_ENUM(THROW):
         case ZR_INSTRUCTION_ENUM(END_FINALLY):

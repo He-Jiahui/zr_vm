@@ -110,6 +110,525 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingRightOperand(SZrState *state,
             suggestion);
 }
 
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingCondition(SZrState *state,
+                                                         SZrStructuredDiagnostic *out,
+                                                         SZrFileRange location,
+                                                         const TZrChar *statementKind) {
+    const TZrChar *kind = statementKind != ZR_NULL ? statementKind : "control";
+    TZrChar message[128];
+    TZrChar cause[224];
+
+    snprintf(message,
+             sizeof(message),
+             "Missing condition inside '%s'",
+             kind);
+    snprintf(cause,
+             sizeof(cause),
+             "The '%s' statement opened condition parentheses but closed them before a condition expression appeared.",
+             kind);
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_condition",
+            message,
+            cause,
+            "Add a boolean expression between '(' and ')' or remove the control statement.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyOpen(SZrState *state,
+                                                                   SZrStructuredDiagnostic *out,
+                                                                   SZrFileRange location,
+                                                                   const TZrChar *declarationKind) {
+    const TZrChar *kind = declarationKind != ZR_NULL ? declarationKind : "declaration";
+    TZrChar message[160];
+    TZrChar cause[256];
+    TZrChar suggestion[192];
+
+    snprintf(message,
+             sizeof(message),
+             "Missing '{' to start %s body",
+             kind);
+    snprintf(cause,
+             sizeof(cause),
+             "The %s header was parsed, but the parser reached another token before the body-opening '{'.",
+             kind);
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Insert '{' after the %s header or finish the declaration body.",
+             kind);
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_declaration_body_open",
+            message,
+            cause,
+            suggestion);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(SZrState *state,
+                                                                 SZrStructuredDiagnostic *out,
+                                                                 SZrFileRange location,
+                                                                 const TZrChar *statementKind) {
+    const TZrChar *kind = statementKind != ZR_NULL ? statementKind : "statement";
+    TZrChar message[160];
+    TZrChar cause[256];
+    TZrChar suggestion[192];
+
+    snprintf(message,
+             sizeof(message),
+             "Missing '{' to start %s body",
+             kind);
+    snprintf(cause,
+             sizeof(cause),
+             "The %s header was parsed, but the parser reached another token before the body-opening '{'.",
+             kind);
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Insert '{' after the %s header or wrap the statement body in braces.",
+             kind);
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_statement_body_open",
+            message,
+            cause,
+            suggestion);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingBlockClose(SZrState *state,
+                                                          SZrStructuredDiagnostic *out,
+                                                          SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_block_close",
+            "Missing closing '}' for block",
+            "The block started with '{', but the parser reached the end of input before a closing '}' appeared.",
+            "Insert '}' to close the block before continuing.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingCatchPatternClose(SZrState *state,
+                                                                 SZrStructuredDiagnostic *out,
+                                                                 SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_catch_pattern_close",
+            "Missing closing ')' in catch pattern",
+            "The catch clause started a pattern with '(', but the parser reached the catch body before a closing ')' appeared.",
+            "Insert ')' after the catch pattern before the catch body.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(SZrState *state,
+                                                                  SZrStructuredDiagnostic *out,
+                                                                  SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_using_resource_close",
+            "Missing closing ')' in using resource",
+            "The using statement started a resource expression with '(', but the parser reached the using body before a closing ')' appeared.",
+            "Insert ')' after the using resource before the using body.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingForHeaderClose(SZrState *state,
+                                                              SZrStructuredDiagnostic *out,
+                                                              SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_for_header_close",
+            "Missing closing ')' in for header",
+            "The for statement header started with '(', but the parser reached the loop body before a closing ')' appeared.",
+            "Insert ')' after the for header before the loop body.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingForHeaderSeparator(SZrState *state,
+                                                                  SZrStructuredDiagnostic *out,
+                                                                  SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_for_header_separator",
+            "Missing ';' between for header clauses",
+            "A traditional for header requires ';' between initializer, condition, and step clauses, but another clause started first.",
+            "Insert ';' between the for header clauses.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingForeachHeaderClose(SZrState *state,
+                                                                  SZrStructuredDiagnostic *out,
+                                                                  SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_foreach_header_close",
+            "Missing closing ')' in foreach header",
+            "The foreach header started with '(', but the parser reached the loop body before a closing ')' appeared.",
+            "Insert ')' after the foreach iterable before the loop body.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingForeachInKeyword(SZrState *state,
+                                                               SZrStructuredDiagnostic *out,
+                                                               SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_foreach_in_keyword",
+            "Missing 'in' in foreach header",
+            "The foreach header has a pattern, but the parser did not find 'in' before the iterable expression.",
+            "Insert 'in' between the foreach pattern and iterable expression.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingSwitchCaseHeaderClose(SZrState *state,
+                                                                     SZrStructuredDiagnostic *out,
+                                                                     SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_switch_case_header_close",
+            "Missing closing ')' in switch case header",
+            "The switch case header started with '(', but the parser reached the case body before a closing ')' appeared.",
+            "Insert ')' after the switch case expression before the case body.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingSwitchBodyClose(SZrState *state,
+                                                               SZrStructuredDiagnostic *out,
+                                                               SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_switch_body_close",
+            "Missing closing '}' for switch body",
+            "The switch body started with '{', but the parser reached the end of input before a closing '}' appeared.",
+            "Insert '}' to close the switch body before continuing.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingExternSpecClose(SZrState *state,
+                                                               SZrStructuredDiagnostic *out,
+                                                               SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_extern_spec_close",
+            "Missing closing ')' in extern block spec",
+            "The extern block started a library spec with '(', but the parser reached the extern block body before a closing ')' appeared.",
+            "Insert ')' after the extern block spec before the extern block body.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingTestNameClose(SZrState *state,
+                                                             SZrStructuredDiagnostic *out,
+                                                             SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_test_name_close",
+            "Missing closing ')' in test declaration name",
+            "The test declaration started a name with '(', but the parser reached the test body before a closing ')' appeared.",
+            "Insert ')' after the test declaration name before the test body.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionClose(SZrState *state,
+                                                              SZrStructuredDiagnostic *out,
+                                                              SZrFileRange location,
+                                                              const TZrChar *statementKind) {
+    const TZrChar *kind = statementKind != ZR_NULL ? statementKind : "control";
+    TZrChar message[128];
+    TZrChar cause[224];
+
+    snprintf(message,
+             sizeof(message),
+             "Missing ')' after '%s' condition",
+             kind);
+    snprintf(cause,
+             sizeof(cause),
+             "The '%s' condition started with '(', but the parser reached the block before a closing ')' appeared.",
+             kind);
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_condition_close",
+            message,
+            cause,
+            "Insert ')' after the condition expression before the block.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingMemberName(SZrState *state,
+                                                          SZrStructuredDiagnostic *out,
+                                                          SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_member_name",
+            "Missing member name after '.'",
+            "The member-access operator was written, but no property, method, or field name follows it.",
+            "Add a member name after '.' or remove the member access.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingIndexClose(SZrState *state,
+                                                          SZrStructuredDiagnostic *out,
+                                                          SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_index_close",
+            "Missing closing ']' in index access",
+            "The computed member access started with '[', but the parser reached another token before a closing ']' appeared.",
+            "Insert ']' after the index expression before continuing the member access.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingCallClose(SZrState *state,
+                                                         SZrStructuredDiagnostic *out,
+                                                         SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_call_close",
+            "Missing closing ')' in function call",
+            "The function call started an argument list with '(', but the parser reached another token before a closing ')' appeared.",
+            "Insert ')' after the last argument before continuing.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingParameterListClose(SZrState *state,
+                                                                  SZrStructuredDiagnostic *out,
+                                                                  SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_parameter_list_close",
+            "Missing closing ')' in function declaration parameters",
+            "The function declaration started a parameter list with '(', but the parser reached another token before a closing ')' appeared.",
+            "Insert ')' after the parameter list before continuing.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingGroupClose(SZrState *state,
+                                                          SZrStructuredDiagnostic *out,
+                                                          SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_group_close",
+            "Missing closing ')' in grouped expression",
+            "The grouped expression started with '(', but the parser reached another token before a closing ')' appeared.",
+            "Insert ')' after the grouped expression before continuing.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildArrayElementAssignment(SZrState *state,
+                                                               SZrStructuredDiagnostic *out,
+                                                               SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "array_element_assignment",
+            "Array element cannot be an assignment expression",
+            "Array literals collect value expressions. An assignment inside the element list would mutate state while the parser is still reading the literal.",
+            "Move the assignment into a statement before the array literal, then reference the assigned value from the array.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingArrayClose(SZrState *state,
+                                                          SZrStructuredDiagnostic *out,
+                                                          SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_array_close",
+            "Missing closing ']' in array literal",
+            "The array literal started with '[', but the parser reached another token before a closing ']' appeared.",
+            "Insert ']' after the last array element before continuing.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingArrayElementSeparator(SZrState *state,
+                                                                     SZrStructuredDiagnostic *out,
+                                                                     SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_array_element_separator",
+            "Missing separator between array elements",
+            "The array literal has another element expression immediately after the previous element.",
+            "Insert ',' or ';' between array elements.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectClose(SZrState *state,
+                                                           SZrStructuredDiagnostic *out,
+                                                           SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_object_close",
+            "Missing closing '}' in object literal",
+            "The object literal started with '{', but the parser reached another token before a closing '}' appeared.",
+            "Insert '}' after the last object property before continuing.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectComputedKeyClose(SZrState *state,
+                                                                      SZrStructuredDiagnostic *out,
+                                                                      SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_object_computed_key_close",
+            "Missing closing ']' in computed object key",
+            "The computed object key started with '[', but the parser reached another token before the key expression closed.",
+            "Insert ']' after the computed key expression before ':'.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertyColon(SZrState *state,
+                                                                   SZrStructuredDiagnostic *out,
+                                                                   SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_object_property_colon",
+            "Missing ':' after object property key",
+            "Object literal properties require ':' between the key and the value expression.",
+            "Insert ':' between the property key and value expression.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingObjectPropertySeparator(SZrState *state,
+                                                                       SZrStructuredDiagnostic *out,
+                                                                       SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_object_property_separator",
+            "Missing separator between object properties",
+            "The object literal has another property key immediately after the previous property's value.",
+            "Insert ',' or ';' between object properties.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalConsequent(SZrState *state,
+                                                                     SZrStructuredDiagnostic *out,
+                                                                     SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_conditional_consequent",
+            "Missing expression after '?' in conditional expression",
+            "The conditional operator selected a consequent branch with '?', but no expression appears before ':'.",
+            "Add the consequent expression between '?' and ':'.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalColon(SZrState *state,
+                                                               SZrStructuredDiagnostic *out,
+                                                               SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_conditional_colon",
+            "Missing ':' in conditional expression",
+            "The conditional expression has a condition and consequent branch, but the alternate branch separator is missing.",
+            "Insert ':' between the consequent and alternate expressions.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingConditionalAlternate(SZrState *state,
+                                                                   SZrStructuredDiagnostic *out,
+                                                                   SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_conditional_alternate",
+            "Missing expression after ':' in conditional expression",
+            "The conditional operator opened an alternate branch with ':', but no expression follows it.",
+            "Add the alternate expression after ':'.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementSemicolon(SZrState *state,
+                                                                  SZrStructuredDiagnostic *out,
+                                                                  SZrFileRange location,
+                                                                  const TZrChar *statementKind) {
+    const TZrChar *kind = statementKind != ZR_NULL ? statementKind : "statement";
+    TZrChar message[160];
+    TZrChar cause[256];
+    TZrChar suggestion[192];
+
+    snprintf(message,
+             sizeof(message),
+             "Missing ';' after %s statement",
+             kind);
+    snprintf(cause,
+             sizeof(cause),
+             "The %s statement ended before a ';' terminator, so the next token is being read as part of the same statement.",
+             kind);
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Insert ';' after the %s statement before the next statement.",
+             kind);
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_statement_semicolon",
+            message,
+            cause,
+            suggestion);
+}
+
 TZrBool ZrParser_DiagnosticBuilder_BuildWeakUpgrade(SZrState *state,
                                                     SZrStructuredDiagnostic *out,
                                                     SZrFileRange location) {

@@ -228,8 +228,16 @@ async function main() {
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-call-member-expression.zr';
     const computedMemberExpressionUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-computed-member-expression.zr';
+    const aggregateExpressionUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-aggregate-expression.zr';
+    const objectAggregateExpressionUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-object-aggregate-expression.zr';
     const continuationExpressionUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-continuation-expression.zr';
+    const blockCommentInlineValueUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-block-comment.zr';
+    const stringInlineValueUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-string-literals.zr';
     const text = [
         'func main(): void {',
         '    var seed = 2;',
@@ -284,10 +292,46 @@ async function main() {
         '}',
         '',
     ].join('\n');
+    const aggregateExpressionText = [
+        'func main(): void {',
+        '    [1 + 2];',
+        '    [true || false];',
+        '}',
+        '',
+    ].join('\n');
+    const objectAggregateExpressionText = [
+        'func main(): void {',
+        '    var anchor = 0;',
+        '    {[1 + 2]: 4};',
+        '    {',
+        '        a: 1 + 2',
+        '    };',
+        '    {a: 1 + 2};',
+        '}',
+        '',
+    ].join('\n');
     const continuationExpressionText = [
         'func main(): void {',
         '    1 +',
         '        2;',
+        '}',
+        '',
+    ].join('\n');
+    const blockCommentInlineValueText = [
+        'func main(): void {',
+        '    /*',
+        '    var ghost = 1;',
+        '    */',
+        '    /* var inlineGhost = 2; */',
+        '}',
+        '/* var topGhost = 3; */',
+        '',
+    ].join('\n');
+    const stringInlineValueText = [
+        'func main(): void {',
+        '    "var stringGhost = 4;";',
+        "    'var singleGhost = 5;';",
+        '    `var templateGhost = 6;`;',
         '}',
         '',
     ].join('\n');
@@ -684,6 +728,128 @@ async function main() {
 
         client.notify('textDocument/didOpen', {
             textDocument: {
+                uri: aggregateExpressionUri,
+                languageId: 'zr',
+                version: 1,
+                text: aggregateExpressionText,
+            },
+        });
+
+        const aggregateExpressionDiagnostics =
+            await client.waitForNotification('textDocument/publishDiagnostics');
+        assert(aggregateExpressionDiagnostics.uri === aggregateExpressionUri,
+            'inline aggregate expression diagnostics uri mismatch');
+        assert(Array.isArray(aggregateExpressionDiagnostics.diagnostics),
+            'aggregate expression diagnostics must be an array');
+
+        const aggregateExpressionValues = await client.request('textDocument/inlineValue', {
+            textDocument: { uri: aggregateExpressionUri },
+            range: {
+                start: { line: 1, character: 0 },
+                end: { line: 2, character: 21 },
+            },
+            context: {
+                frameId: 1,
+                stoppedLocation: {
+                    start: { line: 1, character: 0 },
+                    end: { line: 2, character: 21 },
+                },
+            },
+        });
+
+        assert(Array.isArray(aggregateExpressionValues),
+            'aggregate expression inlineValue response must be an array');
+        assert(aggregateExpressionValues.some((value) =>
+                value &&
+                typeof value.text === 'string' &&
+                value.text.includes('range 3..3') &&
+                value.range &&
+                value.range.start.line === 1 &&
+                value.range.start.character === 4 &&
+                value.range.end.line === 1 &&
+                value.range.end.character === 11),
+        `textDocument/inlineValue must expose nested numeric facts for aggregate expression statements; values=${
+            JSON.stringify(aggregateExpressionValues)}`);
+        assert(aggregateExpressionValues.some((value) =>
+                value &&
+                value.text === 'logical true, short-circuits' &&
+                value.range &&
+                value.range.start.line === 2 &&
+                value.range.start.character === 4 &&
+                value.range.end.line === 2 &&
+                value.range.end.character === 19),
+        `textDocument/inlineValue must expose nested logical facts for aggregate expression statements; values=${
+            JSON.stringify(aggregateExpressionValues)}`);
+
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri: objectAggregateExpressionUri,
+                languageId: 'zr',
+                version: 1,
+                text: objectAggregateExpressionText,
+            },
+        });
+
+        const objectAggregateExpressionDiagnostics =
+            await client.waitForNotification('textDocument/publishDiagnostics');
+        assert(objectAggregateExpressionDiagnostics.uri === objectAggregateExpressionUri,
+            'inline object-aggregate expression diagnostics uri mismatch');
+        assert(Array.isArray(objectAggregateExpressionDiagnostics.diagnostics),
+            'object-aggregate expression diagnostics must be an array');
+
+        const objectAggregateExpressionValues = await client.request('textDocument/inlineValue', {
+            textDocument: { uri: objectAggregateExpressionUri },
+            range: {
+                start: { line: 2, character: 0 },
+                end: { line: 6, character: 17 },
+            },
+            context: {
+                frameId: 1,
+                stoppedLocation: {
+                    start: { line: 2, character: 0 },
+                    end: { line: 6, character: 17 },
+                },
+            },
+        });
+
+        assert(Array.isArray(objectAggregateExpressionValues),
+            'object-aggregate expression inlineValue response must be an array');
+        assert(objectAggregateExpressionValues.some((value) =>
+                value &&
+                typeof value.text === 'string' &&
+                value.text.includes('range 3..3') &&
+                value.range &&
+                value.range.start.line === 2 &&
+                value.range.start.character === 4 &&
+                value.range.end.line === 2 &&
+                value.range.end.character === 16),
+        `textDocument/inlineValue must expose computed-key numeric facts for object expression statements; values=${
+            JSON.stringify(objectAggregateExpressionValues)}`);
+        assert(objectAggregateExpressionValues.some((value) =>
+                value &&
+                typeof value.text === 'string' &&
+                value.text.includes('range 3..3') &&
+                value.range &&
+                value.range.start.line === 3 &&
+                value.range.start.character === 4 &&
+                value.range.end.line === 5 &&
+                value.range.end.character === 5),
+        `textDocument/inlineValue must expose nested value facts for multi-line object expression statements; values=${
+            JSON.stringify(objectAggregateExpressionValues)}`);
+        assert(objectAggregateExpressionValues.some((value) =>
+                value &&
+                typeof value.text === 'string' &&
+                value.text.includes('range 3..3') &&
+                value.range &&
+                value.range.start.line === 6 &&
+                value.range.start.character === 4 &&
+                value.range.end.line === 6 &&
+                value.range.end.character === 14),
+        `textDocument/inlineValue must expose nested value facts for same-line object expression statements; values=${
+            JSON.stringify(objectAggregateExpressionValues)}`);
+
+        client.notify('textDocument/didOpen', {
+            textDocument: {
                 uri: continuationExpressionUri,
                 languageId: 'zr',
                 version: 1,
@@ -726,6 +892,159 @@ async function main() {
                 value.range.end.character === 9),
         `textDocument/inlineValue must expose semantic facts when the request starts on a continuation line; values=${
             JSON.stringify(continuationExpressionValues)}`);
+
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri: blockCommentInlineValueUri,
+                languageId: 'zr',
+                version: 1,
+                text: blockCommentInlineValueText,
+            },
+        });
+
+        const blockCommentDiagnostics =
+            await client.waitForNotification('textDocument/publishDiagnostics');
+        assert(blockCommentDiagnostics.uri === blockCommentInlineValueUri,
+            'inline block-comment diagnostics uri mismatch');
+        assert(Array.isArray(blockCommentDiagnostics.diagnostics),
+            'block-comment diagnostics must be an array');
+
+        const blockCommentValues = await client.request('textDocument/inlineValue', {
+            textDocument: { uri: blockCommentInlineValueUri },
+            range: {
+                start: { line: 2, character: 0 },
+                end: { line: 2, character: 18 },
+            },
+            context: {
+                frameId: 1,
+                stoppedLocation: {
+                    start: { line: 2, character: 0 },
+                    end: { line: 2, character: 18 },
+                },
+            },
+        });
+
+        assert(Array.isArray(blockCommentValues),
+            'block-comment inlineValue response must be an array');
+        assert(blockCommentValues.length === 0,
+            `textDocument/inlineValue must ignore variable-looking text inside block comments; values=${
+                JSON.stringify(blockCommentValues)}`);
+
+        const singleLineBlockCommentValues = await client.request('textDocument/inlineValue', {
+            textDocument: { uri: blockCommentInlineValueUri },
+            range: {
+                start: { line: 4, character: 0 },
+                end: { line: 4, character: 32 },
+            },
+            context: {
+                frameId: 1,
+                stoppedLocation: {
+                    start: { line: 4, character: 0 },
+                    end: { line: 4, character: 32 },
+                },
+            },
+        });
+        assert(Array.isArray(singleLineBlockCommentValues),
+            'single-line block-comment inlineValue response must be an array');
+        assert(singleLineBlockCommentValues.length === 0,
+            `textDocument/inlineValue must ignore single-line block-comment variables; values=${
+                JSON.stringify(singleLineBlockCommentValues)}`);
+
+        const topLevelBlockCommentValues = await client.request('textDocument/inlineValue', {
+            textDocument: { uri: blockCommentInlineValueUri },
+            range: {
+                start: { line: 6, character: 0 },
+                end: { line: 6, character: 23 },
+            },
+            context: {
+                frameId: 1,
+                stoppedLocation: {
+                    start: { line: 6, character: 0 },
+                    end: { line: 6, character: 23 },
+                },
+            },
+        });
+        assert(Array.isArray(topLevelBlockCommentValues),
+            'top-level block-comment inlineValue response must be an array');
+        assert(topLevelBlockCommentValues.length === 0,
+            `textDocument/inlineValue must ignore zero-column block-comment variables; values=${
+                JSON.stringify(topLevelBlockCommentValues)}`);
+
+        client.notify('textDocument/didOpen', {
+            textDocument: {
+                uri: stringInlineValueUri,
+                languageId: 'zr',
+                version: 1,
+                text: stringInlineValueText,
+            },
+        });
+
+        const stringDiagnostics =
+            await client.waitForNotification('textDocument/publishDiagnostics');
+        assert(stringDiagnostics.uri === stringInlineValueUri,
+            'inline string-literal diagnostics uri mismatch');
+        assert(Array.isArray(stringDiagnostics.diagnostics),
+            'string-literal diagnostics must be an array');
+
+        const stringLineValues = await client.request('textDocument/inlineValue', {
+            textDocument: { uri: stringInlineValueUri },
+            range: {
+                start: { line: 1, character: 0 },
+                end: { line: 1, character: 30 },
+            },
+            context: {
+                frameId: 1,
+                stoppedLocation: {
+                    start: { line: 1, character: 0 },
+                    end: { line: 1, character: 30 },
+                },
+            },
+        });
+        assert(Array.isArray(stringLineValues),
+            'double-quoted string inlineValue response must be an array');
+        assert(stringLineValues.length === 0,
+            `textDocument/inlineValue must ignore variable-looking text inside double-quoted strings; values=${
+                JSON.stringify(stringLineValues)}`);
+
+        const singleStringLineValues = await client.request('textDocument/inlineValue', {
+            textDocument: { uri: stringInlineValueUri },
+            range: {
+                start: { line: 2, character: 0 },
+                end: { line: 2, character: 30 },
+            },
+            context: {
+                frameId: 1,
+                stoppedLocation: {
+                    start: { line: 2, character: 0 },
+                    end: { line: 2, character: 30 },
+                },
+            },
+        });
+        assert(Array.isArray(singleStringLineValues),
+            'single-quoted string inlineValue response must be an array');
+        assert(singleStringLineValues.length === 0,
+            `textDocument/inlineValue must ignore variable-looking text inside single-quoted strings; values=${
+                JSON.stringify(singleStringLineValues)}`);
+
+        const templateStringLineValues = await client.request('textDocument/inlineValue', {
+            textDocument: { uri: stringInlineValueUri },
+            range: {
+                start: { line: 3, character: 0 },
+                end: { line: 3, character: 34 },
+            },
+            context: {
+                frameId: 1,
+                stoppedLocation: {
+                    start: { line: 3, character: 0 },
+                    end: { line: 3, character: 34 },
+                },
+            },
+        });
+        assert(Array.isArray(templateStringLineValues),
+            'template string inlineValue response must be an array');
+        assert(templateStringLineValues.length === 0,
+            `textDocument/inlineValue must ignore variable-looking text inside template strings; values=${
+                JSON.stringify(templateStringLineValues)}`);
 
         await client.request('shutdown', {});
         client.notify('exit', {});

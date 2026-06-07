@@ -240,6 +240,79 @@ static TZrBool function_contains_semir_opcode(const SZrFunction *function, EZrSe
     return ZR_FALSE;
 }
 
+static TZrUInt32 function_count_semir_opcode(const SZrFunction *function, EZrSemIrOpcode opcode) {
+    TZrUInt32 index;
+    TZrUInt32 count = 0;
+
+    if (function == ZR_NULL || function->semIrInstructions == ZR_NULL) {
+        return 0;
+    }
+
+    for (index = 0; index < function->semIrInstructionLength; index++) {
+        if ((EZrSemIrOpcode)function->semIrInstructions[index].opcode == opcode) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static SZrFunction *find_single_function_constant_with_opcode(SZrState *state,
+                                                              SZrFunction *wrapper,
+                                                              EZrInstructionCode opcode) {
+    SZrFunction *match = ZR_NULL;
+    TZrUInt32 constantIndex;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(wrapper);
+
+    for (constantIndex = 0; constantIndex < wrapper->constantValueLength; constantIndex++) {
+        SZrTypeValue *constant = &wrapper->constantValueList[constantIndex];
+        SZrFunction *candidate;
+
+        if (constant->type != ZR_VALUE_TYPE_FUNCTION || constant->value.object == ZR_NULL || constant->isNative) {
+            continue;
+        }
+
+        candidate = ZR_CAST_FUNCTION(state, constant->value.object);
+        if (!function_contains_opcode(candidate, opcode)) {
+            continue;
+        }
+
+        TEST_ASSERT_NULL(match);
+        match = candidate;
+    }
+
+    return match;
+}
+
+static TZrBool function_find_member_entry_index(const SZrFunction *function,
+                                                const TZrChar *memberName,
+                                                TZrUInt32 *outIndex) {
+    TZrUInt32 index;
+
+    if (outIndex != ZR_NULL) {
+        *outIndex = 0u;
+    }
+    if (function == ZR_NULL || memberName == ZR_NULL || function->memberEntries == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; index < function->memberEntryLength; index++) {
+        SZrString *symbol = function->memberEntries[index].symbol;
+        const TZrChar *symbolText = symbol != ZR_NULL ? ZrCore_String_GetNativeString(symbol) : ZR_NULL;
+
+        if (symbolText != ZR_NULL && strcmp(symbolText, memberName) == 0) {
+            if (outIndex != ZR_NULL) {
+                *outIndex = index;
+            }
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool function_contains_native_helper_constant(const SZrFunction *function, TZrUInt64 helperId) {
     TZrUInt32 index;
 
@@ -413,6 +486,258 @@ static void test_struct_value_type_places_emit_semir_metadata(void) {
 
         free(intermediateText);
         remove(intermediatePath);
+        ZrCore_Function_Free(state, func);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_struct_value_type_store_semir_uses_stable_member_entry(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Struct Value-Type Store SemIR Uses Stable Member Entry";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Struct value-type store SemIR operands",
+              "Testing that inline struct STORE_VALUE records the declared member entry rather than a callsite-cache index");
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "struct Label {\n"
+                "    pub var text: string;\n"
+                "    pub @constructor(text: string) {\n"
+                "        this.text = text;\n"
+                "    }\n"
+                "}\n"
+                "var original: Label = $Label(\"left\");\n"
+                "var copied: Label = original;\n"
+                "copied.text = \"right\";";
+        SZrString *sourceName;
+        SZrFunction *func;
+        TZrUInt32 textMemberEntryIndex = 0u;
+        TZrUInt32 storeCount = 0u;
+        TZrUInt32 index;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "semir_value_type_store_member_test.zr", 37);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(func);
+
+        TEST_ASSERT_TRUE(function_find_member_entry_index(func, "text", &textMemberEntryIndex));
+        TEST_ASSERT_NOT_NULL(func->semIrInstructions);
+        for (index = 0; index < func->semIrInstructionLength; index++) {
+            const SZrSemIrInstruction *instruction = &func->semIrInstructions[index];
+
+            if ((EZrSemIrOpcode)instruction->opcode != ZR_SEMIR_OPCODE_STORE_VALUE) {
+                continue;
+            }
+
+            storeCount++;
+            TEST_ASSERT_EQUAL_UINT32(textMemberEntryIndex, instruction->operand1);
+        }
+        TEST_ASSERT_GREATER_THAN_UINT32(0u, storeCount);
+
+        ZrCore_Function_Free(state, func);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_struct_value_type_repeated_store_semir_uses_stable_member_entry(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Struct Value-Type Repeated Store SemIR Uses Stable Member Entry";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Struct value-type repeated store SemIR operands",
+              "Testing that repeated inline struct member stores keep the declared member entry instead of leaking callsite-cache indexes into SemIR");
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "struct Label {\n"
+                "    pub var text: string;\n"
+                "    pub @constructor(text: string) {\n"
+                "        this.text = text;\n"
+                "    }\n"
+                "}\n"
+                "pub makeLabel(text: string): Label {\n"
+                "    var local: Label = $Label(text);\n"
+                "    return local;\n"
+                "}\n"
+                "var original: Label = $Label(\"left\");\n"
+                "var copied: Label = original;\n"
+                "copied.text = \"right\";\n"
+                "var returned: Label = makeLabel(copied.text);\n"
+                "returned.text = \"done\";";
+        SZrString *sourceName;
+        SZrFunction *func;
+        TZrUInt32 textMemberEntryIndex = 0u;
+        TZrUInt32 storeCount = 0u;
+        TZrUInt32 fieldAddressCount = 0u;
+        TZrUInt32 index;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "semir_value_type_repeated_store_member_test.zr", 46);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(func);
+
+        TEST_ASSERT_TRUE(function_find_member_entry_index(func, "text", &textMemberEntryIndex));
+        TEST_ASSERT_NOT_NULL(func->semIrInstructions);
+        for (index = 0; index < func->semIrInstructionLength; index++) {
+            const SZrSemIrInstruction *instruction = &func->semIrInstructions[index];
+
+            if ((EZrSemIrOpcode)instruction->opcode == ZR_SEMIR_OPCODE_FIELD_ADDR) {
+                fieldAddressCount++;
+                TEST_ASSERT_EQUAL_UINT32(textMemberEntryIndex, instruction->operand1);
+            }
+            if ((EZrSemIrOpcode)instruction->opcode == ZR_SEMIR_OPCODE_STORE_VALUE) {
+                storeCount++;
+                TEST_ASSERT_EQUAL_UINT32(textMemberEntryIndex, instruction->operand1);
+            }
+        }
+        TEST_ASSERT_GREATER_THAN_UINT32(1u, fieldAddressCount);
+        TEST_ASSERT_GREATER_THAN_UINT32(1u, storeCount);
+
+        ZrCore_Function_Free(state, func);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_struct_value_type_constructor_semir_emits_inline_field_store(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Struct Value-Type Constructor SemIR Emits Inline Field Store";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Struct constructor value-place SemIR",
+              "Testing that a constructor this.field assignment is visible as FIELD_ADDR plus STORE_VALUE SemIR");
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "struct Label {\n"
+                "    pub var text: string;\n"
+                "    pub @constructor(text: string) {\n"
+                "        this.text = text;\n"
+                "    }\n"
+                "}\n"
+                "var original: Label = $Label(\"left\");\n"
+                "return original.text;";
+        SZrString *sourceName;
+        SZrFunction *func;
+        SZrFunction *constructorFunction;
+        TZrUInt32 textMemberEntryIndex = 0u;
+        TZrUInt32 index;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "semir_value_type_constructor_store_test.zr", 40);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(func);
+
+        constructorFunction = find_single_function_constant_with_opcode(state, func, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT));
+        TEST_ASSERT_NOT_NULL(constructorFunction);
+        TEST_ASSERT_TRUE(function_find_member_entry_index(constructorFunction, "text", &textMemberEntryIndex));
+        TEST_ASSERT_GREATER_THAN_UINT32(0u,
+                                        function_count_semir_opcode(constructorFunction, ZR_SEMIR_OPCODE_FIELD_ADDR));
+        TEST_ASSERT_GREATER_THAN_UINT32(0u,
+                                        function_count_semir_opcode(constructorFunction, ZR_SEMIR_OPCODE_STORE_VALUE));
+
+        for (index = 0; index < constructorFunction->semIrInstructionLength; index++) {
+            const SZrSemIrInstruction *instruction = &constructorFunction->semIrInstructions[index];
+
+            if ((EZrSemIrOpcode)instruction->opcode != ZR_SEMIR_OPCODE_FIELD_ADDR &&
+                (EZrSemIrOpcode)instruction->opcode != ZR_SEMIR_OPCODE_STORE_VALUE) {
+                continue;
+            }
+
+            TEST_ASSERT_EQUAL_UINT32(textMemberEntryIndex, instruction->operand1);
+        }
+
+        ZrCore_Function_Free(state, func);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_struct_value_type_constructor_resolves_field_layout_from_owner_metadata(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Struct Value-Type Constructor Resolves Field Layout From Owner Metadata";
+
+    timer.startTime = clock();
+    TEST_START(testSummary);
+    TEST_INFO("Struct constructor value-place layout",
+              "Testing that constructor this.field SemIR can resolve field layout through owner prototype metadata");
+
+    {
+        SZrState *state = create_test_state();
+        const char *source =
+                "struct Label {\n"
+                "    pub var text: string;\n"
+                "    pub @constructor(text: string) {\n"
+                "        this.text = text;\n"
+                "    }\n"
+                "}\n"
+                "var original: Label = $Label(\"left\");\n"
+                "return original.text;";
+        SZrString *sourceName;
+        SZrFunction *func;
+        SZrFunction *constructorFunction;
+        TZrUInt32 textMemberEntryIndex = 0u;
+        SZrString *textName;
+        const SZrFunctionFrameSlotLayout *thisLayout = ZR_NULL;
+        SZrFunctionFrameFieldLayout fieldLayout;
+
+        TEST_ASSERT_NOT_NULL(state);
+        sourceName = ZrCore_String_Create(state, "semir_value_type_constructor_layout_test.zr", 41);
+        TEST_ASSERT_NOT_NULL(sourceName);
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        TEST_ASSERT_NOT_NULL(func);
+
+        constructorFunction = find_single_function_constant_with_opcode(state, func, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT));
+        TEST_ASSERT_NOT_NULL(constructorFunction);
+        TEST_ASSERT_TRUE(function_find_member_entry_index(constructorFunction, "text", &textMemberEntryIndex));
+        TEST_ASSERT_LESS_THAN_UINT32(constructorFunction->memberEntryLength, textMemberEntryIndex);
+        textName = constructorFunction->memberEntries[textMemberEntryIndex].symbol;
+        TEST_ASSERT_NOT_NULL(textName);
+
+        for (TZrUInt32 index = 0; index < constructorFunction->frameSlotLayoutLength; index++) {
+            const SZrFunctionFrameSlotLayout *layout = &constructorFunction->frameSlotLayouts[index];
+            if (layout->stackSlot == 0u &&
+                layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {
+                thisLayout = layout;
+                break;
+            }
+        }
+
+        TEST_ASSERT_NOT_NULL(thisLayout);
+        TEST_ASSERT_EQUAL_UINT32(0u, thisLayout->typeLayoutId);
+        TEST_ASSERT_TRUE(ZrCore_Function_ResolvePrototypeFrameFieldLayout(state,
+                                                                          constructorFunction,
+                                                                          thisLayout->typeLayoutId,
+                                                                          textName,
+                                                                          &fieldLayout));
+        TEST_ASSERT_EQUAL_UINT32(0u, fieldLayout.byteOffset);
+        TEST_ASSERT_EQUAL_UINT32((TZrUInt32)sizeof(SZrTypeValue), fieldLayout.byteSize);
+        TEST_ASSERT_TRUE(fieldLayout.isValueSlot);
+
         ZrCore_Function_Free(state, func);
         destroy_test_state(state);
     }
@@ -596,6 +921,10 @@ int main(void) {
     RUN_TEST(test_intermediate_writer_emits_semir_sections);
     RUN_TEST(test_ownership_builtins_lower_to_ownership_opcodes);
     RUN_TEST(test_struct_value_type_places_emit_semir_metadata);
+    RUN_TEST(test_struct_value_type_store_semir_uses_stable_member_entry);
+    RUN_TEST(test_struct_value_type_repeated_store_semir_uses_stable_member_entry);
+    RUN_TEST(test_struct_value_type_constructor_semir_emits_inline_field_store);
+    RUN_TEST(test_struct_value_type_constructor_resolves_field_layout_from_owner_metadata);
     RUN_TEST(test_struct_value_type_call_and_return_emit_semir_metadata);
     RUN_TEST(test_aot_execir_source_exposes_inline_frame_byte_layout);
     RUN_TEST(test_binary_roundtrip_preserves_semir_metadata);

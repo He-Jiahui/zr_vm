@@ -38,6 +38,7 @@ static TZrUInt32 backend_aot_exec_ir_find_parent_function_index(SZrState *state,
                                                                 const SZrFunction *function);
 static TZrBool backend_aot_exec_ir_build_function(SZrState *state,
                                                   const SZrAotFunctionTable *functionTable,
+                                                  const SZrFunction *metadataEntryFunction,
                                                   const SZrAotFunctionEntry *entry,
                                                   SZrAotExecIrInstruction *moduleInstructions,
                                                   TZrUInt32 *ioInstructionOffset,
@@ -340,6 +341,9 @@ static TZrUInt32 backend_aot_exec_ir_terminator_kind_for_instruction(TZrUInt16 o
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
             return ZR_AOT_EXEC_IR_TERMINATOR_KIND_CONDITIONAL_BRANCH;
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
@@ -401,6 +405,9 @@ static TZrBool backend_aot_exec_ir_branch_target(const SZrFunction *function,
             targetIndex = (TZrInt32)instructionIndex + 1 + instruction->instruction.operand.operand2[0];
             break;
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             targetIndex = (TZrInt32)instructionIndex + 1 + (TZrInt16)instruction->instruction.operand.operand1[1];
             break;
         case ZR_INSTRUCTION_ENUM(SUPER_DYN_ITER_MOVE_NEXT_JUMP_IF_FALSE):
@@ -693,6 +700,7 @@ static TZrUInt32 backend_aot_exec_ir_find_parent_function_index(SZrState *state,
 
 static TZrBool backend_aot_exec_ir_build_function(SZrState *state,
                                                   const SZrAotFunctionTable *functionTable,
+                                                  const SZrFunction *metadataEntryFunction,
                                                   const SZrAotFunctionEntry *entry,
                                                   SZrAotExecIrInstruction *moduleInstructions,
                                                   TZrUInt32 *ioInstructionOffset,
@@ -706,6 +714,8 @@ static TZrBool backend_aot_exec_ir_build_function(SZrState *state,
 
     ZrCore_Memory_RawSet(outFunction, 0, sizeof(*outFunction));
     outFunction->function = entry->function;
+    outFunction->metadataEntryFunction =
+            metadataEntryFunction != ZR_NULL ? metadataEntryFunction : entry->function;
     outFunction->flatIndex = entry->flatIndex;
     outFunction->parentFunctionIndex =
             backend_aot_exec_ir_find_parent_function_index(state, functionTable, entry->function);
@@ -828,6 +838,7 @@ TZrBool backend_aot_exec_ir_build_module(SZrState *state, SZrFunction *function,
     for (TZrUInt32 functionIndex = 0; functionIndex < functionTable.count; functionIndex++) {
         if (!backend_aot_exec_ir_build_function(state,
                                                 &functionTable,
+                                                function,
                                                 &functionTable.entries[functionIndex],
                                                 outModule->instructions,
                                                 &instructionOffset,

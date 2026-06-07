@@ -538,6 +538,8 @@ async function main() {
     const genericUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-generic.zr';
     const parserDiagnosticUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-parser-diagnostic.zr';
+    const missingConditionUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-missing-condition.zr';
     const formatEditUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-format-edit.zr';
     const noopFormatUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-format-noop.zr';
     const importFoldingUri = 'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-import-folding.zr';
@@ -550,12 +552,27 @@ async function main() {
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-return.zr';
     const inlineExpressionUri =
         'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-inline-expression.zr';
+    const documentHighlightFilterUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-document-highlight-filter.zr';
+    const linkedEditingFilterUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-linked-editing-filter.zr';
+    const monikerFilterUri =
+        'file:///c%3A/Users/test/workspace/%2Bzr_vm%2B/stdio-moniker-filter.zr';
     const initialText = 'var x = 10; var y = x; var flag = true || false;';
     const parserDiagnosticText = 'var x = ;\n';
-    const colorText = 'var accent = "#336699";';
+    const missingConditionText = 'if () { return 1; }\n';
+    const colorText = [
+        'var accent = "#336699";',
+        '// "#112233" is only a comment color',
+        '/* "#445566" is only a block comment color */',
+        '',
+    ].join('\n');
     const inlineCompletionText = [
         'func main(): int {',
         '    ret',
+        '    // ret',
+        '    var label = "ret";',
+        '    /* ret */',
         '}',
         '',
     ].join('\n');
@@ -570,6 +587,27 @@ async function main() {
         '    1 + 2;',
         '    true || false;',
         '}',
+        '',
+    ].join('\n');
+    const documentHighlightFilterText = [
+        'var highlightOnly = 1;',
+        '// highlightOnly appears in a comment',
+        'var label = "highlightOnly";',
+        '/* highlightOnly appears in a block comment */',
+        '',
+    ].join('\n');
+    const linkedEditingFilterText = [
+        'var linkedOnly = 1;',
+        '// linkedOnly appears in a comment',
+        'var label = "linkedOnly";',
+        '/* linkedOnly appears in a block comment */',
+        '',
+    ].join('\n');
+    const monikerFilterText = [
+        'var real = 1;',
+        '// commentOnly symbol',
+        'var label = "stringOnly";',
+        '/* blockOnly symbol */',
         '',
     ].join('\n');
     const documentationText = [
@@ -858,6 +896,23 @@ async function main() {
             range && range.start && range.start.line === 0 && range.start.character === 20) &&
         linkedEditing.wordPattern,
     'linkedEditingRange must return same-document ranges for the edited symbol');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: linkedEditingFilterUri,
+            languageId: 'zr',
+            version: 1,
+            text: linkedEditingFilterText,
+        },
+    });
+    const linkedEditingFilterDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(linkedEditingFilterDiagnostics.uri === linkedEditingFilterUri,
+        'linked editing filter diagnostics uri mismatch');
+    const linkedEditingFiltered = await client.request('textDocument/linkedEditingRange', {
+        textDocument: { uri: linkedEditingFilterUri },
+        position: findPosition(linkedEditingFilterText, 'linkedOnly'),
+    });
+    assert(linkedEditingFiltered === null,
+        'linkedEditingRange fallback must ignore identifiers inside comments and strings');
     const monikers = await client.request('textDocument/moniker', {
         textDocument: { uri: documentUri },
         position: { line: 0, character: 4 },
@@ -870,6 +925,33 @@ async function main() {
             moniker.unique === 'document' &&
             moniker.kind === 'local'),
     'textDocument/moniker must return a document-scoped symbol identity');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: monikerFilterUri,
+            languageId: 'zr',
+            version: 1,
+            text: monikerFilterText,
+        },
+    });
+    const monikerFilterDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(monikerFilterDiagnostics.uri === monikerFilterUri,
+        'moniker filter diagnostics uri mismatch');
+    const lineCommentMonikers = await client.request('textDocument/moniker', {
+        textDocument: { uri: monikerFilterUri },
+        position: findPosition(monikerFilterText, 'commentOnly'),
+    });
+    const stringMonikers = await client.request('textDocument/moniker', {
+        textDocument: { uri: monikerFilterUri },
+        position: findPosition(monikerFilterText, 'stringOnly'),
+    });
+    const blockCommentMonikers = await client.request('textDocument/moniker', {
+        textDocument: { uri: monikerFilterUri },
+        position: findPosition(monikerFilterText, 'blockOnly'),
+    });
+    assert(Array.isArray(lineCommentMonikers) && lineCommentMonikers.length === 0 &&
+        Array.isArray(stringMonikers) && stringMonikers.length === 0 &&
+        Array.isArray(blockCommentMonikers) && blockCommentMonikers.length === 0,
+    'textDocument/moniker must ignore identifiers inside comments and strings');
     const inlineValues = await client.request('textDocument/inlineValue', {
         textDocument: { uri: documentUri },
         range: {
@@ -1019,6 +1101,11 @@ async function main() {
             Math.abs(entry.color.blue - 0.6) < 0.001 &&
             entry.color.alpha === 1),
     'textDocument/documentColor must expose hex color literals');
+    assert(!documentColors.some((entry) =>
+        entry &&
+        entry.range &&
+        (entry.range.start.line === 1 || entry.range.start.line === 2)),
+    'textDocument/documentColor must ignore hex colors inside comments');
     const colorPresentation = await client.request('textDocument/colorPresentation', {
         textDocument: { uri: colorUri },
         color: { red: 0.2, green: 0.4, blue: 0.6, alpha: 1 },
@@ -1034,6 +1121,16 @@ async function main() {
             presentation.textEdit &&
             presentation.textEdit.newText === '#336699'),
     'textDocument/colorPresentation must format the selected color as a hex edit');
+    const commentColorPresentation = await client.request('textDocument/colorPresentation', {
+        textDocument: { uri: colorUri },
+        color: { red: 0x11 / 255, green: 0x22 / 255, blue: 0x33 / 255, alpha: 1 },
+        range: {
+            start: { line: 1, character: 4 },
+            end: { line: 1, character: 11 },
+        },
+    });
+    assert(Array.isArray(commentColorPresentation) && commentColorPresentation.length === 0,
+        'textDocument/colorPresentation must ignore comment-only hex colors');
     client.notify('textDocument/didOpen', {
         textDocument: {
             uri: inlineCompletionUri,
@@ -1063,6 +1160,37 @@ async function main() {
             item.range.start.character === 4 &&
             item.range.end.character === 7),
     'textDocument/inlineCompletion must expand statement prefixes with filter text');
+    const commentInlineCompletions = await client.request('textDocument/inlineCompletion', {
+        textDocument: { uri: inlineCompletionUri },
+        position: { line: 2, character: 10 },
+        context: {
+            triggerKind: 1,
+            selectedCompletionInfo: null,
+        },
+    });
+    assert(Array.isArray(commentInlineCompletions) && commentInlineCompletions.length === 0,
+        'textDocument/inlineCompletion must ignore prefixes inside line comments');
+    const stringInlineCompletions = await client.request('textDocument/inlineCompletion', {
+        textDocument: { uri: inlineCompletionUri },
+        position: { line: 3, character: 20 },
+        context: {
+            triggerKind: 1,
+            selectedCompletionInfo: null,
+        },
+    });
+    assert(Array.isArray(stringInlineCompletions) && stringInlineCompletions.length === 0,
+        'textDocument/inlineCompletion must ignore prefixes inside strings');
+    const blockCommentInlineCompletions = await client.request('textDocument/inlineCompletion', {
+        textDocument: { uri: inlineCompletionUri },
+        position: { line: 4, character: 10 },
+        context: {
+            triggerKind: 1,
+            selectedCompletionInfo: null,
+        },
+    });
+    assert(Array.isArray(blockCommentInlineCompletions) &&
+        blockCommentInlineCompletions.length === 0,
+        'textDocument/inlineCompletion must ignore prefixes inside block comments');
     const inlineCompletionUpdatedText = inlineCompletionText.replace('    ret', '    retu');
     client.notify('textDocument/didChange', {
         textDocument: {
@@ -1117,7 +1245,7 @@ async function main() {
     const xCompletion = localCompletions.find((item) => item && item.label === 'x');
     assert(xCompletion &&
         typeof xCompletion.detail === 'string' &&
-        xCompletion.detail.includes('Semantic facts: range 20..20') &&
+        xCompletion.detail.includes('range 20..20') &&
         xCompletion.data && xCompletion.data.uri === documentUri,
     'local completion detail should include numeric initializer semantic facts and resolve data');
     const resolvedXCompletion = await client.request('completionItem/resolve', {
@@ -1129,10 +1257,10 @@ async function main() {
     });
     assert(resolvedXCompletion &&
         typeof resolvedXCompletion.detail === 'string' &&
-        resolvedXCompletion.detail.includes('Semantic facts: range 20..20') &&
+        resolvedXCompletion.detail.includes('range 20..20') &&
         resolvedXCompletion.labelDetails &&
         typeof resolvedXCompletion.labelDetails.detail === 'string' &&
-        resolvedXCompletion.labelDetails.detail.includes('Semantic facts: range 20..20'),
+        resolvedXCompletion.labelDetails.detail.includes('range 20..20'),
     'completionItem/resolve must preserve local numeric semantic facts and labelDetails');
     const flagCompletion = localCompletions.find((item) => item && item.label === 'flag');
     assert(flagCompletion &&
@@ -1182,6 +1310,33 @@ async function main() {
     });
     assert(Array.isArray(highlights) && highlights.length > 0,
         'documentHighlight must return at least one highlight');
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: documentHighlightFilterUri,
+            languageId: 'zr',
+            version: 1,
+            text: documentHighlightFilterText,
+        },
+    });
+    const documentHighlightFilterDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(documentHighlightFilterDiagnostics.uri === documentHighlightFilterUri,
+        'document highlight filter diagnostics uri mismatch');
+    const lineCommentHighlights = await client.request('textDocument/documentHighlight', {
+        textDocument: { uri: documentHighlightFilterUri },
+        position: findPosition(documentHighlightFilterText, 'highlightOnly', 1),
+    });
+    const stringHighlights = await client.request('textDocument/documentHighlight', {
+        textDocument: { uri: documentHighlightFilterUri },
+        position: findPosition(documentHighlightFilterText, 'highlightOnly', 2),
+    });
+    const blockCommentHighlights = await client.request('textDocument/documentHighlight', {
+        textDocument: { uri: documentHighlightFilterUri },
+        position: findPosition(documentHighlightFilterText, 'highlightOnly', 3),
+    });
+    assert(Array.isArray(lineCommentHighlights) && lineCommentHighlights.length === 0 &&
+        Array.isArray(stringHighlights) && stringHighlights.length === 0 &&
+        Array.isArray(blockCommentHighlights) && blockCommentHighlights.length === 0,
+    'documentHighlight must ignore identifiers inside comments and strings');
 
     const prepareRename = await client.request('textDocument/prepareRename', {
         textDocument: { uri: documentUri },
@@ -1395,6 +1550,26 @@ async function main() {
     );
     assert(missingExpressionDiagnostic.message.includes("Add an expression before ';'"),
         'structured parser diagnostic should serialize the parser suggestion');
+
+    client.notify('textDocument/didOpen', {
+        textDocument: {
+            uri: missingConditionUri,
+            languageId: 'zr',
+            version: 1,
+            text: missingConditionText,
+        },
+    });
+
+    const missingConditionDiagnostics = await client.waitForNotification('textDocument/publishDiagnostics');
+    assert(missingConditionDiagnostics.uri === missingConditionUri, 'missing condition diagnostics uri mismatch');
+    const missingConditionDiagnostic = assertDiagnosticIncludes(
+        missingConditionDiagnostics,
+        'missing_condition',
+        "Missing condition inside 'if'",
+        'structured missing-condition diagnostic should reach stdio'
+    );
+    assert(missingConditionDiagnostic.message.includes("Add a boolean expression between '(' and ')'"),
+        'structured missing-condition diagnostic should serialize the parser suggestion');
 
     client.notify('textDocument/didOpen', {
         textDocument: {
@@ -2709,6 +2884,26 @@ async function main() {
     });
     client.notify('textDocument/didClose', {
         textDocument: {
+            uri: missingConditionUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: documentHighlightFilterUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: linkedEditingFilterUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
+            uri: monikerFilterUri,
+        },
+    });
+    client.notify('textDocument/didClose', {
+        textDocument: {
             uri: semanticDeltaUri,
         },
     });
@@ -2733,6 +2928,10 @@ async function main() {
         inlineCompletionUri,
         importDiagnosticsFixture.mainUri,
         parserDiagnosticUri,
+        missingConditionUri,
+        documentHighlightFilterUri,
+        linkedEditingFilterUri,
+        monikerFilterUri,
     ]);
     let clearedCloseCount = 0;
     while (clearedCloseCount < expectedClosedUris.size) {

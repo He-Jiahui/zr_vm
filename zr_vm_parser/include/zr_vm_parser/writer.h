@@ -7,6 +7,7 @@
 
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_common/zr_aot_abi.h"
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/state.h"
 
@@ -14,6 +15,17 @@ typedef struct SZrBinaryWriterOptions {
     const TZrChar *moduleName;
     const TZrChar *moduleHash;
 } SZrBinaryWriterOptions;
+
+typedef struct SZrAotWriterOptions {
+    const TZrChar *moduleName;
+    const TZrChar *sourceHash;
+    const TZrChar *zroHash;
+    TZrUInt32 inputKind;
+    const TZrChar *inputHash;
+    const TZrByte *embeddedModuleBlob;
+    TZrSize embeddedModuleBlobLength;
+    TZrBool requireExecutableLowering;
+} SZrAotWriterOptions;
 
 // 写入二进制文件 (.zro)
 // 将编译后的函数写入二进制格式文件，符合 zr_io_conf.h 中定义的 .SOURCE 格式
@@ -33,6 +45,22 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
 // 写入语法树文件 (.zrs)
 // 将解析后的 AST 写入可读的明文格式文件
 ZR_PARSER_API TZrBool ZrParser_Writer_WriteSyntaxTreeFile(SZrState *state, SZrAstNode *ast, const TZrChar *filename);
+
+// 写入 AOT C 文件
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
+                                                               SZrFunction *function,
+                                                               const TZrChar *filename,
+                                                               const SZrAotWriterOptions *options);
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFile(SZrState *state, SZrFunction *function, const TZrChar *filename);
+
+// 写入 AOT LLVM IR 文件
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFileWithOptions(SZrState *state,
+                                                                  SZrFunction *function,
+                                                                  const TZrChar *filename,
+                                                                  const SZrAotWriterOptions *options);
+ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotLlvmFile(SZrState *state,
+                                                       SZrFunction *function,
+                                                       const TZrChar *filename);
 
 #endif //ZR_VM_PARSER_WRITER_H
 

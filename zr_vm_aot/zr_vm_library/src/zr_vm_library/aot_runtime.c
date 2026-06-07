@@ -914,7 +914,8 @@ static TZrUInt32 aot_runtime_find_function_index_in_record(const SZrLibraryAotLo
     }
 
     for (TZrUInt32 index = 0; index < record->functionCount; index++) {
-        if (record->functionTable[index] == function) {
+        const SZrFunction *candidate = record->functionTable[index];
+        if (candidate == function || aot_runtime_functions_equivalent(candidate, function)) {
             return index;
         }
     }
@@ -1232,6 +1233,40 @@ static void aot_runtime_record_direct_call_context(const ZrAotGeneratedFrame *fr
     directCall->publishAllInstructionsSnapshot = frame != ZR_NULL ? frame->publishAllInstructions : ZR_FALSE;
 }
 
+static TZrBool aot_runtime_materialize_static_direct_call_base(SZrState *state,
+                                                               TZrStackValuePointer callBase,
+                                                               SZrFunction *metadataFunction,
+                                                               FZrAotEntryThunk nativeThunk) {
+    SZrTypeValue *callValue;
+    SZrClosureNative *closure;
+
+    if (nativeThunk == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (state == ZR_NULL || callBase == ZR_NULL || metadataFunction == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    callValue = ZrCore_Stack_GetValue(callBase);
+    if (callValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    closure = ZrCore_ClosureNative_New(state, 0);
+    if (closure == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    closure->nativeFunction = (FZrNativeFunction)nativeThunk;
+    closure->aotShimFunction = metadataFunction;
+
+    ZrCore_Ownership_ReleaseValue(state, callValue);
+    ZrCore_Value_InitAsRawObject(state, callValue, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
+    callValue->type = ZR_VALUE_TYPE_CLOSURE;
+    callValue->isGarbageCollectable = ZR_TRUE;
+    callValue->isNative = ZR_TRUE;
+    return ZR_TRUE;
+}
+
 static TZrBool aot_runtime_prepare_vm_direct_call_frame(SZrState *state,
                                                         ZrAotGeneratedFrame *frame,
                                                         TZrUInt32 destinationSlot,
@@ -1240,6 +1275,7 @@ static TZrBool aot_runtime_prepare_vm_direct_call_frame(SZrState *state,
                                                         const SZrLibraryAotLoadedModule *record,
                                                         SZrFunction *metadataFunction,
                                                         TZrUInt32 calleeFunctionIndex,
+                                                        FZrAotEntryThunk staticNativeThunk,
                                                         ZrAotGeneratedDirectCall *directCall) {
     SZrLibraryAotRuntimeState *runtimeState;
     SZrCallInfo *callerCallInfo;
@@ -1286,6 +1322,9 @@ static TZrBool aot_runtime_prepare_vm_direct_call_frame(SZrState *state,
     callBase = ZrCore_Function_StackAnchorRestore(state, &callAnchor);
     destinationPointer = ZrCore_Function_StackAnchorRestore(state, &destinationAnchor);
     if (callBase == ZR_NULL || destinationPointer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+    if (!aot_runtime_materialize_static_direct_call_base(state, callBase, metadataFunction, staticNativeThunk)) {
         return ZR_FALSE;
     }
 
@@ -1386,6 +1425,7 @@ static TZrBool aot_runtime_try_prepare_direct_native_call(SZrState *state,
                                                   record,
                                                   metadataFunction,
                                                   functionIndex,
+                                                  ZR_NULL,
                                                   directCall)) {
         return ZR_FALSE;
     }
@@ -4495,6 +4535,7 @@ static TZrBool aot_runtime_invoke_unary_meta(SZrState *state,
                                                           record,
                                                           metadataFunction,
                                                           functionIndex,
+                                                          ZR_NULL,
                                                           &directCall)) {
                 return ZR_FALSE;
             }
@@ -4565,6 +4606,7 @@ static TZrBool aot_runtime_invoke_binary_meta(SZrState *state,
                                                           record,
                                                           metadataFunction,
                                                           functionIndex,
+                                                          ZR_NULL,
                                                           &directCall)) {
                 return ZR_FALSE;
             }
@@ -6323,6 +6365,7 @@ TZrBool ZrLibrary_AotRuntime_PrepareMetaCall(SZrState *state,
                                                   record,
                                                   metadataFunction,
                                                   functionIndex,
+                                                  ZR_NULL,
                                                   directCall)) {
         return ZR_FALSE;
     }
@@ -6374,6 +6417,7 @@ TZrBool ZrLibrary_AotRuntime_PrepareStaticDirectCall(SZrState *state,
                                                   record,
                                                   metadataFunction,
                                                   calleeFunctionIndex,
+                                                  record->descriptor->functionThunks[calleeFunctionIndex],
                                                   directCall)) {
         return ZR_FALSE;
     }

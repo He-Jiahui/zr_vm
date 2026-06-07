@@ -8,6 +8,89 @@ static int moniker_is_identifier_part(char ch) {
     return moniker_is_identifier_start(ch) || (ch >= '0' && ch <= '9');
 }
 
+static int moniker_offset_is_in_code(const char *content, size_t contentLength, size_t targetOffset) {
+    int inLineComment = 0;
+    int inBlockComment = 0;
+    int inString = 0;
+    int escaped = 0;
+
+    if (content == NULL || targetOffset >= contentLength) {
+        return 0;
+    }
+
+    for (size_t offset = 0; offset <= targetOffset && offset < contentLength; offset++) {
+        char ch = content[offset];
+        char next = offset + 1 < contentLength ? content[offset + 1] : '\0';
+
+        if (inLineComment) {
+            if (offset == targetOffset) {
+                return 0;
+            }
+            if (ch == '\n') {
+                inLineComment = 0;
+            }
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (offset == targetOffset) {
+                return 0;
+            }
+            if (ch == '*' && next == '/') {
+                if (offset + 1 >= targetOffset) {
+                    return 0;
+                }
+                inBlockComment = 0;
+                offset++;
+            }
+            continue;
+        }
+
+        if (inString) {
+            if (offset == targetOffset) {
+                return 0;
+            }
+            if (escaped) {
+                escaped = 0;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = 1;
+                continue;
+            }
+            if (ch == '"') {
+                inString = 0;
+            }
+            continue;
+        }
+
+        if (offset == targetOffset) {
+            return 1;
+        }
+        if (ch == '/' && next == '/') {
+            if (offset + 1 >= targetOffset) {
+                return 0;
+            }
+            inLineComment = 1;
+            offset++;
+            continue;
+        }
+        if (ch == '/' && next == '*') {
+            if (offset + 1 >= targetOffset) {
+                return 0;
+            }
+            inBlockComment = 1;
+            offset++;
+            continue;
+        }
+        if (ch == '"') {
+            inString = 1;
+        }
+    }
+
+    return 0;
+}
+
 static int moniker_offset_from_position(const char *content,
                                         size_t contentLength,
                                         SZrLspPosition position,
@@ -105,6 +188,9 @@ cJSON *handle_moniker_request(SZrStdioServer *server, const cJSON *params) {
             return cJSON_CreateArray();
         }
         offset--;
+    }
+    if (!moniker_offset_is_in_code(content, contentLength, offset)) {
+        return cJSON_CreateArray();
     }
 
     wordStart = offset;

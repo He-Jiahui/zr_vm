@@ -273,7 +273,8 @@ static TZrBool lsp_hierarchy_scan_symbol_for_named_calls(SZrState *state,
     while (cursor + targetNameLength < endOffset && cursor + targetNameLength < fileVersion->contentLength) {
         TZrSize callCursor;
 
-        if ((cursor > startOffset && lsp_hierarchy_identifier_part(fileVersion->content[cursor - 1])) ||
+        if (!lsp_editor_offset_is_code(fileVersion->content, fileVersion->contentLength, cursor) ||
+            (cursor > startOffset && lsp_hierarchy_identifier_part(fileVersion->content[cursor - 1])) ||
             memcmp(fileVersion->content + cursor, targetName, targetNameLength) != 0 ||
             (cursor + targetNameLength < fileVersion->contentLength &&
              lsp_hierarchy_identifier_part(fileVersion->content[cursor + targetNameLength]))) {
@@ -652,7 +653,8 @@ TZrBool ZrLanguageServer_Lsp_GetCallHierarchyOutgoingCalls(SZrState *state,
         TZrSize callCursor;
         const SZrLspSymbolInformation *targetSymbol;
 
-        if (!lsp_hierarchy_identifier_start(fileVersion->content[cursor])) {
+        if (!lsp_editor_offset_is_code(fileVersion->content, fileVersion->contentLength, cursor) ||
+            !lsp_hierarchy_identifier_start(fileVersion->content[cursor])) {
             cursor++;
             continue;
         }

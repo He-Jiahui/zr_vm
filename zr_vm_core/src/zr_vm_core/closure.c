@@ -72,6 +72,44 @@ static ZR_FORCE_INLINE SZrClosureValue **closure_refresh_parent_closure_values_f
     return ownerClosure != ZR_NULL ? ownerClosure->closureValuesExtend : ZR_NULL;
 }
 
+static ZR_FORCE_INLINE SZrFunction *closure_metadata_function_from_frame_base(SZrState *state,
+                                                                              TZrStackValuePointer base) {
+    if (state == ZR_NULL || base == ZR_NULL || base <= state->stackBase.valuePointer) {
+        return ZR_NULL;
+    }
+
+    return closure_refresh_forwarded_function(
+            ZrCore_Closure_GetMetadataFunctionFromValue(state, ZrCore_Stack_GetValue(base - 1)));
+}
+
+static TZrStackValuePointer closure_value_pointer_for_frame_slot(SZrState *state,
+                                                                 const SZrFunction *function,
+                                                                 TZrStackValuePointer base,
+                                                                 TZrUInt32 stackSlot) {
+    const SZrFunctionFrameSlotLayout *slotLayout;
+    SZrStackFramePlace place;
+
+    if (base == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (state == ZR_NULL ||
+        function == ZR_NULL ||
+        function->frameSlotLayouts == ZR_NULL ||
+        function->frameSlotLayoutLength == 0u) {
+        return base + stackSlot;
+    }
+
+    slotLayout = ZrCore_Function_FindFrameSlotLayout(function, stackSlot);
+    if (slotLayout != ZR_NULL &&
+        slotLayout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&
+        slotLayout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue) &&
+        ZrCore_Function_MakeFrameSlotPlace(state, function, base, stackSlot, &place)) {
+        return ZR_CAST_STACK_VALUE(place.address);
+    }
+
+    return base + stackSlot;
+}
+
 static void closure_value_apply_anchored_escape_to_closed_value(SZrState *state, SZrClosureValue *closureValue) {
     TZrUInt32 propagatedEscapeFlags;
 
@@ -449,6 +487,7 @@ void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *func
     }
 
     TZrSize closureSize = function->closureValueLength;
+    SZrFunction *parentFunction = closure_metadata_function_from_frame_base(state, base);
     SZrClosure *closure = ZrCore_Closure_New(state, closureSize);
     closure = closure_refresh_forwarded_closure(closure);
     function = closure_refresh_forwarded_function(function);
@@ -467,7 +506,11 @@ void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *func
         SZrClosureValue *capturedValue;
 
         if (closureValue->inStack) {
-            capturedValue = ZrCore_Closure_FindOrCreateValue(state, base + closureValue->index);
+            TZrStackValuePointer capturePointer =
+                    closure_value_pointer_for_frame_slot(state, parentFunction, base, closureValue->index);
+            capturedValue = capturePointer != ZR_NULL
+                                    ? ZrCore_Closure_FindOrCreateValue(state, capturePointer)
+                                    : ZR_NULL;
             closure = closure_refresh_forwarded_closure(closure);
             if (closureValueList != ZR_NULL) {
                 closureValueList = closure_refresh_parent_closure_values_from_base(state, base);

@@ -144,8 +144,11 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     }
 
     // 期望左大括号
-    expect_token(ps, ZR_TK_LBRACE);
-    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_LBRACE) {
+        report_missing_declaration_body_open(ps, "class declaration", get_current_token_location(ps));
+    } else {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
 
     // 解析成员列表
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
@@ -164,7 +167,7 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
             token == ZR_TK_PRO || token == ZR_TK_STATIC || token == ZR_TK_CONST || token == ZR_TK_USING ||
             token == ZR_TK_VAR || token == ZR_TK_ABSTRACT || token == ZR_TK_VIRTUAL ||
             token == ZR_TK_OVERRIDE || token == ZR_TK_FINAL || token == ZR_TK_SHADOW || token == ZR_TK_AT ||
-            token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
+            token == ZR_TK_GET || token == ZR_TK_SET || token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
             switch (classify_class_member_from_current(ps)) {
                 case ZR_AST_CLASS_FIELD:
                     member = parse_class_field(ps);
@@ -310,10 +313,12 @@ SZrAstNode *parse_class_field(SZrParserState *ps) {
         init = parse_expression(ps);
     }
 
-    // 期望分号
-    expect_token(ps, ZR_TK_SEMICOLON);
     endLoc = get_current_token_location(ps);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        report_missing_statement_semicolon(ps, "class field declaration", endLoc);
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
     SZrFileRange fieldLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_CLASS_FIELD, fieldLoc);
@@ -417,7 +422,14 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
         }
     }
 
-    expect_token(ps, ZR_TK_RPAREN);
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_parameter_list_close(ps, get_current_token_location(ps));
+        ZrParser_AstNodeArray_Free(ps->state, decorators);
+        if (params != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+        }
+        return ZR_NULL;
+    }
     consume_token(ps, ZR_TK_RPAREN);
 
     // 可选返回类型
@@ -439,7 +451,7 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
     if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
         endLoc = get_current_token_location(ps);
         consume_token(ps, ZR_TK_SEMICOLON);
-    } else {
+    } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         body = parse_block(ps);
         if (body == ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, decorators);
@@ -449,6 +461,9 @@ SZrAstNode *parse_class_method(SZrParserState *ps) {
             return ZR_NULL;
         }
         endLoc = body->location;
+    } else {
+        endLoc = get_current_token_location(ps);
+        report_missing_statement_semicolon(ps, "class method", endLoc);
     }
 
     SZrFileRange methodLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -509,12 +524,15 @@ SZrAstNode *parse_property_get(SZrParserState *ps) {
     if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
         endLoc = get_current_token_location(ps);
         consume_token(ps, ZR_TK_SEMICOLON);
-    } else {
+    } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         body = parse_block(ps);
         if (body == ZR_NULL) {
             return ZR_NULL;
         }
         endLoc = body->location;
+    } else {
+        endLoc = get_current_token_location(ps);
+        report_missing_statement_semicolon(ps, "class getter", endLoc);
     }
 
     SZrFileRange getLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -578,12 +596,15 @@ SZrAstNode *parse_property_set(SZrParserState *ps) {
     if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
         endLoc = get_current_token_location(ps);
         consume_token(ps, ZR_TK_SEMICOLON);
-    } else {
+    } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         body = parse_block(ps);
         if (body == ZR_NULL) {
             return ZR_NULL;
         }
         endLoc = body->location;
+    } else {
+        endLoc = get_current_token_location(ps);
+        report_missing_statement_semicolon(ps, "class setter", endLoc);
     }
 
     SZrFileRange setLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -765,7 +786,7 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
     if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
         endLoc = get_current_token_location(ps);
         consume_token(ps, ZR_TK_SEMICOLON);
-    } else {
+    } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
         body = parse_block(ps);
         if (body == ZR_NULL) {
             if (params != ZR_NULL) {
@@ -775,6 +796,9 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
             return ZR_NULL;
         }
         endLoc = get_current_location(ps);
+    } else {
+        endLoc = get_current_token_location(ps);
+        report_missing_statement_semicolon(ps, "class meta function", endLoc);
     }
 
     SZrFileRange metaLoc = ZrParser_FileRange_Merge(startLoc, endLoc);

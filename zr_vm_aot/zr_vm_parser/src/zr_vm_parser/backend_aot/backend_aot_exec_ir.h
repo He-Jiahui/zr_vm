@@ -89,6 +89,7 @@ typedef struct SZrAotExecIrBasicBlock {
 
 typedef struct SZrAotExecIrFunction {
     const SZrFunction *function;
+    const SZrFunction *metadataEntryFunction;
     TZrUInt32 flatIndex;
     TZrUInt32 parentFunctionIndex;
     TZrUInt32 runtimeContracts;

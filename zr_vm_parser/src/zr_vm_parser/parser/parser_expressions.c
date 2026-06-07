@@ -592,11 +592,47 @@ SZrAstNode *parse_conditional_expression(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    if (consume_token(ps, ZR_TK_QUESTIONMARK)) {
-        SZrAstNode *consequent = parse_expression(ps);
-        expect_token(ps, ZR_TK_COLON);
+    if (ps->lexer->t.token == ZR_TK_QUESTIONMARK) {
+        SZrFileRange questionLoc = get_current_token_location(ps);
+        SZrFileRange colonLoc;
+        SZrAstNode *consequent;
+        SZrAstNode *alternate;
+
+        ZrParser_Lexer_Next(ps->lexer);
+        if (!parser_token_can_start_expression(ps->lexer->t.token) || ps->lexer->t.token == ZR_TK_COLON) {
+            report_missing_conditional_consequent(ps, questionLoc);
+            ZrParser_Ast_Free(ps->state, test);
+            return ZR_NULL;
+        }
+
+        consequent = parse_expression(ps);
+        if (consequent == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, test);
+            return ZR_NULL;
+        }
+
+        if (ps->lexer->t.token != ZR_TK_COLON) {
+            report_missing_conditional_colon(ps, questionLoc);
+            ZrParser_Ast_Free(ps->state, consequent);
+            ZrParser_Ast_Free(ps->state, test);
+            return ZR_NULL;
+        }
+
+        colonLoc = get_current_token_location(ps);
         consume_token(ps, ZR_TK_COLON);
-        SZrAstNode *alternate = parse_conditional_expression(ps); // 右结合
+        if (!parser_token_can_start_expression(ps->lexer->t.token)) {
+            report_missing_conditional_alternate(ps, colonLoc);
+            ZrParser_Ast_Free(ps->state, consequent);
+            ZrParser_Ast_Free(ps->state, test);
+            return ZR_NULL;
+        }
+
+        alternate = parse_conditional_expression(ps); // 右结合
+        if (alternate == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, consequent);
+            ZrParser_Ast_Free(ps->state, test);
+            return ZR_NULL;
+        }
 
         SZrAstNode *node = create_ast_node(ps,
                                            ZR_AST_CONDITIONAL_EXPRESSION,

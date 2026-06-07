@@ -101,6 +101,8 @@ typedef struct ZrDebugValuePreview {
     TZrChar name[ZR_DEBUG_NAME_CAPACITY];
     TZrChar type_name[ZR_DEBUG_NAME_CAPACITY];
     TZrChar value_text[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar semantic_summary[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar reference_summary[ZR_DEBUG_TEXT_CAPACITY];
 } ZrDebugValuePreview;
 
 typedef struct ZrDebugEvaluateResult {
@@ -109,6 +111,8 @@ typedef struct ZrDebugEvaluateResult {
     TZrSize indexed_variables;
     TZrChar type_name[ZR_DEBUG_NAME_CAPACITY];
     TZrChar value_text[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar semantic_summary[ZR_DEBUG_TEXT_CAPACITY];
+    TZrChar reference_summary[ZR_DEBUG_TEXT_CAPACITY];
 } ZrDebugEvaluateResult;
 
 ZR_DEBUG_API TZrBool ZrDebug_AgentStart(SZrState *state, struct SZrFunction *entryFunction, const TZrChar *moduleName,

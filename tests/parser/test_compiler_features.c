@@ -2103,6 +2103,8 @@ void test_function_frame_layout_metadata_keeps_member_slot_load_temps_plain(void
         SZrFunction *func;
         SZrFunction *constructorFunction;
         const SZrFunctionFrameSlotLayout *receiverLayout;
+        const SZrFunctionFrameSlotLayout *materializedTempLayout;
+        const SZrFunctionFrameSlotLayout *textParameterLayout;
         const SZrFunctionFrameSlotLayout *returnSourceLayout;
         TZrUInt32 returnSourceSlot = ZR_INSTRUCTION_USE_RET_FLAG;
 
@@ -2117,11 +2119,21 @@ void test_function_frame_layout_metadata_keeps_member_slot_load_temps_plain(void
         constructorFunction = find_single_function_constant_with_opcode(state, func, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT));
         TEST_ASSERT_NOT_NULL(constructorFunction);
         receiverLayout = ZrCore_Function_FindFrameSlotLayout(constructorFunction, 0u);
+        materializedTempLayout = ZrCore_Function_FindFrameSlotLayout(constructorFunction, 1u);
+        textParameterLayout = ZrCore_Function_FindFrameSlotLayout(constructorFunction, 2u);
         TEST_ASSERT_NOT_NULL(receiverLayout);
+        TEST_ASSERT_NOT_NULL(materializedTempLayout);
+        TEST_ASSERT_NOT_NULL(textParameterLayout);
         TEST_ASSERT_EQUAL_UINT32_MESSAGE(
                 ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT,
                 receiverLayout->slotKind,
                 "Constructor receiver slot 0 must remain inline so member-slot stores write into frame bytes");
+        TEST_ASSERT_TRUE_MESSAGE(receiverLayout->isParameter,
+                                 "Constructor receiver slot must remain a parameter frame slot");
+        TEST_ASSERT_FALSE_MESSAGE(materializedTempLayout->isParameter,
+                                  "Constructor materialized value temp must not be marked as a parameter");
+        TEST_ASSERT_TRUE_MESSAGE(textParameterLayout->isParameter,
+                                 "Constructor text argument slot must be marked as a parameter frame slot");
         for (TZrUInt32 index = 0; index < constructorFunction->instructionsLength; index++) {
             const TZrInstruction *instruction = &constructorFunction->instructionsList[index];
             if ((EZrInstructionCode)instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {

@@ -1151,13 +1151,12 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
 
     while (ZR_TRUE) {
         // 点号成员访问
-        if (consume_token(ps, ZR_TK_DOT)) {
+        if (ps->lexer->t.token == ZR_TK_DOT) {
+            SZrFileRange dotLocation = get_current_token_location(ps);
+            consume_token(ps, ZR_TK_DOT);
             // 成员名上下文允许关键字以普通名称形式出现，例如 zr.ffi.out
             if (!is_member_name_token(ps->lexer->t.token)) {
-                const TZrChar *tokenStr = ZrParser_Lexer_TokenToString(ps->lexer, ps->lexer->t.token);
-                TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
-                snprintf(errorMsg, sizeof(errorMsg), "Expected identifier after '.' (遇到 '%s')", tokenStr);
-                report_error_with_token(ps, errorMsg, ps->lexer->t.token);
+                report_missing_member_name(ps, dotLocation);
                 return ZR_NULL;
             }
 
@@ -1177,12 +1176,17 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             base = append_primary_member(ps, base, memberNode, startLoc);
         }
         // 方括号成员访问
-        else if (consume_token(ps, ZR_TK_LBRACKET)) {
+        else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
+            SZrFileRange bracketLocation = get_current_token_location(ps);
+            consume_token(ps, ZR_TK_LBRACKET);
             SZrAstNode *property = parse_expression(ps);
             if (property == ZR_NULL) {
                 return base;
             }
-            expect_token(ps, ZR_TK_RBRACKET);
+            if (ps->lexer->t.token != ZR_TK_RBRACKET) {
+                report_missing_index_close(ps, bracketLocation);
+                return ZR_NULL;
+            }
             consume_token(ps, ZR_TK_RBRACKET);
 
             SZrAstNode *memberNode = create_ast_node(ps, ZR_AST_MEMBER_EXPRESSION, startLoc);
@@ -1205,10 +1209,25 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
                 break;
             }
 
+            SZrFileRange callOpenLocation;
+
+            callOpenLocation = get_current_token_location(ps);
             consume_token(ps, ZR_TK_LPAREN);
             argNames = ZR_NULL;
             args = parse_argument_list(ps, &argNames);
-            expect_token(ps, ZR_TK_RPAREN);
+            if (ps->lexer->t.token != ZR_TK_RPAREN) {
+                report_missing_call_close(ps, callOpenLocation);
+                if (args != ZR_NULL) {
+                    ZrParser_AstNodeArray_Free(ps->state, args);
+                }
+                if (argNames != ZR_NULL) {
+                    ZrCore_Array_Free(ps->state, argNames);
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, argNames, sizeof(SZrArray),
+                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
+                free_ast_node_array_with_elements(ps->state, genericArguments);
+                return ZR_NULL;
+            }
             consume_token(ps, ZR_TK_RPAREN);
 
             callNode = create_ast_node(ps, ZR_AST_FUNCTION_CALL, startLoc);
@@ -1242,10 +1261,25 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             base = append_primary_member(ps, base, callNode, startLoc);
         }
         // 函数调用
-        else if (consume_token(ps, ZR_TK_LPAREN)) {
+        else if (ps->lexer->t.token == ZR_TK_LPAREN) {
+            SZrFileRange callOpenLocation = get_current_token_location(ps);
             SZrArray *argNames = ZR_NULL;
-            SZrAstNodeArray *args = parse_argument_list(ps, &argNames);
-            expect_token(ps, ZR_TK_RPAREN);
+            SZrAstNodeArray *args;
+
+            consume_token(ps, ZR_TK_LPAREN);
+            args = parse_argument_list(ps, &argNames);
+            if (ps->lexer->t.token != ZR_TK_RPAREN) {
+                report_missing_call_close(ps, callOpenLocation);
+                if (args != ZR_NULL) {
+                    ZrParser_AstNodeArray_Free(ps->state, args);
+                }
+                if (argNames != ZR_NULL) {
+                    ZrCore_Array_Free(ps->state, argNames);
+                    ZrCore_Memory_RawFreeWithType(ps->state->global, argNames, sizeof(SZrArray),
+                                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+                }
+                return ZR_NULL;
+            }
             consume_token(ps, ZR_TK_RPAREN);
 
             if (base->type == ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION) {
@@ -1447,13 +1481,17 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
                         return parse_member_access(ps, lambdaNode);
                     }
                 }
-            }
-        } else {
-            consume_token(ps, ZR_TK_LPAREN);
-            base = parse_expression(ps);
-            expect_token(ps, ZR_TK_RPAREN);
-            consume_token(ps, ZR_TK_RPAREN);
         }
+    } else {
+        SZrFileRange groupOpenLocation = get_current_token_location(ps);
+        consume_token(ps, ZR_TK_LPAREN);
+        base = parse_expression(ps);
+        if (ps->lexer->t.token != ZR_TK_RPAREN) {
+            report_missing_group_close(ps, groupOpenLocation);
+            return ZR_NULL;
+        }
+        consume_token(ps, ZR_TK_RPAREN);
+    }
     } else {
         report_error(ps, "Expected primary expression");
         return ZR_NULL;

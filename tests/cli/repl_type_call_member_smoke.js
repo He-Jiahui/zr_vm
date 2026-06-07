@@ -47,6 +47,9 @@ async function main() {
         `:type should print the shared member-access reference fact\n${output}`);
     assert(output.includes('Reference: member index'),
         `:type should print the shared computed member-access reference fact\n${output}`);
+    const computedMemberReferenceCount = (output.match(/Reference: member index/g) || []).length;
+    assert(computedMemberReferenceCount === 1,
+        `:type should not duplicate the same computed member-access reference fact\n${output}`);
     assert(output.includes('Reference: member write value'),
         `:type should print the shared member-write reference fact\n${output}`);
     assert(!output.includes('Declared at:'),

@@ -8,6 +8,7 @@
 #include "type_inference_internal.h"
 #include "type_inference/type_inference_semantic_facts.h"
 #include "zr_vm_parser/ast.h"
+#include "type_inference/type_inference_constant_eval.h"
 
 #include "zr_vm_core/array.h"
 #include "zr_vm_core/memory.h"
@@ -921,6 +922,38 @@ static void infer_lambda_return_type_from_node(SZrCompilerState *cs,
             infer_lambda_return_type_from_node(cs, node->data.ifExpression.elseExpr, foundReturn, result);
             return;
         }
+        case ZR_AST_WHILE_LOOP: {
+            TZrBool conditionValue = ZR_FALSE;
+
+            if (type_inference_node_bool_value(node->data.whileLoop.cond, &conditionValue) &&
+                conditionValue) {
+                infer_lambda_return_type_from_node(cs,
+                                                   node->data.whileLoop.block,
+                                                   foundReturn,
+                                                   result);
+            }
+            return;
+        }
+        case ZR_AST_FOR_LOOP: {
+            TZrBool conditionValue = ZR_TRUE;
+
+            infer_lambda_return_type_from_node(cs, node->data.forLoop.init, foundReturn, result);
+            if (cs->hasError || *foundReturn) {
+                return;
+            }
+
+            if (node->data.forLoop.cond != ZR_NULL &&
+                (!type_inference_node_bool_value(node->data.forLoop.cond, &conditionValue) ||
+                 !conditionValue)) {
+                return;
+            }
+
+            infer_lambda_return_type_from_node(cs,
+                                               node->data.forLoop.block,
+                                               foundReturn,
+                                               result);
+            return;
+        }
         default:
             return;
     }
@@ -1236,10 +1269,37 @@ static TZrBool type_inference_boolean_literal_value(const SZrAstNode *node, TZrB
     return ZR_TRUE;
 }
 
+static TZrBool type_inference_known_bool_from_type(const SZrInferredType *type, TZrBool *outValue) {
+    if (outValue != ZR_NULL) {
+        *outValue = ZR_FALSE;
+    }
+    if (type == ZR_NULL ||
+        outValue == ZR_NULL ||
+        type->baseType != ZR_VALUE_TYPE_BOOL ||
+        !type->hasKnownBoolValue) {
+        return ZR_FALSE;
+    }
+
+    *outValue = type->knownBoolValue;
+    return ZR_TRUE;
+}
+
+static TZrBool type_inference_condition_known_bool_value(SZrAstNode *condition,
+                                                         const SZrInferredType *conditionType,
+                                                         TZrBool *outValue) {
+    if (type_inference_boolean_literal_value(condition, outValue)) {
+        return ZR_TRUE;
+    }
+
+    return type_inference_known_bool_from_type(conditionType, outValue);
+}
+
 TZrBool ZrParser_ConditionalType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZrInferredType *result) {
     SZrConditionalExpression *condExpr;
     TZrBool conditionValue = ZR_FALSE;
+    SZrInferredType conditionType;
     SZrInferredType thenType, elseType;
+    TZrBool hasConditionType = ZR_FALSE;
     TZrBool hasThenType = ZR_FALSE;
     TZrBool hasElseType = ZR_FALSE;
 
@@ -1248,15 +1308,25 @@ TZrBool ZrParser_ConditionalType_Infer(SZrCompilerState *cs, SZrAstNode *node, S
     }
     
     condExpr = &node->data.conditionalExpression;
-    if (type_inference_boolean_literal_value(condExpr->test, &conditionValue)) {
+    ZrParser_InferredType_Init(cs->state, &conditionType, ZR_VALUE_TYPE_OBJECT);
+    if (condExpr->test != ZR_NULL) {
+        hasConditionType = ZrParser_ExpressionType_Infer(cs, condExpr->test, &conditionType);
+    }
+
+    if (type_inference_condition_known_bool_value(condExpr->test,
+                                                  hasConditionType ? &conditionType : ZR_NULL,
+                                                  &conditionValue)) {
         SZrAstNode *selectedBranch = conditionValue ? condExpr->consequent : condExpr->alternate;
         if (selectedBranch == ZR_NULL ||
             !ZrParser_ExpressionType_Infer(cs, selectedBranch, result)) {
+            ZrParser_InferredType_Free(cs->state, &conditionType);
             return ZR_FALSE;
         }
         type_inference_record_constant_conditional_branch_facts(cs, node, conditionValue);
+        ZrParser_InferredType_Free(cs->state, &conditionType);
         return ZR_TRUE;
     }
+    ZrParser_InferredType_Free(cs->state, &conditionType);
     
     // 推断then和else分支类型
     ZrParser_InferredType_Init(cs->state, &thenType, ZR_VALUE_TYPE_OBJECT);

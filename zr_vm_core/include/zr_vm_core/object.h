@@ -8,6 +8,7 @@
 #include "zr_vm_core/hash.h"
 #include "zr_vm_core/hash_set.h"
 #include "zr_vm_core/meta.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/object_known_native_dispatch.h"
 #include "zr_vm_common/zr_contract_conf.h"
@@ -285,6 +286,31 @@ ZR_CORE_API TZrBool ZrCore_Object_SuperArrayAddInt(struct SZrState *state,
                                                    SZrTypeValue *receiver,
                                                    const SZrTypeValue *value,
                                                    SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayTryGetIntFast(struct SZrState *state,
+                                                          SZrTypeValue *receiver,
+                                                          const SZrTypeValue *key,
+                                                          SZrTypeValue *result,
+                                                          TZrBool *outApplicable);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayTrySetIntFast(struct SZrState *state,
+                                                          SZrTypeValue *receiver,
+                                                          const SZrTypeValue *key,
+                                                          const SZrTypeValue *value,
+                                                          TZrBool *outApplicable);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayAddIntAssumeFast(struct SZrState *state,
+                                                             SZrTypeValue *receiver,
+                                                             const SZrTypeValue *value,
+                                                             SZrTypeValue *result);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayAddIntDiscardResultAssumeFast(struct SZrState *state,
+                                                                          SZrTypeValue *receiver,
+                                                                          const SZrTypeValue *value);
+
+ZR_CORE_API TZrBool ZrCore_Object_SuperArrayAddInt4ConstAssumeFast(struct SZrState *state,
+                                                                   TZrStackValuePointer receiverBase,
+                                                                   TZrInt64 intValue);
 
 ZR_CORE_API TZrBool ZrCore_Object_SuperArrayFillInt4ConstAssumeFast(struct SZrState *state,
                                                                     TZrStackValuePointer receiverBase,

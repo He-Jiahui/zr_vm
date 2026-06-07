@@ -104,6 +104,30 @@ void zr_debug_eval_set_missing_conditional_separator_error(ZrDebugEvalParser *pa
         "or remove the conditional operator.");
 }
 
+void zr_debug_eval_set_missing_conditional_consequent_error(ZrDebugEvalParser *parser) {
+    if (parser == ZR_NULL) {
+        return;
+    }
+
+    zr_debug_eval_set_error(
+        parser,
+        "Missing consequent expression in conditional expression. Cause: debug evaluate or conditional breakpoint "
+        "conditional expression reached ':' or ended immediately after '?'. Suggestion: add the expression between "
+        "'?' and ':' or remove the conditional operator.");
+}
+
+void zr_debug_eval_set_missing_conditional_alternate_error(ZrDebugEvalParser *parser) {
+    if (parser == ZR_NULL) {
+        return;
+    }
+
+    zr_debug_eval_set_error(
+        parser,
+        "Missing alternate expression in conditional expression. Cause: debug evaluate or conditional breakpoint "
+        "conditional expression ended immediately after ':'. Suggestion: add the alternate expression after ':' or "
+        "remove the conditional operator.");
+}
+
 void zr_debug_eval_set_unterminated_string_error(ZrDebugEvalParser *parser) {
     if (parser == ZR_NULL) {
         return;
@@ -130,6 +154,17 @@ void zr_debug_eval_set_unsupported_string_escape_error(ZrDebugEvalParser *parser
              escapeChar != '\0' ? escapeChar : '?');
     message[sizeof(message) - 1u] = '\0';
     zr_debug_eval_set_error(parser, message);
+}
+
+void zr_debug_eval_set_invalid_numeric_literal_error(ZrDebugEvalParser *parser) {
+    if (parser == ZR_NULL) {
+        return;
+    }
+
+    zr_debug_eval_set_error(
+        parser,
+        "Invalid numeric literal in debug evaluate. Cause: the literal contains more than one decimal point. "
+        "Suggestion: use a single decimal point or split the expression into valid numeric operands.");
 }
 
 void zr_debug_eval_set_function_call_error(ZrDebugEvalParser *parser) {

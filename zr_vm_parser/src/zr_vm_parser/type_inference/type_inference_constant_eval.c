@@ -1,6 +1,56 @@
 #include "type_inference_constant_eval.h"
 
+#include <stdint.h>
 #include <string.h>
+
+static TZrBool type_inference_int64_add(TZrInt64 left, TZrInt64 right, TZrInt64 *outValue) {
+    if (outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if ((right > 0 && left > INT64_MAX - right) ||
+        (right < 0 && left < INT64_MIN - right)) {
+        return ZR_FALSE;
+    }
+
+    *outValue = left + right;
+    return ZR_TRUE;
+}
+
+static TZrBool type_inference_int64_subtract(TZrInt64 left, TZrInt64 right, TZrInt64 *outValue) {
+    if (outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if ((right < 0 && left > INT64_MAX + right) ||
+        (right > 0 && left < INT64_MIN + right)) {
+        return ZR_FALSE;
+    }
+
+    *outValue = left - right;
+    return ZR_TRUE;
+}
+
+static TZrBool type_inference_int64_multiply(TZrInt64 left, TZrInt64 right, TZrInt64 *outValue) {
+    if (outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (left > 0) {
+        if ((right > 0 && left > INT64_MAX / right) ||
+            (right < 0 && right < INT64_MIN / left)) {
+            return ZR_FALSE;
+        }
+    } else if (left < 0) {
+        if ((right > 0 && left < INT64_MIN / right) ||
+            (right < 0 && left < INT64_MAX / right)) {
+            return ZR_FALSE;
+        }
+    }
+
+    *outValue = left * right;
+    return ZR_TRUE;
+}
 
 TZrBool type_inference_node_integer_value(SZrAstNode *node, TZrInt64 *outValue) {
     if (node == ZR_NULL || outValue == ZR_NULL) {
@@ -14,6 +64,43 @@ TZrBool type_inference_node_integer_value(SZrAstNode *node, TZrInt64 *outValue) 
         case ZR_AST_CHAR_LITERAL:
             *outValue = node->data.charLiteral.value;
             return ZR_TRUE;
+        case ZR_AST_UNARY_EXPRESSION: {
+            TZrInt64 operand;
+            if (node->data.unaryExpression.op.op == ZR_NULL ||
+                !type_inference_node_integer_value(node->data.unaryExpression.argument, &operand)) {
+                return ZR_FALSE;
+            }
+            if (strcmp(node->data.unaryExpression.op.op, "+") == 0) {
+                *outValue = operand;
+                return ZR_TRUE;
+            }
+            if (strcmp(node->data.unaryExpression.op.op, "-") == 0) {
+                return type_inference_int64_subtract(0, operand, outValue);
+            }
+            return ZR_FALSE;
+        }
+        case ZR_AST_BINARY_EXPRESSION: {
+            TZrInt64 left;
+            TZrInt64 right;
+            const TZrChar *op = node->data.binaryExpression.op.op;
+
+            if (op == ZR_NULL ||
+                !type_inference_node_integer_value(node->data.binaryExpression.left, &left) ||
+                !type_inference_node_integer_value(node->data.binaryExpression.right, &right)) {
+                return ZR_FALSE;
+            }
+
+            if (strcmp(op, "+") == 0) {
+                return type_inference_int64_add(left, right, outValue);
+            }
+            if (strcmp(op, "-") == 0) {
+                return type_inference_int64_subtract(left, right, outValue);
+            }
+            if (strcmp(op, "*") == 0) {
+                return type_inference_int64_multiply(left, right, outValue);
+            }
+            return ZR_FALSE;
+        }
         default:
             return ZR_FALSE;
     }

@@ -5,6 +5,15 @@
 #include "compiler_internal.h"
 #include "zr_vm_parser/parser.h"
 
+static void compiler_free_type_environment_chain(SZrState *state, SZrTypeEnvironment *env) {
+    while (state != ZR_NULL && env != ZR_NULL) {
+        SZrTypeEnvironment *parent = env->parent;
+        env->parent = ZR_NULL;
+        ZrParser_TypeEnvironment_Free(state, env);
+        env = parent;
+    }
+}
+
 void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     ZR_ASSERT(cs != ZR_NULL);
     ZR_ASSERT(state != ZR_NULL);
@@ -294,18 +303,12 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
     // 释放类型环境栈
     if (cs->typeEnvStack.isValid && cs->typeEnvStack.head != ZR_NULL && 
         cs->typeEnvStack.capacity > 0 && cs->typeEnvStack.elementSize > 0) {
-        // 释放栈中的所有环境（从栈顶到栈底）
-        for (TZrSize i = 0; i < cs->typeEnvStack.length; i++) {
-            SZrTypeEnvironment **envPtr = (SZrTypeEnvironment **)ZrCore_Array_Get(&cs->typeEnvStack, i);
-            if (envPtr != ZR_NULL && *envPtr != ZR_NULL) {
-                ZrParser_TypeEnvironment_Free(state, *envPtr);
-            }
-        }
+        /* typeEnvStack stores borrowed parent links; cs->typeEnv owns the active chain. */
         ZrCore_Array_Free(state, &cs->typeEnvStack);
     }
     // 释放当前类型环境
     if (cs->typeEnv != ZR_NULL) {
-        ZrParser_TypeEnvironment_Free(state, cs->typeEnv);
+        compiler_free_type_environment_chain(state, cs->typeEnv);
         cs->typeEnv = ZR_NULL;
     }
 

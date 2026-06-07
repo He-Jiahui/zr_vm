@@ -753,15 +753,41 @@ static void test_execute_create_object_with_properties(void) {
     printf("  Compiled Instructions:\n");
     print_instructions(function);
 
-    // 执行函数并输出结果
+    // 执行函数并验证数组内容
+    SZrString *lengthName = ZrCore_String_CreateFromNative(state, "length");
     SZrTypeValue result;
+    SZrTypeValue lengthValue;
+    SZrTypeValue keyValue;
+    SZrTypeValue elementValue;
     TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
-    if (execSuccess) {
-        printf("Test Result: ");
-        print_test_result(state, &result);
-    } else {
-        printf("Test Result: <execution failed or no return value>\n");
-    }
+    TEST_ASSERT_NOT_NULL(lengthName);
+    TEST_ASSERT_TRUE(execSuccess);
+    printf("Test Result: ");
+    print_test_result(state, &result);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, result.type);
+
+    ZrCore_Value_ResetAsNull(&lengthValue);
+    TEST_ASSERT_TRUE(ZrCore_Object_GetMember(state, &result, lengthName, &lengthValue));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lengthValue.type));
+    TEST_ASSERT_EQUAL_INT64(3, lengthValue.value.nativeObject.nativeInt64);
+
+    ZrCore_Value_InitAsInt(state, &keyValue, 0);
+    ZrCore_Value_ResetAsNull(&elementValue);
+    TEST_ASSERT_TRUE(ZrCore_Object_GetByIndex(state, &result, &keyValue, &elementValue));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(elementValue.type));
+    TEST_ASSERT_EQUAL_INT64(1, elementValue.value.nativeObject.nativeInt64);
+
+    ZrCore_Value_InitAsInt(state, &keyValue, 1);
+    ZrCore_Value_ResetAsNull(&elementValue);
+    TEST_ASSERT_TRUE(ZrCore_Object_GetByIndex(state, &result, &keyValue, &elementValue));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(elementValue.type));
+    TEST_ASSERT_EQUAL_INT64(2, elementValue.value.nativeObject.nativeInt64);
+
+    ZrCore_Value_InitAsInt(state, &keyValue, 2);
+    ZrCore_Value_ResetAsNull(&elementValue);
+    TEST_ASSERT_TRUE(ZrCore_Object_GetByIndex(state, &result, &keyValue, &elementValue));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(elementValue.type));
+    TEST_ASSERT_EQUAL_INT64(3, elementValue.value.nativeObject.nativeInt64);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);
@@ -899,15 +925,41 @@ static void test_execute_create_array_with_elements(void) {
     printf("  Compiled Instructions:\n");
     print_instructions(function);
 
-    // 执行函数并输出结果
+    // 执行函数并验证数组内容
+    SZrString *lengthName = ZrCore_String_CreateFromNative(state, "length");
     SZrTypeValue result;
+    SZrTypeValue lengthValue;
+    SZrTypeValue keyValue;
+    SZrTypeValue elementValue;
     TZrBool execSuccess = execute_function_and_get_result(state, function, &result);
-    if (execSuccess) {
-        printf("Test Result: ");
-        print_test_result(state, &result);
-    } else {
-        printf("Test Result: <execution failed or no return value>\n");
-    }
+    TEST_ASSERT_NOT_NULL(lengthName);
+    TEST_ASSERT_TRUE(execSuccess);
+    printf("Test Result: ");
+    print_test_result(state, &result);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_ARRAY, result.type);
+
+    ZrCore_Value_ResetAsNull(&lengthValue);
+    TEST_ASSERT_TRUE(ZrCore_Object_GetMember(state, &result, lengthName, &lengthValue));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(lengthValue.type));
+    TEST_ASSERT_EQUAL_INT64(3, lengthValue.value.nativeObject.nativeInt64);
+
+    ZrCore_Value_InitAsInt(state, &keyValue, 0);
+    ZrCore_Value_ResetAsNull(&elementValue);
+    TEST_ASSERT_TRUE(ZrCore_Object_GetByIndex(state, &result, &keyValue, &elementValue));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(elementValue.type));
+    TEST_ASSERT_EQUAL_INT64(1, elementValue.value.nativeObject.nativeInt64);
+
+    ZrCore_Value_InitAsInt(state, &keyValue, 1);
+    ZrCore_Value_ResetAsNull(&elementValue);
+    TEST_ASSERT_TRUE(ZrCore_Object_GetByIndex(state, &result, &keyValue, &elementValue));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(elementValue.type));
+    TEST_ASSERT_EQUAL_INT64(2, elementValue.value.nativeObject.nativeInt64);
+
+    ZrCore_Value_InitAsInt(state, &keyValue, 2);
+    ZrCore_Value_ResetAsNull(&elementValue);
+    TEST_ASSERT_TRUE(ZrCore_Object_GetByIndex(state, &result, &keyValue, &elementValue));
+    TEST_ASSERT_TRUE(ZR_VALUE_IS_TYPE_INT(elementValue.type));
+    TEST_ASSERT_EQUAL_INT64(3, elementValue.value.nativeObject.nativeInt64);
 
     timer.endTime = clock();
     TEST_PASS_CUSTOM(timer, testSummary);

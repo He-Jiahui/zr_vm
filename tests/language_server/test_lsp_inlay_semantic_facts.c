@@ -81,17 +81,23 @@ static const TZrChar *test_string_ptr(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
-static TZrBool inlay_hint_array_contains_label(SZrArray *hints, const TZrChar *label) {
-    if (hints == ZR_NULL || label == ZR_NULL) {
+static TZrBool inlay_hint_array_contains_label_fragments(SZrArray *hints,
+                                                         const TZrChar *firstFragment,
+                                                         const TZrChar *secondFragment) {
+    if (hints == ZR_NULL || firstFragment == ZR_NULL || secondFragment == ZR_NULL) {
         return ZR_FALSE;
     }
 
     for (TZrSize index = 0; index < hints->length; index++) {
         SZrLspInlayHint **hintPtr = (SZrLspInlayHint **)ZrCore_Array_Get(hints, index);
-        if (hintPtr != ZR_NULL &&
-            *hintPtr != ZR_NULL &&
-            (*hintPtr)->label != ZR_NULL &&
-            strcmp(test_string_ptr((*hintPtr)->label), label) == 0) {
+        const TZrChar *labelText;
+        if (hintPtr == ZR_NULL || *hintPtr == ZR_NULL || (*hintPtr)->label == ZR_NULL) {
+            continue;
+        }
+        labelText = test_string_ptr((*hintPtr)->label);
+        if (labelText != ZR_NULL &&
+            strstr(labelText, firstFragment) != ZR_NULL &&
+            strstr(labelText, secondFragment) != ZR_NULL) {
             return ZR_TRUE;
         }
     }
@@ -216,7 +222,7 @@ static void test_inlay_hint_uses_initializer_numeric_fact(SZrState *state) {
     range.end.character = 0;
     ZrCore_Array_Init(state, &hints, sizeof(SZrLspInlayHint *), 4);
     if (!ZrLanguageServer_Lsp_GetInlayHints(state, context, uri, range, &hints) ||
-        !inlay_hint_array_contains_label(&hints, ": int, range 3..3")) {
+        !inlay_hint_array_contains_label_fragments(&hints, ": int", "range 3..3")) {
         snprintf(reason,
                  sizeof(reason),
                  "Expected local type inlay hint to include initializer numeric range from semantic facts; hintCount=%llu",
@@ -283,6 +289,143 @@ static void test_completion_detail_uses_initializer_numeric_fact(SZrState *state
                  sizeof(reason),
                  "Expected sum completion detail to include inferred type and initializer numeric range; item=%p detail=%s count=%llu",
                  (void *)sumItem,
+                 detailText != ZR_NULL ? detailText : "<null>",
+                 (unsigned long long)completions.length);
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_completion_detail_uses_initializer_expression_fact(SZrState *state) {
+    const TZrChar *summary = "LSP Completion Detail Uses Initializer Expression Fact";
+    SZrTestTimer timer;
+    const TZrChar *uriText = "file:///completion_initializer_expression_fact.zr";
+    const TZrChar *content =
+        "func calc(): int {\n"
+        "    var sum = 1 + 2;\n"
+        "    su\n"
+        "    return sum;\n"
+        "}\n";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition position;
+    SZrArray completions;
+    SZrLspCompletionItem *sumItem;
+    const TZrChar *detailText;
+    TZrChar reason[1024];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    position.line = 2;
+    position.character = 6;
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare completion expression fact fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, position, &completions)) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Completion request failed");
+        return;
+    }
+
+    sumItem = completion_item_find_by_label(&completions, "sum");
+    detailText = sumItem != ZR_NULL && sumItem->detail != ZR_NULL ? test_string_ptr(sumItem->detail) : ZR_NULL;
+    if (sumItem == ZR_NULL ||
+        detailText == ZR_NULL ||
+        strstr(detailText, "int") == ZR_NULL ||
+        strstr(detailText, "expression binary exact") == ZR_NULL ||
+        strstr(detailText, "constant 3") == ZR_NULL ||
+        strstr(detailText, "range 3..3") == ZR_NULL) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected sum completion detail to include initializer expression fact and numeric fact; "
+                 "item=%p detail=%s count=%llu",
+                 (void *)sumItem,
+                 detailText != ZR_NULL ? detailText : "<null>",
+                 (unsigned long long)completions.length);
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, reason);
+        return;
+    }
+
+    ZrCore_Array_Free(state, &completions);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, summary);
+}
+
+static void test_completion_detail_escapes_initializer_string_expression_fact(SZrState *state) {
+    const TZrChar *summary = "LSP Completion Detail Escapes Initializer String Expression Fact";
+    SZrTestTimer timer;
+    const TZrChar *uriText = "file:///completion_initializer_string_expression_fact.zr";
+    const TZrChar *content =
+        "func text(): string {\n"
+        "    var label = \"a\\\"b\\\\c\\n\\t\";\n"
+        "    la\n"
+        "    return label;\n"
+        "}\n";
+    const TZrChar *expectedConstant = "constant \"a\\\"b\\\\c\\n\\t\"";
+    SZrLspContext *context;
+    SZrString *uri;
+    SZrLspPosition position;
+    SZrArray completions;
+    SZrLspCompletionItem *labelItem;
+    const TZrChar *detailText;
+    TZrChar reason[1024];
+
+    TEST_START(summary);
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state, (TZrNativeString)uriText, strlen(uriText));
+    position.line = 2;
+    position.character = 6;
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        if (context != ZR_NULL) {
+            ZrLanguageServer_LspContext_Free(state, context);
+        }
+        TEST_FAIL(timer, summary, "Failed to prepare completion string expression fact fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 8);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, position, &completions)) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, summary, "Completion request failed");
+        return;
+    }
+
+    labelItem = completion_item_find_by_label(&completions, "label");
+    detailText = labelItem != ZR_NULL && labelItem->detail != ZR_NULL ? test_string_ptr(labelItem->detail) : ZR_NULL;
+    if (labelItem == ZR_NULL ||
+        detailText == ZR_NULL ||
+        strstr(detailText, "string") == ZR_NULL ||
+        strstr(detailText, "expression literal exact") == ZR_NULL ||
+        strstr(detailText, expectedConstant) == ZR_NULL ||
+        strstr(detailText, "constant \"a\"b") != ZR_NULL) {
+        snprintf(reason,
+                 sizeof(reason),
+                 "Expected label completion detail to include escaped initializer string constant; "
+                 "item=%p detail=%s count=%llu",
+                 (void *)labelItem,
                  detailText != ZR_NULL ? detailText : "<null>",
                  (unsigned long long)completions.length);
         ZrCore_Array_Free(state, &completions);
@@ -479,6 +622,8 @@ static void test_signature_help_parameter_docs_use_argument_semantic_facts(SZrSt
     numericDoc = signature_parameter_documentation(numericHelp, 0);
     logicalDoc = signature_parameter_documentation(logicalHelp, 1);
     if (numericDoc == ZR_NULL ||
+        strstr(numericDoc, "expression binary exact") == ZR_NULL ||
+        strstr(numericDoc, "constant 3") == ZR_NULL ||
         strstr(numericDoc, "range 3..3") == ZR_NULL ||
         logicalDoc == ZR_NULL ||
         strstr(logicalDoc, "logical true") == ZR_NULL ||
@@ -589,6 +734,8 @@ int main(void) {
 
     test_inlay_hint_uses_initializer_numeric_fact(state);
     test_completion_detail_uses_initializer_numeric_fact(state);
+    test_completion_detail_uses_initializer_expression_fact(state);
+    test_completion_detail_escapes_initializer_string_expression_fact(state);
     test_completion_detail_uses_initializer_logical_fact(state);
     test_completion_detail_uses_initializer_ownership_fact(state);
     test_signature_help_parameter_docs_use_argument_semantic_facts(state);

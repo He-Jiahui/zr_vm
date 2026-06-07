@@ -121,6 +121,44 @@ static void semir_mapped_instruction_set_operands(SZrSemIrMappedInstruction *map
     mapped->operand1 = operand1;
 }
 
+static TZrBool semir_callsite_cache_kind_matches(const SZrFunctionCallSiteCacheEntry *cacheEntry,
+                                                 EZrFunctionCallSiteCacheKind expectedKind) {
+    if (cacheEntry == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return (TZrBool)(cacheEntry->kind == (TZrUInt32)expectedKind);
+}
+
+static TZrBool semir_resolve_member_slot_member_entry(const SZrFunction *function,
+                                                      TZrUInt32 instructionIndex,
+                                                      TZrUInt32 memberSlotOperand,
+                                                      EZrFunctionCallSiteCacheKind expectedKind,
+                                                      TZrUInt32 *outMemberEntryIndex) {
+    const SZrFunctionCallSiteCacheEntry *cacheEntry;
+
+    if (outMemberEntryIndex != ZR_NULL) {
+        *outMemberEntryIndex = memberSlotOperand;
+    }
+    if (function == ZR_NULL || outMemberEntryIndex == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (function->callSiteCaches != ZR_NULL && memberSlotOperand < function->callSiteCacheLength) {
+        cacheEntry = &function->callSiteCaches[memberSlotOperand];
+        if (semir_callsite_cache_kind_matches(cacheEntry, expectedKind) &&
+            function->memberEntries != ZR_NULL &&
+            cacheEntry->memberEntryIndex < function->memberEntryLength) {
+            *outMemberEntryIndex = cacheEntry->memberEntryIndex;
+            return ZR_TRUE;
+        }
+    }
+
+    (void)instructionIndex;
+    return (TZrBool)(function->memberEntries != ZR_NULL &&
+                     memberSlotOperand < function->memberEntryLength);
+}
+
 static SZrString *semir_resolve_member_symbol(const SZrFunction *function, TZrUInt16 memberId) {
     if (function == ZR_NULL || function->memberEntries == ZR_NULL || memberId >= function->memberEntryLength) {
         return ZR_NULL;
@@ -530,8 +568,16 @@ static TZrBool semir_map_value_type_instruction(const SZrFunction *function,
     switch (opcode) {
         case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
             valueOrDestinationSlot = instruction->instruction.operandExtra;
-            receiverSlot = instruction->instruction.operand.operand1[0];
-            memberEntryIndex = instruction->instruction.operand.operand1[1];
+            receiverSlot = semir_resolve_inline_struct_source_slot(function,
+                                                                   instructionIndex,
+                                                                   instruction->instruction.operand.operand1[0]);
+            if (!semir_resolve_member_slot_member_entry(function,
+                                                        instructionIndex,
+                                                        instruction->instruction.operand.operand1[1],
+                                                        ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_GET,
+                                                        &memberEntryIndex)) {
+                return ZR_FALSE;
+            }
             if (!semir_slot_has_inline_struct_layout(function, receiverSlot)) {
                 return ZR_FALSE;
             }
@@ -553,8 +599,16 @@ static TZrBool semir_map_value_type_instruction(const SZrFunction *function,
 
         case ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT):
             valueOrDestinationSlot = instruction->instruction.operandExtra;
-            receiverSlot = instruction->instruction.operand.operand1[0];
-            memberEntryIndex = instruction->instruction.operand.operand1[1];
+            receiverSlot = semir_resolve_inline_struct_source_slot(function,
+                                                                   instructionIndex,
+                                                                   instruction->instruction.operand.operand1[0]);
+            if (!semir_resolve_member_slot_member_entry(function,
+                                                        instructionIndex,
+                                                        instruction->instruction.operand.operand1[1],
+                                                        ZR_FUNCTION_CALLSITE_CACHE_KIND_MEMBER_SET,
+                                                        &memberEntryIndex)) {
+                return ZR_FALSE;
+            }
             if (!semir_slot_has_inline_struct_layout(function, receiverSlot)) {
                 return ZR_FALSE;
             }
@@ -926,6 +980,7 @@ static TZrBool compiler_build_function_semir_metadata_internal(SZrState *state,
                                                                SZrFunction *function,
                                                                TZrBool recurseChildren) {
     TZrUInt32 childIndex;
+    TZrUInt32 constantIndex;
 
     if (function == ZR_NULL) {
         return ZR_TRUE;
@@ -940,6 +995,35 @@ static TZrBool compiler_build_function_semir_metadata_internal(SZrState *state,
             if (!compiler_build_function_semir_metadata_internal(state,
                                                                  &function->childFunctionList[childIndex],
                                                                  ZR_TRUE)) {
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    if (recurseChildren && function->constantValueList != ZR_NULL) {
+        for (constantIndex = 0; constantIndex < function->constantValueLength; constantIndex++) {
+            SZrTypeValue *constant = &function->constantValueList[constantIndex];
+            SZrRawObject *rawObject;
+            SZrFunction *constantFunction = ZR_NULL;
+
+            if ((constant->type != ZR_VALUE_TYPE_FUNCTION && constant->type != ZR_VALUE_TYPE_CLOSURE) ||
+                constant->isNative ||
+                constant->value.object == ZR_NULL) {
+                continue;
+            }
+
+            rawObject = constant->value.object;
+            if (rawObject->type == ZR_RAW_OBJECT_TYPE_FUNCTION) {
+                constantFunction = ZR_CAST_FUNCTION(state, rawObject);
+            } else if (rawObject->type == ZR_RAW_OBJECT_TYPE_CLOSURE) {
+                SZrClosure *closure = ZR_CAST(SZrClosure *, rawObject);
+                constantFunction = closure != ZR_NULL ? closure->function : ZR_NULL;
+            }
+
+            if (constantFunction == ZR_NULL || constantFunction == function) {
+                continue;
+            }
+            if (!compiler_build_function_semir_metadata_internal(state, constantFunction, ZR_TRUE)) {
                 return ZR_FALSE;
             }
         }

@@ -96,6 +96,49 @@ static const TZrChar *repl_string_text(SZrString *value) {
                : ZrCore_String_GetNativeString(value);
 }
 
+static void repl_write_escaped_string_constant(SZrState *state, SZrString *value) {
+    const TZrChar *text = repl_string_text(value);
+    TZrSize length = ZrCore_String_GetByteLength(value);
+    TZrSize index;
+    unsigned char byte;
+
+    ZrCore_Log_Resultf(state, "Constant: \"");
+    for (index = 0; text != ZR_NULL && index < length; ++index) {
+        byte = (unsigned char)text[index];
+        switch (byte) {
+            case '"':
+                ZrCore_Log_Resultf(state, "\\\"");
+                break;
+            case '\\':
+                ZrCore_Log_Resultf(state, "\\\\");
+                break;
+            case '\n':
+                ZrCore_Log_Resultf(state, "\\n");
+                break;
+            case '\t':
+                ZrCore_Log_Resultf(state, "\\t");
+                break;
+            case '\r':
+                ZrCore_Log_Resultf(state, "\\r");
+                break;
+            case '\b':
+                ZrCore_Log_Resultf(state, "\\b");
+                break;
+            case '\f':
+                ZrCore_Log_Resultf(state, "\\f");
+                break;
+            default:
+                if (byte < 0x20u || byte == 0x7fu) {
+                    ZrCore_Log_Resultf(state, "\\x%02X", (unsigned int)byte);
+                } else {
+                    ZrCore_Log_Resultf(state, "%c", (int)byte);
+                }
+                break;
+        }
+    }
+    ZrCore_Log_Resultf(state, "\"\n");
+}
+
 void ZrCli_ReplSemanticFacts_WriteOwnership(SZrState *state, const SZrSemanticOwnershipFact *fact) {
     if (fact == ZR_NULL) {
         return;
@@ -116,6 +159,92 @@ void ZrCli_ReplSemanticFacts_WriteOwnership(SZrState *state, const SZrSemanticOw
                        repl_ownership_qualifier_text(fact->qualifier));
 }
 
+static const TZrChar *repl_expression_fact_kind_text(EZrSemanticExpressionFactKind kind) {
+    switch (kind) {
+        case ZR_SEMANTIC_EXPRESSION_FACT_LITERAL:
+            return "literal";
+        case ZR_SEMANTIC_EXPRESSION_FACT_IDENTIFIER:
+            return "identifier";
+        case ZR_SEMANTIC_EXPRESSION_FACT_BINARY:
+            return "binary";
+        case ZR_SEMANTIC_EXPRESSION_FACT_UNARY:
+            return "unary";
+        case ZR_SEMANTIC_EXPRESSION_FACT_CALL:
+            return "call";
+        case ZR_SEMANTIC_EXPRESSION_FACT_MEMBER:
+            return "member";
+        case ZR_SEMANTIC_EXPRESSION_FACT_ASSIGNMENT:
+            return "assignment";
+        case ZR_SEMANTIC_EXPRESSION_FACT_CONDITIONAL:
+            return "conditional";
+        case ZR_SEMANTIC_EXPRESSION_FACT_ARRAY:
+            return "array";
+        case ZR_SEMANTIC_EXPRESSION_FACT_OBJECT:
+            return "object";
+        case ZR_SEMANTIC_EXPRESSION_FACT_LAMBDA:
+            return "lambda";
+        case ZR_SEMANTIC_EXPRESSION_FACT_OWNERSHIP_BUILTIN:
+            return "ownership builtin";
+        case ZR_SEMANTIC_EXPRESSION_FACT_CONVERSION:
+            return "conversion";
+        case ZR_SEMANTIC_EXPRESSION_FACT_ERROR:
+            return "error";
+        case ZR_SEMANTIC_EXPRESSION_FACT_UNKNOWN:
+        default:
+            return "unknown";
+    }
+}
+
+static const TZrChar *repl_fact_exactness_text(EZrSemanticFactExactness exactness) {
+    switch (exactness) {
+        case ZR_SEMANTIC_FACT_EXACT:
+            return "exact";
+        case ZR_SEMANTIC_FACT_APPROXIMATE:
+            return "approximate";
+        case ZR_SEMANTIC_FACT_UNKNOWN:
+        default:
+            return "unknown";
+    }
+}
+
+static void repl_write_expression_constant(SZrState *state, const SZrSemanticExpressionFact *fact) {
+    if (state == ZR_NULL || fact == ZR_NULL || !fact->hasConstant) {
+        return;
+    }
+
+    switch (fact->valueKind) {
+        case ZR_SEMANTIC_VALUE_KIND_BOOL:
+            ZrCore_Log_Resultf(state,
+                               "Constant: %s\n",
+                               fact->constantValue.boolValue ? "true" : "false");
+            break;
+        case ZR_SEMANTIC_VALUE_KIND_INT64:
+            ZrCore_Log_Resultf(state,
+                               "Constant: %lld\n",
+                               (long long)fact->constantValue.int64Value);
+            break;
+        case ZR_SEMANTIC_VALUE_KIND_UINT64:
+            ZrCore_Log_Resultf(state,
+                               "Constant: %llu\n",
+                               (unsigned long long)fact->constantValue.uint64Value);
+            break;
+        case ZR_SEMANTIC_VALUE_KIND_DOUBLE:
+            ZrCore_Log_Resultf(state,
+                               "Constant: %.17g\n",
+                               fact->constantValue.doubleValue);
+            break;
+        case ZR_SEMANTIC_VALUE_KIND_STRING:
+            repl_write_escaped_string_constant(state, fact->constantValue.stringValue);
+            break;
+        case ZR_SEMANTIC_VALUE_KIND_NULL:
+            ZrCore_Log_Resultf(state, "Constant: null\n");
+            break;
+        case ZR_SEMANTIC_VALUE_KIND_UNKNOWN:
+        default:
+            break;
+    }
+}
+
 void ZrCli_ReplSemanticFacts_WriteExpression(SZrState *state, const SZrSemanticExpressionFact *fact) {
     const TZrChar *callTargetName;
     const TZrChar *memberName;
@@ -123,6 +252,12 @@ void ZrCli_ReplSemanticFacts_WriteExpression(SZrState *state, const SZrSemanticE
     if (fact == ZR_NULL) {
         return;
     }
+
+    ZrCore_Log_Resultf(state,
+                       "Expression: %s %s\n",
+                       repl_expression_fact_kind_text(fact->kind),
+                       repl_fact_exactness_text(fact->exactness));
+    repl_write_expression_constant(state, fact);
 
     if (fact->hasCallInfo) {
         callTargetName = repl_string_text(fact->callTargetName);
@@ -160,9 +295,9 @@ static const TZrChar *repl_reference_kind_text(EZrSemanticReferenceKind kind) {
     }
 }
 
-static void repl_write_reference_fact_for_range(SZrState *state,
-                                                SZrSemanticContext *semanticContext,
-                                                SZrFileRange range) {
+void ZrCli_ReplSemanticFacts_WriteReferenceAtRange(SZrState *state,
+                                                   SZrSemanticContext *semanticContext,
+                                                   SZrFileRange range) {
     const SZrSemanticReferenceFact *fact;
 
     if (state == ZR_NULL ||
@@ -188,150 +323,6 @@ static void repl_write_reference_fact_for_range(SZrState *state,
                            "Declared at: %d:%d\n",
                            fact->declarationRange.start.line,
                            fact->declarationRange.start.column);
-    }
-}
-
-static void repl_write_reference_fact_for_node(SZrState *state,
-                                               SZrSemanticContext *semanticContext,
-                                               SZrAstNode *node) {
-    if (node == ZR_NULL) {
-        return;
-    }
-
-    repl_write_reference_fact_for_range(state, semanticContext, node->location);
-}
-
-static void repl_write_reference_fact_for_computed_member(SZrState *state,
-                                                          SZrSemanticContext *semanticContext,
-                                                          SZrAstNode *node) {
-    SZrAstNode *property;
-    SZrFileRange queryRange;
-
-    if (node == ZR_NULL ||
-        node->type != ZR_AST_MEMBER_EXPRESSION ||
-        !node->data.memberExpression.computed) {
-        return;
-    }
-
-    property = node->data.memberExpression.property;
-    queryRange = node->location;
-    if (property != ZR_NULL &&
-        property->location.start.offset > node->location.start.offset) {
-        queryRange = property->location;
-        queryRange.start.offset -= 1;
-        if (queryRange.start.column > 0) {
-            queryRange.start.column -= 1;
-        }
-        queryRange.end = queryRange.start;
-    }
-
-    repl_write_reference_fact_for_range(state, semanticContext, queryRange);
-}
-
-void ZrCli_ReplSemanticFacts_WriteReferencesForExpression(SZrState *state,
-                                                          SZrSemanticContext *semanticContext,
-                                                          SZrAstNode *node) {
-    TZrSize index;
-
-    if (node == ZR_NULL) {
-        return;
-    }
-
-    if (node->type == ZR_AST_IDENTIFIER_LITERAL) {
-        repl_write_reference_fact_for_node(state, semanticContext, node);
-        return;
-    }
-
-    switch (node->type) {
-        case ZR_AST_BINARY_EXPRESSION:
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.binaryExpression.left);
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.binaryExpression.right);
-            break;
-        case ZR_AST_LOGICAL_EXPRESSION:
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.logicalExpression.left);
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.logicalExpression.right);
-            break;
-        case ZR_AST_UNARY_EXPRESSION:
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.unaryExpression.argument);
-            break;
-        case ZR_AST_TYPE_CAST_EXPRESSION:
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.typeCastExpression.expression);
-            break;
-        case ZR_AST_ASSIGNMENT_EXPRESSION:
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.assignmentExpression.left);
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.assignmentExpression.right);
-            break;
-        case ZR_AST_CONDITIONAL_EXPRESSION:
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.conditionalExpression.test);
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.conditionalExpression.consequent);
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.conditionalExpression.alternate);
-            break;
-        case ZR_AST_IF_EXPRESSION:
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.ifExpression.condition);
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.ifExpression.thenExpr);
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.ifExpression.elseExpr);
-            break;
-        case ZR_AST_FUNCTION_CALL:
-            if (node->data.functionCall.args != ZR_NULL) {
-                for (index = 0; index < node->data.functionCall.args->count; ++index) {
-                    ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state,
-                                                                         semanticContext,
-                                                                         node->data.functionCall.args->nodes[index]);
-                }
-            }
-            break;
-        case ZR_AST_PRIMARY_EXPRESSION:
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state,
-                                                                 semanticContext,
-                                                                 node->data.primaryExpression.property);
-            if (node->data.primaryExpression.members != ZR_NULL) {
-                for (index = 0; index < node->data.primaryExpression.members->count; ++index) {
-                    ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state,
-                                                                         semanticContext,
-                                                                         node->data.primaryExpression.members->nodes[index]);
-                }
-            }
-            break;
-        case ZR_AST_MEMBER_EXPRESSION:
-            repl_write_reference_fact_for_computed_member(state, semanticContext, node);
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state,
-                                                                 semanticContext,
-                                                                 node->data.memberExpression.property);
-            break;
-        case ZR_AST_ARRAY_LITERAL:
-            if (node->data.arrayLiteral.elements != ZR_NULL) {
-                for (index = 0; index < node->data.arrayLiteral.elements->count; ++index) {
-                    ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state,
-                                                                         semanticContext,
-                                                                         node->data.arrayLiteral.elements->nodes[index]);
-                }
-            }
-            break;
-        case ZR_AST_OBJECT_LITERAL:
-            if (node->data.objectLiteral.properties != ZR_NULL) {
-                for (index = 0; index < node->data.objectLiteral.properties->count; ++index) {
-                    ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state,
-                                                                         semanticContext,
-                                                                         node->data.objectLiteral.properties->nodes[index]);
-                }
-            }
-            break;
-        case ZR_AST_KEY_VALUE_PAIR:
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.keyValuePair.key);
-            ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, semanticContext, node->data.keyValuePair.value);
-            break;
-        case ZR_AST_CONSTRUCT_EXPRESSION:
-            if (node->data.constructExpression.args != ZR_NULL) {
-                for (index = 0; index < node->data.constructExpression.args->count; ++index) {
-                    ZrCli_ReplSemanticFacts_WriteReferencesForExpression(
-                            state,
-                            semanticContext,
-                            node->data.constructExpression.args->nodes[index]);
-                }
-            }
-            break;
-        default:
-            break;
     }
 }
 
@@ -361,21 +352,22 @@ static const TZrChar *repl_reachability_cause_text(EZrSemanticReachabilityCause 
     }
 }
 
-static void repl_write_reachability_fact_for_node(SZrState *state,
-                                                  SZrSemanticContext *semanticContext,
-                                                  SZrAstNode *node,
-                                                  const SZrSemanticReachabilityFact **lastFact) {
+void ZrCli_ReplSemanticFacts_WriteReachabilityAtRange(SZrState *state,
+                                                      SZrSemanticContext *semanticContext,
+                                                      SZrFileRange range,
+                                                      const SZrSemanticReachabilityFact **lastFact) {
     const SZrSemanticReachabilityFact *fact;
+    const SZrSemanticReachabilityFact *last;
 
     if (state == ZR_NULL ||
-        semanticContext == ZR_NULL ||
-        node == ZR_NULL) {
+        semanticContext == ZR_NULL) {
         return;
     }
 
-    fact = ZrParser_SemanticFacts_FindReachabilityAtPosition(semanticContext, node->location);
+    last = lastFact != ZR_NULL ? *lastFact : ZR_NULL;
+    fact = ZrParser_SemanticFacts_FindReachabilityAtPosition(semanticContext, range);
     if (fact == ZR_NULL ||
-        fact == *lastFact ||
+        fact == last ||
         fact->state != ZR_SEMANTIC_REACHABILITY_UNREACHABLE) {
         return;
     }
@@ -383,179 +375,7 @@ static void repl_write_reachability_fact_for_node(SZrState *state,
     ZrCore_Log_Resultf(state,
                        "Reachability: unreachable %s\n",
                        repl_reachability_cause_text(fact->cause));
-    *lastFact = fact;
-}
-
-static void repl_write_reachability_for_expression_recursive(
-        SZrState *state,
-        SZrSemanticContext *semanticContext,
-        SZrAstNode *node,
-        const SZrSemanticReachabilityFact **lastFact) {
-    TZrSize index;
-
-    if (node == ZR_NULL) {
-        return;
+    if (lastFact != ZR_NULL) {
+        *lastFact = fact;
     }
-
-    repl_write_reachability_fact_for_node(state, semanticContext, node, lastFact);
-
-    switch (node->type) {
-        case ZR_AST_BINARY_EXPRESSION:
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.binaryExpression.left,
-                                                             lastFact);
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.binaryExpression.right,
-                                                             lastFact);
-            break;
-        case ZR_AST_LOGICAL_EXPRESSION:
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.logicalExpression.left,
-                                                             lastFact);
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.logicalExpression.right,
-                                                             lastFact);
-            break;
-        case ZR_AST_UNARY_EXPRESSION:
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.unaryExpression.argument,
-                                                             lastFact);
-            break;
-        case ZR_AST_TYPE_CAST_EXPRESSION:
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.typeCastExpression.expression,
-                                                             lastFact);
-            break;
-        case ZR_AST_ASSIGNMENT_EXPRESSION:
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.assignmentExpression.left,
-                                                             lastFact);
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.assignmentExpression.right,
-                                                             lastFact);
-            break;
-        case ZR_AST_CONDITIONAL_EXPRESSION:
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.conditionalExpression.test,
-                                                             lastFact);
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.conditionalExpression.consequent,
-                                                             lastFact);
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.conditionalExpression.alternate,
-                                                             lastFact);
-            break;
-        case ZR_AST_IF_EXPRESSION:
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.ifExpression.condition,
-                                                             lastFact);
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.ifExpression.thenExpr,
-                                                             lastFact);
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.ifExpression.elseExpr,
-                                                             lastFact);
-            break;
-        case ZR_AST_FUNCTION_CALL:
-            if (node->data.functionCall.args != ZR_NULL) {
-                for (index = 0; index < node->data.functionCall.args->count; ++index) {
-                    repl_write_reachability_for_expression_recursive(
-                            state,
-                            semanticContext,
-                            node->data.functionCall.args->nodes[index],
-                            lastFact);
-                }
-            }
-            break;
-        case ZR_AST_PRIMARY_EXPRESSION:
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.primaryExpression.property,
-                                                             lastFact);
-            if (node->data.primaryExpression.members != ZR_NULL) {
-                for (index = 0; index < node->data.primaryExpression.members->count; ++index) {
-                    repl_write_reachability_for_expression_recursive(
-                            state,
-                            semanticContext,
-                            node->data.primaryExpression.members->nodes[index],
-                            lastFact);
-                }
-            }
-            break;
-        case ZR_AST_MEMBER_EXPRESSION:
-            if (node->data.memberExpression.computed) {
-                repl_write_reachability_for_expression_recursive(state,
-                                                                 semanticContext,
-                                                                 node->data.memberExpression.property,
-                                                                 lastFact);
-            }
-            break;
-        case ZR_AST_ARRAY_LITERAL:
-            if (node->data.arrayLiteral.elements != ZR_NULL) {
-                for (index = 0; index < node->data.arrayLiteral.elements->count; ++index) {
-                    repl_write_reachability_for_expression_recursive(
-                            state,
-                            semanticContext,
-                            node->data.arrayLiteral.elements->nodes[index],
-                            lastFact);
-                }
-            }
-            break;
-        case ZR_AST_OBJECT_LITERAL:
-            if (node->data.objectLiteral.properties != ZR_NULL) {
-                for (index = 0; index < node->data.objectLiteral.properties->count; ++index) {
-                    repl_write_reachability_for_expression_recursive(
-                            state,
-                            semanticContext,
-                            node->data.objectLiteral.properties->nodes[index],
-                            lastFact);
-                }
-            }
-            break;
-        case ZR_AST_KEY_VALUE_PAIR:
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.keyValuePair.key,
-                                                             lastFact);
-            repl_write_reachability_for_expression_recursive(state,
-                                                             semanticContext,
-                                                             node->data.keyValuePair.value,
-                                                             lastFact);
-            break;
-        case ZR_AST_CONSTRUCT_EXPRESSION:
-            if (node->data.constructExpression.args != ZR_NULL) {
-                for (index = 0; index < node->data.constructExpression.args->count; ++index) {
-                    repl_write_reachability_for_expression_recursive(
-                            state,
-                            semanticContext,
-                            node->data.constructExpression.args->nodes[index],
-                            lastFact);
-                }
-            }
-            break;
-        default:
-            break;
-    }
-}
-
-void ZrCli_ReplSemanticFacts_WriteReachabilityForExpression(SZrState *state,
-                                                            SZrSemanticContext *semanticContext,
-                                                            SZrAstNode *node) {
-    const SZrSemanticReachabilityFact *lastFact = ZR_NULL;
-
-    repl_write_reachability_for_expression_recursive(state, semanticContext, node, &lastFact);
 }

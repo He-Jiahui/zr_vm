@@ -854,6 +854,10 @@ TZrBool ZrLanguageServer_Lsp_GetCodeLens(SZrState *state,
             break;
         }
         matchOffset = (TZrSize)(match - content);
+        if (!lsp_editor_offset_is_code(content, fileVersion->contentLength, matchOffset)) {
+            cursor = matchOffset + 6;
+            continue;
+        }
         lineEnd = matchOffset;
         while (lineEnd < fileVersion->contentLength && content[lineEnd] != '\n') {
             lineEnd++;

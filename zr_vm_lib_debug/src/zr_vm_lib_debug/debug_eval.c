@@ -34,6 +34,32 @@ static TZrBool zr_debug_eval_match_text(ZrDebugEvalParser *parser, const TZrChar
     return ZR_TRUE;
 }
 
+static const TZrChar *zr_debug_eval_peek_non_ws(const ZrDebugEvalParser *parser) {
+    const TZrChar *cursor;
+
+    if (parser == ZR_NULL || parser->cursor == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    cursor = parser->cursor;
+    while (*cursor == ' ' || *cursor == '\t' || *cursor == '\r' || *cursor == '\n') {
+        cursor++;
+    }
+    return cursor;
+}
+
+static TZrBool zr_debug_eval_next_is_missing_consequent_boundary(const ZrDebugEvalParser *parser) {
+    const TZrChar *cursor = zr_debug_eval_peek_non_ws(parser);
+
+    return (TZrBool)(cursor == ZR_NULL || *cursor == '\0' || *cursor == ':' || *cursor == ')' || *cursor == ']');
+}
+
+static TZrBool zr_debug_eval_next_is_missing_alternate_boundary(const ZrDebugEvalParser *parser) {
+    const TZrChar *cursor = zr_debug_eval_peek_non_ws(parser);
+
+    return (TZrBool)(cursor == ZR_NULL || *cursor == '\0' || *cursor == ')' || *cursor == ']');
+}
+
 static TZrBool zr_debug_eval_is_ident_start(TZrChar ch) {
     return (TZrBool)((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_');
 }
@@ -65,6 +91,58 @@ static TZrBool zr_debug_eval_parse_identifier(ZrDebugEvalParser *parser, TZrChar
         buffer[length < bufferSize ? length : bufferSize - 1u] = '\0';
     }
     return ZR_TRUE;
+}
+
+static void zr_debug_eval_append_reference_suffix(ZrDebugEvalParser *parser, const TZrChar *suffix) {
+    TZrSize currentLength;
+
+    if (parser == ZR_NULL || parser->reference_buffer == ZR_NULL || parser->reference_buffer_size == 0 ||
+        suffix == ZR_NULL || suffix[0] == '\0') {
+        return;
+    }
+
+    currentLength = strlen(parser->reference_buffer);
+    if (currentLength == 0 || currentLength >= parser->reference_buffer_size) {
+        return;
+    }
+
+    snprintf(parser->reference_buffer + currentLength,
+             parser->reference_buffer_size - currentLength,
+             ", %s",
+             suffix);
+    parser->reference_buffer[parser->reference_buffer_size - 1u] = '\0';
+}
+
+static void zr_debug_eval_append_reference_summary(ZrDebugEvalParser *parser, const TZrChar *summary) {
+    TZrSize currentLength;
+
+    if (parser == ZR_NULL || parser->reference_buffer == ZR_NULL || parser->reference_buffer_size == 0 ||
+        summary == ZR_NULL || summary[0] == '\0') {
+        return;
+    }
+
+    currentLength = strlen(parser->reference_buffer);
+    if (currentLength == 0) {
+        snprintf(parser->reference_buffer, parser->reference_buffer_size, "%s", summary);
+    } else if (currentLength < parser->reference_buffer_size) {
+        snprintf(parser->reference_buffer + currentLength,
+                 parser->reference_buffer_size - currentLength,
+                 ", %s",
+                 summary);
+    }
+    parser->reference_buffer[parser->reference_buffer_size - 1u] = '\0';
+}
+
+static void zr_debug_eval_append_member_reference_suffix(ZrDebugEvalParser *parser, const TZrChar *memberName) {
+    TZrChar suffix[ZR_DEBUG_NAME_CAPACITY + 16u];
+
+    if (memberName == ZR_NULL || memberName[0] == '\0') {
+        return;
+    }
+
+    snprintf(suffix, sizeof(suffix), "member %s", memberName);
+    suffix[sizeof(suffix) - 1u] = '\0';
+    zr_debug_eval_append_reference_suffix(parser, suffix);
 }
 
 static TZrBool zr_debug_eval_is_integer_type(EZrValueType type) {
@@ -262,7 +340,7 @@ static TZrBool zr_debug_eval_parse_number(ZrDebugEvalParser *parser, SZrTypeValu
     while ((*parser->cursor >= '0' && *parser->cursor <= '9') || *parser->cursor == '.') {
         if (*parser->cursor == '.') {
             if (has_dot) {
-                zr_debug_eval_set_error(parser, "invalid numeric literal in debug evaluate");
+                zr_debug_eval_set_invalid_numeric_literal_error(parser);
                 return ZR_FALSE;
             }
             has_dot = ZR_TRUE;
@@ -338,12 +416,27 @@ static TZrBool zr_debug_eval_parse_primary(ZrDebugEvalParser *parser, SZrTypeVal
         return ZR_TRUE;
     }
 
-    return zr_debug_resolve_identifier_value(parser->agent,
-                                             parser->frame_id,
-                                             identifier,
-                                             outValue,
-                                             parser->error_buffer,
-                                             parser->error_buffer_size);
+    if (!zr_debug_resolve_identifier_value(parser->agent,
+                                           parser->frame_id,
+                                           identifier,
+                                           outValue,
+                                           parser->error_buffer,
+                                           parser->error_buffer_size)) {
+        return ZR_FALSE;
+    }
+
+    if (parser->reference_buffer != ZR_NULL && parser->reference_buffer_size > 0) {
+        TZrChar referenceSummary[ZR_DEBUG_TEXT_CAPACITY];
+        referenceSummary[0] = '\0';
+        if (zr_debug_identifier_reference_summary(parser->agent,
+                                                  parser->frame_id,
+                                                  identifier,
+                                                  referenceSummary,
+                                                  sizeof(referenceSummary))) {
+            zr_debug_eval_append_reference_summary(parser, referenceSummary);
+        }
+    }
+    return ZR_TRUE;
 }
 
 static TZrBool zr_debug_eval_parse_postfix(ZrDebugEvalParser *parser, SZrTypeValue *outValue) {
@@ -376,6 +469,7 @@ static TZrBool zr_debug_eval_parse_postfix(ZrDebugEvalParser *parser, SZrTypeVal
                 return ZR_FALSE;
             }
             *outValue = memberValue;
+            zr_debug_eval_append_member_reference_suffix(parser, memberName);
             continue;
         }
 
@@ -405,6 +499,7 @@ static TZrBool zr_debug_eval_parse_postfix(ZrDebugEvalParser *parser, SZrTypeVal
                 return ZR_FALSE;
             }
             *outValue = indexedValue;
+            zr_debug_eval_append_reference_suffix(parser, "index access");
             continue;
         }
 
@@ -770,6 +865,10 @@ static TZrBool zr_debug_eval_parse_expression(ZrDebugEvalParser *parser, SZrType
     ZrCore_Value_ResetAsNull(&alternate);
     conditionTruthy = zr_debug_eval_truthy(outValue);
     skipConsequent = (TZrBool)(parser->skip_evaluation || !conditionTruthy);
+    if (zr_debug_eval_next_is_missing_consequent_boundary(parser)) {
+        zr_debug_eval_set_missing_conditional_consequent_error(parser);
+        return ZR_FALSE;
+    }
     if (!zr_debug_eval_parse_right_operand_with_skip(parser,
                                                      "?",
                                                      zr_debug_eval_parse_expression,
@@ -783,6 +882,10 @@ static TZrBool zr_debug_eval_parse_expression(ZrDebugEvalParser *parser, SZrType
     }
 
     skipAlternate = (TZrBool)(parser->skip_evaluation || conditionTruthy);
+    if (zr_debug_eval_next_is_missing_alternate_boundary(parser)) {
+        zr_debug_eval_set_missing_conditional_alternate_error(parser);
+        return ZR_FALSE;
+    }
     if (!zr_debug_eval_parse_right_operand_with_skip(parser,
                                                      ":",
                                                      zr_debug_eval_parse_expression,
@@ -806,11 +909,16 @@ TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
                                      const TZrChar *expression,
                                      SZrTypeValue *outValue,
                                      TZrChar *errorBuffer,
-                                     TZrSize errorBufferSize) {
+                                     TZrSize errorBufferSize,
+                                     TZrChar *referenceBuffer,
+                                     TZrSize referenceBufferSize) {
     ZrDebugEvalParser parser;
 
     if (outValue != ZR_NULL) {
         ZrCore_Value_ResetAsNull(outValue);
+    }
+    if (referenceBuffer != ZR_NULL && referenceBufferSize > 0) {
+        referenceBuffer[0] = '\0';
     }
     if (agent == ZR_NULL || expression == ZR_NULL || outValue == ZR_NULL) {
         zr_debug_copy_text(errorBuffer, errorBufferSize, "invalid debug evaluate request");
@@ -823,6 +931,8 @@ TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
     parser.cursor = expression;
     parser.error_buffer = errorBuffer;
     parser.error_buffer_size = errorBufferSize;
+    parser.reference_buffer = referenceBuffer;
+    parser.reference_buffer_size = referenceBufferSize;
 
     if (!zr_debug_eval_parse_expression(&parser, outValue)) {
         if (errorBuffer != ZR_NULL && errorBuffer[0] == '\0') {

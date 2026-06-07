@@ -13,14 +13,26 @@ related_code:
   - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
   - zr_vm_cli/src/zr_vm_cli/repl/repl.h
   - zr_vm_cli/src/zr_vm_cli/repl/repl.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_input_scan.h
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_input_scan.c
   - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_facts.h
   - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_facts.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_fact_walkers.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_expression_walk.h
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_expression_walk.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/value.c
   - zr_vm_core/include/zr_vm_core/io.h
   - zr_vm_core/include/zr_vm_core/module.h
   - zr_vm_core/src/zr_vm_core/io_runtime.c
   - zr_vm_core/src/zr_vm_core/module/module_loader.c
   - tests/cli/test_cli_args.c
+  - tests/cli/repl_expression_aggregate_smoke.js
+  - tests/cli/repl_expression_array_display_smoke.js
+  - tests/cli/repl_expression_object_smoke.js
   - tests/cmake/run_cli_suite.cmake
+  - tests/parser/test_instruction_execution.c
   - tests/fixtures/projects/cli_args/cli_args.zrp
   - tests/fixtures/projects/cli_args/src/main.zr
   - tests/fixtures/projects/cli_args/src/tools/seed.zr
@@ -31,10 +43,23 @@ implementation_files:
   - zr_vm_cli/src/zr_vm_cli/runtime/runtime.c
   - zr_vm_cli/src/zr_vm_cli/runtime/runtime.h
   - zr_vm_cli/src/zr_vm_cli/repl/repl.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_input_scan.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_input_scan.h
   - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_facts.c
   - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_facts.h
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_fact_walkers.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_expression_walk.c
+  - zr_vm_cli/src/zr_vm_cli/repl/repl_semantic_expression_walk.h
+  - zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_values.c
+  - zr_vm_core/src/zr_vm_core/execution/execution_dispatch.c
+  - zr_vm_core/src/zr_vm_core/value.c
   - tests/cli/test_cli_args.c
+  - tests/cli/repl_expression_aggregate_smoke.js
+  - tests/cli/repl_expression_array_display_smoke.js
+  - tests/cli/repl_expression_object_smoke.js
+  - tests/cli/repl_type_call_reference_smoke.js
   - tests/cmake/run_cli_suite.cmake
+  - tests/parser/test_instruction_execution.c
   - tests/fixtures/projects/cli_args/cli_args.zrp
   - tests/fixtures/projects/cli_args/src/main.zr
   - tests/fixtures/projects/cli_args/src/tools/seed.zr
@@ -46,6 +71,10 @@ tests:
   - tests/cli/test_cli_args.c
   - tests/cli/test_cli_repl_e2e.c
   - tests/cli/test_cli_debug_e2e.c
+  - tests/cli/repl_expression_aggregate_smoke.js
+  - tests/cli/repl_expression_array_display_smoke.js
+  - tests/cli/repl_expression_object_smoke.js
+  - tests/parser/test_instruction_execution.c
   - tests/cmake/run_cli_suite.cmake
   - tests/fixtures/projects/cli_args/cli_args.zrp
   - tests/fixtures/projects/cli_args/src/main.zr
@@ -155,7 +184,7 @@ doc_type: module-detail
 - `:type <expression>`
 - 多行缓冲，空行提交
 - 每次提交仍创建新的瞬时 global/state，但会把本次 REPL 会话中已成功提交的声明源码作为上下文前缀重新编译
-- 裸表达式提交会在 REPL 内包装成瞬时 `return <expr>;` 执行，例如 `1 + 2` 会输出 `3`
+- 裸表达式提交会在 REPL 内包装成瞬时 `return <expr>;` 执行，例如 `1 + 2` 会输出 `3`，`[1 + 2][0]` 会输出 `3`，`[1 + 2]` 会输出 `[3]`，`{a: 1 + 2}.a` 会输出 `3`
 
 它现在承诺跨提交保留成功声明出的源码级绑定，例如：
 
@@ -164,9 +193,11 @@ doc_type: module-detail
 
 第二次提交会在同一会话源码前缀下重新编译并输出 `5`。这不是完整的长生命周期运行时 cell 存储：每次提交仍使用 fresh VM runtime，声明 initializer 可能随源码 replay 重新执行，`:reset` 会清空当前会话源码上下文。
 
-裸表达式包装只用于“看起来是表达式”的输入。声明、控制流、函数/类定义、显式 `return`、包含语句分号的提交不会被包装。像 `1 +` 或 `true &&` 这种以操作符结尾的不完整表达式也不会套入内部 `return` 文本，而是直接交给 parser 报出具体问题、原因和建议，例如 `Missing expression after '+'`、`Cause: ...`、`Suggestion: ...`。这样 REPL 可以提升表达式运行能力，同时避免用户在错误信息里看到内部包装细节。
+同一源码 replay 现在也保留简单 member/index assignment statement，例如 `obj.a = 40;` 和 `values[0] = 40;`。这些提交不会被当成普通裸表达式丢弃；后续提交会重新编译 `var obj = ...; obj.a = 40;` 或 `var values = ...; values[0] = 40;` 这类源码前缀，所以 `obj.a` 和 `values[0] + 2` 能看到最新提交过的源码级更新。这个能力仍然是源码重放，不是持久 runtime object cell：副作用会在 fresh VM 中按 session source 顺序重演。
 
-`:type <expression>` 是 REPL 的局部语义查询入口。它创建 fresh analysis state，把当前会话声明源码和参数表达式一起解析，先把 prior variable declarations 注册进 parser type environment，再调用 `ZrParser_ExpressionType_Infer` 推断最后一个 expression statement，并从同一个 `SZrSemanticContext` 读取 numeric/logical/reachability/ownership、reference 和 expression payload facts 输出。`1 + 2` 会显示 `Type: int` 和 `Numeric range: 3..3`；在同一会话内先提交 `var seed = 2;` 后，`:type seed + 3` 会显示 `Numeric range: 5..5`；`:type true || false` 会显示 `Logical flow: short-circuits right operand` 和 `Reachability: unreachable because short-circuit skips evaluation`；若先声明 `var owner: %unique int;`，`:type %borrow(owner)` 会显示 `Type: %borrowed int` 和 `Ownership: borrow %borrowed`；若查询 `pick(42)` 这类调用表达式，会显示 `Call: pick args=1`；`:type seed.value` 会显示 `Member: value` 和 `Reference: member value`；`:type seed[index]` 会显示 `Member: index` 和 `Reference: member index`；`:type seed.value = 3` 会显示 `Reference: member write value`。这个命令不会执行目标表达式，只暴露当前表达式的编译期推断结果和已发射的局部语义事实；unresolved member-access/member-write facts 不会伪造 `Declared at:` 位置。
+裸表达式包装只用于“看起来是表达式”的输入。声明、控制流、函数/类定义、显式 `return`、包含语句分号的提交不会被包装。完整的 aggregate-start expression 也属于可包装输入，例如 `[1 + 2][0]`；对象字面量行首输入也会经 `repl_input_scan.c` 的保守扫描进入同一路径，例如 `{a: 1 + 2}.a` 和 `{[1 + 2]: 4}[3]`。扫描器只把空对象、标识符/字符串键后跟 `:`、或计算键 `[...]` 后跟 `:` 的 `{...}` 当成对象表达式，普通 `{ var ... }`/`{ if ... }` 块仍交给 parser 语句路径。像 `1 +` 或 `true &&` 这种以操作符结尾的不完整表达式也不会套入内部 `return` 文本，而是直接交给 parser 报出具体问题、原因和建议，例如 `Missing expression after '+'`、`Cause: ...`、`Suggestion: ...`。这样 REPL 可以提升表达式运行能力，同时避免用户在错误信息里看到内部包装细节。
+
+`:type <expression>` 是 REPL 的局部语义查询入口。它创建 fresh analysis state，把当前会话声明源码和参数表达式一起解析，先把 prior function declarations 和 prior variable declarations 注册进 parser type environment，再调用 `ZrParser_ExpressionType_Infer` 推断最后一个 expression statement，并从同一个 `SZrSemanticContext` 读取 numeric/logical/reachability/ownership、reference 和 expression payload facts 输出。`1 + 2` 会显示 `Type: int` 和 `Numeric range: 3..3`；`[1 + 2]` 会显示 array root expression fact，同时输出 element expression 的 `Expression: binary exact`、`Constant: 3` 和 `Numeric range: 3..3`；在同一会话内先提交 `var seed = 2;` 后，`:type seed + 3` 会显示 `Numeric range: 5..5`；`:type true || false` 会显示 `Logical flow: short-circuits right operand` 和 `Reachability: unreachable because short-circuit skips evaluation`；`:type true ? 1 : 2` 会显示 `Expression: conditional exact`、constant condition 的 `Logical value: true`，以及 skipped alternate 的 `Reachability: unreachable because a constant branch skips evaluation`；若先声明 `var owner: %unique int;`，`:type %borrow(owner)` 会显示 `Type: %borrowed int` 和 `Ownership: borrow %borrowed`；`:type [%borrow(owner)]` 会在 aggregate borrowed type 下继续显示 nested `Ownership: borrow %borrowed`；若查询 `pick(42)` 这类调用表达式，会显示 `Call: pick args=1`；同一会话先声明 `func pick(value: int): int { ... }` 后，`:type pick(1 + 2)` 还会在 call payload 之后显示 call argument 的 `Expression: binary exact`、`Constant: 3`、`Numeric range: 3..3` 和 resolved `Reference: call pick`；`:type seed.value` 会显示 `Member: value` 和 `Reference: member value`；`:type seed[index]` 会显示 `Member: index` 和 `Reference: member index`；`:type seed.value = 3` 会显示 `Reference: member write value`。这个命令不会执行目标表达式，只暴露当前表达式的编译期推断结果和已发射的局部语义事实；unresolved member-access/member-write facts 不会伪造 `Declared at:` 位置。
 
 REPL v1 还支持两条扩展约束：
 
@@ -318,12 +349,77 @@ CLI 自己管理的增量缓存清单仍然固定落在 `binary/.zr_cli_manifest
 - `:type seed.value = 3` 会显示 `Reference: member write value`，并且不会对 unresolved member-write fact 输出 `Declared at:`
 - 查询不会执行 `pick(42)`，也不会退化成 `failed to infer expression type`
 
+`tests/cli/repl_type_call_reference_smoke.js` 覆盖了：
+
+- 在同一 REPL 会话先声明 `func pick(value: int): int { ... }` 后，`:type pick(1 + 2)` 会显示 `Type: int`
+- 同一次查询会继续显示共享 call expression payload：`Call: pick args=1`
+- 同一次查询会继续下钻到 call argument 的共享 expression fact，显示 `Expression: binary exact` 和 `Constant: 3`，但不会输出 leaf `Constant: 1` / `Constant: 2`
+- 同一次查询会显示 resolved reference fact：`Reference: call pick` 和 `Declared at:`
+- 查询不会退化成 unresolved `Type: object`，也不会报 `failed to infer expression type`
+
+`tests/cli/repl_type_expression_fact_smoke.js` 覆盖了：
+
+- `:type 42` 会显示 `Expression: literal exact` 和 `Constant: 42`
+- `:type 1 + 2` 会显示 `Expression: binary exact` 和 `Constant: 3`
+- `:type "zr"` 会显示字符串常量 `Constant: "zr"`
+- `:type "a\"b\\c\n\t"` 会把 quote、backslash、newline 和 tab 保持为单行 escaped 常量 `Constant: "a\"b\\c\n\t"`
+- 查询不会执行表达式，也不会退化成 `failed to infer expression type`
+
 `tests/cli/repl_type_reachability_smoke.js` 覆盖了：
 
 - `:type true || false` 会显示 `Type: bool`
 - 同一次查询还会显示 `Logical flow: short-circuits right operand`
 - 同一次查询还会显示 `Reachability: unreachable because short-circuit skips evaluation`
 - 查询不会执行表达式打印 `true`，也不会退化成 `failed to infer expression type`
+
+`tests/cli/repl_type_conditional_branch_smoke.js` 覆盖了：
+
+- `:type true ? 1 : 2` 会显示 `Type: int`、selected `Numeric range: 1..1` 和 `Expression: conditional exact`
+- 同一次查询还会显示 condition 子表达式的 `Logical value: true`
+- 同一次查询还会显示 skipped branch 的 `Reachability: unreachable because a constant branch skips evaluation`
+- 查询不会执行表达式打印 `1`，也不会退化成 `failed to infer expression type`
+
+`tests/cli/repl_type_nested_numeric_smoke.js` 覆盖了：
+
+- `:type [1 + 2]` 会显示 `Type: int[1]<int>` 和 `Expression: array exact`
+- 同一次查询还会显示 element expression 的 `Numeric range: 3..3`
+- 查询不会执行 aggregate expression 打印 `[3]`，也不会退化成 `failed to infer expression type`
+
+`tests/cli/repl_type_nested_expression_fact_smoke.js` 覆盖了：
+
+- `:type [1 + 2]` 会显示 aggregate root 的 `Expression: array exact`
+- 同一次查询还会显示 element expression 的 `Expression: binary exact` 和 `Constant: 3`
+- 查询不会倾倒 literal leaf constants `1` / `2`，不会执行 aggregate expression 打印 `[3]`，也不会退化成 `failed to infer expression type`
+
+`tests/cli/repl_type_nested_ownership_smoke.js` 覆盖了：
+
+- `var owner: %unique int;` 后的 `:type [%borrow(owner)]` 会显示 aggregate borrowed type
+- 同一次查询还会显示 nested ownership builtin expression fact 和 `Ownership: borrow %borrowed`
+- 查询不会退化成 `failed to infer expression type` 或 compiler error
+
+`tests/cli/repl_expression_aggregate_smoke.js` 覆盖了：
+
+- 普通 REPL 输入 `[1 + 2][0]` 会作为裸表达式包装执行并打印 `3`
+- 该输入不会被误解析成需要语句分号的 aggregate statement
+- 该输入不会退化成 `:type` 的分析错误，也不会在数组字面量元素初始化时触发 `SET_BY_INDEX` runtime failure
+
+`tests/cli/repl_expression_array_display_smoke.js` 覆盖了：
+
+- 普通 REPL 输入 `[1 + 2]` 会作为裸表达式包装执行并打印 `[3]`
+- 该输入不会在 `ZrCore_Value_ConvertToString` 的 array result display 路径触发断言
+- 该输入不会退化成 `:type` 的分析错误，也不会在数组字面量元素初始化时触发 `SET_BY_INDEX` runtime failure
+
+`tests/cli/repl_expression_object_smoke.js` 覆盖了：
+
+- 普通 REPL 输入 `{a: 1 + 2}.a` 会作为裸表达式包装执行并打印 `3`
+- 普通 REPL 输入 `{[1 + 2]: 4}[3]` 会保留计算键对象字面量执行路径并打印 `4`
+- 这些输入不会被误解析成需要语句分号的块/语句，也不会退化成 `:type` 分析路径或对象初始化 opcode failure
+
+`tests/parser/test_instruction_execution.c` 的 `CREATE_ARRAY With Elements Execution` 覆盖了：
+
+- 数组字面量 `[1, 2, 3]` 执行后返回 array value
+- `length` 为 `3`，索引 `0/1/2` 分别为 `1/2/3`
+- 该覆盖锁住 REPL aggregate execution 依赖的底层数组元素写入路径
 
 `tests/fixtures/projects/cli_args` 是这轮新增的专用夹具，用来验证：
 

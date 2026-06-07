@@ -597,7 +597,8 @@ static TZrBool lsp_editor_append_missing_semicolon_action(SZrState *state,
         trimEnd--;
     }
 
-    if (!lsp_editor_line_can_accept_semicolon(fileVersion->content, trimStart, trimEnd)) {
+    if (!lsp_editor_offset_is_code(fileVersion->content, fileVersion->contentLength, trimStart) ||
+        !lsp_editor_line_can_accept_semicolon(fileVersion->content, trimStart, trimEnd)) {
         return ZR_TRUE;
     }
 

@@ -700,7 +700,7 @@ static void semantic_token_scan_source(SZrState *state,
             }
             continue;
         }
-        if (current == '"' || current == '\'') {
+        if (current == '"' || current == '\'' || current == '`') {
             TZrChar quote = current;
             offset++;
             character++;

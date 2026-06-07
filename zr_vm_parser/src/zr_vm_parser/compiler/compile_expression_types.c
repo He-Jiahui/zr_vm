@@ -1013,7 +1013,6 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
     TZrUInt32 receiverSlot;
     TZrUInt32 resultSlot = instanceSlot;
     TZrUInt32 argCount = 1;
-    TZrUInt32 constructorMemberId;
     TZrBool syncStructReceiver = ZR_FALSE;
     const SZrTypeMemberInfo *constructorMemberInfo;
 
@@ -1035,19 +1034,26 @@ static TZrBool emit_hidden_constructor_call(SZrCompilerState *cs,
         }
     }
 
-    {
+    functionSlot = allocate_stack_slot(cs);
+    if (constructorMemberInfo != ZR_NULL &&
+        constructorMemberInfo->compiledFunction != ZR_NULL &&
+        constructorMemberInfo->compiledFunction->closureValueLength == 0u) {
+        if (!emit_member_function_constant_to_slot(cs, functionSlot, constructorMemberInfo, location)) {
+            return ZR_FALSE;
+        }
+    } else {
+        TZrUInt32 constructorMemberId;
         SZrString *constructorName = ZrCore_String_CreateFromNative(cs->state, "__constructor");
         constructorMemberId = compiler_get_or_add_member_entry(cs, constructorName);
+        if (constructorMemberId == ZR_PARSER_MEMBER_ID_NONE) {
+            return ZR_FALSE;
+        }
+        emit_instruction(cs,
+                         create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                                              (TZrUInt16)functionSlot,
+                                              (TZrUInt16)instanceSlot,
+                                              (TZrUInt16)constructorMemberId));
     }
-    if (constructorMemberId == ZR_PARSER_MEMBER_ID_NONE) {
-        return ZR_FALSE;
-    }
-    functionSlot = allocate_stack_slot(cs);
-    emit_instruction(cs,
-                     create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
-                                          (TZrUInt16)functionSlot,
-                                          (TZrUInt16)instanceSlot,
-                                          (TZrUInt16)constructorMemberId));
 
     receiverSlot = allocate_stack_slot(cs);
     if (syncStructReceiver && !note_inline_struct_result_slot(cs, receiverSlot, typeName)) {

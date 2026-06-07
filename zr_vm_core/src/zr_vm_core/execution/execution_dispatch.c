@@ -2266,8 +2266,9 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
 #define EXECUTE_SET_BY_INDEX_BODY()                                                                                    \
     do {                                                                                                               \
         TZrBool resolved__ = ZR_FALSE;                                                                                 \
-        opA = &BASE(A1(instruction))->value;                                                                           \
-        opB = &BASE(B1(instruction))->value;                                                                           \
+        opA = FRAME_VALUE_SLOT(A1(instruction));                                                                       \
+        opB = FRAME_VALUE_SLOT(B1(instruction));                                                                       \
+        destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));        \
         if (opA->type != ZR_VALUE_TYPE_OBJECT && opA->type != ZR_VALUE_TYPE_ARRAY) {                                  \
             ZrCore_Debug_RunError(state, "SET_BY_INDEX: receiver must be an object or array");                       \
         } else {                                                                                                       \
@@ -2278,7 +2279,7 @@ void ZrCore_Execute(SZrState *state, SZrCallInfo *callInfo) {
                     profileRuntime->helperCounts[ZR_PROFILE_HELPER_SET_BY_INDEX]++;                                   \
                 }                                                                                                      \
                 UPDATE_BASE(callInfo);                                                                                 \
-                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : &BASE(E(instruction))->value;   \
+                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction)); \
             } else if (state->threadStatus != ZR_THREAD_STATUS_FINE) {                                                \
                 SAVE_PC(state, callInfo);                                                                              \
                 goto LZrReturning;                                                                                     \
@@ -7891,6 +7892,7 @@ LZrFastInstruction_JUMP_IF_NULL: {
                 // operand1[1] (B1) = closureVarCount
                 TZrSize functionConstantIndex = A1(instruction);
                 SZrTypeValue *functionConstant = CONST(functionConstantIndex);
+                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 // 从常量池获取函数对象
                 // 注意：编译器将SZrFunction*存储为ZR_VALUE_TYPE_CLOSURE类型，但value.object实际指向SZrFunction*
                 SZrFunction *function = ZR_NULL;
@@ -7927,6 +7929,7 @@ LZrFastInstruction_JUMP_IF_NULL: {
             ZR_INSTRUCTION_LABEL(CREATE_OBJECT) {
                 // 创建空对象
                 SZrObject *object = ZrCore_Object_New(state, ZR_NULL);
+                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 execution_prepare_destination_for_direct_store_no_profile(state, destination);
                 if (object != ZR_NULL) {
                     ZrCore_Object_Init(state, object);
@@ -7939,6 +7942,7 @@ LZrFastInstruction_JUMP_IF_NULL: {
             ZR_INSTRUCTION_LABEL(CREATE_ARRAY) {
                 // 创建空数组对象
                 SZrObject *array = ZrCore_Object_NewCustomized(state, sizeof(SZrObject), ZR_OBJECT_INTERNAL_TYPE_ARRAY);
+                destination = E(instruction) == ZR_INSTRUCTION_USE_RET_FLAG ? &ret : FRAME_VALUE_SLOT(E(instruction));
                 execution_prepare_destination_for_direct_store_no_profile(state, destination);
                 if (array != ZR_NULL) {
                     ZrCore_Object_Init(state, array);

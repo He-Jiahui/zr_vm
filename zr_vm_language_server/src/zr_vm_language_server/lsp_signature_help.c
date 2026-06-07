@@ -3818,6 +3818,13 @@ TZrBool ZrLanguageServer_Lsp_GetSignatureHelp(SZrState *state,
     }
 
     filePosition = ZrLanguageServer_Lsp_GetDocumentFilePosition(context, uri, position);
+    if (fileVersion->content != ZR_NULL &&
+        !ZrLanguageServer_Lsp_IsCursorOffsetInCodeSpan(fileVersion->content,
+                                                       fileVersion->contentLength,
+                                                       filePosition.offset)) {
+        return ZR_TRUE;
+    }
+
     fileRange = ZrParser_FileRange_Create(filePosition, filePosition, uri);
     memset(&callContext, 0, sizeof(callContext));
     signature_find_call_context_in_node(analyzer->ast, fileRange, &callContext);

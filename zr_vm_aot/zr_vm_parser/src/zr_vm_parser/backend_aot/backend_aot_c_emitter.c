@@ -119,7 +119,16 @@ static void backend_aot_write_c_guard_macro(FILE *file) {
             "        zr_aot_return_value = (expr);      \\\n"
             "        goto zr_aot_function_exit;         \\\n"
             "    } while (0)\n"
-            "#define ZR_AOT_C_FAIL() ZR_AOT_C_RETURN(ZrLibrary_AotRuntime_FailGeneratedFunction(state, &frame))\n"
+            "#define ZR_AOT_C_FAIL()                                                             \\\n"
+            "    do {                                                                              \\\n"
+            "        ZrCore_Debug_RunError(state,                                                   \\\n"
+            "                              \"generated AOT function failed: functionIndex=%%u instructionIndex=%%u\", \\\n"
+            "                              (unsigned)frame.functionIndex,                          \\\n"
+            "                              frame.currentInstructionIndex == ZR_AOT_RUNTIME_RESUME_FALLTHROUGH \\\n"
+            "                                      ? UINT32_MAX                                    \\\n"
+            "                                      : (unsigned)frame.currentInstructionIndex);      \\\n"
+            "        ZR_AOT_C_RETURN(0);                                                           \\\n"
+            "    } while (0)\n"
             "#define ZR_AOT_C_GUARD(expr)            \\\n"
             "    do {                                 \\\n"
             "        if (!(expr)) {                   \\\n"
@@ -195,13 +204,25 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteAotCFileWithOptions(SZrState *state,
     fprintf(file, "/* descriptor.embeddedModuleBlobLength = %llu */\n",
             (unsigned long long)((options != ZR_NULL) ? options->embeddedModuleBlobLength : 0));
     fprintf(file, "#include \"zr_vm_common/zr_aot_abi.h\"\n");
+    fprintf(file, "#include \"zr_vm_common/zr_ast_constants.h\"\n");
     fprintf(file, "#include \"zr_vm_core/call_info.h\"\n");
     fprintf(file, "#include \"zr_vm_core/closure.h\"\n");
     fprintf(file, "#include \"zr_vm_core/debug.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/exception.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/execution.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/execution_control.h\"\n");
     fprintf(file, "#include \"zr_vm_core/function.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/global.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/meta.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/module.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/object.h\"\n");
     fprintf(file, "#include \"zr_vm_core/ownership.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/reflection.h\"\n");
+    fprintf(file, "#include \"zr_vm_core/string.h\"\n");
     fprintf(file, "#include \"zr_vm_core/type_layout.h\"\n");
     fprintf(file, "#include \"zr_vm_library/aot_runtime.h\"\n");
+    fprintf(file, "#include <math.h>\n");
+    fprintf(file, "#include <string.h>\n");
     fprintf(file, "\n");
     backend_aot_write_c_guard_macro(file);
     fprintf(file, "\n");

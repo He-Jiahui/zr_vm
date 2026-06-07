@@ -579,9 +579,11 @@ void compile_array_literal(SZrCompilerState *cs, SZrAstNode *node) {
                 continue;
             }
             
-            // 编译元素值
-            ZrParser_Expression_Compile(cs, elemNode);
-            TZrUInt32 valueSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+            // 编译元素值到数组对象后面的固定临时槽，避免覆盖数组接收者。
+            TZrUInt32 valueSlot = compile_expression_into_slot(cs, elemNode, destSlot + 1u);
+            if (valueSlot == ZR_PARSER_SLOT_NONE) {
+                return;
+            }
             
             // 创建索引常量
             SZrTypeValue indexValue;

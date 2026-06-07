@@ -15,6 +15,7 @@ if (zr_debug_module_src AND zr_vm_debug_has_network)
     zr_declare_module(${zr_curr_module_name} ON)
 
     zr_link_library_for_module(${zr_curr_module_name} "zr_vm_core")
+    zr_link_library_for_module(${zr_curr_module_name} "zr_vm_parser")
     zr_link_library_for_module(${zr_curr_module_name} "zr_vm_lib_network")
     zr_link_third_party_for_module(${zr_curr_module_name} "zr_c_json")
 

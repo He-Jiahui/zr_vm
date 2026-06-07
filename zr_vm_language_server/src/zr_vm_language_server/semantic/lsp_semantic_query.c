@@ -223,6 +223,11 @@ static SZrSymbol *semantic_query_lookup_identifier_at_position(SZrState *state,
     if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
         return ZR_NULL;
     }
+    if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(fileVersion->content,
+                                                 fileVersion->contentLength,
+                                                 position.start.offset)) {
+        return ZR_NULL;
+    }
 
     name = semantic_query_extract_identifier_at_offset(state,
                                                        fileVersion->content,
@@ -233,6 +238,29 @@ static SZrSymbol *semantic_query_lookup_identifier_at_position(SZrState *state,
     }
 
     return ZrLanguageServer_SymbolTable_LookupAtPosition(analyzer->symbolTable, name, position);
+}
+
+static TZrBool semantic_query_position_is_code_span(SZrLspContext *context,
+                                                    SZrString *uri,
+                                                    SZrLspPosition position) {
+    SZrFileVersion *fileVersion;
+    SZrFilePosition filePosition;
+
+    if (context == ZR_NULL || uri == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    filePosition = ZrLanguageServer_LspPosition_ToFilePositionWithContent(position,
+                                                                          fileVersion->content,
+                                                                          fileVersion->contentLength);
+    return ZrLanguageServer_Lsp_IsOffsetInCodeSpan(fileVersion->content,
+                                                   fileVersion->contentLength,
+                                                   filePosition.offset);
 }
 
 static TZrBool semantic_query_append_location(SZrState *state,
@@ -2132,6 +2160,10 @@ static TZrBool semantic_query_resolve_receiver_type_member_target(SZrState *stat
         return ZR_FALSE;
     }
 
+    if (!semantic_query_position_is_code_span(context, uri, query->position)) {
+        return ZR_FALSE;
+    }
+
     fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
     if (fileVersion == ZR_NULL || fileVersion->content == ZR_NULL || analyzer->ast == ZR_NULL ||
         !semantic_query_try_resolve_receiver_external_type_member(state,
@@ -2340,6 +2372,7 @@ static TZrBool semantic_query_resolve_import_alias_token_target(SZrState *state,
                                                                 SZrString *uri,
                                                                 SZrLspSemanticQuery *query) {
     SZrFileVersion *fileVersion;
+    TZrSize cursorOffset;
     SZrString *name;
     SZrSymbol *symbol;
     SZrArray bindings;
@@ -2355,12 +2388,18 @@ static TZrBool semantic_query_resolve_import_alias_token_target(SZrState *state,
         return ZR_FALSE;
     }
 
+    cursorOffset = semantic_query_lsp_offset_from_position(fileVersion->content,
+                                                           fileVersion->contentLength,
+                                                           query->position);
+    if (!ZrLanguageServer_Lsp_IsOffsetInCodeSpan(fileVersion->content,
+                                                 fileVersion->contentLength,
+                                                 cursorOffset)) {
+        return ZR_FALSE;
+    }
     name = semantic_query_extract_identifier_at_offset(state,
                                                        fileVersion->content,
                                                        fileVersion->contentLength,
-                                                       semantic_query_lsp_offset_from_position(fileVersion->content,
-                                                                                                fileVersion->contentLength,
-                                                                                                query->position));
+                                                       cursorOffset);
     if (name == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -2530,6 +2569,10 @@ ZR_LANGUAGE_SERVER_API TZrBool ZrLanguageServer_LspSemanticQuery_ResolveAtPositi
     }
 
     if (analyzer == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!semantic_query_position_is_code_span(context, uri, position)) {
         return ZR_FALSE;
     }
 

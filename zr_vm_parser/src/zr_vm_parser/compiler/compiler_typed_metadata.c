@@ -1247,6 +1247,35 @@ static const SZrFunctionTypedLocalBinding *find_typed_local_binding_for_slot(con
     return ZR_NULL;
 }
 
+static TZrBool typed_local_binding_slot_is_parameter(const SZrFunction *function, TZrUInt32 stackSlot) {
+    TZrUInt32 parameterBindingCount = 0;
+
+    if (function == ZR_NULL || function->parameterCount == 0) {
+        return ZR_FALSE;
+    }
+
+    if (function->typedLocalBindings == ZR_NULL || function->typedLocalBindingLength == 0) {
+        return (TZrBool)(stackSlot < function->parameterCount);
+    }
+
+    for (TZrUInt32 index = 0; index < function->typedLocalBindingLength; index++) {
+        const SZrFunctionTypedLocalBinding *binding = &function->typedLocalBindings[index];
+
+        if (binding->name == ZR_NULL) {
+            continue;
+        }
+        if (parameterBindingCount >= function->parameterCount) {
+            break;
+        }
+        if (binding->stackSlot == stackSlot) {
+            return ZR_TRUE;
+        }
+        parameterBindingCount++;
+    }
+
+    return ZR_FALSE;
+}
+
 static void compiler_finalize_current_struct_inline_layout(SZrCompilerState *cs, SZrTypePrototypeInfo *prototypeInfo) {
     TZrUInt32 currentOffset = 0;
     TZrUInt32 maxAlign = 0;
@@ -1693,7 +1722,7 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
         layouts[slot].byteAlign = byteAlign;
         layouts[slot].typeLayoutId = typeLayoutId;
         layouts[slot].slotKind = slotKind;
-        layouts[slot].isParameter = slot < function->parameterCount ? 1 : 0;
+        layouts[slot].isParameter = typed_local_binding_slot_is_parameter(function, slot) ? 1 : 0;
         cursor += byteSize;
     }
 

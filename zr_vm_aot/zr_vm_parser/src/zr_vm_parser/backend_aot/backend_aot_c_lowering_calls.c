@@ -1,39 +1,122 @@
 #include "backend_aot_c_emitter.h"
 #include "backend_aot_internal.h"
 
-void backend_aot_write_c_direct_meta_call(FILE *file,
-                                          TZrUInt32 destinationSlot,
-                                          TZrUInt32 receiverSlot,
-                                          TZrUInt32 argumentCount) {
-    TZrUInt32 callableArgumentCount = argumentCount + 1;
-
-    if (file == ZR_NULL) {
+static void backend_aot_write_c_core_function_call(FILE *file,
+                                                   TZrUInt32 destinationSlot,
+                                                   TZrUInt32 functionSlot,
+                                                   TZrUInt32 argumentCount,
+                                                   const char *marker,
+                                                   const char *errorLabel) {
+    if (file == ZR_NULL || marker == ZR_NULL || errorLabel == ZR_NULL) {
         return;
     }
 
     fprintf(file,
             "    {\n"
-            "        ZrAotGeneratedDirectCall zr_aot_direct_call;\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareMetaCall(state,\n"
-            "                                                          &frame,\n"
-            "                                                          %u,\n"
-            "                                                          %u,\n"
-            "                                                          %u,\n"
-            "                                                          &zr_aot_direct_call));\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,\n"
-            "                                                               &frame,\n"
-            "                                                               &zr_aot_direct_call,\n"
-            "                                                               %u,\n"
-            "                                                               %u,\n"
-            "                                                               %u,\n"
-            "                                                               1));\n"
+            "        /* %s */\n"
+            "        TZrStackValuePointer zr_aot_call_base;\n"
+            "        TZrStackValuePointer zr_aot_destination_pointer;\n"
+            "        TZrStackValuePointer zr_aot_result_base;\n"
+            "        SZrFunctionStackAnchor zr_aot_call_anchor;\n"
+            "        SZrFunctionStackAnchor zr_aot_destination_anchor;\n"
+            "        SZrTypeValue *zr_aot_callable_value;\n"
+            "        SZrTypeValue *zr_aot_destination_value;\n"
+            "        SZrTypeValue *zr_aot_result_value;\n"
+            "        if (state == ZR_NULL || frame.function == ZR_NULL || frame.slotBase == ZR_NULL ||\n"
+            "            %u >= frame.generatedFrameSlotCount || %u >= frame.generatedFrameSlotCount) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        zr_aot_call_base = frame.slotBase + %u;\n"
+            "        zr_aot_destination_pointer = frame.slotBase + %u;\n"
+            "        if (state->callInfoList == ZR_NULL || state->stackTop.valuePointer == ZR_NULL ||\n"
+            "            state->stackTop.valuePointer < zr_aot_call_base + 1 + %u) {\n"
+            "            ZrCore_Debug_RunError(state, \"generated AOT %s has invalid stack range\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        zr_aot_callable_value = ZrCore_Stack_GetValue(zr_aot_call_base);\n"
+            "        if (zr_aot_callable_value == ZR_NULL) {\n"
+            "            ZrCore_Debug_RunError(state, \"generated AOT %s is missing callable value\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        ZrCore_Function_StackAnchorInit(state, zr_aot_call_base, &zr_aot_call_anchor);\n"
+            "        ZrCore_Function_StackAnchorInit(state, zr_aot_destination_pointer, &zr_aot_destination_anchor);\n"
+            "        state->stackTop.valuePointer = zr_aot_call_base + 1 + %u;\n"
+            "        if (state->callInfoList->functionTop.valuePointer == ZR_NULL ||\n"
+            "            state->callInfoList->functionTop.valuePointer < state->stackTop.valuePointer) {\n"
+            "            state->callInfoList->functionTop.valuePointer = state->stackTop.valuePointer;\n"
+            "        }\n"
+            "        zr_aot_result_base = ZrCore_Function_CallAndRestoreAnchor(state, &zr_aot_call_anchor, 1);\n"
+            "        if (zr_aot_result_base == ZR_NULL || state->threadStatus != ZR_THREAD_STATUS_FINE ||\n"
+            "            state->callInfoList == ZR_NULL || state->callInfoList->functionBase.valuePointer == ZR_NULL ||\n"
+            "            state->callInfoList->functionTop.valuePointer == ZR_NULL) {\n"
+            "            ZrCore_Debug_RunError(state, \"generated AOT %s failed\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        zr_aot_destination_pointer = ZrCore_Function_StackAnchorRestore(state, &zr_aot_destination_anchor);\n"
+            "        if (zr_aot_destination_pointer == ZR_NULL) {\n"
+            "            ZrCore_Debug_RunError(state, \"generated AOT %s lost destination slot\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        zr_aot_destination_value = ZrCore_Stack_GetValue(zr_aot_destination_pointer);\n"
+            "        zr_aot_result_value = ZrCore_Stack_GetValue(zr_aot_result_base);\n"
+            "        if (zr_aot_destination_value == ZR_NULL || zr_aot_result_value == ZR_NULL) {\n"
+            "            ZrCore_Debug_RunError(state, \"generated AOT %s has invalid result slot\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        *zr_aot_destination_value = *zr_aot_result_value;\n"
+            "        frame.callInfo = state->callInfoList;\n"
+            "        frame.slotBase = state->callInfoList->functionBase.valuePointer + 1;\n"
+            "        state->stackTop.valuePointer = state->callInfoList->functionTop.valuePointer;\n"
             "    }\n",
+            marker,
+            (unsigned)functionSlot,
+            (unsigned)destinationSlot,
+            (unsigned)functionSlot,
+            (unsigned)destinationSlot,
+            (unsigned)argumentCount,
+            errorLabel,
+            errorLabel,
+            (unsigned)argumentCount,
+            errorLabel,
+            errorLabel,
+            errorLabel);
+}
+
+void backend_aot_write_c_unsupported_meta_call(FILE *file,
+                                               TZrUInt32 destinationSlot,
+                                               TZrUInt32 receiverSlot,
+                                               TZrUInt32 argumentCount) {
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    fprintf(file,
+            "    do {\n"
+            "        /* zr_aot_unsupported_meta_call */\n"
+            "        const TZrUInt32 zr_aot_destination_slot = %u;\n"
+            "        const TZrUInt32 zr_aot_receiver_slot = %u;\n"
+            "        const TZrUInt32 zr_aot_argument_count = %u;\n"
+            "        if (state == ZR_NULL || frame.slotBase == ZR_NULL ||\n"
+            "            zr_aot_destination_slot >= frame.generatedFrameSlotCount ||\n"
+            "            zr_aot_receiver_slot >= frame.generatedFrameSlotCount) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        SZrTypeValue *zr_aot_receiver = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        if (zr_aot_receiver == ZR_NULL || zr_aot_destination == ZR_NULL) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        (void)zr_aot_argument_count;\n"
+            "        (void)zr_aot_receiver;\n"
+            "        (void)zr_aot_destination;\n"
+            "        ZrCore_Debug_RunError(state, \"unsupported AOT meta call\");\n"
+            "        ZR_AOT_C_FAIL();\n"
+            "    } while (0);\n",
             (unsigned)destinationSlot,
             (unsigned)receiverSlot,
             (unsigned)argumentCount,
-            (unsigned)destinationSlot,
             (unsigned)receiverSlot,
-            (unsigned)callableArgumentCount);
+            (unsigned)destinationSlot);
 }
 
 void backend_aot_write_c_static_direct_function_call(FILE *file,
@@ -47,21 +130,63 @@ void backend_aot_write_c_static_direct_function_call(FILE *file,
 
     fprintf(file,
             "    {\n"
-            "        ZrAotGeneratedDirectCall zr_aot_direct_call;\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareStaticDirectCall(state,\n"
-            "                                                                  &frame,\n"
-            "                                                                  %u,\n"
-            "                                                                  %u,\n"
-            "                                                                  %u,\n"
-            "                                                                  %u,\n"
-            "                                                                  &zr_aot_direct_call));\n"
+            "        /* zr_aot_direct_static_function_call */\n"
+            "        TZrStackValuePointer zr_aot_call_base;\n"
+            "        TZrStackValuePointer zr_aot_destination_pointer;\n"
+            "        SZrCallInfo *zr_aot_call_info;\n"
+            "        SZrFunction *zr_aot_metadata_function;\n"
+            "        SZrTypeValue *zr_aot_callable_value;\n"
+            "        if (state == ZR_NULL || frame.function == ZR_NULL || frame.slotBase == ZR_NULL ||\n"
+            "            %u >= frame.generatedFrameSlotCount || %u >= frame.generatedFrameSlotCount) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        zr_aot_call_base = frame.slotBase + %u;\n"
+            "        zr_aot_destination_pointer = frame.slotBase + %u;\n"
+            "        if (state->callInfoList == ZR_NULL || state->stackTop.valuePointer == ZR_NULL ||\n"
+            "            state->stackTop.valuePointer < zr_aot_call_base + 1 + %u) {\n"
+            "            ZrCore_Debug_RunError(state, \"generated AOT static direct call has invalid stack range\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        zr_aot_callable_value = ZrCore_Stack_GetValue(zr_aot_call_base);\n"
+            "        zr_aot_metadata_function = ZrCore_Closure_GetMetadataFunctionFromValue(state, zr_aot_callable_value);\n"
+            "        if (zr_aot_callable_value == ZR_NULL || zr_aot_metadata_function == ZR_NULL) {\n"
+            "            ZrCore_Debug_RunError(state, \"generated AOT static direct call failed\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        state->stackTop.valuePointer = zr_aot_call_base + 1 + %u;\n"
+            "        if (state->callInfoList->functionTop.valuePointer == ZR_NULL ||\n"
+            "            state->callInfoList->functionTop.valuePointer < state->stackTop.valuePointer) {\n"
+            "            state->callInfoList->functionTop.valuePointer = state->stackTop.valuePointer;\n"
+            "        }\n"
+            "        zr_aot_call_info = ZrCore_Function_PreCallPreparedResolvedVmFunction(state,\n"
+            "                                                                             zr_aot_call_base,\n"
+            "                                                                             zr_aot_metadata_function,\n"
+            "                                                                             %u,\n"
+            "                                                                             1,\n"
+            "                                                                             zr_aot_destination_pointer);\n"
+            "        if (zr_aot_call_info == ZR_NULL || state->callInfoList != zr_aot_call_info) {\n"
+            "            ZrCore_Debug_RunError(state, \"generated AOT static direct call failed\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
             "        ZR_AOT_C_GUARD(zr_aot_fn_%u(state));\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_FinishDirectCall(state, &frame, &zr_aot_direct_call, 1));\n"
+            "        ZrCore_Function_PostCall(state, zr_aot_call_info, 1);\n"
+            "        if (state->threadStatus != ZR_THREAD_STATUS_FINE || state->callInfoList == ZR_NULL ||\n"
+            "            state->callInfoList->functionBase.valuePointer == ZR_NULL ||\n"
+            "            state->callInfoList->functionTop.valuePointer == ZR_NULL) {\n"
+            "            ZrCore_Debug_RunError(state, \"generated AOT static direct call failed\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        frame.callInfo = state->callInfoList;\n"
+            "        frame.slotBase = state->callInfoList->functionBase.valuePointer + 1;\n"
+            "        state->stackTop.valuePointer = state->callInfoList->functionTop.valuePointer;\n"
             "    }\n",
+            (unsigned)functionSlot,
             (unsigned)destinationSlot,
             (unsigned)functionSlot,
+            (unsigned)destinationSlot,
             (unsigned)argumentCount,
-            (unsigned)calleeFlatIndex,
+            (unsigned)argumentCount,
+            (unsigned)argumentCount,
             (unsigned)calleeFlatIndex);
 }
 
@@ -69,46 +194,22 @@ void backend_aot_write_c_direct_function_call(FILE *file,
                                               TZrUInt32 destinationSlot,
                                               TZrUInt32 functionSlot,
                                               TZrUInt32 argumentCount) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    {\n"
-            "        ZrAotGeneratedDirectCall zr_aot_direct_call;\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_PrepareDirectCall(state,\n"
-            "                                                            &frame,\n"
-            "                                                            %u,\n"
-            "                                                            %u,\n"
-            "                                                            %u,\n"
-            "                                                            &zr_aot_direct_call));\n"
-            "        ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_CallPreparedOrGeneric(state,\n"
-            "                                                               &frame,\n"
-            "                                                               &zr_aot_direct_call,\n"
-            "                                                               %u,\n"
-            "                                                               %u,\n"
-            "                                                               %u,\n"
-            "                                                               1));\n"
-            "    }\n",
-            (unsigned)destinationSlot,
-            (unsigned)functionSlot,
-            (unsigned)argumentCount,
-            (unsigned)destinationSlot,
-            (unsigned)functionSlot,
-            (unsigned)argumentCount);
+    backend_aot_write_c_core_function_call(file,
+                                           destinationSlot,
+                                           functionSlot,
+                                           argumentCount,
+                                           "zr_aot_direct_function_call",
+                                           "function call");
 }
 
 void backend_aot_write_c_dynamic_function_call(FILE *file,
                                                TZrUInt32 destinationSlot,
                                                TZrUInt32 functionSlot,
                                                TZrUInt32 argumentCount) {
-    if (file == ZR_NULL) {
-        return;
-    }
-
-    fprintf(file,
-            "    ZR_AOT_C_GUARD(ZrLibrary_AotRuntime_Call(state, &frame, %u, %u, %u));\n",
-            (unsigned)destinationSlot,
-            (unsigned)functionSlot,
-            (unsigned)argumentCount);
+    backend_aot_write_c_core_function_call(file,
+                                           destinationSlot,
+                                           functionSlot,
+                                           argumentCount,
+                                           "zr_aot_direct_dynamic_function_call",
+                                           "dynamic call");
 }

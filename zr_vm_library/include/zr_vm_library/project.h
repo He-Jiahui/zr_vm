@@ -53,6 +53,7 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrString *entry;
     SZrString *dependency;
     SZrString *local;
+    TZrPtr aotRuntime;
     SZrLibrary_ProjectPathAlias *pathAliases;
     TZrSize pathAliasCount;
     SZrLibrary_ProjectDependencyPackage *dependencyPackages;

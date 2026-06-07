@@ -89,6 +89,7 @@ if(BUILD_LANGUAGE_SERVER_STDIO)
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_document_color.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_completion.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_value.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_value_scan.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_inline_value_semantic_text.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_moniker.c
         ${CMAKE_CURRENT_SOURCE_DIR}/stdio/stdio_semantic_tokens_cache.c

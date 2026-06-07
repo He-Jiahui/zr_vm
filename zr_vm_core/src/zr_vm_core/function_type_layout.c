@@ -111,6 +111,7 @@ static const SZrFunction *function_type_layout_entry_function_from_call_stack(SZ
 
 static const SZrFunction *function_type_layout_entry_function(SZrState *state, const SZrFunction *function) {
     const SZrFunction *entryFunction = function;
+    const SZrFunction *prototypeContextFunction;
     const SZrFunction *stackEntryFunction;
 
     if (entryFunction == ZR_NULL) {
@@ -123,6 +124,11 @@ static const SZrFunction *function_type_layout_entry_function(SZrState *state, c
 
     if (function_type_layout_function_has_prototype_blob(entryFunction)) {
         return entryFunction;
+    }
+
+    prototypeContextFunction = function->prototypeContextFunction;
+    if (function_type_layout_function_has_prototype_blob(prototypeContextFunction)) {
+        return prototypeContextFunction;
     }
 
     stackEntryFunction = function_type_layout_entry_function_from_call_stack(state);

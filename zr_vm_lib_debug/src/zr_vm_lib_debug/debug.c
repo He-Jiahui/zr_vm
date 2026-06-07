@@ -598,7 +598,7 @@ static TZrBool zr_debug_breakpoint_condition_satisfied(ZrDebugAgent *agent, cons
     }
 
     memset(&value, 0, sizeof(value));
-    if (!zr_debug_evaluate_expression(agent, 1, breakpoint->condition, &value, error, sizeof(error))) {
+    if (!zr_debug_evaluate_expression(agent, 1, breakpoint->condition, &value, error, sizeof(error), ZR_NULL, 0)) {
         zr_debug_agent_emit_output(agent, "stderr", error);
         zr_debug_agent_emit_output(agent, "stderr", "\n");
         return ZR_FALSE;
@@ -671,7 +671,7 @@ static void zr_debug_breakpoint_emit_logpoint(ZrDebugAgent *agent, const ZrDebug
             expression[expressionLength] = '\0';
 
             memset(&value, 0, sizeof(value));
-            if (zr_debug_evaluate_expression(agent, 1, expression, &value, error, sizeof(error))) {
+            if (zr_debug_evaluate_expression(agent, 1, expression, &value, error, sizeof(error), ZR_NULL, 0)) {
                 zr_debug_format_value_text_safe(agent->state, &value, valueText, sizeof(valueText));
                 zr_debug_append_text_segment(output, sizeof(output), valueText);
             } else {

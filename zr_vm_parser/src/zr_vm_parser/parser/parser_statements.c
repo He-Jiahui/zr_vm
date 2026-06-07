@@ -104,6 +104,50 @@ static TZrBool parser_class_declaration_starts_here(SZrParserState *ps) {
     return isClass;
 }
 
+static TZrBool parser_for_header_should_parse_foreach(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrBool parseAsForeach = ZR_FALSE;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_FOR) {
+        return ZR_FALSE;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_LPAREN) {
+        restore_parser_cursor(ps, &cursor);
+        return ZR_FALSE;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_VAR) {
+        restore_parser_cursor(ps, &cursor);
+        return ZR_FALSE;
+    }
+
+    ZrParser_Lexer_Next(ps->lexer);
+    while (ps->lexer->t.token != ZR_TK_EOS &&
+           ps->lexer->t.token != ZR_TK_RPAREN &&
+           ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        if (ps->lexer->t.token == ZR_TK_IN) {
+            parseAsForeach = ZR_TRUE;
+            break;
+        }
+        if (ps->lexer->t.token == ZR_TK_EQUALS) {
+            parseAsForeach = ZR_FALSE;
+            break;
+        }
+        ZrParser_Lexer_Next(ps->lexer);
+    }
+
+    if (ps->lexer->t.token == ZR_TK_RPAREN || ps->lexer->t.token == ZR_TK_EOS) {
+        parseAsForeach = ZR_TRUE;
+    }
+
+    restore_parser_cursor(ps, &cursor);
+    return parseAsForeach;
+}
+
 static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *ps) {
     SZrParserCursor cursor;
     TZrBool savedSuppressErrorOutput;
@@ -168,7 +212,16 @@ SZrAstNode *parse_block(SZrParserState *ps) {
         }
     }
 
-    expect_token(ps, ZR_TK_RBRACE);
+    if (ps->lexer->t.token != ZR_TK_RBRACE) {
+        if (ps->lexer->t.token == ZR_TK_EOS) {
+            report_missing_block_close(ps, startLoc);
+        } else {
+            expect_token(ps, ZR_TK_RBRACE);
+        }
+        ZrParser_AstNodeArray_Free(ps->state, statements);
+        return ZR_NULL;
+    }
+
     endLoc = get_current_token_location(ps);
     consume_token(ps, ZR_TK_RBRACE);
     SZrFileRange blockLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -193,8 +246,11 @@ SZrAstNode *parse_expression_statement(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    expect_token(ps, ZR_TK_SEMICOLON);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        report_missing_statement_semicolon(ps, "expression", get_current_token_location(ps));
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_EXPRESSION_STATEMENT, startLoc);
     if (node == ZR_NULL) {
@@ -217,8 +273,11 @@ SZrAstNode *parse_return_statement(SZrParserState *ps) {
         expr = parse_expression(ps);
     }
 
-    expect_token(ps, ZR_TK_SEMICOLON);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        report_missing_statement_semicolon(ps, "return", get_current_token_location(ps));
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_RETURN_STATEMENT, startLoc);
     if (node == ZR_NULL) {
@@ -239,13 +298,30 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LPAREN);
     ZrParser_Lexer_Next(ps->lexer);
 
+    if (ps->lexer->t.token == ZR_TK_RPAREN) {
+        report_missing_condition(ps, "switch", get_current_token_location(ps));
+        return ZR_NULL;
+    }
+
     SZrAstNode *expr = parse_expression(ps);
     if (expr == ZR_NULL) {
         return ZR_NULL;
     }
 
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_condition_close(ps, "switch", get_current_token_location(ps));
+        ZrParser_Ast_Free(ps->state, expr);
+        return ZR_NULL;
+    }
+
     expect_token(ps, ZR_TK_RPAREN);
     ZrParser_Lexer_Next(ps->lexer);
+
+    if (ps->lexer->t.token != ZR_TK_LBRACE) {
+        report_missing_statement_body_open(ps, "switch statement", get_current_token_location(ps));
+        ZrParser_Ast_Free(ps->state, expr);
+        return ZR_NULL;
+    }
 
     expect_token(ps, ZR_TK_LBRACE);
     ZrParser_Lexer_Next(ps->lexer);
@@ -259,6 +335,13 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
             if (ps->lexer->t.token == ZR_TK_RPAREN) {
                 // 默认 case
                 ZrParser_Lexer_Next(ps->lexer);
+                if (ps->lexer->t.token != ZR_TK_LBRACE) {
+                    report_missing_statement_body_open(ps, "switch default", get_current_token_location(ps));
+                    ZrParser_Ast_Free(ps->state, expr);
+                    ZrParser_AstNodeArray_Free(ps->state, cases);
+                    return ZR_NULL;
+                }
+
                 SZrAstNode *block = parse_block(ps);
                 if (block != ZR_NULL) {
                     SZrFileRange defaultLoc = get_current_location(ps);
@@ -270,8 +353,27 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
             } else {
                 // 普通 case
                 SZrAstNode *value = parse_expression(ps);
-                expect_token(ps, ZR_TK_RPAREN);
-                ZrParser_Lexer_Next(ps->lexer);
+                if (ps->lexer->t.token != ZR_TK_RPAREN) {
+                    report_missing_switch_case_header_close(ps, get_current_token_location(ps));
+                    if (value != ZR_NULL) {
+                        ZrParser_Ast_Free(ps->state, value);
+                    }
+                    ZrParser_Ast_Free(ps->state, expr);
+                    ZrParser_AstNodeArray_Free(ps->state, cases);
+                    return ZR_NULL;
+                }
+
+                consume_token(ps, ZR_TK_RPAREN);
+                if (ps->lexer->t.token != ZR_TK_LBRACE) {
+                    report_missing_statement_body_open(ps, "switch case", get_current_token_location(ps));
+                    if (value != ZR_NULL) {
+                        ZrParser_Ast_Free(ps->state, value);
+                    }
+                    ZrParser_Ast_Free(ps->state, expr);
+                    ZrParser_AstNodeArray_Free(ps->state, cases);
+                    return ZR_NULL;
+                }
+
                 SZrAstNode *block = parse_block(ps);
                 if (value != ZR_NULL && block != ZR_NULL) {
                     SZrFileRange caseLoc = get_current_location(ps);
@@ -288,8 +390,17 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
         }
     }
 
-    expect_token(ps, ZR_TK_RBRACE);
-    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_RBRACE) {
+        report_missing_switch_body_close(ps, get_current_token_location(ps));
+        ZrParser_Ast_Free(ps->state, expr);
+        ZrParser_AstNodeArray_Free(ps->state, cases);
+        if (defaultCase != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, defaultCase);
+        }
+        return ZR_NULL;
+    }
+
+    consume_token(ps, ZR_TK_RBRACE);
 
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange switchLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -315,13 +426,30 @@ SZrAstNode *parse_if_expression(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LPAREN);
     consume_token(ps, ZR_TK_LPAREN);
 
+    if (ps->lexer->t.token == ZR_TK_RPAREN) {
+        report_missing_condition(ps, "if", get_current_token_location(ps));
+        return ZR_NULL;
+    }
+
     SZrAstNode *condition = parse_expression(ps);
     if (condition == ZR_NULL) {
         return ZR_NULL;
     }
 
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_condition_close(ps, "if", get_current_token_location(ps));
+        ZrParser_Ast_Free(ps->state, condition);
+        return ZR_NULL;
+    }
+
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
+
+    if (ps->lexer->t.token != ZR_TK_LBRACE) {
+        report_missing_statement_body_open(ps, "if statement", get_current_token_location(ps));
+        ZrParser_Ast_Free(ps->state, condition);
+        return ZR_NULL;
+    }
 
     SZrAstNode *thenExpr = parse_block(ps);
     if (thenExpr == ZR_NULL) {
@@ -333,6 +461,12 @@ SZrAstNode *parse_if_expression(SZrParserState *ps) {
         if (ps->lexer->t.token == ZR_TK_IF) {
             elseExpr = parse_if_expression(ps);
         } else {
+            if (ps->lexer->t.token != ZR_TK_LBRACE) {
+                report_missing_statement_body_open(ps, "else statement", get_current_token_location(ps));
+                ZrParser_Ast_Free(ps->state, condition);
+                ZrParser_Ast_Free(ps->state, thenExpr);
+                return ZR_NULL;
+            }
             elseExpr = parse_block(ps);
         }
     }
@@ -362,13 +496,30 @@ SZrAstNode *parse_while_loop(SZrParserState *ps) {
     expect_token(ps, ZR_TK_LPAREN);
     consume_token(ps, ZR_TK_LPAREN);
 
+    if (ps->lexer->t.token == ZR_TK_RPAREN) {
+        report_missing_condition(ps, "while", get_current_token_location(ps));
+        return ZR_NULL;
+    }
+
     SZrAstNode *cond = parse_expression(ps);
     if (cond == ZR_NULL) {
         return ZR_NULL;
     }
 
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_condition_close(ps, "while", get_current_token_location(ps));
+        ZrParser_Ast_Free(ps->state, cond);
+        return ZR_NULL;
+    }
+
     expect_token(ps, ZR_TK_RPAREN);
     consume_token(ps, ZR_TK_RPAREN);
+
+    if (ps->lexer->t.token != ZR_TK_LBRACE) {
+        report_missing_statement_body_open(ps, "while statement", get_current_token_location(ps));
+        ZrParser_Ast_Free(ps->state, cond);
+        return ZR_NULL;
+    }
 
     SZrAstNode *block = parse_block(ps);
     if (block == ZR_NULL) {
@@ -389,158 +540,33 @@ SZrAstNode *parse_while_loop(SZrParserState *ps) {
     return node;
 }
 
-// 解析 for 循环
-
-SZrAstNode *parse_for_loop(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
-    expect_token(ps, ZR_TK_FOR);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    expect_token(ps, ZR_TK_LPAREN);
-    consume_token(ps, ZR_TK_LPAREN);
-
-    // 解析初始化（可选）
-    SZrAstNode *init = ZR_NULL;
-    if (ps->lexer->t.token == ZR_TK_VAR) {
-        init = parse_variable_declaration(ps);
-        // 变量声明后面可能有分号，需要跳过
-        if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
-            consume_token(ps, ZR_TK_SEMICOLON);
-        }
-    } else if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
-        // 解析表达式（不是表达式语句，因为后面可能有分号）
-        init = parse_expression(ps);
-        // 如果后面是分号，跳过它
-        if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
-            consume_token(ps, ZR_TK_SEMICOLON);
-        }
-    } else {
-        consume_token(ps, ZR_TK_SEMICOLON);
-    }
-
-    // 解析条件（可选）
-    SZrAstNode *cond = ZR_NULL;
-    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
-        // 解析表达式（不是表达式语句）
-        cond = parse_expression(ps);
-        // 如果后面是分号，跳过它
-        if (ps->lexer->t.token == ZR_TK_SEMICOLON) {
-            consume_token(ps, ZR_TK_SEMICOLON);
-        }
-    } else {
-        consume_token(ps, ZR_TK_SEMICOLON);
-    }
-
-    // 解析步进（可选）
-    SZrAstNode *step = ZR_NULL;
-    if (ps->lexer->t.token != ZR_TK_RPAREN) {
-        step = parse_expression(ps);
-    }
-
-    expect_token(ps, ZR_TK_RPAREN);
-    consume_token(ps, ZR_TK_RPAREN);
-
-    SZrAstNode *block = parse_block(ps);
-    if (block == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange loopLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
-
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_FOR_LOOP, loopLoc);
-    if (node == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    node->data.forLoop.init = init;
-    node->data.forLoop.cond = cond;
-    node->data.forLoop.step = step;
-    node->data.forLoop.block = block;
-    node->data.forLoop.isStatement = ZR_TRUE; // 默认是语句
-    return node;
-}
-
-// 解析 foreach 循环
-
-SZrAstNode *parse_foreach_loop(SZrParserState *ps) {
-    SZrFileRange startLoc = get_current_location(ps);
-    expect_token(ps, ZR_TK_FOR);
-    ZrParser_Lexer_Next(ps->lexer);
-
-    expect_token(ps, ZR_TK_LPAREN);
-    consume_token(ps, ZR_TK_LPAREN);
-
-    expect_token(ps, ZR_TK_VAR);
-    consume_token(ps, ZR_TK_VAR);
-
-    // 解析模式（标识符或解构）
-    SZrAstNode *pattern = ZR_NULL;
-    if (ps->lexer->t.token == ZR_TK_IDENTIFIER) {
-        pattern = parse_identifier(ps);
-    } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
-        // 对象解构模式 {key1, key2, ...}
-        pattern = parse_destructuring_object(ps);
-    } else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
-        // 数组解构模式 [elem1, elem2, ...]
-        pattern = parse_destructuring_array(ps);
-    } else {
-        report_error(ps, "Expected identifier or destructuring pattern");
-        return ZR_NULL;
-    }
-
-    // 可选类型注解
-    SZrType *typeInfo = ZR_NULL;
-    if (consume_token(ps, ZR_TK_COLON)) {
-        typeInfo = parse_type(ps);
-    }
-
-    expect_token(ps, ZR_TK_IN);
-    consume_token(ps, ZR_TK_IN);
-
-    SZrAstNode *expr = parse_expression(ps);
-    if (expr == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    expect_token(ps, ZR_TK_RPAREN);
-    consume_token(ps, ZR_TK_RPAREN);
-
-    SZrAstNode *block = parse_block(ps);
-    if (block == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    SZrFileRange endLoc = get_current_location(ps);
-    SZrFileRange loopLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
-
-    SZrAstNode *node = create_ast_node(ps, ZR_AST_FOREACH_LOOP, loopLoc);
-    if (node == ZR_NULL) {
-        return ZR_NULL;
-    }
-
-    node->data.foreachLoop.pattern = pattern;
-    node->data.foreachLoop.typeInfo = typeInfo;
-    node->data.foreachLoop.expr = expr;
-    node->data.foreachLoop.block = block;
-    node->data.foreachLoop.isStatement = ZR_TRUE; // 默认是语句
-    return node;
-}
-
 // 解析 break/continue 语句
 
 SZrAstNode *parse_break_continue_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     TZrBool isBreak = (ps->lexer->t.token == ZR_TK_BREAK);
+    const TZrChar *statementKind = isBreak ? "break" : "continue";
+    TZrBool reportedMissingSemicolon = ZR_FALSE;
     ZrParser_Lexer_Next(ps->lexer);
 
     SZrAstNode *expr = ZR_NULL;
     if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
-        expr = parse_expression(ps);
+        SZrFileRange nextTokenLocation = get_current_token_location(ps);
+        if (nextTokenLocation.start.line > startLoc.start.line) {
+            report_missing_statement_semicolon(ps, statementKind, nextTokenLocation);
+            reportedMissingSemicolon = ZR_TRUE;
+        } else {
+            expr = parse_expression(ps);
+        }
     }
 
-    expect_token(ps, ZR_TK_SEMICOLON);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        if (!reportedMissingSemicolon) {
+            report_missing_statement_semicolon(ps, statementKind, get_current_token_location(ps));
+        }
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_BREAK_CONTINUE_STATEMENT, startLoc);
     if (node == ZR_NULL) {
@@ -564,8 +590,11 @@ SZrAstNode *parse_out_statement(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    expect_token(ps, ZR_TK_SEMICOLON);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        report_missing_statement_semicolon(ps, "out", get_current_token_location(ps));
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
 
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange stmtLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -591,8 +620,11 @@ SZrAstNode *parse_throw_statement(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    expect_token(ps, ZR_TK_SEMICOLON);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        report_missing_statement_semicolon(ps, "throw", get_current_token_location(ps));
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
 
     SZrAstNode *node = create_ast_node(ps, ZR_AST_THROW_STATEMENT, startLoc);
     if (node == ZR_NULL) {
@@ -609,6 +641,11 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
     expect_token(ps, ZR_TK_TRY);
     ZrParser_Lexer_Next(ps->lexer);
+
+    if (ps->lexer->t.token != ZR_TK_LBRACE) {
+        report_missing_statement_body_open(ps, "try statement", get_current_token_location(ps));
+        return ZR_NULL;
+    }
 
     SZrAstNode *block = parse_block(ps);
     if (block == ZR_NULL) {
@@ -628,8 +665,31 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
 
         catchPattern = parse_parameter_list(ps);
 
-        expect_token(ps, ZR_TK_RPAREN);
+        if (ps->lexer->t.token != ZR_TK_RPAREN) {
+            report_missing_catch_pattern_close(ps, get_current_token_location(ps));
+            if (catchPattern != ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+            }
+            if (catchClauses != ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, catchClauses);
+            }
+            ZrParser_Ast_Free(ps->state, block);
+            return ZR_NULL;
+        }
+
         consume_token(ps, ZR_TK_RPAREN);
+
+        if (ps->lexer->t.token != ZR_TK_LBRACE) {
+            report_missing_statement_body_open(ps, "catch statement", get_current_token_location(ps));
+            if (catchPattern != ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, catchPattern);
+            }
+            if (catchClauses != ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, catchClauses);
+            }
+            ZrParser_Ast_Free(ps->state, block);
+            return ZR_NULL;
+        }
 
         catchBlock = parse_block(ps);
         if (catchBlock == ZR_NULL) {
@@ -672,6 +732,15 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
     // 解析 finally（可选）
     SZrAstNode *finallyBlock = ZR_NULL;
     if (consume_token(ps, ZR_TK_FINALLY)) {
+        if (ps->lexer->t.token != ZR_TK_LBRACE) {
+            report_missing_statement_body_open(ps, "finally statement", get_current_token_location(ps));
+            if (catchClauses != ZR_NULL) {
+                ZrParser_AstNodeArray_Free(ps->state, catchClauses);
+            }
+            ZrParser_Ast_Free(ps->state, block);
+            return ZR_NULL;
+        }
+
         finallyBlock = parse_block(ps);
     }
 
@@ -704,8 +773,19 @@ static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange s
             return ZR_NULL;
         }
 
-        expect_token(ps, ZR_TK_RPAREN);
+        if (ps->lexer->t.token != ZR_TK_RPAREN) {
+            report_missing_using_resource_close(ps, get_current_token_location(ps));
+            ZrParser_Ast_Free(ps->state, resource);
+            return ZR_NULL;
+        }
+
         consume_token(ps, ZR_TK_RPAREN);
+
+        if (ps->lexer->t.token != ZR_TK_LBRACE) {
+            report_missing_statement_body_open(ps, "using statement", get_current_token_location(ps));
+            ZrParser_Ast_Free(ps->state, resource);
+            return ZR_NULL;
+        }
 
         body = parse_block(ps);
         if (body == ZR_NULL) {
@@ -720,8 +800,11 @@ static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange s
             return ZR_NULL;
         }
 
-        expect_token(ps, ZR_TK_SEMICOLON);
-        consume_token(ps, ZR_TK_SEMICOLON);
+        if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+            report_missing_statement_semicolon(ps, "using", get_current_token_location(ps));
+        } else {
+            consume_token(ps, ZR_TK_SEMICOLON);
+        }
     }
 
     node = create_ast_node(ps, ZR_AST_USING_STATEMENT, startLoc);
@@ -839,64 +922,14 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
         }
 
         case ZR_TK_FOR: {
-            // 判断是 for 还是 foreach
-            // FOR ( VAR ... IN ... ) 是 foreach
-            // FOR ( ... ; ... ; ... ) 是 for
-            // 保存状态以便向前看
-            TZrSize savedPos = ps->lexer->currentPos;
-            TZrInt32 savedChar = ps->lexer->currentChar;
-            TZrInt32 savedLine = ps->lexer->lineNumber;
-            TZrInt32 savedLastLine = ps->lexer->lastLine;
-            SZrToken savedToken = ps->lexer->t;
-            SZrToken savedLookahead = ps->lexer->lookahead;
-            TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
-            TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
-            TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
-            TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
-            // 跳过 FOR 和 LPAREN
-            ZrParser_Lexer_Next(ps->lexer); // 消费 FOR
-            if (ps->lexer->t.token == ZR_TK_LPAREN) {
-                ZrParser_Lexer_Next(ps->lexer); // 消费 LPAREN
-                if (ps->lexer->t.token == ZR_TK_VAR) {
-                    // 可能是 foreach，继续检查
-                    ZrParser_Lexer_Next(ps->lexer); // 消费 VAR
-                    // 跳过模式（标识符、类型注解等）
-                    while (ps->lexer->t.token != ZR_TK_IN && ps->lexer->t.token != ZR_TK_COLON &&
-                           ps->lexer->t.token != ZR_TK_RPAREN && ps->lexer->t.token != ZR_TK_EOS) {
-                        ZrParser_Lexer_Next(ps->lexer);
-                    }
-                    if (ps->lexer->t.token == ZR_TK_IN) {
-                        // 是 foreach，恢复状态并解析
-                        ps->lexer->currentPos = savedPos;
-                        ps->lexer->currentChar = savedChar;
-                        ps->lexer->lineNumber = savedLine;
-                        ps->lexer->lastLine = savedLastLine;
-                        ps->lexer->t = savedToken;
-                        ps->lexer->lookahead = savedLookahead;
-                        ps->lexer->lookaheadPos = savedLookaheadPos;
-                        ps->lexer->lookaheadChar = savedLookaheadChar;
-                        ps->lexer->lookaheadLine = savedLookaheadLine;
-                        ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
-                        SZrAstNode *loop = parse_foreach_loop(ps);
-                        if (loop != ZR_NULL) {
-                            loop->data.foreachLoop.isStatement = ZR_TRUE;
-                        }
-                        return loop;
-                    }
+            if (parser_for_header_should_parse_foreach(ps)) {
+                SZrAstNode *foreachNode = parse_foreach_loop(ps);
+                if (foreachNode != ZR_NULL) {
+                    foreachNode->data.foreachLoop.isStatement = ZR_TRUE;
                 }
+                return foreachNode;
             }
-            // 恢复状态并解析 for
-            ps->lexer->currentPos = savedPos;
-            ps->lexer->currentChar = savedChar;
-            ps->lexer->lineNumber = savedLine;
-            ps->lexer->lastLine = savedLastLine;
-            ps->lexer->t = savedToken;
-            ps->lexer->lookahead = savedLookahead;
-            ps->lexer->lookaheadPos = savedLookaheadPos;
-            ps->lexer->lookaheadChar = savedLookaheadChar;
-            ps->lexer->lookaheadLine = savedLookaheadLine;
-            ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+
             SZrAstNode *loop = parse_for_loop(ps);
             if (loop != ZR_NULL) {
                 loop->data.forLoop.isStatement = ZR_TRUE;
@@ -949,6 +982,9 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
                 SZrAstNode *funcDecl = try_parse_prefixed_function_declaration(ps);
                 if (funcDecl != ZR_NULL) {
                     return funcDecl;
+                }
+                if (peek_token(ps) == ZR_TK_IDENTIFIER) {
+                    return parse_function_declaration(ps);
                 }
             }
             // 检查是否是函数声明（identifier(params) { statements} 风格）
@@ -1223,38 +1259,7 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
         }
 
         case ZR_TK_FOR: {
-            // 判断是 for 还是 foreach
-            // 保存状态以便向前看
-            TZrSize savedPos = ps->lexer->currentPos;
-            TZrInt32 savedChar = ps->lexer->currentChar;
-            TZrInt32 savedLine = ps->lexer->lineNumber;
-            TZrInt32 savedLastLine = ps->lexer->lastLine;
-            SZrToken savedToken = ps->lexer->t;
-            SZrToken savedLookahead = ps->lexer->lookahead;
-            TZrSize savedLookaheadPos = ps->lexer->lookaheadPos;
-            TZrInt32 savedLookaheadChar = ps->lexer->lookaheadChar;
-            TZrInt32 savedLookaheadLine = ps->lexer->lookaheadLine;
-            TZrInt32 savedLookaheadLastLine = ps->lexer->lookaheadLastLine;
-
-            // 跳过 for 和 (
-            ZrParser_Lexer_Next(ps->lexer);
-            if (ps->lexer->t.token == ZR_TK_LPAREN) {
-                ZrParser_Lexer_Next(ps->lexer);
-            }
-
-            // 检查是否是 foreach (var x in ...)
-            if (ps->lexer->t.token == ZR_TK_VAR) {
-                // 恢复状态并解析 foreach
-                ps->lexer->currentPos = savedPos;
-                ps->lexer->currentChar = savedChar;
-                ps->lexer->lineNumber = savedLine;
-                ps->lexer->lastLine = savedLastLine;
-                ps->lexer->t = savedToken;
-                ps->lexer->lookahead = savedLookahead;
-                ps->lexer->lookaheadPos = savedLookaheadPos;
-                ps->lexer->lookaheadChar = savedLookaheadChar;
-                ps->lexer->lookaheadLine = savedLookaheadLine;
-                ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
+            if (parser_for_header_should_parse_foreach(ps)) {
                 SZrAstNode *foreachNode = parse_foreach_loop(ps);
                 if (foreachNode != ZR_NULL) {
                     foreachNode->data.foreachLoop.isStatement = ZR_TRUE;
@@ -1262,17 +1267,6 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 return foreachNode;
             }
 
-            // 恢复状态并解析 for
-            ps->lexer->currentPos = savedPos;
-            ps->lexer->currentChar = savedChar;
-            ps->lexer->lineNumber = savedLine;
-            ps->lexer->lastLine = savedLastLine;
-            ps->lexer->t = savedToken;
-            ps->lexer->lookahead = savedLookahead;
-            ps->lexer->lookaheadPos = savedLookaheadPos;
-            ps->lexer->lookaheadChar = savedLookaheadChar;
-            ps->lexer->lookaheadLine = savedLookaheadLine;
-            ps->lexer->lookaheadLastLine = savedLookaheadLastLine;
             SZrAstNode *forNode = parse_for_loop(ps);
             if (forNode != ZR_NULL) {
                 forNode->data.forLoop.isStatement = ZR_TRUE;
@@ -1309,6 +1303,9 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 SZrAstNode *funcDecl = try_parse_prefixed_function_declaration(ps);
                 if (funcDecl != ZR_NULL) {
                     return funcDecl;
+                }
+                if (peek_token(ps) == ZR_TK_IDENTIFIER) {
+                    return parse_function_declaration(ps);
                 }
             }
             if (token == ZR_TK_PERCENT) {

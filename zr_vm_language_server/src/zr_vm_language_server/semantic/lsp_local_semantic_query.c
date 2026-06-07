@@ -1,6 +1,7 @@
 #include "semantic/lsp_local_semantic_query.h"
 
 #include "interface/lsp_interface_internal.h"
+#include "semantic/lsp_local_semantic_expression_text.h"
 #include "semantic/semantic_analyzer_internal.h"
 
 #include "zr_vm_language_server/incremental_parser.h"
@@ -358,7 +359,11 @@ static SZrString *local_query_build_fact_markdown(SZrState *state,
     }
 
     markdown[0] = '\0';
-    if (!local_query_append_numeric_hover(markdown, sizeof(markdown), &used, query->numericFact) ||
+    if (!ZrLanguageServer_LspLocalSemanticExpressionText_AppendHover(markdown,
+                                                                     sizeof(markdown),
+                                                                     &used,
+                                                                     query->expressionFact) ||
+        !local_query_append_numeric_hover(markdown, sizeof(markdown), &used, query->numericFact) ||
         !local_query_append_logical_hover(markdown, sizeof(markdown), &used, query->logicalFact) ||
         !local_query_append_reachability_hover(markdown,
                                                sizeof(markdown),
@@ -934,7 +939,11 @@ TZrBool ZrLanguageServer_LspLocalSemanticQuery_BuildHover(
         return ZR_FALSE;
     }
 
-    if (!local_query_append_numeric_hover(markdown, sizeof(markdown), &used, query->numericFact) ||
+    if (!ZrLanguageServer_LspLocalSemanticExpressionText_AppendHover(markdown,
+                                                                     sizeof(markdown),
+                                                                     &used,
+                                                                     query->expressionFact) ||
+        !local_query_append_numeric_hover(markdown, sizeof(markdown), &used, query->numericFact) ||
         !local_query_append_logical_hover(markdown, sizeof(markdown), &used, query->logicalFact) ||
         !local_query_append_reachability_hover(markdown,
                                                sizeof(markdown),

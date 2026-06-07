@@ -37,9 +37,11 @@ SZrAstNode *parse_interface_field_declaration(SZrParserState *ps) {
         typeInfo = parse_type(ps);
     }
 
-    // 期望分号
-    expect_token(ps, ZR_TK_SEMICOLON);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        report_missing_statement_semicolon(ps, "interface field declaration", get_current_token_location(ps));
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
 
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange fieldLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -102,7 +104,13 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
         }
     }
 
-    expect_token(ps, ZR_TK_RPAREN);
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_parameter_list_close(ps, get_current_token_location(ps));
+        if (params != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+        }
+        return ZR_NULL;
+    }
     consume_token(ps, ZR_TK_RPAREN);
 
     // 可选返回类型
@@ -118,9 +126,11 @@ SZrAstNode *parse_interface_method_signature(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    // 期望分号
-    expect_token(ps, ZR_TK_SEMICOLON);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        report_missing_statement_semicolon(ps, "interface method signature", get_current_token_location(ps));
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
 
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange methodLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -183,9 +193,11 @@ SZrAstNode *parse_interface_property_signature(SZrParserState *ps) {
         typeInfo = parse_type(ps);
     }
 
-    // 期望分号
-    expect_token(ps, ZR_TK_SEMICOLON);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        report_missing_statement_semicolon(ps, "interface property signature", get_current_token_location(ps));
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
 
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange propertyLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -247,7 +259,13 @@ SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
         }
     }
 
-    expect_token(ps, ZR_TK_RPAREN);
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_parameter_list_close(ps, get_current_token_location(ps));
+        if (params != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+        }
+        return ZR_NULL;
+    }
     consume_token(ps, ZR_TK_RPAREN);
 
     // 可选返回类型
@@ -256,9 +274,11 @@ SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
         returnType = parse_type(ps);
     }
 
-    // 期望分号
-    expect_token(ps, ZR_TK_SEMICOLON);
-    consume_token(ps, ZR_TK_SEMICOLON);
+    if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+        report_missing_statement_semicolon(ps, "interface meta signature", get_current_token_location(ps));
+    } else {
+        consume_token(ps, ZR_TK_SEMICOLON);
+    }
 
     SZrFileRange endLoc = get_current_location(ps);
     SZrFileRange metaLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -346,8 +366,11 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     }
 
     // 期望左大括号
-    expect_token(ps, ZR_TK_LBRACE);
-    ZrParser_Lexer_Next(ps->lexer);
+    if (ps->lexer->t.token != ZR_TK_LBRACE) {
+        report_missing_declaration_body_open(ps, "interface declaration", get_current_token_location(ps));
+    } else {
+        ZrParser_Lexer_Next(ps->lexer);
+    }
 
     // 解析成员列表
     SZrAstNodeArray *members = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_SMALL);
@@ -439,6 +462,9 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
         } else if (token == ZR_TK_AT) {
             // 元函数签名
             member = parse_interface_meta_signature(ps);
+        } else if (token == ZR_TK_GET || token == ZR_TK_SET) {
+            // 属性签名
+            member = parse_interface_property_signature(ps);
         } else if (token == ZR_TK_IDENTIFIER) {
             // 方法签名
             member = parse_interface_method_signature(ps);

@@ -149,6 +149,96 @@ static cJSON *color_create_presentation(const char *label, SZrLspRange range) {
     return presentation;
 }
 
+static int color_range_equals(SZrLspRange left, SZrLspRange right) {
+    return left.start.line == right.start.line &&
+           left.start.character == right.start.character &&
+           left.end.line == right.end.line &&
+           left.end.character == right.end.character;
+}
+
+static int color_document_contains_literal_range(const char *content,
+                                                 size_t contentLength,
+                                                 SZrLspRange range) {
+    TZrInt32 line = 0;
+    TZrInt32 character = 0;
+    int inLineComment = 0;
+    int inBlockComment = 0;
+    char quote = '\0';
+    int escaped = 0;
+
+    if (content == NULL) {
+        return 0;
+    }
+
+    for (size_t offset = 0; offset < contentLength; offset++) {
+        SZrStdioColorLiteral literal;
+        size_t literalLength;
+        char current = content[offset];
+        char next = offset + 1 < contentLength ? content[offset + 1] : '\0';
+
+        if (inLineComment) {
+            if (current == '\n') {
+                inLineComment = 0;
+                line++;
+                character = 0;
+            } else {
+                character++;
+            }
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (current == '*' && next == '/') {
+                inBlockComment = 0;
+                offset++;
+                character += 2;
+                continue;
+            }
+            if (current == '\n') {
+                line++;
+                character = 0;
+            } else {
+                character++;
+            }
+            continue;
+        }
+
+        if (color_try_parse_literal(content, contentLength, offset, line, character, &literal, &literalLength)) {
+            if (color_range_equals(literal.range, range)) {
+                return 1;
+            }
+            offset += literalLength - 1;
+            character += (TZrInt32)literalLength;
+            continue;
+        }
+
+        if (quote != '\0') {
+            if (escaped) {
+                escaped = 0;
+            } else if (current == '\\') {
+                escaped = 1;
+            } else if (current == quote) {
+                quote = '\0';
+            }
+        } else if (current == '/' && next == '/') {
+            inLineComment = 1;
+        } else if (current == '/' && next == '*') {
+            inBlockComment = 1;
+        } else if (current == '"' || current == '\'' || current == '`') {
+            quote = current;
+        }
+
+        if (current == '\n') {
+            line++;
+            character = 0;
+        } else {
+            character++;
+        }
+    }
+
+    return 0;
+}
+
 cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params) {
     const char *uriText;
     SZrString *uri;
@@ -157,6 +247,10 @@ cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params
     size_t contentLength;
     TZrInt32 line = 0;
     TZrInt32 character = 0;
+    int inLineComment = 0;
+    int inBlockComment = 0;
+    char quote = '\0';
+    int escaped = 0;
     cJSON *result;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
@@ -180,6 +274,35 @@ cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params
         SZrStdioColorLiteral literal;
         size_t literalLength;
         cJSON *entry;
+        char current = content[offset];
+        char next = offset + 1 < contentLength ? content[offset + 1] : '\0';
+
+        if (inLineComment) {
+            if (current == '\n') {
+                inLineComment = 0;
+                line++;
+                character = 0;
+            } else {
+                character++;
+            }
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (current == '*' && next == '/') {
+                inBlockComment = 0;
+                offset++;
+                character += 2;
+                continue;
+            }
+            if (current == '\n') {
+                line++;
+                character = 0;
+            } else {
+                character++;
+            }
+            continue;
+        }
 
         if (color_try_parse_literal(content, contentLength, offset, line, character, &literal, &literalLength)) {
             entry = color_serialize(&literal);
@@ -191,7 +314,23 @@ cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params
             continue;
         }
 
-        if (content[offset] == '\n') {
+        if (quote != '\0') {
+            if (escaped) {
+                escaped = 0;
+            } else if (current == '\\') {
+                escaped = 1;
+            } else if (current == quote) {
+                quote = '\0';
+            }
+        } else if (current == '/' && next == '/') {
+            inLineComment = 1;
+        } else if (current == '/' && next == '*') {
+            inBlockComment = 1;
+        } else if (current == '"' || current == '\'' || current == '`') {
+            quote = current;
+        }
+
+        if (current == '\n') {
             line++;
             character = 0;
         } else {
@@ -204,6 +343,9 @@ cJSON *handle_document_color_request(SZrStdioServer *server, const cJSON *params
 
 cJSON *handle_color_presentation_request(SZrStdioServer *server, const cJSON *params) {
     const cJSON *color;
+    const char *uriText;
+    SZrString *uri;
+    SZrFileVersion *fileVersion;
     SZrLspRange range;
     char label[10];
     unsigned int red;
@@ -213,8 +355,18 @@ cJSON *handle_color_presentation_request(SZrStdioServer *server, const cJSON *pa
     cJSON *result;
     cJSON *presentation;
 
-    ZR_UNUSED_PARAMETER(server);
     if (params == NULL || !parse_range(get_object_item(params, ZR_LSP_FIELD_RANGE), &range)) {
+        return cJSON_CreateArray();
+    }
+    if (!get_uri_from_text_document(server, params, &uriText, &uri)) {
+        return cJSON_CreateArray();
+    }
+    ZR_UNUSED_PARAMETER(uriText);
+
+    fileVersion = get_file_version_for_uri(server, uri);
+    if (fileVersion == ZR_NULL ||
+        fileVersion->content == ZR_NULL ||
+        !color_document_contains_literal_range(fileVersion->content, (size_t)fileVersion->contentLength, range)) {
         return cJSON_CreateArray();
     }
 

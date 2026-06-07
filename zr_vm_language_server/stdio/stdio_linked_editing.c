@@ -44,6 +44,91 @@ static int linked_editing_is_identifier_part(char ch) {
     return linked_editing_is_identifier_start(ch) || (ch >= '0' && ch <= '9');
 }
 
+static int linked_editing_offset_is_in_code(const char *content,
+                                            size_t contentLength,
+                                            size_t targetOffset) {
+    int inLineComment = 0;
+    int inBlockComment = 0;
+    int inString = 0;
+    int escaped = 0;
+
+    if (content == NULL || targetOffset >= contentLength) {
+        return 0;
+    }
+
+    for (size_t offset = 0; offset <= targetOffset && offset < contentLength; offset++) {
+        char ch = content[offset];
+        char next = offset + 1 < contentLength ? content[offset + 1] : '\0';
+
+        if (inLineComment) {
+            if (offset == targetOffset) {
+                return 0;
+            }
+            if (ch == '\n' || ch == '\r') {
+                inLineComment = 0;
+            }
+            continue;
+        }
+
+        if (inBlockComment) {
+            if (offset == targetOffset) {
+                return 0;
+            }
+            if (ch == '*' && next == '/') {
+                if (offset + 1 >= targetOffset) {
+                    return 0;
+                }
+                inBlockComment = 0;
+                offset++;
+            }
+            continue;
+        }
+
+        if (inString) {
+            if (offset == targetOffset) {
+                return 0;
+            }
+            if (escaped) {
+                escaped = 0;
+                continue;
+            }
+            if (ch == '\\') {
+                escaped = 1;
+                continue;
+            }
+            if (ch == '"') {
+                inString = 0;
+            }
+            continue;
+        }
+
+        if (offset == targetOffset) {
+            return 1;
+        }
+        if (ch == '/' && next == '/') {
+            if (offset + 1 >= targetOffset) {
+                return 0;
+            }
+            inLineComment = 1;
+            offset++;
+            continue;
+        }
+        if (ch == '/' && next == '*') {
+            if (offset + 1 >= targetOffset) {
+                return 0;
+            }
+            inBlockComment = 1;
+            offset++;
+            continue;
+        }
+        if (ch == '"') {
+            inString = 1;
+        }
+    }
+
+    return 0;
+}
+
 static int linked_editing_offset_from_position(const char *content,
                                                size_t contentLength,
                                                SZrLspPosition position,
@@ -132,6 +217,9 @@ static cJSON *linked_editing_ranges_from_document(SZrStdioServer *server,
         }
         offset--;
     }
+    if (!linked_editing_offset_is_in_code(content, contentLength, offset)) {
+        return cJSON_CreateArray();
+    }
 
     wordStart = offset;
     while (wordStart > 0 && linked_editing_is_identifier_part(content[wordStart - 1])) {
@@ -156,7 +244,10 @@ static cJSON *linked_editing_ranges_from_document(SZrStdioServer *server,
         int beforeOk = cursor == 0 || !linked_editing_is_identifier_part(content[cursor - 1]);
         int afterOk = cursor + wordLength >= contentLength ||
                       !linked_editing_is_identifier_part(content[cursor + wordLength]);
-        if (beforeOk && afterOk && memcmp(content + cursor, content + wordStart, wordLength) == 0) {
+        if (beforeOk &&
+            afterOk &&
+            linked_editing_offset_is_in_code(content, contentLength, cursor) &&
+            memcmp(content + cursor, content + wordStart, wordLength) == 0) {
             SZrLspRange range;
             range.start = linked_editing_position_from_offset(content, contentLength, cursor);
             range.end = linked_editing_position_from_offset(content, contentLength, cursor + wordLength);

@@ -331,6 +331,259 @@ static void test_lsp_get_missing_right_operand_parser_diagnostic(SZrState *state
     TEST_PASS(timer, "LSP Missing Right Operand Parser Diagnostic");
 }
 
+static void test_lsp_get_array_assignment_parser_diagnostic(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content = "var seed = 2;\nvar values = [seed = 3];\n";
+    SZrArray diagnostics;
+
+    TEST_START("LSP Array Assignment Parser Diagnostic");
+    TEST_INFO("Parser Diagnostics",
+              "Array elements that use assignment syntax should report the concrete array-element problem instead of only expected-token fallbacks");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Array Assignment Parser Diagnostic", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                               "file:///parser_array_assignment_diagnostic.zr",
+                               strlen("file:///parser_array_assignment_diagnostic.zr"));
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Array Assignment Parser Diagnostic", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Array Assignment Parser Diagnostic", "Failed to update document");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Array Assignment Parser Diagnostic", "Diagnostics request failed");
+        return;
+    }
+
+    if (diagnostics.length == 0 ||
+        !diagnostic_array_contains_code(&diagnostics, "array_element_assignment") ||
+        !diagnostic_array_contains_message(&diagnostics, "Array element cannot be an assignment expression") ||
+        !diagnostic_array_contains_message(&diagnostics, "Move the assignment into a statement before the array literal")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Array Assignment Parser Diagnostic",
+                  "Expected array-element assignment diagnostics to carry code, problem, and suggestion");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &diagnostics);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Array Assignment Parser Diagnostic");
+}
+
+static void test_lsp_get_missing_member_name_parser_diagnostic(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content = "var value = 1;\nreturn value.;\n";
+    SZrArray diagnostics;
+
+    TEST_START("LSP Missing Member Name Parser Diagnostic");
+    TEST_INFO("Parser Diagnostics",
+              "A dot-member expression without a member name should report the concrete member-access problem instead of only expected-token fallback text");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Missing Member Name Parser Diagnostic", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                               "file:///parser_missing_member_name_diagnostic.zr",
+                               strlen("file:///parser_missing_member_name_diagnostic.zr"));
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Member Name Parser Diagnostic", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Member Name Parser Diagnostic", "Failed to update document");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics)) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Member Name Parser Diagnostic", "Diagnostics request failed");
+        return;
+    }
+
+    if (diagnostics.length == 0 ||
+        !diagnostic_array_contains_code(&diagnostics, "missing_member_name") ||
+        !diagnostic_array_contains_message(&diagnostics, "Missing member name after '.'") ||
+        !diagnostic_array_contains_message(&diagnostics, "Add a member name after '.' or remove the member access")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Missing Member Name Parser Diagnostic",
+                  "Expected missing-member-name diagnostics to carry code, problem, and suggestion");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &diagnostics);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Missing Member Name Parser Diagnostic");
+}
+
+static void test_lsp_get_missing_condition_parser_diagnostics(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *ifUri;
+    SZrString *whileUri;
+    SZrString *ifCloseUri;
+    SZrString *whileCloseUri;
+    const TZrChar *ifContent = "if () { return 1; }";
+    const TZrChar *whileContent = "while () { break; }";
+    const TZrChar *ifCloseContent = "var ready = true;\nif (ready { return 1; }";
+    const TZrChar *whileCloseContent = "var ready = true;\nwhile (ready { break; }";
+    SZrArray diagnostics;
+
+    TEST_START("LSP Missing Condition Parser Diagnostics");
+    TEST_INFO("Parser Diagnostics",
+              "Incomplete if/while condition parentheses should report the concrete missing condition part and a fix");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Missing Condition Parser Diagnostics", "Failed to create LSP context");
+        return;
+    }
+
+    ifUri = ZrCore_String_Create(state,
+                                 "file:///parser_missing_if_condition.zr",
+                                 strlen("file:///parser_missing_if_condition.zr"));
+    whileUri = ZrCore_String_Create(state,
+                                    "file:///parser_missing_while_condition.zr",
+                                    strlen("file:///parser_missing_while_condition.zr"));
+    ifCloseUri = ZrCore_String_Create(state,
+                                      "file:///parser_missing_if_condition_close.zr",
+                                      strlen("file:///parser_missing_if_condition_close.zr"));
+    whileCloseUri = ZrCore_String_Create(state,
+                                         "file:///parser_missing_while_condition_close.zr",
+                                         strlen("file:///parser_missing_while_condition_close.zr"));
+    if (ifUri == ZR_NULL || whileUri == ZR_NULL || ifCloseUri == ZR_NULL || whileCloseUri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Condition Parser Diagnostics", "Failed to allocate URIs");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, ifUri, ifContent, strlen(ifContent), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Condition Parser Diagnostics", "Failed to update if document");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, ifUri, &diagnostics) ||
+        diagnostics.length == 0 ||
+        !diagnostic_array_contains_code(&diagnostics, "missing_condition") ||
+        !diagnostic_array_contains_message(&diagnostics, "Missing condition inside 'if'") ||
+        !diagnostic_array_contains_message(&diagnostics, "Add a boolean expression between '(' and ')'")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Missing Condition Parser Diagnostics",
+                  "Expected empty if condition to publish a structured missing-condition diagnostic");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, whileUri, whileContent, strlen(whileContent), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Condition Parser Diagnostics", "Failed to update while document");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, whileUri, &diagnostics) ||
+        diagnostics.length == 0 ||
+        !diagnostic_array_contains_code(&diagnostics, "missing_condition") ||
+        !diagnostic_array_contains_message(&diagnostics, "Missing condition inside 'while'") ||
+        !diagnostic_array_contains_message(&diagnostics, "Add a boolean expression between '(' and ')'")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Missing Condition Parser Diagnostics",
+                  "Expected empty while condition to publish a structured missing-condition diagnostic");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             context,
+                                             ifCloseUri,
+                                             ifCloseContent,
+                                             strlen(ifCloseContent),
+                                             1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Condition Parser Diagnostics", "Failed to update if close document");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, ifCloseUri, &diagnostics) ||
+        diagnostics.length == 0 ||
+        !diagnostic_array_contains_code(&diagnostics, "missing_condition_close") ||
+        !diagnostic_array_contains_message(&diagnostics, "Missing ')' after 'if' condition") ||
+        !diagnostic_array_contains_message(&diagnostics, "Insert ')' after the condition expression before the block")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Missing Condition Parser Diagnostics",
+                  "Expected if condition missing-close diagnostic to name the concrete parenthesis problem");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state,
+                                             context,
+                                             whileCloseUri,
+                                             whileCloseContent,
+                                             strlen(whileCloseContent),
+                                             1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Missing Condition Parser Diagnostics", "Failed to update while close document");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, whileCloseUri, &diagnostics) ||
+        diagnostics.length == 0 ||
+        !diagnostic_array_contains_code(&diagnostics, "missing_condition_close") ||
+        !diagnostic_array_contains_message(&diagnostics, "Missing ')' after 'while' condition") ||
+        !diagnostic_array_contains_message(&diagnostics, "Insert ')' after the condition expression before the block")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Missing Condition Parser Diagnostics",
+                  "Expected while condition missing-close diagnostic to name the concrete parenthesis problem");
+        return;
+    }
+    ZrCore_Array_Free(state, &diagnostics);
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Missing Condition Parser Diagnostics");
+}
+
 static void test_lsp_incomplete_edit_preserves_prior_semantic_snapshot(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context = ZR_NULL;
@@ -3133,6 +3386,75 @@ static void test_lsp_signature_help_resolves_super_constructor(SZrState *state) 
     TEST_PASS(timer, "LSP Signature Help Resolves Super Constructor");
 }
 
+static void test_lsp_signature_help_ignores_comments_inside_call_arguments(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "pick(value: int): int {\n"
+        "    return value;\n"
+        "}\n"
+        "use(): int {\n"
+        "    var result = pick(/* pick(99) is prose */1);\n"
+        "    return pick(result);\n"
+        "}\n";
+    SZrLspPosition commentPosition;
+    SZrLspPosition argumentPosition;
+    SZrLspSignatureHelp *help = ZR_NULL;
+
+    TEST_START("LSP Signature Help Ignores Comments Inside Call Arguments");
+    TEST_INFO("Signature help comment filter",
+              "Cursor positions inside comments embedded in a call expression should not surface call signatures.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state,
+                               "file:///signature_help_call_comment.zr",
+                               strlen("file:///signature_help_call_comment.zr"));
+    if (context == ZR_NULL ||
+        uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "pick(99) is prose", 0, 0, &commentPosition) ||
+        !lsp_find_position_for_substring(content, "pick(result)", 0, 5, &argumentPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help Ignores Comments Inside Call Arguments",
+                  "Failed to prepare call-comment signature-help fixture");
+        return;
+    }
+
+    if (ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, commentPosition, &help) &&
+        help != ZR_NULL) {
+        const TZrChar *label = signature_help_first_label(help);
+
+        ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help Ignores Comments Inside Call Arguments",
+                  label != ZR_NULL ? label : "<unexpected signature help>");
+        return;
+    }
+
+    help = ZR_NULL;
+    if (!ZrLanguageServer_Lsp_GetSignatureHelp(state, context, uri, argumentPosition, &help) ||
+        help == ZR_NULL ||
+        !signature_help_contains_text(help, "pick(value: int): int")) {
+        const TZrChar *label = signature_help_first_label(help);
+
+        if (help != ZR_NULL) {
+            ZrLanguageServer_LspSignatureHelp_Free(state, help);
+        }
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Signature Help Ignores Comments Inside Call Arguments",
+                  label != ZR_NULL ? label : "<missing real call signature help>");
+        return;
+    }
+
+    ZrLanguageServer_LspSignatureHelp_Free(state, help);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Signature Help Ignores Comments Inside Call Arguments");
+}
+
 static void test_lsp_definition_resolves_super_constructor(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3341,6 +3663,143 @@ static void test_lsp_document_highlights_resolve_super_constructor(SZrState *sta
     TEST_PASS(timer, "LSP Document Highlights Resolve Super Constructor");
 }
 
+static void test_lsp_super_constructor_navigation_ignores_non_code_tokens(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    TZrChar *uriText = "file:///super_constructor_non_code_tokens.zr";
+    const TZrChar *content =
+        "class BaseHero {\n"
+        "    pub @constructor(origin: int) {\n"
+        "    }\n"
+        "}\n"
+        "class BossHero: BaseHero {\n"
+        "    pub @constructor(seed: int) super(seed) {\n"
+        "        // super is just text\n"
+        "        var label = \"super\";\n"
+        "    }\n"
+        "}\n";
+    SZrLspPosition commentPosition;
+    SZrLspPosition stringPosition;
+    SZrLspPosition rejectedPositions[2];
+    const TZrChar *positionLabels[2];
+    TZrSize index;
+
+    TEST_START("LSP Super Constructor Navigation Ignores Non-Code Tokens");
+    TEST_INFO("Super constructor non-code filter",
+              "Definition, references, and highlights should not treat comment or string text as a super call");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Super Constructor Navigation Ignores Non-Code Tokens",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, uriText, strlen(uriText));
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Super Constructor Navigation Ignores Non-Code Tokens",
+                  "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Super Constructor Navigation Ignores Non-Code Tokens",
+                  "Failed to update document");
+        return;
+    }
+
+    if (!lsp_find_position_for_substring(content, "super is just text", 0, 0, &commentPosition) ||
+        !lsp_find_position_for_substring(content, "\"super\"", 0, 1, &stringPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Super Constructor Navigation Ignores Non-Code Tokens",
+                  "Failed to compute non-code super positions");
+        return;
+    }
+
+    rejectedPositions[0] = commentPosition;
+    rejectedPositions[1] = stringPosition;
+    positionLabels[0] = "comment";
+    positionLabels[1] = "string literal";
+
+    for (index = 0; index < 2; index++) {
+        TZrChar reason[256];
+        SZrArray definitions;
+        SZrArray references;
+        SZrArray highlights;
+
+        ZrCore_Array_Init(state, &definitions, sizeof(SZrLspLocation *), 1);
+        (void)ZrLanguageServer_Lsp_GetDefinition(state, context, uri, rejectedPositions[index], &definitions);
+        if (definitions.length != 0) {
+            SZrLspLocation **firstLocationPtr =
+                definitions.length > 0 ? (SZrLspLocation **)ZrCore_Array_Get(&definitions, 0) : ZR_NULL;
+            SZrLspLocation *firstLocation = firstLocationPtr != ZR_NULL ? *firstLocationPtr : ZR_NULL;
+            snprintf(reason,
+                     sizeof(reason),
+                     "Definition on %s super text returned %zu locations (first=%d:%d-%d:%d)",
+                     positionLabels[index],
+                     (size_t)definitions.length,
+                     firstLocation != ZR_NULL ? firstLocation->range.start.line : -1,
+                     firstLocation != ZR_NULL ? firstLocation->range.start.character : -1,
+                     firstLocation != ZR_NULL ? firstLocation->range.end.line : -1,
+                     firstLocation != ZR_NULL ? firstLocation->range.end.character : -1);
+            ZrCore_Array_Free(state, &definitions);
+            ZrLanguageServer_LspContext_Free(state, context);
+            TEST_FAIL(timer, "LSP Super Constructor Navigation Ignores Non-Code Tokens", reason);
+            return;
+        }
+        ZrCore_Array_Free(state, &definitions);
+
+        ZrCore_Array_Init(state, &references, sizeof(SZrLspLocation *), 2);
+        (void)ZrLanguageServer_Lsp_FindReferences(state,
+                                                  context,
+                                                  uri,
+                                                  rejectedPositions[index],
+                                                  ZR_TRUE,
+                                                  &references);
+        if (references.length != 0) {
+            snprintf(reason,
+                     sizeof(reason),
+                     "References on %s super text returned %zu locations",
+                     positionLabels[index],
+                     (size_t)references.length);
+            ZrCore_Array_Free(state, &references);
+            ZrLanguageServer_LspContext_Free(state, context);
+            TEST_FAIL(timer, "LSP Super Constructor Navigation Ignores Non-Code Tokens", reason);
+            return;
+        }
+        ZrCore_Array_Free(state, &references);
+
+        ZrCore_Array_Init(state, &highlights, sizeof(SZrLspDocumentHighlight *), 2);
+        (void)ZrLanguageServer_Lsp_GetDocumentHighlights(state,
+                                                         context,
+                                                         uri,
+                                                         rejectedPositions[index],
+                                                         &highlights);
+        if (highlights.length != 0) {
+            snprintf(reason,
+                     sizeof(reason),
+                     "Document highlights on %s super text returned %zu highlights",
+                     positionLabels[index],
+                     (size_t)highlights.length);
+            ZrCore_Array_Free(state, &highlights);
+            ZrLanguageServer_LspContext_Free(state, context);
+            TEST_FAIL(timer, "LSP Super Constructor Navigation Ignores Non-Code Tokens", reason);
+            return;
+        }
+        ZrCore_Array_Free(state, &highlights);
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Super Constructor Navigation Ignores Non-Code Tokens");
+}
+
 static void test_lsp_definition_resolves_decorator_target(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -3541,6 +4000,75 @@ static void test_lsp_hover_describes_meta_method_category(SZrState *state) {
 
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Hover Describes Meta Method Category");
+}
+
+static void test_lsp_hover_ignores_meta_methods_in_non_code_text(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "class Foo {\n"
+        "    pub @constructor(seed: int) {\n"
+        "    }\n"
+        "    pub run(): int {\n"
+        "        // @constructor is prose, not a meta method\n"
+        "        var label = \"@constructor\";\n"
+        "        return 1;\n"
+        "    }\n"
+        "}\n";
+    SZrLspPosition commentPosition;
+    SZrLspPosition stringPosition;
+    SZrLspPosition rejectedPositions[2];
+    const TZrChar *positionLabels[2];
+    TZrSize index;
+
+    TEST_START("LSP Hover Ignores Meta Methods In Non Code Text");
+    TEST_INFO("Meta method hover filters",
+              "Hover should not treat @meta-method text inside comments or strings as source meta-method declarations.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Hover Ignores Meta Methods In Non Code Text", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                               "file:///meta_method_non_code_hover.zr",
+                               strlen("file:///meta_method_non_code_hover.zr"));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "@constructor is prose", 0, 1, &commentPosition) ||
+        !lsp_find_position_for_substring(content, "\"@constructor\"", 0, 2, &stringPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Hover Ignores Meta Methods In Non Code Text",
+                  "Failed to prepare non-code meta method hover fixture");
+        return;
+    }
+
+    rejectedPositions[0] = commentPosition;
+    rejectedPositions[1] = stringPosition;
+    positionLabels[0] = "comment";
+    positionLabels[1] = "string literal";
+
+    for (index = 0; index < 2; index++) {
+        SZrLspHover *hover = ZR_NULL;
+        if (ZrLanguageServer_Lsp_GetHover(state, context, uri, rejectedPositions[index], &hover) &&
+            hover != ZR_NULL &&
+            hover_contains_text(hover, "Meta Method: @constructor")) {
+            TZrChar reason[256];
+            snprintf(reason,
+                     sizeof(reason),
+                     "Hover on %s @constructor text returned meta-method documentation",
+                     positionLabels[index]);
+            ZrLanguageServer_LspContext_Free(state, context);
+            TEST_FAIL(timer, "LSP Hover Ignores Meta Methods In Non Code Text", reason);
+            return;
+        }
+    }
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Hover Ignores Meta Methods In Non Code Text");
 }
 
 static void test_lsp_rich_hover_structures_meta_sections(SZrState *state) {
@@ -4252,6 +4780,67 @@ static void test_lsp_completion_lists_directives_and_meta_methods(SZrState *stat
     ZrCore_Array_Free(state, &completions);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Completion Lists Directives And Meta Methods");
+}
+
+static void test_lsp_completion_ignores_token_prefixes_in_non_code_text(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    const TZrChar *content =
+        "func run(): int {\n"
+        "    // @constructor is prose, not a meta method\n"
+        "    var label = \"%compileTime is prose, not a directive\";\n"
+        "    return 1;\n"
+        "}\n";
+    SZrString *uri;
+    SZrLspPosition commentMetaPosition;
+    SZrLspPosition stringDirectivePosition;
+    SZrArray completions;
+
+    TEST_START("LSP Completion Ignores Token Prefixes In Non Code Text");
+    TEST_INFO("Directive/meta completion filters",
+              "Typing directive or meta-method prefixes inside comments and strings should not surface source-code completions.");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    uri = ZrCore_String_Create(state,
+                               "file:///non_code_token_prefix_completion.zr",
+                               strlen("file:///non_code_token_prefix_completion.zr"));
+    if (context == ZR_NULL || uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "@constructor is prose", 0, 1, &commentMetaPosition) ||
+        !lsp_find_position_for_substring(content, "%compileTime is prose", 0, 1, &stringDirectivePosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Completion Ignores Token Prefixes In Non Code Text",
+                  "Failed to prepare non-code token prefix completion fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, commentMetaPosition, &completions) ||
+        completions.length != 0) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Completion Ignores Token Prefixes In Non Code Text",
+                  "Comment @ text should not list meta-method completions");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrCore_Array_Init(state, &completions, sizeof(SZrLspCompletionItem *), 16);
+    if (!ZrLanguageServer_Lsp_GetCompletion(state, context, uri, stringDirectivePosition, &completions) ||
+        completions.length != 0) {
+        ZrCore_Array_Free(state, &completions);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Completion Ignores Token Prefixes In Non Code Text",
+                  "String % text should not list directive completions");
+        return;
+    }
+    ZrCore_Array_Free(state, &completions);
+
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Completion Ignores Token Prefixes In Non Code Text");
 }
 
 static void test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(SZrState *state) {
@@ -5814,6 +6403,101 @@ static void test_lsp_semantic_tokens_cover_import_chain_members(SZrState *state)
     TEST_PASS(timer, "LSP Semantic Tokens Cover Import Chain Members");
 }
 
+static void test_lsp_semantic_tokens_ignore_template_string_tokens(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "var system = %import(\"zr.system\");\n"
+        "run() {\n"
+        "    var text = `%import(\"zr.math\") @constructor #trace# system.console.printLine`;\n"
+        "    return system;\n"
+        "}\n";
+    SZrLspPosition realImportPosition;
+    SZrLspPosition templateImportPosition;
+    SZrLspPosition templateMetaMethodPosition;
+    SZrLspPosition templateDecoratorPosition;
+    SZrArray tokens;
+
+    TEST_START("LSP Semantic Tokens Ignore Template String Tokens");
+    TEST_INFO("Template string semantic-token filtering",
+              "Semantic tokens should classify real source tokens but ignore directive, meta-method, and decorator text inside backtick strings");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Ignore Template String Tokens",
+                  "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state,
+                               "file:///semantic_tokens_template_string.zr",
+                               strlen("file:///semantic_tokens_template_string.zr"));
+    if (uri == ZR_NULL ||
+        !ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1) ||
+        !lsp_find_position_for_substring(content, "%import", 0, 0, &realImportPosition) ||
+        !lsp_find_position_for_substring(content, "%import", 1, 0, &templateImportPosition) ||
+        !lsp_find_position_for_substring(content, "@constructor", 0, 0, &templateMetaMethodPosition) ||
+        !lsp_find_position_for_substring(content, "#trace#", 0, 0, &templateDecoratorPosition)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Ignore Template String Tokens",
+                  "Failed to prepare semantic-token template string fixture");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &tokens, sizeof(TZrUInt32), 32);
+    if (!ZrLanguageServer_Lsp_GetSemanticTokens(state, context, uri, &tokens)) {
+        ZrCore_Array_Free(state, &tokens);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Ignore Template String Tokens",
+                  "Semantic token request failed for template string fixture");
+        return;
+    }
+
+    if (!semantic_tokens_contain(&tokens,
+                                 realImportPosition.line,
+                                 realImportPosition.character,
+                                 7,
+                                 "keyword")) {
+        ZrCore_Array_Free(state, &tokens);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Ignore Template String Tokens",
+                  "Real %import directive should still be classified as a keyword token");
+        return;
+    }
+
+    if (semantic_tokens_contain(&tokens,
+                                templateImportPosition.line,
+                                templateImportPosition.character,
+                                7,
+                                "keyword") ||
+        semantic_tokens_contain(&tokens,
+                                templateMetaMethodPosition.line,
+                                templateMetaMethodPosition.character,
+                                12,
+                                "metaMethod") ||
+        semantic_tokens_contain(&tokens,
+                                templateDecoratorPosition.line,
+                                templateDecoratorPosition.character,
+                                7,
+                                "decorator")) {
+        ZrCore_Array_Free(state, &tokens);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Semantic Tokens Ignore Template String Tokens",
+                  "Semantic tokens classified directive, meta-method, or decorator text inside a backtick string");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &tokens);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Semantic Tokens Ignore Template String Tokens");
+}
+
 static void test_lsp_semantic_query_builds_native_receiver_member_hover(SZrState *state) {
     SZrTestTimer timer;
     SZrLspContext *context;
@@ -6380,6 +7064,15 @@ int main(void) {
     test_lsp_get_missing_right_operand_parser_diagnostic(state);
     TEST_DIVIDER();
 
+    test_lsp_get_array_assignment_parser_diagnostic(state);
+    TEST_DIVIDER();
+
+    test_lsp_get_missing_member_name_parser_diagnostic(state);
+    TEST_DIVIDER();
+
+    test_lsp_get_missing_condition_parser_diagnostics(state);
+    TEST_DIVIDER();
+
     test_lsp_incomplete_edit_preserves_prior_semantic_snapshot(state);
     TEST_DIVIDER();
     
@@ -6455,6 +7148,9 @@ int main(void) {
     test_lsp_signature_help_resolves_super_constructor(state);
     TEST_DIVIDER();
 
+    test_lsp_signature_help_ignores_comments_inside_call_arguments(state);
+    TEST_DIVIDER();
+
     test_lsp_definition_resolves_super_constructor(state);
     TEST_DIVIDER();
 
@@ -6464,6 +7160,9 @@ int main(void) {
     test_lsp_document_highlights_resolve_super_constructor(state);
     TEST_DIVIDER();
 
+    test_lsp_super_constructor_navigation_ignores_non_code_tokens(state);
+    TEST_DIVIDER();
+
     test_lsp_definition_resolves_decorator_target(state);
     TEST_DIVIDER();
 
@@ -6471,6 +7170,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_hover_describes_meta_method_category(state);
+    TEST_DIVIDER();
+
+    test_lsp_hover_ignores_meta_methods_in_non_code_text(state);
     TEST_DIVIDER();
 
     test_lsp_rich_hover_structures_meta_sections(state);
@@ -6489,6 +7191,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_completion_lists_directives_and_meta_methods(state);
+    TEST_DIVIDER();
+
+    test_lsp_completion_ignores_token_prefixes_in_non_code_text(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_query_unifies_local_symbol_navigation_and_hover(state);
@@ -6546,6 +7251,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_semantic_tokens_cover_import_chain_members(state);
+    TEST_DIVIDER();
+
+    test_lsp_semantic_tokens_ignore_template_string_tokens(state);
     TEST_DIVIDER();
 
     test_lsp_semantic_query_builds_native_receiver_member_hover(state);

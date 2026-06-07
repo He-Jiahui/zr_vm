@@ -20,6 +20,8 @@
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
 
+typedef struct SZrCompilerState SZrCompilerState;
+
 #define ZR_DEBUG_WAIT_INFINITE ((TZrUInt32) 0xFFFFFFFFu)
 #define ZR_DEBUG_PROTOCOL_NAME "zrdbg/1"
 #define ZR_DEBUG_INSTANCE_SYNTHETIC_FIELD_COUNT ((TZrSize)1u)
@@ -155,12 +157,43 @@ TZrUInt32 zr_debug_scope_id(TZrUInt32 frameId, EZrDebugScopeKind kind);
 TZrBool zr_debug_exception_read_frame(ZrDebugAgent *agent, TZrUInt32 frameId, ZrDebugFrameSnapshot *outFrame);
 TZrSize zr_debug_exception_frame_count(ZrDebugAgent *agent);
 SZrCallInfo *zr_debug_find_call_info_by_frame_id(ZrDebugAgent *agent, TZrUInt32 frameId, SZrFunction **outFunction);
+const SZrTypeValue *zr_debug_frame_value_slot(SZrState *state,
+                                              const SZrFunction *function,
+                                              const SZrCallInfo *callInfo,
+                                              TZrUInt32 stackSlot);
+const SZrTypeValue *zr_debug_closure_capture_value(ZrDebugAgent *agent,
+                                                   const SZrFunction *function,
+                                                   const SZrCallInfo *callInfo,
+                                                   const TZrChar *name);
 SZrObjectPrototype *zr_debug_resolve_value_prototype(SZrState *state, const SZrTypeValue *value);
 TZrSize zr_debug_count_visible_object_entries(const SZrHashSet *set);
 void zr_debug_value_child_shape(SZrState *state,
                                 const SZrTypeValue *value,
                                 TZrSize *outNamedVariables,
                                 TZrSize *outIndexedVariables);
+void zr_debug_value_semantic_summary(SZrState *state,
+                                     const SZrTypeValue *value,
+                                     TZrSize namedVariables,
+                                     TZrSize indexedVariables,
+                                     TZrChar *buffer,
+                                     TZrSize bufferSize);
+ZR_DEBUG_API void zr_debug_append_expression_semantic_facts(ZrDebugAgent *agent,
+                                                            TZrUInt32 frameId,
+                                                            const TZrChar *expression,
+                                                            TZrChar *buffer,
+                                                            TZrSize bufferSize);
+void zr_debug_semantic_register_bindings(ZrDebugAgent *agent,
+                                         TZrUInt32 frameId,
+                                         SZrCompilerState *compilerState);
+void zr_debug_reference_summary_from_scope(EZrDebugScopeKind scopeKind,
+                                           const TZrChar *name,
+                                           TZrChar *buffer,
+                                           TZrSize bufferSize);
+TZrBool zr_debug_identifier_reference_summary(ZrDebugAgent *agent,
+                                              TZrUInt32 frameId,
+                                              const TZrChar *name,
+                                              TZrChar *buffer,
+                                              TZrSize bufferSize);
 void zr_debug_format_value_text_safe(SZrState *state,
                                      const SZrTypeValue *value,
                                      TZrChar *buffer,
@@ -209,6 +242,8 @@ TZrBool zr_debug_evaluate_expression(ZrDebugAgent *agent,
                                      const TZrChar *expression,
                                      SZrTypeValue *outValue,
                                      TZrChar *errorBuffer,
-                                     TZrSize errorBufferSize);
+                                     TZrSize errorBufferSize,
+                                     TZrChar *referenceBuffer,
+                                     TZrSize referenceBufferSize);
 
 #endif

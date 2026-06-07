@@ -227,6 +227,10 @@ ZR_PARSER_API const SZrSemanticExpressionFact *ZrParser_SemanticFacts_FindExpres
 ZR_PARSER_API const SZrSemanticReferenceFact *ZrParser_SemanticFacts_FindReferenceAtPosition(
         const SZrSemanticContext *context,
         SZrFileRange position);
+ZR_PARSER_API const SZrSemanticReferenceFact *ZrParser_SemanticFacts_FindReferenceByNodeAndKind(
+        const SZrSemanticContext *context,
+        const SZrAstNode *node,
+        EZrSemanticReferenceKind kind);
 ZR_PARSER_API const SZrSemanticNumericFact *ZrParser_SemanticFacts_FindNumericByNode(
         const SZrSemanticContext *context,
         const SZrAstNode *node);

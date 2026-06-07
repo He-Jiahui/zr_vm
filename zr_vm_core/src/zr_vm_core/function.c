@@ -189,6 +189,7 @@ SZrFunction *ZrCore_Function_New(struct SZrState *state) {
     function->prototypeFrameTypeLayoutLength = 0;
     function->prototypeFrameTypeLayoutFieldCount = 0;
     function->prototypeFrameTypeLayoutFieldCapacity = 0;
+    function->prototypeContextFunction = ZR_NULL;
     function->localVariableList = ZR_NULL;
     function->localVariableLength = 0;
     function->lineInSourceStart = 0;
@@ -665,8 +666,12 @@ TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function
                 break;
             case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
             case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
                 function_note_generated_frame_slot(destinationSlot, &slotCount);
                 function_note_generated_frame_slot(operandA1, &slotCount);
+                break;
+            case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+                function_note_generated_frame_slot(destinationSlot, &slotCount);
                 break;
 
             case ZR_INSTRUCTION_ENUM(THROW):
@@ -796,15 +801,30 @@ TZrBool ZrCore_Function_ApplyReturnEscape(struct SZrState *state,
 }
 
 void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *function) {
-    if (function == ZR_NULL || function->childFunctionList == ZR_NULL || function->childFunctionLength == 0) {
+    SZrFunction *prototypeContextFunction;
+
+    if (function == ZR_NULL) {
         return;
     }
 
-    for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
-        SZrFunction *childFunction = &function->childFunctionList[childIndex];
+    prototypeContextFunction = function->prototypeContextFunction != ZR_NULL
+                                       ? function->prototypeContextFunction
+                                       : function;
+    if (function->prototypeData != ZR_NULL &&
+        function->prototypeDataLength > 0u &&
+        function->prototypeCount > 0u) {
+        prototypeContextFunction = function;
+        function->prototypeContextFunction = function;
+    }
 
-        childFunction->ownerFunction = function;
-        ZrCore_Function_RebindConstantFunctionValuesToChildren(childFunction);
+    if (function->childFunctionList != ZR_NULL) {
+        for (TZrUInt32 childIndex = 0; childIndex < function->childFunctionLength; childIndex++) {
+            SZrFunction *childFunction = &function->childFunctionList[childIndex];
+
+            childFunction->ownerFunction = function;
+            childFunction->prototypeContextFunction = prototypeContextFunction;
+            ZrCore_Function_RebindConstantFunctionValuesToChildren(childFunction);
+        }
     }
 
     if (function->constantValueList == ZR_NULL || function->constantValueLength == 0) {
@@ -832,6 +852,16 @@ void ZrCore_Function_RebindConstantFunctionValuesToChildren(SZrFunction *functio
         }
 
         if (constantFunction == ZR_NULL) {
+            continue;
+        }
+
+        if (constantFunction != function &&
+            constantFunction->prototypeContextFunction == ZR_NULL &&
+            prototypeContextFunction != constantFunction) {
+            constantFunction->prototypeContextFunction = prototypeContextFunction;
+        }
+
+        if (function->childFunctionList == ZR_NULL || function->childFunctionLength == 0) {
             continue;
         }
 
@@ -969,6 +999,7 @@ static void function_reset_to_tombstone(SZrFunction *function) {
     function->prototypeFrameTypeLayoutLength = 0;
     function->prototypeFrameTypeLayoutFieldCount = 0;
     function->prototypeFrameTypeLayoutFieldCapacity = 0;
+    function->prototypeContextFunction = ZR_NULL;
     function->lineInSourceStart = 0;
     function->lineInSourceEnd = 0;
     function->cachedStatelessClosure = ZR_NULL;
@@ -3515,6 +3546,7 @@ void ZrCore_Function_PostCall(struct SZrState *state, struct SZrCallInfo *callIn
     inlineDropFunction = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
     inlineDropFrameBase = function_inline_frame_base_from_call_info(callInfo);
     function_move_returns(state, callInfo, dest, resultCount, expectedReturnCount);
+    ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, callInfo);
     function_drop_inline_frame_values_for_function_if_available(state, inlineDropFunction, inlineDropFrameBase);
 
     ZR_ASSERT(!(callInfo->callStatus &

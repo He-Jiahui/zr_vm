@@ -40,6 +40,10 @@ async function main() {
         `:type should infer the borrowed ownership-qualified type\n${output}`);
     assert(output.includes('Ownership: borrow %borrowed'),
         `:type should print the shared ownership semantic fact for %borrow(owner)\n${output}`);
+    assert(output.includes('Reference: read owner'),
+        `:type should print the shared owner operand reference fact for %borrow(owner)\n${output}`);
+    assert(output.includes('Declared at: 1:5'),
+        `:type should print the owner operand declaration location for %borrow(owner)\n${output}`);
     assert(!output.includes('\nint\n') && !output.includes('failed to infer expression type'),
         `:type should not execute the ownership expression or fail inference\n${output}`);
 }

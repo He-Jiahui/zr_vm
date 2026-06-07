@@ -695,6 +695,12 @@ static cJSON *zr_debug_agent_make_stack_trace_result(ZrDebugAgent *agent) {
                     cJSON_AddStringToObject(argumentObject, "name", argumentValues[argumentIndex].name);
                     cJSON_AddStringToObject(argumentObject, "type", argumentValues[argumentIndex].type_name);
                     cJSON_AddStringToObject(argumentObject, "value", argumentValues[argumentIndex].value_text);
+                    cJSON_AddStringToObject(argumentObject,
+                                            "semanticSummary",
+                                            argumentValues[argumentIndex].semantic_summary);
+                    cJSON_AddStringToObject(argumentObject,
+                                            "referenceSummary",
+                                            argumentValues[argumentIndex].reference_summary);
                     cJSON_AddNumberToObject(argumentObject,
                                             "variablesReference",
                                             argumentValues[argumentIndex].variables_reference);
@@ -739,6 +745,8 @@ static cJSON *zr_debug_agent_make_evaluate_result(ZrDebugAgent *agent,
 
     cJSON_AddStringToObject(result, "type", evaluateResult.type_name);
     cJSON_AddStringToObject(result, "value", evaluateResult.value_text);
+    cJSON_AddStringToObject(result, "semanticSummary", evaluateResult.semantic_summary);
+    cJSON_AddStringToObject(result, "referenceSummary", evaluateResult.reference_summary);
     cJSON_AddNumberToObject(result, "variablesReference", evaluateResult.variables_reference);
     cJSON_AddNumberToObject(result, "namedVariables", (double)evaluateResult.named_variables);
     cJSON_AddNumberToObject(result, "indexedVariables", (double)evaluateResult.indexed_variables);
@@ -831,6 +839,8 @@ static cJSON *zr_debug_agent_make_variables_result(ZrDebugAgent *agent,
         cJSON_AddStringToObject(valueObject, "name", values[index].name);
         cJSON_AddStringToObject(valueObject, "type", values[index].type_name);
         cJSON_AddStringToObject(valueObject, "value", values[index].value_text);
+        cJSON_AddStringToObject(valueObject, "semanticSummary", values[index].semantic_summary);
+        cJSON_AddStringToObject(valueObject, "referenceSummary", values[index].reference_summary);
         cJSON_AddNumberToObject(valueObject, "variablesReference", values[index].variables_reference);
         cJSON_AddNumberToObject(valueObject, "namedVariables", (double)values[index].named_variables);
         cJSON_AddNumberToObject(valueObject, "indexedVariables", (double)values[index].indexed_variables);

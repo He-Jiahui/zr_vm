@@ -33,6 +33,12 @@ SZrHashKeyValuePair *ZrLanguageServer_Lsp_FindEquivalentUriKeyPair(SZrState *sta
                                                                    SZrHashSet *set,
                                                                    SZrString *uri);
 SZrFileRange ZrLanguageServer_Lsp_GetSymbolLookupRange(SZrSymbol *symbol);
+TZrBool ZrLanguageServer_Lsp_IsOffsetInCodeSpan(const TZrChar *content,
+                                                TZrSize contentLength,
+                                                TZrSize offset);
+TZrBool ZrLanguageServer_Lsp_IsCursorOffsetInCodeSpan(const TZrChar *content,
+                                                      TZrSize contentLength,
+                                                      TZrSize offset);
 SZrString *ZrLanguageServer_Lsp_BuildSymbolMarkdownDocumentation(SZrState *state,
                                                                  SZrSymbol *symbol,
                                                                  const TZrChar *content,

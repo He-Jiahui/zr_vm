@@ -1,16 +1,9 @@
 #include "zr_vm_language_server_stdio_internal.h"
 
+#include "stdio_inline_value_scan.h"
 #include "stdio_inline_value_semantic_text.h"
 
 #include <string.h>
-
-static int inline_value_is_identifier_start(char ch) {
-    return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_';
-}
-
-static int inline_value_is_identifier_part(char ch) {
-    return inline_value_is_identifier_start(ch) || (ch >= '0' && ch <= '9');
-}
 
 static int inline_value_position_in_range(SZrLspRange range, TZrInt32 line, TZrInt32 character) {
     if (line < range.start.line || line > range.end.line) {
@@ -20,34 +13,6 @@ static int inline_value_position_in_range(SZrLspRange range, TZrInt32 line, TZrI
         return 0;
     }
     if (line == range.end.line && character > range.end.character) {
-        return 0;
-    }
-    return 1;
-}
-
-static int inline_value_is_keyword_at(const char *content,
-                                      size_t lineStart,
-                                      size_t lineEnd,
-                                      size_t offset,
-                                      const char *keyword) {
-    size_t keywordLength;
-
-    if (content == NULL || keyword == NULL) {
-        return 0;
-    }
-
-    keywordLength = strlen(keyword);
-    if (offset + keywordLength > lineEnd) {
-        return 0;
-    }
-    if (offset > lineStart && inline_value_is_identifier_part(content[offset - 1])) {
-        return 0;
-    }
-    if (strncmp(content + offset, keyword, keywordLength) != 0) {
-        return 0;
-    }
-    if (offset + keywordLength < lineEnd &&
-        inline_value_is_identifier_part(content[offset + keywordLength])) {
         return 0;
     }
     return 1;
@@ -204,13 +169,13 @@ static int inline_value_previous_token_is_keyword(const char *content,
         }
         offset--;
     }
-    if (offset == 0 || !inline_value_is_identifier_part(content[offset - 1])) {
+    if (offset == 0 || !ZrStdioInlineValue_IsIdentifierPart(content[offset - 1])) {
         return 0;
     }
 
     tokenEnd = offset;
     tokenStart = tokenEnd;
-    while (tokenStart > 0 && inline_value_is_identifier_part(content[tokenStart - 1])) {
+    while (tokenStart > 0 && ZrStdioInlineValue_IsIdentifierPart(content[tokenStart - 1])) {
         tokenStart--;
     }
 
@@ -270,124 +235,6 @@ static int inline_value_has_only_whitespace_before(const char *content,
     }
 
     return 1;
-}
-
-static size_t inline_value_find_logical_operator(const char *content,
-                                                 size_t start,
-                                                 size_t end) {
-    if (content == NULL) {
-        return end;
-    }
-
-    for (size_t offset = start; offset + 1 < end; offset++) {
-        if ((content[offset] == '|' && content[offset + 1] == '|') ||
-            (content[offset] == '&' && content[offset + 1] == '&')) {
-            return offset;
-        }
-    }
-
-    return end;
-}
-
-static size_t inline_value_find_arithmetic_operator(const char *content,
-                                                    size_t start,
-                                                    size_t end) {
-    if (content == NULL) {
-        return end;
-    }
-
-    for (size_t offset = start; offset < end; offset++) {
-        if (content[offset] == '+' ||
-            content[offset] == '-' ||
-            content[offset] == '*' ||
-            content[offset] == '/' ||
-            content[offset] == '%') {
-            return offset;
-        }
-    }
-
-    return end;
-}
-
-static size_t inline_value_find_last_member_operator(const char *content,
-                                                     size_t start,
-                                                     size_t end) {
-    size_t offset;
-
-    if (content == NULL || end <= start) {
-        return end;
-    }
-
-    offset = end;
-    while (offset > start) {
-        offset--;
-        if (content[offset] == '.' &&
-            offset + 1 < end &&
-            inline_value_is_identifier_start(content[offset + 1])) {
-            return offset + 1;
-        }
-    }
-
-    return end;
-}
-
-static size_t inline_value_find_semantic_query_offset(const char *content,
-                                                      size_t start,
-                                                      size_t end) {
-    size_t queryOffset = inline_value_find_logical_operator(content, start, end);
-    if (queryOffset < end) {
-        return queryOffset;
-    }
-
-    queryOffset = inline_value_find_arithmetic_operator(content, start, end);
-    if (queryOffset < end) {
-        return queryOffset;
-    }
-
-    queryOffset = inline_value_find_last_member_operator(content, start, end);
-    if (queryOffset < end) {
-        return queryOffset;
-    }
-
-    return start;
-}
-
-static int inline_value_is_expression_statement_start(const char *content,
-                                                      size_t lineStart,
-                                                      size_t lineEnd,
-                                                      size_t offset) {
-    char ch;
-
-    if (content == NULL || offset >= lineEnd) {
-        return 0;
-    }
-
-    ch = content[offset];
-    if ((ch >= '0' && ch <= '9') || ch == '(' || ch == '!' || ch == '-') {
-        return 1;
-    }
-
-    if (inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "true") ||
-        inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "false")) {
-        return 1;
-    }
-
-    if (!inline_value_is_identifier_start(ch)) {
-        return 0;
-    }
-
-    return !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "var") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "return") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "func") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "if") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "while") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "for") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "switch") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "class") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "struct") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "interface") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "module") &&
-           !inline_value_is_keyword_at(content, lineStart, lineEnd, offset, "import");
 }
 
 static int inline_value_find_continuation_expression_owner(const char *content,
@@ -571,11 +418,11 @@ static void inline_value_emit_continuation_initializer(const char *content,
            (content[ownerOffset] == ' ' || content[ownerOffset] == '\t')) {
         ownerOffset++;
     }
-    if (!inline_value_is_keyword_at(content,
-                                    ownerLineStart,
-                                    ownerLineEnd,
-                                    ownerOffset,
-                                    "var")) {
+    if (!ZrStdioInlineValue_IsKeywordAt(content,
+                                        ownerLineStart,
+                                        ownerLineEnd,
+                                        ownerOffset,
+                                        "var")) {
         return;
     }
 
@@ -590,12 +437,12 @@ static void inline_value_emit_continuation_initializer(const char *content,
            (content[nameStart] == ' ' || content[nameStart] == '\t')) {
         nameStart++;
     }
-    if (nameStart >= ownerLineEnd || !inline_value_is_identifier_start(content[nameStart])) {
+    if (nameStart >= ownerLineEnd || !ZrStdioInlineValue_IsIdentifierStart(content[nameStart])) {
         return;
     }
 
     nameEnd = nameStart + 1;
-    while (nameEnd < ownerLineEnd && inline_value_is_identifier_part(content[nameEnd])) {
+    while (nameEnd < ownerLineEnd && ZrStdioInlineValue_IsIdentifierPart(content[nameEnd])) {
         nameEnd++;
     }
 
@@ -626,9 +473,9 @@ static void inline_value_emit_continuation_initializer(const char *content,
         return;
     }
 
-    queryOffset = inline_value_find_semantic_query_offset(content,
-                                                         initializerStart,
-                                                         expressionEnd);
+    queryOffset = ZrStdioInlineValue_FindSemanticQueryOffset(content,
+                                                             initializerStart,
+                                                             expressionEnd);
     nameRange.start.line = ownerLine;
     nameRange.start.character = (TZrInt32)(nameStart - ownerLineStart);
     nameRange.end.line = ownerLine;
@@ -695,14 +542,15 @@ static void inline_value_emit_continuation_expression_statement(const char *cont
            (content[expressionStart] == ' ' || content[expressionStart] == '\t')) {
         expressionStart++;
     }
-    if (!inline_value_is_expression_statement_start(content,
-                                                   ownerLineStart,
-                                                   ownerLineEnd,
-                                                   expressionStart)) {
+    if (!ZrStdioInlineValue_IsExpressionStatementStart(content,
+                                                       ownerLineStart,
+                                                       ownerLineEnd,
+                                                       contentLength,
+                                                       expressionStart)) {
         return;
     }
 
-    statementEnd = inline_value_find_multiline_statement_end(content, expressionStart, contentLength);
+    statementEnd = ZrStdioInlineValue_FindExpressionStatementEnd(content, expressionStart, contentLength);
     if (statementEnd >= contentLength || content[statementEnd] != ';' || statementEnd < lineStart) {
         return;
     }
@@ -712,7 +560,7 @@ static void inline_value_emit_continuation_expression_statement(const char *cont
         return;
     }
 
-    queryOffset = inline_value_find_semantic_query_offset(content, expressionStart, expressionEnd);
+    queryOffset = ZrStdioInlineValue_FindSemanticQueryOffset(content, expressionStart, expressionEnd);
     value = inline_value_create_semantic_text_for_offsets(server,
                                                           uri,
                                                           content,
@@ -734,17 +582,23 @@ static void inline_value_scan_line(const char *content,
                                    SZrLspRange requestRange,
                                    SZrStdioServer *server,
                                    SZrString *uri,
-                                   cJSON *result) {
-    size_t offset = lineStart;
-    TZrInt32 character = 0;
-    size_t commentStart = lineEnd;
+                                   cJSON *result,
+                                   int *inBlockComment) {
+    size_t codeStart = lineStart;
+    size_t commentStart = lineStart;
+    size_t offset;
+    TZrInt32 character;
 
-    for (size_t scan = lineStart; scan + 1 < lineEnd; scan++) {
-        if (content[scan] == '/' && content[scan + 1] == '/') {
-            commentStart = scan;
-            break;
-        }
+    if (!ZrStdioInlineValue_FindCodeSpanOnLine(content,
+                                               lineStart,
+                                               lineEnd,
+                                               inBlockComment,
+                                               &codeStart,
+                                               &commentStart)) {
+        return;
     }
+    offset = codeStart;
+    character = (TZrInt32)(codeStart - lineStart);
 
     inline_value_emit_continuation_expression_statement(content,
                                                         lineStart,
@@ -776,7 +630,7 @@ static void inline_value_scan_line(const char *content,
         cJSON *value;
 
         if (inline_value_position_in_range(requestRange, line, character) &&
-            inline_value_is_keyword_at(content, lineStart, commentStart, offset, "return")) {
+            ZrStdioInlineValue_IsKeywordAt(content, lineStart, commentStart, offset, "return")) {
             size_t expressionStart = inline_value_skip_multiline_whitespace(content,
                                                                             offset + 6,
                                                                             contentLength);
@@ -785,7 +639,7 @@ static void inline_value_scan_line(const char *content,
             statementEnd = inline_value_find_multiline_statement_end(content, expressionStart, contentLength);
             expressionEnd = inline_value_trim_expression_end(content, expressionStart, statementEnd);
             if (expressionStart < expressionEnd) {
-                queryOffset = inline_value_find_semantic_query_offset(
+                queryOffset = ZrStdioInlineValue_FindSemanticQueryOffset(
                         content,
                         expressionStart,
                         expressionEnd);
@@ -816,15 +670,19 @@ static void inline_value_scan_line(const char *content,
         if (inline_value_position_in_range(requestRange, line, character) &&
             !inline_value_line_is_continuation(content, lineStart) &&
             inline_value_has_only_whitespace_before(content, lineStart, offset) &&
-            inline_value_is_expression_statement_start(content, lineStart, commentStart, offset)) {
+            ZrStdioInlineValue_IsExpressionStatementStart(content,
+                                                          lineStart,
+                                                          commentStart,
+                                                          contentLength,
+                                                          offset)) {
             size_t expressionStart = offset;
             size_t expressionEnd;
 
-            statementEnd = inline_value_find_multiline_statement_end(content, expressionStart, contentLength);
+            statementEnd = ZrStdioInlineValue_FindExpressionStatementEnd(content, expressionStart, contentLength);
             if (statementEnd < contentLength && content[statementEnd] == ';') {
                 expressionEnd = inline_value_trim_expression_end(content, expressionStart, statementEnd);
                 if (expressionStart < expressionEnd) {
-                    queryOffset = inline_value_find_semantic_query_offset(
+                    queryOffset = ZrStdioInlineValue_FindSemanticQueryOffset(
                             content,
                             expressionStart,
                             expressionEnd);
@@ -854,7 +712,7 @@ static void inline_value_scan_line(const char *content,
         }
 
         if (!inline_value_position_in_range(requestRange, line, character) ||
-            !inline_value_is_keyword_at(content, lineStart, commentStart, offset, "var")) {
+            !ZrStdioInlineValue_IsKeywordAt(content, lineStart, commentStart, offset, "var")) {
             offset++;
             character++;
             continue;
@@ -871,7 +729,7 @@ static void inline_value_scan_line(const char *content,
         while (nameStart < commentStart && (content[nameStart] == ' ' || content[nameStart] == '\t')) {
             nameStart++;
         }
-        if (nameStart >= commentStart || !inline_value_is_identifier_start(content[nameStart])) {
+        if (nameStart >= commentStart || !ZrStdioInlineValue_IsIdentifierStart(content[nameStart])) {
             offset++;
             character++;
             continue;
@@ -879,7 +737,7 @@ static void inline_value_scan_line(const char *content,
 
         nameCharacter = character + (TZrInt32)(nameStart - offset);
         nameEnd = nameStart + 1;
-        while (nameEnd < commentStart && inline_value_is_identifier_part(content[nameEnd])) {
+        while (nameEnd < commentStart && ZrStdioInlineValue_IsIdentifierPart(content[nameEnd])) {
             nameEnd++;
         }
 
@@ -914,7 +772,9 @@ static void inline_value_scan_line(const char *content,
                     SZrLspPosition queryPosition;
 
                     statementEnd = inline_value_find_multiline_statement_end(content, initializerStart, contentLength);
-                    queryOffset = inline_value_find_semantic_query_offset(content, initializerStart, statementEnd);
+                    queryOffset = ZrStdioInlineValue_FindSemanticQueryOffset(content,
+                                                                             initializerStart,
+                                                                             statementEnd);
                     nameRange.start.line = line;
                     nameRange.start.character = nameCharacter;
                     nameRange.end.line = line;
@@ -946,6 +806,7 @@ cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params) 
     size_t lineStart = 0;
     TZrInt32 line = 0;
     cJSON *result;
+    int inBlockComment = 0;
 
     if (!get_uri_from_text_document(server, params, &uriText, &uri) ||
         !parse_range(get_object_item(params, ZR_LSP_FIELD_RANGE), &requestRange)) {
@@ -968,7 +829,25 @@ cJSON *handle_inline_value_request(SZrStdioServer *server, const cJSON *params) 
     for (size_t offset = 0; offset <= contentLength; offset++) {
         if (offset == contentLength || content[offset] == '\n') {
             if (line >= requestRange.start.line && line <= requestRange.end.line) {
-                inline_value_scan_line(content, lineStart, offset, contentLength, line, requestRange, server, uri, result);
+                inline_value_scan_line(content,
+                                       lineStart,
+                                       offset,
+                                       contentLength,
+                                       line,
+                                       requestRange,
+                                       server,
+                                       uri,
+                                       result,
+                                       &inBlockComment);
+            } else {
+                size_t codeStart;
+                size_t codeEnd;
+                (void)ZrStdioInlineValue_FindCodeSpanOnLine(content,
+                                                            lineStart,
+                                                            offset,
+                                                            &inBlockComment,
+                                                            &codeStart,
+                                                            &codeEnd);
             }
             line++;
             lineStart = offset + 1;

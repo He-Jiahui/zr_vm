@@ -1,4 +1,5 @@
 #include "repl/repl.h"
+#include "repl/repl_input_scan.h"
 #include "repl/repl_semantic_facts.h"
 
 #include <stdio.h>
@@ -135,206 +136,6 @@ static void zr_cli_repl_session_free(ZrCliReplSessionContext *session) {
     session->capacity = 0;
 }
 
-static TZrBool zr_cli_repl_is_space(TZrChar ch) {
-    return ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f' || ch == '\v';
-}
-
-static TZrBool zr_cli_repl_is_identifier_part(TZrChar ch) {
-    return (ch >= 'a' && ch <= 'z') ||
-           (ch >= 'A' && ch <= 'Z') ||
-           (ch >= '0' && ch <= '9') ||
-           ch == '_';
-}
-
-static const TZrChar *zr_cli_repl_skip_space(const TZrChar *code) {
-    while (code != ZR_NULL && zr_cli_repl_is_space(*code)) {
-        ++code;
-    }
-    return code;
-}
-
-static TZrBool zr_cli_repl_starts_with_keyword(const TZrChar *code, const TZrChar *keyword) {
-    TZrSize keywordLength;
-
-    if (code == ZR_NULL || keyword == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    keywordLength = strlen(keyword);
-    return strncmp(code, keyword, keywordLength) == 0 &&
-           !zr_cli_repl_is_identifier_part(code[keywordLength]);
-}
-
-static TZrBool zr_cli_repl_starts_with_statement_keyword(const TZrChar *code) {
-    static const TZrChar *keywords[] = {
-        "break",
-        "case",
-        "catch",
-        "class",
-        "const",
-        "continue",
-        "default",
-        "else",
-        "enum",
-        "extern",
-        "finally",
-        "for",
-        "foreach",
-        "func",
-        "if",
-        "interface",
-        "pri",
-        "pro",
-        "pub",
-        "return",
-        "struct",
-        "switch",
-        "throw",
-        "try",
-        "using",
-        "var",
-        "while"
-    };
-    TZrSize i;
-
-    for (i = 0; i < sizeof(keywords) / sizeof(keywords[0]); ++i) {
-        if (zr_cli_repl_starts_with_keyword(code, keywords[i])) {
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
-}
-
-static TZrBool zr_cli_repl_has_statement_semicolon(const TZrChar *code) {
-    TZrBool inSingleQuote = ZR_FALSE;
-    TZrBool inDoubleQuote = ZR_FALSE;
-    TZrBool inLineComment = ZR_FALSE;
-    TZrBool inBlockComment = ZR_FALSE;
-    TZrBool escaped = ZR_FALSE;
-    TZrChar previous = '\0';
-
-    if (code == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    for (; *code != '\0'; ++code) {
-        TZrChar current = *code;
-        TZrChar next = code[1];
-
-        if (inLineComment) {
-            if (current == '\n' || current == '\r') {
-                inLineComment = ZR_FALSE;
-            }
-            continue;
-        }
-
-        if (inBlockComment) {
-            if (previous == '*' && current == '/') {
-                inBlockComment = ZR_FALSE;
-                previous = '\0';
-                continue;
-            }
-            previous = current;
-            continue;
-        }
-
-        if (inSingleQuote || inDoubleQuote) {
-            if (escaped) {
-                escaped = ZR_FALSE;
-                continue;
-            }
-            if (current == '\\') {
-                escaped = ZR_TRUE;
-                continue;
-            }
-            if ((inSingleQuote && current == '\'') || (inDoubleQuote && current == '"')) {
-                inSingleQuote = ZR_FALSE;
-                inDoubleQuote = ZR_FALSE;
-            }
-            continue;
-        }
-
-        if (current == '/' && next == '/') {
-            inLineComment = ZR_TRUE;
-            ++code;
-            continue;
-        }
-        if (current == '/' && next == '*') {
-            inBlockComment = ZR_TRUE;
-            previous = '\0';
-            ++code;
-            continue;
-        }
-        if (current == '\'') {
-            inSingleQuote = ZR_TRUE;
-            continue;
-        }
-        if (current == '"') {
-            inDoubleQuote = ZR_TRUE;
-            continue;
-        }
-        if (current == ';') {
-            return ZR_TRUE;
-        }
-    }
-
-    return ZR_FALSE;
-}
-
-static TZrBool zr_cli_repl_ends_with_incomplete_expression_marker(const TZrChar *code) {
-    const TZrChar *begin;
-    const TZrChar *end;
-    TZrChar last;
-
-    begin = zr_cli_repl_skip_space(code);
-    if (begin == ZR_NULL || *begin == '\0') {
-        return ZR_FALSE;
-    }
-
-    end = begin + strlen(begin);
-    while (end > begin && zr_cli_repl_is_space(end[-1])) {
-        --end;
-    }
-    if (end == begin) {
-        return ZR_FALSE;
-    }
-
-    last = end[-1];
-    return last == '+' || last == '-' || last == '*' || last == '/' ||
-           last == '%' || last == '&' || last == '|' || last == '^' ||
-           last == '!' || last == '=' || last == '<' || last == '>' ||
-           last == '?' || last == ':' || last == ',' || last == '.' ||
-           last == '(' || last == '[' || last == '{' || last == '~';
-}
-
-static TZrBool zr_cli_repl_should_wrap_expression(const TZrChar *code) {
-    const TZrChar *trimmed = zr_cli_repl_skip_space(code);
-
-    if (trimmed == ZR_NULL || *trimmed == '\0') {
-        return ZR_FALSE;
-    }
-
-    if (*trimmed == ':' || *trimmed == '@' || *trimmed == '{' || *trimmed == '}' ||
-        *trimmed == '[' || *trimmed == ']' || *trimmed == '/' || *trimmed == '#') {
-        return ZR_FALSE;
-    }
-
-    if (zr_cli_repl_has_statement_semicolon(trimmed)) {
-        return ZR_FALSE;
-    }
-
-    if (zr_cli_repl_ends_with_incomplete_expression_marker(trimmed)) {
-        return ZR_FALSE;
-    }
-
-    if (zr_cli_repl_starts_with_statement_keyword(trimmed)) {
-        return ZR_FALSE;
-    }
-
-    return ZR_TRUE;
-}
-
 static TZrChar *zr_cli_repl_build_return_wrapper(const TZrChar *code) {
     static const TZrChar prefix[] = "return ";
     static const TZrChar suffix[] = ";";
@@ -346,13 +147,13 @@ static TZrChar *zr_cli_repl_build_return_wrapper(const TZrChar *code) {
     TZrSize wrapperLength;
     TZrChar *wrapper;
 
-    begin = zr_cli_repl_skip_space(code);
+    begin = ZrCli_ReplInput_SkipSpace(code);
     if (begin == ZR_NULL || *begin == '\0') {
         return ZR_NULL;
     }
 
     end = begin + strlen(begin);
-    while (end > begin && zr_cli_repl_is_space(end[-1])) {
+    while (end > begin && ZrCli_ReplInput_IsSpace(end[-1])) {
         --end;
     }
 
@@ -380,13 +181,13 @@ static TZrChar *zr_cli_repl_build_expression_statement_source(const TZrChar *cod
     TZrBool hasTrailingSemicolon;
     TZrChar *source;
 
-    begin = zr_cli_repl_skip_space(code);
+    begin = ZrCli_ReplInput_SkipSpace(code);
     if (begin == ZR_NULL || *begin == '\0') {
         return ZR_NULL;
     }
 
     end = begin + strlen(begin);
-    while (end > begin && zr_cli_repl_is_space(end[-1])) {
+    while (end > begin && ZrCli_ReplInput_IsSpace(end[-1])) {
         --end;
     }
     if (end == begin) {
@@ -470,7 +271,7 @@ static TZrBool zr_cli_repl_session_append(ZrCliReplSessionContext *session, cons
         return ZR_FALSE;
     }
 
-    begin = zr_cli_repl_skip_space(code);
+    begin = ZrCli_ReplInput_SkipSpace(code);
     if (begin == ZR_NULL || *begin == '\0') {
         return ZR_TRUE;
     }
@@ -504,29 +305,33 @@ static TZrBool zr_cli_repl_session_append(ZrCliReplSessionContext *session, cons
 }
 
 static TZrBool zr_cli_repl_should_persist_submission(const TZrChar *code) {
-    const TZrChar *trimmed = zr_cli_repl_skip_space(code);
+    const TZrChar *trimmed = ZrCli_ReplInput_SkipSpace(code);
 
     if (trimmed == ZR_NULL || *trimmed == '\0') {
         return ZR_FALSE;
     }
 
-    if (zr_cli_repl_should_wrap_expression(trimmed)) {
+    if (ZrCli_ReplInput_ShouldWrapExpression(trimmed)) {
         return ZR_FALSE;
     }
 
-    return (TZrBool)(zr_cli_repl_starts_with_keyword(trimmed, "class") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "const") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "enum") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "extern") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "func") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "interface") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "module") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "pri") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "pro") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "pub") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "struct") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "using") ||
-                     zr_cli_repl_starts_with_keyword(trimmed, "var"));
+    if (ZrCli_ReplInput_IsSimpleAssignmentStatement(trimmed)) {
+        return ZR_TRUE;
+    }
+
+    return (TZrBool)(ZrCli_ReplInput_StartsWithKeyword(trimmed, "class") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "const") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "enum") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "extern") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "func") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "interface") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "module") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "pri") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "pro") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "pub") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "struct") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "using") ||
+                     ZrCli_ReplInput_StartsWithKeyword(trimmed, "var"));
 }
 
 static TZrBool zr_cli_repl_register_variable_type_for_query(SZrCompilerState *compilerState,
@@ -578,6 +383,190 @@ cleanup:
     return registered;
 }
 
+static TZrBool zr_cli_repl_register_assignment_type_for_query(SZrCompilerState *compilerState,
+                                                              SZrAstNode *statement) {
+    SZrAstNode *expr;
+    SZrAssignmentExpression *assignment;
+    SZrAstNode *target;
+    SZrString *name;
+    SZrInferredType inferredType;
+    SZrFileRange emptyRange = {0};
+    TZrBool inferredTypeInitialized = ZR_FALSE;
+    TZrBool registered = ZR_FALSE;
+
+    if (compilerState == ZR_NULL ||
+        statement == ZR_NULL ||
+        statement->type != ZR_AST_EXPRESSION_STATEMENT) {
+        return ZR_TRUE;
+    }
+
+    expr = statement->data.expressionStatement.expr;
+    if (expr == ZR_NULL || expr->type != ZR_AST_ASSIGNMENT_EXPRESSION) {
+        return ZR_TRUE;
+    }
+
+    assignment = &expr->data.assignmentExpression;
+    target = assignment->left;
+    if (target == ZR_NULL ||
+        target->type != ZR_AST_IDENTIFIER_LITERAL ||
+        target->data.identifier.name == ZR_NULL ||
+        ZrParser_TypeEnvironment_FindVariableBinding(compilerState->typeEnv,
+                                                     target->data.identifier.name) == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    name = target->data.identifier.name;
+    ZrParser_InferredType_Init(compilerState->state, &inferredType, ZR_VALUE_TYPE_OBJECT);
+    inferredTypeInitialized = ZR_TRUE;
+    if (!ZrParser_ExpressionType_Infer(compilerState, expr, &inferredType)) {
+        goto cleanup;
+    }
+
+    registered = ZrParser_TypeEnvironment_RegisterVariableEx(compilerState->state,
+                                                             compilerState->typeEnv,
+                                                             name,
+                                                             &inferredType,
+                                                             ZR_NULL,
+                                                             emptyRange);
+
+cleanup:
+    if (inferredTypeInitialized) {
+        ZrParser_InferredType_Free(compilerState->state, &inferredType);
+    }
+    return registered;
+}
+
+static void zr_cli_repl_free_parameter_types_for_query(SZrCompilerState *compilerState,
+                                                       SZrArray *paramTypes) {
+    if (compilerState == ZR_NULL || paramTypes == ZR_NULL ||
+        !paramTypes->isValid || paramTypes->head == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < paramTypes->length; ++index) {
+        SZrInferredType *paramType = (SZrInferredType *)ZrCore_Array_Get(paramTypes, index);
+        if (paramType != ZR_NULL) {
+            ZrParser_InferredType_Free(compilerState->state, paramType);
+        }
+    }
+    ZrCore_Array_Free(compilerState->state, paramTypes);
+}
+
+static TZrBool zr_cli_repl_collect_function_parameters_for_query(SZrCompilerState *compilerState,
+                                                                 SZrAstNodeArray *params,
+                                                                 SZrArray *paramTypes,
+                                                                 SZrArray *parameterPassingModes) {
+    TZrSize capacity = params != ZR_NULL && params->count > 0
+                               ? params->count
+                               : ZR_PARSER_INITIAL_CAPACITY_SMALL;
+
+    if (compilerState == ZR_NULL || paramTypes == ZR_NULL || parameterPassingModes == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Array_Init(compilerState->state, paramTypes, sizeof(SZrInferredType), capacity);
+    ZrCore_Array_Construct(parameterPassingModes);
+
+    if (params == ZR_NULL || params->count == 0) {
+        return ZR_TRUE;
+    }
+
+    ZrCore_Array_Init(compilerState->state,
+                      parameterPassingModes,
+                      sizeof(EZrParameterPassingMode),
+                      params->count);
+
+    for (TZrSize index = 0; index < params->count; ++index) {
+        SZrAstNode *paramNode = params->nodes[index];
+        SZrInferredType paramType;
+        EZrParameterPassingMode passingMode = ZR_PARAMETER_PASSING_MODE_VALUE;
+
+        if (paramNode == ZR_NULL || paramNode->type != ZR_AST_PARAMETER) {
+            continue;
+        }
+
+        if (paramNode->data.parameter.typeInfo != ZR_NULL) {
+            if (!ZrParser_AstTypeToInferredType_Convert(compilerState,
+                                                        paramNode->data.parameter.typeInfo,
+                                                        &paramType)) {
+                zr_cli_repl_free_parameter_types_for_query(compilerState, paramTypes);
+                if (parameterPassingModes->isValid && parameterPassingModes->head != ZR_NULL) {
+                    ZrCore_Array_Free(compilerState->state, parameterPassingModes);
+                }
+                return ZR_FALSE;
+            }
+        } else {
+            ZrParser_InferredType_Init(compilerState->state, &paramType, ZR_VALUE_TYPE_OBJECT);
+        }
+
+        passingMode = paramNode->data.parameter.passingMode;
+        ZrCore_Array_Push(compilerState->state, paramTypes, &paramType);
+        ZrCore_Array_Push(compilerState->state, parameterPassingModes, &passingMode);
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool zr_cli_repl_register_function_type_for_query(SZrCompilerState *compilerState,
+                                                            SZrAstNode *statement) {
+    SZrFunctionDeclaration *declaration;
+    SZrInferredType returnType;
+    SZrArray paramTypes;
+    SZrArray parameterPassingModes;
+    TZrBool returnTypeInitialized = ZR_FALSE;
+    TZrBool paramTypesInitialized = ZR_FALSE;
+
+    if (compilerState == ZR_NULL || statement == ZR_NULL ||
+        statement->type != ZR_AST_FUNCTION_DECLARATION) {
+        return ZR_TRUE;
+    }
+
+    declaration = &statement->data.functionDeclaration;
+    if (declaration->name == ZR_NULL || declaration->name->name == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (declaration->returnType != ZR_NULL) {
+        if (!ZrParser_AstTypeToInferredType_Convert(compilerState,
+                                                    declaration->returnType,
+                                                    &returnType)) {
+            return ZR_FALSE;
+        }
+    } else {
+        ZrParser_InferredType_Init(compilerState->state, &returnType, ZR_VALUE_TYPE_OBJECT);
+    }
+    returnTypeInitialized = ZR_TRUE;
+
+    if (!zr_cli_repl_collect_function_parameters_for_query(compilerState,
+                                                           declaration->params,
+                                                           &paramTypes,
+                                                           &parameterPassingModes)) {
+        goto cleanup;
+    }
+    paramTypesInitialized = ZR_TRUE;
+
+    (void)ZrParser_TypeEnvironment_RegisterFunctionEx(compilerState->state,
+                                                       compilerState->typeEnv,
+                                                       declaration->name->name,
+                                                       &returnType,
+                                                       &paramTypes,
+                                                       ZR_NULL,
+                                                       &parameterPassingModes,
+                                                       statement);
+
+cleanup:
+    if (returnTypeInitialized) {
+        ZrParser_InferredType_Free(compilerState->state, &returnType);
+    }
+    if (paramTypesInitialized) {
+        zr_cli_repl_free_parameter_types_for_query(compilerState, &paramTypes);
+        if (parameterPassingModes.isValid && parameterPassingModes.head != ZR_NULL) {
+            ZrCore_Array_Free(compilerState->state, &parameterPassingModes);
+        }
+    }
+    return (TZrBool)(paramTypesInitialized && !compilerState->hasError);
+}
+
 static TZrBool zr_cli_repl_register_prior_types_for_query(SZrCompilerState *compilerState,
                                                           SZrAstNode *ast) {
     SZrAstNodeArray *statements;
@@ -594,7 +583,15 @@ static TZrBool zr_cli_repl_register_prior_types_for_query(SZrCompilerState *comp
 
     for (TZrSize index = 0; index + 1u < statements->count; ++index) {
         SZrAstNode *statement = statements->nodes[index];
-        if (!zr_cli_repl_register_variable_type_for_query(compilerState, statement)) {
+        if (!zr_cli_repl_register_function_type_for_query(compilerState, statement)) {
+            return ZR_FALSE;
+        }
+    }
+
+    for (TZrSize index = 0; index + 1u < statements->count; ++index) {
+        SZrAstNode *statement = statements->nodes[index];
+        if (!zr_cli_repl_register_variable_type_for_query(compilerState, statement) ||
+            !zr_cli_repl_register_assignment_type_for_query(compilerState, statement)) {
             return ZR_FALSE;
         }
     }
@@ -615,15 +612,11 @@ static int zr_cli_repl_type_query(const TZrChar *sessionSource, const TZrChar *e
     SZrInferredType inferredType;
     TZrChar typeBuffer[ZR_PARSER_TYPE_NAME_BUFFER_LENGTH];
     const TZrChar *typeText;
-    const SZrSemanticNumericFact *numericFact;
-    const SZrSemanticLogicalFact *logicalFact;
-    const SZrSemanticOwnershipFact *ownershipFact;
-    const SZrSemanticExpressionFact *expressionFact;
     TZrBool compilerStateInitialized = ZR_FALSE;
     TZrBool inferredTypeInitialized = ZR_FALSE;
     int exitCode = 1;
 
-    if (expression == ZR_NULL || *zr_cli_repl_skip_space(expression) == '\0') {
+    if (expression == ZR_NULL || *ZrCli_ReplInput_SkipSpace(expression) == '\0') {
         ZrCore_Log_Error(ZR_NULL, "usage: :type <expression>\n");
         return 1;
     }
@@ -694,14 +687,10 @@ static int zr_cli_repl_type_query(const TZrChar *sessionSource, const TZrChar *e
     typeText = ZrParser_TypeNameString_Get(state, &inferredType, typeBuffer, sizeof(typeBuffer));
     ZrCore_Log_Resultf(state, "Type: %s\n", typeText != ZR_NULL ? typeText : "unknown");
 
-    numericFact = ZrParser_SemanticFacts_FindNumericByNode(compilerState.semanticContext, expr);
-    logicalFact = ZrParser_SemanticFacts_FindLogicalByNode(compilerState.semanticContext, expr);
-    ownershipFact = ZrParser_SemanticFacts_FindOwnershipByNode(compilerState.semanticContext, expr);
-    expressionFact = ZrParser_SemanticFacts_FindExpressionByNode(compilerState.semanticContext, expr);
-    ZrCli_ReplSemanticFacts_WriteNumeric(state, numericFact);
-    ZrCli_ReplSemanticFacts_WriteLogical(state, logicalFact);
-    ZrCli_ReplSemanticFacts_WriteOwnership(state, ownershipFact);
-    ZrCli_ReplSemanticFacts_WriteExpression(state, expressionFact);
+    ZrCli_ReplSemanticFacts_WriteNumericForExpression(state, compilerState.semanticContext, expr);
+    ZrCli_ReplSemanticFacts_WriteLogicalForExpression(state, compilerState.semanticContext, expr);
+    ZrCli_ReplSemanticFacts_WriteOwnershipForExpression(state, compilerState.semanticContext, expr);
+    ZrCli_ReplSemanticFacts_WriteExpressionForExpression(state, compilerState.semanticContext, expr);
     ZrCli_ReplSemanticFacts_WriteReferencesForExpression(state, compilerState.semanticContext, expr);
     ZrCli_ReplSemanticFacts_WriteReachabilityForExpression(state, compilerState.semanticContext, expr);
 
@@ -764,7 +753,7 @@ static int zr_cli_repl_submit(const TZrChar *sessionSource, const TZrChar *code)
     }
 
     sourceName = ZrCore_String_CreateFromNative(state, "<repl>");
-    if (zr_cli_repl_should_wrap_expression(code)) {
+    if (ZrCli_ReplInput_ShouldWrapExpression(code)) {
         wrappedExpressionCode = zr_cli_repl_build_return_wrapper(code);
         if (wrappedExpressionCode != ZR_NULL) {
             compileCode = wrappedExpressionCode;
@@ -878,7 +867,7 @@ int ZrCli_Repl_Run(void) {
                     buffer[0] = '\0';
                 }
                 zr_cli_repl_session_free(&session);
-            } else if (zr_cli_repl_starts_with_keyword(line, ":type")) {
+            } else if (ZrCli_ReplInput_StartsWithKeyword(line, ":type")) {
                 (void)zr_cli_repl_type_query(session.source, line + 5);
             } else {
                 ZrCore_Log_Error(ZR_NULL, "unknown REPL command: %s\n", line);

@@ -492,6 +492,64 @@ SZrAstNode *parse_identifier(SZrParserState *ps) {
 
 // ==================== 表达式解析（按优先级从低到高）====================
 
+static TZrBool parser_array_literal_token_is_assignment(EZrToken token) {
+    return token == ZR_TK_EQUALS ||
+           token == ZR_TK_PLUS_EQUALS ||
+           token == ZR_TK_MINUS_EQUALS ||
+           token == ZR_TK_STAR_EQUALS ||
+           token == ZR_TK_SLASH_EQUALS ||
+           token == ZR_TK_PERCENT_EQUALS;
+}
+
+static TZrBool parser_array_literal_token_can_start_element(EZrToken token) {
+    switch (token) {
+        case ZR_TK_IDENTIFIER:
+        case ZR_TK_TEST:
+        case ZR_TK_BOOLEAN:
+        case ZR_TK_INTEGER:
+        case ZR_TK_FLOAT:
+        case ZR_TK_STRING:
+        case ZR_TK_TEMPLATE_STRING:
+        case ZR_TK_CHAR:
+        case ZR_TK_NULL:
+        case ZR_TK_INFINITY:
+        case ZR_TK_NEG_INFINITY:
+        case ZR_TK_NAN:
+        case ZR_TK_LPAREN:
+        case ZR_TK_LBRACKET:
+        case ZR_TK_LBRACE:
+        case ZR_TK_BANG:
+        case ZR_TK_TILDE:
+        case ZR_TK_PLUS:
+        case ZR_TK_MINUS:
+        case ZR_TK_DOLLAR:
+        case ZR_TK_NEW:
+        case ZR_TK_USING:
+        case ZR_TK_PERCENT:
+        case ZR_TK_SUPER:
+        case ZR_TK_LESS_THAN:
+            return ZR_TRUE;
+        default:
+            return ZR_FALSE;
+    }
+}
+
+static SZrAstNode *parse_array_literal_value_element(SZrParserState *ps) {
+    SZrAstNode *element = parse_conditional_expression(ps);
+
+    if (element != ZR_NULL && parser_array_literal_token_is_assignment(ps->lexer->t.token)) {
+        report_array_element_assignment(ps, get_current_token_location(ps));
+        ZrParser_Ast_Free(ps->state, element);
+        return ZR_NULL;
+    }
+
+    return element;
+}
+
+static TZrBool parser_object_literal_token_can_start_property_key(EZrToken token) {
+    return token == ZR_TK_IDENTIFIER || token == ZR_TK_STRING || token == ZR_TK_LBRACKET;
+}
+
 // 解析数组字面量
 
 SZrAstNode *parse_array_literal(SZrParserState *ps) {
@@ -508,9 +566,12 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
     // 解析第一个元素
     if (ps->lexer->t.token != ZR_TK_RBRACKET) {
         // 数组元素不应该包含赋值表达式，使用 conditional_expression
-        SZrAstNode *first = parse_conditional_expression(ps);
+        SZrAstNode *first = parse_array_literal_value_element(ps);
         if (first != ZR_NULL) {
             ZrParser_AstNodeArray_Add(ps->state, elements, first);
+        } else {
+            ZrParser_AstNodeArray_Free(ps->state, elements);
+            return ZR_NULL;
         }
 
         // 解析后续元素
@@ -520,11 +581,12 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
                 break;
             }
             // 数组元素不应该包含赋值表达式，使用 conditional_expression
-            SZrAstNode *elem = parse_conditional_expression(ps);
+            SZrAstNode *elem = parse_array_literal_value_element(ps);
             if (elem != ZR_NULL) {
                 ZrParser_AstNodeArray_Add(ps->state, elements, elem);
             } else {
-                break;
+                ZrParser_AstNodeArray_Free(ps->state, elements);
+                return ZR_NULL;
             }
         }
     }
@@ -534,7 +596,17 @@ SZrAstNode *parse_array_literal(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 
-    expect_token(ps, ZR_TK_RBRACKET);
+    if (parser_array_literal_token_can_start_element(ps->lexer->t.token)) {
+        report_missing_array_element_separator(ps, get_current_token_location(ps));
+        ZrParser_AstNodeArray_Free(ps->state, elements);
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token != ZR_TK_RBRACKET) {
+        report_missing_array_close(ps, startLoc);
+        ZrParser_AstNodeArray_Free(ps->state, elements);
+        return ZR_NULL;
+    }
     consume_token(ps, ZR_TK_RBRACKET);
 
     SZrFileRange endLoc = get_current_location(ps);
@@ -574,10 +646,15 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
             key = parse_literal(ps);
         } else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
             // 计算键
+            SZrFileRange keyOpenLocation = get_current_token_location(ps);
             keyIsComputed = ZR_TRUE;
             ZrParser_Lexer_Next(ps->lexer);
             key = parse_expression(ps);
-            expect_token(ps, ZR_TK_RBRACKET);
+            if (ps->lexer->t.token != ZR_TK_RBRACKET) {
+                report_missing_object_computed_key_close(ps, keyOpenLocation);
+                ZrParser_AstNodeArray_Free(ps->state, properties);
+                return ZR_NULL;
+            }
             consume_token(ps, ZR_TK_RBRACKET);
         } else {
             report_error(ps, "Expected key in object literal");
@@ -585,8 +662,9 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
             return ZR_NULL;
         }
 
-        expect_token(ps, ZR_TK_COLON);
-        consume_token(ps, ZR_TK_COLON);
+        if (!consume_token(ps, ZR_TK_COLON)) {
+            report_missing_object_property_colon(ps, get_current_token_location(ps));
+        }
 
         // 解析值
         SZrAstNode *value = parse_expression(ps);
@@ -622,17 +700,23 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
             } else if (ps->lexer->t.token == ZR_TK_STRING) {
                 key = parse_literal(ps);
             } else if (ps->lexer->t.token == ZR_TK_LBRACKET) {
+                SZrFileRange keyOpenLocation = get_current_token_location(ps);
                 keyIsComputed = ZR_TRUE;
                 ZrParser_Lexer_Next(ps->lexer);
                 key = parse_expression(ps);
-                expect_token(ps, ZR_TK_RBRACKET);
+                if (ps->lexer->t.token != ZR_TK_RBRACKET) {
+                    report_missing_object_computed_key_close(ps, keyOpenLocation);
+                    ZrParser_AstNodeArray_Free(ps->state, properties);
+                    return ZR_NULL;
+                }
                 consume_token(ps, ZR_TK_RBRACKET);
             } else {
                 break;
             }
 
-            expect_token(ps, ZR_TK_COLON);
-            consume_token(ps, ZR_TK_COLON);
+            if (!consume_token(ps, ZR_TK_COLON)) {
+                report_missing_object_property_colon(ps, get_current_token_location(ps));
+            }
 
             value = parse_expression(ps);
             if (value == ZR_NULL) {
@@ -656,7 +740,17 @@ SZrAstNode *parse_object_literal(SZrParserState *ps) {
         ZrParser_Lexer_Next(ps->lexer);
     }
 
-    expect_token(ps, ZR_TK_RBRACE);
+    if (parser_object_literal_token_can_start_property_key(ps->lexer->t.token)) {
+        report_missing_object_property_separator(ps, get_current_token_location(ps));
+        ZrParser_AstNodeArray_Free(ps->state, properties);
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token != ZR_TK_RBRACE) {
+        report_missing_object_close(ps, startLoc);
+        ZrParser_AstNodeArray_Free(ps->state, properties);
+        return ZR_NULL;
+    }
     consume_token(ps, ZR_TK_RBRACE);
 
     SZrFileRange endLoc = get_current_location(ps);

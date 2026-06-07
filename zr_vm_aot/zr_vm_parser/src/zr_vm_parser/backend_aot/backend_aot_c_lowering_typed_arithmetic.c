@@ -715,6 +715,62 @@ void backend_aot_write_c_direct_mod_signed_const(FILE *file,
                                                    ZR_AOT_TYPED_ARITHMETIC_ZERO_GUARD_MODULO);
 }
 
+void backend_aot_write_c_direct_add_signed_mod_const(FILE *file,
+                                                     const SZrFunction *function,
+                                                     TZrUInt32 destinationSlot,
+                                                     TZrUInt32 leftSlot,
+                                                     TZrUInt32 rightSlot,
+                                                     TZrUInt32 constantIndex) {
+    const char *expressionText = "(zr_aot_left_scalar + zr_aot_right_scalar) % zr_aot_mod_literal";
+    const SZrTypeValue *constantValue;
+    char modLiteral[64];
+
+    if (file == ZR_NULL) {
+        return;
+    }
+
+    constantValue = backend_aot_c_get_constant_value(function, (TZrInt32)constantIndex);
+    if (!backend_aot_c_format_signed_integer_literal(modLiteral, (TZrSize)sizeof(modLiteral), constantValue)) {
+        backend_aot_write_c_direct_typed_arithmetic_const_fail(file);
+        return;
+    }
+
+    fprintf(file,
+            "    {\n"
+            "        /* zr_aot_arith_exec_signed_add_mod_const */\n"
+            "        SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_left = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_right = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        TZrInt64 zr_aot_left_scalar;\n"
+            "        TZrInt64 zr_aot_right_scalar;\n"
+            "        TZrInt64 zr_aot_mod_literal = %s;\n"
+            "        if (zr_aot_destination == ZR_NULL || zr_aot_left == ZR_NULL || zr_aot_right == ZR_NULL) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (!ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_left->type) || !ZR_VALUE_IS_TYPE_SIGNED_INT(zr_aot_right->type)) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (ZR_UNLIKELY(zr_aot_mod_literal == 0)) {\n"
+            "            ZrCore_Debug_RunError(state, \"modulo by zero\");\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (ZR_UNLIKELY(zr_aot_mod_literal < 0)) {\n"
+            "            zr_aot_mod_literal = -zr_aot_mod_literal;\n"
+            "        }\n"
+            "        zr_aot_left_scalar = zr_aot_left->value.nativeObject.nativeInt64;\n"
+            "        zr_aot_right_scalar = zr_aot_right->value.nativeObject.nativeInt64;\n"
+            "        ZR_VALUE_FAST_SET(zr_aot_destination,\n"
+            "                          nativeInt64,\n"
+            "                          %s,\n"
+            "                          ZR_VALUE_TYPE_INT64);\n"
+            "    }\n",
+            (unsigned)destinationSlot,
+            (unsigned)leftSlot,
+            (unsigned)rightSlot,
+            modLiteral,
+            expressionText);
+}
+
 void backend_aot_write_c_direct_mod_unsigned_const(FILE *file,
                                                    const SZrFunction *function,
                                                    TZrUInt32 destinationSlot,

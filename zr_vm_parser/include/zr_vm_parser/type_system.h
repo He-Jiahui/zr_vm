@@ -36,6 +36,10 @@ typedef struct SZrInferredType {
     TZrInt64 minValue;                 // 最小值
     TZrInt64 maxValue;                 // 最大值
     TZrBool hasRangeConstraint;        // 是否有范围约束
+
+    // 布尔精确值约束（用于调试快照、局部语义查询等已知运行时值）
+    TZrBool knownBoolValue;
+    TZrBool hasKnownBoolValue;
     
     // 数组大小约束
     TZrSize arrayFixedSize;          // 数组固定大小（0表示未固定）
