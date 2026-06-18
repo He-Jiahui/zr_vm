@@ -18,6 +18,7 @@
 #include "zr_vm_core/closure.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
+#include "zr_vm_core/ownership.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
@@ -8416,6 +8417,51 @@ static void test_native_registry_rejects_unsupported_capabilities(void) {
     TEST_DIVIDER();
 }
 
+static void test_native_registry_tracks_module_owner_refcount(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Native Registry Tracks Module Owner Refcount";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrObjectModule *module;
+        SZrTypeValue plainModule;
+        SZrTypeValue sharedA;
+        SZrTypeValue sharedB;
+
+        TEST_ASSERT_NOT_NULL(state);
+        module = import_native_module(state, "zr.math");
+        TEST_ASSERT_NOT_NULL(module);
+
+        ZrCore_Value_ResetAsNull(&plainModule);
+        ZrCore_Value_ResetAsNull(&sharedA);
+        ZrCore_Value_ResetAsNull(&sharedB);
+        ZrCore_Value_InitAsRawObject(state, &plainModule, ZR_CAST_RAW_OBJECT_AS_SUPER(module));
+        plainModule.type = ZR_VALUE_TYPE_OBJECT;
+
+        TEST_ASSERT_EQUAL_UINT32(0u, ZrLibrary_NativeRegistry_GetModuleRefCount(state->global, "zr.math"));
+        TEST_ASSERT_TRUE(ZrCore_Ownership_SharePlainValue(state, &sharedA, &plainModule));
+        TEST_ASSERT_EQUAL_UINT32(1u, ZrLibrary_NativeRegistry_GetModuleRefCount(state->global, "zr.math"));
+
+        ZrCore_Value_Copy(state, &sharedB, &sharedA);
+        TEST_ASSERT_EQUAL_UINT32(2u, ZrLibrary_NativeRegistry_GetModuleRefCount(state->global, "zr.math"));
+
+        ZrCore_Ownership_ReleaseValue(state, &sharedA);
+        TEST_ASSERT_EQUAL_UINT32(1u, ZrLibrary_NativeRegistry_GetModuleRefCount(state->global, "zr.math"));
+        ZrCore_Ownership_ReleaseValue(state, &sharedB);
+        TEST_ASSERT_EQUAL_UINT32(0u, ZrLibrary_NativeRegistry_GetModuleRefCount(state->global, "zr.math"));
+
+        ZrCore_Value_ResetAsNull(&plainModule);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_reference_protocols_native_iterable_fixture_uses_registered_contracts(void) {
     SZrTestTimer timer;
     const char *testSummary = "Reference Protocols Native Iterable Fixture Uses Registered Contracts";
@@ -9016,6 +9062,9 @@ int main(void) {
 
     // 12. prototypeData 中高级 OOP runtime descriptor 元数据恢复
     RUN_TEST(test_module_restores_advanced_oop_runtime_descriptor_metadata);
+
+    // 12.1 native registry 追踪 owner 引用计数
+    RUN_TEST(test_native_registry_tracks_module_owner_refcount);
 
     // 13. 复杂 source module 导出函数图不应出现 null call target
     RUN_TEST(test_source_module_exports_complex_function_graph_without_null_call_targets);

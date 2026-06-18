@@ -1098,6 +1098,55 @@ static void test_ownership_shared_refcount_and_weak_null_on_release(void) {
     TEST_DIVIDER();
 }
 
+static void test_ownership_plain_object_can_be_shared_without_consuming_source(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Ownership Plain Object Can Be Shared Without Consuming Source";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    TEST_INFO("Ownership runtime plugin share bridge",
+              "Testing that a plain GC object can be retained as Shared<T> without consuming the scoped source value");
+    SZrState *state = createTestState();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->global);
+
+    {
+        SZrGarbageCollector *gc = state->global->garbageCollector;
+        SZrRawObject *object = createTestObject(state, ZR_VALUE_TYPE_OBJECT, sizeof(SZrRawObject));
+        SZrTypeValue plainValue;
+        SZrTypeValue sharedValue;
+
+        TEST_ASSERT_NOT_NULL(object);
+        ZrCore_Value_ResetAsNull(&plainValue);
+        ZrCore_Value_ResetAsNull(&sharedValue);
+        ZrCore_Value_InitAsRawObject(state, &plainValue, object);
+        plainValue.type = ZR_VALUE_TYPE_OBJECT;
+
+        TEST_ASSERT_TRUE(ZrCore_Ownership_SharePlainValue(state, &sharedValue, &plainValue));
+        TEST_ASSERT_EQUAL_PTR(object, plainValue.value.object);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, plainValue.ownershipKind);
+        TEST_ASSERT_EQUAL_PTR(object, sharedValue.value.object);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_SHARED, sharedValue.ownershipKind);
+        TEST_ASSERT_EQUAL_UINT32(1, ZrCore_Ownership_GetStrongRefCount(object));
+        TEST_ASSERT_TRUE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(1, (int)gc->ignoredObjectCount);
+
+        ZrCore_Ownership_ReleaseValue(state, &sharedValue);
+        TEST_ASSERT_EQUAL_UINT32(0, ZrCore_Ownership_GetStrongRefCount(object));
+        TEST_ASSERT_FALSE(ZrCore_GarbageCollector_IsObjectIgnored(state->global, object));
+        TEST_ASSERT_EQUAL_INT(0, (int)gc->ignoredObjectCount);
+        TEST_ASSERT_EQUAL_PTR(object, plainValue.value.object);
+        ZrCore_Value_ResetAsNull(&plainValue);
+    }
+
+    destroyTestState(state);
+
+    timer.endTime = clock();
+    TEST_PASS(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_ownership_unique_can_return_to_gc_control(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Unique Can Return To GC Control";
@@ -4607,6 +4656,7 @@ int main(void) {
     RUN_TEST(test_gc_short_string_list_keeps_interned_entries_reachable_across_minor_then_full_gc);
     RUN_TEST(test_gc_string_table_minor_bucket_flags_rebuild_after_rehash);
     RUN_TEST(test_ownership_shared_refcount_and_weak_null_on_release);
+    RUN_TEST(test_ownership_plain_object_can_be_shared_without_consuming_source);
     RUN_TEST(test_ownership_unique_can_return_to_gc_control);
     RUN_TEST(test_ownership_weak_expires_when_returned_object_is_released);
     

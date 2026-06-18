@@ -1,5 +1,51 @@
 #include "native_binding/native_binding_internal.h"
 
+static void native_registry_observe_owner_strong_ref(SZrState *state,
+                                                     SZrRawObject *object,
+                                                     TZrInt32 delta,
+                                                     TZrPtr userData) {
+    ZrLibrary_NativeRegistryState *registry = (ZrLibrary_NativeRegistryState *)userData;
+    SZrObject *objectValue;
+    SZrObjectModule *module;
+    const TZrChar *moduleName;
+    ZrLibRegisteredModuleRecord *record;
+
+    if (state == ZR_NULL || object == ZR_NULL || registry == ZR_NULL || delta == 0 ||
+        object->type != ZR_RAW_OBJECT_TYPE_OBJECT) {
+        return;
+    }
+
+    objectValue = ZR_CAST_OBJECT(state, object);
+    if (objectValue == ZR_NULL || objectValue->internalType != ZR_OBJECT_INTERNAL_TYPE_MODULE) {
+        return;
+    }
+
+    module = (SZrObjectModule *)objectValue;
+    if (module->moduleName == ZR_NULL) {
+        return;
+    }
+
+    moduleName = ZrCore_String_GetNativeString(module->moduleName);
+    if (moduleName == ZR_NULL) {
+        return;
+    }
+
+    record = (ZrLibRegisteredModuleRecord *)native_registry_find_record(registry, moduleName);
+    if (record == ZR_NULL) {
+        return;
+    }
+
+    if (delta > 0) {
+        record->ownerRefCount += (TZrUInt32)delta;
+        return;
+    }
+
+    {
+        TZrUInt32 decrement = (TZrUInt32)(-delta);
+        record->ownerRefCount = decrement >= record->ownerRefCount ? 0u : record->ownerRefCount - decrement;
+    }
+}
+
 TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     ZrLibrary_NativeRegistryState *registry;
     SZrState *state;
@@ -45,6 +91,9 @@ TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global) {
     native_registry_clear_error(registry);
 
     ZrCore_GlobalState_SetNativeModuleLoader(global, native_registry_loader, registry);
+    ZrCore_GlobalState_SetOwnershipStrongRefObserver(global,
+                                                     native_registry_observe_owner_strong_ref,
+                                                     registry);
     if (!ZrLibrary_NativeRegistry_RegisterModule(global, ZrLibrary_BuiltinModule_GetDescriptor())) {
         ZrLibrary_NativeRegistry_Free(global);
         return ZR_FALSE;
@@ -65,6 +114,8 @@ void ZrLibrary_NativeRegistry_Free(SZrGlobalState *global) {
     if (registry == ZR_NULL || global->mainThreadState == ZR_NULL) {
         return;
     }
+
+    ZrCore_GlobalState_SetOwnershipStrongRefObserver(global, ZR_NULL, ZR_NULL);
 
     state = global->mainThreadState;
     if (registry->pluginHandles.isValid) {
@@ -179,6 +230,7 @@ TZrBool ZrLibrary_NativeRegistry_GetModuleInfo(SZrGlobalState *global,
     outInfo->sourcePath = record->sourcePath;
     outInfo->registrationKind = record->registrationKind;
     outInfo->isDescriptorPlugin = record->isDescriptorPlugin;
+    outInfo->ownerRefCount = record->ownerRefCount;
     return ZR_TRUE;
 }
 
@@ -195,6 +247,19 @@ TZrSize ZrLibrary_NativeRegistry_GetModuleCount(SZrGlobalState *global) {
     }
 
     return registry->moduleRecords.length;
+}
+
+TZrUInt32 ZrLibrary_NativeRegistry_GetModuleRefCount(SZrGlobalState *global, const TZrChar *moduleName) {
+    ZrLibrary_NativeRegistryState *registry;
+    const ZrLibRegisteredModuleRecord *record;
+
+    if (global == ZR_NULL || moduleName == ZR_NULL) {
+        return 0u;
+    }
+
+    registry = native_registry_get(global);
+    record = native_registry_find_record(registry, moduleName);
+    return record != ZR_NULL ? record->ownerRefCount : 0u;
 }
 
 TZrBool ZrLibrary_NativeRegistry_GetModuleInfoAt(SZrGlobalState *global,
@@ -227,34 +292,8 @@ TZrBool ZrLibrary_NativeRegistry_GetModuleInfoAt(SZrGlobalState *global,
     outInfo->sourcePath = record->sourcePath;
     outInfo->registrationKind = record->registrationKind;
     outInfo->isDescriptorPlugin = record->isDescriptorPlugin;
+    outInfo->ownerRefCount = record->ownerRefCount;
     return ZR_TRUE;
-}
-
-static TZrChar native_registry_normalize_path_char(TZrChar value) {
-    if (value == '\\') {
-        value = '/';
-    }
-#if defined(ZR_PLATFORM_WIN)
-    value = (TZrChar)tolower((unsigned char)value);
-#endif
-    return value;
-}
-
-static TZrBool native_registry_source_paths_equal(const TZrChar *left, const TZrChar *right) {
-    TZrSize index = 0;
-
-    if (left == ZR_NULL || right == ZR_NULL) {
-        return ZR_FALSE;
-    }
-
-    while (left[index] != '\0' && right[index] != '\0') {
-        if (native_registry_normalize_path_char(left[index]) != native_registry_normalize_path_char(right[index])) {
-            return ZR_FALSE;
-        }
-        index++;
-    }
-
-    return left[index] == '\0' && right[index] == '\0';
 }
 
 TZrBool ZrLibrary_NativeRegistry_GetModuleInfoBySourcePath(SZrGlobalState *global,
@@ -290,6 +329,7 @@ TZrBool ZrLibrary_NativeRegistry_GetModuleInfoBySourcePath(SZrGlobalState *globa
         outInfo->sourcePath = record->sourcePath;
         outInfo->registrationKind = record->registrationKind;
         outInfo->isDescriptorPlugin = record->isDescriptorPlugin;
+        outInfo->ownerRefCount = record->ownerRefCount;
         return ZR_TRUE;
     }
 
@@ -336,6 +376,15 @@ TZrBool ZrLibrary_NativeRegistry_InvalidateDescriptorPluginSource(SZrGlobalState
 
     if (!matched) {
         return ZR_FALSE;
+    }
+
+    {
+        const ZrLibRegisteredModuleRecord *liveRecord =
+                native_registry_find_live_descriptor_plugin_record(registry);
+        if (liveRecord != ZR_NULL) {
+            native_registry_set_descriptor_plugin_in_use_error(registry, liveRecord, "invalidate");
+            return ZR_FALSE;
+        }
     }
 
     if (state != ZR_NULL) {

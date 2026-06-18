@@ -221,6 +221,8 @@ const TZrChar *zr_debug_prototype_type_name(EZrObjectPrototypeType type) {
             return "interface";
         case ZR_OBJECT_PROTOTYPE_TYPE_ENUM:
             return "enum";
+        case ZR_OBJECT_PROTOTYPE_TYPE_UNION:
+            return "union";
         case ZR_OBJECT_PROTOTYPE_TYPE_MODULE:
             return "module";
         case ZR_OBJECT_PROTOTYPE_TYPE_NATIVE:

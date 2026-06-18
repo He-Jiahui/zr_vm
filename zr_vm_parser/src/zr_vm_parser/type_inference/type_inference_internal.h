@@ -22,12 +22,23 @@ typedef enum EZrGenericCallResolveStatus {
 } EZrGenericCallResolveStatus;
 
 const TZrChar *get_base_type_name(EZrValueType baseType);
+void ZrParser_TypeError_Report(SZrCompilerState *cs,
+                               const TZrChar *message,
+                               const SZrInferredType *expectedType,
+                               const SZrInferredType *actualType,
+                               SZrFileRange location);
 ZR_PARSER_API void free_inferred_type_array(SZrState *state, SZrArray *types);
 TZrBool zr_string_equals_cstr(SZrString *value, const TZrChar *literal);
 ZR_PARSER_API SZrTypePrototypeInfo *find_compiler_type_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 SZrTypeMemberInfo *find_compiler_type_member_inference(SZrCompilerState *cs,
                                                        SZrString *typeName,
                                                        SZrString *memberName);
+TZrBool find_compiler_type_member_call_inference(SZrCompilerState *cs,
+                                                 SZrString *typeName,
+                                                 SZrString *memberName,
+                                                 SZrFunctionCall *call,
+                                                 SZrFileRange location,
+                                                 SZrTypeMemberInfo **outMember);
 ZR_PARSER_API TZrBool type_name_is_module_prototype_inference(SZrCompilerState *cs, SZrString *typeName);
 ZR_PARSER_API TZrBool inferred_type_from_type_name(SZrCompilerState *cs, SZrString *typeName, SZrInferredType *result);
 ZR_PARSER_API TZrBool inferred_type_implements_protocol_mask(SZrCompilerState *cs,
@@ -76,6 +87,8 @@ TZrBool validate_call_argument_passing_modes(SZrCompilerState *cs,
                                              const SZrArray *parameterTypes,
                                              SZrFunctionCall *call,
                                              const SZrArray *argTypes);
+const TZrChar *type_inference_ownership_flow_diagnostic_message(const SZrInferredType *targetType,
+                                                                const SZrInferredType *sourceType);
 ZR_PARSER_API void free_resolved_call_signature(SZrState *state, SZrResolvedCallSignature *signature);
 EZrGenericCallResolveStatus resolve_generic_function_call_signature_detailed(
         SZrCompilerState *cs,

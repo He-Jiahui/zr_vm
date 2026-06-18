@@ -644,6 +644,21 @@ static void init_test_object_type(SZrState *state,
     type->ownershipQualifier = ownershipQualifier;
 }
 
+static void init_test_generic_object_type(SZrState *state,
+                                          SZrInferredType *type,
+                                          const char *typeName,
+                                          const SZrInferredType *argumentType,
+                                          EZrOwnershipQualifier ownershipQualifier) {
+    SZrInferredType copiedArgument;
+
+    TEST_ASSERT_NOT_NULL(argumentType);
+
+    init_test_object_type(state, type, typeName, ownershipQualifier);
+    ZrCore_Array_Init(state, &type->elementTypes, sizeof(SZrInferredType), 1);
+    ZrParser_InferredType_Copy(state, &copiedArgument, argumentType);
+    ZrCore_Array_Push(state, &type->elementTypes, &copiedArgument);
+}
+
 static void init_test_type_prototype(SZrState *state,
                                      SZrTypePrototypeInfo *info,
                                      const char *typeName,
@@ -698,6 +713,49 @@ static const SZrTypePrototypeInfo *find_test_type_prototype(const SZrCompilerSta
     }
 
     return ZR_NULL;
+}
+
+static const SZrTypeMemberInfo *find_test_type_member(const SZrTypePrototypeInfo *info,
+                                                      const char *memberName) {
+    TZrSize index;
+
+    if (info == ZR_NULL || memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < info->members.length; index++) {
+        const SZrTypeMemberInfo *member =
+                (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&info->members, index);
+        if (member != ZR_NULL &&
+            member->name != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeString(member->name), memberName) == 0) {
+            return member;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrUInt32 count_test_type_members(const SZrTypePrototypeInfo *info,
+                                         const char *memberName) {
+    TZrSize index;
+    TZrUInt32 count = 0;
+
+    if (info == ZR_NULL || memberName == ZR_NULL) {
+        return 0;
+    }
+
+    for (index = 0; index < info->members.length; index++) {
+        const SZrTypeMemberInfo *member =
+                (const SZrTypeMemberInfo *)ZrCore_Array_Get((SZrArray *)&info->members, index);
+        if (member != ZR_NULL &&
+            member->name != ZR_NULL &&
+            strcmp(ZrCore_String_GetNativeString(member->name), memberName) == 0) {
+            count++;
+        }
+    }
+
+    return count;
 }
 
 static void add_test_method_member(SZrState *state,
@@ -1482,6 +1540,85 @@ static void test_convert_ast_type_preserves_ownership_qualifier(void) {
     TEST_DIVIDER();
 }
 
+static void test_intrinsic_ownership_generic_types_convert_to_owner_qualifiers(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Intrinsic Ownership Generic Types";
+    const char *source =
+        "var owned: Unique<Resource>;"
+        "var sharedRef: Shared<Box<int>>;"
+        "var weakRef: Weak<Resource>;"
+        "var borrowedRef: Borrow<Resource>;"
+        "var loanedRef: Loan<Resource>;";
+    const struct {
+        TZrSize statementIndex;
+        EZrOwnershipQualifier qualifier;
+        const char *typeName;
+        TZrUInt32 elementTypeCount;
+    } cases[] = {
+        {0, ZR_OWNERSHIP_QUALIFIER_UNIQUE, "Resource", 0},
+        {1, ZR_OWNERSHIP_QUALIFIER_SHARED, "Box<int>", 1},
+        {2, ZR_OWNERSHIP_QUALIFIER_WEAK, "Resource", 0},
+        {3, ZR_OWNERSHIP_QUALIFIER_BORROWED, "Resource", 0},
+        {4, ZR_OWNERSHIP_QUALIFIER_LOANED, "Resource", 0},
+    };
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    SZrCompilerState *cs = create_test_compiler_state(state);
+    TEST_ASSERT_NOT_NULL(cs);
+
+    TEST_INFO("Intrinsic ownership generic type conversion",
+              "Testing that Unique<T>/Shared<T>/Weak<T>/Borrow<T>/Loan<T> are compiler intrinsic wrappers, not ordinary user-defined generic types");
+
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+        state, cs->typeEnv, ZrCore_String_Create(state, "Resource", 8)));
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+        state, cs->typeEnv, ZrCore_String_Create(state, "Box", 3)));
+
+    {
+        SZrString *sourceName = ZrCore_String_Create(state, "ownership_generic_types_test.zr", 31);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_UINT32(5, (TZrUInt32)ast->data.script.statements->count);
+
+        for (TZrSize index = 0; index < ZR_ARRAY_COUNT(cases); index++) {
+            SZrAstNode *decl = ast->data.script.statements->nodes[cases[index].statementIndex];
+            SZrInferredType convertedType;
+
+            TEST_ASSERT_NOT_NULL(decl);
+            TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, decl->type);
+            TEST_ASSERT_NOT_NULL(decl->data.variableDeclaration.typeInfo);
+
+            ZrParser_InferredType_Init(state, &convertedType, ZR_VALUE_TYPE_OBJECT);
+            TEST_ASSERT_TRUE(ZrParser_AstTypeToInferredType_Convert(
+                cs, decl->data.variableDeclaration.typeInfo, &convertedType));
+            TEST_ASSERT_EQUAL_INT(cases[index].qualifier, convertedType.ownershipQualifier);
+            TEST_ASSERT_NOT_NULL(convertedType.typeName);
+            TEST_ASSERT_EQUAL_STRING(cases[index].typeName,
+                                     ZrCore_String_GetNativeString(convertedType.typeName));
+            TEST_ASSERT_EQUAL_UINT32(cases[index].elementTypeCount,
+                                     (TZrUInt32)convertedType.elementTypes.length);
+            ZrParser_InferredType_Free(state, &convertedType);
+        }
+
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_construct_expression_preserves_ownership_qualifier(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Construct Expression Preserves Ownership Qualifier";
@@ -1984,6 +2121,61 @@ static void test_weak_receiver_requires_upgrade_before_borrowed_method(void) {
     TEST_DIVIDER();
 }
 
+static void expect_plain_parameter_rejects_ownership_argument(EZrOwnershipQualifier qualifier,
+                                                              const char *expectedMessage,
+                                                              const char *sourceNameText) {
+    SZrState *state = create_test_state();
+    SZrCompilerState *cs = create_test_compiler_state(state);
+    const char *source = "return Observe(value);";
+    SZrString *sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    SZrAstNode *expr = ZR_NULL;
+    SZrString *valueName = ZR_NULL;
+    SZrInferredType valueType;
+    SZrInferredType result;
+    SZrTypePrototypeInfo holderInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+    init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    register_test_type_prototype(state, cs, &holderInfo);
+    register_test_function_with_one_param(state,
+                                          cs,
+                                          "Observe",
+                                          ZR_VALUE_TYPE_INT64,
+                                          ZR_NULL,
+                                          ZR_VALUE_TYPE_OBJECT,
+                                          "Holder",
+                                          ZR_OWNERSHIP_QUALIFIER_NONE);
+
+    valueName = ZrCore_String_Create(state, "value", 5);
+    TEST_ASSERT_NOT_NULL(valueName);
+    init_test_object_type(state, &valueType, "Holder", qualifier);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(state, cs->typeEnv, valueName, &valueType));
+    ZrParser_InferredType_Free(state, &valueType);
+
+    expr = ast->data.script.statements->nodes[0]->data.returnStatement.expr;
+    TEST_ASSERT_NOT_NULL(expr);
+
+    cs->hasError = ZR_FALSE;
+    cs->errorMessage = ZR_NULL;
+    ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+    TEST_ASSERT_TRUE(cs->hasError);
+    TEST_ASSERT_NOT_NULL(cs->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, expectedMessage));
+    ZrParser_InferredType_Free(state, &result);
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
+}
+
 static void test_borrowed_value_cannot_flow_to_plain_parameter(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Borrowed Value Cannot Flow To Plain Parameter";
@@ -1991,56 +2183,243 @@ static void test_borrowed_value_cannot_flow_to_plain_parameter(void) {
     TEST_START(testSummary);
     timer.startTime = clock();
 
+    expect_plain_parameter_rejects_ownership_argument(
+            ZR_OWNERSHIP_QUALIFIER_BORROWED,
+            "Borrowed value cannot escape its owner",
+            "borrowed_escape_type_test.zr");
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_loaned_value_cannot_flow_to_plain_parameter(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Loaned Value Cannot Flow To Plain Parameter";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    expect_plain_parameter_rejects_ownership_argument(
+            ZR_OWNERSHIP_QUALIFIER_LOANED,
+            "Loaned value cannot escape its owner",
+            "loaned_escape_type_test.zr");
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_owned_value_requires_detach_before_plain_parameter(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Owned Value Requires Detach Before Plain Parameter";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    expect_plain_parameter_rejects_ownership_argument(
+            ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+            "Owned value cannot flow into a plain GC value implicitly",
+            "unique_to_plain_param_test.zr");
+    expect_plain_parameter_rejects_ownership_argument(
+            ZR_OWNERSHIP_QUALIFIER_SHARED,
+            "Owned value cannot flow into a plain GC value implicitly",
+            "shared_to_plain_param_test.zr");
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void expect_assignment_expression_rejects_ownership_flow(const char *source,
+                                                                EZrOwnershipQualifier qualifier,
+                                                                const char *expectedMessage,
+                                                                const char *sourceNameText,
+                                                                TZrBool useFieldTarget) {
+    SZrState *state = create_test_state();
+    SZrCompilerState *cs = create_test_compiler_state(state);
+    SZrString *sourceName = ZrCore_String_Create(state, (TZrNativeString)sourceNameText, strlen(sourceNameText));
+    SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    SZrAstNode *expr = ZR_NULL;
+    SZrInferredType holderType;
+    SZrInferredType boxType;
+    SZrInferredType valueType;
+    SZrInferredType result;
+    SZrTypePrototypeInfo holderInfo;
+    SZrTypePrototypeInfo boxInfo;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+    TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+    TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+    init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+    register_test_type_prototype(state, cs, &holderInfo);
+
+    if (useFieldTarget) {
+        init_test_type_prototype(state, &boxInfo, "Box", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
+        add_test_field_member(state, &boxInfo, "slot", "Holder", ZR_OWNERSHIP_QUALIFIER_NONE);
+        register_test_type_prototype(state, cs, &boxInfo);
+
+        init_test_object_type(state, &boxType, "Box", ZR_OWNERSHIP_QUALIFIER_NONE);
+        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(
+                state, cs->typeEnv, ZrCore_String_Create(state, "box", 3), &boxType));
+        ZrParser_InferredType_Free(state, &boxType);
+    } else {
+        init_test_object_type(state, &holderType, "Holder", ZR_OWNERSHIP_QUALIFIER_NONE);
+        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(
+                state, cs->typeEnv, ZrCore_String_Create(state, "target", 6), &holderType));
+        ZrParser_InferredType_Free(state, &holderType);
+    }
+
+    init_test_object_type(state, &valueType, "Holder", qualifier);
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(
+            state, cs->typeEnv, ZrCore_String_Create(state, "value", 5), &valueType));
+    ZrParser_InferredType_Free(state, &valueType);
+
+    expr = ast->data.script.statements->nodes[0]->data.expressionStatement.expr;
+    TEST_ASSERT_NOT_NULL(expr);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_ASSIGNMENT_EXPRESSION, expr->type);
+
+    cs->hasError = ZR_FALSE;
+    cs->errorMessage = ZR_NULL;
+    ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+    TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+    TEST_ASSERT_TRUE(cs->hasError);
+    TEST_ASSERT_NOT_NULL(cs->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, expectedMessage));
+    ZrParser_InferredType_Free(state, &result);
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
+}
+
+static void test_ownership_escape_diagnostics_apply_to_assignment_expressions(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Ownership Escape Diagnostics Apply To Assignment Expressions";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    expect_assignment_expression_rejects_ownership_flow(
+            "target = value;",
+            ZR_OWNERSHIP_QUALIFIER_BORROWED,
+            "Borrowed value cannot escape its owner",
+            "borrowed_assignment_expression_test.zr",
+            ZR_FALSE);
+    expect_assignment_expression_rejects_ownership_flow(
+            "target = value;",
+            ZR_OWNERSHIP_QUALIFIER_LOANED,
+            "Loaned value cannot escape its owner",
+            "loaned_assignment_expression_test.zr",
+            ZR_FALSE);
+    expect_assignment_expression_rejects_ownership_flow(
+            "target = value;",
+            ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+            "Owned value cannot flow into a plain GC value implicitly",
+            "unique_assignment_expression_test.zr",
+            ZR_FALSE);
+    expect_assignment_expression_rejects_ownership_flow(
+            "target = value;",
+            ZR_OWNERSHIP_QUALIFIER_SHARED,
+            "Owned value cannot flow into a plain GC value implicitly",
+            "shared_assignment_expression_test.zr",
+            ZR_FALSE);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_ownership_escape_diagnostics_apply_to_field_assignment_expressions(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Ownership Escape Diagnostics Apply To Field Assignment Expressions";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    expect_assignment_expression_rejects_ownership_flow(
+            "box.slot = value;",
+            ZR_OWNERSHIP_QUALIFIER_BORROWED,
+            "Borrowed value cannot escape its owner",
+            "borrowed_field_assignment_expression_test.zr",
+            ZR_TRUE);
+    expect_assignment_expression_rejects_ownership_flow(
+            "box.slot = value;",
+            ZR_OWNERSHIP_QUALIFIER_LOANED,
+            "Loaned value cannot escape its owner",
+            "loaned_field_assignment_expression_test.zr",
+            ZR_TRUE);
+    expect_assignment_expression_rejects_ownership_flow(
+            "box.slot = value;",
+            ZR_OWNERSHIP_QUALIFIER_UNIQUE,
+            "Owned value cannot flow into a plain GC value implicitly",
+            "unique_field_assignment_expression_test.zr",
+            ZR_TRUE);
+    expect_assignment_expression_rejects_ownership_flow(
+            "box.slot = value;",
+            ZR_OWNERSHIP_QUALIFIER_SHARED,
+            "Owned value cannot flow into a plain GC value implicitly",
+            "shared_field_assignment_expression_test.zr",
+            ZR_TRUE);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_borrowed_and_loaned_values_cannot_escape_through_assignment(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Borrowed And Loaned Values Cannot Escape Through Assignment";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
     {
         SZrState *state = create_test_state();
         SZrCompilerState *cs = create_test_compiler_state(state);
-        const char *source = "return Observe(this);";
-        SZrString *sourceName = ZrCore_String_Create(state, "borrowed_escape_type_test.zr", 28);
-        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
-        SZrAstNode *expr = ZR_NULL;
-        SZrString *thisName = ZR_NULL;
-        SZrInferredType thisType;
-        SZrInferredType result;
-        SZrTypePrototypeInfo holderInfo;
+        SZrInferredType plainType;
+        SZrInferredType uniqueType;
+        SZrInferredType borrowedType;
+        SZrInferredType loanedType;
+        SZrFileRange location = {{0, 1, 1}, {0, 1, 8}, ZR_NULL};
 
         TEST_ASSERT_NOT_NULL(state);
         TEST_ASSERT_NOT_NULL(cs);
-        TEST_ASSERT_NOT_NULL(ast);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
-        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
-        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
 
-        init_test_type_prototype(state, &holderInfo, "Holder", ZR_OBJECT_PROTOTYPE_TYPE_CLASS);
-        register_test_type_prototype(state, cs, &holderInfo);
-        register_test_function_with_one_param(state,
-                                              cs,
-                                              "Observe",
-                                              ZR_VALUE_TYPE_INT64,
-                                              ZR_NULL,
-                                              ZR_VALUE_TYPE_OBJECT,
-                                              "Holder",
-                                              ZR_OWNERSHIP_QUALIFIER_NONE);
-
-        thisName = ZrCore_String_Create(state, "this", 4);
-        TEST_ASSERT_NOT_NULL(thisName);
-        init_test_object_type(state, &thisType, "Holder", ZR_OWNERSHIP_QUALIFIER_BORROWED);
-        TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterVariable(state, cs->typeEnv, thisName, &thisType));
-        ZrParser_InferredType_Free(state, &thisType);
-
-        expr = ast->data.script.statements->nodes[0]->data.returnStatement.expr;
-        TEST_ASSERT_NOT_NULL(expr);
+        init_test_object_type(state, &plainType, "Resource", ZR_OWNERSHIP_QUALIFIER_NONE);
+        init_test_object_type(state, &uniqueType, "Resource", ZR_OWNERSHIP_QUALIFIER_UNIQUE);
+        init_test_object_type(state, &borrowedType, "Resource", ZR_OWNERSHIP_QUALIFIER_BORROWED);
+        init_test_object_type(state, &loanedType, "Resource", ZR_OWNERSHIP_QUALIFIER_LOANED);
 
         cs->hasError = ZR_FALSE;
         cs->errorMessage = ZR_NULL;
-        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
-        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &plainType, &borrowedType, location));
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_TRUE(strstr(cs->errorMessage, "Argument type mismatch") != ZR_NULL ||
-                         strstr(cs->errorMessage, "No matching overload") != ZR_NULL);
-        ZrParser_InferredType_Free(state, &result);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Borrowed value cannot escape its owner"));
 
-        ZrParser_Ast_Free(state, ast);
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &plainType, &loanedType, location));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Loaned value cannot escape its owner"));
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &uniqueType, &loanedType, location));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Loaned value cannot escape its owner"));
+
+        ZrParser_InferredType_Free(state, &plainType);
+        ZrParser_InferredType_Free(state, &uniqueType);
+        ZrParser_InferredType_Free(state, &borrowedType);
+        ZrParser_InferredType_Free(state, &loanedType);
         destroy_test_compiler_state(cs);
         destroy_test_state(state);
     }
@@ -2077,18 +2456,122 @@ static void test_owned_value_requires_detach_before_plain_flow(void) {
         TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &plainType, &uniqueType, location));
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Type mismatch"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Owned value cannot flow into a plain GC value implicitly"));
 
         cs->hasError = ZR_FALSE;
         cs->errorMessage = ZR_NULL;
         TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &plainType, &sharedType, location));
         TEST_ASSERT_TRUE(cs->hasError);
         TEST_ASSERT_NOT_NULL(cs->errorMessage);
-        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Type mismatch"));
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Owned value cannot flow into a plain GC value implicitly"));
 
         ZrParser_InferredType_Free(state, &plainType);
         ZrParser_InferredType_Free(state, &uniqueType);
         ZrParser_InferredType_Free(state, &sharedType);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_nested_ownership_generic_arguments_cannot_escape_through_assignment(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Nested Ownership Generic Arguments Cannot Escape Through Assignment";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        SZrInferredType plainResourceType;
+        SZrInferredType borrowedResourceType;
+        SZrInferredType loanedResourceType;
+        SZrInferredType uniqueResourceType;
+        SZrInferredType sharedResourceType;
+        SZrInferredType plainBoxType;
+        SZrInferredType borrowedBoxType;
+        SZrInferredType loanedBoxType;
+        SZrInferredType uniqueBoxType;
+        SZrInferredType sharedBoxType;
+        SZrFileRange location = {{0, 1, 1}, {0, 1, 8}, ZR_NULL};
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+
+        init_test_object_type(state, &plainResourceType, "Resource", ZR_OWNERSHIP_QUALIFIER_NONE);
+        init_test_object_type(state, &borrowedResourceType, "Resource", ZR_OWNERSHIP_QUALIFIER_BORROWED);
+        init_test_object_type(state, &loanedResourceType, "Resource", ZR_OWNERSHIP_QUALIFIER_LOANED);
+        init_test_object_type(state, &uniqueResourceType, "Resource", ZR_OWNERSHIP_QUALIFIER_UNIQUE);
+        init_test_object_type(state, &sharedResourceType, "Resource", ZR_OWNERSHIP_QUALIFIER_SHARED);
+
+        init_test_generic_object_type(state,
+                                      &plainBoxType,
+                                      "Box<Resource>",
+                                      &plainResourceType,
+                                      ZR_OWNERSHIP_QUALIFIER_NONE);
+        init_test_generic_object_type(state,
+                                      &borrowedBoxType,
+                                      "Box<Resource>",
+                                      &borrowedResourceType,
+                                      ZR_OWNERSHIP_QUALIFIER_NONE);
+        init_test_generic_object_type(state,
+                                      &loanedBoxType,
+                                      "Box<Resource>",
+                                      &loanedResourceType,
+                                      ZR_OWNERSHIP_QUALIFIER_NONE);
+        init_test_generic_object_type(state,
+                                      &uniqueBoxType,
+                                      "Box<Resource>",
+                                      &uniqueResourceType,
+                                      ZR_OWNERSHIP_QUALIFIER_NONE);
+        init_test_generic_object_type(state,
+                                      &sharedBoxType,
+                                      "Box<Resource>",
+                                      &sharedResourceType,
+                                      ZR_OWNERSHIP_QUALIFIER_NONE);
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &plainBoxType, &borrowedBoxType, location));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Borrowed value cannot escape its owner"));
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &plainBoxType, &loanedBoxType, location));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Loaned value cannot escape its owner"));
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &plainBoxType, &uniqueBoxType, location));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Owned value cannot flow into a plain GC value implicitly"));
+
+        cs->hasError = ZR_FALSE;
+        cs->errorMessage = ZR_NULL;
+        TEST_ASSERT_FALSE(ZrParser_AssignmentCompatibility_Check(cs, &plainBoxType, &sharedBoxType, location));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "Owned value cannot flow into a plain GC value implicitly"));
+
+        ZrParser_InferredType_Free(state, &plainBoxType);
+        ZrParser_InferredType_Free(state, &borrowedBoxType);
+        ZrParser_InferredType_Free(state, &loanedBoxType);
+        ZrParser_InferredType_Free(state, &uniqueBoxType);
+        ZrParser_InferredType_Free(state, &sharedBoxType);
+        ZrParser_InferredType_Free(state, &plainResourceType);
+        ZrParser_InferredType_Free(state, &borrowedResourceType);
+        ZrParser_InferredType_Free(state, &loanedResourceType);
+        ZrParser_InferredType_Free(state, &uniqueResourceType);
+        ZrParser_InferredType_Free(state, &sharedResourceType);
         destroy_test_compiler_state(cs);
         destroy_test_state(state);
     }
@@ -2441,12 +2924,119 @@ static void test_using_statement_compilation_records_cleanup_plan(void) {
     TEST_INFO("Using statement semantic plan",
               "Testing that compiling a using statement appends deterministic cleanup metadata");
 
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+        state, cs->typeEnv, ZrCore_String_Create(state, "Resource", 8)));
+
     {
         const char *source =
                 "var resource = \"x\";\n"
-                "%using resource;";
+                "%using resource;\n"
+                "var owned: Unique<Resource>;\n"
+                "using owned;";
         SZrString *sourceName =
                 ZrCore_String_Create(state, "using_cleanup_test.zr", strlen("using_cleanup_test.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *resourceDecl;
+        SZrAstNode *usingStmt;
+        SZrAstNode *ownedDecl;
+        SZrAstNode *ownedUsingStmt;
+        const SZrDeterministicCleanupStep *step;
+        const SZrDeterministicCleanupStep *ownedStep;
+
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
+
+        resourceDecl = ast->data.script.statements->nodes[0];
+        TEST_ASSERT_NOT_NULL(resourceDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, resourceDecl->type);
+
+        usingStmt = ast->data.script.statements->nodes[1];
+        TEST_ASSERT_NOT_NULL(usingStmt);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_USING_STATEMENT, usingStmt->type);
+
+        ownedDecl = ast->data.script.statements->nodes[2];
+        TEST_ASSERT_NOT_NULL(ownedDecl);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, ownedDecl->type);
+
+        ownedUsingStmt = ast->data.script.statements->nodes[3];
+        TEST_ASSERT_NOT_NULL(ownedUsingStmt);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_USING_STATEMENT, ownedUsingStmt->type);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        ZrParser_Statement_Compile(cs, resourceDecl);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, usingStmt);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ownedDecl);
+        TEST_ASSERT_FALSE(cs->hasError);
+        ZrParser_Statement_Compile(cs, ownedUsingStmt);
+
+        TEST_ASSERT_FALSE(cs->hasError);
+        TEST_ASSERT_EQUAL_INT(2, (int)cs->semanticContext->cleanupPlan.length);
+
+        step = (const SZrDeterministicCleanupStep *)ZrCore_Array_Get(&cs->semanticContext->cleanupPlan, 0);
+        TEST_ASSERT_NOT_NULL(step);
+        TEST_ASSERT_TRUE(step->regionId > 0);
+        TEST_ASSERT_TRUE(step->symbolId > 0);
+        TEST_ASSERT_TRUE(step->callsClose);
+        TEST_ASSERT_TRUE(step->callsDestructor);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_NONE, step->ownershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_NONE, step->ownershipBuiltinKind);
+
+        ownedStep = (const SZrDeterministicCleanupStep *)ZrCore_Array_Get(&cs->semanticContext->cleanupPlan, 1);
+        TEST_ASSERT_NOT_NULL(ownedStep);
+        TEST_ASSERT_TRUE(ownedStep->regionId > 0);
+        TEST_ASSERT_TRUE(ownedStep->symbolId > 0);
+        TEST_ASSERT_TRUE(ownedStep->callsClose);
+        TEST_ASSERT_TRUE(ownedStep->callsDestructor);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE, ownedStep->ownershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_RELEASE, ownedStep->ownershipBuiltinKind);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+    }
+
+    destroy_test_compiler_state(cs);
+    destroy_test_state(state);
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_using_statement_cleanup_plan_records_ownership_generic_kind(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Semantic - Using Cleanup Ownership Generic Kind";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    SZrState *state = create_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+
+    SZrCompilerState *cs = create_test_compiler_state(state);
+    TEST_ASSERT_NOT_NULL(cs);
+    TEST_ASSERT_NOT_NULL(cs->semanticContext);
+
+    TEST_INFO("Using owner cleanup semantic plan",
+              "Testing that using a Unique<T> resource records ownership-generic cleanup metadata for release lowering");
+
+    TEST_ASSERT_TRUE(ZrParser_TypeEnvironment_RegisterType(
+        state, cs->typeEnv, ZrCore_String_Create(state, "Resource", 8)));
+
+    {
+        const char *source =
+                "var resource: Unique<Resource>;\n"
+                "using resource;";
+        SZrString *sourceName =
+                ZrCore_String_Create(state,
+                                     "using_owner_cleanup_generic_test.zr",
+                                     strlen("using_owner_cleanup_generic_test.zr"));
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrAstNode *resourceDecl;
         SZrAstNode *usingStmt;
@@ -2458,11 +3048,10 @@ static void test_using_statement_compilation_records_cleanup_plan(void) {
         TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
 
         resourceDecl = ast->data.script.statements->nodes[0];
-        TEST_ASSERT_NOT_NULL(resourceDecl);
-        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, resourceDecl->type);
-
         usingStmt = ast->data.script.statements->nodes[1];
+        TEST_ASSERT_NOT_NULL(resourceDecl);
         TEST_ASSERT_NOT_NULL(usingStmt);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_VARIABLE_DECLARATION, resourceDecl->type);
         TEST_ASSERT_EQUAL_INT(ZR_AST_USING_STATEMENT, usingStmt->type);
 
         cs->currentFunction = ZrCore_Function_New(state);
@@ -2477,8 +3066,8 @@ static void test_using_statement_compilation_records_cleanup_plan(void) {
 
         step = (const SZrDeterministicCleanupStep *)ZrCore_Array_Get(&cs->semanticContext->cleanupPlan, 0);
         TEST_ASSERT_NOT_NULL(step);
-        TEST_ASSERT_TRUE(step->regionId > 0);
-        TEST_ASSERT_TRUE(step->symbolId > 0);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_QUALIFIER_UNIQUE, step->ownershipQualifier);
+        TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_BUILTIN_KIND_RELEASE, step->ownershipBuiltinKind);
         TEST_ASSERT_TRUE(step->callsClose);
         TEST_ASSERT_TRUE(step->callsDestructor);
 
@@ -2665,6 +3254,57 @@ static void test_type_inference_import_native_module_keeps_module_name(void) {
         TEST_ASSERT_EQUAL_STRING("zr.math", ZrCore_String_GetNativeString(result.typeName));
 
         ZrParser_InferredType_Free(state, &result);
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_native_import_function_member_preserves_metadata_signature_identity(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Native Import Function Member Preserves Metadata Signature Identity";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source = "var math = %import(\"zr.math\");";
+        SZrString *sourceName = ZrCore_String_Create(state, "native_import_signature_identity_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        const SZrTypePrototypeInfo *modulePrototype;
+        const SZrTypeMemberInfo *sqrtMember;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        modulePrototype = find_test_type_prototype(cs, "zr.math");
+        TEST_ASSERT_NOT_NULL(modulePrototype);
+        sqrtMember = find_test_type_member(modulePrototype, "sqrt");
+        TEST_ASSERT_NOT_NULL(sqrtMember);
+        TEST_ASSERT_EQUAL_UINT32(ZR_METADATA_TABLE_MEMBER_DEF,
+                                 ZR_METADATA_TOKEN_TABLE(sqrtMember->metadataToken));
+        TEST_ASSERT_EQUAL_UINT32(ZR_METADATA_TABLE_SIGNATURE,
+                                 ZR_METADATA_TOKEN_TABLE(sqrtMember->signatureToken));
+        TEST_ASSERT_TRUE(sqrtMember->signatureHash != 0);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
         ZrParser_Ast_Free(state, ast);
         destroy_test_compiler_state(cs);
         destroy_test_state(state);
@@ -5357,6 +5997,71 @@ static void test_type_inference_source_class_and_struct_constraints_are_enforced
     TEST_DIVIDER();
 }
 
+static void test_type_inference_source_owner_constraint_is_enforced(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Owner Constraint Is Enforced";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *source =
+                "class Resource { }\n"
+                "func requireOwner<T>(): int where T: owner { return 1; }\n"
+                "requireOwner<Unique<Resource>>();\n"
+                "requireOwner<Resource>();";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_owner_constraint_test.zr", 31);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrAstNode *successExpr = ZR_NULL;
+        SZrAstNode *failureExpr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        TEST_ASSERT_NOT_NULL(ast);
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(4, (int)ast->data.script.statements->count);
+
+        cs->scriptAst = ast;
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        compile_test_top_level_statement(cs, ast->data.script.statements->nodes[1]);
+        TEST_ASSERT_FALSE(cs->hasError);
+        successExpr = ast->data.script.statements->nodes[2]->data.expressionStatement.expr;
+        failureExpr = ast->data.script.statements->nodes[3]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(successExpr);
+        TEST_ASSERT_NOT_NULL(failureExpr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, successExpr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+        ZrParser_InferredType_Free(state, &result);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_FALSE(ZrParser_ExpressionType_Infer(cs, failureExpr, &result));
+        TEST_ASSERT_TRUE(cs->hasError);
+        TEST_ASSERT_NOT_NULL(cs->errorMessage);
+        TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, "owner constraint"));
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
 static void test_type_inference_source_import_function_call_uses_exported_signature(void) {
     SZrTestTimer timer = {0};
     const char *testSummary = "Type Inference - Source Import Function Call Uses Exported Signature";
@@ -5398,6 +6103,130 @@ static void test_type_inference_source_import_function_call_uses_exported_signat
         ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
         TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        state->global->sourceLoader = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_import_function_member_preserves_metadata_signature_identity(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Import Function Member Preserves Metadata Signature Identity";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
+        const char *source = "var calc = %import(\"calc\");";
+        SZrString *sourceName = ZrCore_String_Create(state, "source_import_signature_identity_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        const SZrTypePrototypeInfo *modulePrototype;
+        const SZrTypeMemberInfo *addMember;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        install_import_test_fixture(state,
+                                    "calc",
+                                    (const TZrByte *)moduleSource,
+                                    strlen(moduleSource),
+                                    ZR_FALSE);
+        TEST_ASSERT_NOT_NULL(ast);
+        cs->scriptAst = ast;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        modulePrototype = find_test_type_prototype(cs, "calc");
+        TEST_ASSERT_NOT_NULL(modulePrototype);
+        addMember = find_test_type_member(modulePrototype, "add");
+        TEST_ASSERT_NOT_NULL(addMember);
+        TEST_ASSERT_EQUAL_UINT32(ZR_METADATA_TABLE_MEMBER_DEF,
+                                 ZR_METADATA_TOKEN_TABLE(addMember->metadataToken));
+        TEST_ASSERT_EQUAL_UINT32(ZR_METADATA_TABLE_SIGNATURE,
+                                 ZR_METADATA_TOKEN_TABLE(addMember->signatureToken));
+        TEST_ASSERT_TRUE(addMember->signatureBlobLength > 0);
+        TEST_ASSERT_TRUE(addMember->signatureHash != 0);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        state->global->sourceLoader = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_source_import_keeps_same_name_signature_candidates(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Source Import Keeps Same Name Signature Candidates";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *moduleSource =
+                "pick(value: int): int { return value; }\n"
+                "pick(value: float): bool { return true; }\n";
+        const char *source = "var calc = %import(\"calc\"); calc.pick(1.5);";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "source_import_overload_signature_test.zr",
+                                                     strlen("source_import_overload_signature_test.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        const SZrTypePrototypeInfo *modulePrototype;
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        install_import_test_fixture(state,
+                                    "calc",
+                                    (const TZrByte *)moduleSource,
+                                    strlen(moduleSource),
+                                    ZR_FALSE);
+        TEST_ASSERT_NOT_NULL(ast);
+        cs->scriptAst = ast;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        modulePrototype = find_test_type_prototype(cs, "calc");
+        TEST_ASSERT_NOT_NULL(modulePrototype);
+        TEST_ASSERT_EQUAL_UINT32(2, count_test_type_members(modulePrototype, "pick"));
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, result.baseType);
 
         ZrParser_InferredType_Free(state, &result);
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -5962,6 +6791,138 @@ static void test_type_inference_binary_import_function_call_uses_exported_signat
         ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
         TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
         TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, result.baseType);
+
+        ZrParser_InferredType_Free(state, &result);
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        state->global->sourceLoader = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        free(binaryBytes);
+        remove(binaryPath);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_binary_import_function_member_preserves_metadata_signature_identity(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Binary Import Function Member Preserves Metadata Signature Identity";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *moduleSource = "add(lhs: int, rhs: int): int { return lhs + rhs; }";
+        const char *source = "var calc = %import(\"calc\");";
+        const char *binaryPath = "test_type_inference_import_signature_identity.zro";
+        TZrByte *binaryBytes = ZR_NULL;
+        TZrSize binaryLength = 0;
+        SZrString *sourceName = ZrCore_String_Create(state, "binary_import_signature_identity_test.zr", 40);
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        const SZrTypePrototypeInfo *modulePrototype;
+        const SZrTypeMemberInfo *addMember;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        ZrParser_ToGlobalState_Register(state);
+        binaryBytes = build_binary_import_fixture(state, moduleSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        install_import_test_fixture(state, "calc", binaryBytes, binaryLength, ZR_TRUE);
+        TEST_ASSERT_NOT_NULL(ast);
+        cs->scriptAst = ast;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(1, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        modulePrototype = find_test_type_prototype(cs, "calc");
+        TEST_ASSERT_NOT_NULL(modulePrototype);
+        addMember = find_test_type_member(modulePrototype, "add");
+        TEST_ASSERT_NOT_NULL(addMember);
+        TEST_ASSERT_EQUAL_UINT32(ZR_METADATA_TABLE_MEMBER_DEF,
+                                 ZR_METADATA_TOKEN_TABLE(addMember->metadataToken));
+        TEST_ASSERT_EQUAL_UINT32(ZR_METADATA_TABLE_SIGNATURE,
+                                 ZR_METADATA_TOKEN_TABLE(addMember->signatureToken));
+        TEST_ASSERT_TRUE(addMember->signatureBlobLength > 0);
+        TEST_ASSERT_TRUE(addMember->signatureHash != 0);
+
+        ZrCore_Function_Free(state, cs->currentFunction);
+        cs->currentFunction = ZR_NULL;
+        state->global->sourceLoader = ZR_NULL;
+        ZrParser_Ast_Free(state, ast);
+        free(binaryBytes);
+        remove(binaryPath);
+        destroy_test_compiler_state(cs);
+        destroy_test_state(state);
+    }
+
+    timer.endTime = clock();
+    TEST_PASS_CUSTOM(timer, testSummary);
+    TEST_DIVIDER();
+}
+
+static void test_type_inference_binary_import_keeps_same_name_signature_candidates(void) {
+    SZrTestTimer timer = {0};
+    const char *testSummary = "Type Inference - Binary Import Keeps Same Name Signature Candidates";
+
+    TEST_START(testSummary);
+    timer.startTime = clock();
+
+    {
+        SZrState *state = create_test_state();
+        SZrCompilerState *cs = create_test_compiler_state(state);
+        const char *moduleSource =
+                "pick(value: int): int { return value; }\n"
+                "pick(value: float): bool { return true; }\n";
+        const char *source = "var calc = %import(\"calc\"); calc.pick(1.5);";
+        const char *binaryPath = "test_type_inference_import_overload_signature.zro";
+        TZrByte *binaryBytes = ZR_NULL;
+        TZrSize binaryLength = 0;
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "binary_import_overload_signature_test.zr",
+                                                     strlen("binary_import_overload_signature_test.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        const SZrTypePrototypeInfo *modulePrototype;
+        SZrAstNode *expr = ZR_NULL;
+        SZrInferredType result;
+
+        TEST_ASSERT_NOT_NULL(state);
+        TEST_ASSERT_NOT_NULL(cs);
+        ZrParser_ToGlobalState_Register(state);
+        binaryBytes = build_binary_import_fixture(state, moduleSource, binaryPath, &binaryLength);
+        TEST_ASSERT_NOT_NULL(binaryBytes);
+        install_import_test_fixture(state, "calc", binaryBytes, binaryLength, ZR_TRUE);
+        TEST_ASSERT_NOT_NULL(ast);
+        cs->scriptAst = ast;
+        TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+        TEST_ASSERT_NOT_NULL(ast->data.script.statements);
+        TEST_ASSERT_EQUAL_INT(2, (int)ast->data.script.statements->count);
+
+        cs->currentFunction = ZrCore_Function_New(state);
+        TEST_ASSERT_NOT_NULL(cs->currentFunction);
+        ZrParser_Statement_Compile(cs, ast->data.script.statements->nodes[0]);
+        TEST_ASSERT_FALSE(cs->hasError);
+
+        modulePrototype = find_test_type_prototype(cs, "calc");
+        TEST_ASSERT_NOT_NULL(modulePrototype);
+        TEST_ASSERT_EQUAL_UINT32(2, count_test_type_members(modulePrototype, "pick"));
+
+        expr = ast->data.script.statements->nodes[1]->data.expressionStatement.expr;
+        TEST_ASSERT_NOT_NULL(expr);
+
+        ZrParser_InferredType_Init(state, &result, ZR_VALUE_TYPE_OBJECT);
+        TEST_ASSERT_TRUE(ZrParser_ExpressionType_Infer(cs, expr, &result));
+        TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_BOOL, result.baseType);
 
         ZrParser_InferredType_Free(state, &result);
         ZrCore_Function_Free(state, cs->currentFunction);
@@ -7054,6 +8015,7 @@ int main(void) {
     RUN_TEST(test_type_inference_resolves_best_function_overload);
     RUN_TEST(test_convert_ast_type_registers_generic_instance_semantics);
     RUN_TEST(test_convert_ast_type_preserves_ownership_qualifier);
+    RUN_TEST(test_intrinsic_ownership_generic_types_convert_to_owner_qualifiers);
     RUN_TEST(test_convert_ast_type_preserves_qualified_root_module_member_name);
     RUN_TEST(test_construct_expression_preserves_ownership_qualifier);
     RUN_TEST(test_ownership_builtin_type_inference_rejects_invalid_operands);
@@ -7062,11 +8024,18 @@ int main(void) {
     RUN_TEST(test_weak_value_requires_upgrade_before_borrowed_parameter);
     RUN_TEST(test_weak_receiver_requires_upgrade_before_borrowed_method);
     RUN_TEST(test_borrowed_value_cannot_flow_to_plain_parameter);
+    RUN_TEST(test_loaned_value_cannot_flow_to_plain_parameter);
+    RUN_TEST(test_owned_value_requires_detach_before_plain_parameter);
+    RUN_TEST(test_ownership_escape_diagnostics_apply_to_assignment_expressions);
+    RUN_TEST(test_ownership_escape_diagnostics_apply_to_field_assignment_expressions);
+    RUN_TEST(test_borrowed_and_loaned_values_cannot_escape_through_assignment);
     RUN_TEST(test_owned_value_requires_detach_before_plain_flow);
+    RUN_TEST(test_nested_ownership_generic_arguments_cannot_escape_through_assignment);
     RUN_TEST(test_move_only_struct_assignment_rejects_implicit_copy);
     RUN_TEST(test_move_only_struct_argument_rejects_by_value_call);
     RUN_TEST(test_parser_supports_ownership_types_and_template_strings);
     RUN_TEST(test_using_statement_compilation_records_cleanup_plan);
+    RUN_TEST(test_using_statement_cleanup_plan_records_ownership_generic_kind);
     RUN_TEST(test_template_string_compilation_records_semantic_segments);
     RUN_TEST(test_type_inference_float_literal);
     RUN_TEST(test_type_inference_string_literal);
@@ -7109,6 +8078,7 @@ int main(void) {
     RUN_TEST(test_type_inference_source_generic_constraint_mismatch_rejects_non_implementing_type);
     RUN_TEST(test_type_inference_source_generic_inheritance_substitutes_closed_base_member_type);
     RUN_TEST(test_type_inference_source_class_and_struct_constraints_are_enforced);
+    RUN_TEST(test_type_inference_source_owner_constraint_is_enforced);
     RUN_TEST(test_type_inference_container_dotted_generic_new_returns_closed_registered_type);
     RUN_TEST(test_type_inference_container_computed_access_uses_registered_meta_types);
     RUN_TEST(test_type_inference_ffi_pointer_helpers_propagate_registered_pointer_types);
@@ -7124,6 +8094,8 @@ int main(void) {
     RUN_TEST(test_type_inference_source_extern_enum_member_access_returns_enum_type);
     RUN_TEST(test_type_inference_source_extern_struct_construction_returns_struct_type);
     RUN_TEST(test_type_inference_source_import_function_call_uses_exported_signature);
+    RUN_TEST(test_type_inference_source_import_function_member_preserves_metadata_signature_identity);
+    RUN_TEST(test_type_inference_source_import_keeps_same_name_signature_candidates);
     RUN_TEST(test_type_inference_source_import_function_call_rejects_argument_mismatch);
     RUN_TEST(test_type_inference_source_import_member_chain_uses_returned_prototype_type);
     RUN_TEST(test_type_inference_cyclic_import_entry_value_read_rejects_same_scc);
@@ -7137,7 +8109,10 @@ int main(void) {
     RUN_TEST(test_type_inference_destructured_native_type_import_rejects_second_pair_declaration);
     RUN_TEST(test_type_inference_source_import_array_assignment_rejects_incompatible_value);
     RUN_TEST(test_type_inference_binary_import_function_call_uses_exported_signature);
+    RUN_TEST(test_type_inference_binary_import_function_member_preserves_metadata_signature_identity);
+    RUN_TEST(test_type_inference_binary_import_keeps_same_name_signature_candidates);
     RUN_TEST(test_type_inference_binary_import_function_call_rejects_argument_mismatch);
+    RUN_TEST(test_type_inference_native_import_function_member_preserves_metadata_signature_identity);
     RUN_TEST(test_type_inference_native_method_call_rejects_registered_parameter_mismatch);
     RUN_TEST(test_type_inference_native_instance_method_uses_registered_return_type);
     RUN_TEST(test_type_inference_native_nested_module_method_call_returns_null);

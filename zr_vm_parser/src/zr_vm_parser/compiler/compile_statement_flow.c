@@ -216,6 +216,7 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     SZrLoopLabel loopLabel;
     loopLabel.breakLabelId = create_label(cs);
     loopLabel.continueLabelId = create_label(cs);
+    loopLabel.targetScopeStackDepth = cs->scopeStack.length;
     ZrCore_Array_Push(cs->state, &cs->loopLabelStack, &loopLabel);
     
     // 创建循环开始标签（continue 跳转到这里）
@@ -228,7 +229,11 @@ void compile_while_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 编译条件表达式
     ZrParser_Expression_Compile(cs, whileLoop->cond);
-    TZrUInt32 condSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+    TZrUInt32 condSlot = cs->lastExpressionSlot;
+    if (condSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to compile while condition", node->location);
+        return;
+    }
     
     // 创建循环结束标签（break 跳转到这里）
     TZrSize loopEndLabelId = loopLabel.breakLabelId;
@@ -299,6 +304,7 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
     SZrLoopLabel loopLabel;
     loopLabel.breakLabelId = create_label(cs);
     loopLabel.continueLabelId = create_label(cs);
+    loopLabel.targetScopeStackDepth = cs->scopeStack.length;
     ZrCore_Array_Push(cs->state, &cs->loopLabelStack, &loopLabel);
     
     // 编译初始化表达式
@@ -313,7 +319,11 @@ void compile_for_statement(SZrCompilerState *cs, SZrAstNode *node) {
         // 编译条件表达式
         if (forLoop->cond != ZR_NULL) {
             ZrParser_Expression_Compile(cs, forLoop->cond);
-            TZrUInt32 condSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+            TZrUInt32 condSlot = cs->lastExpressionSlot;
+            if (condSlot == ZR_PARSER_SLOT_NONE) {
+                ZrParser_Compiler_Error(cs, "Failed to compile for condition", node->location);
+                return;
+            }
             
             // 创建循环结束标签（break 跳转到这里）
             TZrSize loopEndLabelId = loopLabel.breakLabelId;
@@ -403,6 +413,7 @@ void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
 
     loopLabel.breakLabelId = create_label(cs);
     loopLabel.continueLabelId = create_label(cs);
+    loopLabel.targetScopeStackDepth = cs->scopeStack.length;
     ZrCore_Array_Push(cs->state, &cs->loopLabelStack, &loopLabel);
 
     if (foreachLoop->typeInfo != ZR_NULL) {
@@ -426,7 +437,11 @@ void compile_foreach_statement(SZrCompilerState *cs, SZrAstNode *node) {
         goto foreach_cleanup;
     }
 
-    iterableSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+    iterableSlot = cs->lastExpressionSlot;
+    if (iterableSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Foreach iterable expression did not produce a value", foreachLoop->expr->location);
+        goto foreach_cleanup;
+    }
     iteratorSlot = allocate_stack_slot(cs);
     emit_instruction(cs,
                      create_instruction_2(useDynamicIteratorOps
@@ -513,6 +528,406 @@ foreach_cleanup:
     exit_type_scope(cs);
 }
 
+static TZrBool switch_case_can_use_subject_union_type(SZrAstNode *caseValue) {
+    return caseValue != ZR_NULL &&
+           (caseValue->type == ZR_AST_IDENTIFIER_LITERAL ||
+            caseValue->type == ZR_AST_PRIMARY_EXPRESSION);
+}
+
+static TZrBool compile_switch_union_variant_case_compare(SZrCompilerState *cs,
+                                                         SZrAstNode *caseValue,
+                                                         SZrString *switchUnionTypeName,
+                                                         TZrUInt32 exprSlot,
+                                                         TZrUInt32 *outCompareSlot,
+                                                         SZrAstNodeArray **outBindings,
+                                                         SZrAstNode **outVariant) {
+    SZrString *variantName = ZR_NULL;
+    SZrAstNodeArray *bindings = ZR_NULL;
+    SZrAstNode *variant = ZR_NULL;
+    SZrString *tagMemberName;
+    TZrUInt32 tagMemberId;
+    TZrUInt32 tagSlot;
+    TZrUInt32 variantSlot;
+    TZrUInt32 compareSlot;
+    EZrInstructionCode compareOpcode;
+
+    if (outCompareSlot != ZR_NULL) {
+        *outCompareSlot = ZR_PARSER_SLOT_NONE;
+    }
+    if (outBindings != ZR_NULL) {
+        *outBindings = ZR_NULL;
+    }
+    if (outVariant != ZR_NULL) {
+        *outVariant = ZR_NULL;
+    }
+    if (cs == ZR_NULL || caseValue == ZR_NULL || outCompareSlot == ZR_NULL || outBindings == ZR_NULL ||
+        cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    if (switchUnionTypeName != ZR_NULL && switch_case_can_use_subject_union_type(caseValue)) {
+        if (!try_resolve_union_variant_pattern_for_type(cs,
+                                                        caseValue,
+                                                        switchUnionTypeName,
+                                                        &variantName,
+                                                        &bindings,
+                                                        &variant)) {
+            return ZR_FALSE;
+        }
+    } else if (!try_resolve_union_variant_pattern_expression(cs, caseValue, &variantName, &bindings, &variant)) {
+        return ZR_FALSE;
+    }
+    if (cs->hasError || variantName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    tagMemberName = ZrCore_String_CreateFromNative(cs->state, "__zr_unionVariant");
+    if (tagMemberName == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Failed to allocate union variant tag member name", caseValue->location);
+        return ZR_TRUE;
+    }
+
+    tagMemberId = compiler_get_or_add_member_entry(cs, tagMemberName);
+    if (tagMemberId == ZR_PARSER_MEMBER_ID_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to register union variant tag member", caseValue->location);
+        return ZR_TRUE;
+    }
+
+    tagSlot = allocate_stack_slot(cs);
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                                          (TZrUInt16)tagSlot,
+                                          (TZrUInt16)exprSlot,
+                                          (TZrUInt16)tagMemberId));
+
+    variantSlot = emit_string_constant(cs, variantName);
+    if (variantSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
+        ZrParser_Compiler_Error(cs, "Failed to emit union variant tag constant", caseValue->location);
+        return ZR_TRUE;
+    }
+
+    compareOpcode = compiler_select_binary_equality_opcode(ZR_FALSE,
+                                                           ZR_TRUE,
+                                                           ZR_VALUE_TYPE_STRING,
+                                                           ZR_VALUE_TYPE_STRING);
+    compareSlot = allocate_stack_slot(cs);
+    emit_instruction(cs,
+                     create_instruction_2(compareOpcode,
+                                          (TZrUInt16)compareSlot,
+                                          (TZrUInt16)tagSlot,
+                                          (TZrUInt16)variantSlot));
+
+    *outCompareSlot = compareSlot;
+    *outBindings = bindings;
+    if (outVariant != ZR_NULL) {
+        *outVariant = variant;
+    }
+    return ZR_TRUE;
+}
+
+static void compile_switch_union_variant_payload_bindings(SZrCompilerState *cs,
+                                                          TZrUInt32 exprSlot,
+                                                          SZrAstNodeArray *bindings,
+                                                          SZrAstNode *variant,
+                                                          SZrFileRange location) {
+    if (cs == ZR_NULL || bindings == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < bindings->count; index++) {
+        SZrAstNode *bindingNode = bindings->nodes[index];
+        TZrChar memberNameBuffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
+        TZrInt32 written;
+        SZrString *memberName;
+        TZrUInt32 memberId;
+        TZrUInt32 localSlot;
+        TZrUInt32 valueSlot;
+        TZrUInt32 bindingValueSlot;
+        TZrBool moveBinding;
+        TZrBool payloadDefaultsToBorrow;
+        TZrBool needsBorrow;
+
+        if (bindingNode == ZR_NULL || bindingNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+            bindingNode->data.identifier.name == ZR_NULL) {
+            ZrParser_Compiler_Error(cs,
+                                    "Union switch pattern binding must be an identifier",
+                                    bindingNode != ZR_NULL ? bindingNode->location : location);
+            return;
+        }
+
+        written = snprintf(memberNameBuffer,
+                           sizeof(memberNameBuffer),
+                           "__zr_unionPayload%u",
+                           (unsigned)index);
+        if (written <= 0 || (TZrSize)written >= sizeof(memberNameBuffer)) {
+            ZrParser_Compiler_Error(cs, "Union payload member name is too long", location);
+            return;
+        }
+
+        memberName = ZrCore_String_Create(cs->state, memberNameBuffer, (TZrSize)written);
+        if (memberName == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "Failed to allocate union payload member name", location);
+            return;
+        }
+
+        memberId = compiler_get_or_add_member_entry(cs, memberName);
+        if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
+            ZrParser_Compiler_Error(cs, "Failed to register union payload member", location);
+            return;
+        }
+
+        localSlot = allocate_local_var(cs, bindingNode->data.identifier.name);
+        valueSlot = allocate_stack_slot(cs);
+        emit_instruction(cs,
+                         create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                                              (TZrUInt16)valueSlot,
+                                              (TZrUInt16)exprSlot,
+                                              (TZrUInt16)memberId));
+        bindingValueSlot = valueSlot;
+        moveBinding = bindingNode->data.identifier.isMoveBinding;
+        payloadDefaultsToBorrow = union_variant_payload_binding_defaults_to_borrow(variant, index, ZR_FALSE);
+        needsBorrow = union_variant_payload_binding_defaults_to_borrow(variant, index, moveBinding);
+        if (needsBorrow) {
+            TZrUInt32 borrowSlot = allocate_stack_slot(cs);
+
+            emit_instruction(cs,
+                             create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_BORROW),
+                                                  (TZrUInt16)borrowSlot,
+                                                  (TZrUInt16)valueSlot,
+                                                  0));
+            bindingValueSlot = borrowSlot;
+        }
+        if (moveBinding && payloadDefaultsToBorrow) {
+            if (!emit_member_slot_set_null(cs, exprSlot, memberId, location)) {
+                return;
+            }
+        }
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)localSlot,
+                                              (TZrInt32)bindingValueSlot));
+        register_union_variant_payload_binding_type(cs,
+                                                    variant,
+                                                    index,
+                                                    bindingNode->data.identifier.name,
+                                                    moveBinding);
+        ZrParser_Compiler_TrimStackBy(cs, needsBorrow ? 2u : 1u);
+    }
+}
+
+static TZrBool switch_union_case_covers_variant(SZrCompilerState *cs,
+                                                SZrAstNode *caseValue,
+                                                SZrString *switchUnionTypeName,
+                                                SZrString *variantName) {
+    SZrString *caseVariantName = ZR_NULL;
+    SZrAstNodeArray *bindings = ZR_NULL;
+
+    if (cs == ZR_NULL || caseValue == ZR_NULL || variantName == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    if (switchUnionTypeName != ZR_NULL && switch_case_can_use_subject_union_type(caseValue)) {
+        if (!try_resolve_union_variant_pattern_for_type(cs,
+                                                        caseValue,
+                                                        switchUnionTypeName,
+                                                        &caseVariantName,
+                                                        &bindings,
+                                                        ZR_NULL)) {
+            return ZR_FALSE;
+        }
+    } else if (!try_resolve_union_variant_pattern_expression(cs, caseValue, &caseVariantName, &bindings, ZR_NULL)) {
+        return ZR_FALSE;
+    }
+    if (cs->hasError || caseVariantName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_String_Equal(caseVariantName, variantName);
+}
+
+static void compile_switch_validate_union_duplicate_cases(SZrCompilerState *cs,
+                                                          SZrSwitchExpression *switchExpr,
+                                                          SZrAstNode *unionDeclaration,
+                                                          SZrString *switchUnionTypeName) {
+    SZrAstNodeArray *variants;
+
+    if (cs == ZR_NULL || switchExpr == ZR_NULL || unionDeclaration == ZR_NULL ||
+        unionDeclaration->type != ZR_AST_UNION_DECLARATION || cs->hasError ||
+        switchExpr->cases == ZR_NULL || switchExpr->cases->nodes == ZR_NULL) {
+        return;
+    }
+
+    variants = unionDeclaration->data.unionDeclaration.variants;
+    if (variants == ZR_NULL || variants->nodes == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize variantIndex = 0; variantIndex < variants->count; variantIndex++) {
+        SZrAstNode *variantNode = variants->nodes[variantIndex];
+        SZrString *variantName;
+        TZrBool alreadyCovered = ZR_FALSE;
+
+        if (variantNode == ZR_NULL ||
+            variantNode->type != ZR_AST_UNION_VARIANT ||
+            variantNode->data.unionVariant.name == ZR_NULL ||
+            variantNode->data.unionVariant.name->name == ZR_NULL) {
+            continue;
+        }
+
+        variantName = variantNode->data.unionVariant.name->name;
+        for (TZrSize caseIndex = 0; caseIndex < switchExpr->cases->count; caseIndex++) {
+            SZrAstNode *caseNode = switchExpr->cases->nodes[caseIndex];
+
+            if (caseNode == ZR_NULL ||
+                caseNode->type != ZR_AST_SWITCH_CASE ||
+                !switch_union_case_covers_variant(cs,
+                                                  caseNode->data.switchCase.value,
+                                                  switchUnionTypeName,
+                                                  variantName)) {
+                if (cs->hasError) {
+                    return;
+                }
+                continue;
+            }
+
+            if (alreadyCovered) {
+                TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
+                const TZrChar *variantText = ZrCore_String_GetNativeString(variantName);
+
+                snprintf(message,
+                         sizeof(message),
+                         "Unreachable union switch case; variant '%s' is already covered",
+                         variantText != ZR_NULL ? variantText : "<unknown>");
+                ZrParser_Compiler_Error(cs, message, caseNode->location);
+                return;
+            }
+
+            alreadyCovered = ZR_TRUE;
+        }
+    }
+}
+
+static void compile_switch_validate_union_exhaustiveness(SZrCompilerState *cs,
+                                                         SZrSwitchExpression *switchExpr,
+                                                         SZrAstNode *unionDeclaration,
+                                                         SZrString *switchUnionTypeName,
+                                                         SZrFileRange location) {
+    SZrAstNodeArray *variants;
+
+    if (cs == ZR_NULL || switchExpr == ZR_NULL || unionDeclaration == ZR_NULL ||
+        unionDeclaration->type != ZR_AST_UNION_DECLARATION || cs->hasError ||
+        switchExpr->defaultCase != ZR_NULL) {
+        return;
+    }
+
+    variants = unionDeclaration->data.unionDeclaration.variants;
+    if (variants == ZR_NULL || variants->nodes == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize variantIndex = 0; variantIndex < variants->count; variantIndex++) {
+        SZrAstNode *variantNode = variants->nodes[variantIndex];
+        SZrString *variantName;
+        TZrBool covered = ZR_FALSE;
+
+        if (variantNode == ZR_NULL ||
+            variantNode->type != ZR_AST_UNION_VARIANT ||
+            variantNode->data.unionVariant.name == ZR_NULL ||
+            variantNode->data.unionVariant.name->name == ZR_NULL) {
+            continue;
+        }
+
+        variantName = variantNode->data.unionVariant.name->name;
+        if (switchExpr->cases != ZR_NULL && switchExpr->cases->nodes != ZR_NULL) {
+            for (TZrSize caseIndex = 0; caseIndex < switchExpr->cases->count; caseIndex++) {
+                SZrAstNode *caseNode = switchExpr->cases->nodes[caseIndex];
+
+                if (caseNode != ZR_NULL &&
+                    caseNode->type == ZR_AST_SWITCH_CASE &&
+                    switch_union_case_covers_variant(cs,
+                                                     caseNode->data.switchCase.value,
+                                                     switchUnionTypeName,
+                                                     variantName)) {
+                    covered = ZR_TRUE;
+                    break;
+                }
+                if (cs->hasError) {
+                    return;
+                }
+            }
+        }
+
+        if (!covered) {
+            TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
+            const TZrChar *variantText = ZrCore_String_GetNativeString(variantName);
+
+            snprintf(message,
+                     sizeof(message),
+                     "Non-exhaustive union switch; missing variant '%s'",
+                     variantText != ZR_NULL ? variantText : "<unknown>");
+            ZrParser_Compiler_Error(cs, message, location);
+            return;
+        }
+    }
+}
+
+static void preserve_switch_subject_slot(SZrCompilerState *cs, TZrUInt32 stackSlot) {
+    if (cs == ZR_NULL || stackSlot == ZR_PARSER_SLOT_NONE) {
+        return;
+    }
+
+    if (cs->stackSlotCount <= (TZrSize)stackSlot) {
+        cs->stackSlotCount = (TZrSize)stackSlot + 1u;
+    }
+    if (cs->maxStackSlotCount < cs->stackSlotCount) {
+        cs->maxStackSlotCount = cs->stackSlotCount;
+    }
+}
+
+static TZrBool compile_switch_expression_slot(SZrCompilerState *cs,
+                                              SZrAstNode *expr,
+                                              TZrBool preferLocalSlot,
+                                              TZrUInt32 *outSlot) {
+    TZrUInt32 localSlot;
+
+    if (outSlot != ZR_NULL) {
+        *outSlot = ZR_PARSER_SLOT_NONE;
+    }
+    if (cs == ZR_NULL || expr == ZR_NULL || outSlot == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    if (preferLocalSlot && expr->type == ZR_AST_IDENTIFIER_LITERAL && expr->data.identifier.name != ZR_NULL) {
+        localSlot = find_local_var(cs, expr->data.identifier.name);
+        if (localSlot != ZR_PARSER_SLOT_NONE) {
+            *outSlot = localSlot;
+            cs->lastExpressionSlot = localSlot;
+            return ZR_TRUE;
+        }
+    }
+
+    if (preferLocalSlot) {
+        TZrUInt32 targetSlot = (TZrUInt32)cs->stackSlotCount;
+        TZrUInt32 compiledSlot = compile_expression_into_slot(cs, expr, targetSlot);
+
+        if (cs->hasError || compiledSlot == ZR_PARSER_SLOT_NONE) {
+            return ZR_FALSE;
+        }
+
+        preserve_switch_subject_slot(cs, compiledSlot);
+        *outSlot = compiledSlot;
+        return ZR_TRUE;
+    }
+
+    ZrParser_Expression_Compile(cs, expr);
+    if (cs->hasError || cs->lastExpressionSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+
+    *outSlot = cs->lastExpressionSlot;
+    return ZR_TRUE;
+}
+
 // 编译 switch 语句
 void compile_switch_statement(SZrCompilerState *cs, SZrAstNode *node) {
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
@@ -526,12 +941,56 @@ void compile_switch_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
     
     SZrSwitchExpression *switchExpr = &node->data.switchExpression;
+    SZrAstNode *switchUnionDeclaration = ZR_NULL;
+    SZrString *switchUnionTypeName = ZR_NULL;
+    SZrInferredType switchInferredType;
+
+    ZrParser_InferredType_Init(cs->state, &switchInferredType, ZR_VALUE_TYPE_OBJECT);
+    if (ZrParser_ExpressionType_Infer(cs, switchExpr->expr, &switchInferredType) &&
+        switchInferredType.typeName != ZR_NULL) {
+        switchUnionDeclaration = try_find_union_declaration_for_type_name(cs, switchInferredType.typeName);
+        if (switchUnionDeclaration != ZR_NULL) {
+            switchUnionTypeName = switchInferredType.typeName;
+        }
+    }
+    if (cs->hasError) {
+        ZrParser_InferredType_Free(cs->state, &switchInferredType);
+        return;
+    }
     
     // 编译 switch 表达式
-    ZrParser_Expression_Compile(cs, switchExpr->expr);
-    TZrUInt32 exprSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+    TZrUInt32 exprSlot;
+    if (!compile_switch_expression_slot(cs, switchExpr->expr, (TZrBool)(switchUnionDeclaration != ZR_NULL), &exprSlot)) {
+        ZrParser_Compiler_Error(cs, "Switch expression did not produce a value", switchExpr->expr->location);
+        ZrParser_InferredType_Free(cs->state, &switchInferredType);
+        return;
+    }
+    if (cs->hasError || exprSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Switch expression did not produce a value", switchExpr->expr->location);
+        ZrParser_InferredType_Free(cs->state, &switchInferredType);
+        return;
+    }
     EZrValueType switchExprType = ZR_VALUE_TYPE_OBJECT;
     TZrBool hasSwitchExprType = compiler_try_infer_expression_base_type(cs, switchExpr->expr, &switchExprType);
+    if (switchUnionDeclaration != ZR_NULL) {
+        compile_switch_validate_union_duplicate_cases(cs,
+                                                      switchExpr,
+                                                      switchUnionDeclaration,
+                                                      switchUnionTypeName);
+        if (cs->hasError) {
+            ZrParser_InferredType_Free(cs->state, &switchInferredType);
+            return;
+        }
+        compile_switch_validate_union_exhaustiveness(cs,
+                                                     switchExpr,
+                                                     switchUnionDeclaration,
+                                                     switchUnionTypeName,
+                                                     node->location);
+        if (cs->hasError) {
+            ZrParser_InferredType_Free(cs->state, &switchInferredType);
+            return;
+        }
+    }
     
     // 创建结束标签
     TZrSize endLabelId = create_label(cs);
@@ -542,25 +1001,49 @@ void compile_switch_statement(SZrCompilerState *cs, SZrAstNode *node) {
             SZrAstNode *caseNode = switchExpr->cases->nodes[i];
             if (caseNode != ZR_NULL && caseNode->type == ZR_AST_SWITCH_CASE) {
                 SZrSwitchCase *switchCase = &caseNode->data.switchCase;
+                TZrUInt32 compareSlot = ZR_PARSER_SLOT_NONE;
+                SZrAstNodeArray *unionPatternBindings = ZR_NULL;
+                SZrAstNode *unionPatternVariant = ZR_NULL;
                 
-                // 编译 case 值
-                ZrParser_Expression_Compile(cs, switchCase->value);
-                TZrUInt32 caseValueSlot = (TZrUInt32)(cs->stackSlotCount - 1);
-                
-                // 比较表达式和 case 值
-                EZrValueType caseValueType = ZR_VALUE_TYPE_OBJECT;
-                TZrBool hasCaseValueType = compiler_try_infer_expression_base_type(cs, switchCase->value, &caseValueType);
-                EZrInstructionCode compareOpcode = compiler_select_binary_equality_opcode(
-                        ZR_FALSE,
-                        (TZrBool)(hasSwitchExprType && hasCaseValueType),
-                        switchExprType,
-                        caseValueType);
-                TZrUInt32 compareSlot = allocate_stack_slot(cs);
-                TZrInstruction compareInst = create_instruction_2(compareOpcode,
-                                                                  (TZrUInt16)compareSlot,
-                                                                  (TZrUInt16)exprSlot,
-                                                                  (TZrUInt16)caseValueSlot);
-                emit_instruction(cs, compareInst);
+                if (!compile_switch_union_variant_case_compare(cs,
+                                                               switchCase->value,
+                                                               switchUnionTypeName,
+                                                               exprSlot,
+                                                               &compareSlot,
+                                                               &unionPatternBindings,
+                                                               &unionPatternVariant)) {
+                    // 编译 case 值
+                    ZrParser_Expression_Compile(cs, switchCase->value);
+                    TZrUInt32 caseValueSlot = cs->lastExpressionSlot;
+                    if (cs->hasError || caseValueSlot == ZR_PARSER_SLOT_NONE) {
+                        ZrParser_Compiler_Error(cs,
+                                                "Switch case expression did not produce a value",
+                                                switchCase->value->location);
+                        ZrParser_InferredType_Free(cs->state, &switchInferredType);
+                        return;
+                    }
+
+                    // 比较表达式和 case 值
+                    EZrValueType caseValueType = ZR_VALUE_TYPE_OBJECT;
+                    TZrBool hasCaseValueType = compiler_try_infer_expression_base_type(cs,
+                                                                                       switchCase->value,
+                                                                                       &caseValueType);
+                    EZrInstructionCode compareOpcode = compiler_select_binary_equality_opcode(
+                            ZR_FALSE,
+                            (TZrBool)(hasSwitchExprType && hasCaseValueType),
+                            switchExprType,
+                            caseValueType);
+                    compareSlot = allocate_stack_slot(cs);
+                    emit_instruction(cs,
+                                     create_instruction_2(compareOpcode,
+                                                          (TZrUInt16)compareSlot,
+                                                          (TZrUInt16)exprSlot,
+                                                          (TZrUInt16)caseValueSlot));
+                }
+                if (cs->hasError || compareSlot == ZR_PARSER_SLOT_NONE) {
+                    ZrParser_InferredType_Free(cs->state, &switchInferredType);
+                    return;
+                }
                 
                 // 创建下一个 case 标签
                 TZrSize nextCaseLabelId = create_label(cs);
@@ -570,10 +1053,24 @@ void compile_switch_statement(SZrCompilerState *cs, SZrAstNode *node) {
                 TZrSize jumpIfIndex = cs->instructionCount;
                 emit_instruction(cs, jumpIfInst);
                 add_pending_jump(cs, jumpIfIndex, nextCaseLabelId);
+
+                compile_switch_union_variant_payload_bindings(cs,
+                                                              exprSlot,
+                                                              unionPatternBindings,
+                                                              unionPatternVariant,
+                                                              switchCase->value->location);
+                if (cs->hasError) {
+                    ZrParser_InferredType_Free(cs->state, &switchInferredType);
+                    return;
+                }
                 
                 // 编译 case 块
                 if (switchCase->block != ZR_NULL) {
                     ZrParser_Statement_Compile(cs, switchCase->block);
+                    if (cs->hasError) {
+                        ZrParser_InferredType_Free(cs->state, &switchInferredType);
+                        return;
+                    }
                 }
                 
                 // JUMP -> end
@@ -598,6 +1095,7 @@ void compile_switch_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 解析结束标签
     resolve_label(cs, endLabelId);
+    ZrParser_InferredType_Free(cs->state, &switchInferredType);
 }
 
 // 编译 break/continue 语句
@@ -643,6 +1141,13 @@ void compile_break_continue_statement(SZrCompilerState *cs, SZrAstNode *node) {
         return;
     }
 
+    if (compiler_has_scope_ownership_cleanups_above_depth(cs, loopLabel->targetScopeStackDepth)) {
+        compiler_emit_scope_ownership_cleanups_above_depth(cs, loopLabel->targetScopeStackDepth);
+        if (cs->hasError) {
+            return;
+        }
+    }
+
     if (hasFinallyContext) {
         TZrInstruction pendingInst =
                 create_instruction_1(stmt->isBreak ? ZR_INSTRUCTION_ENUM(SET_PENDING_BREAK)
@@ -675,7 +1180,11 @@ void compile_out_statement(SZrCompilerState *cs, SZrAstNode *node) {
     // 编译表达式
     if (stmt->expr != ZR_NULL) {
         ZrParser_Expression_Compile(cs, stmt->expr);
-        TZrUInt32 valueSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+        TZrUInt32 valueSlot = cs->lastExpressionSlot;
+        if (cs->hasError || valueSlot == ZR_PARSER_SLOT_NONE) {
+            ZrParser_Compiler_Error(cs, "Out expression did not produce a value", stmt->expr->location);
+            return;
+        }
         
         // 生成生成器输出指令（用于生成器）
         // 注意：生成器机制需要运行时支持，这里先实现基本框架
@@ -708,7 +1217,11 @@ void compile_throw_statement(SZrCompilerState *cs, SZrAstNode *node) {
     // 编译异常表达式
     if (stmt->expr != ZR_NULL) {
         ZrParser_Expression_Compile(cs, stmt->expr);
-        TZrUInt32 exceptionSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+        TZrUInt32 exceptionSlot = cs->lastExpressionSlot;
+        if (cs->hasError || exceptionSlot == ZR_PARSER_SLOT_NONE) {
+            ZrParser_Compiler_Error(cs, "Throw expression did not produce a value", stmt->expr->location);
+            return;
+        }
         
         // 生成 THROW 指令
         TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(THROW), (TZrUInt16)exceptionSlot, 0);
@@ -853,6 +1366,57 @@ static void compile_destructuring_register_binding_type(SZrCompilerState *cs,
     ZrParser_InferredType_Free(cs->state, &bindingType);
 }
 
+static TZrBool destructuring_object_entry_names(SZrAstNode *entry,
+                                                SZrString **outBindingName,
+                                                SZrString **outFieldName,
+                                                SZrFileRange *outLocation) {
+    if (outBindingName != ZR_NULL) {
+        *outBindingName = ZR_NULL;
+    }
+    if (outFieldName != ZR_NULL) {
+        *outFieldName = ZR_NULL;
+    }
+    if (outLocation != ZR_NULL) {
+        memset(outLocation, 0, sizeof(SZrFileRange));
+    }
+    if (entry == ZR_NULL || outBindingName == ZR_NULL || outFieldName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (entry->type == ZR_AST_IDENTIFIER_LITERAL) {
+        if (entry->data.identifier.name == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        *outBindingName = entry->data.identifier.name;
+        *outFieldName = entry->data.identifier.name;
+        if (outLocation != ZR_NULL) {
+            *outLocation = entry->location;
+        }
+        return ZR_TRUE;
+    }
+
+    if (entry->type == ZR_AST_KEY_VALUE_PAIR) {
+        SZrKeyValuePair *pair = &entry->data.keyValuePair;
+        if (pair->keyIsComputed ||
+            pair->key == ZR_NULL ||
+            pair->key->type != ZR_AST_IDENTIFIER_LITERAL ||
+            pair->key->data.identifier.name == ZR_NULL ||
+            pair->value == ZR_NULL ||
+            pair->value->type != ZR_AST_IDENTIFIER_LITERAL ||
+            pair->value->data.identifier.name == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        *outBindingName = pair->key->data.identifier.name;
+        *outFieldName = pair->value->data.identifier.name;
+        if (outLocation != ZR_NULL) {
+            *outLocation = entry->location;
+        }
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZrAstNode *value) {
     SZrInferredType sourceType;
     TZrBool sourceTypeInitialized = ZR_FALSE;
@@ -874,7 +1438,11 @@ void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZr
     TZrUInt32 sourceSlot;
     if (value != ZR_NULL) {
         ZrParser_Expression_Compile(cs, value);
-        sourceSlot = (TZrUInt32)(cs->stackSlotCount - 1);  // 源对象在栈顶
+        sourceSlot = cs->lastExpressionSlot;
+        if (cs->hasError || sourceSlot == ZR_PARSER_SLOT_NONE) {
+            ZrParser_Compiler_Error(cs, "Destructuring source expression did not produce a value", value->location);
+            return;
+        }
         hasTypedSource = compile_destructuring_infer_source_type(cs, value, &sourceType);
         sourceTypeInitialized = ZR_TRUE;
         hasTypedSource = (TZrBool)(hasTypedSource && sourceType.typeName != ZR_NULL);
@@ -892,32 +1460,34 @@ void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZr
     if (destruct->keys != ZR_NULL) {
         for (TZrSize i = 0; i < destruct->keys->count; i++) {
             SZrAstNode *keyNode = destruct->keys->nodes[i];
-            if (keyNode == ZR_NULL || keyNode->type != ZR_AST_IDENTIFIER_LITERAL) {
+            SZrString *bindingName = ZR_NULL;
+            SZrString *fieldName = ZR_NULL;
+            SZrFileRange bindingLocation;
+            if (!destructuring_object_entry_names(keyNode, &bindingName, &fieldName, &bindingLocation)) {
                 continue;  // 跳过无效的键
             }
             
-            SZrString *keyName = keyNode->data.identifier.name;
-            if (keyName == ZR_NULL) {
+            if (bindingName == ZR_NULL || fieldName == ZR_NULL) {
                 continue;
             }
             
             // 分配局部变量槽位
-            TZrUInt32 varIndex = allocate_local_var(cs, keyName);
+            TZrUInt32 varIndex = allocate_local_var(cs, bindingName);
             
-            TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, keyName);
+            TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, fieldName);
             SZrString *fieldTypeName = ZR_NULL;
             TZrBool isStaticField = ZR_FALSE;
             EZrOwnershipQualifier fieldOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
             TZrBool canEmitMemberSlot = hasTypedSource &&
                                         resolve_declared_field_member_access(cs,
                                                                              sourceType.typeName,
-                                                                             keyName,
+                                                                             fieldName,
                                                                              &fieldTypeName,
                                                                              &isStaticField,
                                                                              &fieldOwnershipQualifier);
             TZrUInt32 valueSlot = allocate_stack_slot(cs);
             if (canEmitMemberSlot) {
-                if (!emit_member_slot_get(cs, valueSlot, sourceSlot, memberId, keyNode->location)) {
+                if (!emit_member_slot_get(cs, valueSlot, sourceSlot, memberId, bindingLocation)) {
                     break;
                 }
             } else {
@@ -933,7 +1503,7 @@ void compile_destructuring_object(SZrCompilerState *cs, SZrAstNode *pattern, SZr
             emit_instruction(cs, setStackInst);
             if (canEmitMemberSlot) {
                 compile_destructuring_register_binding_type(cs,
-                                                            keyName,
+                                                            bindingName,
                                                             fieldTypeName,
                                                             fieldOwnershipQualifier);
             }
@@ -968,7 +1538,11 @@ void compile_destructuring_array(SZrCompilerState *cs, SZrAstNode *pattern, SZrA
     TZrUInt32 sourceSlot;
     if (value != ZR_NULL) {
         ZrParser_Expression_Compile(cs, value);
-        sourceSlot = (TZrUInt32)(cs->stackSlotCount - 1);  // 源数组在栈顶
+        sourceSlot = cs->lastExpressionSlot;
+        if (cs->hasError || sourceSlot == ZR_PARSER_SLOT_NONE) {
+            ZrParser_Compiler_Error(cs, "Destructuring source expression did not produce a value", value->location);
+            return;
+        }
     } else {
         // 值已经在栈上，使用栈顶的值
         if (cs->stackSlotCount == 0) {

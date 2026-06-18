@@ -12,7 +12,8 @@ struct SZrState;
 
 typedef enum EZrTypeLayoutKind {
     ZR_TYPE_LAYOUT_KIND_VALUE = 0,
-    ZR_TYPE_LAYOUT_KIND_STRUCT = 1
+    ZR_TYPE_LAYOUT_KIND_STRUCT = 1,
+    ZR_TYPE_LAYOUT_KIND_UNION = 2
 } EZrTypeLayoutKind;
 
 typedef enum EZrTypeLayoutCopyKind {
@@ -37,6 +38,7 @@ typedef struct SZrTypeLayoutField {
     TZrUInt32 byteSize;
     TZrUInt32 typeLayoutIndex;
     TZrUInt32 flags;
+    TZrUInt32 activeTag;
 } SZrTypeLayoutField;
 
 typedef struct SZrTypeLayout {
@@ -50,6 +52,8 @@ typedef struct SZrTypeLayout {
     TZrUInt32 fieldCount;
     TZrUInt32 gcFieldCount;
     TZrUInt32 ownershipFieldCount;
+    TZrUInt32 tagOffset;
+    TZrUInt32 tagSize;
 } SZrTypeLayout;
 
 typedef struct SZrStackFrameLayoutSlot {
@@ -76,6 +80,16 @@ ZR_CORE_API void ZrCore_TypeLayout_InitStruct(SZrTypeLayout *layout,
                                               EZrTypeLayoutDropKind dropKind,
                                               const SZrTypeLayoutField *fields,
                                               TZrUInt32 fieldCount);
+
+ZR_CORE_API void ZrCore_TypeLayout_InitUnion(SZrTypeLayout *layout,
+                                             TZrUInt32 byteSize,
+                                             TZrUInt32 byteAlign,
+                                             TZrUInt32 tagOffset,
+                                             TZrUInt32 tagSize,
+                                             EZrTypeLayoutCopyKind copyKind,
+                                             EZrTypeLayoutDropKind dropKind,
+                                             const SZrTypeLayoutField *fields,
+                                             TZrUInt32 fieldCount);
 
 ZR_CORE_API TZrBool ZrCore_TypeLayout_CanRawCopy(const SZrTypeLayout *layout);
 

@@ -459,6 +459,253 @@ static void io_read_function_typed_export_symbols(SZrIo *io,
             symbol->lineInSourceEnd = 0;
             symbol->columnInSourceEnd = 0;
         }
+
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_TOKEN_MODEL) {
+            ZR_IO_READ_NATIVE_TYPE(io, symbol->metadataToken, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, symbol->signatureToken, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, symbol->signatureBlobOffset, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, symbol->signatureBlobLength, TZrUInt32);
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_TOKEN_SIGNATURE_HASH) {
+                ZR_IO_READ_NATIVE_TYPE(io, symbol->signatureHash, TZrUInt64);
+            } else {
+                symbol->signatureHash = 0;
+            }
+        } else {
+            symbol->metadataToken = 0;
+            symbol->signatureToken = 0;
+            symbol->signatureBlobOffset = 0;
+            symbol->signatureBlobLength = 0;
+            symbol->signatureHash = 0;
+        }
+    }
+}
+
+static void io_read_metadata_token_record_list(SZrIo *io,
+                                               TZrSize *outRecordLength,
+                                               SZrMetadataTokenRecord **outRecords) {
+    SZrGlobalState *global;
+
+    if (outRecordLength != ZR_NULL) {
+        *outRecordLength = 0;
+    }
+    if (outRecords != ZR_NULL) {
+        *outRecords = ZR_NULL;
+    }
+    if (io == ZR_NULL || outRecordLength == ZR_NULL || outRecords == ZR_NULL) {
+        return;
+    }
+
+    global = io->state->global;
+    ZR_IO_READ_NATIVE_TYPE(io, *outRecordLength, TZrSize);
+    if (*outRecordLength > 0) {
+        *outRecords = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrMetadataTokenRecord) * *outRecordLength);
+        for (TZrSize index = 0; index < *outRecordLength; index++) {
+            SZrMetadataTokenRecord discardRecord;
+            SZrMetadataTokenRecord *record = *outRecords != ZR_NULL ? &(*outRecords)[index] : &discardRecord;
+            ZR_IO_READ_NATIVE_TYPE(io, record->token, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, record->relatedToken, TZrMetadataToken);
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_TOKEN_OWNER_CHAIN) {
+                ZR_IO_READ_NATIVE_TYPE(io, record->ownerToken, TZrMetadataToken);
+            } else {
+                record->ownerToken = 0;
+            }
+            ZR_IO_READ_NATIVE_TYPE(io, record->ownerIndex, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, record->signatureBlobOffset, TZrUInt32);
+            ZR_IO_READ_NATIVE_TYPE(io, record->signatureBlobLength, TZrUInt32);
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_TOKEN_SIGNATURE_HASH) {
+                ZR_IO_READ_NATIVE_TYPE(io, record->signatureHash, TZrUInt64);
+            } else {
+                record->signatureHash = 0;
+            }
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_TOKEN_LAYOUT_IDENTITY) {
+                ZR_IO_READ_NATIVE_TYPE(io, record->layoutVersion, TZrUInt32);
+                ZR_IO_READ_NATIVE_TYPE(io, record->reserved0, TZrUInt32);
+                ZR_IO_READ_NATIVE_TYPE(io, record->layoutHash, TZrUInt64);
+            } else {
+                record->layoutVersion = 0;
+                record->reserved0 = 0;
+                record->layoutHash = 0;
+            }
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_TARGET_SIGNATURE_TOKENS) {
+                ZR_IO_READ_NATIVE_TYPE(io, record->targetMetadataToken, TZrMetadataToken);
+                ZR_IO_READ_NATIVE_TYPE(io, record->targetSignatureToken, TZrMetadataToken);
+            } else {
+                record->targetMetadataToken = 0;
+                record->targetSignatureToken = 0;
+            }
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_TARGET_SIGNATURE_HASH) {
+                ZR_IO_READ_NATIVE_TYPE(io, record->targetSignatureHash, TZrUInt64);
+            } else {
+                record->targetSignatureHash = 0;
+            }
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_MODULE_EFFECT_TARGET_MODULE_HASH) {
+                ZR_IO_READ_NATIVE_TYPE(io, record->targetModuleSignatureHash, TZrUInt64);
+            } else {
+                record->targetModuleSignatureHash = 0;
+            }
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_ASSEMBLY_REF_VERSION_RANGE) {
+                record->requestedModuleVersion = io_read_string_with_length(io);
+                record->minModuleVersionInclusive = io_read_string_with_length(io);
+                record->maxModuleVersionExclusive = io_read_string_with_length(io);
+            } else {
+                record->requestedModuleVersion = ZR_NULL;
+                record->minModuleVersionInclusive = ZR_NULL;
+                record->maxModuleVersionExclusive = ZR_NULL;
+            }
+        }
+    }
+}
+
+static void io_read_module_metadata_binding_list(SZrIo *io,
+                                                 TZrSize *outBindingLength,
+                                                 SZrMetadataTokenBinding **outBindings) {
+    SZrGlobalState *global;
+
+    if (outBindingLength != ZR_NULL) {
+        *outBindingLength = 0;
+    }
+    if (outBindings != ZR_NULL) {
+        *outBindings = ZR_NULL;
+    }
+    if (io == ZR_NULL || outBindingLength == ZR_NULL || outBindings == ZR_NULL) {
+        return;
+    }
+
+    global = io->state->global;
+    ZR_IO_READ_NATIVE_TYPE(io, *outBindingLength, TZrSize);
+    if (*outBindingLength > 0) {
+        *outBindings = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrMetadataTokenBinding) * *outBindingLength);
+        for (TZrSize index = 0; index < *outBindingLength; index++) {
+            SZrMetadataTokenBinding discardBinding;
+            SZrMetadataTokenBinding *binding =
+                    *outBindings != ZR_NULL ? &(*outBindings)[index] : &discardBinding;
+
+            ZR_IO_READ_NATIVE_TYPE(io, binding->refToken, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->refSignatureToken, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->refSignatureHash, TZrUInt64);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->expectedMetadataToken, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->expectedSignatureToken, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->expectedSignatureHash, TZrUInt64);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->expectedModuleSignatureHash, TZrUInt64);
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_BINDING_LAYOUT_IDENTITY) {
+                ZR_IO_READ_NATIVE_TYPE(io, binding->expectedLayoutVersion, TZrUInt32);
+                ZR_IO_READ_NATIVE_TYPE(io, binding->reserved0, TZrUInt32);
+                ZR_IO_READ_NATIVE_TYPE(io, binding->expectedLayoutHash, TZrUInt64);
+            } else {
+                binding->expectedLayoutVersion = 0;
+                binding->reserved0 = 0;
+                binding->expectedLayoutHash = 0;
+            }
+            ZR_IO_READ_NATIVE_TYPE(io, binding->resolvedMetadataToken, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->resolvedSignatureToken, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->resolvedSignatureHash, TZrUInt64);
+            ZR_IO_READ_NATIVE_TYPE(io, binding->resolvedModuleSignatureHash, TZrUInt64);
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_BINDING_LAYOUT_IDENTITY) {
+                ZR_IO_READ_NATIVE_TYPE(io, binding->resolvedLayoutVersion, TZrUInt32);
+                ZR_IO_READ_NATIVE_TYPE(io, binding->reserved1, TZrUInt32);
+                ZR_IO_READ_NATIVE_TYPE(io, binding->resolvedLayoutHash, TZrUInt64);
+            } else {
+                binding->resolvedLayoutVersion = 0;
+                binding->reserved1 = 0;
+                binding->resolvedLayoutHash = 0;
+            }
+        }
+    }
+}
+
+static void io_read_metadata_string_heap(SZrIo *io,
+                                         TZrSize *outStringHeapLength,
+                                         SZrMetadataStringHeapEntry **outStringHeap) {
+    SZrGlobalState *global;
+
+    if (io == ZR_NULL || outStringHeapLength == ZR_NULL || outStringHeap == ZR_NULL) {
+        return;
+    }
+
+    *outStringHeapLength = 0;
+    *outStringHeap = ZR_NULL;
+    global = io->state->global;
+    ZR_IO_READ_NATIVE_TYPE(io, *outStringHeapLength, TZrSize);
+    if (*outStringHeapLength == 0) {
+        return;
+    }
+
+    *outStringHeap = ZR_IO_MALLOC_NATIVE_DATA(global, sizeof(SZrMetadataStringHeapEntry) * *outStringHeapLength);
+    for (TZrSize index = 0; index < *outStringHeapLength; index++) {
+        SZrMetadataStringHeapEntry discardEntry;
+        SZrMetadataStringHeapEntry *entry =
+                *outStringHeap != ZR_NULL ? &(*outStringHeap)[index] : &discardEntry;
+
+        ZrCore_Memory_RawSet(entry, 0, sizeof(*entry));
+        ZR_IO_READ_NATIVE_TYPE(io, entry->stringIndex, TZrUInt32);
+        entry->value = io_read_string_with_length(io);
+    }
+}
+
+static void io_read_function_metadata_token_model(SZrIo *io, SZrIoFunction *function) {
+    SZrGlobalState *global;
+
+    if (io == ZR_NULL || function == ZR_NULL) {
+        return;
+    }
+
+    function->metadataTokenRecordLength = 0;
+    function->metadataTokenRecords = ZR_NULL;
+    function->moduleMetadataTokenRecordLength = 0;
+    function->moduleMetadataTokenRecords = ZR_NULL;
+    function->signatureBlobHeapLength = 0;
+    function->signatureBlobHeap = ZR_NULL;
+    function->metadataStringHeapLength = 0;
+    function->metadataStringHeap = ZR_NULL;
+    function->moduleSignatureHash = 0;
+    function->moduleVersion = ZR_NULL;
+    function->moduleMetadataBindingLength = 0;
+    function->moduleMetadataBindings = ZR_NULL;
+
+    if (io->sourceVersionPatch < ZR_IO_SOURCE_PATCH_HAS_METADATA_TOKEN_MODEL) {
+        return;
+    }
+
+    global = io->state->global;
+    io_read_metadata_token_record_list(io,
+                                       &function->metadataTokenRecordLength,
+                                       &function->metadataTokenRecords);
+    if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_ASSEMBLY_REF_VERSION_RANGE) {
+        function->moduleVersion = io_read_string_with_length(io);
+    } else {
+        function->moduleVersion = ZR_NULL;
+    }
+
+    ZR_IO_READ_NATIVE_TYPE(io, function->signatureBlobHeapLength, TZrSize);
+    if (function->signatureBlobHeapLength > 0) {
+        function->signatureBlobHeap = ZR_IO_MALLOC_NATIVE_DATA(global, function->signatureBlobHeapLength);
+        if (function->signatureBlobHeap != ZR_NULL) {
+            ZrCore_Io_Read(io, function->signatureBlobHeap, function->signatureBlobHeapLength);
+        } else {
+            TZrByte discardByte = 0;
+            for (TZrSize index = 0; index < function->signatureBlobHeapLength; index++) {
+                ZrCore_Io_Read(io, &discardByte, sizeof(discardByte));
+            }
+        }
+    }
+    if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_STRING_HEAP) {
+        io_read_metadata_string_heap(io,
+                                     &function->metadataStringHeapLength,
+                                     &function->metadataStringHeap);
+    }
+    if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_MODULE_SIGNATURE_HASH) {
+        ZR_IO_READ_NATIVE_TYPE(io, function->moduleSignatureHash, TZrUInt64);
+    }
+
+    if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_MODULE_METADATA_REF_TABLE) {
+        io_read_metadata_token_record_list(io,
+                                           &function->moduleMetadataTokenRecordLength,
+                                           &function->moduleMetadataTokenRecords);
+    }
+    if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_MODULE_METADATA_BINDINGS) {
+        io_read_module_metadata_binding_list(io,
+                                             &function->moduleMetadataBindingLength,
+                                             &function->moduleMetadataBindings);
     }
 }
 
@@ -479,6 +726,33 @@ static void io_read_function_module_effects(SZrIo *io,
         ZR_IO_READ_NATIVE_TYPE(io, effect->columnInSourceStart, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, effect->lineInSourceEnd, TZrUInt32);
         ZR_IO_READ_NATIVE_TYPE(io, effect->columnInSourceEnd, TZrUInt32);
+        if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_METADATA_TARGET_SIGNATURE_HASH) {
+            ZR_IO_READ_NATIVE_TYPE(io, effect->targetMetadataToken, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, effect->targetSignatureToken, TZrMetadataToken);
+            ZR_IO_READ_NATIVE_TYPE(io, effect->targetSignatureHash, TZrUInt64);
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_MODULE_EFFECT_TARGET_MODULE_HASH) {
+                ZR_IO_READ_NATIVE_TYPE(io, effect->targetModuleSignatureHash, TZrUInt64);
+            } else {
+                effect->targetModuleSignatureHash = 0;
+            }
+            if (io->sourceVersionPatch >= ZR_IO_SOURCE_PATCH_HAS_ASSEMBLY_REF_VERSION_RANGE) {
+                effect->requestedModuleVersion = io_read_string_with_length(io);
+                effect->minModuleVersionInclusive = io_read_string_with_length(io);
+                effect->maxModuleVersionExclusive = io_read_string_with_length(io);
+            } else {
+                effect->requestedModuleVersion = ZR_NULL;
+                effect->minModuleVersionInclusive = ZR_NULL;
+                effect->maxModuleVersionExclusive = ZR_NULL;
+            }
+        } else {
+            effect->targetMetadataToken = 0;
+            effect->targetSignatureToken = 0;
+            effect->targetSignatureHash = 0;
+            effect->targetModuleSignatureHash = 0;
+            effect->requestedModuleVersion = ZR_NULL;
+            effect->minModuleVersionInclusive = ZR_NULL;
+            effect->maxModuleVersionExclusive = ZR_NULL;
+        }
     }
 }
 
@@ -1093,6 +1367,7 @@ static void io_read_functions(SZrIo *io, SZrIoFunction *functions, TZrSize count
         } else {
             function->typedExportedSymbols = ZR_NULL;
         }
+        io_read_function_metadata_token_model(io, function);
         ZR_IO_READ_NATIVE_TYPE(io, function->staticImportsLength, TZrSize);
         if (function->staticImportsLength > 0) {
             function->staticImports = ZR_IO_MALLOC_NATIVE_DATA(global,
@@ -1578,6 +1853,13 @@ SZrIoSource *ZrCore_Io_ReadSourceNew(SZrIo *io) {
     ZR_IO_READ_NATIVE_TYPE(io, source->versionPatch, TZrUInt32);
     ZR_IO_READ_NATIVE_TYPE(io, source->format, TZrUInt64);
     io->sourceVersionPatch = source->versionPatch;
+    if (source->versionPatch > ZR_IO_SOURCE_PATCH_CURRENT) {
+        ZrCore_Debug_RunError(io->state,
+                              "io source version patch is newer than this runtime: actualPatch=%u supportedPatch=%u",
+                              source->versionPatch,
+                              (TZrUInt32)ZR_IO_SOURCE_PATCH_CURRENT);
+        return ZR_NULL;
+    }
     ZR_IO_READ_NATIVE_TYPE(io, source->nativeIntSize, TZrUInt8);
     ZR_IO_READ_NATIVE_TYPE(io, source->typeSizeSize, TZrUInt8);
     ZR_IO_READ_NATIVE_TYPE(io, source->typeInstructionSize, TZrUInt8);

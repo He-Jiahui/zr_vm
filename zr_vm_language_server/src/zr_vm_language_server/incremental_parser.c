@@ -37,6 +37,21 @@ static void clear_parser_diagnostics(SZrState *state, SZrFileVersion *fileVersio
     fileVersion->parserDiagnostics.length = 0;
 }
 
+static TZrBool parser_diagnostics_have_errors(SZrFileVersion *fileVersion) {
+    if (fileVersion == ZR_NULL || !fileVersion->parserDiagnostics.isValid) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < fileVersion->parserDiagnostics.length; index++) {
+        SZrDiagnostic **diagPtr = (SZrDiagnostic **)ZrCore_Array_Get(&fileVersion->parserDiagnostics, index);
+        if (diagPtr != ZR_NULL && *diagPtr != ZR_NULL && (*diagPtr)->severity == ZR_DIAGNOSTIC_ERROR) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
 static void collect_parser_diagnostic(TZrPtr userData,
                                       const SZrFileRange *location,
                                       const TZrChar *message,
@@ -82,7 +97,7 @@ static void collect_structured_parser_diagnostic(TZrPtr userData,
     diagnostic = ZrLanguageServer_Diagnostic_FromStructured(collector->state, structured);
     if (diagnostic != ZR_NULL) {
         ZrCore_Array_Push(collector->state, &collector->fileVersion->parserDiagnostics, &diagnostic);
-        collector->suppressNextLegacyDiagnostic = ZR_TRUE;
+        collector->suppressNextLegacyDiagnostic = structured->severity == ZR_STRUCTURED_DIAGNOSTIC_ERROR;
     }
 }
 
@@ -438,7 +453,7 @@ TZrBool ZrLanguageServer_IncrementalParser_Parse(SZrState *state,
         ZrParser_State_Free(&parserState);
 
         if (parsedAst != ZR_NULL) {
-            if (fileVersion->parserDiagnostics.length == 0 || previousAst == ZR_NULL) {
+            if (!parser_diagnostics_have_errors(fileVersion) || previousAst == ZR_NULL) {
                 if (previousAst != ZR_NULL && previousAst != parsedAst) {
                     ZrParser_Ast_Free(state, previousAst);
                 }

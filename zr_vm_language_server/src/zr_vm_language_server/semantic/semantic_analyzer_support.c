@@ -493,6 +493,8 @@ void ZrLanguageServer_SemanticAnalyzer_RecordUsingCleanupStep(SZrSemanticAnalyze
     step.ownerRegionId = step.regionId;
     step.symbolId = resolve_semantic_symbol_id_for_node(analyzer, resource);
     step.declarationOrder = (TZrInt32)analyzer->semanticContext->cleanupPlan.length;
+    step.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    step.ownershipBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
     step.callsClose = ZR_TRUE;
     step.callsDestructor = ZR_TRUE;
     ZrParser_Semantic_AppendCleanupStep(analyzer->semanticContext, &step);
@@ -503,6 +505,7 @@ void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *
                                                                       SZrFileRange fallbackLocation) {
     SZrCompilerState *compilerState;
     SZrFileRange location;
+    SZrDiagnostic *structuredDiagnostic;
 
     if (state == ZR_NULL || analyzer == ZR_NULL) {
         return;
@@ -519,6 +522,17 @@ void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *
         location = fallbackLocation;
     }
 
+    if (compilerState->hasStructuredError) {
+        compilerState->structuredError.location = location;
+        structuredDiagnostic = ZrLanguageServer_Diagnostic_FromStructured(state, &compilerState->structuredError);
+        if (structuredDiagnostic != ZR_NULL) {
+            ZrCore_Array_Push(state, &analyzer->diagnostics, &structuredDiagnostic);
+            compilerState->hasError = ZR_FALSE;
+            ZrParser_Compiler_ClearStructuredError(compilerState);
+            return;
+        }
+    }
+
     ZrLanguageServer_SemanticAnalyzer_AddDiagnostic(state,
                                                     analyzer,
                                                     ZR_DIAGNOSTIC_ERROR,
@@ -526,6 +540,7 @@ void ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(SZrState *
                                                     compilerState->errorMessage,
                                                     "compiler_error");
     compilerState->hasError = ZR_FALSE;
+    ZrParser_Compiler_ClearStructuredError(compilerState);
 }
 
 TZrBool ZrLanguageServer_SemanticAnalyzer_InferExactExpressionType(SZrState *state,
@@ -618,6 +633,8 @@ static void record_field_cleanup_step(SZrSemanticAnalyzer *analyzer,
     step.ownerRegionId = ownerRegionId;
     step.symbolId = symbol->semanticId;
     step.declarationOrder = declarationOrder;
+    step.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    step.ownershipBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
     step.callsClose = ZR_TRUE;
     step.callsDestructor = ZR_TRUE;
     ZrParser_Semantic_AppendCleanupStep(analyzer->semanticContext, &step);

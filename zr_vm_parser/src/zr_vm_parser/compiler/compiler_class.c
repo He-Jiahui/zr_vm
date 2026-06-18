@@ -1177,9 +1177,17 @@ void compile_class_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     }
                     // 处理字段类型信息
                     if (field->typeInfo != ZR_NULL) {
+                        EZrOwnershipQualifier intrinsicOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                        const SZrType *intrinsicInnerType = ZR_NULL;
                         memberInfo.fieldType = field->typeInfo;
                         memberInfo.fieldTypeName = extract_type_name_string(cs, field->typeInfo);
                         memberInfo.ownershipQualifier = field->typeInfo->ownershipQualifier;
+                        if (ZrParser_AstType_TryUnwrapOwnershipGeneric(field->typeInfo,
+                                                                       &intrinsicOwnershipQualifier,
+                                                                       &intrinsicInnerType)) {
+                            ZR_UNUSED_PARAMETER(intrinsicInnerType);
+                            memberInfo.ownershipQualifier = intrinsicOwnershipQualifier;
+                        }
                         memberInfo.fieldSize = calculate_type_size(cs, field->typeInfo);
                     } else if (field->init != ZR_NULL) {
                         // 没有类型注解，从初始值推断类型

@@ -4,6 +4,112 @@
 
 #include "compiler_internal.h"
 
+static void emit_scope_cleanup_registration(SZrCompilerState *cs,
+                                            const SZrScopeCleanupRegistration *registration) {
+    if (cs == ZR_NULL || registration == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    switch (registration->ownershipBuiltinKind) {
+        case ZR_OWNERSHIP_BUILTIN_KIND_RELEASE:
+            emit_instruction(cs,
+                             create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_RELEASE),
+                                                   (TZrUInt16)registration->slot,
+                                                   (TZrUInt16)registration->slot,
+                                                   0));
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN:
+            emit_instruction(cs,
+                             create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN),
+                                                  (TZrUInt16)registration->sourceSlot,
+                                                  (TZrUInt16)registration->slot,
+                                                  0));
+            break;
+        case ZR_OWNERSHIP_BUILTIN_KIND_NONE:
+        default:
+            emit_instruction(cs,
+                             create_instruction_0(ZR_INSTRUCTION_ENUM(CLOSE_SCOPE), 1u));
+            break;
+    }
+}
+
+TZrBool compiler_has_scope_ownership_cleanups_above_depth(SZrCompilerState *cs,
+                                                          TZrSize targetScopeStackDepth) {
+    if (cs == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    if (targetScopeStackDepth > cs->scopeStack.length) {
+        targetScopeStackDepth = cs->scopeStack.length;
+    }
+
+    for (TZrSize scopeIndex = targetScopeStackDepth; scopeIndex < cs->scopeStack.length; scopeIndex++) {
+        SZrScope *scope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, scopeIndex);
+        if (scope == ZR_NULL || !scope->cleanupRegistrations.isValid) {
+            continue;
+        }
+
+        for (TZrSize registrationIndex = 0;
+             registrationIndex < scope->cleanupRegistrations.length;
+             registrationIndex++) {
+            const SZrScopeCleanupRegistration *registration =
+                    (const SZrScopeCleanupRegistration *)ZrCore_Array_Get(&scope->cleanupRegistrations,
+                                                                          registrationIndex);
+            if (registration != ZR_NULL &&
+                (registration->ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_RELEASE ||
+                 registration->ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN)) {
+                return ZR_TRUE;
+            }
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool compiler_has_active_scope_ownership_cleanups(SZrCompilerState *cs) {
+    return compiler_has_scope_ownership_cleanups_above_depth(cs, 0);
+}
+
+void compiler_emit_scope_ownership_cleanups_above_depth(SZrCompilerState *cs,
+                                                        TZrSize targetScopeStackDepth) {
+    if (cs == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    if (targetScopeStackDepth > cs->scopeStack.length) {
+        targetScopeStackDepth = cs->scopeStack.length;
+    }
+
+    for (TZrSize scopeIndex = cs->scopeStack.length; scopeIndex > targetScopeStackDepth; scopeIndex--) {
+        SZrScope *scope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, scopeIndex - 1);
+        if (scope == ZR_NULL || !scope->cleanupRegistrations.isValid) {
+            continue;
+        }
+
+        for (TZrSize registrationIndex = scope->cleanupRegistrations.length;
+             registrationIndex > 0;
+             registrationIndex--) {
+            const SZrScopeCleanupRegistration *registration =
+                    (const SZrScopeCleanupRegistration *)ZrCore_Array_Get(&scope->cleanupRegistrations,
+                                                                          registrationIndex - 1);
+            if (registration == ZR_NULL ||
+                (registration->ownershipBuiltinKind != ZR_OWNERSHIP_BUILTIN_KIND_RELEASE &&
+                 registration->ownershipBuiltinKind != ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN)) {
+                continue;
+            }
+
+            emit_scope_cleanup_registration(cs, registration);
+            if (cs->hasError) {
+                return;
+            }
+        }
+    }
+}
+
+void compiler_emit_active_scope_ownership_cleanups(SZrCompilerState *cs) {
+    compiler_emit_scope_ownership_cleanups_above_depth(cs, 0);
+}
+
 void enter_scope(SZrCompilerState *cs) {
     if (cs == ZR_NULL || cs->hasError) {
         return;
@@ -13,6 +119,10 @@ void enter_scope(SZrCompilerState *cs) {
     scope.startVarIndex = cs->localVarCount;
     scope.varCount = 0;
     scope.cleanupRegistrationCount = 0;
+    ZrCore_Array_Init(cs->state,
+                      &scope.cleanupRegistrations,
+                      sizeof(SZrScopeCleanupRegistration),
+                      ZR_PARSER_INITIAL_CAPACITY_SMALL);
     scope.depth = (TZrUInt32)cs->scopeStack.length;
     // 如果当前编译器有父编译器，则新作用域的父编译器就是当前编译器
     // 否则，如果当前编译器是顶层编译器，其父编译器为NULL
@@ -33,11 +143,18 @@ void exit_scope(SZrCompilerState *cs) {
 
     SZrScope *scope = (SZrScope *) ZrCore_Array_Pop(&cs->scopeStack);
     if (scope != ZR_NULL) {
-        if (scope->cleanupRegistrationCount > 0) {
-            TZrInstruction cleanupInst = create_instruction_0(
-                ZR_INSTRUCTION_ENUM(CLOSE_SCOPE),
-                (TZrUInt16)scope->cleanupRegistrationCount);
-            emit_instruction(cs, cleanupInst);
+        if (scope->cleanupRegistrations.isValid && scope->cleanupRegistrations.length > 0) {
+            TZrSize index = scope->cleanupRegistrations.length;
+            while (index > 0) {
+                const SZrScopeCleanupRegistration *registration;
+
+                index--;
+                registration = (const SZrScopeCleanupRegistration *)ZrCore_Array_Get(&scope->cleanupRegistrations, index);
+                emit_scope_cleanup_registration(cs, registration);
+                if (cs->hasError) {
+                    break;
+                }
+            }
         }
 
         // 标记作用域内变量的结束位置
@@ -52,6 +169,8 @@ void exit_scope(SZrCompilerState *cs) {
                 }
             }
         }
+
+        ZrCore_Array_Free(cs->state, &scope->cleanupRegistrations);
     }
 }
 

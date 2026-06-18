@@ -480,15 +480,20 @@ static const SZrIoFunction *find_io_function_metadata_recursive(const SZrIoFunct
 static void import_copy_runtime_parameter_metadata(SZrCompilerState *cs,
                                                    SZrTypeMemberInfo *memberInfo,
                                                    const SZrFunction *function) {
+    TZrBool preserveParameterTypes;
+
     if (cs == ZR_NULL || memberInfo == ZR_NULL || function == ZR_NULL || function->parameterMetadata == ZR_NULL ||
         function->parameterMetadataCount == 0) {
         return;
     }
 
-    ZrCore_Array_Init(cs->state,
-                      &memberInfo->parameterTypes,
-                      sizeof(SZrInferredType),
-                      function->parameterMetadataCount);
+    preserveParameterTypes = memberInfo->parameterTypes.length > 0;
+    if (!preserveParameterTypes) {
+        ZrCore_Array_Init(cs->state,
+                          &memberInfo->parameterTypes,
+                          sizeof(SZrInferredType),
+                          function->parameterMetadataCount);
+    }
     ZrCore_Array_Init(cs->state,
                       &memberInfo->parameterNames,
                       sizeof(SZrString *),
@@ -505,14 +510,16 @@ static void import_copy_runtime_parameter_metadata(SZrCompilerState *cs,
         SZrString *name = function->parameterMetadata[index].name;
         TZrBool hasDefaultValue = function->parameterMetadata[index].hasDefaultValue;
         SZrTypeValue defaultValue;
-        SZrInferredType parameterType;
         ZrCore_Value_ResetAsNull(&defaultValue);
-        ZrParser_InferredType_Init(cs->state, &parameterType, ZR_VALUE_TYPE_OBJECT);
         if (hasDefaultValue) {
             defaultValue = function->parameterMetadata[index].defaultValue;
         }
-        function_typed_type_ref_to_inferred(cs, &function->parameterMetadata[index].type, &parameterType);
-        ZrCore_Array_Push(cs->state, &memberInfo->parameterTypes, &parameterType);
+        if (!preserveParameterTypes) {
+            SZrInferredType parameterType;
+            ZrParser_InferredType_Init(cs->state, &parameterType, ZR_VALUE_TYPE_OBJECT);
+            function_typed_type_ref_to_inferred(cs, &function->parameterMetadata[index].type, &parameterType);
+            ZrCore_Array_Push(cs->state, &memberInfo->parameterTypes, &parameterType);
+        }
         ZrCore_Array_Push(cs->state, &memberInfo->parameterNames, &name);
         ZrCore_Array_Push(cs->state, &memberInfo->parameterHasDefaultValues, &hasDefaultValue);
         ZrCore_Array_Push(cs->state, &memberInfo->parameterDefaultValues, &defaultValue);
@@ -522,15 +529,20 @@ static void import_copy_runtime_parameter_metadata(SZrCompilerState *cs,
 static void import_copy_io_parameter_metadata(SZrCompilerState *cs,
                                               SZrTypeMemberInfo *memberInfo,
                                               const SZrIoFunction *function) {
+    TZrBool preserveParameterTypes;
+
     if (cs == ZR_NULL || memberInfo == ZR_NULL || function == ZR_NULL || function->parameterMetadata == ZR_NULL ||
         function->parameterMetadataLength == 0) {
         return;
     }
 
-    ZrCore_Array_Init(cs->state,
-                      &memberInfo->parameterTypes,
-                      sizeof(SZrInferredType),
-                      function->parameterMetadataLength);
+    preserveParameterTypes = memberInfo->parameterTypes.length > 0;
+    if (!preserveParameterTypes) {
+        ZrCore_Array_Init(cs->state,
+                          &memberInfo->parameterTypes,
+                          sizeof(SZrInferredType),
+                          function->parameterMetadataLength);
+    }
     ZrCore_Array_Init(cs->state,
                       &memberInfo->parameterNames,
                       sizeof(SZrString *),
@@ -547,16 +559,17 @@ static void import_copy_io_parameter_metadata(SZrCompilerState *cs,
         SZrString *name = function->parameterMetadata[index].name;
         TZrBool hasDefaultValue = function->parameterMetadata[index].hasDefaultValue ? ZR_TRUE : ZR_FALSE;
         SZrTypeValue defaultValue;
-        SZrInferredType parameterType;
         ZrCore_Value_ResetAsNull(&defaultValue);
-        ZrParser_InferredType_Init(cs->state, &parameterType, ZR_VALUE_TYPE_OBJECT);
         if (hasDefaultValue &&
             !import_io_constant_to_value(cs->state, &function->parameterMetadata[index].defaultValue, &defaultValue)) {
-            ZrParser_InferredType_Free(cs->state, &parameterType);
             return;
         }
-        io_typed_type_ref_to_inferred(cs, &function->parameterMetadata[index].type, &parameterType);
-        ZrCore_Array_Push(cs->state, &memberInfo->parameterTypes, &parameterType);
+        if (!preserveParameterTypes) {
+            SZrInferredType parameterType;
+            ZrParser_InferredType_Init(cs->state, &parameterType, ZR_VALUE_TYPE_OBJECT);
+            io_typed_type_ref_to_inferred(cs, &function->parameterMetadata[index].type, &parameterType);
+            ZrCore_Array_Push(cs->state, &memberInfo->parameterTypes, &parameterType);
+        }
         ZrCore_Array_Push(cs->state, &memberInfo->parameterNames, &name);
         ZrCore_Array_Push(cs->state, &memberInfo->parameterHasDefaultValues, &hasDefaultValue);
         ZrCore_Array_Push(cs->state, &memberInfo->parameterDefaultValues, &defaultValue);
@@ -673,13 +686,18 @@ static SZrString *io_typed_type_ref_to_type_name(SZrCompilerState *cs, const SZr
     return typed_type_ref_to_type_name(cs, &bridge);
 }
 
-static void import_add_field_member(SZrState *state,
-                                    SZrTypePrototypeInfo *info,
-                                    SZrString *memberName,
-                                    SZrString *fieldTypeName,
-                                    TZrBool isStatic,
-                                    EZrModuleExportKind exportKind,
-                                    EZrModuleExportReadiness readiness) {
+static void import_add_field_member_with_metadata(SZrState *state,
+                                                  SZrTypePrototypeInfo *info,
+                                                  SZrString *memberName,
+                                                  SZrString *fieldTypeName,
+                                                  TZrBool isStatic,
+                                                  EZrModuleExportKind exportKind,
+                                                  EZrModuleExportReadiness readiness,
+                                                  TZrMetadataToken metadataToken,
+                                                  TZrMetadataToken signatureToken,
+                                                  TZrUInt32 signatureBlobOffset,
+                                                  TZrUInt32 signatureBlobLength,
+                                                  TZrUInt64 signatureHash) {
     SZrTypeMemberInfo memberInfo;
 
     if (state == ZR_NULL || info == ZR_NULL || memberName == ZR_NULL || import_prototype_has_member(info, memberName)) {
@@ -703,7 +721,33 @@ static void import_add_field_member(SZrState *state,
     memberInfo.fieldTypeName = fieldTypeName;
     memberInfo.moduleExportKind = exportKind;
     memberInfo.moduleExportReadiness = readiness;
+    memberInfo.metadataToken = metadataToken;
+    memberInfo.signatureToken = signatureToken;
+    memberInfo.signatureBlobOffset = signatureBlobOffset;
+    memberInfo.signatureBlobLength = signatureBlobLength;
+    memberInfo.signatureHash = signatureHash;
     ZrCore_Array_Push(state, &info->members, &memberInfo);
+}
+
+static void import_add_field_member(SZrState *state,
+                                    SZrTypePrototypeInfo *info,
+                                    SZrString *memberName,
+                                    SZrString *fieldTypeName,
+                                    TZrBool isStatic,
+                                    EZrModuleExportKind exportKind,
+                                    EZrModuleExportReadiness readiness) {
+    import_add_field_member_with_metadata(state,
+                                          info,
+                                          memberName,
+                                          fieldTypeName,
+                                          isStatic,
+                                          exportKind,
+                                          readiness,
+                                          0,
+                                          0,
+                                          0,
+                                          0,
+                                          0);
 }
 
 static void import_add_function_member_from_symbol(SZrCompilerState *cs,
@@ -713,8 +757,7 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
     SZrTypeMemberInfo memberInfo;
     const SZrFunction *metadataFunction;
 
-    if (cs == ZR_NULL || modulePrototype == ZR_NULL || symbol == ZR_NULL || symbol->name == ZR_NULL ||
-        import_prototype_has_member(modulePrototype, symbol->name)) {
+    if (cs == ZR_NULL || modulePrototype == ZR_NULL || symbol == ZR_NULL || symbol->name == ZR_NULL) {
         return;
     }
 
@@ -736,6 +779,11 @@ static void import_add_function_member_from_symbol(SZrCompilerState *cs,
     memberInfo.returnTypeName = typed_type_ref_to_type_name(cs, &symbol->valueType);
     memberInfo.moduleExportKind = (EZrModuleExportKind)symbol->exportKind;
     memberInfo.moduleExportReadiness = (EZrModuleExportReadiness)symbol->readiness;
+    memberInfo.metadataToken = symbol->metadataToken;
+    memberInfo.signatureToken = symbol->signatureToken;
+    memberInfo.signatureBlobOffset = symbol->signatureBlobOffset;
+    memberInfo.signatureBlobLength = symbol->signatureBlobLength;
+    memberInfo.signatureHash = symbol->signatureHash;
     if (symbol->parameterCount > 0 && symbol->parameterTypes != ZR_NULL) {
         ZrCore_Array_Init(cs->state, &memberInfo.parameterTypes, sizeof(SZrInferredType), symbol->parameterCount);
         for (TZrUInt32 paramIndex = 0; paramIndex < symbol->parameterCount; paramIndex++) {
@@ -761,8 +809,7 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
     SZrTypeMemberInfo memberInfo;
     const SZrIoFunction *metadataFunction;
 
-    if (cs == ZR_NULL || modulePrototype == ZR_NULL || symbol == ZR_NULL || symbol->name == ZR_NULL ||
-        import_prototype_has_member(modulePrototype, symbol->name)) {
+    if (cs == ZR_NULL || modulePrototype == ZR_NULL || symbol == ZR_NULL || symbol->name == ZR_NULL) {
         return;
     }
 
@@ -784,6 +831,11 @@ static void import_add_function_member_from_io_symbol(SZrCompilerState *cs,
     memberInfo.returnTypeName = io_typed_type_ref_to_type_name(cs, &symbol->valueType);
     memberInfo.moduleExportKind = (EZrModuleExportKind)symbol->exportKind;
     memberInfo.moduleExportReadiness = (EZrModuleExportReadiness)symbol->readiness;
+    memberInfo.metadataToken = symbol->metadataToken;
+    memberInfo.signatureToken = symbol->signatureToken;
+    memberInfo.signatureBlobOffset = symbol->signatureBlobOffset;
+    memberInfo.signatureBlobLength = symbol->signatureBlobLength;
+    memberInfo.signatureHash = symbol->signatureHash;
     if (symbol->parameterCount > 0 && symbol->parameterTypes != ZR_NULL) {
         ZrCore_Array_Init(cs->state, &memberInfo.parameterTypes, sizeof(SZrInferredType), symbol->parameterCount);
         for (TZrSize paramIndex = 0; paramIndex < symbol->parameterCount; paramIndex++) {
@@ -1072,13 +1124,18 @@ static TZrBool register_runtime_import_metadata(SZrCompilerState *cs,
         if (symbol->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION) {
             import_add_function_member_from_symbol(cs, &modulePrototype, symbol, function);
         } else {
-            import_add_field_member(cs->state,
-                                    &modulePrototype,
-                                    symbol->name,
-                                    typed_type_ref_to_type_name(cs, &symbol->valueType),
-                                    ZR_TRUE,
-                                    (EZrModuleExportKind)symbol->exportKind,
-                                    (EZrModuleExportReadiness)symbol->readiness);
+            import_add_field_member_with_metadata(cs->state,
+                                                  &modulePrototype,
+                                                  symbol->name,
+                                                  typed_type_ref_to_type_name(cs, &symbol->valueType),
+                                                  ZR_TRUE,
+                                                  (EZrModuleExportKind)symbol->exportKind,
+                                                  (EZrModuleExportReadiness)symbol->readiness,
+                                                  symbol->metadataToken,
+                                                  symbol->signatureToken,
+                                                  symbol->signatureBlobOffset,
+                                                  symbol->signatureBlobLength,
+                                                  symbol->signatureHash);
         }
     }
 
@@ -1098,6 +1155,22 @@ static TZrBool register_runtime_import_metadata(SZrCompilerState *cs,
     register_imported_type_name(cs, moduleName);
     ZrCore_Array_Push(cs->state, &cs->typePrototypes, &modulePrototype);
     return ZR_TRUE;
+}
+
+static void import_metadata_update_summary_module_signature_hash(SZrCompilerState *cs,
+                                                                 SZrString *moduleName,
+                                                                 const SZrFunction *function) {
+    SZrParserModuleInitSummary *summary;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL || cs->state->global == ZR_NULL ||
+        moduleName == ZR_NULL || function == ZR_NULL || function->moduleSignatureHash == 0u) {
+        return;
+    }
+
+    summary = (SZrParserModuleInitSummary *)ZrParser_ModuleInitAnalysis_FindSummary(cs->state->global, moduleName);
+    if (summary != ZR_NULL) {
+        summary->moduleSignatureHash = function->moduleSignatureHash;
+    }
 }
 
 static void register_io_type_prototype_stub(SZrCompilerState *cs,
@@ -1145,13 +1218,18 @@ static TZrBool register_binary_import_metadata(SZrCompilerState *cs,
         if (symbol->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION) {
             import_add_function_member_from_io_symbol(cs, &modulePrototype, symbol, function);
         } else {
-            import_add_field_member(cs->state,
-                                    &modulePrototype,
-                                    symbol->name,
-                                    io_typed_type_ref_to_type_name(cs, &symbol->valueType),
-                                    ZR_TRUE,
-                                    (EZrModuleExportKind)symbol->exportKind,
-                                    (EZrModuleExportReadiness)symbol->readiness);
+            import_add_field_member_with_metadata(cs->state,
+                                                  &modulePrototype,
+                                                  symbol->name,
+                                                  io_typed_type_ref_to_type_name(cs, &symbol->valueType),
+                                                  ZR_TRUE,
+                                                  (EZrModuleExportKind)symbol->exportKind,
+                                                  (EZrModuleExportReadiness)symbol->readiness,
+                                                  symbol->metadataToken,
+                                                  symbol->signatureToken,
+                                                  symbol->signatureBlobOffset,
+                                                  symbol->signatureBlobLength,
+                                                  symbol->signatureHash);
         }
     }
 
@@ -1244,6 +1322,9 @@ static TZrBool register_summary_import_metadata(SZrCompilerState *cs,
             memberInfo.returnTypeName = typed_type_ref_to_type_name(cs, &exportInfo->valueType);
             memberInfo.moduleExportKind = (EZrModuleExportKind)exportInfo->exportKind;
             memberInfo.moduleExportReadiness = (EZrModuleExportReadiness)exportInfo->readiness;
+            memberInfo.metadataToken = exportInfo->metadataToken;
+            memberInfo.signatureToken = exportInfo->signatureToken;
+            memberInfo.signatureHash = exportInfo->signatureHash;
             if (exportInfo->parameterCount > 0 && exportInfo->parameterTypes != ZR_NULL) {
                 ZrCore_Array_Init(cs->state,
                                   &memberInfo.parameterTypes,
@@ -1260,13 +1341,18 @@ static TZrBool register_summary_import_metadata(SZrCompilerState *cs,
         } else if (exportInfo->exportKind == ZR_MODULE_EXPORT_KIND_TYPE) {
             register_summary_type_prototype_stub(cs, &modulePrototype, exportInfo);
         } else {
-            import_add_field_member(cs->state,
-                                    &modulePrototype,
-                                    exportInfo->name,
-                                    typed_type_ref_to_type_name(cs, &exportInfo->valueType),
-                                    ZR_TRUE,
-                                    (EZrModuleExportKind)exportInfo->exportKind,
-                                    (EZrModuleExportReadiness)exportInfo->readiness);
+            import_add_field_member_with_metadata(cs->state,
+                                                  &modulePrototype,
+                                                  exportInfo->name,
+                                                  typed_type_ref_to_type_name(cs, &exportInfo->valueType),
+                                                  ZR_TRUE,
+                                                  (EZrModuleExportKind)exportInfo->exportKind,
+                                                  (EZrModuleExportReadiness)exportInfo->readiness,
+                                                  exportInfo->metadataToken,
+                                                  exportInfo->signatureToken,
+                                                  0,
+                                                  0,
+                                                  exportInfo->signatureHash);
         }
     }
 
@@ -1412,6 +1498,7 @@ TZrBool ensure_import_module_compile_info(SZrCompilerState *cs, SZrString *modul
         }
 
         result = register_runtime_import_metadata(cs, moduleName, compiledFunction);
+        import_metadata_update_summary_module_signature_hash(cs, moduleName, compiledFunction);
         import_metadata_trace("ensure import compile info register runtime result=%d func=%p",
                               (int)result,
                               (void *)compiledFunction);

@@ -25,6 +25,9 @@ void backend_aot_write_llvm_contracts(FILE *file, TZrUInt32 runtimeContracts) {
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_LOAN) {
         fprintf(file, "declare i1 @ZrCore_Ownership_LoanValue(ptr, ptr, ptr)\n");
     }
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN) {
+        fprintf(file, "declare i1 @ZrCore_Ownership_ReturnLoanValue(ptr, ptr, ptr)\n");
+    }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_SHARE) {
         fprintf(file, "declare i1 @ZrCore_Ownership_NativeShared(ptr)\n");
     }
@@ -49,7 +52,7 @@ void backend_aot_write_runtime_contract_array_llvm(FILE *file, TZrUInt32 runtime
     TZrUInt32 contractBit;
 
     fprintf(file, "; runtimeContracts:");
-    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE; contractBit <<= 1) {
+    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN; contractBit <<= 1) {
         if ((runtimeContracts & contractBit) == 0) {
             continue;
         }
@@ -68,7 +71,7 @@ void backend_aot_write_runtime_contract_globals_llvm(FILE *file, TZrUInt32 runti
     }
 
     contractCount = backend_aot_llvm_runtime_contract_count(runtimeContracts);
-    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE; contractBit <<= 1) {
+    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN; contractBit <<= 1) {
         const TZrChar *contractName;
 
         if ((runtimeContracts & contractBit) == 0) {
@@ -86,7 +89,7 @@ void backend_aot_write_runtime_contract_globals_llvm(FILE *file, TZrUInt32 runti
 
     fprintf(file, "@zr_aot_runtime_contracts = private constant [%u x ptr] [", (unsigned)(contractCount + 1));
     contractIndex = 0;
-    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE; contractBit <<= 1) {
+    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN; contractBit <<= 1) {
         if ((runtimeContracts & contractBit) == 0) {
             continue;
         }
@@ -160,6 +163,7 @@ void backend_aot_write_llvm_runtime_helper_decls(FILE *file) {
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnUnique(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnBorrow(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnLoan(ptr, ptr, i32, i32)\n");
+    fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnReturnLoan(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnShare(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnWeak(ptr, ptr, i32, i32)\n");
     fprintf(file, "declare i1 @ZrLibrary_AotRuntime_OwnDetach(ptr, ptr, i32, i32)\n");

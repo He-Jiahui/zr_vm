@@ -140,6 +140,10 @@ void report_missing_declaration_body_open(SZrParserState *ps,
                                           const TZrChar *declarationKind,
                                           SZrFileRange location);
 
+void report_missing_declaration_body_close(SZrParserState *ps,
+                                           const TZrChar *declarationKind,
+                                           SZrFileRange location);
+
 void report_missing_statement_body_open(SZrParserState *ps,
                                         const TZrChar *statementKind,
                                         SZrFileRange location);
@@ -149,6 +153,12 @@ void report_missing_block_close(SZrParserState *ps, SZrFileRange location);
 void report_missing_catch_pattern_close(SZrParserState *ps, SZrFileRange location);
 
 void report_missing_using_resource_close(SZrParserState *ps, SZrFileRange location);
+
+void report_using_binder_invalid(SZrParserState *ps, SZrFileRange location);
+
+void report_import_path_not_constant(SZrParserState *ps,
+                                     SZrFileRange location,
+                                     const TZrChar *directiveName);
 
 void report_missing_for_header_close(SZrParserState *ps, SZrFileRange location);
 
@@ -165,6 +175,11 @@ void report_missing_switch_body_close(SZrParserState *ps, SZrFileRange location)
 void report_missing_extern_spec_close(SZrParserState *ps, SZrFileRange location);
 
 void report_missing_test_name_close(SZrParserState *ps, SZrFileRange location);
+
+void report_legacy_ownership_type_syntax(SZrParserState *ps,
+                                         SZrFileRange location,
+                                         const TZrChar *legacyQualifier,
+                                         const TZrChar *wrapperName);
 
 SZrAstNode *create_ast_node(SZrParserState *ps, EZrAstNodeType type, SZrFileRange location);
 
@@ -221,6 +236,11 @@ SZrAstNodeArray *parse_argument_list(SZrParserState *ps, SZrArray **argNames);
 
 SZrAstNode *append_primary_member(SZrParserState *ps, SZrAstNode *base, SZrAstNode *memberNode,
                                          SZrFileRange startLoc);
+
+SZrAstNode *try_parse_braced_primary_member(SZrParserState *ps,
+                                            SZrAstNode *base,
+                                            SZrFileRange startLoc,
+                                            TZrBool *outHandled);
 
 TZrBool is_lambda_expression_after_lparen(SZrParserState *ps);
 
@@ -333,9 +353,15 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps);
 
 SZrAstNode *parse_block(SZrParserState *ps);
 
+SZrAstNode *parse_declaration_body_block(SZrParserState *ps, const TZrChar *declarationKind);
+
 SZrAstNode *parse_expression_statement(SZrParserState *ps);
 
 SZrAstNode *parse_return_statement(SZrParserState *ps);
+
+SZrAstNode *try_parse_switch_struct_variant_payload_case(SZrParserState *ps, SZrAstNode *value);
+
+SZrAstNode *try_parse_switch_move_variant_pattern_case(SZrParserState *ps);
 
 SZrAstNode *parse_switch_expression(SZrParserState *ps);
 
@@ -398,6 +424,10 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps);
 SZrAstNode *parse_enum_member(SZrParserState *ps);
 
 SZrAstNode *parse_enum_declaration(SZrParserState *ps);
+
+SZrAstNode *parse_union_variant(SZrParserState *ps);
+
+SZrAstNode *parse_union_declaration(SZrParserState *ps);
 
 SZrAstNode *parse_extern_function_declaration(SZrParserState *ps, SZrAstNodeArray *decorators);
 

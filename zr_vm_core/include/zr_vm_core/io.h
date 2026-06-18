@@ -6,6 +6,7 @@
 #define ZR_VM_CORE_IO_H
 
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/value.h"
 
 struct SZrState;
@@ -24,7 +25,9 @@ typedef enum EZrIoNativeHelperId {
     ZR_IO_NATIVE_HELPER_RESERVED_LEGACY_OWNERSHIP_USING = 5,
     ZR_IO_NATIVE_HELPER_REFLECTION_TYPEOF = 6,
     ZR_IO_NATIVE_HELPER_RUNTIME_DECORATOR_APPLY = 7,
-    ZR_IO_NATIVE_HELPER_RUNTIME_MEMBER_DECORATOR_APPLY = 8
+    ZR_IO_NATIVE_HELPER_RUNTIME_MEMBER_DECORATOR_APPLY = 8,
+    ZR_IO_NATIVE_HELPER_MODULE_IMPORT_GUARD = 9,
+    ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN = 10
 } EZrIoNativeHelperId;
 
 typedef EZrThreadStatus (*FZrIoWrite)(struct SZrState *state, TZrBytePtr buffer, TZrSize size, TZrPtr customData);
@@ -159,6 +162,11 @@ typedef struct SZrIoFunctionTypedExportSymbol {
     TZrUInt32 columnInSourceStart;
     TZrUInt32 lineInSourceEnd;
     TZrUInt32 columnInSourceEnd;
+    TZrMetadataToken metadataToken;
+    TZrMetadataToken signatureToken;
+    TZrUInt32 signatureBlobOffset;
+    TZrUInt32 signatureBlobLength;
+    TZrUInt64 signatureHash;
 } SZrIoFunctionTypedExportSymbol;
 
 typedef struct SZrIoFunctionModuleEffect {
@@ -172,6 +180,13 @@ typedef struct SZrIoFunctionModuleEffect {
     TZrUInt32 columnInSourceStart;
     TZrUInt32 lineInSourceEnd;
     TZrUInt32 columnInSourceEnd;
+    TZrMetadataToken targetMetadataToken;
+    TZrMetadataToken targetSignatureToken;
+    TZrUInt64 targetSignatureHash;
+    TZrUInt64 targetModuleSignatureHash;
+    struct SZrString *requestedModuleVersion;
+    struct SZrString *minModuleVersionInclusive;
+    struct SZrString *maxModuleVersionExclusive;
 } SZrIoFunctionModuleEffect;
 
 typedef struct SZrIoFunctionCallableSummary {
@@ -387,6 +402,18 @@ struct SZrIoFunction {
     SZrIoFunctionTypedLocalBinding *typedLocalBindings;
     TZrSize typedExportedSymbolsLength;
     SZrIoFunctionTypedExportSymbol *typedExportedSymbols;
+    TZrSize metadataTokenRecordLength;
+    SZrMetadataTokenRecord *metadataTokenRecords;
+    TZrSize moduleMetadataTokenRecordLength;
+    SZrMetadataTokenRecord *moduleMetadataTokenRecords;
+    TZrSize signatureBlobHeapLength;
+    TZrByte *signatureBlobHeap;
+    TZrSize metadataStringHeapLength;
+    SZrMetadataStringHeapEntry *metadataStringHeap;
+    TZrUInt64 moduleSignatureHash;
+    struct SZrString *moduleVersion;
+    TZrSize moduleMetadataBindingLength;
+    SZrMetadataTokenBinding *moduleMetadataBindings;
     TZrSize staticImportsLength;
     struct SZrString **staticImports;
     TZrSize moduleEntryEffectsLength;

@@ -1366,6 +1366,44 @@ static void register_enum_member_symbol(SZrState *state,
     }
 }
 
+static void register_union_variant_symbol(SZrState *state,
+                                          SZrSemanticAnalyzer *analyzer,
+                                          SZrString *unionTypeName,
+                                          SZrAstNode *variantNode) {
+    SZrInferredType *typeInfo;
+    SZrSymbol *symbol = ZR_NULL;
+    SZrString *variantName;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || unionTypeName == ZR_NULL || variantNode == ZR_NULL ||
+        variantNode->type != ZR_AST_UNION_VARIANT || variantNode->data.unionVariant.name == ZR_NULL) {
+        return;
+    }
+
+    variantName = variantNode->data.unionVariant.name->name;
+    if (variantName == ZR_NULL) {
+        return;
+    }
+
+    typeInfo = create_named_object_type_info(state, unionTypeName);
+    ZrLanguageServer_SymbolTable_AddSymbolEx(state,
+                                             analyzer->symbolTable,
+                                             ZR_SYMBOL_ENUM_MEMBER,
+                                             variantName,
+                                             variantNode->location,
+                                             typeInfo,
+                                             ZR_ACCESS_PUBLIC,
+                                             variantNode,
+                                             &symbol);
+    if (symbol != ZR_NULL) {
+        ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
+                                                                  symbol,
+                                                                  ZR_SEMANTIC_SYMBOL_KIND_FIELD,
+                                                                  typeInfo,
+                                                                  ZR_SEMANTIC_TYPE_KIND_VALUE);
+        ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
+    }
+}
+
 static SZrFileRange compute_extern_callable_name_range(SZrAstNode *node, SZrString *name) {
     const TZrChar *nameText = semantic_string_native(name);
     TZrSize nameLength = nameText != ZR_NULL ? strlen(nameText) : 0;
@@ -2510,6 +2548,47 @@ void ZrLanguageServer_SemanticAnalyzer_CollectSymbolsFromAst(SZrState *state, SZ
             }
             return;
         }
+
+        case ZR_AST_UNION_DECLARATION: {
+            SZrUnionDeclaration *unionDecl = &node->data.unionDeclaration;
+            SZrString *name = unionDecl->name != ZR_NULL ? unionDecl->name->name : ZR_NULL;
+            SZrSymbol *symbol = ZR_NULL;
+
+            if (name != ZR_NULL) {
+                if (!register_type_name_binding_in_env(state, analyzer, name, node->location)) {
+                    return;
+                }
+                ZrLanguageServer_SymbolTable_AddSymbolEx(state,
+                                                         analyzer->symbolTable,
+                                                         ZR_SYMBOL_ENUM,
+                                                         name,
+                                                         node->location,
+                                                         ZR_NULL,
+                                                         unionDecl->accessModifier,
+                                                         node,
+                                                         &symbol);
+                ZrLanguageServer_SemanticAnalyzer_RegisterSymbolSemantics(analyzer,
+                                                                          symbol,
+                                                                          ZR_SEMANTIC_SYMBOL_KIND_TYPE,
+                                                                          ZR_NULL,
+                                                                          ZR_SEMANTIC_TYPE_KIND_VALUE);
+                ZrLanguageServer_SemanticAnalyzer_AddDefinitionReferenceForSymbol(state, analyzer, symbol);
+            }
+
+            if (unionDecl->variants != ZR_NULL && name != ZR_NULL) {
+                for (TZrSize variantIndex = 0; variantIndex < unionDecl->variants->count; variantIndex++) {
+                    SZrAstNode *variantNode = unionDecl->variants->nodes[variantIndex];
+
+                    if (variantNode != ZR_NULL) {
+                        register_union_variant_symbol(state, analyzer, name, variantNode);
+                    }
+                }
+            }
+            return;
+        }
+
+        case ZR_AST_UNION_VARIANT:
+            return;
 
         case ZR_AST_LAMBDA_EXPRESSION:
             collect_function_like_scope(state,

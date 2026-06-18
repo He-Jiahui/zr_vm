@@ -32,7 +32,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteBinaryFileWithOptions(SZrState *state
     FILE *file;
     TZrUInt32 versionMajor = ZR_VM_MAJOR_VERSION;
     TZrUInt32 versionMinor = ZR_VM_MINOR_VERSION;
-    TZrUInt32 versionPatch = ZR_VM_PATCH_VERSION;
+    TZrUInt32 versionPatch = ZR_IO_SOURCE_PATCH_CURRENT;
     TZrUInt64 format = ((TZrUInt64)versionMajor << ZR_IO_VERSION_FORMAT_SHIFT_BITS) | versionMinor;
     TZrUInt8 nativeIntSize = ZR_IO_NATIVE_INT_SIZE;
     TZrUInt8 sizeTypeSize = ZR_IO_SIZE_T_SIZE;

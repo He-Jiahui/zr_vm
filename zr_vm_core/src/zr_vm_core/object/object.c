@@ -2078,7 +2078,8 @@ TZrBool ZrCore_Object_GetMemberWithKeyUnchecked(struct SZrState *state,
                      ? ZR_CAST_OBJECT(state, receiver->value.object)
                      : ZR_NULL;
 
-    resolvedValue = object != ZR_NULL ? object_get_own_value_unchecked(state, object, memberKey) : ZR_NULL;
+    resolvedValue =
+            object != ZR_NULL ? object_get_own_value_unchecked(state, object, memberKey) : ZR_NULL;
     if (resolvedValue != ZR_NULL) {
         if (object != ZR_NULL && object_module_guard_pending_export(state, object, memberName)) {
             ZrCore_Value_ResetAsNull(result);
@@ -2122,7 +2123,10 @@ TZrBool ZrCore_Object_GetMemberWithKeyUnchecked(struct SZrState *state,
         }
     }
 
-    resolvedValue = prototype != ZR_NULL ? object_get_prototype_value_unchecked(state, prototype, memberKey, ZR_TRUE) : ZR_NULL;
+    resolvedValue =
+            prototype != ZR_NULL
+                    ? object_get_prototype_value_unchecked(state, prototype, memberKey, ZR_TRUE)
+                    : ZR_NULL;
     if (resolvedValue != ZR_NULL) {
         if (descriptor == ZR_NULL || !descriptor->isStatic || isPrototypeReceiver) {
             object_copy_value_profiled(state, result, resolvedValue);

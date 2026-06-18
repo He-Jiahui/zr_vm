@@ -262,6 +262,38 @@ static TZrBool project_imports_canonicalize_node(SZrState *state,
                                                            errorBufferSize,
                                                            outErrorLocation);
 
+        case ZR_AST_UNION_DECLARATION:
+            return project_imports_canonicalize_node_array(state,
+                                                           node->data.unionDeclaration.decorators,
+                                                           project,
+                                                           currentModuleKey,
+                                                           errorBuffer,
+                                                           errorBufferSize,
+                                                           outErrorLocation) &&
+                   project_imports_canonicalize_node_array(state,
+                                                           node->data.unionDeclaration.variants,
+                                                           project,
+                                                           currentModuleKey,
+                                                           errorBuffer,
+                                                           errorBufferSize,
+                                                           outErrorLocation);
+
+        case ZR_AST_UNION_VARIANT:
+            return project_imports_canonicalize_node_array(state,
+                                                           node->data.unionVariant.decorators,
+                                                           project,
+                                                           currentModuleKey,
+                                                           errorBuffer,
+                                                           errorBufferSize,
+                                                           outErrorLocation) &&
+                   project_imports_canonicalize_node_array(state,
+                                                           node->data.unionVariant.fields,
+                                                           project,
+                                                           currentModuleKey,
+                                                           errorBuffer,
+                                                           errorBufferSize,
+                                                           outErrorLocation);
+
         case ZR_AST_FUNCTION_DECLARATION:
             return project_imports_canonicalize_node_array(state,
                                                            node->data.functionDeclaration.decorators,

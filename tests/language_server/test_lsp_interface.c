@@ -106,6 +106,9 @@ static TZrBool diagnostic_array_contains_range(SZrArray *diagnostics,
                                                TZrInt32 endLine,
                                                TZrInt32 endCharacter);
 static TZrBool diagnostic_array_contains_code(SZrArray *diagnostics, const TZrChar *expectedCode);
+static TZrBool diagnostic_array_contains_code_with_severity(SZrArray *diagnostics,
+                                                            const TZrChar *expectedCode,
+                                                            TZrInt32 expectedSeverity);
 static TZrBool diagnostic_array_contains_message(SZrArray *diagnostics, const TZrChar *needle);
 static TZrBool lsp_find_position_for_substring(const TZrChar *content,
                                                const TZrChar *needle,
@@ -274,6 +277,68 @@ static void test_lsp_get_parser_diagnostics(SZrState *state) {
     ZrCore_Array_Free(state, &diagnostics);
     ZrLanguageServer_LspContext_Free(state, context);
     TEST_PASS(timer, "LSP Get Parser Diagnostics");
+}
+
+static void test_lsp_legacy_ownership_type_warning_preserves_current_ast(SZrState *state) {
+    SZrTestTimer timer;
+    SZrLspContext *context;
+    SZrString *uri;
+    const TZrChar *content =
+        "struct Resource { }\n"
+        "var owner: %unique Resource;\n"
+        "var after = 1;\n";
+    SZrFileVersion *fileVersion;
+    SZrSemanticAnalyzer *analyzer;
+    SZrArray diagnostics;
+
+    TEST_START("LSP Legacy Ownership Type Warning Preserves Current AST");
+    TEST_INFO("Parser warning diagnostics",
+              "Legacy ownership type syntax should publish a warning without forcing fallback AST semantics");
+
+    context = ZrLanguageServer_LspContext_New(state);
+    if (context == ZR_NULL) {
+        TEST_FAIL(timer, "LSP Legacy Ownership Type Warning Preserves Current AST", "Failed to create LSP context");
+        return;
+    }
+
+    uri = ZrCore_String_Create(state, "file:///legacy_ownership_type_warning.zr", 39);
+    if (uri == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Legacy Ownership Type Warning Preserves Current AST", "Failed to allocate URI");
+        return;
+    }
+
+    if (!ZrLanguageServer_Lsp_UpdateDocument(state, context, uri, content, strlen(content), 1)) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer, "LSP Legacy Ownership Type Warning Preserves Current AST", "Failed to update document");
+        return;
+    }
+
+    fileVersion = ZrLanguageServer_Lsp_GetDocumentFileVersion(context, uri);
+    analyzer = ZrLanguageServer_Lsp_FindAnalyzer(state, context, uri);
+    if (fileVersion == ZR_NULL || fileVersion->ast == ZR_NULL || fileVersion->usesFallbackAst || analyzer == ZR_NULL) {
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Legacy Ownership Type Warning Preserves Current AST",
+                  "Parser warnings should keep the current AST and semantic analyzer available");
+        return;
+    }
+
+    ZrCore_Array_Init(state, &diagnostics, sizeof(SZrLspDiagnostic *), 4);
+    if (!ZrLanguageServer_Lsp_GetDiagnostics(state, context, uri, &diagnostics) ||
+        !diagnostic_array_contains_code_with_severity(&diagnostics, "legacy_ownership_type_syntax", 2) ||
+        !diagnostic_array_contains_message(&diagnostics, "Write Unique<T> instead.")) {
+        ZrCore_Array_Free(state, &diagnostics);
+        ZrLanguageServer_LspContext_Free(state, context);
+        TEST_FAIL(timer,
+                  "LSP Legacy Ownership Type Warning Preserves Current AST",
+                  "Expected legacy ownership syntax warning to be published as LSP severity warning");
+        return;
+    }
+
+    ZrCore_Array_Free(state, &diagnostics);
+    ZrLanguageServer_LspContext_Free(state, context);
+    TEST_PASS(timer, "LSP Legacy Ownership Type Warning Preserves Current AST");
 }
 
 static void test_lsp_get_missing_right_operand_parser_diagnostic(SZrState *state) {
@@ -1295,6 +1360,22 @@ static TZrBool diagnostic_array_contains_code(SZrArray *diagnostics, const TZrCh
         SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
         if (diagnosticPtr != ZR_NULL && *diagnosticPtr != ZR_NULL &&
             (*diagnosticPtr)->code != ZR_NULL &&
+            strcmp(test_string_ptr((*diagnosticPtr)->code), expectedCode) == 0) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool diagnostic_array_contains_code_with_severity(SZrArray *diagnostics,
+                                                            const TZrChar *expectedCode,
+                                                            TZrInt32 expectedSeverity) {
+    for (TZrSize index = 0; diagnostics != ZR_NULL && index < diagnostics->length; index++) {
+        SZrLspDiagnostic **diagnosticPtr = (SZrLspDiagnostic **)ZrCore_Array_Get(diagnostics, index);
+        if (diagnosticPtr != ZR_NULL && *diagnosticPtr != ZR_NULL &&
+            (*diagnosticPtr)->code != ZR_NULL &&
+            (*diagnosticPtr)->severity == expectedSeverity &&
             strcmp(test_string_ptr((*diagnosticPtr)->code), expectedCode) == 0) {
             return ZR_TRUE;
         }
@@ -7059,6 +7140,9 @@ int main(void) {
     TEST_DIVIDER();
 
     test_lsp_get_parser_diagnostics(state);
+    TEST_DIVIDER();
+
+    test_lsp_legacy_ownership_type_warning_preserves_current_ast(state);
     TEST_DIVIDER();
 
     test_lsp_get_missing_right_operand_parser_diagnostic(state);

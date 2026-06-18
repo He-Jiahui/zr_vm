@@ -1,0 +1,379 @@
+# Union Types P3 Frontend Slice
+
+## Scope
+
+- Implement the first union slice from `docs/plans/using/04-union-types.md`.
+- Covered this round:
+  - `union` keyword and AST nodes for declarations and variants.
+  - Rust-like unit, tuple-style, and struct-style variant declaration parsing.
+  - Generic union declarations for `Option<T>` and `Result<T, E>`.
+  - Variant constructor parsing for identifier and generic type roots.
+  - Type inference for `Shape.Circle(...)`, `Shape.Empty`, `Option<int>.Some(...)`, and `Option<int>.None`.
+  - Compiler lowering of tuple/unit variant constructors to a runtime carrier object.
+  - Basic `switch` variant tag matching for cases such as `(Shape.Circle)`.
+  - Struct-style variant construction syntax for `Shape.Rect { width: 3.0, height: 4.0 }`, including parse/type inference and carrier payload lowering in declared field order.
+  - Tuple-style `switch` payload pattern binding for cases such as `(Shape.Circle(r))`.
+  - Struct-style `switch` payload pattern binding for cases such as `(Shape.Rect { width: w, height: h })`.
+  - Basic `using` single-variant guard binding for cases such as `using (var [r]: Shape.Circle = s) { ... } else { ... }`.
+  - Basic union `switch` exhaustiveness checking: full variant coverage passes without default, `()` default allows partial coverage, and a missing variant without default reports a compiler error.
+  - Typed export signature blob encoding for known union types, including `Option<int>` as `ZR_METADATA_SIGNATURE_NODE_UNION` with recursive generic argument signatures.
+  - PrototypeData serialization for union declarations and variant metadata: `ZR_OBJECT_PROTOTYPE_TYPE_UNION` plus `ZR_AST_UNION_VARIANT` members with tag order, variant kind, and payload field counts.
+  - Variant payload field metadata serialization through member metadata constants, including declared field name, runtime storage name, type name, positional index, and passing mode.
+  - Tag/payload byte layout metadata serialization, including prototype size/align, payload offset, variant payload size/align, and payload field byte offset/size/align.
+  - Typed union local inline frame slot layout and constructor carrier materialization into inline tag/payload bytes for POD payloads.
+  - Inline union `switch` and `using` tag/payload reads from typed local frame bytes through `__zr_unionVariant` and `__zr_unionPayloadN`.
+  - Typed union local-to-local declaration initialization and simple assignment copies of inline tag/payload bytes.
+  - Updated `using` single-variant guard syntax for tuple and struct payload destructuring:
+    `using (var [r]: Shape.Circle = s)` and `using (var {width, h: height}: Shape.Rect = s)`.
+  - Object destructuring alias handling uses `local: field` and is shared by compiler binding, import destructuring, module-init binding collection, and task-effect pattern binding.
+  - Struct-field constructor assignment followed by member-expression switching:
+    `holder.choice = Choice.Num(31); switch (holder.choice) { ... }` now preserves the inline union subject slot through tag/payload reads.
+  - Nested struct-field union constructor assignment and member-chain reads:
+    `holder.inner.choice = Choice.Num(41); switch (holder.inner.choice) { ... }`
+    and `using (var [v]: Choice.Num = holder.inner.choice) { ... }`.
+  - Serializer preservation of union variant `returnTypeNameStringIndex`.
+  - `ZR_OBJECT_PROTOTYPE_TYPE_UNION` display/reflection/metadata mappings.
+  - Language-server type prototype and symbol collection support for union declarations.
+
+## Evidence
+
+- Timestamp: 2026-06-17 19:55:47 +08:00.
+- Build directory: `build/codex-union-inline-wsl-gcc-debug`.
+- Focused parser/compiler test:
+  - `cmake -S . -B build/codex-union-inline-wsl-gcc-debug -DCMAKE_BUILD_TYPE=Debug`
+  - `cmake --build build/codex-union-inline-wsl-gcc-debug --target zr_vm_union_test -j1`
+  - `./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `21 Tests 0 Failures 0 Ignored OK`
+  - Note: the missing-variant exhaustiveness test intentionally emits `Non-exhaustive union switch; missing variant 'Circle'` while asserting `cs->hasError`.
+  - Inline materialization coverage verifies `Shape.Circle(2.5)` writes tag `1` and the `float` radius payload at byte offset `4` in the typed local frame span.
+  - Inline pattern-read coverage verifies top-level `switch (choice)` and `using (var [value]: Choice.Num = choice)` style guards can read tag/payload from a typed union inline local instead of a carrier object.
+  - Inline copy coverage verifies `var target: Choice = source` and `target = source` preserve the active variant tag and payload when both locals are typed union inline slots.
+- Metadata token signature test:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_metadata_token_model_test -j1`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_metadata_token_model_test`
+  - Result: `2 Tests 0 Failures 0 Ignored OK`
+  - `ctest -R metadata_token_model --output-on-failure`
+  - Result: `100% tests passed, 0 tests failed out of 1`
+- Full parser suite:
+  - `cmake --build build/codex-union-inline-wsl-gcc-debug --target zr_vm_parser_test -j1`
+  - `./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Current result: `74 Tests 0 Failures 0 Ignored OK`
+- Value-type runtime regression:
+  - `cmake --build build/codex-union-inline-wsl-gcc-debug --target zr_vm_value_type_runtime_test -j1`
+  - `./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_value_type_runtime_test`
+  - Current result: `13 Tests 0 Failures 0 Ignored OK`
+- Combined CTest filter:
+  - `ctest --test-dir build/codex-using-exhaustive-wsl-gcc-debug -R 'metadata_token_model|union' --output-on-failure`
+  - Current result: metadata token model `1/1` passed; union target is not registered in this CTest filter in the current build.
+- Diff hygiene:
+  - `git diff --check`
+  - Result: exit code `0`; output only contains existing CRLF/LF line-ending warnings.
+- Tooling build:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_language_server_shared -j2`
+  - Result: linked `libzr_vm_language_server.so`
+- Additional `using` variant destructuring slice:
+  - Timestamp: 2026-06-18 00:08:13 +08:00.
+  - Build directory: `build/codex-using-exhaustive-wsl-gcc-debug`.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_union_test -j1`
+  - Result: target build succeeded.
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `28 Tests 1 Failures 0 Ignored`; new `test_union_variant_using_guard_binds_tuple_destructuring_payload_member` and `test_union_struct_variant_using_guard_binds_object_destructuring_payload_member_aliases` pass; the full binary still exits 1 because existing `test_union_struct_field_assignment_materializes_constructor_payload` fails at runtime with `GET_MEMBER: receiver must be an object, array, or string`.
+- Struct-field constructor assignment switch-subject fix:
+  - Timestamp: 2026-06-18 00:50:36 +08:00.
+  - Build directory: `build/codex-using-exhaustive-wsl-gcc-debug`.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_union_test -j1`
+  - Result: target build succeeded; existing unused helper warnings in `compile_expression_types.c` remain.
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `28 Tests 0 Failures 0 Ignored OK`.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_parser_test -j1`
+  - Result: target build succeeded.
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+- Current workspace verification refresh:
+  - Timestamp: 2026-06-18 01:01:28 +08:00.
+  - Build directory: `build/codex-using-exhaustive-wsl-gcc-debug`.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_union_test -j1`
+  - Result: target build succeeded after CMake regenerated for changed source globs.
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `30 Tests 0 Failures 0 Ignored OK`.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_parser_test -j1 && ./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+- Default variant typed import guard lowering:
+  - Timestamp: 2026-06-18 01:30:20 +08:00.
+  - Build directory: `build/codex-union-inline-wsl-gcc-debug`.
+  - `cmake --build build/codex-union-inline-wsl-gcc-debug --target zr_vm_union_test -j1 && ./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `34 Tests 0 Failures 0 Ignored OK`.
+  - Coverage includes `using (var [m]: DynamicModule<Plugins>.Available = %import("zr.plugins"))` and `using (var [m]: DynamicModule<Plugins> = %import("zr.plugins"))`, both lowering through the guard import helper and binding the `@Available` payload.
+  - `cmake --build build/codex-union-inline-wsl-gcc-debug --target zr_vm_parser_test -j1 && ./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check -- zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_union.c zr_vm_parser/src/zr_vm_parser/compiler/compile_expression_internal.h zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c tests/parser/test_union.c`
+  - Result: exit code `0`; output only contains CRLF/LF line-ending warnings.
+- Unannotated `%import` default variant destructuring sugar:
+  - Timestamp: 2026-06-18 01:58:40 +08:00.
+  - Build directory: `build/codex-union-inline-wsl-gcc-debug`.
+  - RED check: after adding `using (var [m] = %import("zr.plugins"))`, old lowering reported `Using pattern guard requires a named union resource` and the focused assertion failed, confirming it did not route through the import guard helper.
+  - `cmake --build build/codex-union-inline-wsl-gcc-debug --target zr_vm_union_test -j1 && ./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `35 Tests 0 Failures 0 Ignored OK`.
+  - Coverage confirms the unannotated pattern guard stays `ZR_USING_GUARD_PATTERN`, resource is `%import`, `guardTypeInfo == NULL`, the compiled path emits the guard helper call, binds local `m`, and does not rely on carrier pseudo-members.
+  - `cmake --build build/codex-union-inline-wsl-gcc-debug --target zr_vm_parser_test -j1 && ./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+  - `cc -std=c11 -fsyntax-only ... zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c`
+  - Result: exit code `0`.
+  - `git diff --check -- zr_vm_parser/src/zr_vm_parser/compiler/compile_statement.c tests/parser/test_union.c`
+  - Result: exit code `0`; output only contains CRLF/LF line-ending warnings.
+- Untyped `%import` payload escape matrix:
+  - Timestamp: 2026-06-18 02:19:58 +08:00.
+  - Build directory: `build/codex-union-inline-wsl-gcc-debug`.
+  - Added invalid compile cases for `using (var [m] = %import("zr.plugins"))` where payload `m` escapes through closure capture, call argument, object field, and array element.
+  - `cmake --build build/codex-union-inline-wsl-gcc-debug --target zr_vm_compiler_integration_test -j4`
+  - Result: target build succeeded.
+  - `./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_compiler_integration_test`
+  - Focused result: `test_ownership_builtin_compile_rejects_invalid_operands` passed, covering the new untyped payload escape cases.
+  - Note: the full integration binary later still reports existing frame-layout / ownership runtime failures and aborts on an existing execution assertion outside this slice.
+- Owner payload default-borrow destructuring:
+  - Timestamp: 2026-06-18 02:42:10 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Production change:
+    - `switch` payload bindings and `using` variant payload bindings now lower `Unique<T>`, `Shared<T>`, and `Loan<T>` payload fields through `OWN_BORROW` before binding the local.
+    - The payload binding type environment registers those locals as `Borrow<T>`, so owner-consuming builtins reject default destructured payload bindings.
+    - `Weak<T>` payloads remain weak, and plain payloads keep their previous type.
+  - `cmake --build build-wsl-gcc --target zr_vm_union_test -j2 && ./build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `35 Tests 0 Failures 0 Ignored OK`.
+  - Coverage includes `test_union_using_guard_owner_payload_binding_borrows_by_default`, which recursively scans the compiled function graph and confirms an `OWN_BORROW` instruction is emitted for the owner payload binding.
+  - `cmake --build build-wsl-gcc --target zr_vm_compiler_integration_test -j2`
+  - Result: target built successfully.
+  - `./build-wsl-gcc/bin/zr_vm_compiler_integration_test`
+  - Focused result: `Ownership Builtin Compile Rejects Invalid Operands` passed and covered `union-default-owner-payload-borrow-release`, where `%release(handle)` on a default destructured `Shared<Box>` payload is rejected with `'%release' requires a %unique or %shared owner`.
+  - Note: the full integration binary later still reports existing frame-layout / ownership runtime failures and aborts on the existing `execution_dispatch.c:5711` assertion outside this slice.
+- Legacy `using` union binder convergence:
+  - Timestamp: 2026-06-18 03:17:21 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Production change:
+    - `using (var Variant(x) = value)` is no longer accepted as the current union guard surface.
+    - Tuple payload guards use `using (var [x]: Union.Variant = value)`, struct payload guards use `using (var {local: field}: Union.Variant = value)`, and omitted variant matching is limited to the unique `@` default variant destructuring forms.
+    - `switch` case patterns continue to support `Union.Variant(x)` syntax; the rejection is scoped to `using`.
+  - `cmake --build build-wsl-gcc --target zr_vm_union_test -j2`
+  - Result: target build succeeded.
+  - `./build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `36 Tests 0 Failures 0 Ignored OK`.
+  - Coverage includes `test_union_using_guard_rejects_legacy_variant_call_binder`, which compiles the variable setup, then confirms the old `using (var Num(v) = choice)` guard sets `cs->hasError`.
+  - `cmake --build build-wsl-gcc --target zr_vm_parser_test -j2 && ./build-wsl-gcc/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+  - `cmake --build build-wsl-gcc --target zr_vm_language_server_statement_parser_diagnostics_test -j2 && ./build-wsl-gcc/bin/zr_vm_language_server_statement_parser_diagnostics_test`
+  - Result: all statement parser diagnostic tests completed successfully, including `LSP Using Binder Invalid Parser Diagnostic`.
+- Unit variant empty destructuring `using`:
+  - Timestamp: 2026-06-18 03:17:21 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Added runtime regression coverage for `using (var []: Shape.Empty = shape) { ... } else { ... }`.
+  - `cmake --build build-wsl-gcc --target zr_vm_union_test -j2 && ./build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `37 Tests 0 Failures 0 Ignored OK`.
+  - Coverage includes `test_union_using_guard_matches_unit_variant_with_empty_tuple_destructuring`, confirming a typed union inline local with active `Shape.Empty` enters the guarded body without payload bindings.
+- Nested member-level union mutation refresh:
+  - Timestamp: 2026-06-18 04:01:00 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Production change:
+    - Assignment-prefix and member-chain lowering allocate fresh inline slots for nested inline struct/union prefixes, preventing old plain-value stack slots from downgrading frame layout metadata.
+    - `using` pattern guard hidden resource slots now carry the inferred union type as a typed local/type hint before the resource expression is compiled, so inline union pseudo-members remain available for `holder.inner.choice`.
+  - `ninja zr_vm_union_test && ./bin/zr_vm_union_test`
+  - Result: `39 Tests 0 Failures 0 Ignored OK`.
+  - Coverage includes nested `Holder.inner.choice` constructor assignment followed by `switch`, and nested `using (var [v]: Choice.Num = holder.inner.choice)`.
+  - `./bin/zr_vm_project_import_canonicalization_test`
+  - Result: `19 Tests 0 Failures 0 Ignored OK`.
+  - `./bin/zr_vm_gc_test`
+  - Result: `66 Tests 0 Failures 0 Ignored OK`.
+  - Focused compiler integration execution: `Ownership Builtin Compile Rejects Invalid Operands` and `Plugin Guard Share Promotes Module Handle To Shared Owner` passed; the full integration binary still reaches existing frame-layout failures, ownership runtime failures, and `execution_dispatch.c:5711` outside this slice.
+  - `git diff --check`
+  - Result: exit code `0`; output only contains LF/CRLF line-ending warnings.
+- Pattern shape mismatch matrix:
+  - Timestamp: 2026-06-18 04:29:06 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Added negative coverage for tuple variant object patterns and struct variant tuple patterns across `switch`, explicit `using` annotation, and omitted-annotation `@` default variant guards.
+  - `cmake --build build-wsl-gcc --target zr_vm_union_test -j2 && ./build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `47 Tests 0 Failures 0 Ignored OK`.
+- Pattern shape mismatch structured diagnostics and LSP golden:
+  - Timestamp: 2026-06-18 05:33:33 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Production change:
+    - Compiler state now carries an optional `SZrStructuredDiagnostic` beside the legacy error message.
+    - `pattern_shape_mismatch` is built through the diagnostic builder with code/message/cause/suggestion and is propagated through the language-server semantic diagnostic bridge.
+    - The LSP semantic analyzer validates using pattern shape by reusing the existing union pattern resolver, so tuple variant object destructuring and struct variant tuple destructuring report `pattern_shape_mismatch` instead of generic `compiler_error`.
+  - Added `tests/language_server/test_union_pattern_diagnostics.c`.
+  - `wsl cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_language_server_union_pattern_diagnostics_test -j2`
+  - Result: target build succeeded.
+  - `wsl /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_language_server_union_pattern_diagnostics_test`
+  - Result: all focused union pattern diagnostics tests passed.
+  - `wsl cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_union_test -j2 && wsl /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `52 Tests 0 Failures 0 Ignored OK`.
+  - `wsl cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_parser_test -j2 && wsl /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+  - `wsl cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_language_server_ownership_diagnostics_test -j2 && wsl /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_language_server_ownership_diagnostics_test`
+  - Result: ownership diagnostics focused test passed.
+  - Residual risk: `wsl /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_language_server_semantic_analyzer_test` returned exit code 0 but still printed existing ownership-related `Fail` lines; not counted as a passing verification for this slice.
+- Pattern unknown field structured diagnostics and LSP golden:
+  - Timestamp: 2026-06-18 06:00:49 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Production change:
+    - `pattern_unknown_field` is built through the diagnostic builder and propagated through the compiler structured diagnostic bridge into LSP semantic diagnostics.
+    - Struct variant object destructuring validates field names before field count, so an unknown field reports specific guidance instead of a generic count mismatch.
+    - Using object destructuring keeps `local: field`; in `using (var {r: radius}: Shape.Rect = s)`, `radius` is the checked union field and `r` is the local binding.
+  - `wsl.exe cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_language_server_union_pattern_diagnostics_test -j2`
+  - Result: target build succeeded.
+  - `wsl.exe /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_language_server_union_pattern_diagnostics_test`
+  - Result: all 3 focused union pattern diagnostics tests passed, including `pattern_unknown_field`.
+  - `wsl.exe cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_union_test -j2 && wsl.exe /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `54 Tests 0 Failures 0 Ignored OK`.
+  - `wsl.exe cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_parser_test -j2 && wsl.exe /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+- Unqualified switch variant patterns from subject type:
+  - Timestamp: 2026-06-18 05:40:45 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Production change:
+    - `switch` keeps the inferred subject union type available while compiling cases and validating exhaustiveness.
+    - Identifier / primary-expression case patterns can now omit the union prefix when the subject type is known, for example `(Circle(r))`, `(Empty)`, and `(Rect { width: w, height: h })` inside `switch (s)` where `s: Shape`.
+    - `parser_statements.c` accepts `Identifier { ... }` as a struct variant payload only inside a switch case header and only when the object payload is followed by the case-header `)`, so ordinary case blocks are not consumed as patterns.
+    - The subject-type shortcut is intentionally not used for bare array/object destructuring, so using-only `[x]` / `{field}` default-variant expansion does not become switch syntax.
+  - RED check: after adding `test_union_switch_binds_unqualified_tuple_variant_pattern_from_subject_type`, the old compiler reported `Non-exhaustive union switch; missing variant 'Empty'` and the test failed before the resolver path was updated.
+  - RED follow-up: after adding `test_union_switch_binds_unqualified_struct_variant_pattern_from_subject_type`, the old parser treated `Rect { ... }` as the start of the case body and emitted missing switch-case close diagnostics.
+  - `cmake --build build-wsl-gcc --target zr_vm_union_test -j2 && ./build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `53 Tests 0 Failures 0 Ignored OK`.
+  - `cmake --build build-wsl-gcc --target zr_vm_parser_test -j2 && ./build-wsl-gcc/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+- Duplicate switch variant case rejection:
+  - Timestamp: 2026-06-18 05:59:07 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Production change:
+    - `compile_statement_flow.c` now validates union switch cases before lowering and reports a repeated variant case as unreachable.
+    - The check reuses the existing subject-type aware union variant pattern resolver, so it also covers unqualified cases such as `(Circle(r))` followed by `(Circle(other))` inside `switch (s)` where `s: Shape`.
+  - RED check: after adding `test_union_switch_rejects_duplicate_variant_case_as_unreachable`, the old compiler accepted the duplicate `Circle` case and the assertion failed with `Expected TRUE Was FALSE`.
+  - `cmake --build build-wsl-gcc --target zr_vm_union_test -j2 && ./build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `54 Tests 0 Failures 0 Ignored OK`.
+  - `cmake --build build-wsl-gcc --target zr_vm_parser_test -j2 && ./build-wsl-gcc/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+- Pattern arity structured diagnostics and owner payload lifecycle:
+  - Timestamp: 2026-06-18 07:11:38 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Production change:
+    - `pattern_arity_mismatch` is built through the diagnostic builder and propagated through the compiler structured diagnostic bridge into LSP semantic diagnostics.
+    - Tuple and struct variant arity failures now report expected and actual binding counts; struct variants include available field names in the fix suggestion.
+    - Inline union type layouts copy, drop, and visit GC values by active tag.
+    - Constructor carrier owner payload references are consumed after materializing into inline union storage.
+    - Value-frame parameter destinations release an existing owner before reuse, and function type layout reserves capacity for union payload field metadata.
+  - Added regression coverage:
+    - LSP tuple arity and struct arity golden cases in `tests/language_server/test_union_pattern_diagnostics.c`.
+    - A plain `Shared<Box>` parameter call-window owner release case in `tests/parser/test_union.c`.
+    - Child-function typed union inline layout verification for `var resource: Resource` inside `func keep(...)`.
+    - Active-variant drop/replacement and multi-owner payload release cases.
+  - `wsl.exe cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_union_test -j2`
+  - Result: target build succeeded.
+  - `wsl.exe /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `57 Tests 0 Failures 0 Ignored OK`.
+  - `wsl.exe cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_language_server_union_pattern_diagnostics_test -j2`
+  - Result: target build succeeded.
+  - `wsl.exe /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_language_server_union_pattern_diagnostics_test`
+  - Result: all 5 focused union pattern diagnostics tests passed.
+  - `wsl.exe cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_parser_test -j2 && wsl.exe /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+  - `wsl.exe cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_gc_test -j2 && wsl.exe /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_gc_test`
+  - Result: `66 Tests 0 Failures 0 Ignored OK`; existing const-qualifier warnings in `gc_tests.c` remain non-fatal.
+- Pattern variant mismatch structured diagnostics and LSP golden:
+  - Timestamp: 2026-06-18 17:38:31 +08:00.
+  - Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+  - Reference languages consulted: Rust enum/pattern mismatch UI tests under `lua/Rust/tests/ui/pattern` and CPython structural pattern matching tests under `lua/CPython/Lib/test/test_patma.py`; this slice keeps zr using-specific annotation/resource guidance rather than copying another language's wording.
+  - Production change:
+    - `pattern_variant_mismatch` is built through the diagnostic builder and propagated through the compiler structured diagnostic bridge into LSP semantic diagnostics.
+    - Using pattern annotation/resource union mismatches now report the annotation union/variant and the actual resource union in message/cause/suggestion.
+  - Added LSP golden coverage in `tests/language_server/test_union_pattern_diagnostics.c` for `using (var [v]: Other.Some = s)` where `s: Shape`.
+  - RED check: the new focused LSP case first failed because the old path reported only a generic compiler error without `pattern_variant_mismatch`.
+  - `ninja -C build/codex-p1-thread-wsl-gcc-debug zr_vm_language_server_union_pattern_diagnostics_test && ./build/codex-p1-thread-wsl-gcc-debug/bin/zr_vm_language_server_union_pattern_diagnostics_test`
+  - Result: all 6 focused union pattern diagnostics tests passed, including `pattern_variant_mismatch`.
+  - `./build/codex-p1-thread-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `57 Tests 0 Failures 0 Ignored OK`.
+  - `./build/codex-p1-thread-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+- Using owner payload explicit move destructuring:
+  - Timestamp: 2026-06-18 18:42:41 +08:00.
+  - Build directory: `build/codex-using-move-wsl-gcc-debug`.
+  - Production change:
+    - `using` tuple/object payload bindings accept `move` before the local binding name, including `[move handle]`, `{move handle}`, and alias form `{move local: field}`.
+    - Default owner payload bindings still lower through `OWN_BORROW` and register `Borrow<T>`.
+    - Explicit move bindings skip `OWN_BORROW`, register the payload field's declared owner type, and emit `SET_MEMBER_SLOT_NULL` against the matched `__zr_unionPayloadN` pseudo-member after binding.
+    - Runtime inline-frame member writes now understand union payload pseudo-members, so the null write clears active inline union storage instead of writing an object field fallback.
+  - Added regression coverage:
+    - `test_union_using_guard_owner_payload_move_binding_allows_release`
+    - `test_union_using_guard_struct_owner_payload_move_binding_allows_release`
+  - RED check: the tuple move regression initially failed because the parser accepted `[` but rejected `move handle` before `]`, producing an expected `]` diagnostic and a null compiled function.
+  - `wsl cmake --build /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug --target zr_vm_union_test -j4`
+  - Result: target build succeeded.
+  - `wsl /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `59 Tests 0 Failures 0 Ignored OK`.
+  - `wsl cmake --build /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug --target zr_vm_parser_test -j4`
+  - Result: target build succeeded.
+  - `wsl /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+  - `wsl cmake --build /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug --target zr_vm_gc_test zr_vm_instructions_test -j4`
+  - Result: targets built successfully after the broader `core_runtime` CTest initially found missing test binaries.
+  - `wsl /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug/bin/zr_vm_gc_test`
+  - Result: `66 Tests 0 Failures 0 Ignored OK`.
+  - `wsl /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug/bin/zr_vm_instructions_test`
+  - Result: `95 Tests 0 Failures 0 Ignored OK`.
+  - Residual baseline blocker:
+    - `wsl ctest --test-dir /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug -R '^language_pipeline$' --output-on-failure` still fails in `zr_vm_instruction_execution_test`.
+    - Reproduced direct failure: `test_execute_create_object_with_properties` expected 14 and got 18; `test_execute_string_concat_with_dynamic_member_number` expected `checksum=7` and got `checksum=null`; execution then aborts at `execution_dispatch.c:6877` inside `LOGICAL_AND Instruction`.
+    - This blocker is recorded as existing language-pipeline scope outside the explicit using move slice.
+- Switch owner payload explicit move pattern surface:
+  - Timestamp: 2026-06-18 19:27:05 +08:00.
+  - Build directory: `build/codex-using-move-wsl-gcc-debug`.
+  - Production change:
+    - `switch` case header parsing now tries a dedicated move-aware union variant pattern path before ordinary expression parsing.
+    - Tuple payload patterns accept `move` before the local binding name: `(Open(move handle))`.
+    - Struct payload patterns accept explicit field alias move forms: `(Open { handle: move h })`; same-name shorthand is also supported as `(Open { move handle })`.
+    - Struct switch patterns continue to use the existing `field: local` direction, unlike using object destructuring's `local: field` direction.
+    - `parser_switch_patterns.c` now owns switch struct payload disambiguation and move pattern parsing; `parser_statements.c` keeps only the case dispatch entry.
+    - Compiler lowering reuses the existing `isMoveBinding` path: explicit move skips `OWN_BORROW`, registers the declared owner payload type, and clears the matched inline union payload with `SET_MEMBER_SLOT_NULL`.
+  - Added regression coverage:
+    - `test_union_switch_owner_payload_move_binding_allows_release`
+    - `test_union_switch_struct_owner_payload_move_binding_allows_release`
+  - RED checks:
+    - Tuple switch move was first parsed as a normal call argument sequence, so `move handle` could not bind a payload owner and the regression failed.
+    - Struct switch move first failed in object-literal parsing because `handle: move h` was not a valid ordinary object value expression.
+  - `wsl cmake --build /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug --target zr_vm_union_test zr_vm_parser_test zr_vm_gc_test zr_vm_instructions_test -j4`
+  - Result: target build succeeded, with existing warnings in `module_init_analysis.c` and `parser_types.c`.
+  - `wsl /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `61 Tests 0 Failures 0 Ignored OK`.
+  - `wsl /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+  - `wsl /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug/bin/zr_vm_gc_test`
+  - Result: `66 Tests 0 Failures 0 Ignored OK`.
+  - `wsl /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug/bin/zr_vm_instructions_test`
+  - Result: `95 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check -- tests/parser/test_union.c zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c zr_vm_parser/src/zr_vm_parser/parser/parser_switch_patterns.c zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h`
+  - Result: exit code 0, with only LF/CRLF normalization warnings for touched parser files.
+  - Residual baseline blocker:
+    - `wsl ctest --test-dir /mnt/e/Git/zr_vm/build/codex-using-move-wsl-gcc-debug -R '^language_pipeline$' --output-on-failure` still fails in `zr_vm_instruction_execution_test`.
+    - Reproduced failure remains outside this slice: object properties expected 14 and got 18, dynamic member string concat expected `checksum=7` and got `checksum=null`, then `execution_dispatch.c:6877` aborts inside `LOGICAL_AND Instruction`.
+
+## Remaining Work
+
+- Full plugin-specific registry/DLL load+verify, scoped release, and module-level ref→def binding remain planned beyond the current guard helper path.
+- Further complex expression/member-level union mutation matrices remain planned beyond typed-local constructor materialization, nested struct-field constructor assignment, `switch`/`using` reads, hidden-resource slot typing, and local-to-local copy/assignment.
+- Basic `share()` promotion is implemented for guard-scoped module handles; scoped release, full load+verify, and broader cross-region/global/async plugin escape semantics remain planned.
+- Block-style `using` and `switch` case explicit move destructuring are implemented for tuple and object/struct payload bindings. Default borrow for `Unique<T>` / `Shared<T>` / `Loan<T>` payload bindings remains implemented for `switch` and `using`.
+- Legacy `using (var Variant(...)=...)` compatibility is now removed from the current `using` surface; remaining `Variant(...)` forms are for `switch` case patterns or negative regression tests.
+- Pattern shape mismatch, unknown-field, arity, and variant mismatch structured diagnostic builder/LSP golden are implemented.
+- No-block `using {..} = value.Variant;` / `using [x] = value.Variant;` remains planned shorthand; the stable implemented surface is still block-style `using (var pattern: Union.Variant = value) { ... }` plus unique `@` default-variant omission.
+- Using rule refresh:
+  - Timestamp: 2026-06-18 04:59:33 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Added coverage for explicit struct variant using with mixed default/alias fields: `using (var {width, h: height}: Shape.Rect = s)`.
+  - Added negative coverage proving `%import` variant annotations must target the union's `@` default validation variant; a non-default `DynamicModule<Plugins>.Available` annotation is rejected.
+  - `cmake --build build-wsl-gcc --target zr_vm_union_test -j2 && ./build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `50 Tests 0 Failures 0 Ignored OK`.
+- Default `@` struct using refresh:
+  - Timestamp: 2026-06-18 05:11:24 +08:00.
+  - Build directory: `build-wsl-gcc`.
+  - Added coverage for omitted-annotation default struct variant using with mixed default/alias fields: `using (var {width, h: height} = s)`.
+  - Confirmed object destructuring still follows `local: field`: locals `width` and `h` are created, while field name `height` is not leaked as a local.
+  - No production code change was needed for this rule; the existing default `@` variant resolver already shares the explicit struct binding path.
+  - `cmake --build build-wsl-gcc --target zr_vm_union_test -j2 && ./build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `51 Tests 0 Failures 0 Ignored OK`.
+- The language-server symbol path currently reuses enum-style symbol kinds for unions and variants until dedicated union symbol kinds are added.

@@ -55,11 +55,17 @@ FZrNativeFunction ZrCore_Io_GetSerializableNativeHelperFunction(TZrUInt64 helper
         case ZR_IO_NATIVE_HELPER_MODULE_IMPORT:
             return ZrCore_Module_ImportNativeEntry;
 
+        case ZR_IO_NATIVE_HELPER_MODULE_IMPORT_GUARD:
+            return ZrCore_Module_ImportGuardNativeEntry;
+
         case ZR_IO_NATIVE_HELPER_OWNERSHIP_UNIQUE:
             return ZrCore_Ownership_NativeUnique;
 
         case ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED:
             return ZrCore_Ownership_NativeShared;
+
+        case ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN:
+            return ZrCore_Ownership_NativeSharePlain;
 
         case ZR_IO_NATIVE_HELPER_OWNERSHIP_WEAK:
             return ZrCore_Ownership_NativeWeak;
@@ -100,6 +106,93 @@ static void io_runtime_copy_typed_type_ref(SZrFunctionTypedTypeRef *destination,
     destination->typeName = source->typeName;
     destination->elementBaseType = source->elementBaseType;
     destination->elementTypeName = source->elementTypeName;
+}
+
+static TZrBool io_runtime_copy_metadata_token_model(SZrState *state,
+                                                    const SZrIoFunction *source,
+                                                    SZrFunction *function) {
+    SZrGlobalState *global;
+
+    if (state == ZR_NULL || source == ZR_NULL || function == ZR_NULL || state->global == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    global = state->global;
+    function->moduleSignatureHash = source->moduleSignatureHash;
+    function->moduleVersion = source->moduleVersion;
+    if (source->metadataTokenRecordLength > 0 && source->metadataTokenRecords != ZR_NULL) {
+        TZrSize bytes = sizeof(SZrMetadataTokenRecord) * source->metadataTokenRecordLength;
+        function->metadataTokenRecords =
+                (SZrMetadataTokenRecord *)ZrCore_Memory_RawMallocWithType(global,
+                                                                          bytes,
+                                                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->metadataTokenRecords == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawCopy(function->metadataTokenRecords, source->metadataTokenRecords, bytes);
+        function->metadataTokenRecordLength = (TZrUInt32)source->metadataTokenRecordLength;
+    }
+
+    if (source->moduleMetadataTokenRecordLength > 0 && source->moduleMetadataTokenRecords != ZR_NULL) {
+        TZrSize bytes = sizeof(SZrMetadataTokenRecord) * source->moduleMetadataTokenRecordLength;
+        function->moduleMetadataTokenRecords =
+                (SZrMetadataTokenRecord *)ZrCore_Memory_RawMallocWithType(global,
+                                                                          bytes,
+                                                                          ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->moduleMetadataTokenRecords == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawCopy(function->moduleMetadataTokenRecords, source->moduleMetadataTokenRecords, bytes);
+        function->moduleMetadataTokenRecordLength = (TZrUInt32)source->moduleMetadataTokenRecordLength;
+    }
+
+    if (source->moduleMetadataBindingLength > 0 && source->moduleMetadataBindings != ZR_NULL) {
+        TZrSize bytes = sizeof(SZrMetadataTokenBinding) * source->moduleMetadataBindingLength;
+        function->moduleMetadataBindings =
+                (SZrMetadataTokenBinding *)ZrCore_Memory_RawMallocWithType(global,
+                                                                           bytes,
+                                                                           ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->moduleMetadataBindings == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawCopy(function->moduleMetadataBindings, source->moduleMetadataBindings, bytes);
+        function->moduleMetadataBindingLength = (TZrUInt32)source->moduleMetadataBindingLength;
+        function->moduleMetadataBindingCapacity = (TZrUInt32)source->moduleMetadataBindingLength;
+    }
+
+    if (source->signatureBlobHeapLength > 0 && source->signatureBlobHeap != ZR_NULL) {
+        function->signatureBlobHeap = (TZrByte *)ZrCore_Memory_RawMallocWithType(
+                global,
+                source->signatureBlobHeapLength,
+                ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->signatureBlobHeap == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawCopy(function->signatureBlobHeap,
+                              source->signatureBlobHeap,
+                              source->signatureBlobHeapLength);
+        function->signatureBlobHeapLength = (TZrUInt32)source->signatureBlobHeapLength;
+    }
+
+    if (source->metadataStringHeapLength > 0 && source->metadataStringHeap != ZR_NULL) {
+        TZrSize bytes = sizeof(SZrMetadataStringHeapEntry) * source->metadataStringHeapLength;
+        function->metadataStringHeap =
+                (SZrMetadataStringHeapEntry *)ZrCore_Memory_RawMallocWithType(global,
+                                                                              bytes,
+                                                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+        if (function->metadataStringHeap == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrCore_Memory_RawCopy(function->metadataStringHeap, source->metadataStringHeap, bytes);
+        function->metadataStringHeapLength = (TZrUInt32)source->metadataStringHeapLength;
+    }
+
+    return ZR_TRUE;
 }
 
 static TZrBool io_runtime_copy_semir_metadata(SZrState *state,
@@ -775,6 +868,11 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             destinationSymbol->columnInSourceStart = sourceSymbol->columnInSourceStart;
             destinationSymbol->lineInSourceEnd = sourceSymbol->lineInSourceEnd;
             destinationSymbol->columnInSourceEnd = sourceSymbol->columnInSourceEnd;
+            destinationSymbol->metadataToken = sourceSymbol->metadataToken;
+            destinationSymbol->signatureToken = sourceSymbol->signatureToken;
+            destinationSymbol->signatureBlobOffset = sourceSymbol->signatureBlobOffset;
+            destinationSymbol->signatureBlobLength = sourceSymbol->signatureBlobLength;
+            destinationSymbol->signatureHash = sourceSymbol->signatureHash;
 
             if (sourceSymbol->parameterCount > 0) {
                 destinationSymbol->parameterTypes =
@@ -793,6 +891,10 @@ static TZrBool io_runtime_populate_function(SZrState *state,
             }
         }
         function->typedExportedSymbolLength = (TZrUInt32)source->typedExportedSymbolsLength;
+    }
+
+    if (!io_runtime_copy_metadata_token_model(state, source, function)) {
+        return ZR_FALSE;
     }
 
     if (!io_runtime_copy_static_imports(state, source, function)) {
@@ -1104,6 +1206,13 @@ static TZrBool io_runtime_copy_module_effects(SZrState *state,
         (*outEffects)[index].columnInSourceStart = sourceEffects[index].columnInSourceStart;
         (*outEffects)[index].lineInSourceEnd = sourceEffects[index].lineInSourceEnd;
         (*outEffects)[index].columnInSourceEnd = sourceEffects[index].columnInSourceEnd;
+        (*outEffects)[index].targetMetadataToken = sourceEffects[index].targetMetadataToken;
+        (*outEffects)[index].targetSignatureToken = sourceEffects[index].targetSignatureToken;
+        (*outEffects)[index].targetSignatureHash = sourceEffects[index].targetSignatureHash;
+        (*outEffects)[index].targetModuleSignatureHash = sourceEffects[index].targetModuleSignatureHash;
+        (*outEffects)[index].requestedModuleVersion = sourceEffects[index].requestedModuleVersion;
+        (*outEffects)[index].minModuleVersionInclusive = sourceEffects[index].minModuleVersionInclusive;
+        (*outEffects)[index].maxModuleVersionExclusive = sourceEffects[index].maxModuleVersionExclusive;
     }
 
     *outCount = (TZrUInt32)sourceCount;

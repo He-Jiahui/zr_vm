@@ -33,6 +33,9 @@ static void backend_aot_write_c_contracts(FILE *file, TZrUInt32 runtimeContracts
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE) {
         fprintf(file, "/* runtime contract: ZrCore_Ownership_ReleaseValue */\n");
     }
+    if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN) {
+        fprintf(file, "/* runtime contract: ZrCore_Ownership_ReturnLoanValue */\n");
+    }
     if (runtimeContracts & ZR_AOT_RUNTIME_CONTRACT_ITER_INIT) {
         fprintf(file, "/* runtime contract: ZrCore_Object_IterInit */\n");
     }
@@ -45,7 +48,7 @@ static void backend_aot_write_runtime_contract_array_c(FILE *file, TZrUInt32 run
     TZrUInt32 contractBit;
 
     fprintf(file, "static const TZrChar *const zr_aot_runtime_contracts[] = {\n");
-    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE; contractBit <<= 1) {
+    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN; contractBit <<= 1) {
         if ((runtimeContracts & contractBit) == 0) {
             continue;
         }

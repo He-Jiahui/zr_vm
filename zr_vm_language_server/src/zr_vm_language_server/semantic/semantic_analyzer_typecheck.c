@@ -9,6 +9,19 @@ void free_resolved_call_signature(SZrState *state, SZrResolvedCallSignature *sig
 TZrBool bind_foreach_element_type_from_inferred_iterable(SZrCompilerState *cs,
                                                          const SZrInferredType *iterableType,
                                                          SZrInferredType *outType);
+TZrBool try_resolve_union_variant_pattern_for_type(SZrCompilerState *cs,
+                                                   SZrAstNode *node,
+                                                   SZrString *typeName,
+                                                   SZrString **outVariantName,
+                                                   SZrAstNodeArray **outBindings,
+                                                   SZrAstNode **outVariant);
+TZrBool try_resolve_union_variant_pattern_with_type_annotation(SZrCompilerState *cs,
+                                                               SZrAstNode *pattern,
+                                                               SZrType *variantTypeInfo,
+                                                               SZrString *resourceTypeName,
+                                                               SZrString **outVariantName,
+                                                               SZrAstNodeArray **outBindings,
+                                                               SZrAstNode **outVariant);
 static TZrBool semantic_type_from_ast(SZrState *state,
                                       SZrSemanticAnalyzer *analyzer,
                                       const SZrType *typeNode,
@@ -17,6 +30,10 @@ static TZrBool semantic_infer_node_type(SZrState *state,
                                         SZrSemanticAnalyzer *analyzer,
                                         SZrAstNode *node,
                                         SZrInferredType *result);
+
+static void semantic_validate_using_union_pattern(SZrState *state,
+                                                  SZrSemanticAnalyzer *analyzer,
+                                                  SZrUsingStatement *usingStmt);
 
 static const TZrChar *semantic_identifier_node_text(SZrAstNode *node) {
     if (node == ZR_NULL || node->type != ZR_AST_IDENTIFIER_LITERAL || node->data.identifier.name == ZR_NULL) {
@@ -1110,6 +1127,7 @@ static void semantic_record_ownership_fact(SZrSemanticAnalyzer *analyzer,
 static void semantic_clear_compiler_error(SZrSemanticAnalyzer *analyzer) {
     if (analyzer != ZR_NULL && analyzer->compilerState != ZR_NULL) {
         analyzer->compilerState->hasError = ZR_FALSE;
+        ZrParser_Compiler_ClearStructuredError(analyzer->compilerState);
     }
 }
 
@@ -1547,6 +1565,54 @@ static TZrBool semantic_infer_node_type(SZrState *state,
     return ZR_FALSE;
 }
 
+static void semantic_validate_using_union_pattern(SZrState *state,
+                                                  SZrSemanticAnalyzer *analyzer,
+                                                  SZrUsingStatement *usingStmt) {
+    SZrInferredType resourceType;
+    SZrString *variantName = ZR_NULL;
+    SZrAstNodeArray *bindings = ZR_NULL;
+    SZrAstNode *variant = ZR_NULL;
+
+    if (state == ZR_NULL || analyzer == ZR_NULL || analyzer->compilerState == ZR_NULL ||
+        usingStmt == ZR_NULL || usingStmt->pattern == ZR_NULL || usingStmt->resource == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_InferredType_Init(state, &resourceType, ZR_VALUE_TYPE_OBJECT);
+    if (!semantic_infer_node_type(state, analyzer, usingStmt->resource, &resourceType)) {
+        ZrParser_InferredType_Free(state, &resourceType);
+        return;
+    }
+
+    if (resourceType.typeName != ZR_NULL) {
+        if (usingStmt->guardTypeInfo != ZR_NULL) {
+            (void)try_resolve_union_variant_pattern_with_type_annotation(analyzer->compilerState,
+                                                                         usingStmt->pattern,
+                                                                         usingStmt->guardTypeInfo,
+                                                                         resourceType.typeName,
+                                                                         &variantName,
+                                                                         &bindings,
+                                                                         &variant);
+        } else {
+            (void)try_resolve_union_variant_pattern_for_type(analyzer->compilerState,
+                                                             usingStmt->pattern,
+                                                             resourceType.typeName,
+                                                             &variantName,
+                                                             &bindings,
+                                                             &variant);
+        }
+
+        if (analyzer->compilerState->hasError) {
+            ZrLanguageServer_SemanticAnalyzer_ConsumeCompilerErrorDiagnostic(
+                    state,
+                    analyzer,
+                    usingStmt->pattern->location);
+        }
+    }
+
+    ZrParser_InferredType_Free(state, &resourceType);
+}
+
 static TZrBool semantic_call_matches_parameters(SZrState *state,
                                                 SZrSemanticAnalyzer *analyzer,
                                                 SZrAstNodeArray *params,
@@ -1737,6 +1803,7 @@ static TZrBool semantic_resolve_named_function_call_in_env(SZrState *state,
                                                &resolvedFunction,
                                                &resolvedSignature)) {
         compilerState->hasError = ZR_FALSE;
+        ZrParser_Compiler_ClearStructuredError(compilerState);
         free_resolved_call_signature(state, &resolvedSignature);
         return ZR_FALSE;
     }
@@ -1749,6 +1816,7 @@ static TZrBool semantic_resolve_named_function_call_in_env(SZrState *state,
                                                           &resolvedSignature,
                                                           location);
     compilerState->hasError = ZR_FALSE;
+    ZrParser_Compiler_ClearStructuredError(compilerState);
     free_resolved_call_signature(state, &resolvedSignature);
     return compatible;
 }
@@ -2492,6 +2560,7 @@ void ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(SZrState *state, SZrS
         case ZR_AST_USING_STATEMENT: {
             SZrUsingStatement *usingStmt = &node->data.usingStatement;
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, usingStmt->resource);
+            semantic_validate_using_union_pattern(state, analyzer, usingStmt);
             ZrLanguageServer_SemanticAnalyzer_PerformTypeChecking(state, analyzer, usingStmt->body);
             break;
         }

@@ -394,6 +394,9 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->aotModuleLoaderUserData = ZR_NULL;
     global->nativeModuleLoader = ZR_NULL;
     global->nativeModuleLoaderUserData = ZR_NULL;
+    global->moduleLoadDiagnostic[0] = '\0';
+    global->ownershipStrongRefObserver = ZR_NULL;
+    global->ownershipStrongRefObserverUserData = ZR_NULL;
 
     // init string table
     ZrCore_StringTable_New(global);
@@ -431,6 +434,9 @@ SZrGlobalState *ZrCore_GlobalState_New(FZrAllocator allocator, TZrPtr userAlloca
     global->aotModuleLoaderUserData = ZR_NULL;
     global->nativeModuleLoader = ZR_NULL;
     global->nativeModuleLoaderUserData = ZR_NULL;
+    global->moduleLoadDiagnostic[0] = '\0';
+    global->ownershipStrongRefObserver = ZR_NULL;
+    global->ownershipStrongRefObserverUserData = ZR_NULL;
     
     // parser and compiler (初始化为NULL，需要外部注入)
     // 封装了从源代码解析到编译的全流程
@@ -598,6 +604,52 @@ void ZrCore_GlobalState_SetAotModuleLoader(SZrGlobalState *global,
 
     global->aotModuleLoader = loader;
     global->aotModuleLoaderUserData = userData;
+}
+
+void ZrCore_GlobalState_SetOwnershipStrongRefObserver(SZrGlobalState *global,
+                                                      FZrOwnershipStrongRefObserver observer,
+                                                      TZrPtr userData) {
+    if (global == ZR_NULL) {
+        return;
+    }
+
+    global->ownershipStrongRefObserver = observer;
+    global->ownershipStrongRefObserverUserData = userData;
+}
+
+void ZrCore_GlobalState_ClearModuleLoadDiagnostic(SZrGlobalState *global) {
+    if (global == ZR_NULL) {
+        return;
+    }
+
+    global->moduleLoadDiagnostic[0] = '\0';
+}
+
+void ZrCore_GlobalState_SetModuleLoadDiagnostic(SZrGlobalState *global,
+                                                const TZrChar *format,
+                                                ...) {
+    va_list arguments;
+
+    if (global == ZR_NULL) {
+        return;
+    }
+
+    global->moduleLoadDiagnostic[0] = '\0';
+    if (format == ZR_NULL) {
+        return;
+    }
+
+    va_start(arguments, format);
+    vsnprintf(global->moduleLoadDiagnostic, sizeof(global->moduleLoadDiagnostic), format, arguments);
+    va_end(arguments);
+}
+
+const TZrChar *ZrCore_GlobalState_GetModuleLoadDiagnostic(const SZrGlobalState *global) {
+    if (global == ZR_NULL || global->moduleLoadDiagnostic[0] == '\0') {
+        return ZR_NULL;
+    }
+
+    return global->moduleLoadDiagnostic;
 }
 
 

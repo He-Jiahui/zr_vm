@@ -7,6 +7,7 @@
 
 #include "zr_vm_parser/conf.h"
 #include "zr_vm_parser/ast.h"
+#include "zr_vm_parser/diagnostic_builder.h"
 #include "zr_vm_parser/semantic.h"
 #include "zr_vm_parser/type_system.h"
 #include "zr_vm_core/function.h"
@@ -43,6 +44,7 @@ typedef struct SZrCompilerState {
     TZrSize localVarCount;              // 局部变量数量
     TZrSize stackSlotCount;             // 当前栈槽数量
     TZrSize maxStackSlotCount;          // 当前函数编译过程中的栈槽峰值
+    TZrUInt32 lastExpressionSlot;       // 最近一次表达式编译产生的结果槽
     SZrArray stackSlotTypeHints;         // 临时栈槽类型提示（SZrCompilerStackSlotTypeHint）
     TZrSize stackSlotTypeHintScopeStart; // 当前函数的类型提示起始索引
     
@@ -87,6 +89,8 @@ typedef struct SZrCompilerState {
     TZrChar *errorMessageStorage;
     TZrSize errorMessageStorageCapacity;
     SZrFileRange errorLocation;
+    TZrBool hasStructuredError;
+    SZrStructuredDiagnostic structuredError;
     TZrBool hasFatalError;                  // 是否有致命错误（阻止编译完成）
     TZrBool hasCompileTimeError;            // 是否发生过编译期错误（不能在后续语句中被吞掉）
     TZrBool suppressErrorOutput;            // 是否抑制 stderr 错误输出（LSP/分析器路径）
@@ -195,11 +199,18 @@ typedef struct SZrTypeDecoratorInfo {
     SZrString *name;                       // 装饰器名称
 } SZrTypeDecoratorInfo;
 
+typedef struct SZrScopeCleanupRegistration {
+    TZrUInt32 slot;
+    TZrUInt32 sourceSlot;
+    EZrOwnershipBuiltinKind ownershipBuiltinKind;
+} SZrScopeCleanupRegistration;
+
 // 作用域信息
 typedef struct SZrScope {
     TZrSize startVarIndex;              // 作用域开始的变量索引
     TZrSize varCount;                   // 作用域内的变量数量
     TZrSize cleanupRegistrationCount;   // 作用域内 using 注册的清理数量
+    SZrArray cleanupRegistrations;      // SZrScopeCleanupRegistration
     TZrUInt32 depth;                    // 作用域深度（用于逃逸分析）
     SZrCompilerState *parentCompiler;   // 父编译器（用于闭包）
 } SZrScope;
@@ -225,6 +236,7 @@ typedef struct SZrPendingAbsolutePatch {
 typedef struct SZrLoopLabel {
     TZrSize breakLabelId;               // break 目标标签 ID
     TZrSize continueLabelId;            // continue 目标标签 ID
+    TZrSize targetScopeStackDepth;      // 跳转目标保留的作用域栈深度
 } SZrLoopLabel;
 
 typedef struct SZrCompilerCatchClauseInfo {
@@ -270,6 +282,7 @@ typedef struct SZrTypeGenericParameterInfo {
     TZrBool requiresClass;             // class 约束
     TZrBool requiresStruct;            // struct 约束
     TZrBool requiresNew;               // new() 约束
+    TZrBool requiresOwner;             // owner 约束（要求所有权泛型实参）
     SZrArray constraintTypeNames;       // 约束类型名称数组（SZrString*）
 } SZrTypeGenericParameterInfo;
 
@@ -344,6 +357,11 @@ typedef struct SZrTypeMemberInfo {
     SZrString *returnTypeName;          // 返回类型名称（字符串表示，用于运行时类型查找）
     EZrModuleExportKind moduleExportKind; // module prototype member 对应的导出种类
     EZrModuleExportReadiness moduleExportReadiness; // module prototype member 对应的导出就绪阶段
+    TZrMetadataToken metadataToken;       // module export/member def token, if available
+    TZrMetadataToken signatureToken;      // paired signature token, if available
+    TZrUInt32 signatureBlobOffset;        // signature blob range start, if available
+    TZrUInt32 signatureBlobLength;        // signature blob range length, if available
+    TZrUInt64 signatureHash;              // stable signature fingerprint, if available
     SZrString *ownerTypeName;             // 当前声明所在类型
     SZrString *baseDefinitionOwnerTypeName; // 覆写链根定义所属类型
     SZrString *baseDefinitionName;        // 覆写链根定义名称（属性访问器为隐藏名）
@@ -428,6 +446,28 @@ ZR_PARSER_API void ZrParser_CompileResult_Free(SZrState *state, SZrCompileResult
 
 // 报告编译错误
 ZR_PARSER_API void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRange location);
+ZR_PARSER_API void ZrParser_Compiler_ClearStructuredError(SZrCompilerState *cs);
+ZR_PARSER_API void ZrParser_Compiler_StructuredError(SZrCompilerState *cs,
+                                                     const SZrStructuredDiagnostic *diagnostic);
+ZR_PARSER_API void ZrParser_Compiler_PatternShapeMismatch(SZrCompilerState *cs,
+                                                          SZrFileRange location,
+                                                          const TZrChar *message,
+                                                          const TZrChar *cause,
+                                                          const TZrChar *suggestion);
+ZR_PARSER_API void ZrParser_Compiler_PatternUnknownField(SZrCompilerState *cs,
+                                                         SZrFileRange location,
+                                                         const TZrChar *fieldName,
+                                                         const TZrChar *availableFields);
+ZR_PARSER_API void ZrParser_Compiler_PatternArityMismatch(SZrCompilerState *cs,
+                                                          SZrFileRange location,
+                                                          TZrSize expectedCount,
+                                                          TZrSize actualCount,
+                                                          const TZrChar *availableFields);
+ZR_PARSER_API void ZrParser_Compiler_PatternVariantMismatch(SZrCompilerState *cs,
+                                                            SZrFileRange location,
+                                                            const TZrChar *annotationUnionName,
+                                                            const TZrChar *variantName,
+                                                            const TZrChar *resourceUnionName);
 
 ZR_PARSER_API void add_pending_absolute_patch(SZrCompilerState *cs, TZrSize instructionIndex, TZrSize labelId);
 

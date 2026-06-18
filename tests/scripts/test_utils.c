@@ -143,7 +143,9 @@ static cJSON* ast_node_to_json(SZrState* state, SZrAstNode* node) {
         case ZR_AST_LAMBDA_EXPRESSION: typeName = "LAMBDA_EXPRESSION"; break;
         case ZR_AST_CLASS_DECLARATION: typeName = "CLASS_DECLARATION"; break;
         case ZR_AST_ENUM_DECLARATION: typeName = "ENUM_DECLARATION"; break;
+        case ZR_AST_UNION_DECLARATION: typeName = "UNION_DECLARATION"; break;
         case ZR_AST_STRUCT_DECLARATION: typeName = "STRUCT_DECLARATION"; break;
+        case ZR_AST_UNION_VARIANT: typeName = "UNION_VARIANT"; break;
         default: typeName = "UNKNOWN"; break;
     }
     cJSON_AddStringToObject(json, "type", typeName);

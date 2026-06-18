@@ -16,6 +16,7 @@
 #include "zr_vm_core/function.h"
 #include "zr_vm_core/global.h"
 #include "zr_vm_core/reflection.h"
+#include "zr_vm_core/stack.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/value.h"
@@ -25,6 +26,7 @@
 #include "zr_vm_lib_system/module.h"
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/writer.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
 
 #pragma pack(push, 1)
 typedef struct SZrCompiledPrototypeInfoView {
@@ -258,6 +260,45 @@ static TZrBool function_contains_opcode(const SZrFunction *function, EZrInstruct
     for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
         if ((EZrInstructionCode) function->instructionsList[i].instruction.operationCode == opcode) {
             return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrUInt32 function_count_opcode(const SZrFunction *function, EZrInstructionCode opcode) {
+    TZrUInt32 count = 0;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return 0;
+    }
+
+    for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
+        if ((EZrInstructionCode)function->instructionsList[i].instruction.operationCode == opcode) {
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static TZrBool function_opcode_appears_before(const SZrFunction *function,
+                                              EZrInstructionCode firstOpcode,
+                                              EZrInstructionCode secondOpcode) {
+    TZrBool sawFirstOpcode = ZR_FALSE;
+
+    if (function == ZR_NULL || function->instructionsList == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 i = 0; i < function->instructionsLength; i++) {
+        EZrInstructionCode opcode = (EZrInstructionCode)function->instructionsList[i].instruction.operationCode;
+
+        if (opcode == firstOpcode) {
+            sawFirstOpcode = ZR_TRUE;
+        }
+        if (opcode == secondOpcode) {
+            return sawFirstOpcode;
         }
     }
 
@@ -1813,6 +1854,456 @@ void test_using_statement_compiles_through_frontend(void) {
     ZR_TEST_DIVIDER();
 }
 
+void test_using_owner_generic_emits_release_cleanup(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Using Owner Generic Emits Release Cleanup";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Using owner generic cleanup",
+                 "Testing that using on Shared<T> releases the owner at scope exit");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "class Box {}\n"
+                "var seed = Unique<Box>(new Box());\n"
+                "var owner = Shared<Box>(seed);\n"
+                "var watcher = Weak<Box>(owner);\n"
+                "using (owner) { var inner = 1; }\n"
+                "var after = %upgrade(watcher);\n"
+                "if (after == null && owner == null) { return 1; }\n"
+                "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "using_owner_generic_cleanup.zr",
+                                                     strlen("using_owner_generic_cleanup.zr"));
+        SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile using owner generic cleanup source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TZrInt64 result = 0;
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute using owner generic cleanup source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 1) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Using owner generic cleanup did not release the owner");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        ZrCore_Function_Free(state, func);
+    }
+
+    {
+        const char *source =
+            "var seen = 0;\n"
+            "using (var math = %import(\"zr.math\")) {\n"
+            "    seen = 1;\n"
+            "} else {\n"
+            "    seen = 2;\n"
+            "}\n"
+            "return seen;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "plugin_guard_plain_scoped_module_release.zr",
+                                                     strlen("plugin_guard_plain_scoped_module_release.zr"));
+        SZrFunction *func;
+        TZrInt64 result = 0;
+
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile plain plugin guard scoped release source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN));
+        TEST_ASSERT_EQUAL_UINT32(1u, function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute plain plugin guard scoped release source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 1) {
+            char failureMessage[128];
+            snprintf(failureMessage,
+                     sizeof(failureMessage),
+                     "Plain plugin guard scoped release returned unexpected result: %lld",
+                     (long long)result);
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, failureMessage);
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_using_owner_generic_release_runs_before_return(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Using Owner Generic Release Runs Before Return";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Using owner generic return cleanup",
+                 "Testing that using on Shared<T> releases the owner before returning from the using body");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "class Box {}\n"
+                "var seed = Unique<Box>(new Box());\n"
+                "var owner = Shared<Box>(seed);\n"
+                "using (owner) {\n"
+                "    return 1;\n"
+                "}\n"
+                "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "using_owner_generic_return_cleanup.zr",
+                                                     strlen("using_owner_generic_return_cleanup.zr"));
+        SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile using owner generic return cleanup source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TZrInt64 result = 0;
+        TEST_ASSERT_TRUE(function_opcode_appears_before(func,
+                                                        ZR_INSTRUCTION_ENUM(OWN_RELEASE),
+                                                        ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute using owner generic return cleanup source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 1) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Using owner generic return cleanup changed return value");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_using_owner_generic_release_runs_before_break(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Using Owner Generic Release Runs Before Break";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Using owner generic break cleanup",
+                 "Testing that using on Shared<T> releases the owner before breaking out of the owning block");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "class Box {}\n"
+                "var seed = Unique<Box>(new Box());\n"
+                "var owner = Shared<Box>(seed);\n"
+                "var watcher = Weak<Box>(owner);\n"
+                "while (true) {\n"
+                "    using (owner) { break; }\n"
+                "}\n"
+                "var after = %upgrade(watcher);\n"
+                "if (after == null && owner == null) { return 1; }\n"
+                "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "using_owner_generic_break_cleanup.zr",
+                                                     strlen("using_owner_generic_break_cleanup.zr"));
+        SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile using owner generic break cleanup source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TZrInt64 result = 0;
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute using owner generic break cleanup source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 1) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Using owner generic break cleanup did not release the owner");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_using_borrow_generic_emits_end_borrow_cleanup(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Using Borrow Generic Emits End Borrow Cleanup";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Using borrow generic cleanup",
+                 "Testing that using on Borrow<T> emits a deterministic end-borrow cleanup at scope exit");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "class Box {}\n"
+                "var seed = Unique<Box>(new Box());\n"
+                "var owner = Shared<Box>(seed);\n"
+                "using (Borrow<Box>(owner)) { var inner = 1; }\n"
+                "return 1;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "using_borrow_generic_cleanup.zr",
+                                                     strlen("using_borrow_generic_cleanup.zr"));
+        SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile using borrow generic cleanup source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_using_borrow_generic_end_borrow_runs_before_return(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Using Borrow Generic End Borrow Runs Before Return";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Using borrow generic return cleanup",
+                 "Testing that using on Borrow<T> ends the borrow before returning from the using body");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "class Box {}\n"
+                "var seed = Unique<Box>(new Box());\n"
+                "var owner = Shared<Box>(seed);\n"
+                "using (Borrow<Box>(owner)) {\n"
+                "    return 1;\n"
+                "}\n"
+                "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "using_borrow_generic_return_cleanup.zr",
+                                                     strlen("using_borrow_generic_return_cleanup.zr"));
+        SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile using borrow generic return cleanup source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_TRUE(function_opcode_appears_before(func,
+                                                        ZR_INSTRUCTION_ENUM(OWN_RELEASE),
+                                                        ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_using_loan_generic_returns_loan_to_source_on_scope_exit(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Using Loan Generic Returns Loan To Source On Scope Exit";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Using loan generic cleanup",
+                 "Testing that using on Loan<T> restores the original unique owner at scope exit");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "var owner = Unique<string>(\"loan-scope\");\n"
+                "using (Loan<string>(owner)) { var inner = 1; }\n"
+                "if (owner != null) { return 1; }\n"
+                "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "using_loan_generic_scope_cleanup.zr",
+                                                     strlen("using_loan_generic_scope_cleanup.zr"));
+        SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile using loan generic cleanup source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TZrInt64 result = 0;
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute using loan generic cleanup source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        TEST_ASSERT_EQUAL_INT64(1, result);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_using_loan_generic_returns_loan_before_break(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Using Loan Generic Returns Loan Before Break";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Using loan generic break cleanup",
+                 "Testing that using on Loan<T> restores the source owner before breaking out of the owning block");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+                "var owner = Unique<string>(\"loan-break\");\n"
+                "while (true) {\n"
+                "    using (Loan<string>(owner)) { break; }\n"
+                "}\n"
+                "if (owner != null) { return 1; }\n"
+                "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "using_loan_generic_break_cleanup.zr",
+                                                     strlen("using_loan_generic_break_cleanup.zr"));
+        SZrFunction *func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile using loan generic break cleanup source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TZrInt64 result = 0;
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN)));
+        TEST_ASSERT_FALSE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED)));
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute using loan generic break cleanup source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        TEST_ASSERT_EQUAL_INT64(1, result);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
 void test_struct_prototype_metadata_serializes_layout_size_and_align(void) {
     SZrTestTimer timer;
     const char *testSummary = "Struct Prototype Metadata Serializes Layout Size And Align";
@@ -1899,13 +2390,14 @@ void test_function_frame_layout_metadata_marks_struct_parameter_inline(void) {
         const TZrUInt32 offsetB = test_align_offset_u32(offsetA + (TZrUInt32)sizeof(TZrInt8), ZR_ALIGN_SIZE);
         const TZrUInt32 expectedStructSize =
                 test_align_offset_u32(offsetB + (TZrUInt32)sizeof(TZrInt64), expectedStructAlign);
-        const TZrUInt32 expectedLocalOffset = test_align_offset_u32(expectedStructSize, ZR_ALIGN_SIZE);
         SZrString *sourceName = ZrCore_String_Create(state, "function_frame_layout.zr", 24);
         SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
         SZrFunction *wrapper;
         SZrFunction *declaredFunction;
         const SZrFunctionFrameSlotLayout *parameterLayout;
         const SZrFunctionFrameSlotLayout *localLayout;
+        TZrUInt32 expectedFrameByteBaseOffset;
+        TZrUInt32 expectedLocalOffset;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
@@ -1926,6 +2418,11 @@ void test_function_frame_layout_metadata_marks_struct_parameter_inline(void) {
         TEST_ASSERT_GREATER_OR_EQUAL_UINT32(2, declaredFunction->stackSize);
         TEST_ASSERT_EQUAL_UINT32(declaredFunction->stackSize, declaredFunction->frameSlotLayoutLength);
         TEST_ASSERT_EQUAL_UINT32(ZR_ALIGN_SIZE, declaredFunction->frameByteAlign);
+        expectedFrameByteBaseOffset =
+                test_align_offset_u32((TZrUInt32)(declaredFunction->stackSize * sizeof(SZrTypeValueOnStack)),
+                                      ZR_ALIGN_SIZE);
+        expectedLocalOffset = test_align_offset_u32(expectedFrameByteBaseOffset + expectedStructSize,
+                                                    ZR_ALIGN_SIZE);
 
         parameterLayout = ZrCore_Function_FindFrameSlotLayout(declaredFunction, 0);
         localLayout = ZrCore_Function_FindFrameSlotLayout(declaredFunction, 1);
@@ -1934,7 +2431,7 @@ void test_function_frame_layout_metadata_marks_struct_parameter_inline(void) {
 
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT, parameterLayout->slotKind);
         TEST_ASSERT_TRUE(parameterLayout->isParameter);
-        TEST_ASSERT_EQUAL_UINT32(0, parameterLayout->byteOffset);
+        TEST_ASSERT_EQUAL_UINT32(expectedFrameByteBaseOffset, parameterLayout->byteOffset);
         TEST_ASSERT_EQUAL_UINT32(expectedStructSize, parameterLayout->byteSize);
         TEST_ASSERT_EQUAL_UINT32(expectedStructAlign, parameterLayout->byteAlign);
         TEST_ASSERT_NOT_EQUAL_UINT32(ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE, parameterLayout->typeLayoutId);
@@ -2103,7 +2600,6 @@ void test_function_frame_layout_metadata_keeps_member_slot_load_temps_plain(void
         SZrFunction *func;
         SZrFunction *constructorFunction;
         const SZrFunctionFrameSlotLayout *receiverLayout;
-        const SZrFunctionFrameSlotLayout *materializedTempLayout;
         const SZrFunctionFrameSlotLayout *textParameterLayout;
         const SZrFunctionFrameSlotLayout *returnSourceLayout;
         TZrUInt32 returnSourceSlot = ZR_INSTRUCTION_USE_RET_FLAG;
@@ -2119,10 +2615,8 @@ void test_function_frame_layout_metadata_keeps_member_slot_load_temps_plain(void
         constructorFunction = find_single_function_constant_with_opcode(state, func, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT));
         TEST_ASSERT_NOT_NULL(constructorFunction);
         receiverLayout = ZrCore_Function_FindFrameSlotLayout(constructorFunction, 0u);
-        materializedTempLayout = ZrCore_Function_FindFrameSlotLayout(constructorFunction, 1u);
-        textParameterLayout = ZrCore_Function_FindFrameSlotLayout(constructorFunction, 2u);
+        textParameterLayout = ZrCore_Function_FindFrameSlotLayout(constructorFunction, 1u);
         TEST_ASSERT_NOT_NULL(receiverLayout);
-        TEST_ASSERT_NOT_NULL(materializedTempLayout);
         TEST_ASSERT_NOT_NULL(textParameterLayout);
         TEST_ASSERT_EQUAL_UINT32_MESSAGE(
                 ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT,
@@ -2130,10 +2624,12 @@ void test_function_frame_layout_metadata_keeps_member_slot_load_temps_plain(void
                 "Constructor receiver slot 0 must remain inline so member-slot stores write into frame bytes");
         TEST_ASSERT_TRUE_MESSAGE(receiverLayout->isParameter,
                                  "Constructor receiver slot must remain a parameter frame slot");
-        TEST_ASSERT_FALSE_MESSAGE(materializedTempLayout->isParameter,
-                                  "Constructor materialized value temp must not be marked as a parameter");
         TEST_ASSERT_TRUE_MESSAGE(textParameterLayout->isParameter,
                                  "Constructor text argument slot must be marked as a parameter frame slot");
+        TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                ZR_FUNCTION_FRAME_SLOT_KIND_VALUE,
+                textParameterLayout->slotKind,
+                "Constructor text argument slot must remain a plain value frame slot");
         for (TZrUInt32 index = 0; index < constructorFunction->instructionsLength; index++) {
             const TZrInstruction *instruction = &constructorFunction->instructionsList[index];
             if ((EZrInstructionCode)instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(FUNCTION_RETURN)) {
@@ -2150,6 +2646,8 @@ void test_function_frame_layout_metadata_keeps_member_slot_load_temps_plain(void
                 ZR_FUNCTION_FRAME_SLOT_KIND_VALUE,
                 returnSourceLayout->slotKind,
                 "Constructor return-source temp must remain a plain value slot even when its stack slot was previously hinted as the struct type");
+        TEST_ASSERT_FALSE_MESSAGE(returnSourceLayout->isParameter,
+                                  "Constructor return-source temp must not be marked as a parameter");
 
         ZrCore_Function_Free(state, func);
     }
@@ -2195,6 +2693,7 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
         const SZrFunctionFrameSlotLayout *sourceParameterLayout;
         const SZrFunctionFrameSlotLayout *runtimeParameterLayout;
         const SZrFunctionFrameSlotLayout *runtimeLocalLayout;
+        TZrUInt32 expectedFrameByteBaseOffset;
 
         if (ast == ZR_NULL) {
             timer.endTime = clock();
@@ -2223,6 +2722,9 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
         TEST_ASSERT_EQUAL_UINT32(sourceFunction->frameSlotLayoutLength, runtimeFunction->frameSlotLayoutLength);
         TEST_ASSERT_EQUAL_UINT32(sourceFunction->frameByteSize, runtimeFunction->frameByteSize);
         TEST_ASSERT_EQUAL_UINT32(sourceFunction->frameByteAlign, runtimeFunction->frameByteAlign);
+        expectedFrameByteBaseOffset =
+                test_align_offset_u32((TZrUInt32)(runtimeFunction->stackSize * sizeof(SZrTypeValueOnStack)),
+                                      ZR_ALIGN_SIZE);
 
         runtimeParameterLayout = ZrCore_Function_FindFrameSlotLayout(runtimeFunction, 0);
         runtimeLocalLayout = ZrCore_Function_FindFrameSlotLayout(runtimeFunction, 1);
@@ -2230,7 +2732,8 @@ void test_binary_roundtrip_preserves_function_frame_layout_metadata(void) {
         TEST_ASSERT_NOT_NULL(runtimeLocalLayout);
         TEST_ASSERT_EQUAL_UINT32(ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT, runtimeParameterLayout->slotKind);
         TEST_ASSERT_TRUE(runtimeParameterLayout->isParameter);
-        TEST_ASSERT_EQUAL_UINT32(0, runtimeParameterLayout->byteOffset);
+        TEST_ASSERT_EQUAL_UINT32(sourceParameterLayout->byteOffset, runtimeParameterLayout->byteOffset);
+        TEST_ASSERT_EQUAL_UINT32(expectedFrameByteBaseOffset, runtimeParameterLayout->byteOffset);
         TEST_ASSERT_EQUAL_UINT32(expectedStructSize, runtimeParameterLayout->byteSize);
         TEST_ASSERT_EQUAL_UINT32(expectedStructAlign, runtimeParameterLayout->byteAlign);
         TEST_ASSERT_NOT_EQUAL_UINT32(ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE, runtimeParameterLayout->typeLayoutId);
@@ -2328,6 +2831,86 @@ void test_owned_field_metadata_serializes_into_prototype_data(void) {
 
         TEST_ASSERT_FALSE(versionMember->isUsingManaged);
         TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_NONE, versionMember->ownershipQualifier);
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_intrinsic_ownership_generic_fields_serialize_owner_metadata(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Intrinsic Ownership Generic Field Prototype Metadata";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Intrinsic ownership generic field metadata",
+              "Testing that Unique<T>/Shared<T> fields serialize the same ownership metadata and teardown flags as legacy percent-qualified owner fields");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "pub struct HandleBox { var handle: Unique<Resource>; var count: int; }\n"
+            "pub class Holder { var resource: Shared<Resource>; var version: int; }";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_generic_field_meta.zr",
+                                                     strlen("ownership_generic_field_meta.zr"));
+        SZrAstNode *ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+        SZrFunction *func;
+        const SZrCompiledPrototypeInfoView *structProto;
+        const SZrCompiledPrototypeInfoView *classProto;
+        const SZrCompiledMemberInfoView *handleMember;
+        const SZrCompiledMemberInfoView *resourceMember;
+        SZrString *handleFieldTypeName;
+        SZrString *resourceFieldTypeName;
+
+        if (ast == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to parse intrinsic ownership generic field source");
+            destroy_test_state(state);
+            return;
+        }
+
+        func = ZrParser_Compiler_Compile(state, ast);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile intrinsic ownership generic field source");
+            destroy_test_state(state);
+            return;
+        }
+
+        structProto = find_compiled_prototype_by_name(state, func, "HandleBox");
+        classProto = find_compiled_prototype_by_name(state, func, "Holder");
+        TEST_ASSERT_NOT_NULL(structProto);
+        TEST_ASSERT_NOT_NULL(classProto);
+
+        handleMember = find_compiled_member_by_name(state, func, structProto, "handle");
+        resourceMember = find_compiled_member_by_name(state, func, classProto, "resource");
+        TEST_ASSERT_NOT_NULL(handleMember);
+        TEST_ASSERT_NOT_NULL(resourceMember);
+
+        TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_UNIQUE, handleMember->ownershipQualifier);
+        TEST_ASSERT_TRUE(handleMember->callsClose);
+        TEST_ASSERT_TRUE(handleMember->callsDestructor);
+        handleFieldTypeName = get_string_constant_at(state, func, handleMember->fieldTypeNameStringIndex);
+        TEST_ASSERT_NOT_NULL(handleFieldTypeName);
+        TEST_ASSERT_EQUAL_STRING("Resource", ZrCore_String_GetNativeString(handleFieldTypeName));
+
+        TEST_ASSERT_EQUAL_UINT32(ZR_OWNERSHIP_QUALIFIER_SHARED, resourceMember->ownershipQualifier);
+        TEST_ASSERT_TRUE(resourceMember->callsClose);
+        TEST_ASSERT_TRUE(resourceMember->callsDestructor);
+        resourceFieldTypeName = get_string_constant_at(state, func, resourceMember->fieldTypeNameStringIndex);
+        TEST_ASSERT_NOT_NULL(resourceFieldTypeName);
+        TEST_ASSERT_EQUAL_STRING("Resource", ZrCore_String_GetNativeString(resourceFieldTypeName));
 
         ZrCore_Function_Free(state, func);
     }
@@ -2947,6 +3530,58 @@ void test_ownership_builtin_shared_expression_consumes_unique_owner(void) {
     ZR_TEST_DIVIDER();
 }
 
+void test_intrinsic_ownership_generic_constructors_emit_dedicated_opcodes(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Intrinsic Ownership Generic Constructors Emit Dedicated Opcodes";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Ownership generic constructor lowering",
+              "Testing that Unique<T>(value), Shared<T>(value), Borrow<T>(value), and Loan<T>(value) compile through the dedicated ownership opcodes");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "class Box {}\n"
+            "var owner = Unique<Box>(new Box());\n"
+            "var alias = Shared<Box>(owner);\n"
+            "var borrowed = Borrow<Box>(alias);\n"
+            "var loanSource = Unique<Box>(new Box());\n"
+            "var loaned = Loan<Box>(loanSource);";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "ownership_generic_constructors.zr",
+                                                     strlen("ownership_generic_constructors.zr"));
+        SZrFunction *func;
+
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile intrinsic ownership generic constructor source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_UNIQUE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_SHARE)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_BORROW)));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_LOAN)));
+        TEST_ASSERT_FALSE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED));
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
 void test_ownership_borrow_loan_and_detach_emit_dedicated_opcodes(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Borrow Loan And Detach Emit Dedicated Opcodes";
@@ -3347,6 +3982,227 @@ void test_ownership_release_preserves_unrelated_stack_values_after_weak_expiry(v
     ZR_TEST_DIVIDER();
 }
 
+void test_plugin_guard_share_promotes_module_handle_to_shared_owner(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Share Promotes Module Handle To Shared Owner";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Using plugin guard share promotion",
+              "Testing that guard-scoped %import handles lower .share() to a native shared-owner promotion instead of dynamic module member lookup");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "union DynamicModule<T> {\n"
+            "    Unavailable;\n"
+            "    @Available(m: Module);\n"
+            "}\n"
+            "using (var [math] = %import(\"zr.math\")) {\n"
+            "    var handle = math.share();\n"
+            "    var released = %release(handle);\n"
+            "    return 1;\n"
+            "} else {\n"
+            "    return 2;\n"
+            "}\n"
+            "return 0;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "plugin_guard_share_promotes_module_handle.zr",
+                                                     strlen("plugin_guard_share_promotes_module_handle.zr"));
+        SZrFunction *func;
+        TZrInt64 result = 0;
+
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile plugin guard share promotion source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN));
+        TEST_ASSERT_TRUE(function_contains_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute plugin guard share promotion source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 1) {
+            char failureMessage[128];
+            snprintf(failureMessage,
+                     sizeof(failureMessage),
+                     "Plugin guard share promotion returned unexpected result: %lld",
+                     (long long)result);
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, failureMessage);
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_scoped_module_handle_releases_on_scope_exit(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Scoped Module Handle Releases On Scope Exit";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Using plugin guard scoped release",
+              "Testing that a guard-scoped module payload gets an automatic scoped shared-owner release even without explicit share()");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "union DynamicModule<T> {\n"
+            "    Unavailable;\n"
+            "    @Available(m: Module);\n"
+            "}\n"
+            "var seen = 0;\n"
+            "using (var [math] = %import(\"zr.math\")) {\n"
+            "    seen = 1;\n"
+            "} else {\n"
+            "    seen = 2;\n"
+            "}\n"
+            "return seen;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "plugin_guard_scoped_module_release.zr",
+                                                     strlen("plugin_guard_scoped_module_release.zr"));
+        SZrFunction *func;
+        TZrInt64 result = 0;
+
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile plugin guard scoped release source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN));
+        TEST_ASSERT_EQUAL_UINT32(1u, function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)));
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute plugin guard scoped release source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 1) {
+            char failureMessage[128];
+            snprintf(failureMessage,
+                     sizeof(failureMessage),
+                     "Plugin guard scoped release returned unexpected result: %lld",
+                     (long long)result);
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, failureMessage);
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_load_available_import_guard_lowers_to_available_payload(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "PluginLoad Available Import Guard Lowers To Available Payload";
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("PluginLoad.Available import guard",
+              "Testing that PluginLoad.Available lowers to the import guard success payload without requiring a user-declared DynamicModule union");
+
+    SZrState *state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    {
+        const char *source =
+            "var seen = 0;\n"
+            "using (var [math]: PluginLoad.Available = %import(\"zr.math\")) {\n"
+            "    var handle = math.share();\n"
+            "    var released = %release(handle);\n"
+            "    seen = 1;\n"
+            "} else {\n"
+            "    seen = 2;\n"
+            "}\n"
+            "return seen;\n";
+        SZrString *sourceName = ZrCore_String_Create(state,
+                                                     "plugin_load_available_import_guard.zr",
+                                                     strlen("plugin_load_available_import_guard.zr"));
+        SZrFunction *func;
+        TZrInt64 result = 0;
+
+        func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+        if (func == ZR_NULL) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to compile PluginLoad.Available import guard source");
+            destroy_test_state(state);
+            return;
+        }
+
+        TEST_ASSERT_TRUE(function_contains_native_helper_constant(func, ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN));
+        TEST_ASSERT_TRUE(function_count_opcode(func, ZR_INSTRUCTION_ENUM(OWN_RELEASE)) >= 2u);
+        if (!ZrTests_Runtime_Function_ExecuteExpectInt64(state, func, &result)) {
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, "Failed to execute PluginLoad.Available import guard source");
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+        if (result != 1) {
+            char failureMessage[128];
+            snprintf(failureMessage,
+                     sizeof(failureMessage),
+                     "PluginLoad.Available import guard returned unexpected result: %lld",
+                     (long long)result);
+            timer.endTime = clock();
+            ZR_TEST_FAIL(timer, testSummary, failureMessage);
+            ZrCore_Function_Free(state, func);
+            destroy_test_state(state);
+            return;
+        }
+
+        ZrCore_Function_Free(state, func);
+    }
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
 void test_ownership_builtin_compile_rejects_invalid_operands(void) {
     SZrTestTimer timer;
     const char *testSummary = "Ownership Builtin Compile Rejects Invalid Operands";
@@ -3388,6 +4244,23 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "ownership_invalid_release_borrowed_compile.zr",
         },
         {
+            "union-default-owner-payload-borrow-release",
+            "class Box {}\n"
+            "union Resource {\n"
+            "    Empty;\n"
+            "    Open(handle: Shared<Box>);\n"
+            "}\n"
+            "var seed = Unique<Box>(new Box());\n"
+            "var owner = Shared<Box>(seed);\n"
+            "var resource: Resource = Resource.Open(owner);\n"
+            "using (var [handle]: Resource.Open = resource) {\n"
+            "    var released = %release(handle);\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_union_default_owner_payload_borrow_release_compile.zr",
+        },
+        {
             "detach-weak",
             "class Box {}\n"
             "var seed = %unique new Box();\n"
@@ -3412,6 +4285,356 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
             "}\n",
             "ownership_invalid_borrow_return_compile.zr",
         },
+        {
+            "borrow-global-escape",
+            "class Box {}\n"
+            "var seed = %unique new Box();\n"
+            "var owner = %shared(seed);\n"
+            "pub var escaped: Borrow<Box> = %borrow(owner);\n",
+            "ownership_invalid_borrow_global_compile.zr",
+        },
+        {
+            "loan-global-escape",
+            "class Box {}\n"
+            "var seed = %unique new Box();\n"
+            "pub var escaped: Loan<Box> = %loan(seed);\n",
+            "ownership_invalid_loan_global_compile.zr",
+        },
+        {
+            "nested-borrow-global-escape",
+            "class Box {}\n"
+            "class Holder<T> {}\n"
+            "pub var escaped: Holder<Borrow<Box>>;\n",
+            "ownership_invalid_nested_borrow_global_compile.zr",
+        },
+        {
+            "nested-loan-global-escape",
+            "class Box {}\n"
+            "class Holder<T> {}\n"
+            "pub var escaped: Holder<Loan<Box>>;\n",
+            "ownership_invalid_nested_loan_global_compile.zr",
+        },
+        {
+            "borrow-closure-escape",
+            "class Box {}\n"
+            "var seed = %unique new Box();\n"
+            "var owner = %shared(seed);\n"
+            "var borrowed = %borrow(owner);\n"
+            "var f = () => { borrowed; return 1; };\n",
+            "ownership_invalid_borrow_closure_compile.zr",
+        },
+        {
+            "loan-closure-escape",
+            "class Box {}\n"
+            "var seed = %unique new Box();\n"
+            "var loaned = %loan(seed);\n"
+            "var f = () => { loaned; return 1; };\n",
+            "ownership_invalid_loan_closure_compile.zr",
+        },
+        {
+            "nested-borrow-closure-escape",
+            "class Box {}\n"
+            "class Holder<T> {}\n"
+            "var nested: Holder<Borrow<Box>>;\n"
+            "var f = () => { nested; return 1; };\n",
+            "ownership_invalid_nested_borrow_closure_compile.zr",
+        },
+        {
+            "nested-loan-closure-escape",
+            "class Box {}\n"
+            "class Holder<T> {}\n"
+            "var nested: Holder<Loan<Box>>;\n"
+            "var f = () => { nested; return 1; };\n",
+            "ownership_invalid_nested_loan_closure_compile.zr",
+        },
+        {
+            "plugin-guard-return-escape",
+            "leak() {\n"
+            "    using (var math = %import(\"zr.math\")) {\n"
+            "        return math;\n"
+            "    } else {\n"
+            "        return null;\n"
+            "    }\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_return_compile.zr",
+        },
+        {
+            "plugin-guard-member-return-escape",
+            "leak() {\n"
+            "    using (var math = %import(\"zr.math\")) {\n"
+            "        return math.abs;\n"
+            "    } else {\n"
+            "        return null;\n"
+            "    }\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_member_return_compile.zr",
+        },
+        {
+            "plugin-guard-closure-escape",
+            "using (var math = %import(\"zr.math\")) {\n"
+            "    var f = () => { math; return 1; };\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_closure_compile.zr",
+        },
+        {
+            "plugin-guard-nested-function-alias-return-escape",
+            "leak() {\n"
+            "    using (var math = %import(\"zr.math\")) {\n"
+            "        func nested() {\n"
+            "            var alias = math;\n"
+            "            return alias;\n"
+            "        }\n"
+            "        return nested();\n"
+            "    } else {\n"
+            "        return null;\n"
+            "    }\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_nested_function_alias_return_compile.zr",
+        },
+        {
+            "plugin-guard-call-argument-escape",
+            "sink(value) { return 0; }\n"
+            "using (var math = %import(\"zr.math\")) {\n"
+            "    sink(math);\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_call_argument_compile.zr",
+        },
+        {
+            "plugin-guard-constructor-argument-escape",
+            "class Sink {\n"
+            "    pub @constructor(value) {\n"
+            "        var observed = value;\n"
+            "    }\n"
+            "}\n"
+            "using (var math = %import(\"zr.math\")) {\n"
+            "    var box = new Sink(math);\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_constructor_argument_compile.zr",
+        },
+        {
+            "plugin-guard-if-call-argument-escape",
+            "sink(value) { return 1; }\n"
+            "using (var math = %import(\"zr.math\")) {\n"
+            "    if (sink(math)) {\n"
+            "        var observed = 1;\n"
+            "    }\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_if_call_argument_compile.zr",
+        },
+        {
+            "plugin-guard-switch-case-call-argument-escape",
+            "sink(value) { return 1; }\n"
+            "using (var math = %import(\"zr.math\")) {\n"
+            "    switch (1) {\n"
+            "        (sink(math)) {\n"
+            "            var observed = 1;\n"
+            "        }\n"
+            "    }\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_switch_case_call_argument_compile.zr",
+        },
+        {
+            "plugin-guard-object-field-escape",
+            "using (var math = %import(\"zr.math\")) {\n"
+            "    var box = { handle: math };\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_object_field_compile.zr",
+        },
+        {
+            "plugin-guard-array-element-escape",
+            "using (var math = %import(\"zr.math\")) {\n"
+            "    var handles = [math];\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_array_element_compile.zr",
+        },
+        {
+            "plugin-guard-template-interpolation-escape",
+            "using (var math = %import(\"zr.math\")) {\n"
+            "    var text = `module ${math}`;\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_template_interpolation_compile.zr",
+        },
+        {
+            "plugin-guard-generator-out-escape",
+            "using (var math = %import(\"zr.math\")) {\n"
+            "    var gen = {{ out math; }};\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_generator_out_compile.zr",
+        },
+        {
+            "typed-plugin-guard-return-escape",
+            "union DynamicModule<T> {\n"
+            "    Unavailable;\n"
+            "    @Available(m: Module);\n"
+            "}\n"
+            "leak() {\n"
+            "    using (var [m]: DynamicModule<Plugins> = %import(\"zr.plugins\")) {\n"
+            "        return m;\n"
+            "    } else {\n"
+            "        return null;\n"
+            "    }\n"
+            "}\n",
+            "ownership_invalid_typed_plugin_guard_return_compile.zr",
+        },
+        {
+            "untyped-plugin-guard-return-escape",
+            "union DynamicModule<T> {\n"
+            "    Unavailable;\n"
+            "    @Available(m: Module);\n"
+            "}\n"
+            "leak() {\n"
+            "    using (var [m] = %import(\"zr.plugins\")) {\n"
+            "        return m;\n"
+            "    } else {\n"
+            "        return null;\n"
+            "    }\n"
+            "}\n",
+            "ownership_invalid_untyped_plugin_guard_return_compile.zr",
+        },
+        {
+            "untyped-plugin-guard-closure-escape",
+            "union DynamicModule<T> {\n"
+            "    Unavailable;\n"
+            "    @Available(m: Module);\n"
+            "}\n"
+            "using (var [m] = %import(\"zr.plugins\")) {\n"
+            "    var f = () => { m; return 1; };\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_untyped_plugin_guard_closure_compile.zr",
+        },
+        {
+            "untyped-plugin-guard-call-argument-escape",
+            "union DynamicModule<T> {\n"
+            "    Unavailable;\n"
+            "    @Available(m: Module);\n"
+            "}\n"
+            "sink(value) { return 0; }\n"
+            "using (var [m] = %import(\"zr.plugins\")) {\n"
+            "    sink(m);\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_untyped_plugin_guard_call_argument_compile.zr",
+        },
+        {
+            "untyped-plugin-guard-object-field-escape",
+            "union DynamicModule<T> {\n"
+            "    Unavailable;\n"
+            "    @Available(m: Module);\n"
+            "}\n"
+            "using (var [m] = %import(\"zr.plugins\")) {\n"
+            "    var box = { handle: m };\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_untyped_plugin_guard_object_field_compile.zr",
+        },
+        {
+            "untyped-plugin-guard-array-element-escape",
+            "union DynamicModule<T> {\n"
+            "    Unavailable;\n"
+            "    @Available(m: Module);\n"
+            "}\n"
+            "using (var [m] = %import(\"zr.plugins\")) {\n"
+            "    var handles = [m];\n"
+            "} else {\n"
+            "    var fallback = 0;\n"
+            "}\n",
+            "ownership_invalid_untyped_plugin_guard_array_element_compile.zr",
+        },
+        {
+            "untyped-plugin-guard-if-assignment-return-escape",
+            "union DynamicModule<T> {\n"
+            "    Unavailable;\n"
+            "    @Available(m: Module);\n"
+            "}\n"
+            "leak(flag) {\n"
+            "    using (var [m] = %import(\"zr.plugins\")) {\n"
+            "        var alias;\n"
+            "        if (flag) {\n"
+            "            alias = m;\n"
+            "        }\n"
+            "        return alias;\n"
+            "    } else {\n"
+            "        return null;\n"
+            "    }\n"
+            "}\n",
+            "ownership_invalid_untyped_plugin_guard_if_assignment_return_compile.zr",
+        },
+        {
+            "plugin-guard-condition-assignment-return-escape",
+            "leak() {\n"
+            "    using (var math = %import(\"zr.math\")) {\n"
+            "        var alias;\n"
+            "        if (alias = math) {\n"
+            "            var observed = 1;\n"
+            "        }\n"
+            "        return alias;\n"
+            "    } else {\n"
+            "        return null;\n"
+            "    }\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_condition_assignment_return_compile.zr",
+        },
+        {
+            "plugin-guard-initializer-assignment-return-escape",
+            "leak() {\n"
+            "    using (var math = %import(\"zr.math\")) {\n"
+            "        var alias;\n"
+            "        var ok = (alias = math);\n"
+            "        return alias;\n"
+            "    } else {\n"
+            "        return null;\n"
+            "    }\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_initializer_assignment_return_compile.zr",
+        },
+        {
+            "plugin-guard-try-return-escape",
+            "leak() {\n"
+            "    using (var math = %import(\"zr.math\")) {\n"
+            "        try {\n"
+            "            return math;\n"
+            "        } catch (e) {\n"
+            "            return null;\n"
+            "        }\n"
+            "    } else {\n"
+            "        return null;\n"
+            "    }\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_try_return_compile.zr",
+        },
+        {
+            "plugin-guard-throw-escape",
+            "leak() {\n"
+            "    using (var math = %import(\"zr.math\")) {\n"
+            "        throw math;\n"
+            "    } else {\n"
+            "        return null;\n"
+            "    }\n"
+            "}\n",
+            "ownership_invalid_plugin_guard_throw_compile.zr",
+        },
     };
     TZrSize i;
 
@@ -3435,6 +4658,719 @@ void test_ownership_builtin_compile_rejects_invalid_operands(void) {
 
     timer.endTime = clock();
     ZR_TEST_PASS(timer, testSummary);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_global_assignment_reports_escape_boundary(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Global Assignment Reports Escape Boundary";
+    const char *source =
+        "var leaked = null;\n"
+        "using (var math = %import(\"zr.math\")) {\n"
+        "    leaked = math;\n"
+        "} else {\n"
+        "    var fallback = 0;\n"
+        "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Plugin guard global assignment diagnostics",
+              "Testing that assigning a guard-scoped module handle to an outer/global storage location reports a dedicated escape boundary");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "plugin_guard_global_assignment_escape.zr",
+                                      strlen("plugin_guard_global_assignment_escape.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse plugin guard global assignment source");
+        destroy_test_state(state);
+        return;
+    }
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+    cs.currentFunction = ZrCore_Function_New(state);
+    if (cs.currentFunction == ZR_NULL) {
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create compiler function");
+        destroy_test_state(state);
+        return;
+    }
+
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(&cs, ast));
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "plugin_type_escape"));
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "outer/global assignment"));
+
+    ZrCore_Function_Free(state, cs.currentFunction);
+    cs.currentFunction = ZR_NULL;
+    if (cs.topLevelFunction != ZR_NULL) {
+        ZrCore_Function_Free(state, cs.topLevelFunction);
+        cs.topLevelFunction = ZR_NULL;
+    }
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_member_assignment_reports_escape_boundary(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Member Assignment Reports Escape Boundary";
+    const char *source =
+        "leak() {\n"
+        "    var box = {};\n"
+        "    using (var math = %import(\"zr.math\")) {\n"
+        "        box.handle = math;\n"
+        "        return box;\n"
+        "    } else {\n"
+        "        return null;\n"
+        "    }\n"
+        "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Plugin guard member assignment diagnostics",
+              "Testing that assigning a guard-scoped module handle into object/member storage reports a field/container boundary");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "plugin_guard_member_assignment_escape.zr",
+                                      strlen("plugin_guard_member_assignment_escape.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse plugin guard member assignment source");
+        destroy_test_state(state);
+        return;
+    }
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+    cs.currentFunction = ZrCore_Function_New(state);
+    if (cs.currentFunction == ZR_NULL) {
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create compiler function");
+        destroy_test_state(state);
+        return;
+    }
+
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(&cs, ast));
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "plugin_type_escape"));
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "field/container"));
+
+    ZrCore_Function_Free(state, cs.currentFunction);
+    cs.currentFunction = ZR_NULL;
+    if (cs.topLevelFunction != ZR_NULL) {
+        ZrCore_Function_Free(state, cs.topLevelFunction);
+        cs.topLevelFunction = ZR_NULL;
+    }
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_type_query_reports_escape_boundary(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Type Query Reports Escape Boundary";
+    const char *source =
+        "leak() {\n"
+        "    using (var math = %import(\"zr.math\")) {\n"
+        "        return %type(math);\n"
+        "    } else {\n"
+        "        return null;\n"
+        "    }\n"
+        "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Plugin guard type query diagnostics",
+              "Testing that %type(...) cannot wrap a guard-scoped module handle and return it past the guard boundary");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "plugin_guard_type_query_escape.zr",
+                                      strlen("plugin_guard_type_query_escape.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse plugin guard type query source");
+        destroy_test_state(state);
+        return;
+    }
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+    cs.currentFunction = ZrCore_Function_New(state);
+    if (cs.currentFunction == ZR_NULL) {
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create compiler function");
+        destroy_test_state(state);
+        return;
+    }
+
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(&cs, ast));
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "plugin_type_escape"));
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "return"));
+
+    ZrCore_Function_Free(state, cs.currentFunction);
+    cs.currentFunction = ZR_NULL;
+    if (cs.topLevelFunction != ZR_NULL) {
+        ZrCore_Function_Free(state, cs.topLevelFunction);
+        cs.topLevelFunction = ZR_NULL;
+    }
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_decorator_reports_escape_boundary(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Decorator Reports Escape Boundary";
+    const char *source =
+        "using (var math = %import(\"zr.math\")) {\n"
+        "    #math.Decorate#\n"
+        "    func nested(): int {\n"
+        "        return 1;\n"
+        "    }\n"
+        "} else {\n"
+        "    var fallback = 0;\n"
+        "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Plugin guard decorator diagnostics",
+              "Testing that a guard-scoped module handle cannot be captured by decorator metadata");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "plugin_guard_decorator_escape.zr",
+                                      strlen("plugin_guard_decorator_escape.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse plugin guard decorator source");
+        destroy_test_state(state);
+        return;
+    }
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+    cs.currentFunction = ZrCore_Function_New(state);
+    if (cs.currentFunction == ZR_NULL) {
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create compiler function");
+        destroy_test_state(state);
+        return;
+    }
+
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(&cs, ast));
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "plugin_type_escape"));
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "decorator"));
+
+    ZrCore_Function_Free(state, cs.currentFunction);
+    cs.currentFunction = ZR_NULL;
+    if (cs.topLevelFunction != ZR_NULL) {
+        ZrCore_Function_Free(state, cs.topLevelFunction);
+        cs.topLevelFunction = ZR_NULL;
+    }
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_parameter_default_reports_escape_boundary(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Parameter Default Reports Escape Boundary";
+    const char *source =
+        "using (var math = %import(\"zr.math\")) {\n"
+        "    func nested(value = math): int {\n"
+        "        return 1;\n"
+        "    }\n"
+        "} else {\n"
+        "    var fallback = 0;\n"
+        "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Plugin guard parameter default diagnostics",
+              "Testing that a guard-scoped module handle cannot be captured by function parameter default metadata");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "plugin_guard_parameter_default_escape.zr",
+                                      strlen("plugin_guard_parameter_default_escape.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse plugin guard parameter default source");
+        destroy_test_state(state);
+        return;
+    }
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+    cs.currentFunction = ZrCore_Function_New(state);
+    if (cs.currentFunction == ZR_NULL) {
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create compiler function");
+        destroy_test_state(state);
+        return;
+    }
+
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(&cs, ast));
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "plugin_type_escape"));
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "parameter default"));
+
+    ZrCore_Function_Free(state, cs.currentFunction);
+    cs.currentFunction = ZR_NULL;
+    if (cs.topLevelFunction != ZR_NULL) {
+        ZrCore_Function_Free(state, cs.topLevelFunction);
+        cs.topLevelFunction = ZR_NULL;
+    }
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_signature_type_reports_escape_boundary(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Signature Type Reports Escape Boundary";
+    const char *source =
+        "using (var math = %import(\"zr.math\")) {\n"
+        "    func nested(): math.Vector {\n"
+        "        return null;\n"
+        "    }\n"
+        "} else {\n"
+        "    var fallback = 0;\n"
+        "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Plugin guard signature type diagnostics",
+              "Testing that a guard-scoped module handle cannot be captured by function signature type metadata");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "plugin_guard_signature_type_escape.zr",
+                                      strlen("plugin_guard_signature_type_escape.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse plugin guard signature type source");
+        destroy_test_state(state);
+        return;
+    }
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+    cs.currentFunction = ZrCore_Function_New(state);
+    if (cs.currentFunction == ZR_NULL) {
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create compiler function");
+        destroy_test_state(state);
+        return;
+    }
+
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(&cs, ast));
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "plugin_type_escape"));
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "signature type"));
+
+    ZrCore_Function_Free(state, cs.currentFunction);
+    cs.currentFunction = ZR_NULL;
+    if (cs.topLevelFunction != ZR_NULL) {
+        ZrCore_Function_Free(state, cs.topLevelFunction);
+        cs.topLevelFunction = ZR_NULL;
+    }
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_foreach_binding_type_reports_escape_boundary(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Foreach Binding Type Reports Escape Boundary";
+    const char *source =
+        "using (var math = %import(\"zr.math\")) {\n"
+        "    for(var item: math.Vector in []) {\n"
+        "        var observed = item;\n"
+        "    }\n"
+        "} else {\n"
+        "    var fallback = 0;\n"
+        "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Plugin guard foreach binding type diagnostics",
+              "Testing that a guard-scoped module handle cannot be captured by foreach binding type metadata");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "plugin_guard_foreach_binding_type_escape.zr",
+                                      strlen("plugin_guard_foreach_binding_type_escape.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse plugin guard foreach binding type source");
+        destroy_test_state(state);
+        return;
+    }
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+    cs.currentFunction = ZrCore_Function_New(state);
+    if (cs.currentFunction == ZR_NULL) {
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create compiler function");
+        destroy_test_state(state);
+        return;
+    }
+
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(&cs, ast));
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "plugin_type_escape"));
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "signature type"));
+
+    ZrCore_Function_Free(state, cs.currentFunction);
+    cs.currentFunction = ZR_NULL;
+    if (cs.topLevelFunction != ZR_NULL) {
+        ZrCore_Function_Free(state, cs.topLevelFunction);
+        cs.topLevelFunction = ZR_NULL;
+    }
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_generic_call_argument_reports_escape_boundary(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Generic Call Argument Reports Escape Boundary";
+    const char *source =
+        "leak() {\n"
+        "    using (var math = %import(\"zr.math\")) {\n"
+        "        return sink<math.Vector>();\n"
+        "    } else {\n"
+        "        return null;\n"
+        "    }\n"
+        "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrAstNode *ast;
+    SZrCompilerState cs;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Plugin guard generic call argument diagnostics",
+              "Testing that a guard-scoped module handle cannot be captured by function-call generic metadata");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(state,
+                                      "plugin_guard_generic_call_argument_escape.zr",
+                                      strlen("plugin_guard_generic_call_argument_escape.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+    ast = ZrParser_Parse(state, source, strlen(source), sourceName);
+    if (ast == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to parse plugin guard generic call argument source");
+        destroy_test_state(state);
+        return;
+    }
+
+    memset(&cs, 0, sizeof(cs));
+    ZrParser_CompilerState_Init(&cs, state);
+    cs.currentAst = ast;
+    cs.currentFunction = ZrCore_Function_New(state);
+    if (cs.currentFunction == ZR_NULL) {
+        ZrParser_CompilerState_Free(&cs);
+        ZrParser_Ast_Free(state, ast);
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create compiler function");
+        destroy_test_state(state);
+        return;
+    }
+
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(&cs, ast));
+    compile_script(&cs, ast);
+
+    TEST_ASSERT_TRUE(cs.hasError);
+    TEST_ASSERT_NOT_NULL(cs.errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "plugin_type_escape"));
+    TEST_ASSERT_NOT_NULL(strstr(cs.errorMessage, "signature type"));
+
+    ZrCore_Function_Free(state, cs.currentFunction);
+    cs.currentFunction = ZR_NULL;
+    if (cs.topLevelFunction != ZR_NULL) {
+        ZrCore_Function_Free(state, cs.topLevelFunction);
+        cs.topLevelFunction = ZR_NULL;
+    }
+    ZrParser_CompilerState_Free(&cs);
+    ZrParser_Ast_Free(state, ast);
+
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_nested_function_shadowed_parameter_allows_local_value(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Nested Function Shadowed Parameter Allows Local Value";
+    const char *source =
+        "valid() {\n"
+        "    using (var math = %import(\"zr.math\")) {\n"
+        "        func nested(math) {\n"
+        "            return math;\n"
+        "        }\n"
+        "        return nested(null);\n"
+        "    } else {\n"
+        "        return null;\n"
+        "    }\n"
+        "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *func;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Plugin guard nested function shadowing",
+              "Testing that a nested function parameter can shadow the guard binder without being reported as a plugin handle capture");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(
+            state,
+            "plugin_guard_nested_function_shadowed_parameter.zr",
+            strlen("plugin_guard_nested_function_shadowed_parameter.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(func);
+
+    ZrCore_Function_Free(state, func);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
+    ZR_TEST_DIVIDER();
+}
+
+void test_plugin_guard_nested_function_destructured_shadow_allows_local_value(void) {
+    SZrTestTimer timer;
+    const char *testSummary = "Plugin Guard Nested Function Destructured Shadow Allows Local Value";
+    const char *source =
+        "valid() {\n"
+        "    using (var math = %import(\"zr.math\")) {\n"
+        "        func nestedObject() {\n"
+        "            var {math} = {math: null};\n"
+        "            return math;\n"
+        "        }\n"
+        "        func nestedArray() {\n"
+        "            var [math] = [null];\n"
+        "            return math;\n"
+        "        }\n"
+        "        func nestedAlias() {\n"
+        "            var {math: value} = {value: null};\n"
+        "            return math;\n"
+        "        }\n"
+        "        var objectValue = nestedObject();\n"
+        "        var arrayValue = nestedArray();\n"
+        "        return nestedAlias();\n"
+        "    } else {\n"
+        "        return null;\n"
+        "    }\n"
+        "}\n";
+    SZrState *state;
+    SZrString *sourceName;
+    SZrFunction *func;
+
+    timer.startTime = clock();
+    ZR_TEST_START(testSummary);
+    ZR_TEST_INFO("Plugin guard nested function destructuring shadow",
+              "Testing that a nested function destructuring declaration can shadow the guard binder without being reported as a plugin handle capture");
+
+    state = create_test_state();
+    if (state == ZR_NULL) {
+        timer.endTime = clock();
+        ZR_TEST_FAIL(timer, testSummary, "Failed to create test state");
+        return;
+    }
+
+    sourceName = ZrCore_String_Create(
+            state,
+            "plugin_guard_nested_function_destructured_shadow.zr",
+            strlen("plugin_guard_nested_function_destructured_shadow.zr"));
+    TEST_ASSERT_NOT_NULL(sourceName);
+
+    func = ZrParser_Source_Compile(state, source, strlen(source), sourceName);
+    TEST_ASSERT_NOT_NULL(func);
+
+    ZrCore_Function_Free(state, func);
+    timer.endTime = clock();
+    ZR_TEST_PASS(timer, testSummary);
+    destroy_test_state(state);
     ZR_TEST_DIVIDER();
 }
 

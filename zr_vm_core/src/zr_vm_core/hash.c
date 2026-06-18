@@ -30,3 +30,30 @@ TZrUInt64 ZrCore_HashSeed_Create(SZrGlobalState *global, TZrUInt64 uniqueNumber)
 TZrUInt64 ZrCore_Hash_Create(SZrGlobalState *global, TZrNativeString string, TZrSize length) {
     return ZrHashSeedCreateInternal(string, length, global->hashSeed);
 }
+
+TZrUInt64 ZrCore_Hash_CreateStable64(const TZrByte *data, TZrSize length) {
+    return XXH3_64bits(data, length);
+}
+
+TZrUInt64 ZrCore_Hash_CreateStable64WithPrefix(const TZrByte *prefix,
+                                               TZrSize prefixLength,
+                                               const TZrByte *data,
+                                               TZrSize length) {
+    XXH3_state_t *state;
+    TZrUInt64 result;
+
+    state = XXH3_createState();
+    if (state == ZR_NULL) {
+        return 0;
+    }
+    if (XXH3_64bits_reset(state) == XXH_ERROR ||
+        (prefixLength > 0 && XXH3_64bits_update(state, prefix, prefixLength) == XXH_ERROR) ||
+        (length > 0 && XXH3_64bits_update(state, data, length) == XXH_ERROR)) {
+        XXH3_freeState(state);
+        return 0;
+    }
+
+    result = XXH3_64bits_digest(state);
+    XXH3_freeState(state);
+    return result;
+}

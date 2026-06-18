@@ -541,7 +541,12 @@ static TZrBool backend_aot_try_write_c_value_field_value_slot_load_exec(
             "    {\n"
             "        const TZrByte *zr_aot_field = (const TZrByte *)frame.slotBase + %u + %u;\n"
             "        SZrTypeValue *zr_aot_destination = (SZrTypeValue *)((TZrByte *)frame.slotBase + %u);\n"
+            "        SZrTypeValue *zr_aot_dense_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        if (zr_aot_dense_destination == ZR_NULL) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
             "        ZrCore_Value_Copy(state, zr_aot_destination, (const SZrTypeValue *)zr_aot_field);\n"
+            "        ZrCore_Value_Copy(state, zr_aot_dense_destination, (const SZrTypeValue *)zr_aot_field);\n"
             "    }\n",
             (unsigned)instruction->destinationSlot,
             (unsigned)instruction->operand0,
@@ -549,7 +554,8 @@ static TZrBool backend_aot_try_write_c_value_field_value_slot_load_exec(
             (unsigned)fieldLayout->byteSize,
             (unsigned)sourceLayout->byteOffset,
             (unsigned)fieldLayout->byteOffset,
-            (unsigned)destinationLayout->byteOffset);
+            (unsigned)destinationLayout->byteOffset,
+            (unsigned)instruction->destinationSlot);
     return ZR_TRUE;
 }
 
@@ -569,7 +575,14 @@ static TZrBool backend_aot_try_write_c_value_field_value_slot_store_exec(
             " fieldOffset=%u fieldSize=%u */\n"
             "    {\n"
             "        TZrByte *zr_aot_field = (TZrByte *)frame.slotBase + %u + %u;\n"
+            "        const SZrTypeValue *zr_aot_dense_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
             "        const SZrTypeValue *zr_aot_source = (const SZrTypeValue *)((const TZrByte *)frame.slotBase + %u);\n"
+            "        if (zr_aot_dense_source == ZR_NULL || zr_aot_source == ZR_NULL) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (!ZR_VALUE_IS_TYPE_NULL(zr_aot_dense_source->type)) {\n"
+            "            zr_aot_source = zr_aot_dense_source;\n"
+            "        }\n"
             "        ZrCore_Value_Copy(state, (SZrTypeValue *)zr_aot_field, zr_aot_source);\n"
             "    }\n",
             (unsigned)instruction->destinationSlot,
@@ -578,6 +591,7 @@ static TZrBool backend_aot_try_write_c_value_field_value_slot_store_exec(
             (unsigned)fieldLayout->byteSize,
             (unsigned)destinationLayout->byteOffset,
             (unsigned)fieldLayout->byteOffset,
+            (unsigned)instruction->operand0,
             (unsigned)sourceLayout->byteOffset);
     return ZR_TRUE;
 }
@@ -639,7 +653,11 @@ TZrBool backend_aot_try_write_c_value_semir_field_load_exec(
             "    {\n"
             "        const TZrByte *zr_aot_field = (const TZrByte *)frame.slotBase + %u + %u;\n"
             "        SZrTypeValue *zr_aot_destination = (SZrTypeValue *)((TZrByte *)frame.slotBase + %u);\n"
+            "        SZrTypeValue *zr_aot_dense_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
             "        %s zr_aot_field_value;\n"
+            "        if (zr_aot_dense_destination == ZR_NULL) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
             "        memcpy(&zr_aot_field_value, zr_aot_field, sizeof(zr_aot_field_value));\n",
             (unsigned)instruction->destinationSlot,
             (unsigned)instruction->operand0,
@@ -649,6 +667,7 @@ TZrBool backend_aot_try_write_c_value_semir_field_load_exec(
             (unsigned)sourceLayout->byteOffset,
             (unsigned)fieldLayout.byteOffset,
             (unsigned)destinationLayout->byteOffset,
+            (unsigned)instruction->destinationSlot,
             fieldTypeName);
 
     switch (fieldLayout.valueType) {
@@ -697,7 +716,9 @@ TZrBool backend_aot_try_write_c_value_semir_field_load_exec(
             return ZR_FALSE;
     }
 
-    fprintf(file, "    }\n");
+    fprintf(file,
+            "        ZrCore_Value_Copy(state, zr_aot_dense_destination, zr_aot_destination);\n"
+            "    }\n");
     return ZR_TRUE;
 }
 
@@ -757,6 +778,7 @@ TZrBool backend_aot_try_write_c_value_semir_field_store_exec(
             "    /* zr_aot_value_exec_field_store dstSlot=%u sourceSlot=%u fieldOffset=%u fieldSize=%u valueType=%u */\n"
             "    {\n"
             "        TZrByte *zr_aot_field = (TZrByte *)frame.slotBase + %u + %u;\n"
+            "        const SZrTypeValue *zr_aot_dense_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
             "        const SZrTypeValue *zr_aot_source = (const SZrTypeValue *)((const TZrByte *)frame.slotBase + %u);\n"
             "        %s zr_aot_stored_value;\n",
             (unsigned)instruction->destinationSlot,
@@ -766,8 +788,16 @@ TZrBool backend_aot_try_write_c_value_semir_field_store_exec(
             (unsigned)fieldLayout.valueType,
             (unsigned)destinationLayout->byteOffset,
             (unsigned)fieldLayout.byteOffset,
+            (unsigned)instruction->operand0,
             (unsigned)sourceLayout->byteOffset,
             fieldTypeName);
+    fprintf(file,
+            "        if (zr_aot_dense_source == ZR_NULL || zr_aot_source == ZR_NULL) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (!ZR_VALUE_IS_TYPE_NULL(zr_aot_dense_source->type)) {\n"
+            "            zr_aot_source = zr_aot_dense_source;\n"
+            "        }\n");
 
     switch (fieldLayout.valueType) {
         case ZR_VALUE_TYPE_INT8:

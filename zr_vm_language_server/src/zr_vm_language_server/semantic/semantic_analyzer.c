@@ -1795,6 +1795,8 @@ static const TZrChar *semantic_module_exported_prototype_kind(EZrObjectPrototype
             return "interface";
         case ZR_OBJECT_PROTOTYPE_TYPE_MODULE:
             return "module";
+        case ZR_OBJECT_PROTOTYPE_TYPE_UNION:
+            return "union";
         default:
             return ZR_NULL;
     }

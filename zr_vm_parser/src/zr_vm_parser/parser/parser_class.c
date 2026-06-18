@@ -55,9 +55,11 @@ static EZrAstNodeType classify_class_member_from_current(SZrParserState *ps) {
 
 SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_token_location(ps);
+    SZrFileRange bodyOpenLoc = startLoc;
     SZrFileRange endLoc;
     SZrAstNodeArray *decorators;
     TZrUInt32 modifierFlags;
+    TZrBool bodyOpened = ZR_FALSE;
 
     // 允许 top-level decorators 出现在访问修饰符之前。
     decorators = parse_leading_decorators(ps);
@@ -147,6 +149,8 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     if (ps->lexer->t.token != ZR_TK_LBRACE) {
         report_missing_declaration_body_open(ps, "class declaration", get_current_token_location(ps));
     } else {
+        bodyOpenLoc = get_current_token_location(ps);
+        bodyOpened = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
 
@@ -198,7 +202,15 @@ SZrAstNode *parse_class_declaration(SZrParserState *ps) {
     }
 
     // 期望右大括号
-    expect_token(ps, ZR_TK_RBRACE);
+    if (ps->lexer->t.token != ZR_TK_RBRACE) {
+        if (ps->lexer->t.token == ZR_TK_EOS) {
+            if (bodyOpened) {
+                report_missing_declaration_body_close(ps, "class declaration", bodyOpenLoc);
+            }
+        } else {
+            expect_token(ps, ZR_TK_RBRACE);
+        }
+    }
     endLoc = get_current_token_location(ps);
     consume_token(ps, ZR_TK_RBRACE);
     SZrFileRange classLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
@@ -587,7 +599,10 @@ SZrAstNode *parse_property_set(SZrParserState *ps) {
         targetType = parse_type(ps);
     }
 
-    expect_token(ps, ZR_TK_RPAREN);
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_parameter_list_close(ps, get_current_token_location(ps));
+        return ZR_NULL;
+    }
     consume_token(ps, ZR_TK_RPAREN);
 
     // 解析方法体；抽象访问器等场景允许使用 ';'。
@@ -740,7 +755,13 @@ SZrAstNode *parse_class_meta_function(SZrParserState *ps) {
         }
     }
 
-    expect_token(ps, ZR_TK_RPAREN);
+    if (ps->lexer->t.token != ZR_TK_RPAREN) {
+        report_missing_parameter_list_close(ps, get_current_token_location(ps));
+        if (params != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, params);
+        }
+        return ZR_NULL;
+    }
     consume_token(ps, ZR_TK_RPAREN);
 
     // 解析 super 调用参数（可选）

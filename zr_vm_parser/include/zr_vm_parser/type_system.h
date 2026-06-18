@@ -83,6 +83,15 @@ typedef struct SZrTypeEnvironment {
 
 // 类型操作函数
 
+// 内建所有权泛型类型（Unique<T>/Shared<T>/Weak<T>/Borrow<T>/Loan<T>）
+// 的统一识别入口。显式泛型表面会被归一化为内层类型 + 现有 qualifier。
+ZR_PARSER_API TZrBool ZrParser_OwnershipGenericNameToQualifier(SZrString *name,
+                                                               EZrOwnershipQualifier *qualifier);
+
+ZR_PARSER_API TZrBool ZrParser_AstType_TryUnwrapOwnershipGeneric(const SZrType *type,
+                                                                 EZrOwnershipQualifier *qualifier,
+                                                                 const SZrType **innerType);
+
 // 初始化类型（使用基础类型）
 ZR_PARSER_API void ZrParser_InferredType_Init(SZrState *state, SZrInferredType *type, EZrValueType baseType);
 

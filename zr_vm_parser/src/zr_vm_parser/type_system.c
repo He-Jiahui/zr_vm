@@ -15,6 +15,104 @@
 
 // 类型操作函数实现
 
+static TZrBool zr_parser_string_equals_cstr(SZrString *value, const TZrChar *literal) {
+    TZrNativeString nativeValue;
+    TZrSize nativeLength;
+    TZrSize literalLength;
+
+    if (value == ZR_NULL || literal == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        nativeValue = ZrCore_String_GetNativeStringShort(value);
+        nativeLength = value->shortStringLength;
+    } else {
+        nativeValue = ZrCore_String_GetNativeString(value);
+        nativeLength = nativeValue != ZR_NULL ? value->longStringLength : 0;
+    }
+
+    if (nativeValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    literalLength = strlen(literal);
+    return nativeLength == literalLength && memcmp(nativeValue, literal, literalLength) == 0;
+}
+
+TZrBool ZrParser_OwnershipGenericNameToQualifier(SZrString *name, EZrOwnershipQualifier *qualifier) {
+    if (qualifier != ZR_NULL) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+
+    if (name == ZR_NULL || qualifier == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (zr_parser_string_equals_cstr(name, "Unique")) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_UNIQUE;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "Shared")) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "Weak")) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_WEAK;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "Borrow")) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        return ZR_TRUE;
+    }
+    if (zr_parser_string_equals_cstr(name, "Loan")) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
+TZrBool ZrParser_AstType_TryUnwrapOwnershipGeneric(const SZrType *type,
+                                                   EZrOwnershipQualifier *qualifier,
+                                                   const SZrType **innerType) {
+    SZrGenericType *genericType;
+    SZrAstNode *argumentNode;
+    EZrOwnershipQualifier ownershipQualifier;
+
+    if (qualifier != ZR_NULL) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    }
+    if (innerType != ZR_NULL) {
+        *innerType = ZR_NULL;
+    }
+
+    if (type == ZR_NULL || type->name == ZR_NULL || type->name->type != ZR_AST_GENERIC_TYPE ||
+        type->subType != ZR_NULL || type->dimensions != 0 || type->hasArraySizeConstraint) {
+        return ZR_FALSE;
+    }
+
+    genericType = (SZrGenericType *)&type->name->data.genericType;
+    if (genericType->name == ZR_NULL ||
+        !ZrParser_OwnershipGenericNameToQualifier(genericType->name->name, &ownershipQualifier) ||
+        genericType->params == ZR_NULL || genericType->params->count != 1) {
+        return ZR_FALSE;
+    }
+
+    argumentNode = genericType->params->nodes[0];
+    if (argumentNode == ZR_NULL || argumentNode->type != ZR_AST_TYPE) {
+        return ZR_FALSE;
+    }
+
+    if (qualifier != ZR_NULL) {
+        *qualifier = ownershipQualifier;
+    }
+    if (innerType != ZR_NULL) {
+        *innerType = &argumentNode->data.type;
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool inferred_type_is_reference_like(EZrValueType baseType) {
     return baseType == ZR_VALUE_TYPE_OBJECT ||
            baseType == ZR_VALUE_TYPE_STRING ||
@@ -322,6 +420,42 @@ static TZrBool ownership_qualifier_is_compatible(EZrOwnershipQualifier fromQuali
     return ZR_FALSE;
 }
 
+static TZrBool inferred_type_element_types_are_compatible(const SZrInferredType *fromType,
+                                                          const SZrInferredType *toType) {
+    if (fromType == ZR_NULL || toType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (toType->elementTypes.length == 0) {
+        return ZR_TRUE;
+    }
+
+    if (fromType->elementTypes.length == 0 ||
+        fromType->elementTypes.length != toType->elementTypes.length) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < toType->elementTypes.length; index++) {
+        SZrInferredType *fromElementType =
+                (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&fromType->elementTypes, index);
+        SZrInferredType *toElementType =
+                (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&toType->elementTypes, index);
+
+        if (fromElementType == ZR_NULL || toElementType == ZR_NULL) {
+            if (fromElementType != toElementType) {
+                return ZR_FALSE;
+            }
+            continue;
+        }
+
+        if (!ZrParser_InferredType_IsCompatible(fromElementType, toElementType)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static EZrOwnershipQualifier ownership_qualifier_get_common(EZrOwnershipQualifier leftQualifier,
                                                             EZrOwnershipQualifier rightQualifier) {
     if (leftQualifier == rightQualifier) {
@@ -451,6 +585,7 @@ static TZrBool copy_generic_parameter_info_array(SZrState *state,
         copiedInfo.requiresClass = sourceInfo->requiresClass;
         copiedInfo.requiresStruct = sourceInfo->requiresStruct;
         copiedInfo.requiresNew = sourceInfo->requiresNew;
+        copiedInfo.requiresOwner = sourceInfo->requiresOwner;
         ZrCore_Array_Construct(&copiedInfo.constraintTypeNames);
 
         if (sourceInfo->constraintTypeNames.isValid && sourceInfo->constraintTypeNames.length > 0) {
@@ -600,6 +735,10 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
 
     if (fromType->baseType == toType->baseType &&
         inferred_type_same_base_name_matches(fromType, toType)) {
+        if (!inferred_type_element_types_are_compatible(fromType, toType)) {
+            return ZR_FALSE;
+        }
+
         if (fromType->isNullable == toType->isNullable) {
             return ZR_TRUE;
         }
@@ -610,28 +749,8 @@ TZrBool ZrParser_InferredType_IsCompatible(const SZrInferredType *fromType, cons
     }
 
     if (fromType->baseType == ZR_VALUE_TYPE_ARRAY && toType->baseType == ZR_VALUE_TYPE_ARRAY) {
-        if (toType->elementTypes.length > 0) {
-            if (fromType->elementTypes.length == 0 || fromType->elementTypes.length != toType->elementTypes.length) {
-                return ZR_FALSE;
-            }
-
-            for (TZrSize index = 0; index < toType->elementTypes.length; index++) {
-                SZrInferredType *fromElementType =
-                        (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&fromType->elementTypes, index);
-                SZrInferredType *toElementType =
-                        (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&toType->elementTypes, index);
-
-                if (fromElementType == ZR_NULL || toElementType == ZR_NULL) {
-                    if (fromElementType != toElementType) {
-                        return ZR_FALSE;
-                    }
-                    continue;
-                }
-
-                if (!ZrParser_InferredType_IsCompatible(fromElementType, toElementType)) {
-                    return ZR_FALSE;
-                }
-            }
+        if (!inferred_type_element_types_are_compatible(fromType, toType)) {
+            return ZR_FALSE;
         }
 
         if (toType->hasArraySizeConstraint) {

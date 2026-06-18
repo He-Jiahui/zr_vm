@@ -309,6 +309,69 @@ static void expect_task_compile_failure_contains(const char *source,
     destroy_task_test_state(inspectState);
 }
 
+static void expect_task_effect_failure_contains(const char *source,
+                                                const char *name,
+                                                const char *expectedMessage) {
+    SZrState *state;
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_NOT_NULL(name);
+    TEST_ASSERT_NOT_NULL(expectedMessage);
+
+    state = create_task_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_FALSE(task_source_reports_parser_error(state, source, name));
+
+    cs = create_task_test_compiler_state(state);
+    TEST_ASSERT_NOT_NULL(cs);
+
+    ast = parse_task_source_ast(state, source, name);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    cs->currentAst = ast;
+    cs->scriptAst = ast;
+    TEST_ASSERT_FALSE(compiler_validate_task_effects(cs, ast));
+    TEST_ASSERT_TRUE(cs->hasError);
+    TEST_ASSERT_NOT_NULL(cs->errorMessage);
+    TEST_ASSERT_NOT_NULL(strstr(cs->errorMessage, expectedMessage));
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_task_test_compiler_state(cs);
+    destroy_task_test_state(state);
+}
+
+static void expect_task_effect_success(const char *source, const char *name) {
+    SZrState *state;
+    SZrCompilerState *cs;
+    SZrAstNode *ast;
+
+    TEST_ASSERT_NOT_NULL(source);
+    TEST_ASSERT_NOT_NULL(name);
+
+    state = create_task_test_state();
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_FALSE(task_source_reports_parser_error(state, source, name));
+
+    cs = create_task_test_compiler_state(state);
+    TEST_ASSERT_NOT_NULL(cs);
+
+    ast = parse_task_source_ast(state, source, name);
+    TEST_ASSERT_NOT_NULL(ast);
+    TEST_ASSERT_EQUAL_INT(ZR_AST_SCRIPT, ast->type);
+
+    cs->currentAst = ast;
+    cs->scriptAst = ast;
+    TEST_ASSERT_TRUE(compiler_validate_task_effects(cs, ast));
+    TEST_ASSERT_FALSE(cs->hasError);
+
+    ZrParser_Ast_Free(state, ast);
+    destroy_task_test_compiler_state(cs);
+    destroy_task_test_state(state);
+}
+
 static const ZrLibTypeDescriptor *find_type_descriptor(const ZrLibModuleDescriptor *descriptor, const char *typeName) {
     TZrSize index;
 
@@ -599,6 +662,519 @@ static void test_loaned_value_cannot_cross_await_boundary(void) {
                                          "Loaned binding 'loaned' cannot be used after an await boundary");
 }
 
+static void test_generic_borrow_parameter_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(value: Borrow<string>): string {\n"
+            "    %async pause(): int { return 1; }\n"
+            "    var task = pause().start();\n"
+            "    %await task;\n"
+            "    return value;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_compile_failure_contains(source,
+                                         "task_generic_borrow_parameter_across_await_test.zr",
+                                         "Borrowed binding 'value' cannot be used after an await boundary");
+}
+
+static void test_generic_loan_parameter_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "class Box {}\n"
+            "%async invalid(value: Loan<Box>): int {\n"
+            "    %async pause(): int { return 1; }\n"
+            "    var task = pause().start();\n"
+            "    %await task;\n"
+            "    return value == null ? 0 : 1;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_compile_failure_contains(source,
+                                         "task_generic_loan_parameter_across_await_test.zr",
+                                         "Loaned binding 'value' cannot be used after an await boundary");
+}
+
+static void test_generic_loan_typed_local_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "class Box {}\n"
+            "%async invalid(): int {\n"
+            "    var value: Loan<Box> = null;\n"
+            "    %async pause(): int { return 1; }\n"
+            "    var task = pause().start();\n"
+            "    %await task;\n"
+            "    return value == null ? 0 : 1;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_generic_loan_typed_local_across_await_test.zr",
+                                        "Loaned binding 'value' cannot be used after an await boundary");
+}
+
+static void test_nested_generic_borrow_typed_local_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "class Box {}\n"
+            "class Holder<T> {}\n"
+            "%async invalid(): int {\n"
+            "    var value: Holder<Borrow<Box>> = null;\n"
+            "    %async pause(): int { return 1; }\n"
+            "    var task = pause().start();\n"
+            "    %await task;\n"
+            "    return value == null ? 0 : 1;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_nested_generic_borrow_typed_local_across_await_test.zr",
+                                        "Borrowed binding 'value' cannot be used after an await boundary");
+}
+
+static void test_nested_generic_loan_typed_local_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "class Box {}\n"
+            "class Holder<T> {}\n"
+            "%async invalid(): int {\n"
+            "    var value: Holder<Loan<Box>> = null;\n"
+            "    %async pause(): int { return 1; }\n"
+            "    var task = pause().start();\n"
+            "    %await task;\n"
+            "    return value == null ? 0 : 1;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_nested_generic_loan_typed_local_across_await_test.zr",
+                                        "Loaned binding 'value' cannot be used after an await boundary");
+}
+
+static void test_using_else_branch_borrow_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(value: Borrow<string>): string {\n"
+            "    using (var plugin = %import(\"missing.plugin\")) {\n"
+            "        return \"ok\";\n"
+            "    } else {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        return value;\n"
+            "    }\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_using_else_borrow_across_await_test.zr",
+                                        "Borrowed binding 'value' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_binding_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        return plugin;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_binding_across_await_test.zr",
+                                        "Plugin guard binding 'plugin' cannot be used after an await boundary");
+}
+
+static void test_dynamic_module_payload_binding_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "union DynamicModule<T> {\n"
+            "    Unavailable;\n"
+            "    @Available(m: Module);\n"
+            "}\n"
+            "%async invalid(): int {\n"
+            "    using (var [m] = %import(\"zr.plugins\")) {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        return m;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_dynamic_module_payload_across_await_test.zr",
+                                        "Plugin guard binding 'm' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_alias_assignment_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    var alias = 0;\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        alias = plugin;\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        return alias;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_alias_assignment_across_await_test.zr",
+                                        "Plugin guard binding 'alias' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_conditional_alias_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(flag: bool): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        var alias = flag ? plugin : null;\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var seen = alias == null ? 0 : 1;\n"
+            "        return seen;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_conditional_alias_across_await_test.zr",
+                                        "Plugin guard binding 'alias' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_logical_alias_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        var alias = plugin || null;\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var seen = alias == null ? 0 : 1;\n"
+            "        return seen;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_logical_alias_across_await_test.zr",
+                                        "Plugin guard binding 'alias' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_cast_alias_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        var alias = <object> plugin;\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var seen = alias == null ? 0 : 1;\n"
+            "        return seen;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_cast_alias_across_await_test.zr",
+                                        "Plugin guard binding 'alias' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_assignment_expression_alias_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        var temp = null;\n"
+            "        var alias = (temp = plugin);\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var seen = alias == null ? 0 : 1;\n"
+            "        return seen;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_assignment_expression_alias_across_await_test.zr",
+                                        "Plugin guard binding 'alias' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_generator_body_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        var gen = {{\n"
+            "            %async pause(): int { return 1; }\n"
+            "            var task = pause().start();\n"
+            "            %await task;\n"
+            "            out plugin;\n"
+            "        }};\n"
+            "        return 0;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_generator_body_across_await_test.zr",
+                                        "Plugin guard binding 'plugin' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_template_interpolation_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var text = `plugin ${plugin}`;\n"
+            "        return 0;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_template_interpolation_across_await_test.zr",
+                                        "Plugin guard binding 'plugin' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_type_query_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var reflected = %type(plugin);\n"
+            "        return 0;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_type_query_across_await_test.zr",
+                                        "Plugin guard binding 'plugin' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_array_alias_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        var alias = [plugin];\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var seen = alias == null ? 0 : 1;\n"
+            "        return seen;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_array_alias_across_await_test.zr",
+                                        "Plugin guard binding 'alias' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_object_alias_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        var alias = { handle: plugin };\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var seen = alias == null ? 0 : 1;\n"
+            "        return seen;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_object_alias_across_await_test.zr",
+                                        "Plugin guard binding 'alias' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_construct_argument_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "class Sink {\n"
+            "    pub @constructor(value) { var observed = value; }\n"
+            "}\n"
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var box = new Sink(plugin);\n"
+            "        return 0;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_construct_argument_across_await_test.zr",
+                                        "Plugin guard binding 'plugin' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_decorator_argument_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        #plugin.Decorate(plugin)#\n"
+            "        func nested(): int { return 1; }\n"
+            "        return 0;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_decorator_argument_across_await_test.zr",
+                                        "Plugin guard binding 'plugin' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_if_branch_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(flag: bool): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        if (flag) {\n"
+            "            return plugin == null ? 0 : 1;\n"
+            "        } else {\n"
+            "            return 0;\n"
+            "        }\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_if_branch_across_await_test.zr",
+                                        "Plugin guard binding 'plugin' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_block_expression_alias_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        var alias = {\n"
+            "            var marker = 0;\n"
+            "            plugin;\n"
+            "        };\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var seen = alias == null ? 0 : 1;\n"
+            "        return seen;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_block_expression_alias_across_await_test.zr",
+                                        "Plugin guard binding 'alias' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_generic_call_argument_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var seen = sink<plugin + 0>();\n"
+            "        return seen;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_generic_call_argument_across_await_test.zr",
+                                        "Plugin guard binding 'plugin' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_generic_call_type_argument_cannot_cross_await_boundary(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        var seen = sink<plugin.Vector>();\n"
+            "        return seen;\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_generic_call_type_argument_across_await_test.zr",
+                                        "Plugin guard binding 'plugin' cannot be used after an await boundary");
+}
+
+static void test_plugin_guard_nested_function_after_parent_await_cannot_read_binding(void) {
+    static const char *source =
+            "%async invalid(): int {\n"
+            "    using (var plugin = %import(\"zr.plugins\")) {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        %await task;\n"
+            "        func nested(): int {\n"
+            "            return plugin == null ? 0 : 1;\n"
+            "        }\n"
+            "        return nested();\n"
+            "    }\n"
+            "    return 0;\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(source,
+                                        "task_plugin_guard_nested_function_after_parent_await_test.zr",
+                                        "Plugin guard binding 'plugin' cannot be used after an await boundary");
+}
+
+static void test_nested_function_after_parent_await_allows_fresh_local_binding(void) {
+    static const char *source =
+            "%async valid(): int {\n"
+            "    %async pause(): int { return 1; }\n"
+            "    var task = pause().start();\n"
+            "    %await task;\n"
+            "    func nested(): int {\n"
+            "        var local = 1;\n"
+            "        return local;\n"
+            "    }\n"
+            "    return nested();\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_success(source,
+                               "task_nested_function_after_parent_await_fresh_local_test.zr");
+}
+
+static void test_task_effects_reject_await_inside_class_method(void) {
+    static const char *source =
+            "class Worker {\n"
+            "    run(): int {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        return %await task;\n"
+            "    }\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(
+            source,
+            "task_class_method_await_outside_async_context_test.zr",
+            "%await is only allowed inside %async bodies or scheduler-managed top-level coroutines");
+}
+
+static void test_task_effects_reject_await_inside_struct_method(void) {
+    static const char *source =
+            "struct Worker {\n"
+            "    run(): int {\n"
+            "        %async pause(): int { return 1; }\n"
+            "        var task = pause().start();\n"
+            "        return %await task;\n"
+            "    }\n"
+            "}\n"
+            "return 0;\n";
+    expect_task_effect_failure_contains(
+            source,
+            "task_struct_method_await_outside_async_context_test.zr",
+            "%await is only allowed inside %async bodies or scheduler-managed top-level coroutines");
+}
+
 static void test_task_runner_start_and_await_execute_on_default_scheduler(void) {
     static const char *source =
             "%async addOne(value: int): int {\n"
@@ -703,6 +1279,34 @@ int main(void) {
     RUN_TEST(test_borrowed_value_used_before_await_still_compiles);
     RUN_TEST(test_local_borrowed_value_cannot_cross_await_boundary);
     RUN_TEST(test_loaned_value_cannot_cross_await_boundary);
+    RUN_TEST(test_generic_borrow_parameter_cannot_cross_await_boundary);
+    RUN_TEST(test_generic_loan_parameter_cannot_cross_await_boundary);
+    RUN_TEST(test_generic_loan_typed_local_cannot_cross_await_boundary);
+    RUN_TEST(test_nested_generic_borrow_typed_local_cannot_cross_await_boundary);
+    RUN_TEST(test_nested_generic_loan_typed_local_cannot_cross_await_boundary);
+    RUN_TEST(test_using_else_branch_borrow_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_binding_cannot_cross_await_boundary);
+    RUN_TEST(test_dynamic_module_payload_binding_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_alias_assignment_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_conditional_alias_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_logical_alias_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_cast_alias_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_assignment_expression_alias_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_generator_body_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_template_interpolation_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_type_query_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_array_alias_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_object_alias_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_construct_argument_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_decorator_argument_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_if_branch_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_block_expression_alias_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_generic_call_argument_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_generic_call_type_argument_cannot_cross_await_boundary);
+    RUN_TEST(test_plugin_guard_nested_function_after_parent_await_cannot_read_binding);
+    RUN_TEST(test_nested_function_after_parent_await_allows_fresh_local_binding);
+    RUN_TEST(test_task_effects_reject_await_inside_class_method);
+    RUN_TEST(test_task_effects_reject_await_inside_struct_method);
     RUN_TEST(test_task_runner_start_and_await_execute_on_default_scheduler);
     RUN_TEST(test_task_runner_start_and_await_execute_with_explicit_async_return_type);
     RUN_TEST(test_coroutine_scheduler_manual_pump_executes_started_runner);

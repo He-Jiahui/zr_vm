@@ -31,6 +31,8 @@ static const TZrChar *backend_aot_llvm_ownership_helper_name(TZrUInt32 opcode) {
             return "ZrLibrary_AotRuntime_OwnBorrow";
         case ZR_INSTRUCTION_ENUM(OWN_LOAN):
             return "ZrLibrary_AotRuntime_OwnLoan";
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
+            return "ZrLibrary_AotRuntime_OwnReturnLoan";
         case ZR_INSTRUCTION_ENUM(OWN_SHARE):
             return "ZrLibrary_AotRuntime_OwnShare";
         case ZR_INSTRUCTION_ENUM(OWN_WEAK):

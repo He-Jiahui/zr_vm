@@ -997,6 +997,7 @@ TZrUInt32 emit_load_global_identifier(SZrCompilerState *cs, SZrString *name) {
                                           (TZrUInt16)globalSlot,
                                           (TZrUInt16)globalSlot,
                                           (TZrUInt16)memberId));
+    cs->lastExpressionSlot = globalSlot;
     return globalSlot;
 }
 
@@ -1360,15 +1361,16 @@ cleanup:
     return success;
 }
 
-ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompilerState *cs,
-                                                                     SZrString *moduleName,
-                                                                     SZrFileRange location) {
+static TZrUInt32 compiler_emit_import_module_expression_with_helper(SZrCompilerState *cs,
+                                                                    SZrString *moduleName,
+                                                                    FZrNativeFunction nativeFunction,
+                                                                    SZrFileRange location) {
     SZrClosureNative *importClosure;
     SZrTypeValue importCallable;
     TZrUInt32 functionSlot;
     TZrUInt32 argumentSlot;
 
-    if (cs == ZR_NULL || moduleName == ZR_NULL || cs->hasError) {
+    if (cs == ZR_NULL || moduleName == ZR_NULL || nativeFunction == ZR_NULL || cs->hasError) {
         return ZR_PARSER_SLOT_NONE;
     }
 
@@ -1377,7 +1379,7 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompiler
         ZrParser_Compiler_Error(cs, "failed to create internal import callable", location);
         return ZR_PARSER_SLOT_NONE;
     }
-    importClosure->nativeFunction = ZrCore_Module_ImportNativeEntry;
+    importClosure->nativeFunction = nativeFunction;
     ZrCore_RawObject_MarkAsPermanent(cs->state, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
 
     ZrCore_Value_InitAsRawObject(cs->state, &importCallable, ZR_CAST_RAW_OBJECT_AS_SUPER(importClosure));
@@ -1396,6 +1398,24 @@ ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompiler
                                           1));
     ZrParser_Compiler_TrimStackToSlot(cs, functionSlot);
     return functionSlot;
+}
+
+ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompilerState *cs,
+                                                                     SZrString *moduleName,
+                                                                     SZrFileRange location) {
+    return compiler_emit_import_module_expression_with_helper(cs,
+                                                             moduleName,
+                                                             ZrCore_Module_ImportNativeEntry,
+                                                             location);
+}
+
+ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportGuardModuleExpression(SZrCompilerState *cs,
+                                                                          SZrString *moduleName,
+                                                                          SZrFileRange location) {
+    return compiler_emit_import_module_expression_with_helper(cs,
+                                                             moduleName,
+                                                             ZrCore_Module_ImportGuardNativeEntry,
+                                                             location);
 }
 
 ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerState *cs,

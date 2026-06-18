@@ -191,7 +191,7 @@ static SZrAstNode *try_parse_function_declaration_from_current(SZrParserState *p
     return ZR_NULL;
 }
 
-SZrAstNode *parse_block(SZrParserState *ps) {
+static SZrAstNode *parse_block_impl(SZrParserState *ps, const TZrChar *declarationKind) {
     SZrFileRange startLoc = get_current_token_location(ps);
     SZrFileRange endLoc;
     expect_token(ps, ZR_TK_LBRACE);
@@ -214,7 +214,11 @@ SZrAstNode *parse_block(SZrParserState *ps) {
 
     if (ps->lexer->t.token != ZR_TK_RBRACE) {
         if (ps->lexer->t.token == ZR_TK_EOS) {
-            report_missing_block_close(ps, startLoc);
+            if (declarationKind != ZR_NULL) {
+                report_missing_declaration_body_close(ps, declarationKind, startLoc);
+            } else {
+                report_missing_block_close(ps, startLoc);
+            }
         } else {
             expect_token(ps, ZR_TK_RBRACE);
         }
@@ -235,6 +239,14 @@ SZrAstNode *parse_block(SZrParserState *ps) {
     node->data.block.body = statements;
     node->data.block.isStatement = ZR_TRUE;
     return node;
+}
+
+SZrAstNode *parse_block(SZrParserState *ps) {
+    return parse_block_impl(ps, ZR_NULL);
+}
+
+SZrAstNode *parse_declaration_body_block(SZrParserState *ps, const TZrChar *declarationKind) {
+    return parse_block_impl(ps, declarationKind);
 }
 
 // 解析表达式语句
@@ -259,6 +271,34 @@ SZrAstNode *parse_expression_statement(SZrParserState *ps) {
 
     node->data.expressionStatement.expr = expr;
     return node;
+}
+
+static SZrAstNode *parse_decorator_expression_statement(SZrParserState *ps) {
+    SZrAstNode *decorator = parse_decorator_expression(ps);
+    SZrAstNode *stmt;
+
+    if (decorator == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    stmt = create_ast_node(ps, ZR_AST_EXPRESSION_STATEMENT, decorator->location);
+    if (stmt == ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, decorator);
+        return ZR_NULL;
+    }
+
+    stmt->data.expressionStatement.expr = decorator;
+    return stmt;
+}
+
+static SZrAstNode *parse_decorated_statement(SZrParserState *ps) {
+    SZrAstNode *decoratedFunction = try_parse_function_declaration_from_current(ps);
+
+    if (decoratedFunction != ZR_NULL) {
+        return decoratedFunction;
+    }
+
+    return parse_decorator_expression_statement(ps);
 }
 
 // 解析返回语句
@@ -352,7 +392,11 @@ SZrAstNode *parse_switch_expression(SZrParserState *ps) {
                 }
             } else {
                 // 普通 case
-                SZrAstNode *value = parse_expression(ps);
+                SZrAstNode *value = try_parse_switch_move_variant_pattern_case(ps);
+                if (value == ZR_NULL) {
+                    value = parse_expression(ps);
+                    value = try_parse_switch_struct_variant_payload_case(ps, value);
+                }
                 if (ps->lexer->t.token != ZR_TK_RPAREN) {
                     report_missing_switch_case_header_close(ps, get_current_token_location(ps));
                     if (value != ZR_NULL) {
@@ -761,21 +805,84 @@ SZrAstNode *parse_try_catch_finally_statement(SZrParserState *ps) {
     return node;
 }
 
+static TZrBool using_resource_is_import_expression(SZrAstNode *resource);
+static TZrBool using_pattern_is_plain_identifier(SZrAstNode *pattern);
+static TZrBool using_pattern_has_guard_shape(SZrAstNode *pattern);
+static TZrBool using_no_block_pattern_starts_here(SZrParserState *ps);
+static SZrAstNode *parse_using_binding_pattern(SZrParserState *ps);
+static SZrAstNode *parse_using_binding_identifier(SZrParserState *ps);
+static SZrAstNode *parse_using_array_destructuring_pattern(SZrParserState *ps);
+static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps);
+
 static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange startLoc) {
     SZrAstNode *resource = ZR_NULL;
     SZrAstNode *body = ZR_NULL;
+    SZrAstNode *pattern = ZR_NULL;
+    SZrType *guardTypeInfo = ZR_NULL;
+    SZrAstNode *elseBody = ZR_NULL;
     TZrBool isBlockScoped = ZR_FALSE;
+    EZrUsingGuardKind guardKind = ZR_USING_GUARD_DROP;
     SZrAstNode *node;
 
     if (consume_token(ps, ZR_TK_LPAREN)) {
+        if (consume_token(ps, ZR_TK_VAR)) {
+            guardKind = ZR_USING_GUARD_PATTERN;
+            pattern = parse_using_binding_pattern(ps);
+            if (pattern == ZR_NULL) {
+                report_using_binder_invalid(ps, get_current_token_location(ps));
+                return ZR_NULL;
+            }
+            if (!using_pattern_has_guard_shape(pattern)) {
+                report_using_binder_invalid(ps, pattern->location);
+                ZrParser_Ast_Free(ps->state, pattern);
+                return ZR_NULL;
+            }
+            if (consume_token(ps, ZR_TK_COLON)) {
+                guardTypeInfo = parse_type(ps);
+                if (guardTypeInfo == ZR_NULL) {
+                    report_error(ps, "Expected union variant annotation after ':' in using pattern");
+                    ZrParser_Ast_Free(ps->state, pattern);
+                    return ZR_NULL;
+                }
+            }
+            if (ps->lexer->t.token != ZR_TK_EQUALS) {
+                report_missing_using_resource_close(ps, get_current_token_location(ps));
+                ZrParser_Ast_Free(ps->state, pattern);
+                if (guardTypeInfo != ZR_NULL) {
+                    free_owned_type(ps->state, guardTypeInfo);
+                }
+                return ZR_NULL;
+            }
+            consume_token(ps, ZR_TK_EQUALS);
+        }
+
         resource = parse_expression(ps);
         if (resource == ZR_NULL) {
+            if (pattern != ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, pattern);
+            }
+            if (guardTypeInfo != ZR_NULL) {
+                free_owned_type(ps->state, guardTypeInfo);
+            }
             return ZR_NULL;
+        }
+
+        if (guardKind == ZR_USING_GUARD_PATTERN &&
+            guardTypeInfo == ZR_NULL &&
+            using_pattern_is_plain_identifier(pattern) &&
+            using_resource_is_import_expression(resource)) {
+            guardKind = ZR_USING_GUARD_PLUGIN;
         }
 
         if (ps->lexer->t.token != ZR_TK_RPAREN) {
             report_missing_using_resource_close(ps, get_current_token_location(ps));
             ZrParser_Ast_Free(ps->state, resource);
+            if (pattern != ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, pattern);
+            }
+            if (guardTypeInfo != ZR_NULL) {
+                free_owned_type(ps->state, guardTypeInfo);
+            }
             return ZR_NULL;
         }
 
@@ -784,16 +891,115 @@ static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange s
         if (ps->lexer->t.token != ZR_TK_LBRACE) {
             report_missing_statement_body_open(ps, "using statement", get_current_token_location(ps));
             ZrParser_Ast_Free(ps->state, resource);
+            if (pattern != ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, pattern);
+            }
+            if (guardTypeInfo != ZR_NULL) {
+                free_owned_type(ps->state, guardTypeInfo);
+            }
             return ZR_NULL;
         }
 
         body = parse_block(ps);
         if (body == ZR_NULL) {
             ZrParser_Ast_Free(ps->state, resource);
+            if (pattern != ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, pattern);
+            }
+            if (guardTypeInfo != ZR_NULL) {
+                free_owned_type(ps->state, guardTypeInfo);
+            }
             return ZR_NULL;
         }
 
+        if ((guardKind == ZR_USING_GUARD_PATTERN || guardKind == ZR_USING_GUARD_PLUGIN) &&
+            consume_token(ps, ZR_TK_ELSE)) {
+            if (ps->lexer->t.token != ZR_TK_LBRACE) {
+                report_missing_statement_body_open(ps, "using else", get_current_token_location(ps));
+                ZrParser_Ast_Free(ps->state, resource);
+                ZrParser_Ast_Free(ps->state, pattern);
+                if (guardTypeInfo != ZR_NULL) {
+                    free_owned_type(ps->state, guardTypeInfo);
+                }
+                ZrParser_Ast_Free(ps->state, body);
+                return ZR_NULL;
+            }
+            elseBody = parse_block(ps);
+            if (elseBody == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, resource);
+                ZrParser_Ast_Free(ps->state, pattern);
+                if (guardTypeInfo != ZR_NULL) {
+                    free_owned_type(ps->state, guardTypeInfo);
+                }
+                ZrParser_Ast_Free(ps->state, body);
+                return ZR_NULL;
+            }
+        }
+
+        if (guardKind == ZR_USING_GUARD_DROP && consume_token(ps, ZR_TK_ELSE)) {
+            SZrAstNode *invalidElseBody = ZR_NULL;
+            report_error(ps,
+                         "using_else_without_guard: using else requires a guard binder; use `using (var name = %import(...))` or a union variant pattern");
+            if (ps->lexer->t.token != ZR_TK_LBRACE) {
+                report_missing_statement_body_open(ps, "using else", get_current_token_location(ps));
+                ZrParser_Ast_Free(ps->state, resource);
+                ZrParser_Ast_Free(ps->state, body);
+                return ZR_NULL;
+            }
+            invalidElseBody = parse_block(ps);
+            if (invalidElseBody == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, resource);
+                ZrParser_Ast_Free(ps->state, body);
+                return ZR_NULL;
+            }
+            ZrParser_Ast_Free(ps->state, invalidElseBody);
+        }
+
         isBlockScoped = ZR_TRUE;
+    } else if (using_no_block_pattern_starts_here(ps)) {
+        guardKind = ZR_USING_GUARD_PATTERN;
+        pattern = parse_using_binding_pattern(ps);
+        if (pattern == ZR_NULL) {
+            report_using_binder_invalid(ps, get_current_token_location(ps));
+            return ZR_NULL;
+        }
+        if (!using_pattern_has_guard_shape(pattern)) {
+            report_using_binder_invalid(ps, pattern->location);
+            ZrParser_Ast_Free(ps->state, pattern);
+            return ZR_NULL;
+        }
+        if (consume_token(ps, ZR_TK_COLON)) {
+            guardTypeInfo = parse_type(ps);
+            if (guardTypeInfo == ZR_NULL) {
+                report_error(ps, "Expected union variant annotation after ':' in using pattern");
+                ZrParser_Ast_Free(ps->state, pattern);
+                return ZR_NULL;
+            }
+        }
+        if (ps->lexer->t.token != ZR_TK_EQUALS) {
+            report_missing_using_resource_close(ps, get_current_token_location(ps));
+            ZrParser_Ast_Free(ps->state, pattern);
+            if (guardTypeInfo != ZR_NULL) {
+                free_owned_type(ps->state, guardTypeInfo);
+            }
+            return ZR_NULL;
+        }
+        consume_token(ps, ZR_TK_EQUALS);
+
+        resource = parse_expression(ps);
+        if (resource == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, pattern);
+            if (guardTypeInfo != ZR_NULL) {
+                free_owned_type(ps->state, guardTypeInfo);
+            }
+            return ZR_NULL;
+        }
+
+        if (ps->lexer->t.token != ZR_TK_SEMICOLON) {
+            report_missing_statement_semicolon(ps, "using", get_current_token_location(ps));
+        } else {
+            consume_token(ps, ZR_TK_SEMICOLON);
+        }
     } else {
         resource = parse_expression(ps);
         if (resource == ZR_NULL) {
@@ -811,12 +1017,299 @@ static SZrAstNode *parse_using_statement_body(SZrParserState *ps, SZrFileRange s
     if (node == ZR_NULL) {
         ZrParser_Ast_Free(ps->state, resource);
         ZrParser_Ast_Free(ps->state, body);
+        if (pattern != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, pattern);
+        }
+        if (guardTypeInfo != ZR_NULL) {
+            free_owned_type(ps->state, guardTypeInfo);
+        }
+        if (elseBody != ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, elseBody);
+        }
         return ZR_NULL;
     }
 
     node->data.usingStatement.resource = resource;
     node->data.usingStatement.body = body;
     node->data.usingStatement.isBlockScoped = isBlockScoped;
+    node->data.usingStatement.guardKind = guardKind;
+    node->data.usingStatement.pattern = pattern;
+    node->data.usingStatement.guardTypeInfo = guardTypeInfo;
+    node->data.usingStatement.elseBody = elseBody;
+    return node;
+}
+
+static TZrBool using_resource_is_import_expression(SZrAstNode *resource) {
+    return resource != ZR_NULL && resource->type == ZR_AST_IMPORT_EXPRESSION;
+}
+
+static TZrBool using_pattern_is_plain_identifier(SZrAstNode *pattern) {
+    return pattern != ZR_NULL &&
+           pattern->type == ZR_AST_IDENTIFIER_LITERAL &&
+           pattern->data.identifier.name != ZR_NULL;
+}
+
+static TZrBool using_pattern_has_guard_shape(SZrAstNode *pattern) {
+    if (using_pattern_is_plain_identifier(pattern)) {
+        return ZR_TRUE;
+    }
+
+    return pattern != ZR_NULL &&
+           (pattern->type == ZR_AST_PRIMARY_EXPRESSION ||
+            pattern->type == ZR_AST_DESTRUCTURING_ARRAY ||
+            pattern->type == ZR_AST_OBJECT_LITERAL);
+}
+
+static TZrBool using_no_block_pattern_starts_here(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrBool savedSuppressErrorOutput;
+    TZrParserErrorCallback savedErrorCallback;
+    TZrParserStructuredErrorCallback savedStructuredErrorCallback;
+    TZrPtr savedErrorUserData;
+    SZrAstNode *pattern;
+    SZrType *guardTypeInfo = ZR_NULL;
+    TZrBool result = ZR_FALSE;
+
+    if (ps == ZR_NULL ||
+        (ps->lexer->t.token != ZR_TK_LBRACKET && ps->lexer->t.token != ZR_TK_LBRACE)) {
+        return ZR_FALSE;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    savedSuppressErrorOutput = ps->suppressErrorOutput;
+    savedErrorCallback = ps->errorCallback;
+    savedStructuredErrorCallback = ps->structuredErrorCallback;
+    savedErrorUserData = ps->errorUserData;
+    ps->suppressErrorOutput = ZR_TRUE;
+    ps->errorCallback = ZR_NULL;
+    ps->structuredErrorCallback = ZR_NULL;
+    ps->errorUserData = ZR_NULL;
+    ps->hasError = ZR_FALSE;
+    ps->errorMessage = ZR_NULL;
+
+    pattern = parse_using_binding_pattern(ps);
+    if (pattern != ZR_NULL && using_pattern_has_guard_shape(pattern)) {
+        if (consume_token(ps, ZR_TK_COLON)) {
+            guardTypeInfo = parse_type(ps);
+        }
+        result = (TZrBool)((guardTypeInfo != ZR_NULL || ps->lexer->t.token != ZR_TK_COLON) &&
+                           ps->lexer->t.token == ZR_TK_EQUALS);
+    }
+
+    if (guardTypeInfo != ZR_NULL) {
+        free_owned_type(ps->state, guardTypeInfo);
+    }
+    if (pattern != ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, pattern);
+    }
+    ps->suppressErrorOutput = savedSuppressErrorOutput;
+    ps->errorCallback = savedErrorCallback;
+    ps->structuredErrorCallback = savedStructuredErrorCallback;
+    ps->errorUserData = savedErrorUserData;
+    restore_parser_cursor(ps, &cursor);
+    return result;
+}
+
+static SZrAstNode *parse_using_binding_pattern(SZrParserState *ps) {
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    switch (ps->lexer->t.token) {
+        case ZR_TK_IDENTIFIER:
+        case ZR_TK_TEST:
+            if (peek_token(ps) == ZR_TK_LPAREN || peek_token(ps) == ZR_TK_DOT) {
+                return parse_primary_expression(ps);
+            }
+            return parse_identifier(ps);
+        case ZR_TK_LBRACKET:
+            return parse_using_array_destructuring_pattern(ps);
+        case ZR_TK_LBRACE:
+            return parse_using_object_destructuring_pattern(ps);
+        default:
+            return ZR_NULL;
+    }
+}
+
+static TZrBool using_current_token_is_move_binding_marker(SZrParserState *ps) {
+    EZrToken lookahead;
+
+    if (ps == ZR_NULL ||
+        ps->lexer->t.token != ZR_TK_IDENTIFIER ||
+        !current_identifier_equals(ps, "move")) {
+        return ZR_FALSE;
+    }
+
+    lookahead = peek_token(ps);
+    return (TZrBool)(lookahead == ZR_TK_IDENTIFIER || lookahead == ZR_TK_TEST);
+}
+
+static SZrAstNode *parse_using_binding_identifier(SZrParserState *ps) {
+    TZrBool isMoveBinding = ZR_FALSE;
+    SZrFileRange moveLocation;
+    SZrAstNode *identifier;
+
+    if (using_current_token_is_move_binding_marker(ps)) {
+        isMoveBinding = ZR_TRUE;
+        moveLocation = get_current_location(ps);
+        ZrParser_Lexer_Next(ps->lexer);
+    } else {
+        moveLocation = get_current_location(ps);
+    }
+
+    identifier = parse_identifier(ps);
+    if (identifier != ZR_NULL && isMoveBinding) {
+        identifier->data.identifier.isMoveBinding = ZR_TRUE;
+        identifier->location = ZrParser_FileRange_Merge(moveLocation, identifier->location);
+    }
+
+    return identifier;
+}
+
+static SZrAstNode *parse_using_array_destructuring_pattern(SZrParserState *ps) {
+    SZrFileRange startLoc = get_current_location(ps);
+    SZrAstNodeArray *keys;
+    SZrAstNode *node;
+    SZrFileRange endLoc;
+    SZrFileRange destructuringLoc;
+
+    expect_token(ps, ZR_TK_LBRACKET);
+    ZrParser_Lexer_Next(ps->lexer);
+
+    keys = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    if (keys == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (ps->lexer->t.token != ZR_TK_RBRACKET) {
+        SZrAstNode *first = parse_using_binding_identifier(ps);
+        if (first == ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, keys);
+            return ZR_NULL;
+        }
+        ZrParser_AstNodeArray_Add(ps->state, keys, first);
+
+        while (consume_token(ps, ZR_TK_COMMA)) {
+            SZrAstNode *key;
+
+            if (ps->lexer->t.token == ZR_TK_RBRACKET) {
+                break;
+            }
+
+            key = parse_using_binding_identifier(ps);
+            if (key == ZR_NULL) {
+                free_ast_node_array_with_elements(ps->state, keys);
+                return ZR_NULL;
+            }
+            ZrParser_AstNodeArray_Add(ps->state, keys, key);
+        }
+    }
+
+    expect_token(ps, ZR_TK_RBRACKET);
+    if (!consume_token(ps, ZR_TK_RBRACKET)) {
+        free_ast_node_array_with_elements(ps->state, keys);
+        return ZR_NULL;
+    }
+
+    endLoc = get_current_location(ps);
+    destructuringLoc = ZrParser_FileRange_Merge(startLoc, endLoc);
+    node = create_ast_node(ps, ZR_AST_DESTRUCTURING_ARRAY, destructuringLoc);
+    if (node == ZR_NULL) {
+        free_ast_node_array_with_elements(ps->state, keys);
+        return ZR_NULL;
+    }
+
+    node->data.destructuringArray.keys = keys;
+    return node;
+}
+
+static SZrAstNode *parse_using_object_destructuring_pattern(SZrParserState *ps) {
+    SZrFileRange startLoc;
+    SZrAstNodeArray *properties;
+    SZrAstNode *node;
+
+    if (ps == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    startLoc = get_current_location(ps);
+    expect_token(ps, ZR_TK_LBRACE);
+    ZrParser_Lexer_Next(ps->lexer);
+
+    properties = ZrParser_AstNodeArray_New(ps->state, ZR_PARSER_INITIAL_CAPACITY_TINY);
+    if (properties == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
+        SZrAstNode *first = parse_using_binding_identifier(ps);
+        SZrAstNode *key;
+        SZrAstNode *value;
+        SZrAstNode *kvNode;
+        SZrFileRange kvLoc;
+
+        if (first == ZR_NULL) {
+            free_ast_node_array_with_elements(ps->state, properties);
+            return ZR_NULL;
+        }
+
+        if (consume_token(ps, ZR_TK_COLON)) {
+            key = parse_identifier(ps);
+            value = first;
+            if (key == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, value);
+                free_ast_node_array_with_elements(ps->state, properties);
+                return ZR_NULL;
+            }
+        } else {
+            key = create_identifier_node_with_location(ps,
+                                                       first->data.identifier.name,
+                                                       first->location);
+            value = first;
+            if (key == ZR_NULL) {
+                ZrParser_Ast_Free(ps->state, value);
+                free_ast_node_array_with_elements(ps->state, properties);
+                return ZR_NULL;
+            }
+        }
+
+        kvLoc = ZrParser_FileRange_Merge(key->location, value->location);
+        kvNode = create_ast_node(ps, ZR_AST_KEY_VALUE_PAIR, kvLoc);
+        if (kvNode == ZR_NULL) {
+            ZrParser_Ast_Free(ps->state, key);
+            ZrParser_Ast_Free(ps->state, value);
+            free_ast_node_array_with_elements(ps->state, properties);
+            return ZR_NULL;
+        }
+        kvNode->data.keyValuePair.key = key;
+        kvNode->data.keyValuePair.value = value;
+        kvNode->data.keyValuePair.keyIsComputed = ZR_FALSE;
+        ZrParser_AstNodeArray_Add(ps->state, properties, kvNode);
+
+        if (ps->lexer->t.token == ZR_TK_COMMA || ps->lexer->t.token == ZR_TK_SEMICOLON) {
+            ZrParser_Lexer_Next(ps->lexer);
+            continue;
+        }
+        if (ps->lexer->t.token != ZR_TK_RBRACE) {
+            report_error(ps, "Expected ',' or '}' in using object destructuring pattern");
+            free_ast_node_array_with_elements(ps->state, properties);
+            return ZR_NULL;
+        }
+    }
+
+    if (ps->lexer->t.token != ZR_TK_RBRACE) {
+        report_missing_object_close(ps, startLoc);
+        free_ast_node_array_with_elements(ps->state, properties);
+        return ZR_NULL;
+    }
+    consume_token(ps, ZR_TK_RBRACE);
+
+    node = create_ast_node(ps, ZR_AST_OBJECT_LITERAL, ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
+    if (node == ZR_NULL) {
+        free_ast_node_array_with_elements(ps->state, properties);
+        return ZR_NULL;
+    }
+    node->data.objectLiteral.properties = properties;
     return node;
 }
 
@@ -892,15 +1385,11 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
         case ZR_TK_VAR:
             return parse_variable_declaration(ps);
 
-        case ZR_TK_USING: {
-            SZrAstNode *legacyUsing;
-            report_error(ps, "Legacy bare using syntax is not supported; use '%using'");
-            legacyUsing = parse_using_statement(ps);
-            if (legacyUsing != ZR_NULL) {
-                ZrParser_Ast_Free(ps->state, legacyUsing);
-            }
-            return ZR_NULL;
-        }
+        case ZR_TK_USING:
+            return parse_using_statement(ps);
+
+        case ZR_TK_SHARP:
+            return parse_decorated_statement(ps);
 
         case ZR_TK_IF:
             return parse_if_expression(ps);
@@ -1081,7 +1570,7 @@ SZrAstNode *parse_statement(SZrParserState *ps) {
 SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
     EZrToken token = ps->lexer->t.token;
 
-    // 检查是否是可见性修饰符（pub/pri/pro），后面应该跟 var/struct/class/interface/enum
+    // 检查是否是可见性修饰符（pub/pri/pro），后面应该跟 var/struct/class/interface/enum/union
     if (token == ZR_TK_PUB || token == ZR_TK_PRI || token == ZR_TK_PRO) {
         // 使用 peek_token 查看下一个 token，不消费当前 token
         EZrToken nextToken = peek_token(ps);
@@ -1167,6 +1656,8 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
                 return parse_interface_declaration(ps);
             case ZR_TK_ENUM:
                 return parse_enum_declaration(ps);
+            case ZR_TK_UNION:
+                return parse_union_declaration(ps);
             default:
                 // 如果后面不是声明类型，报告错误
                 report_error(ps, "Expected declaration after access modifier");
@@ -1183,15 +1674,8 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
         case ZR_TK_VAR:
             return parse_variable_declaration(ps);
 
-        case ZR_TK_USING: {
-            SZrAstNode *legacyUsing;
-            report_error(ps, "Legacy bare using syntax is not supported; use '%using'");
-            legacyUsing = parse_using_statement(ps);
-            if (legacyUsing != ZR_NULL) {
-                ZrParser_Ast_Free(ps->state, legacyUsing);
-            }
-            return ZR_NULL;
-        }
+        case ZR_TK_USING:
+            return parse_using_statement(ps);
 
         case ZR_TK_STRUCT:
             return parse_struct_declaration(ps);
@@ -1211,6 +1695,9 @@ SZrAstNode *parse_top_level_statement(SZrParserState *ps) {
 
         case ZR_TK_ENUM:
             return parse_enum_declaration(ps);
+
+        case ZR_TK_UNION:
+            return parse_union_declaration(ps);
 
         case ZR_TK_PERCENT:
             if (current_percent_directive_equals(ps, "using")) {

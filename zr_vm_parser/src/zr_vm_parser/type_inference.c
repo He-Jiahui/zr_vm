@@ -123,6 +123,623 @@ static TZrBool type_inference_report_move_only_struct_copy(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
+static TZrBool ownership_qualifier_is_borrow_like(EZrOwnershipQualifier qualifier) {
+    return qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+           qualifier == ZR_OWNERSHIP_QUALIFIER_LOANED;
+}
+
+static TZrBool ownership_qualifier_is_direct_owner(EZrOwnershipQualifier qualifier) {
+    return qualifier == ZR_OWNERSHIP_QUALIFIER_UNIQUE ||
+           qualifier == ZR_OWNERSHIP_QUALIFIER_SHARED;
+}
+
+static TZrBool type_inference_assignment_target_accepts_borrow_like(EZrOwnershipQualifier targetQualifier,
+                                                                    EZrOwnershipQualifier sourceQualifier) {
+    if (sourceQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED) {
+        return targetQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+    }
+
+    if (sourceQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
+        return targetQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED ||
+               targetQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED;
+    }
+
+    return ZR_TRUE;
+}
+
+static const TZrChar *type_inference_direct_ownership_flow_diagnostic_message(
+        EZrOwnershipQualifier targetQualifier,
+        EZrOwnershipQualifier sourceQualifier) {
+    if (ownership_qualifier_is_borrow_like(sourceQualifier) &&
+        !type_inference_assignment_target_accepts_borrow_like(targetQualifier,
+                                                              sourceQualifier)) {
+        if (sourceQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
+            return "Loaned value cannot escape its owner";
+        }
+        return "Borrowed value cannot escape its owner";
+    }
+
+    if (targetQualifier == ZR_OWNERSHIP_QUALIFIER_NONE &&
+        ownership_qualifier_is_direct_owner(sourceQualifier)) {
+        return "Owned value cannot flow into a plain GC value implicitly";
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool type_inference_ownership_flow_shells_match(const SZrInferredType *targetType,
+                                                          const SZrInferredType *sourceType) {
+    if (targetType == ZR_NULL || sourceType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (targetType->baseType != sourceType->baseType ||
+        targetType->elementTypes.length != sourceType->elementTypes.length) {
+        return ZR_FALSE;
+    }
+
+    if (targetType->typeName == sourceType->typeName) {
+        return ZR_TRUE;
+    }
+
+    if (targetType->typeName == ZR_NULL || sourceType->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return ZrCore_String_Equal(targetType->typeName, sourceType->typeName);
+}
+
+const TZrChar *type_inference_ownership_flow_diagnostic_message(const SZrInferredType *targetType,
+                                                                const SZrInferredType *sourceType) {
+    const TZrChar *directMessage;
+
+    if (targetType == ZR_NULL || sourceType == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    directMessage = type_inference_direct_ownership_flow_diagnostic_message(
+            targetType->ownershipQualifier,
+            sourceType->ownershipQualifier);
+    if (directMessage != ZR_NULL) {
+        return directMessage;
+    }
+
+    if (!type_inference_ownership_flow_shells_match(targetType, sourceType)) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < targetType->elementTypes.length; index++) {
+        SZrInferredType *targetElementType =
+                (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&targetType->elementTypes, index);
+        SZrInferredType *sourceElementType =
+                (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&sourceType->elementTypes, index);
+        const TZrChar *nestedMessage =
+                type_inference_ownership_flow_diagnostic_message(targetElementType, sourceElementType);
+        if (nestedMessage != ZR_NULL) {
+            return nestedMessage;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool type_inference_report_ownership_flow_escape(SZrCompilerState *cs,
+                                                           const SZrInferredType *targetType,
+                                                           const SZrInferredType *sourceType,
+                                                           SZrFileRange location) {
+    const TZrChar *diagnosticMessage;
+
+    if (cs == ZR_NULL || targetType == ZR_NULL || sourceType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    diagnosticMessage = type_inference_ownership_flow_diagnostic_message(targetType, sourceType);
+    if (diagnosticMessage == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    ZrParser_Compiler_Error(cs, diagnosticMessage, location);
+    return ZR_FALSE;
+}
+
+static SZrString *union_constructor_lookup_name(SZrCompilerState *cs, SZrString *typeName) {
+    SZrString *baseName = ZR_NULL;
+    SZrArray argumentTypeNames;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Array_Construct(&argumentTypeNames);
+    if (try_parse_generic_instance_type_name(cs->state, typeName, &baseName, &argumentTypeNames)) {
+        ZrCore_Array_Free(cs->state, &argumentTypeNames);
+        return baseName != ZR_NULL ? baseName : typeName;
+    }
+
+    return typeName;
+}
+
+static TZrBool union_constructor_target_type_name(SZrCompilerState *cs,
+                                                  SZrAstNode *property,
+                                                  SZrString **outTypeName) {
+    if (outTypeName != ZR_NULL) {
+        *outTypeName = ZR_NULL;
+    }
+    if (cs == ZR_NULL || property == ZR_NULL || outTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (property->type == ZR_AST_IDENTIFIER_LITERAL) {
+        *outTypeName = property->data.identifier.name;
+        return *outTypeName != ZR_NULL;
+    }
+
+    if (property->type == ZR_AST_TYPE) {
+        *outTypeName = extract_type_name_string(cs, &property->data.type);
+        return *outTypeName != ZR_NULL;
+    }
+
+    return ZR_FALSE;
+}
+
+static SZrAstNode *find_union_declaration_in_array(SZrCompilerState *cs,
+                                                   SZrAstNodeArray *declarations,
+                                                   SZrString *lookupName) {
+    if (cs == ZR_NULL || declarations == ZR_NULL || declarations->nodes == ZR_NULL || lookupName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < declarations->count; index++) {
+        SZrAstNode *declaration = declarations->nodes[index];
+
+        if (declaration == ZR_NULL) {
+            continue;
+        }
+
+        if (declaration->type == ZR_AST_UNION_DECLARATION &&
+            declaration->data.unionDeclaration.name != ZR_NULL &&
+            declaration->data.unionDeclaration.name->name != ZR_NULL &&
+            ZrCore_String_Equal(declaration->data.unionDeclaration.name->name, lookupName)) {
+            return declaration;
+        }
+
+        if (declaration->type == ZR_AST_EXTERN_BLOCK) {
+            SZrAstNode *match = find_union_declaration_in_array(cs,
+                                                                declaration->data.externBlock.declarations,
+                                                                lookupName);
+            if (match != ZR_NULL) {
+                return match;
+            }
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrAstNode *find_union_declaration_for_constructor_type(SZrCompilerState *cs, SZrString *typeName) {
+    SZrString *lookupName;
+
+    if (cs == ZR_NULL || typeName == ZR_NULL ||
+        cs->scriptAst == ZR_NULL || cs->scriptAst->type != ZR_AST_SCRIPT) {
+        return ZR_NULL;
+    }
+
+    lookupName = union_constructor_lookup_name(cs, typeName);
+    if (lookupName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return find_union_declaration_in_array(cs, cs->scriptAst->data.script.statements, lookupName);
+}
+
+static SZrString *union_variant_member_name(SZrAstNode *memberNode) {
+    if (memberNode == ZR_NULL ||
+        memberNode->type != ZR_AST_MEMBER_EXPRESSION ||
+        memberNode->data.memberExpression.computed ||
+        memberNode->data.memberExpression.property == ZR_NULL ||
+        memberNode->data.memberExpression.property->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_NULL;
+    }
+
+    return memberNode->data.memberExpression.property->data.identifier.name;
+}
+
+static SZrAstNode *find_union_variant_node(SZrAstNode *unionDeclaration, SZrString *variantName) {
+    SZrAstNodeArray *variants;
+
+    if (unionDeclaration == ZR_NULL ||
+        unionDeclaration->type != ZR_AST_UNION_DECLARATION ||
+        variantName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    variants = unionDeclaration->data.unionDeclaration.variants;
+    if (variants == ZR_NULL || variants->nodes == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < variants->count; index++) {
+        SZrAstNode *variant = variants->nodes[index];
+
+        if (variant != ZR_NULL &&
+            variant->type == ZR_AST_UNION_VARIANT &&
+            variant->data.unionVariant.name != ZR_NULL &&
+            variant->data.unionVariant.name->name != ZR_NULL &&
+            ZrCore_String_Equal(variant->data.unionVariant.name->name, variantName)) {
+            return variant;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrString *union_struct_payload_property_name(SZrAstNode *propertyNode) {
+    SZrKeyValuePair *pair;
+
+    if (propertyNode == ZR_NULL ||
+        propertyNode->type != ZR_AST_KEY_VALUE_PAIR) {
+        return ZR_NULL;
+    }
+
+    pair = &propertyNode->data.keyValuePair;
+    if (pair->keyIsComputed ||
+        pair->key == ZR_NULL ||
+        pair->key->type != ZR_AST_IDENTIFIER_LITERAL) {
+        return ZR_NULL;
+    }
+
+    return pair->key->data.identifier.name;
+}
+
+static SZrParameter *union_variant_field_parameter(SZrAstNode *fieldNode) {
+    if (fieldNode == ZR_NULL || fieldNode->type != ZR_AST_PARAMETER) {
+        return ZR_NULL;
+    }
+
+    return &fieldNode->data.parameter;
+}
+
+static SZrAstNode *find_union_struct_payload_property(SZrObjectLiteral *objectLiteral, SZrString *fieldName) {
+    if (objectLiteral == ZR_NULL ||
+        objectLiteral->properties == ZR_NULL ||
+        objectLiteral->properties->nodes == ZR_NULL ||
+        fieldName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < objectLiteral->properties->count; index++) {
+        SZrAstNode *propertyNode = objectLiteral->properties->nodes[index];
+        SZrString *propertyName = union_struct_payload_property_name(propertyNode);
+
+        if (propertyName != ZR_NULL && ZrCore_String_Equal(propertyName, fieldName)) {
+            return propertyNode;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static TZrBool union_variant_has_field_named(SZrAstNode *variant, SZrString *fieldName) {
+    SZrAstNodeArray *fields;
+
+    if (variant == ZR_NULL || variant->type != ZR_AST_UNION_VARIANT || fieldName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    fields = variant->data.unionVariant.fields;
+    if (fields == ZR_NULL || fields->nodes == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < fields->count; index++) {
+        SZrParameter *field = union_variant_field_parameter(fields->nodes[index]);
+
+        if (field != ZR_NULL &&
+            field->name != ZR_NULL &&
+            field->name->name != ZR_NULL &&
+            ZrCore_String_Equal(field->name->name, fieldName)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool union_struct_payload_has_duplicate_before(SZrObjectLiteral *objectLiteral,
+                                                         TZrSize propertyIndex,
+                                                         SZrString *propertyName) {
+    if (objectLiteral == ZR_NULL ||
+        objectLiteral->properties == ZR_NULL ||
+        objectLiteral->properties->nodes == ZR_NULL ||
+        propertyName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < propertyIndex; index++) {
+        SZrString *previousName = union_struct_payload_property_name(objectLiteral->properties->nodes[index]);
+
+        if (previousName != ZR_NULL && ZrCore_String_Equal(previousName, propertyName)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool validate_union_variant_constructor_arguments(SZrCompilerState *cs,
+                                                            SZrAstNode *unionDeclaration,
+                                                            SZrAstNode *variant,
+                                                            SZrFunctionCall *call,
+                                                            SZrFileRange location) {
+    SZrAstNodeArray *fields;
+    TZrSize expectedCount;
+    TZrSize actualCount;
+
+    if (cs == ZR_NULL || unionDeclaration == ZR_NULL || variant == ZR_NULL ||
+        variant->type != ZR_AST_UNION_VARIANT) {
+        return ZR_FALSE;
+    }
+
+    fields = variant->data.unionVariant.fields;
+    expectedCount = fields != ZR_NULL ? fields->count : 0;
+    actualCount = (call != ZR_NULL && call->args != ZR_NULL) ? call->args->count : 0;
+
+    if (variant->data.unionVariant.kind == ZR_UNION_VARIANT_STRUCT) {
+        ZrParser_Compiler_Error(cs, "Struct union variants are constructed with object payload syntax", location);
+        return ZR_FALSE;
+    }
+
+    if (variant->data.unionVariant.kind == ZR_UNION_VARIANT_UNIT && call != ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Unit union variants are constructed without call syntax", location);
+        return ZR_FALSE;
+    }
+
+    if (variant->data.unionVariant.kind != ZR_UNION_VARIANT_UNIT && call == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Union variant constructor requires arguments", location);
+        return ZR_FALSE;
+    }
+
+    if (expectedCount != actualCount) {
+        static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
+        snprintf(errorMsg,
+                 sizeof(errorMsg),
+                 "Union variant constructor argument count mismatch (expected %zu, actual %zu)",
+                 (size_t)expectedCount,
+                 (size_t)actualCount);
+        ZrParser_Compiler_Error(cs, errorMsg, location);
+        return ZR_FALSE;
+    }
+
+    if (unionDeclaration->data.unionDeclaration.generic != ZR_NULL || fields == ZR_NULL || call == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < fields->count; index++) {
+        SZrAstNode *fieldNode = fields->nodes[index];
+        SZrAstNode *argNode = call->args->nodes[index];
+        SZrParameter *field;
+        SZrInferredType expectedType;
+        SZrInferredType actualType;
+        TZrBool success;
+
+        if (fieldNode == ZR_NULL || fieldNode->type != ZR_AST_PARAMETER || argNode == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        field = &fieldNode->data.parameter;
+        if (field->typeInfo == ZR_NULL) {
+            continue;
+        }
+
+        ZrParser_InferredType_Init(cs->state, &expectedType, ZR_VALUE_TYPE_OBJECT);
+        ZrParser_InferredType_Init(cs->state, &actualType, ZR_VALUE_TYPE_OBJECT);
+        success = ZrParser_AstTypeToInferredType_Convert(cs, field->typeInfo, &expectedType) &&
+                  ZrParser_ExpressionType_Infer(cs, argNode, &actualType) &&
+                  ZrParser_TypeCompatibility_Check(cs, &actualType, &expectedType, argNode->location);
+        ZrParser_InferredType_Free(cs->state, &expectedType);
+        ZrParser_InferredType_Free(cs->state, &actualType);
+        if (!success) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool validate_union_variant_struct_object_arguments(SZrCompilerState *cs,
+                                                              SZrAstNode *unionDeclaration,
+                                                              SZrAstNode *variant,
+                                                              SZrObjectLiteral *objectLiteral,
+                                                              SZrFileRange location) {
+    SZrAstNodeArray *fields;
+    TZrSize expectedCount;
+    TZrSize actualCount;
+
+    if (cs == ZR_NULL || unionDeclaration == ZR_NULL || variant == ZR_NULL ||
+        variant->type != ZR_AST_UNION_VARIANT || objectLiteral == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (variant->data.unionVariant.kind != ZR_UNION_VARIANT_STRUCT) {
+        ZrParser_Compiler_Error(cs, "Object payload syntax is only valid for struct union variants", location);
+        return ZR_FALSE;
+    }
+
+    fields = variant->data.unionVariant.fields;
+    expectedCount = fields != ZR_NULL ? fields->count : 0;
+    actualCount = objectLiteral->properties != ZR_NULL ? objectLiteral->properties->count : 0;
+    if (expectedCount != actualCount) {
+        static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
+        snprintf(errorMsg,
+                 sizeof(errorMsg),
+                 "Union struct variant field count mismatch (expected %zu, actual %zu)",
+                 (size_t)expectedCount,
+                 (size_t)actualCount);
+        ZrParser_Compiler_Error(cs, errorMsg, location);
+        return ZR_FALSE;
+    }
+
+    if (objectLiteral->properties != ZR_NULL && objectLiteral->properties->nodes != ZR_NULL) {
+        for (TZrSize index = 0; index < objectLiteral->properties->count; index++) {
+            SZrAstNode *propertyNode = objectLiteral->properties->nodes[index];
+            SZrString *propertyName = union_struct_payload_property_name(propertyNode);
+
+            if (propertyName == ZR_NULL) {
+                ZrParser_Compiler_Error(cs,
+                                        "Union struct variant payload fields must use identifier keys",
+                                        propertyNode != ZR_NULL ? propertyNode->location : location);
+                return ZR_FALSE;
+            }
+            if (union_struct_payload_has_duplicate_before(objectLiteral, index, propertyName)) {
+                ZrParser_Compiler_Error(cs, "Duplicate union struct variant payload field",
+                                        propertyNode->location);
+                return ZR_FALSE;
+            }
+            if (!union_variant_has_field_named(variant, propertyName)) {
+                ZrParser_Compiler_Error(cs, "Unknown union struct variant payload field",
+                                        propertyNode->location);
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    if (fields == ZR_NULL || fields->nodes == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (TZrSize index = 0; index < fields->count; index++) {
+        SZrAstNode *fieldNode = fields->nodes[index];
+        SZrParameter *field = union_variant_field_parameter(fieldNode);
+        SZrAstNode *propertyNode;
+        SZrAstNode *valueNode;
+        SZrInferredType expectedType;
+        SZrInferredType actualType;
+        TZrBool success;
+
+        if (field == ZR_NULL || field->name == ZR_NULL || field->name->name == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        propertyNode = find_union_struct_payload_property(objectLiteral, field->name->name);
+        if (propertyNode == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "Missing union struct variant payload field", location);
+            return ZR_FALSE;
+        }
+
+        if (unionDeclaration->data.unionDeclaration.generic != ZR_NULL || field->typeInfo == ZR_NULL) {
+            continue;
+        }
+
+        valueNode = propertyNode->data.keyValuePair.value;
+        if (valueNode == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        ZrParser_InferredType_Init(cs->state, &expectedType, ZR_VALUE_TYPE_OBJECT);
+        ZrParser_InferredType_Init(cs->state, &actualType, ZR_VALUE_TYPE_OBJECT);
+        success = ZrParser_AstTypeToInferredType_Convert(cs, field->typeInfo, &expectedType) &&
+                  ZrParser_ExpressionType_Infer(cs, valueNode, &actualType) &&
+                  ZrParser_TypeCompatibility_Check(cs, &actualType, &expectedType, valueNode->location);
+        ZrParser_InferredType_Free(cs->state, &expectedType);
+        ZrParser_InferredType_Free(cs->state, &actualType);
+        if (!success) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool infer_union_variant_primary_expression_type(SZrCompilerState *cs,
+                                                           SZrAstNode *node,
+                                                           SZrPrimaryExpression *primary,
+                                                           SZrInferredType *result,
+                                                           TZrBool *outHandled) {
+    SZrString *typeName = ZR_NULL;
+    SZrAstNode *unionDeclaration;
+    SZrString *variantName;
+    SZrAstNode *variant;
+    SZrFunctionCall *call = ZR_NULL;
+    SZrObjectLiteral *objectLiteral = ZR_NULL;
+
+    if (outHandled != ZR_NULL) {
+        *outHandled = ZR_FALSE;
+    }
+    if (cs == ZR_NULL || node == ZR_NULL || primary == ZR_NULL || result == ZR_NULL || outHandled == ZR_NULL ||
+        primary->property == ZR_NULL || primary->members == ZR_NULL || primary->members->count == 0) {
+        return ZR_TRUE;
+    }
+
+    if (!union_constructor_target_type_name(cs, primary->property, &typeName) || typeName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    unionDeclaration = find_union_declaration_for_constructor_type(cs, typeName);
+    if (unionDeclaration == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    *outHandled = ZR_TRUE;
+    variantName = union_variant_member_name(primary->members->nodes[0]);
+    if (variantName == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Union constructor must name a variant", node->location);
+        return ZR_FALSE;
+    }
+
+    variant = find_union_variant_node(unionDeclaration, variantName);
+    if (variant == ZR_NULL) {
+        static TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
+        const TZrChar *variantText = ZrCore_String_GetNativeString(variantName);
+        snprintf(errorMsg,
+                 sizeof(errorMsg),
+                 "Unknown union variant '%s'",
+                 variantText != ZR_NULL ? variantText : "<unknown>");
+        ZrParser_Compiler_Error(cs, errorMsg, primary->members->nodes[0]->location);
+        return ZR_FALSE;
+    }
+
+    if (primary->members->count > 1) {
+        SZrAstNode *payloadNode = primary->members->nodes[1];
+        if (payloadNode == ZR_NULL || primary->members->count > 2) {
+            ZrParser_Compiler_Error(cs, "Union variant constructor cannot be followed by additional member access",
+                                    payloadNode != ZR_NULL ? payloadNode->location : node->location);
+            return ZR_FALSE;
+        }
+        if (payloadNode->type == ZR_AST_FUNCTION_CALL) {
+            call = &payloadNode->data.functionCall;
+        } else if (payloadNode->type == ZR_AST_OBJECT_LITERAL) {
+            objectLiteral = &payloadNode->data.objectLiteral;
+        } else {
+            ZrParser_Compiler_Error(cs, "Union variant constructor only accepts a call or object payload",
+                                    payloadNode->location);
+            return ZR_FALSE;
+        }
+    }
+
+    if (objectLiteral != ZR_NULL) {
+        if (!validate_union_variant_struct_object_arguments(cs,
+                                                            unionDeclaration,
+                                                            variant,
+                                                            objectLiteral,
+                                                            primary->members->nodes[1]->location)) {
+            return ZR_FALSE;
+        }
+
+        return inferred_type_from_type_name(cs, typeName, result);
+    }
+
+    if (!validate_union_variant_constructor_arguments(cs,
+                                                      unionDeclaration,
+                                                      variant,
+                                                      call,
+                                                      call != ZR_NULL ? primary->members->nodes[1]->location
+                                                                      : primary->members->nodes[0]->location)) {
+        return ZR_FALSE;
+    }
+
+    return inferred_type_from_type_name(cs, typeName, result);
+}
+
 // 检查类型兼容性（用于赋值等场景）
 TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *fromType, const SZrInferredType *toType, SZrFileRange location) {
     if (cs == ZR_NULL || fromType == ZR_NULL || toType == ZR_NULL) {
@@ -145,6 +762,10 @@ TZrBool ZrParser_TypeCompatibility_Check(SZrCompilerState *cs, const SZrInferred
 // 检查赋值兼容性
 TZrBool ZrParser_AssignmentCompatibility_Check(SZrCompilerState *cs, const SZrInferredType *leftType, const SZrInferredType *rightType, SZrFileRange location) {
     if (cs == ZR_NULL || leftType == ZR_NULL || rightType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!type_inference_report_ownership_flow_escape(cs, leftType, rightType, location)) {
         return ZR_FALSE;
     }
     
@@ -256,7 +877,13 @@ TZrBool ZrParser_FunctionCallCompatibility_Check(SZrCompilerState *cs,
         if (!ZrParser_InferredType_IsCompatible(argType, paramType) &&
             !inferred_type_can_use_named_constraint_fallback(cs, argType, paramType) &&
             !ffi_function_call_argument_is_native_boundary_compatible(cs, funcType, i, argType, paramType)) {
-            ZrParser_TypeError_Report(cs, "Argument type mismatch", paramType, argType, location);
+            const TZrChar *ownershipDiagnostic =
+                    type_inference_ownership_flow_diagnostic_message(paramType, argType);
+            if (ownershipDiagnostic != ZR_NULL) {
+                ZrParser_Compiler_Error(cs, ownershipDiagnostic, location);
+            } else {
+                ZrParser_TypeError_Report(cs, "Argument type mismatch", paramType, argType, location);
+            }
             free_inferred_type_array(cs->state, &argTypes);
             return ZR_FALSE;
         }
@@ -1421,6 +2048,11 @@ TZrBool ZrParser_AssignmentType_Infer(SZrCompilerState *cs, SZrAstNode *node, SZ
     }
 
     if (hasLeftType) {
+        if (!type_inference_report_ownership_flow_escape(cs, &leftType, result, node->location)) {
+            ZrParser_InferredType_Free(cs->state, &leftType);
+            return ZR_FALSE;
+        }
+
         // 2. 检查类型兼容性
         if (leftType.baseType != ZR_VALUE_TYPE_OBJECT && result->baseType != ZR_VALUE_TYPE_OBJECT &&
             !ZrParser_InferredType_IsCompatible(result, &leftType)) {
@@ -1442,6 +2074,7 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
     }
     
     SZrPrimaryExpression *primary = &node->data.primaryExpression;
+    TZrBool unionVariantHandled = ZR_FALSE;
     
     // 如果没有members，直接推断property的类型
     if (primary->members == ZR_NULL || primary->members->count == 0) {
@@ -1450,6 +2083,13 @@ TZrBool ZrParser_PrimaryExpressionType_Infer(SZrCompilerState *cs, SZrAstNode *n
         }
         // 如果没有property，返回对象类型
         ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+        return ZR_TRUE;
+    }
+
+    if (!infer_union_variant_primary_expression_type(cs, node, primary, result, &unionVariantHandled)) {
+        return ZR_FALSE;
+    }
+    if (unionVariantHandled) {
         return ZR_TRUE;
     }
     
@@ -2145,9 +2785,33 @@ static TZrBool ast_type_resolve_unqualified_inferred_type(SZrCompilerState *cs,
     if (astType->name->type == ZR_AST_GENERIC_TYPE) {
         SZrGenericType *genericType = &astType->name->data.genericType;
         SZrString *canonicalName;
+        EZrOwnershipQualifier ownershipGenericQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+        const SZrType *ownershipGenericInnerType = ZR_NULL;
 
         if (genericType->name == ZR_NULL || genericType->name->name == ZR_NULL) {
             ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+            return ZR_TRUE;
+        }
+
+        if (ZrParser_AstType_TryUnwrapOwnershipGeneric(astType,
+                                                       &ownershipGenericQualifier,
+                                                       &ownershipGenericInnerType)) {
+            SZrSemanticContext *savedSemanticContext = cs->semanticContext;
+            cs->semanticContext = ZR_NULL;
+            if (!ZrParser_AstTypeToInferredType_Convert(cs, ownershipGenericInnerType, result)) {
+                cs->semanticContext = savedSemanticContext;
+                return ZR_FALSE;
+            }
+            cs->semanticContext = savedSemanticContext;
+
+            result->ownershipQualifier = ownershipGenericQualifier;
+            if (cs->semanticContext != ZR_NULL && result->typeName != ZR_NULL) {
+                ZrParser_Semantic_RegisterInferredType(cs->semanticContext,
+                                                       result,
+                                                       ZR_SEMANTIC_TYPE_KIND_REFERENCE,
+                                                       result->typeName,
+                                                       astType->name);
+            }
             return ZR_TRUE;
         }
 

@@ -52,6 +52,12 @@ static TZrBool library_project_parse_dependencies(SZrState *state,
                                                   const TZrChar *ownerDirectory,
                                                   TZrSize ownerPackageIndex,
                                                   TZrBool ownerIsPackage);
+static TZrBool library_project_parse_references(SZrState *state,
+                                                SZrLibrary_Project *project,
+                                                cJSON *projectJson,
+                                                const TZrChar *ownerDirectory,
+                                                TZrSize ownerPackageIndex,
+                                                TZrBool ownerIsPackage);
 
 static const TZrChar *library_project_string_text(SZrString *value) {
     if (value == ZR_NULL) {
@@ -63,6 +69,16 @@ static const TZrChar *library_project_string_text(SZrString *value) {
     }
 
     return ZrCore_String_GetNativeString(value);
+}
+
+static TZrBool library_project_optional_string_matches(SZrString *value, const TZrChar *text) {
+    const TZrChar *valueText = library_project_string_text(value);
+
+    if (valueText == ZR_NULL) {
+        return text == ZR_NULL;
+    }
+
+    return text != ZR_NULL && strcmp(valueText, text) == 0;
 }
 
 static TZrBool zr_library_project_trace_enabled(void) {
@@ -351,6 +367,129 @@ static TZrBool library_project_validate_dependency_version(const TZrChar *versio
     return ZR_TRUE;
 }
 
+static TZrBool library_project_validate_assembly_name(const TZrChar *assemblyName) {
+    TZrSize index;
+    TZrBool previousWasDot = ZR_TRUE;
+
+    if (assemblyName == ZR_NULL || assemblyName[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; assemblyName[index] != '\0'; index++) {
+        TZrChar current = assemblyName[index];
+        if (current == '/' || current == '\\' || current == ' ' || current == '\t' ||
+            current == '\r' || current == '\n' || current == '@' || current == '$') {
+            return ZR_FALSE;
+        }
+        if (current == '.') {
+            if (previousWasDot) {
+                return ZR_FALSE;
+            }
+            previousWasDot = ZR_TRUE;
+            continue;
+        }
+        previousWasDot = ZR_FALSE;
+    }
+
+    return !previousWasDot;
+}
+
+static TZrBool library_project_get_manifest_assembly_identity(cJSON *manifestJson,
+                                                              const TZrChar **outName,
+                                                              const TZrChar **outVersion,
+                                                              const TZrChar **outCulture,
+                                                              const TZrChar **outPublicKeyToken,
+                                                              const TZrChar **outKind) {
+    cJSON *assemblyJson;
+    cJSON *assemblyNameJson;
+    cJSON *assemblyVersionJson;
+    cJSON *cultureJson;
+    cJSON *publicKeyTokenJson;
+    cJSON *kindJson;
+    cJSON *legacyNameJson;
+    cJSON *legacyVersionJson;
+
+    if (outName != ZR_NULL) {
+        *outName = ZR_NULL;
+    }
+    if (outVersion != ZR_NULL) {
+        *outVersion = ZR_NULL;
+    }
+    if (outCulture != ZR_NULL) {
+        *outCulture = "neutral";
+    }
+    if (outPublicKeyToken != ZR_NULL) {
+        *outPublicKeyToken = ZR_NULL;
+    }
+    if (outKind != ZR_NULL) {
+        *outKind = "library";
+    }
+    if (manifestJson == ZR_NULL || outName == ZR_NULL || outVersion == ZR_NULL ||
+        outCulture == ZR_NULL || outPublicKeyToken == ZR_NULL || outKind == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    assemblyJson = cJSON_GetObjectItemCaseSensitive(manifestJson, "assembly");
+    if (assemblyJson != ZR_NULL) {
+        if (!cJSON_IsObject(assemblyJson)) {
+            return ZR_FALSE;
+        }
+        assemblyNameJson = cJSON_GetObjectItemCaseSensitive(assemblyJson, "name");
+        assemblyVersionJson = cJSON_GetObjectItemCaseSensitive(assemblyJson, "version");
+        cultureJson = cJSON_GetObjectItemCaseSensitive(assemblyJson, "culture");
+        publicKeyTokenJson = cJSON_GetObjectItemCaseSensitive(assemblyJson, "publicKeyToken");
+        kindJson = cJSON_GetObjectItemCaseSensitive(assemblyJson, "kind");
+
+        if (!cJSON_IsString(assemblyNameJson) || assemblyNameJson->valuestring == ZR_NULL ||
+            !library_project_validate_assembly_name(assemblyNameJson->valuestring)) {
+            return ZR_FALSE;
+        }
+        *outName = assemblyNameJson->valuestring;
+        if (assemblyVersionJson != ZR_NULL) {
+            if (!cJSON_IsString(assemblyVersionJson) || assemblyVersionJson->valuestring == ZR_NULL ||
+                !library_project_validate_dependency_version(assemblyVersionJson->valuestring)) {
+                return ZR_FALSE;
+            }
+            *outVersion = assemblyVersionJson->valuestring;
+        }
+        if (cultureJson != ZR_NULL) {
+            if (!cJSON_IsString(cultureJson) || cultureJson->valuestring == ZR_NULL ||
+                cultureJson->valuestring[0] == '\0') {
+                return ZR_FALSE;
+            }
+            *outCulture = cultureJson->valuestring;
+        }
+        if (publicKeyTokenJson != ZR_NULL && !cJSON_IsNull(publicKeyTokenJson)) {
+            if (!cJSON_IsString(publicKeyTokenJson) || publicKeyTokenJson->valuestring == ZR_NULL ||
+                publicKeyTokenJson->valuestring[0] == '\0') {
+                return ZR_FALSE;
+            }
+            *outPublicKeyToken = publicKeyTokenJson->valuestring;
+        }
+        if (kindJson != ZR_NULL) {
+            if (!cJSON_IsString(kindJson) || kindJson->valuestring == ZR_NULL ||
+                (strcmp(kindJson->valuestring, "library") != 0 &&
+                 strcmp(kindJson->valuestring, "application") != 0)) {
+                return ZR_FALSE;
+            }
+            *outKind = kindJson->valuestring;
+        }
+    }
+
+    legacyNameJson = cJSON_GetObjectItemCaseSensitive(manifestJson, "name");
+    legacyVersionJson = cJSON_GetObjectItemCaseSensitive(manifestJson, "version");
+    if (*outName == ZR_NULL && cJSON_IsString(legacyNameJson) && legacyNameJson->valuestring != ZR_NULL) {
+        *outName = legacyNameJson->valuestring;
+    }
+    if (*outVersion == ZR_NULL && cJSON_IsString(legacyVersionJson) && legacyVersionJson->valuestring != ZR_NULL) {
+        if (!library_project_validate_dependency_version(legacyVersionJson->valuestring)) {
+            return ZR_FALSE;
+        }
+        *outVersion = legacyVersionJson->valuestring;
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool library_project_resolve_manifest_path(const TZrChar *ownerDirectory,
                                                      const TZrChar *declaredPath,
                                                      TZrChar *buffer,
@@ -372,9 +511,13 @@ static TZrBool library_project_resolve_manifest_path(const TZrChar *ownerDirecto
 
 static TZrBool library_project_get_dependency_declaration(cJSON *dependencyEntry,
                                                           const TZrChar **outPath,
-                                                          const TZrChar **outVersion) {
+                                                          const TZrChar **outVersion,
+                                                          const TZrChar **outMinVersionInclusive,
+                                                          const TZrChar **outMaxVersionExclusive) {
     cJSON *pathJson;
     cJSON *versionJson;
+    cJSON *minVersionJson;
+    cJSON *maxVersionJson;
 
     if (outPath != ZR_NULL) {
         *outPath = ZR_NULL;
@@ -382,7 +525,14 @@ static TZrBool library_project_get_dependency_declaration(cJSON *dependencyEntry
     if (outVersion != ZR_NULL) {
         *outVersion = ZR_NULL;
     }
-    if (dependencyEntry == ZR_NULL || outPath == ZR_NULL || outVersion == ZR_NULL) {
+    if (outMinVersionInclusive != ZR_NULL) {
+        *outMinVersionInclusive = ZR_NULL;
+    }
+    if (outMaxVersionExclusive != ZR_NULL) {
+        *outMaxVersionExclusive = ZR_NULL;
+    }
+    if (dependencyEntry == ZR_NULL || outPath == ZR_NULL || outVersion == ZR_NULL ||
+        outMinVersionInclusive == ZR_NULL || outMaxVersionExclusive == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -397,6 +547,8 @@ static TZrBool library_project_get_dependency_declaration(cJSON *dependencyEntry
 
     pathJson = cJSON_GetObjectItemCaseSensitive(dependencyEntry, "path");
     versionJson = cJSON_GetObjectItemCaseSensitive(dependencyEntry, "version");
+    minVersionJson = cJSON_GetObjectItemCaseSensitive(dependencyEntry, "minVersionInclusive");
+    maxVersionJson = cJSON_GetObjectItemCaseSensitive(dependencyEntry, "maxVersionExclusive");
     if (!cJSON_IsString(pathJson) || pathJson->valuestring == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -409,6 +561,20 @@ static TZrBool library_project_get_dependency_declaration(cJSON *dependencyEntry
         }
         *outVersion = versionJson->valuestring;
     }
+    if (minVersionJson != ZR_NULL) {
+        if (!cJSON_IsString(minVersionJson) || minVersionJson->valuestring == ZR_NULL ||
+            !library_project_validate_dependency_version(minVersionJson->valuestring)) {
+            return ZR_FALSE;
+        }
+        *outMinVersionInclusive = minVersionJson->valuestring;
+    }
+    if (maxVersionJson != ZR_NULL) {
+        if (!cJSON_IsString(maxVersionJson) || maxVersionJson->valuestring == ZR_NULL ||
+            !library_project_validate_dependency_version(maxVersionJson->valuestring)) {
+            return ZR_FALSE;
+        }
+        *outMaxVersionExclusive = maxVersionJson->valuestring;
+    }
     return ZR_TRUE;
 }
 
@@ -417,7 +583,11 @@ static TZrBool library_project_append_dependency_ref(SZrState *state,
                                                      TZrSize ownerPackageIndex,
                                                      TZrBool ownerIsPackage,
                                                      const TZrChar *name,
-                                                     TZrSize packageIndex) {
+                                                     const TZrChar *assemblyName,
+                                                     TZrSize packageIndex,
+                                                     const TZrChar *minVersionInclusive,
+                                                     const TZrChar *maxVersionExclusive,
+                                                     TZrBool useAliasForModuleKey) {
     SZrGlobalState *global;
     SZrLibrary_ProjectDependencyReference **refs;
     TZrSize *refCount;
@@ -449,6 +619,11 @@ static TZrBool library_project_append_dependency_ref(SZrState *state,
         if (existingName != ZR_NULL && strcmp(existingName, name) == 0) {
             return ZR_FALSE;
         }
+        if ((*refs)[index].packageIndex == packageIndex &&
+            (!library_project_optional_string_matches((*refs)[index].minVersionInclusive, minVersionInclusive) ||
+             !library_project_optional_string_matches((*refs)[index].maxVersionExclusive, maxVersionExclusive))) {
+            return ZR_FALSE;
+        }
     }
 
     if (*refCount == *refCapacity) {
@@ -472,8 +647,21 @@ static TZrBool library_project_append_dependency_ref(SZrState *state,
     slot = &(*refs)[*refCount];
     memset(slot, 0, sizeof(*slot));
     slot->name = ZrCore_String_CreateTryHitCache(state, name);
+    if (assemblyName != ZR_NULL) {
+        slot->assemblyName = ZrCore_String_CreateTryHitCache(state, (TZrNativeString)assemblyName);
+    }
     slot->packageIndex = packageIndex;
-    if (slot->name == ZR_NULL) {
+    if (minVersionInclusive != ZR_NULL) {
+        slot->minVersionInclusive = ZrCore_String_CreateTryHitCache(state, (TZrNativeString)minVersionInclusive);
+    }
+    if (maxVersionExclusive != ZR_NULL) {
+        slot->maxVersionExclusive = ZrCore_String_CreateTryHitCache(state, (TZrNativeString)maxVersionExclusive);
+    }
+    slot->useAliasForModuleKey = useAliasForModuleKey;
+    if (slot->name == ZR_NULL ||
+        (assemblyName != ZR_NULL && slot->assemblyName == ZR_NULL) ||
+        (minVersionInclusive != ZR_NULL && slot->minVersionInclusive == ZR_NULL) ||
+        (maxVersionExclusive != ZR_NULL && slot->maxVersionExclusive == ZR_NULL)) {
         return ZR_FALSE;
     }
     (*refCount)++;
@@ -549,7 +737,11 @@ static TZrBool library_project_parse_dependency_package_fields(SZrState *state,
                                                                SZrLibrary_ProjectDependencyPackage *package,
                                                                cJSON *manifestJson,
                                                                const TZrChar *name,
+                                                               const TZrChar *assemblyName,
                                                                const TZrChar *version,
+                                                               const TZrChar *culture,
+                                                               const TZrChar *publicKeyToken,
+                                                               const TZrChar *kind,
                                                                const TZrChar *manifestPath,
                                                                const TZrChar *directory) {
     cJSON *sourceJson;
@@ -557,7 +749,8 @@ static TZrBool library_project_parse_dependency_package_fields(SZrState *state,
     cJSON *entryJson;
     cJSON *pathAliasesJson;
 
-    if (state == ZR_NULL || package == ZR_NULL || manifestJson == ZR_NULL || name == ZR_NULL || version == ZR_NULL ||
+    if (state == ZR_NULL || package == ZR_NULL || manifestJson == ZR_NULL || name == ZR_NULL ||
+        assemblyName == ZR_NULL || version == ZR_NULL || culture == ZR_NULL || kind == ZR_NULL ||
         manifestPath == ZR_NULL || directory == ZR_NULL) {
         return ZR_FALSE;
     }
@@ -585,15 +778,22 @@ static TZrBool library_project_parse_dependency_package_fields(SZrState *state,
     }
 
     package->name = ZrCore_String_CreateTryHitCache(state, name);
+    package->assemblyName = ZrCore_String_CreateTryHitCache(state, assemblyName);
     package->version = ZrCore_String_CreateTryHitCache(state, version);
     package->file = ZrCore_String_CreateTryHitCache(state, manifestPath);
     package->directory = ZrCore_String_CreateTryHitCache(state, directory);
+    package->culture = ZrCore_String_CreateTryHitCache(state, culture);
+    if (publicKeyToken != ZR_NULL) {
+        package->publicKeyToken = ZrCore_String_CreateTryHitCache(state, publicKeyToken);
+    }
+    package->kind = ZrCore_String_CreateTryHitCache(state, kind);
     package->source = ZrCore_String_CreateTryHitCache(state, sourceJson->valuestring);
     package->binary = ZrCore_String_CreateTryHitCache(state, binaryJson->valuestring);
     package->entry = ZrCore_String_CreateTryHitCache(state, entryJson->valuestring);
-    if (package->name == ZR_NULL || package->version == ZR_NULL || package->file == ZR_NULL ||
-        package->directory == ZR_NULL || package->source == ZR_NULL || package->binary == ZR_NULL ||
-        package->entry == ZR_NULL) {
+    if (package->name == ZR_NULL || package->assemblyName == ZR_NULL || package->version == ZR_NULL ||
+        package->file == ZR_NULL || package->directory == ZR_NULL || package->culture == ZR_NULL ||
+        package->kind == ZR_NULL || (publicKeyToken != ZR_NULL && package->publicKeyToken == ZR_NULL) ||
+        package->source == ZR_NULL || package->binary == ZR_NULL || package->entry == ZR_NULL) {
         return ZR_FALSE;
     }
 
@@ -612,16 +812,19 @@ static TZrBool library_project_parse_dependency_entry(SZrState *state,
                                                       TZrBool ownerIsPackage) {
     const TZrChar *declaredPath;
     const TZrChar *declaredVersion;
+    const TZrChar *declaredMinVersionInclusive;
+    const TZrChar *declaredMaxVersionExclusive;
     const TZrChar *dependencyName;
     TZrChar manifestPath[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrChar manifestDirectory[ZR_LIBRARY_MAX_PATH_LENGTH];
     TZrNativeString manifestText;
     TZrSize manifestLength;
     cJSON *manifestJson;
-    cJSON *manifestNameJson;
-    cJSON *manifestVersionJson;
     const TZrChar *manifestName;
     const TZrChar *manifestVersion;
+    const TZrChar *manifestCulture;
+    const TZrChar *manifestPublicKeyToken;
+    const TZrChar *manifestKind;
     const TZrChar *packageName;
     const TZrChar *effectiveVersion;
     TZrSize packageIndex;
@@ -629,7 +832,11 @@ static TZrBool library_project_parse_dependency_entry(SZrState *state,
 
     if (state == ZR_NULL || project == ZR_NULL || dependencyEntry == ZR_NULL || ownerDirectory == ZR_NULL ||
         dependencyEntry->string == ZR_NULL || !library_project_validate_dependency_key(dependencyEntry->string) ||
-        !library_project_get_dependency_declaration(dependencyEntry, &declaredPath, &declaredVersion) ||
+        !library_project_get_dependency_declaration(dependencyEntry,
+                                                    &declaredPath,
+                                                    &declaredVersion,
+                                                    &declaredMinVersionInclusive,
+                                                    &declaredMaxVersionExclusive) ||
         !library_project_resolve_manifest_path(ownerDirectory, declaredPath, manifestPath, sizeof(manifestPath)) ||
         ZrLibrary_File_Exist(manifestPath) != ZR_LIBRARY_FILE_IS_FILE ||
         !ZrLibrary_File_GetDirectory(manifestPath, manifestDirectory)) {
@@ -648,22 +855,17 @@ static TZrBool library_project_parse_dependency_entry(SZrState *state,
         goto cleanup_text;
     }
 
-    manifestNameJson = cJSON_GetObjectItemCaseSensitive(manifestJson, "name");
-    manifestVersionJson = cJSON_GetObjectItemCaseSensitive(manifestJson, "version");
-    if (manifestNameJson != ZR_NULL) {
-        if (!cJSON_IsString(manifestNameJson) || manifestNameJson->valuestring == ZR_NULL ||
-            !library_project_validate_dependency_name(manifestNameJson->valuestring)) {
-            goto cleanup_json;
-        }
-        manifestName = manifestNameJson->valuestring;
-    } else {
-        manifestName = ZR_NULL;
+    if (!library_project_get_manifest_assembly_identity(manifestJson,
+                                                        &manifestName,
+                                                        &manifestVersion,
+                                                        &manifestCulture,
+                                                        &manifestPublicKeyToken,
+                                                        &manifestKind)) {
+        goto cleanup_json;
     }
-    manifestVersion = cJSON_IsString(manifestVersionJson) && manifestVersionJson->valuestring != ZR_NULL
-                    ? manifestVersionJson->valuestring
-                    : ZR_NULL;
-    if (manifestVersionJson != ZR_NULL &&
-        (manifestVersion == ZR_NULL || !library_project_validate_dependency_version(manifestVersion))) {
+    if (manifestName != ZR_NULL &&
+        cJSON_GetObjectItemCaseSensitive(manifestJson, "assembly") == ZR_NULL &&
+        !library_project_validate_dependency_name(manifestName)) {
         goto cleanup_json;
     }
     if (manifestVersion != ZR_NULL && declaredVersion != ZR_NULL && strcmp(manifestVersion, declaredVersion) != 0) {
@@ -683,7 +885,11 @@ static TZrBool library_project_parse_dependency_entry(SZrState *state,
                                                              package,
                                                              manifestJson,
                                                              packageName,
+                                                             manifestName != ZR_NULL ? manifestName : packageName,
                                                              effectiveVersion,
+                                                             manifestCulture,
+                                                             manifestPublicKeyToken,
+                                                             manifestKind,
                                                              manifestPath,
                                                              manifestDirectory) ||
             !library_project_parse_dependencies(state,
@@ -691,7 +897,13 @@ static TZrBool library_project_parse_dependency_entry(SZrState *state,
                                                 manifestJson,
                                                 manifestDirectory,
                                                 packageIndex,
-                                                ZR_TRUE)) {
+                                                ZR_TRUE) ||
+            !library_project_parse_references(state,
+                                              project,
+                                              manifestJson,
+                                              manifestDirectory,
+                                              packageIndex,
+                                              ZR_TRUE)) {
             goto cleanup_json;
         }
     }
@@ -701,7 +913,11 @@ static TZrBool library_project_parse_dependency_entry(SZrState *state,
                                                     ownerPackageIndex,
                                                     ownerIsPackage,
                                                     dependencyName,
-                                                    packageIndex);
+                                                    packageName,
+                                                    packageIndex,
+                                                    declaredMinVersionInclusive,
+                                                    declaredMaxVersionExclusive,
+                                                    ZR_FALSE);
 
 cleanup_json:
     cJSON_Delete(manifestJson);
@@ -748,6 +964,231 @@ static TZrBool library_project_parse_dependencies(SZrState *state,
     return ZR_TRUE;
 }
 
+static TZrBool library_project_get_reference_declaration(cJSON *referenceEntry,
+                                                         const TZrChar **outAssemblyName,
+                                                         const TZrChar **outPath,
+                                                         const TZrChar **outVersion,
+                                                         const TZrChar **outMinVersionInclusive,
+                                                         const TZrChar **outMaxVersionExclusive) {
+    cJSON *assemblyJson;
+    cJSON *pathJson;
+    cJSON *versionJson;
+    cJSON *minVersionJson;
+    cJSON *maxVersionJson;
+
+    if (outAssemblyName != ZR_NULL) {
+        *outAssemblyName = ZR_NULL;
+    }
+    if (outPath != ZR_NULL) {
+        *outPath = ZR_NULL;
+    }
+    if (outVersion != ZR_NULL) {
+        *outVersion = ZR_NULL;
+    }
+    if (outMinVersionInclusive != ZR_NULL) {
+        *outMinVersionInclusive = ZR_NULL;
+    }
+    if (outMaxVersionExclusive != ZR_NULL) {
+        *outMaxVersionExclusive = ZR_NULL;
+    }
+    if (referenceEntry == ZR_NULL || outAssemblyName == ZR_NULL || outPath == ZR_NULL ||
+        outVersion == ZR_NULL || outMinVersionInclusive == ZR_NULL || outMaxVersionExclusive == ZR_NULL ||
+        !cJSON_IsObject(referenceEntry)) {
+        return ZR_FALSE;
+    }
+
+    assemblyJson = cJSON_GetObjectItemCaseSensitive(referenceEntry, "assembly");
+    pathJson = cJSON_GetObjectItemCaseSensitive(referenceEntry, "path");
+    versionJson = cJSON_GetObjectItemCaseSensitive(referenceEntry, "version");
+    minVersionJson = cJSON_GetObjectItemCaseSensitive(referenceEntry, "minVersionInclusive");
+    maxVersionJson = cJSON_GetObjectItemCaseSensitive(referenceEntry, "maxVersionExclusive");
+    if (!cJSON_IsString(assemblyJson) || assemblyJson->valuestring == ZR_NULL ||
+        !library_project_validate_assembly_name(assemblyJson->valuestring) ||
+        !cJSON_IsString(pathJson) || pathJson->valuestring == ZR_NULL || pathJson->valuestring[0] == '\0') {
+        return ZR_FALSE;
+    }
+
+    *outAssemblyName = assemblyJson->valuestring;
+    *outPath = pathJson->valuestring;
+    if (versionJson != ZR_NULL) {
+        if (!cJSON_IsString(versionJson) || versionJson->valuestring == ZR_NULL ||
+            !library_project_validate_dependency_version(versionJson->valuestring)) {
+            return ZR_FALSE;
+        }
+        *outVersion = versionJson->valuestring;
+    }
+    if (minVersionJson != ZR_NULL) {
+        if (!cJSON_IsString(minVersionJson) || minVersionJson->valuestring == ZR_NULL ||
+            !library_project_validate_dependency_version(minVersionJson->valuestring)) {
+            return ZR_FALSE;
+        }
+        *outMinVersionInclusive = minVersionJson->valuestring;
+    }
+    if (maxVersionJson != ZR_NULL) {
+        if (!cJSON_IsString(maxVersionJson) || maxVersionJson->valuestring == ZR_NULL ||
+            !library_project_validate_dependency_version(maxVersionJson->valuestring)) {
+            return ZR_FALSE;
+        }
+        *outMaxVersionExclusive = maxVersionJson->valuestring;
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool library_project_parse_reference_entry(SZrState *state,
+                                                     SZrLibrary_Project *project,
+                                                     cJSON *referenceEntry,
+                                                     const TZrChar *ownerDirectory,
+                                                     TZrSize ownerPackageIndex,
+                                                     TZrBool ownerIsPackage) {
+    const TZrChar *referenceName;
+    const TZrChar *declaredAssemblyName;
+    const TZrChar *declaredPath;
+    const TZrChar *declaredVersion;
+    const TZrChar *declaredMinVersionInclusive;
+    const TZrChar *declaredMaxVersionExclusive;
+    TZrChar manifestPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar manifestDirectory[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrNativeString manifestText;
+    TZrSize manifestLength;
+    cJSON *manifestJson;
+    const TZrChar *manifestAssemblyName;
+    const TZrChar *manifestVersion;
+    const TZrChar *manifestCulture;
+    const TZrChar *manifestPublicKeyToken;
+    const TZrChar *manifestKind;
+    const TZrChar *effectiveVersion;
+    TZrSize packageIndex;
+    TZrBool success = ZR_FALSE;
+
+    if (state == ZR_NULL || project == ZR_NULL || referenceEntry == ZR_NULL || ownerDirectory == ZR_NULL ||
+        referenceEntry->string == ZR_NULL || !library_project_validate_dependency_name(referenceEntry->string) ||
+        !library_project_get_reference_declaration(referenceEntry,
+                                                   &declaredAssemblyName,
+                                                   &declaredPath,
+                                                   &declaredVersion,
+                                                   &declaredMinVersionInclusive,
+                                                   &declaredMaxVersionExclusive) ||
+        !library_project_resolve_manifest_path(ownerDirectory, declaredPath, manifestPath, sizeof(manifestPath)) ||
+        ZrLibrary_File_Exist(manifestPath) != ZR_LIBRARY_FILE_IS_FILE ||
+        !ZrLibrary_File_GetDirectory(manifestPath, manifestDirectory)) {
+        return ZR_FALSE;
+    }
+
+    referenceName = referenceEntry->string;
+    manifestText = ZrLibrary_File_ReadAll(state->global, manifestPath);
+    if (manifestText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    manifestLength = strlen(manifestText);
+    manifestJson = cJSON_Parse(manifestText);
+    if (manifestJson == ZR_NULL) {
+        goto cleanup_text;
+    }
+
+    if (!library_project_get_manifest_assembly_identity(manifestJson,
+                                                        &manifestAssemblyName,
+                                                        &manifestVersion,
+                                                        &manifestCulture,
+                                                        &manifestPublicKeyToken,
+                                                        &manifestKind) ||
+        manifestAssemblyName == ZR_NULL ||
+        strcmp(manifestAssemblyName, declaredAssemblyName) != 0 ||
+        (manifestVersion != ZR_NULL && declaredVersion != ZR_NULL && strcmp(manifestVersion, declaredVersion) != 0)) {
+        goto cleanup_json;
+    }
+    effectiveVersion = manifestVersion != ZR_NULL ? manifestVersion : (declaredVersion != ZR_NULL ? declaredVersion : "0.0.0");
+
+    if (!library_project_find_dependency_package(project, referenceName, effectiveVersion, &packageIndex)) {
+        SZrLibrary_ProjectDependencyPackage *package;
+
+        if (!library_project_append_dependency_package(state, project, &packageIndex)) {
+            goto cleanup_json;
+        }
+        package = &project->dependencyPackages[packageIndex];
+        if (!library_project_parse_dependency_package_fields(state,
+                                                             package,
+                                                             manifestJson,
+                                                             referenceName,
+                                                             manifestAssemblyName,
+                                                             effectiveVersion,
+                                                             manifestCulture,
+                                                             manifestPublicKeyToken,
+                                                             manifestKind,
+                                                             manifestPath,
+                                                             manifestDirectory) ||
+            !library_project_parse_dependencies(state,
+                                                project,
+                                                manifestJson,
+                                                manifestDirectory,
+                                                packageIndex,
+                                                ZR_TRUE) ||
+            !library_project_parse_references(state,
+                                              project,
+                                              manifestJson,
+                                              manifestDirectory,
+                                              packageIndex,
+                                              ZR_TRUE)) {
+            goto cleanup_json;
+        }
+    }
+
+    success = library_project_append_dependency_ref(state,
+                                                    project,
+                                                    ownerPackageIndex,
+                                                    ownerIsPackage,
+                                                    referenceName,
+                                                    manifestAssemblyName,
+                                                    packageIndex,
+                                                    declaredMinVersionInclusive,
+                                                    declaredMaxVersionExclusive,
+                                                    ZR_TRUE);
+
+cleanup_json:
+    cJSON_Delete(manifestJson);
+cleanup_text:
+    ZrCore_Memory_RawFreeWithType(state->global,
+                                  manifestText,
+                                  manifestLength + 1,
+                                  ZR_MEMORY_NATIVE_TYPE_NATIVE_STRING);
+    return success;
+}
+
+static TZrBool library_project_parse_references(SZrState *state,
+                                                SZrLibrary_Project *project,
+                                                cJSON *projectJson,
+                                                const TZrChar *ownerDirectory,
+                                                TZrSize ownerPackageIndex,
+                                                TZrBool ownerIsPackage) {
+    cJSON *referencesJson;
+    cJSON *referenceEntry;
+
+    if (state == ZR_NULL || project == ZR_NULL || projectJson == ZR_NULL || ownerDirectory == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    referencesJson = cJSON_GetObjectItemCaseSensitive(projectJson, "references");
+    if (referencesJson == ZR_NULL) {
+        return ZR_TRUE;
+    }
+    if (!cJSON_IsObject(referencesJson)) {
+        return ZR_FALSE;
+    }
+
+    cJSON_ArrayForEach(referenceEntry, referencesJson) {
+        if (!library_project_parse_reference_entry(state,
+                                                   project,
+                                                   referenceEntry,
+                                                   ownerDirectory,
+                                                   ownerPackageIndex,
+                                                   ownerIsPackage)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, TZrNativeString file) {
     SZrGlobalState *global = state->global;
     SZrLibrary_Project *project =
@@ -787,6 +1228,50 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
 
     ZR_JSON_READ_STRING(state, projectJson, version);
     project->version = version;
+    {
+        const TZrChar *assemblyNameText;
+        const TZrChar *assemblyVersionText;
+        const TZrChar *assemblyCultureText;
+        const TZrChar *assemblyPublicKeyTokenText;
+        const TZrChar *assemblyKindText;
+
+        if (!library_project_get_manifest_assembly_identity(projectJson,
+                                                            &assemblyNameText,
+                                                            &assemblyVersionText,
+                                                            &assemblyCultureText,
+                                                            &assemblyPublicKeyTokenText,
+                                                            &assemblyKindText)) {
+            cJSON_Delete(projectJson);
+            library_project_free_dependencies(global, project);
+            library_project_free_path_aliases(global, project);
+            ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
+            return ZR_NULL;
+        }
+        if (assemblyNameText != ZR_NULL) {
+            project->assemblyName = ZrCore_String_CreateTryHitCache(state, assemblyNameText);
+            project->name = project->assemblyName;
+        }
+        if (assemblyVersionText == ZR_NULL) {
+            assemblyVersionText = "0.0.0";
+        }
+        project->version = ZrCore_String_CreateTryHitCache(state, assemblyVersionText);
+        project->assemblyCulture = ZrCore_String_CreateTryHitCache(state, assemblyCultureText);
+        if (assemblyPublicKeyTokenText != ZR_NULL) {
+            project->assemblyPublicKeyToken = ZrCore_String_CreateTryHitCache(state, assemblyPublicKeyTokenText);
+        }
+        project->assemblyKind = ZrCore_String_CreateTryHitCache(state, assemblyKindText);
+        if ((assemblyNameText != ZR_NULL && project->assemblyName == ZR_NULL) ||
+            project->version == ZR_NULL ||
+            project->assemblyCulture == ZR_NULL ||
+            (assemblyPublicKeyTokenText != ZR_NULL && project->assemblyPublicKeyToken == ZR_NULL) ||
+            project->assemblyKind == ZR_NULL) {
+            cJSON_Delete(projectJson);
+            library_project_free_dependencies(global, project);
+            library_project_free_path_aliases(global, project);
+            ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
+            return ZR_NULL;
+        }
+    }
 
     ZR_JSON_READ_STRING(state, projectJson, description);
     project->description = description;
@@ -828,6 +1313,13 @@ SZrLibrary_Project *ZrLibrary_Project_New(SZrState *state, TZrNativeString raw, 
         return ZR_NULL;
     }
     if (!library_project_parse_dependencies(state, project, projectJson, path, 0, ZR_FALSE)) {
+        cJSON_Delete(projectJson);
+        library_project_free_dependencies(global, project);
+        library_project_free_path_aliases(global, project);
+        ZrCore_Memory_RawFreeWithType(global, project, sizeof(SZrLibrary_Project), ZR_MEMORY_NATIVE_TYPE_PROJECT);
+        return ZR_NULL;
+    }
+    if (!library_project_parse_references(state, project, projectJson, path, 0, ZR_FALSE)) {
         cJSON_Delete(projectJson);
         library_project_free_dependencies(global, project);
         library_project_free_path_aliases(global, project);
@@ -884,6 +1376,24 @@ static TZrBool library_project_load_resolved_file(SZrState *state, TZrNativeStri
 
     ZrCore_Io_Init(state, io, ZrLibrary_File_SourceReadImplementation, ZrLibrary_File_SourceCloseImplementation, reader);
     io->isBinary = isBinary;
+    return ZR_TRUE;
+}
+
+static TZrBool library_project_copy_diagnostic_path(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize) {
+    TZrSize index;
+
+    if (path == ZR_NULL || buffer == ZR_NULL || bufferSize == 0) {
+        return ZR_FALSE;
+    }
+
+    for (index = 0; path[index] != '\0'; index++) {
+        if (index + 1 >= bufferSize) {
+            buffer[0] = '\0';
+            return ZR_FALSE;
+        }
+        buffer[index] = path[index] == '\\' ? '/' : path[index];
+    }
+    buffer[index] = '\0';
     return ZR_TRUE;
 }
 
@@ -1068,6 +1578,13 @@ void ZrLibrary_Project_Do(SZrState *state) {
 }
 
 TZrBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TZrNativeString path, TZrNativeString md5, SZrIo *io) {
+    TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar binaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar diagnosticSourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar diagnosticBinaryPath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrBool hasSourcePath;
+    TZrBool hasBinaryPath;
+
     ZR_UNUSED_PARAMETER(md5);
 
     if (state == ZR_NULL || state->global == ZR_NULL || io == ZR_NULL) {
@@ -1079,16 +1596,34 @@ TZrBool ZrLibrary_Project_SourceLoadImplementation(SZrState *state, TZrNativeStr
         return ZR_FALSE;
     }
 
-    TZrChar fullPath[ZR_LIBRARY_MAX_PATH_LENGTH];
-    if (library_project_resolve_source_path(project, path, fullPath) &&
-        ZrLibrary_File_Exist(fullPath) == ZR_LIBRARY_FILE_IS_FILE) {
-        return library_project_load_resolved_file(state, fullPath, ZR_FALSE, io);
+    hasSourcePath = library_project_resolve_source_path(project, path, sourcePath);
+    if (hasSourcePath && ZrLibrary_File_Exist(sourcePath) == ZR_LIBRARY_FILE_IS_FILE) {
+        return library_project_load_resolved_file(state, sourcePath, ZR_FALSE, io);
     }
 
-    if (library_project_resolve_binary_path(project, path, fullPath) &&
-        ZrLibrary_File_Exist(fullPath) == ZR_LIBRARY_FILE_IS_FILE) {
-        return library_project_load_resolved_file(state, fullPath, ZR_TRUE, io);
+    hasBinaryPath = library_project_resolve_binary_path(project, path, binaryPath);
+    if (hasBinaryPath && ZrLibrary_File_Exist(binaryPath) == ZR_LIBRARY_FILE_IS_FILE) {
+        return library_project_load_resolved_file(state, binaryPath, ZR_TRUE, io);
     }
 
+    if (ZrCore_GlobalState_GetModuleLoadDiagnostic(state->global) == ZR_NULL) {
+        const TZrChar *sourceDiagnostic = "<unresolved>";
+        const TZrChar *binaryDiagnostic = "<unresolved>";
+
+        if (hasSourcePath &&
+            library_project_copy_diagnostic_path(sourcePath, diagnosticSourcePath, sizeof(diagnosticSourcePath))) {
+            sourceDiagnostic = diagnosticSourcePath;
+        }
+        if (hasBinaryPath &&
+            library_project_copy_diagnostic_path(binaryPath, diagnosticBinaryPath, sizeof(diagnosticBinaryPath))) {
+            binaryDiagnostic = diagnosticBinaryPath;
+        }
+        ZrCore_GlobalState_SetModuleLoadDiagnostic(
+                state->global,
+                "loader=project-source result=not-found module='%s' source='%s' binary='%s'",
+                path,
+                sourceDiagnostic,
+                binaryDiagnostic);
+    }
     return ZR_FALSE;
 }

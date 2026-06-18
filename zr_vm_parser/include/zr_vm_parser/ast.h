@@ -143,6 +143,10 @@ enum EZrAstNodeType {
     // 属性类型
     ZR_AST_PROPERTY_GET,
     ZR_AST_PROPERTY_SET,
+
+    // Union 类型（新增节点追加在尾部，避免已有 AST 编号漂移）
+    ZR_AST_UNION_DECLARATION,
+    ZR_AST_UNION_VARIANT,
 };
 
 typedef enum EZrAstNodeType EZrAstNodeType;
@@ -191,6 +195,7 @@ enum EZrOwnershipBuiltinKind {
     ZR_OWNERSHIP_BUILTIN_KIND_UPGRADE,
     ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
     ZR_OWNERSHIP_BUILTIN_KIND_DETACH,
+    ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN,
 };
 
 typedef enum EZrOwnershipBuiltinKind EZrOwnershipBuiltinKind;
@@ -248,6 +253,7 @@ typedef struct SZrUnaryOperator {
 // 标识符
 typedef struct SZrIdentifier {
     SZrString *name;
+    TZrBool isMoveBinding;
 } SZrIdentifier;
 
 // 类型定义
@@ -305,6 +311,7 @@ typedef struct SZrParameter {
     TZrBool genericRequiresClass;
     TZrBool genericRequiresStruct;
     TZrBool genericRequiresNew;
+    TZrBool genericRequiresOwner;
 } SZrParameter;
 
 // 字面量节点结构
@@ -630,6 +637,28 @@ typedef struct SZrEnumMember {
     SZrAstNodeArray *decorators; // DecoratorExpression 数组
 } SZrEnumMember;
 
+typedef enum EZrUnionVariantKind {
+    ZR_UNION_VARIANT_UNIT,
+    ZR_UNION_VARIANT_TUPLE,
+    ZR_UNION_VARIANT_STRUCT,
+} EZrUnionVariantKind;
+
+typedef struct SZrUnionDeclaration {
+    SZrIdentifier *name;
+    SZrGenericDeclaration *generic; // 可选
+    SZrAstNodeArray *variants; // UnionVariant 数组
+    SZrAstNodeArray *decorators; // DecoratorExpression 数组
+    EZrAccessModifier accessModifier; // 可见性修饰符，默认 ZR_ACCESS_PRIVATE
+} SZrUnionDeclaration;
+
+typedef struct SZrUnionVariant {
+    SZrIdentifier *name;
+    EZrUnionVariantKind kind;
+    SZrAstNodeArray *fields; // Parameter 数组（tuple/struct variant）
+    SZrAstNodeArray *decorators; // DecoratorExpression 数组
+    TZrBool isDefaultUsingVariant; // @Variant: using default guard variant
+} SZrUnionVariant;
+
 // 类声明
 typedef struct SZrClassDeclaration {
     SZrIdentifier *name;
@@ -770,10 +799,20 @@ typedef struct SZrExpressionStatement {
     SZrAstNode *expr;
 } SZrExpressionStatement;
 
+typedef enum EZrUsingGuardKind {
+    ZR_USING_GUARD_DROP = 0,
+    ZR_USING_GUARD_PATTERN,
+    ZR_USING_GUARD_PLUGIN
+} EZrUsingGuardKind;
+
 typedef struct SZrUsingStatement {
     SZrAstNode *resource;
     SZrAstNode *body; // Block（可选，仅 using (expr) { ... }）
     TZrBool isBlockScoped;
+    EZrUsingGuardKind guardKind;
+    SZrAstNode *pattern; // pattern guard 的绑定模式，或 plugin guard 的绑定名
+    SZrType *guardTypeInfo; // Optional: var [x]: Union.Variant = resource
+    SZrAstNode *elseBody; // Guard 未命中时的可选 else block
 } SZrUsingStatement;
 
 typedef struct SZrReturnStatement {
@@ -840,7 +879,7 @@ typedef struct SZrIntermediateInstructionParameter {
 
 // 解构
 typedef struct SZrDestructuringObject {
-    SZrAstNodeArray *keys; // Identifier 数组
+    SZrAstNodeArray *keys; // Identifier 或 KeyValuePair 数组
 } SZrDestructuringObject;
 
 typedef struct SZrDestructuringArray {
@@ -989,6 +1028,10 @@ typedef struct SZrAstNode {
         SZrIdentifier identifier;
         SZrDecoratorExpression decoratorExpression;
         SZrMetaIdentifier metaIdentifier;
+
+        // Union 类型（新增数据追加在尾部，避免扰动既有布局约定）
+        SZrUnionDeclaration unionDeclaration;
+        SZrUnionVariant unionVariant;
     } data;
 } SZrAstNode;
 

@@ -21,6 +21,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldInstructionCount = cs->instructionCount;
     TZrSize oldStackSlotCount = cs->stackSlotCount;
     TZrSize oldMaxStackSlotCount = cs->maxStackSlotCount;
+    TZrUInt32 oldLastExpressionSlot = cs->lastExpressionSlot;
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
@@ -147,6 +148,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->instructionCount = oldInstructionCount;
     cs->stackSlotCount = oldStackSlotCount;
     cs->maxStackSlotCount = oldMaxStackSlotCount;
+    cs->lastExpressionSlot = ZR_PARSER_SLOT_NONE;
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
@@ -193,6 +195,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
             cs->instructionCount = oldInstructionCount;
             cs->stackSlotCount = oldStackSlotCount;
             cs->maxStackSlotCount = oldMaxStackSlotCount;
+            cs->lastExpressionSlot = oldLastExpressionSlot;
             cs->localVarCount = oldLocalVarCount;
             cs->constantCount = oldConstantCount;
             cs->closureVarCount = oldClosureVarCount;
@@ -345,6 +348,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
         cs->instructionCount = oldInstructionCount;
         cs->stackSlotCount = oldStackSlotCount;
         cs->maxStackSlotCount = oldMaxStackSlotCount;
+        cs->lastExpressionSlot = oldLastExpressionSlot;
         cs->localVarCount = oldLocalVarCount;
         cs->constantCount = oldConstantCount;
         cs->closureVarCount = oldClosureVarCount;
@@ -479,6 +483,7 @@ void compile_test_declaration(SZrCompilerState *cs, SZrAstNode *node) {
     cs->instructionCount = oldInstructionCount;
     cs->stackSlotCount = oldStackSlotCount;
     cs->maxStackSlotCount = oldMaxStackSlotCount;
+    cs->lastExpressionSlot = oldLastExpressionSlot;
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;

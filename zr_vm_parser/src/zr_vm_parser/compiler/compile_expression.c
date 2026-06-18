@@ -112,7 +112,11 @@ static void compile_unary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     } else {
         // 其他一元操作符：先编译操作数
         compile_expression_non_tail(cs, arg);
-        TZrUInt32 argSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+        TZrUInt32 argSlot = cs->lastExpressionSlot;
+        if (argSlot == ZR_PARSER_SLOT_NONE) {
+            ZrParser_Compiler_Error(cs, "Failed to compile unary operand", node->location);
+            return;
+        }
         
         if (strcmp(op, "!") == 0) {
             EZrValueType argType = ZR_VALUE_TYPE_OBJECT;
@@ -196,7 +200,11 @@ static void compile_type_cast_expression(SZrCompilerState *cs, SZrAstNode *node)
     // 先编译要转换的表达式
     compile_expression_non_tail(cs, expression);
     
-    TZrUInt32 srcSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+    TZrUInt32 srcSlot = cs->lastExpressionSlot;
+    if (srcSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to compile cast source expression", node->location);
+        return;
+    }
     TZrUInt32 destSlot = allocate_stack_slot(cs);
     
     // 根据目标类型生成相应的转换指令
@@ -384,11 +392,19 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 编译左操作数
     compile_expression_non_tail(cs, left);
-    TZrUInt32 leftSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+    TZrUInt32 leftSlot = cs->lastExpressionSlot;
+    if (leftSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to compile left operand", node->location);
+        return;
+    }
     
     // 编译右操作数
     compile_expression_non_tail(cs, right);
-    TZrUInt32 rightSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+    TZrUInt32 rightSlot = cs->lastExpressionSlot;
+    if (rightSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to compile right operand", node->location);
+        return;
+    }
     
     // 如果需要类型转换，插入转换指令
     // 注意：对于比较操作，需要保留 leftType 和 rightType 用于选择正确的比较指令
@@ -575,6 +591,7 @@ static void compile_binary_expression(SZrCompilerState *cs, SZrAstNode *node) {
             ZR_COMPILE_SLOT_U16(leftSlot),
             ZR_COMPILE_SLOT_U16(rightSlot));
     emit_instruction(cs, inst);
+    collapse_stack_to_slot(cs, destSlot);
     
     // 清理类型信息
     if (hasTypeInfo) {
@@ -626,7 +643,9 @@ static TZrBool note_inline_struct_field_result_slot(SZrCompilerState *cs,
     }
 
     prototypeInfo = find_compiler_type_prototype(cs, fieldTypeName);
-    if (prototypeInfo == ZR_NULL || prototypeInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+    if (prototypeInfo == ZR_NULL ||
+        (prototypeInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+         prototypeInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_UNION)) {
         return ZR_TRUE;
     }
 
@@ -653,7 +672,9 @@ static TZrBool assignment_field_type_is_inline_struct(SZrCompilerState *cs, SZrS
     }
 
     prototypeInfo = find_compiler_type_prototype(cs, fieldTypeName);
-    return (TZrBool)(prototypeInfo != ZR_NULL && prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT);
+    return (TZrBool)(prototypeInfo != ZR_NULL &&
+                     (prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+                      prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION));
 }
 
 static TZrBool emit_assignment_inline_struct_writebacks(
@@ -749,7 +770,11 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                 return ZR_FALSE;
             }
 
-            currentSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+            currentSlot = cs->lastExpressionSlot;
+            if (currentSlot == ZR_PARSER_SLOT_NONE) {
+                ZrParser_Compiler_Error(cs, "Primary assignment target did not produce a value", primary->property->location);
+                return ZR_FALSE;
+            }
         }
 
         resolve_expression_root_type(cs, primary->property, &rootTypeName, &rootIsTypeReference);
@@ -853,7 +878,9 @@ static TZrBool compile_assignment_target_member_prefix(SZrCompilerState *cs,
                     SZrString *fieldTypeName = typeMember != ZR_NULL ? typeMember->fieldTypeName
                                                                       : declaredFieldTypeName;
                     TZrBool fieldIsInlineStruct = assignment_field_type_is_inline_struct(cs, fieldTypeName);
-                    TZrUInt32 destinationSlot = fieldIsInlineStruct ? allocate_stack_slot(cs) : currentSlot;
+                    TZrUInt32 destinationSlot = fieldIsInlineStruct
+                                                        ? allocate_fresh_stack_slot_after(cs, parentSlot)
+                                                        : currentSlot;
 
                     if (!emit_member_slot_get(cs, destinationSlot, parentSlot, memberId, memberNode->location)) {
                         return ZR_FALSE;
@@ -948,6 +975,8 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
     EZrInstructionCode assignmentConversionOpcode = ZR_INSTRUCTION_ENUM(ENUM_MAX);
     SZrInferredType leftType;
     SZrInferredType rightType;
+    TZrBool useDirectInlineRightSlot = ZR_FALSE;
+    TZrUInt32 directInlineRightSlot = ZR_PARSER_SLOT_NONE;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -973,14 +1002,28 @@ static void compile_assignment_expression(SZrCompilerState *cs, SZrAstNode *node
             return;
         }
         assignmentConversionOpcode = ZrParser_InferredType_GetConversionOpcode(&rightType, &leftType);
+        if (assignmentConversionOpcode == ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
+            useDirectInlineRightSlot =
+                    compile_expression_try_get_inline_union_identifier_slot_for_type(cs,
+                                                                                     right,
+                                                                                     &leftType,
+                                                                                     &directInlineRightSlot);
+        }
     }
     ZrParser_InferredType_Free(cs->state, &leftType);
     ZrParser_InferredType_Free(cs->state, &rightType);
     
     // 编译右值
-    ZrParser_Expression_Compile(cs, right);
     EZrInstructionCode compoundAssignmentOpcode = ZR_INSTRUCTION_ENUM(ENUM_MAX);
-    TZrUInt32 rightSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+    TZrUInt32 rightSlot = directInlineRightSlot;
+    if (!useDirectInlineRightSlot) {
+        ZrParser_Expression_Compile(cs, right);
+        rightSlot = cs->lastExpressionSlot;
+    }
+    if (!cs->hasError && rightSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Assignment expression did not produce a value", right->location);
+        return;
+    }
     if (!cs->hasError && assignmentConversionOpcode != ZR_INSTRUCTION_ENUM(ENUM_MAX)) {
         emit_type_conversion(cs, rightSlot, rightSlot, assignmentConversionOpcode);
     }
@@ -1462,7 +1505,11 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 编译左操作数
     compile_expression_non_tail(cs, left);
-    TZrUInt32 leftSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+    TZrUInt32 leftSlot = cs->lastExpressionSlot;
+    if (leftSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to compile logical left operand", node->location);
+        return;
+    }
     
     // 分配结果槽位
     TZrUInt32 destSlot = allocate_stack_slot(cs);
@@ -1482,6 +1529,9 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
         add_pending_jump(cs, jumpIfIndex, endLabelId);
         
         if (compile_expression_into_slot(cs, right, destSlot) == ZR_PARSER_SLOT_NONE) {
+            return;
+        }
+        if (normalize_top_result_to_slot(cs, destSlot) == ZR_PARSER_SLOT_NONE) {
             return;
         }
     } else if (strcmp(op, "||") == 0) {
@@ -1506,6 +1556,9 @@ static void compile_logical_expression(SZrCompilerState *cs, SZrAstNode *node) {
         
         resolve_label(cs, evaluateRightLabelId);
         if (compile_expression_into_slot(cs, right, destSlot) == ZR_PARSER_SLOT_NONE) {
+            return;
+        }
+        if (normalize_top_result_to_slot(cs, destSlot) == ZR_PARSER_SLOT_NONE) {
             return;
         }
     } else {
@@ -1536,7 +1589,11 @@ static void compile_conditional_expression(SZrCompilerState *cs, SZrAstNode *nod
     
     // 编译条件
     compile_expression_non_tail(cs, test);
-    TZrUInt32 testSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+    TZrUInt32 testSlot = cs->lastExpressionSlot;
+    if (testSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to compile conditional test", node->location);
+        return;
+    }
     resultSlot = allocate_stack_slot(cs);
     
     // 创建 else 和 end 标签
@@ -1732,7 +1789,9 @@ ZR_PARSER_API void ZrParser_Expression_Compile(SZrCompilerState *cs, SZrAstNode 
                     case ZR_AST_CLASS_DECLARATION: typeName = "CLASS_DECLARATION"; break;
                     case ZR_AST_INTERFACE_DECLARATION: typeName = "INTERFACE_DECLARATION"; break;
                     case ZR_AST_ENUM_DECLARATION: typeName = "ENUM_DECLARATION"; break;
+                    case ZR_AST_UNION_DECLARATION: typeName = "UNION_DECLARATION"; break;
                     case ZR_AST_ENUM_MEMBER: typeName = "ENUM_MEMBER"; break;
+                    case ZR_AST_UNION_VARIANT: typeName = "UNION_VARIANT"; break;
                     case ZR_AST_MODULE_DECLARATION: typeName = "MODULE_DECLARATION"; break;
                     case ZR_AST_IMPORT_EXPRESSION: typeName = "IMPORT_EXPRESSION"; break;
                     case ZR_AST_TYPE_QUERY_EXPRESSION: typeName = "TYPE_QUERY_EXPRESSION"; break;

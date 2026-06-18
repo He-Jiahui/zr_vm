@@ -4,9 +4,11 @@
 
 #include "zr_vm_parser/compiler.h"
 #include "compiler_internal.h"
+#include "compile_expression_internal.h"
 #include "compile_time_binding_metadata.h"
 #include "compile_time_executor_internal.h"
 #include "compile_statement_internal.h"
+#include "compiler_using_plugin_guard_escape.h"
 #include "type_inference_internal.h"
 #include "zr_vm_parser/ast.h"
 #include "zr_vm_parser/parser.h"
@@ -30,15 +32,73 @@ void emit_type_conversion(SZrCompilerState *cs,
                           TZrUInt32 srcSlot,
                           EZrInstructionCode conversionOpcode);
 TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
+TZrBool try_resolve_union_variant_pattern_for_type(SZrCompilerState *cs,
+                                                   SZrAstNode *node,
+                                                   SZrString *typeName,
+                                                   SZrString **outVariantName,
+                                                   SZrAstNodeArray **outBindings,
+                                                   SZrAstNode **outVariant);
+TZrBool try_resolve_union_variant_pattern_with_type_annotation(SZrCompilerState *cs,
+                                                               SZrAstNode *pattern,
+                                                               SZrType *variantTypeInfo,
+                                                               SZrString *resourceTypeName,
+                                                               SZrString **outVariantName,
+                                                               SZrAstNodeArray **outBindings,
+                                                               SZrAstNode **outVariant);
+TZrBool try_resolve_union_variant_pattern_annotation(SZrCompilerState *cs,
+                                                     SZrAstNode *pattern,
+                                                     SZrType *variantTypeInfo,
+                                                     SZrString **outUnionTypeName,
+                                                     SZrString **outVariantName,
+                                                     SZrAstNodeArray **outBindings,
+                                                     SZrAstNode **outVariant);
+void register_union_variant_payload_binding_type(SZrCompilerState *cs,
+                                                 SZrAstNode *variant,
+                                                 TZrSize payloadIndex,
+                                                 SZrString *bindingName,
+                                                 TZrBool moveBinding);
+TZrBool union_variant_payload_binding_defaults_to_borrow(SZrAstNode *variant,
+                                                         TZrSize payloadIndex,
+                                                         TZrBool moveBinding);
+TZrUInt32 emit_string_constant(SZrCompilerState *cs, SZrString *value);
+EZrInstructionCode compiler_select_binary_equality_opcode(TZrBool isNotEqual,
+                                                          TZrBool hasTypeInfo,
+                                                          EZrValueType leftType,
+                                                          EZrValueType rightType);
 
 ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *node);
 static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node);
+static TZrBool ownership_qualifier_is_borrow_escape(EZrOwnershipQualifier qualifier);
+static TZrBool validate_exported_variable_ownership_escape(SZrCompilerState *cs,
+                                                           const SZrVariableDeclaration *decl,
+                                                           const SZrInferredType *resolvedType,
+                                                           SZrFileRange location);
 static TZrNativeString compile_statement_get_native_string(SZrString *value);
+void emit_constant_to_slot_local(SZrCompilerState *cs,
+                                 TZrUInt32 slot,
+                                 const SZrTypeValue *value,
+                                 SZrFileRange location);
 SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeName);
 SZrTypePrototypeInfo *find_compiler_type_prototype(SZrCompilerState *cs, SZrString *typeName);
 SZrTypeMemberInfo *find_compiler_type_member(SZrCompilerState *cs,
                                              SZrString *typeName,
                                              SZrString *memberName);
+
+static TZrBool compile_statement_type_has_inline_byte_layout(SZrCompilerState *cs,
+                                                             const SZrInferredType *type) {
+    SZrTypePrototypeInfo *prototype;
+
+    if (cs == ZR_NULL || type == ZR_NULL || type->typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    prototype = find_compiler_type_prototype(cs, type->typeName);
+    return (TZrBool)(prototype != ZR_NULL &&
+                     (prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+                      prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) &&
+                     prototype->layoutByteSize > 0u &&
+                     prototype->layoutByteAlign > 0u);
+}
 
 static void compile_statement_register_type_value_alias(SZrCompilerState *cs,
                                                         SZrString *name,
@@ -195,6 +255,54 @@ static TZrBool compile_statement_register_explicit_type_name(SZrCompilerState *c
     return ZR_TRUE;
 }
 
+static TZrBool compile_statement_destructuring_entry_names(SZrAstNode *entry,
+                                                           SZrString **outBindingName,
+                                                           SZrString **outFieldName,
+                                                           SZrFileRange *outLocation) {
+    if (outBindingName != ZR_NULL) {
+        *outBindingName = ZR_NULL;
+    }
+    if (outFieldName != ZR_NULL) {
+        *outFieldName = ZR_NULL;
+    }
+    if (entry == ZR_NULL || outBindingName == ZR_NULL || outFieldName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (entry->type == ZR_AST_IDENTIFIER_LITERAL) {
+        if (entry->data.identifier.name == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        *outBindingName = entry->data.identifier.name;
+        *outFieldName = entry->data.identifier.name;
+        if (outLocation != ZR_NULL) {
+            *outLocation = entry->location;
+        }
+        return ZR_TRUE;
+    }
+
+    if (entry->type == ZR_AST_KEY_VALUE_PAIR) {
+        SZrKeyValuePair *pair = &entry->data.keyValuePair;
+        if (pair->keyIsComputed ||
+            pair->key == ZR_NULL ||
+            pair->key->type != ZR_AST_IDENTIFIER_LITERAL ||
+            pair->key->data.identifier.name == ZR_NULL ||
+            pair->value == ZR_NULL ||
+            pair->value->type != ZR_AST_IDENTIFIER_LITERAL ||
+            pair->value->data.identifier.name == ZR_NULL) {
+            return ZR_FALSE;
+        }
+        *outBindingName = pair->key->data.identifier.name;
+        *outFieldName = pair->value->data.identifier.name;
+        if (outLocation != ZR_NULL) {
+            *outLocation = entry->location;
+        }
+        return ZR_TRUE;
+    }
+
+    return ZR_FALSE;
+}
+
 static TZrBool compile_statement_try_register_imported_destructured_type_aliases(SZrCompilerState *cs,
                                                                                  SZrAstNode *node) {
     SZrVariableDeclaration *decl;
@@ -232,30 +340,33 @@ static TZrBool compile_statement_try_register_imported_destructured_type_aliases
 
     for (TZrSize index = 0; index < destructuring->keys->count; index++) {
         SZrAstNode *keyNode = destructuring->keys->nodes[index];
-        SZrString *keyName;
+        SZrString *bindingName = ZR_NULL;
+        SZrString *fieldName = ZR_NULL;
+        SZrFileRange bindingLocation;
         SZrTypeMemberInfo *memberInfo;
 
-        if (keyNode == ZR_NULL || keyNode->type != ZR_AST_IDENTIFIER_LITERAL ||
-            keyNode->data.identifier.name == ZR_NULL) {
+        if (!compile_statement_destructuring_entry_names(keyNode,
+                                                         &bindingName,
+                                                         &fieldName,
+                                                         &bindingLocation)) {
             continue;
         }
 
-        keyName = keyNode->data.identifier.name;
-        memberInfo = find_compiler_type_member(cs, moduleName, keyName);
+        memberInfo = find_compiler_type_member(cs, moduleName, fieldName);
         if (memberInfo == ZR_NULL || memberInfo->fieldTypeName == ZR_NULL ||
-            !ZrCore_String_Equal(memberInfo->fieldTypeName, keyName) ||
-            find_compiler_type_prototype(cs, keyName) == ZR_NULL) {
+            !ZrCore_String_Equal(memberInfo->fieldTypeName, fieldName) ||
+            find_compiler_type_prototype(cs, fieldName) == ZR_NULL) {
             continue;
         }
 
-        if (!compile_statement_register_explicit_type_name(cs, keyName, keyNode->location)) {
+        if (!compile_statement_register_explicit_type_name(cs, bindingName, bindingLocation)) {
             return ZR_FALSE;
         }
 
         {
-            SZrString *qualifiedTypeName = compile_statement_build_qualified_type_name(cs, moduleName, keyName);
+            SZrString *qualifiedTypeName = compile_statement_build_qualified_type_name(cs, moduleName, fieldName);
             if (qualifiedTypeName != ZR_NULL) {
-                compile_statement_register_type_binding_alias(cs, keyName, qualifiedTypeName);
+                compile_statement_register_type_binding_alias(cs, bindingName, qualifiedTypeName);
             }
         }
     }
@@ -1512,24 +1623,6 @@ static TZrBool compile_statement_try_register_imported_compile_time_member_alias
     return ZR_TRUE;
 }
 
-static void emit_constant_to_slot_local(SZrCompilerState *cs, TZrUInt32 slot, const SZrTypeValue *value,
-                                        SZrFileRange location) {
-    if (cs == ZR_NULL || value == ZR_NULL || cs->hasError) {
-        return;
-    }
-
-    if (!ZrParser_Compiler_ValidateRuntimeProjectionValue(cs, value, location)) {
-        return;
-    }
-
-    SZrTypeValue constantValue = *value;
-    TZrUInt32 constantIndex = add_constant(cs, &constantValue);
-    TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_CONSTANT),
-                                               (TZrUInt16)slot,
-                                               (TZrInt32)constantIndex);
-    emit_instruction(cs, inst);
-}
-
 static TZrBool resolve_fixed_array_size(const SZrInferredType *type, TZrSize *fixedSize) {
     if (type == ZR_NULL || fixedSize == ZR_NULL ||
         type->baseType != ZR_VALUE_TYPE_ARRAY || !type->hasArraySizeConstraint) {
@@ -1633,6 +1726,61 @@ static TZrTypeId resolve_using_resource_type_id(SZrCompilerState *cs, SZrAstNode
     return typeId;
 }
 
+static TZrBool infer_using_resource_type(SZrCompilerState *cs,
+                                         SZrAstNode *resource,
+                                         SZrInferredType *outType) {
+    if (cs == ZR_NULL || resource == ZR_NULL || outType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (resource->type == ZR_AST_IDENTIFIER_LITERAL && cs->typeEnv != ZR_NULL &&
+        resource->data.identifier.name != ZR_NULL &&
+        ZrParser_TypeEnvironment_LookupVariable(cs->state,
+                                                cs->typeEnv,
+                                                resource->data.identifier.name,
+                                                outType)) {
+        return ZR_TRUE;
+    }
+
+    return ZrParser_ExpressionType_Infer(cs, resource, outType);
+}
+
+static EZrOwnershipBuiltinKind using_cleanup_builtin_for_ownership(
+        EZrOwnershipQualifier ownershipQualifier) {
+    switch (ownershipQualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+            return ZR_OWNERSHIP_BUILTIN_KIND_RELEASE;
+        case ZR_OWNERSHIP_QUALIFIER_LOANED:
+            return ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN;
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+        case ZR_OWNERSHIP_QUALIFIER_NONE:
+        default:
+            return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+    }
+}
+
+static TZrBool note_using_resource_slot_type_hint(SZrCompilerState *cs,
+                                                  SZrAstNode *resource,
+                                                  TZrUInt32 targetSlot) {
+    SZrInferredType resourceType;
+    TZrBool ok = ZR_TRUE;
+
+    if (cs == ZR_NULL || resource == ZR_NULL || targetSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &resourceType, ZR_VALUE_TYPE_OBJECT);
+    if (infer_using_resource_type(cs, resource, &resourceType)) {
+        ok = compiler_register_stack_slot_type_hint(cs, targetSlot, &resourceType);
+    } else if (cs->hasError) {
+        ok = ZR_FALSE;
+    }
+    ZrParser_InferredType_Free(cs->state, &resourceType);
+    return ok;
+}
+
 static TZrSymbolId register_using_resource_symbol(SZrCompilerState *cs, SZrAstNode *resource) {
     TZrTypeId typeId;
 
@@ -1685,7 +1833,10 @@ static SZrString *create_hidden_using_local_name(SZrCompilerState *cs) {
     return ZrCore_String_Create(cs->state, buffer, (TZrSize)length);
 }
 
-static TZrBool compile_using_resource_slot(SZrCompilerState *cs, SZrAstNode *resource, TZrUInt32 *slot) {
+static TZrBool compile_using_resource_slot(SZrCompilerState *cs,
+                                           SZrAstNode *resource,
+                                           const SZrInferredType *resourceType,
+                                           TZrUInt32 *slot) {
     TZrUInt32 targetSlot;
     TZrUInt32 valueSlot;
     SZrString *hiddenName;
@@ -1710,12 +1861,26 @@ static TZrBool compile_using_resource_slot(SZrCompilerState *cs, SZrAstNode *res
     }
 
     targetSlot = allocate_local_var(cs, hiddenName);
+    if (resourceType != ZR_NULL) {
+        ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, hiddenName, resourceType);
+        if (!compiler_register_stack_slot_type_hint(cs, targetSlot, resourceType)) {
+            return ZR_FALSE;
+        }
+    }
     ZrParser_Expression_Compile(cs, resource);
     if (cs->hasError || cs->stackSlotCount == 0) {
         return ZR_FALSE;
     }
 
-    valueSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+    valueSlot = cs->lastExpressionSlot;
+    if (valueSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Using resource expression did not produce a value", resource->location);
+        return ZR_FALSE;
+    }
+    if (!note_using_resource_slot_type_hint(cs, resource, targetSlot)) {
+        ZrParser_Compiler_Error(cs, "Failed to record using resource slot type", resource->location);
+        return ZR_FALSE;
+    }
     if (valueSlot != targetSlot) {
         emit_instruction(cs,
                          create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
@@ -1728,8 +1893,12 @@ static TZrBool compile_using_resource_slot(SZrCompilerState *cs, SZrAstNode *res
     return ZR_TRUE;
 }
 
-static void register_using_cleanup_slot(SZrCompilerState *cs, TZrUInt32 slot) {
+static void register_using_cleanup_slot(SZrCompilerState *cs,
+                                        TZrUInt32 slot,
+                                        EZrOwnershipBuiltinKind ownershipBuiltinKind,
+                                        TZrUInt32 sourceSlot) {
     SZrScope *scope;
+    SZrScopeCleanupRegistration registration;
 
     if (cs == ZR_NULL || cs->hasError) {
         return;
@@ -1740,10 +1909,767 @@ static void register_using_cleanup_slot(SZrCompilerState *cs, TZrUInt32 slot) {
         return;
     }
 
-    emit_instruction(cs,
-                     create_instruction_0(ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED),
-                                          (TZrUInt16)slot));
+    if (ownershipBuiltinKind == ZR_OWNERSHIP_BUILTIN_KIND_NONE) {
+        emit_instruction(cs,
+                         create_instruction_0(ZR_INSTRUCTION_ENUM(MARK_TO_BE_CLOSED),
+                                              (TZrUInt16)slot));
+    }
+
+    registration.slot = slot;
+    registration.sourceSlot = sourceSlot;
+    registration.ownershipBuiltinKind = ownershipBuiltinKind;
+    ZrCore_Array_Push(cs->state, &scope->cleanupRegistrations, &registration);
     scope->cleanupRegistrationCount++;
+}
+
+static TZrBool register_plugin_guard_scoped_owner_cleanup(SZrCompilerState *cs,
+                                                          TZrUInt32 resourceSlot,
+                                                          SZrFileRange location) {
+    SZrString *hiddenName;
+    TZrUInt32 ownerSlot;
+
+    if (cs == ZR_NULL || cs->hasError || resourceSlot == ZR_PARSER_SLOT_NONE) {
+        return ZR_FALSE;
+    }
+
+    hiddenName = create_hidden_using_local_name(cs);
+    if (hiddenName == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Failed to create plugin guard scoped owner", location);
+        return ZR_FALSE;
+    }
+
+    ownerSlot = allocate_local_var(cs, hiddenName);
+    if (ownerSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to allocate plugin guard scoped owner", location);
+        return ZR_FALSE;
+    }
+
+    if (!emit_module_plain_share_helper_call(cs, resourceSlot, ownerSlot, location)) {
+        return ZR_FALSE;
+    }
+
+    register_using_cleanup_slot(cs,
+                                ownerSlot,
+                                ZR_OWNERSHIP_BUILTIN_KIND_RELEASE,
+                                ZR_PARSER_SLOT_NONE);
+    return !cs->hasError;
+}
+
+static TZrUInt32 resolve_using_loan_source_slot(SZrCompilerState *cs,
+                                                SZrAstNode *resource,
+                                                EZrOwnershipBuiltinKind cleanupBuiltinKind) {
+    SZrConstructExpression *constructExpr;
+
+    if (cleanupBuiltinKind != ZR_OWNERSHIP_BUILTIN_KIND_RETURN_LOAN) {
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    if (cs == ZR_NULL || resource == ZR_NULL || resource->type != ZR_AST_CONSTRUCT_EXPRESSION) {
+        if (cs != ZR_NULL && resource != ZR_NULL) {
+            ZrParser_Compiler_Error(cs,
+                                    "Loan using cleanup requires a direct Loan<T>(localOwner) resource",
+                                    resource->location);
+        }
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    constructExpr = &resource->data.constructExpression;
+    if (constructExpr->builtinKind != ZR_OWNERSHIP_BUILTIN_KIND_LOAN ||
+        constructExpr->target == ZR_NULL ||
+        constructExpr->target->type != ZR_AST_IDENTIFIER_LITERAL ||
+        constructExpr->target->data.identifier.name == ZR_NULL) {
+        ZrParser_Compiler_Error(cs,
+                                "Loan using cleanup requires a direct Loan<T>(localOwner) resource",
+                                resource->location);
+        return ZR_PARSER_SLOT_NONE;
+    }
+
+    {
+        TZrUInt32 sourceSlot = find_local_var(cs, constructExpr->target->data.identifier.name);
+        if (sourceSlot == ZR_PARSER_SLOT_NONE) {
+            ZrParser_Compiler_Error(cs,
+                                    "Loan using cleanup source owner must be a local binding",
+                                    constructExpr->target->location);
+        }
+        return sourceSlot;
+    }
+}
+
+static TZrBool compile_using_union_pattern_compare(SZrCompilerState *cs,
+                                                   SZrUsingStatement *stmt,
+                                                   TZrUInt32 resourceSlot,
+                                                   SZrString *resourceTypeName,
+                                                   TZrUInt32 *outCompareSlot,
+                                                   SZrAstNodeArray **outBindings,
+                                                   SZrAstNode **outVariant) {
+    SZrString *variantName = ZR_NULL;
+    SZrAstNodeArray *bindings = ZR_NULL;
+    SZrAstNode *variant = ZR_NULL;
+    SZrString *tagMemberName;
+    TZrUInt32 tagMemberId;
+    TZrUInt32 tagSlot;
+    TZrUInt32 variantSlot;
+    TZrUInt32 compareSlot;
+    EZrInstructionCode compareOpcode;
+
+    if (outCompareSlot != ZR_NULL) {
+        *outCompareSlot = ZR_PARSER_SLOT_NONE;
+    }
+    if (outBindings != ZR_NULL) {
+        *outBindings = ZR_NULL;
+    }
+    if (outVariant != ZR_NULL) {
+        *outVariant = ZR_NULL;
+    }
+    if (cs == ZR_NULL || stmt == ZR_NULL || stmt->pattern == ZR_NULL ||
+        resourceTypeName == ZR_NULL || outCompareSlot == ZR_NULL ||
+        outBindings == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    if (stmt->guardTypeInfo != ZR_NULL) {
+        if (!try_resolve_union_variant_pattern_with_type_annotation(cs,
+                                                                    stmt->pattern,
+                                                                    stmt->guardTypeInfo,
+                                                                    resourceTypeName,
+                                                                    &variantName,
+                                                                    &bindings,
+                                                                    &variant)) {
+            ZrParser_Compiler_Error(cs, "Unable to resolve using union pattern", stmt->pattern->location);
+            return ZR_FALSE;
+        }
+    } else if (!try_resolve_union_variant_pattern_for_type(cs,
+                                                           stmt->pattern,
+                                                           resourceTypeName,
+                                                           &variantName,
+                                                           &bindings,
+                                                           &variant)) {
+        ZrParser_Compiler_Error(cs, "Unable to resolve using union pattern", stmt->pattern->location);
+        return ZR_FALSE;
+    }
+    if (cs->hasError || variantName == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    tagMemberName = ZrCore_String_CreateFromNative(cs->state, "__zr_unionVariant");
+    if (tagMemberName == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Failed to allocate union variant tag member name", stmt->pattern->location);
+        return ZR_TRUE;
+    }
+
+    tagMemberId = compiler_get_or_add_member_entry(cs, tagMemberName);
+    if (tagMemberId == ZR_PARSER_MEMBER_ID_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to register union variant tag member", stmt->pattern->location);
+        return ZR_TRUE;
+    }
+
+    tagSlot = allocate_stack_slot(cs);
+    emit_instruction(cs,
+                     create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                                          (TZrUInt16)tagSlot,
+                                          (TZrUInt16)resourceSlot,
+                                          (TZrUInt16)tagMemberId));
+
+    variantSlot = emit_string_constant(cs, variantName);
+    if (variantSlot == ZR_PARSER_SLOT_NONE || cs->hasError) {
+        ZrParser_Compiler_Error(cs, "Failed to emit union variant tag constant", stmt->pattern->location);
+        return ZR_TRUE;
+    }
+
+    compareOpcode = compiler_select_binary_equality_opcode(ZR_FALSE,
+                                                           ZR_TRUE,
+                                                           ZR_VALUE_TYPE_STRING,
+                                                           ZR_VALUE_TYPE_STRING);
+    compareSlot = allocate_stack_slot(cs);
+    emit_instruction(cs,
+                     create_instruction_2(compareOpcode,
+                                          (TZrUInt16)compareSlot,
+                                          (TZrUInt16)tagSlot,
+                                          (TZrUInt16)variantSlot));
+
+    *outCompareSlot = compareSlot;
+    *outBindings = bindings;
+    if (outVariant != ZR_NULL) {
+        *outVariant = variant;
+    }
+    return ZR_TRUE;
+}
+
+static TZrBool using_pattern_is_legacy_union_variant_binder(SZrAstNode *pattern) {
+    return pattern != ZR_NULL &&
+           (pattern->type == ZR_AST_IDENTIFIER_LITERAL ||
+            pattern->type == ZR_AST_PRIMARY_EXPRESSION);
+}
+
+static void compile_using_union_pattern_bindings(SZrCompilerState *cs,
+                                                 TZrUInt32 resourceSlot,
+                                                 SZrAstNodeArray *bindings,
+                                                 SZrAstNode *variant,
+                                                 SZrFileRange location) {
+    if (cs == ZR_NULL || bindings == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < bindings->count; index++) {
+        SZrAstNode *bindingNode = bindings->nodes[index];
+        TZrChar memberNameBuffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
+        TZrInt32 written;
+        SZrString *memberName;
+        TZrUInt32 memberId;
+        TZrUInt32 localSlot;
+        TZrUInt32 valueSlot;
+        TZrUInt32 bindingValueSlot;
+        TZrBool moveBinding;
+        TZrBool payloadDefaultsToBorrow;
+        TZrBool needsBorrow;
+
+        if (bindingNode == ZR_NULL || bindingNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+            bindingNode->data.identifier.name == ZR_NULL) {
+            ZrParser_Compiler_Error(cs,
+                                    "Union using pattern binding must be an identifier",
+                                    bindingNode != ZR_NULL ? bindingNode->location : location);
+            return;
+        }
+
+        written = snprintf(memberNameBuffer,
+                           sizeof(memberNameBuffer),
+                           "__zr_unionPayload%u",
+                           (unsigned)index);
+        if (written <= 0 || (TZrSize)written >= sizeof(memberNameBuffer)) {
+            ZrParser_Compiler_Error(cs, "Union payload member name is too long", location);
+            return;
+        }
+
+        memberName = ZrCore_String_Create(cs->state, memberNameBuffer, (TZrSize)written);
+        if (memberName == ZR_NULL) {
+            ZrParser_Compiler_Error(cs, "Failed to allocate union payload member name", location);
+            return;
+        }
+
+        memberId = compiler_get_or_add_member_entry(cs, memberName);
+        if (memberId == ZR_PARSER_MEMBER_ID_NONE) {
+            ZrParser_Compiler_Error(cs, "Failed to register union payload member", location);
+            return;
+        }
+
+        localSlot = allocate_local_var(cs, bindingNode->data.identifier.name);
+        valueSlot = allocate_stack_slot(cs);
+        emit_instruction(cs,
+                         create_instruction_2(ZR_INSTRUCTION_ENUM(GET_MEMBER),
+                                              (TZrUInt16)valueSlot,
+                                              (TZrUInt16)resourceSlot,
+                                              (TZrUInt16)memberId));
+        bindingValueSlot = valueSlot;
+        moveBinding = bindingNode->data.identifier.isMoveBinding;
+        payloadDefaultsToBorrow = union_variant_payload_binding_defaults_to_borrow(variant, index, ZR_FALSE);
+        needsBorrow = union_variant_payload_binding_defaults_to_borrow(variant, index, moveBinding);
+        if (needsBorrow) {
+            TZrUInt32 borrowSlot = allocate_stack_slot(cs);
+
+            emit_instruction(cs,
+                             create_instruction_2(ZR_INSTRUCTION_ENUM(OWN_BORROW),
+                                                  (TZrUInt16)borrowSlot,
+                                                  (TZrUInt16)valueSlot,
+                                                  0));
+            bindingValueSlot = borrowSlot;
+        }
+        if (moveBinding && payloadDefaultsToBorrow) {
+            if (!emit_member_slot_set_null(cs, resourceSlot, memberId, location)) {
+                return;
+            }
+        }
+        emit_instruction(cs,
+                         create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                              (TZrUInt16)localSlot,
+                                              (TZrInt32)bindingValueSlot));
+        register_union_variant_payload_binding_type(cs,
+                                                    variant,
+                                                    index,
+                                                    bindingNode->data.identifier.name,
+                                                    moveBinding);
+        ZrParser_Compiler_TrimStackBy(cs, needsBorrow ? 2u : 1u);
+    }
+}
+
+static void compile_using_plugin_guard_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrUsingStatement *stmt;
+    SZrString *bindingName;
+    TZrUInt32 resourceSlot;
+    TZrUInt32 valueSlot;
+    TZrUInt32 localSlot;
+    TZrUInt32 activateOffset;
+    SZrInferredType resourceType;
+    SZrString *moduleName = ZR_NULL;
+    SZrAstNode *modulePathNode;
+    TZrSize elseLabelId;
+    TZrSize endLabelId = ZR_PARSER_LABEL_ID_NONE;
+    TZrInstruction jumpIfInst;
+    TZrSize jumpIfIndex;
+    TZrInstruction jumpEndInst;
+    TZrSize jumpEndIndex;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    stmt = &node->data.usingStatement;
+    if (stmt->resource == ZR_NULL || stmt->resource->type != ZR_AST_IMPORT_EXPRESSION ||
+        stmt->pattern == ZR_NULL || stmt->pattern->type != ZR_AST_IDENTIFIER_LITERAL ||
+        stmt->pattern->data.identifier.name == ZR_NULL || stmt->body == ZR_NULL) {
+        ZrParser_Compiler_Error(cs,
+                                "Using import guard requires `using (var name = %import(...)) { ... }`",
+                                node->location);
+        return;
+    }
+
+    bindingName = stmt->pattern->data.identifier.name;
+    if (!ZrParser_Compiler_ValidateUsingPluginGuardEscape(cs, stmt)) {
+        return;
+    }
+
+    enter_scope(cs);
+
+    modulePathNode = stmt->resource->data.importExpression.modulePath;
+    if (modulePathNode == ZR_NULL || modulePathNode->type != ZR_AST_STRING_LITERAL ||
+        modulePathNode->data.stringLiteral.value == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Using import guard requires a normalized string module path", node->location);
+        exit_scope(cs);
+        return;
+    }
+
+    valueSlot = ZrParser_Compiler_EmitImportGuardModuleExpression(cs,
+                                                                  modulePathNode->data.stringLiteral.value,
+                                                                  stmt->resource->location);
+    if (cs->hasError || valueSlot == ZR_PARSER_SLOT_NONE) {
+        exit_scope(cs);
+        return;
+    }
+    resourceSlot = valueSlot;
+    ZrParser_Compiler_TrimStackToSlot(cs, resourceSlot);
+
+    activateOffset = (TZrUInt32)cs->instructionCount;
+    localSlot = bind_existing_stack_slot_as_local_var(cs, bindingName, resourceSlot, activateOffset);
+    if (localSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to bind using import guard variable", stmt->pattern->location);
+        exit_scope(cs);
+        return;
+    }
+
+    moduleName = modulePathNode->data.stringLiteral.value;
+    if (cs->typeEnv != ZR_NULL) {
+        if (moduleName != ZR_NULL) {
+            ZrParser_InferredType_InitFull(cs->state, &resourceType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, moduleName);
+        } else {
+            ZrParser_InferredType_Init(cs->state, &resourceType, ZR_VALUE_TYPE_OBJECT);
+        }
+        ZrParser_TypeEnvironment_RegisterVariable(cs->state, cs->typeEnv, bindingName, &resourceType);
+        ZrParser_InferredType_Free(cs->state, &resourceType);
+    }
+
+    elseLabelId = create_label(cs);
+    endLabelId = create_label(cs);
+    jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)resourceSlot, 0);
+    jumpIfIndex = cs->instructionCount;
+    emit_instruction(cs, jumpIfInst);
+    add_pending_jump(cs, jumpIfIndex, elseLabelId);
+
+    if (!register_plugin_guard_scoped_owner_cleanup(cs, resourceSlot, stmt->resource->location)) {
+        exit_scope(cs);
+        return;
+    }
+
+    ZrParser_Statement_Compile(cs, stmt->body);
+    exit_scope(cs);
+    if (cs->hasError) {
+        return;
+    }
+
+    jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+    jumpEndIndex = cs->instructionCount;
+    emit_instruction(cs, jumpEndInst);
+    add_pending_jump(cs, jumpEndIndex, endLabelId);
+
+    resolve_label(cs, elseLabelId);
+    if (stmt->elseBody != ZR_NULL) {
+        ZrParser_Statement_Compile(cs, stmt->elseBody);
+        if (cs->hasError) {
+            return;
+        }
+    }
+    resolve_label(cs, endLabelId);
+}
+
+static TZrBool compile_using_import_variant_guard_binding(SZrCompilerState *cs,
+                                                          SZrAstNodeArray *bindings,
+                                                          SZrAstNode *variant,
+                                                          TZrUInt32 resourceSlot,
+                                                          SZrString *moduleName,
+                                                          SZrFileRange location) {
+    SZrAstNode *bindingNode;
+    TZrUInt32 localSlot;
+
+    if (cs == ZR_NULL || bindings == ZR_NULL || cs->hasError) {
+        return ZR_FALSE;
+    }
+
+    if (bindings->count != 1u) {
+        ZrParser_Compiler_Error(cs,
+                                "Using import variant guard requires exactly one payload binding",
+                                location);
+        return ZR_FALSE;
+    }
+
+    bindingNode = bindings->nodes[0];
+    if (bindingNode == ZR_NULL || bindingNode->type != ZR_AST_IDENTIFIER_LITERAL ||
+        bindingNode->data.identifier.name == ZR_NULL) {
+        ZrParser_Compiler_Error(cs,
+                                "Union using pattern binding must be an identifier",
+                                bindingNode != ZR_NULL ? bindingNode->location : location);
+        return ZR_FALSE;
+    }
+
+    localSlot = allocate_local_var(cs, bindingNode->data.identifier.name);
+    emit_instruction(cs,
+                     create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                          (TZrUInt16)localSlot,
+                                          (TZrInt32)resourceSlot));
+    if (cs->typeEnv != ZR_NULL && moduleName != ZR_NULL) {
+        SZrInferredType resourceType;
+
+        ZrParser_InferredType_InitFull(cs->state, &resourceType, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, moduleName);
+        ZrParser_TypeEnvironment_RegisterVariable(cs->state,
+                                                  cs->typeEnv,
+                                                  bindingNode->data.identifier.name,
+                                                  &resourceType);
+        ZrParser_InferredType_Free(cs->state, &resourceType);
+    } else {
+        register_union_variant_payload_binding_type(cs,
+                                                    variant,
+                                                    0u,
+                                                    bindingNode->data.identifier.name,
+                                                    ZR_FALSE);
+    }
+    return !cs->hasError;
+}
+
+static TZrBool using_import_guard_annotation_is_plugin_load_available(SZrCompilerState *cs,
+                                                                      SZrType *typeInfo) {
+    SZrString *typeName;
+    const TZrChar *typeNameText;
+
+    typeName = extract_type_name_string(cs, typeInfo);
+    if (typeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    typeNameText = ZrCore_String_GetNativeString(typeName);
+    return typeNameText != ZR_NULL && strcmp(typeNameText, "PluginLoad.Available") == 0;
+}
+
+static TZrBool try_resolve_builtin_plugin_load_available_import_guard(SZrCompilerState *cs,
+                                                                      SZrAstNode *pattern,
+                                                                      SZrType *guardTypeInfo,
+                                                                      SZrAstNodeArray **outBindings,
+                                                                      TZrBool *outHandled) {
+    if (outHandled != ZR_NULL) {
+        *outHandled = ZR_FALSE;
+    }
+    if (cs == ZR_NULL || pattern == ZR_NULL || guardTypeInfo == ZR_NULL ||
+        outBindings == ZR_NULL || outHandled == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!using_import_guard_annotation_is_plugin_load_available(cs, guardTypeInfo)) {
+        return ZR_TRUE;
+    }
+
+    *outHandled = ZR_TRUE;
+    if (pattern->type != ZR_AST_DESTRUCTURING_ARRAY) {
+        ZrParser_Compiler_Error(cs,
+                                "PluginLoad.Available import guard requires tuple destructuring",
+                                pattern->location);
+        return ZR_FALSE;
+    }
+
+    *outBindings = pattern->data.destructuringArray.keys;
+    return *outBindings != ZR_NULL;
+}
+
+static void compile_using_import_variant_guard_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrUsingStatement *stmt;
+    SZrAstNode *modulePathNode;
+    SZrString *dynamicModuleTypeName = ZR_NULL;
+    SZrString *unionTypeName = ZR_NULL;
+    SZrString *variantName = ZR_NULL;
+    SZrAstNodeArray *bindings = ZR_NULL;
+    SZrAstNode *variant = ZR_NULL;
+    TZrUInt32 resourceSlot;
+    TZrSize elseLabelId;
+    TZrSize endLabelId;
+    TZrInstruction jumpIfInst;
+    TZrSize jumpIfIndex;
+    TZrInstruction jumpEndInst;
+    TZrSize jumpEndIndex;
+    TZrBool isBuiltinPluginLoadAvailableGuard = ZR_FALSE;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    stmt = &node->data.usingStatement;
+    if (stmt->resource == ZR_NULL ||
+        stmt->resource->type != ZR_AST_IMPORT_EXPRESSION ||
+        stmt->pattern == ZR_NULL ||
+        stmt->body == ZR_NULL) {
+        ZrParser_Compiler_Error(cs,
+                                "Using import variant guard requires an import pattern",
+                                node->location);
+        return;
+    }
+
+    if (stmt->guardTypeInfo != ZR_NULL) {
+        if (!try_resolve_builtin_plugin_load_available_import_guard(cs,
+                                                                    stmt->pattern,
+                                                                    stmt->guardTypeInfo,
+                                                                    &bindings,
+                                                                    &isBuiltinPluginLoadAvailableGuard)) {
+            if (!cs->hasError) {
+                ZrParser_Compiler_Error(cs, "Unable to resolve using union pattern", stmt->pattern->location);
+            }
+            return;
+        }
+        if (!isBuiltinPluginLoadAvailableGuard &&
+            !try_resolve_union_variant_pattern_annotation(cs,
+                                                          stmt->pattern,
+                                                          stmt->guardTypeInfo,
+                                                          &unionTypeName,
+                                                          &variantName,
+                                                          &bindings,
+                                                          &variant)) {
+            ZrParser_Compiler_Error(cs, "Unable to resolve using union pattern", stmt->pattern->location);
+            return;
+        }
+    } else {
+        dynamicModuleTypeName = ZrCore_String_Create(cs->state, "DynamicModule", strlen("DynamicModule"));
+        if (dynamicModuleTypeName == ZR_NULL ||
+            !try_resolve_union_variant_pattern_for_type(cs,
+                                                        stmt->pattern,
+                                                        dynamicModuleTypeName,
+                                                        &variantName,
+                                                        &bindings,
+                                                        &variant)) {
+            ZrParser_Compiler_Error(cs, "Unable to resolve using union pattern", stmt->pattern->location);
+            return;
+        }
+    }
+    if (cs->hasError) {
+        return;
+    }
+    if ((!isBuiltinPluginLoadAvailableGuard && variant == ZR_NULL) || bindings == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Unable to resolve using union pattern", stmt->pattern->location);
+        return;
+    }
+    if (!isBuiltinPluginLoadAvailableGuard && !variant->data.unionVariant.isDefaultUsingVariant) {
+        ZrParser_Compiler_Error(cs,
+                                "Using import variant guard requires the annotated variant to be marked with '@'",
+                                stmt->guardTypeInfo != ZR_NULL ? node->location : stmt->pattern->location);
+        return;
+    }
+    ZR_UNUSED_PARAMETER(unionTypeName);
+    ZR_UNUSED_PARAMETER(variantName);
+
+    modulePathNode = stmt->resource->data.importExpression.modulePath;
+    if (modulePathNode == ZR_NULL ||
+        modulePathNode->type != ZR_AST_STRING_LITERAL ||
+        modulePathNode->data.stringLiteral.value == ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "Using import guard requires a normalized string module path", node->location);
+        return;
+    }
+
+    if (!ZrParser_Compiler_ValidateUsingPluginGuardEscapeBindings(cs,
+                                                                  stmt,
+                                                                  bindings,
+                                                                  modulePathNode->data.stringLiteral.value)) {
+        return;
+    }
+
+    resourceSlot = ZrParser_Compiler_EmitImportGuardModuleExpression(cs,
+                                                                     modulePathNode->data.stringLiteral.value,
+                                                                     stmt->resource->location);
+    if (cs->hasError || resourceSlot == ZR_PARSER_SLOT_NONE) {
+        return;
+    }
+    ZrParser_Compiler_TrimStackToSlot(cs, resourceSlot);
+
+    elseLabelId = create_label(cs);
+    endLabelId = create_label(cs);
+    jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)resourceSlot, 0);
+    jumpIfIndex = cs->instructionCount;
+    emit_instruction(cs, jumpIfInst);
+    add_pending_jump(cs, jumpIfIndex, elseLabelId);
+
+    enter_scope(cs);
+    if (!register_plugin_guard_scoped_owner_cleanup(cs, resourceSlot, stmt->resource->location)) {
+        exit_scope(cs);
+        return;
+    }
+    if (!compile_using_import_variant_guard_binding(cs,
+                                                    bindings,
+                                                    variant,
+                                                    resourceSlot,
+                                                    modulePathNode->data.stringLiteral.value,
+                                                    stmt->pattern->location)) {
+        exit_scope(cs);
+        return;
+    }
+    ZrParser_Statement_Compile(cs, stmt->body);
+    if (cs->hasError) {
+        exit_scope(cs);
+        return;
+    }
+    exit_scope(cs);
+
+    jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+    jumpEndIndex = cs->instructionCount;
+    emit_instruction(cs, jumpEndInst);
+    add_pending_jump(cs, jumpEndIndex, endLabelId);
+
+    resolve_label(cs, elseLabelId);
+    if (stmt->elseBody != ZR_NULL) {
+        ZrParser_Statement_Compile(cs, stmt->elseBody);
+        if (cs->hasError) {
+            return;
+        }
+    }
+    resolve_label(cs, endLabelId);
+}
+
+static void compile_using_pattern_guard_statement(SZrCompilerState *cs, SZrAstNode *node) {
+    SZrUsingStatement *stmt;
+    SZrInferredType resourceType;
+    TZrBool hasResourceType;
+    TZrUInt32 resourceSlot = ZR_PARSER_SLOT_NONE;
+    TZrUInt32 compareSlot = ZR_PARSER_SLOT_NONE;
+    SZrAstNodeArray *bindings = ZR_NULL;
+    SZrAstNode *patternVariant = ZR_NULL;
+    TZrSize elseLabelId;
+    TZrSize endLabelId;
+    TZrInstruction jumpIfInst;
+    TZrSize jumpIfIndex;
+    TZrInstruction jumpEndInst;
+    TZrSize jumpEndIndex;
+    TZrBool hasBlockBody;
+
+    if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
+        return;
+    }
+
+    stmt = &node->data.usingStatement;
+    if (stmt->resource == ZR_NULL ||
+        stmt->pattern == ZR_NULL ||
+        (stmt->isBlockScoped && stmt->body == ZR_NULL)) {
+        ZrParser_Compiler_Error(cs, "Using pattern guard is incomplete", node->location);
+        return;
+    }
+    if (!stmt->isBlockScoped && stmt->elseBody != ZR_NULL) {
+        ZrParser_Compiler_Error(cs, "using else requires a block-scoped using guard", node->location);
+        return;
+    }
+    hasBlockBody = (TZrBool)(stmt->body != ZR_NULL);
+
+    if (stmt->resource->type == ZR_AST_IMPORT_EXPRESSION &&
+        (stmt->guardTypeInfo != ZR_NULL ||
+         stmt->pattern->type == ZR_AST_DESTRUCTURING_ARRAY ||
+         stmt->pattern->type == ZR_AST_OBJECT_LITERAL)) {
+        compile_using_import_variant_guard_statement(cs, node);
+        return;
+    }
+
+    if (stmt->guardTypeInfo == ZR_NULL &&
+        using_pattern_is_legacy_union_variant_binder(stmt->pattern)) {
+        ZrParser_Compiler_Error(
+                cs,
+                "Union using guard requires destructuring with a variant annotation; use `using (var [x]: Union.Variant = value)` or a default '@' variant with `[x]`/`{field}`",
+                stmt->pattern->location);
+        return;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &resourceType, ZR_VALUE_TYPE_OBJECT);
+    hasResourceType = infer_using_resource_type(cs, stmt->resource, &resourceType);
+    if (cs->hasError || !hasResourceType || resourceType.typeName == ZR_NULL) {
+        ZrParser_InferredType_Free(cs->state, &resourceType);
+        ZrParser_Compiler_Error(cs, "Using pattern guard requires a named union resource", stmt->resource->location);
+        return;
+    }
+
+    if (!compile_using_resource_slot(cs, stmt->resource, &resourceType, &resourceSlot)) {
+        ZrParser_InferredType_Free(cs->state, &resourceType);
+        return;
+    }
+
+    if (!compile_using_union_pattern_compare(cs,
+                                             stmt,
+                                             resourceSlot,
+                                             resourceType.typeName,
+                                             &compareSlot,
+                                             &bindings,
+                                             &patternVariant)) {
+        ZrParser_InferredType_Free(cs->state, &resourceType);
+        return;
+    }
+    ZrParser_InferredType_Free(cs->state, &resourceType);
+    if (cs->hasError || compareSlot == ZR_PARSER_SLOT_NONE) {
+        return;
+    }
+
+    elseLabelId = create_label(cs);
+    if (hasBlockBody) {
+        endLabelId = create_label(cs);
+    }
+    jumpIfInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP_IF), (TZrUInt16)compareSlot, 0);
+    jumpIfIndex = cs->instructionCount;
+    emit_instruction(cs, jumpIfInst);
+    add_pending_jump(cs, jumpIfIndex, elseLabelId);
+
+    if (hasBlockBody) {
+        enter_scope(cs);
+    }
+    compile_using_union_pattern_bindings(cs,
+                                         resourceSlot,
+                                         bindings,
+                                         patternVariant,
+                                         stmt->pattern != ZR_NULL ? stmt->pattern->location : node->location);
+    if (cs->hasError) {
+        if (hasBlockBody) {
+            exit_scope(cs);
+        }
+        return;
+    }
+    if (!hasBlockBody) {
+        resolve_label(cs, elseLabelId);
+        return;
+    }
+
+    ZrParser_Statement_Compile(cs, stmt->body);
+    if (cs->hasError) {
+        exit_scope(cs);
+        return;
+    }
+    exit_scope(cs);
+
+    jumpEndInst = create_instruction_1(ZR_INSTRUCTION_ENUM(JUMP), 0, 0);
+    jumpEndIndex = cs->instructionCount;
+    emit_instruction(cs, jumpEndInst);
+    add_pending_jump(cs, jumpEndIndex, endLabelId);
+
+    resolve_label(cs, elseLabelId);
+    if (stmt->elseBody != ZR_NULL) {
+        ZrParser_Statement_Compile(cs, stmt->elseBody);
+        if (cs->hasError) {
+            return;
+        }
+    }
+    resolve_label(cs, endLabelId);
 }
 
 // 编译变量声明
@@ -1839,6 +2765,20 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                                     (void *)initializerType.typeName);
         }
 
+        if (hasResolvedType &&
+            !validate_exported_variable_ownership_escape(cs,
+                                                         decl,
+                                                         &resolvedType,
+                                                         decl->value != ZR_NULL ? decl->value->location : node->location)) {
+            if (initializerTypeInitialized) {
+                ZrParser_InferredType_Free(cs->state, &initializerType);
+            }
+            if (resolvedTypeInitialized) {
+                ZrParser_InferredType_Free(cs->state, &resolvedType);
+            }
+            return;
+        }
+
         TZrUInt32 varIndex = 0;
 
         if (decl->isConst && decl->value == ZR_NULL) {
@@ -1910,6 +2850,12 @@ static void compile_variable_declaration(SZrCompilerState *cs, SZrAstNode *node)
                                  create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
                                                       (TZrUInt16)reservedVarSlot,
                                                       (TZrInt32)initializerSlot));
+            } else if (hasResolvedType &&
+                       compile_statement_type_has_inline_byte_layout(cs, &resolvedType)) {
+                emit_instruction(cs,
+                                 create_instruction_1(ZR_INSTRUCTION_ENUM(SET_STACK),
+                                                      (TZrUInt16)reservedVarSlot,
+                                                      (TZrInt32)reservedVarSlot));
             }
             ZrParser_Compiler_TrimStackToSlot(cs, reservedVarSlot);
             varIndex = bind_existing_stack_slot_as_local_var(cs, varName, reservedVarSlot, activateOffset);
@@ -2038,6 +2984,51 @@ static TZrBool ownership_qualifier_is_borrow_escape(EZrOwnershipQualifier qualif
            qualifier == ZR_OWNERSHIP_QUALIFIER_LOANED;
 }
 
+static TZrBool inferred_type_contains_borrow_escape_ownership(const SZrInferredType *type) {
+    TZrSize index;
+
+    if (type == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (ownership_qualifier_is_borrow_escape(type->ownershipQualifier)) {
+        return ZR_TRUE;
+    }
+
+    for (index = 0; index < type->elementTypes.length; index++) {
+        SZrInferredType *elementType =
+                (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&type->elementTypes, index);
+
+        if (inferred_type_contains_borrow_escape_ownership(elementType)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool validate_exported_variable_ownership_escape(SZrCompilerState *cs,
+                                                           const SZrVariableDeclaration *decl,
+                                                           const SZrInferredType *resolvedType,
+                                                           SZrFileRange location) {
+    if (cs == ZR_NULL || decl == ZR_NULL || resolvedType == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!cs->isScriptLevel || decl->accessModifier == ZR_ACCESS_PRIVATE) {
+        return ZR_TRUE;
+    }
+
+    if (inferred_type_contains_borrow_escape_ownership(resolvedType)) {
+        ZrParser_Compiler_Error(cs,
+                                "Borrowed and loaned owners cannot escape through exported globals",
+                                location);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool validate_return_ownership_escape(SZrCompilerState *cs, SZrAstNode *expr) {
     SZrInferredType returnType;
     TZrBool success;
@@ -2053,7 +3044,7 @@ static TZrBool validate_return_ownership_escape(SZrCompilerState *cs, SZrAstNode
         return ZR_FALSE;
     }
 
-    if (ownership_qualifier_is_borrow_escape(returnType.ownershipQualifier)) {
+    if (inferred_type_contains_borrow_escape_ownership(&returnType)) {
         ZrParser_InferredType_Free(cs->state, &returnType);
         ZrParser_Compiler_Error(cs,
                                 "Borrowed and loaned owners cannot escape through return",
@@ -2073,6 +3064,7 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrUInt32 resultSlot = 0;
     TZrUInt32 resultCount = 0;
     TZrBool oldTailCallContext;
+    TZrBool hasOwnershipCleanupContext;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -2089,9 +3081,10 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     hasFinallyContext = try_context_find_innermost_finally(cs, &finallyContext);
+    hasOwnershipCleanupContext = compiler_has_active_scope_ownership_cleanups(cs);
 
     oldTailCallContext = cs->isInTailCallContext;
-    cs->isInTailCallContext = hasFinallyContext ? ZR_FALSE : ZR_TRUE;
+    cs->isInTailCallContext = (hasFinallyContext || hasOwnershipCleanupContext) ? ZR_FALSE : ZR_TRUE;
 
     if (stmt->expr != ZR_NULL) {
         TZrSize exprInstBefore = cs->instructions.length;
@@ -2107,10 +3100,14 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
                  lastInst->instruction.operationCode == ZR_INSTRUCTION_ENUM(META_TAIL_CALL))) {
                 resultSlot = lastInst->instruction.operandExtra;
             } else {
-                resultSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+                resultSlot = cs->lastExpressionSlot;
             }
         } else {
-            resultSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+            resultSlot = cs->lastExpressionSlot;
+        }
+        if (!cs->hasError && resultSlot == ZR_PARSER_SLOT_NONE) {
+            ZrParser_Compiler_Error(cs, "Return expression did not produce a value", stmt->expr->location);
+            return;
         }
         resultCount = 1;
     } else {
@@ -2139,6 +3136,13 @@ static void compile_return_statement(SZrCompilerState *cs, SZrAstNode *node) {
         add_pending_absolute_patch(cs, pendingIndex, resumeLabelId);
         emit_jump_to_label(cs, finallyContext.finallyLabelId);
         resolve_label(cs, resumeLabelId);
+    }
+
+    if (hasOwnershipCleanupContext) {
+        compiler_emit_active_scope_ownership_cleanups(cs);
+        if (cs->hasError) {
+            return;
+        }
     }
 
     emit_instruction(cs,
@@ -2191,6 +3195,9 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
     TZrLifetimeRegionId regionId = ZR_SEMANTIC_ID_INVALID;
     TZrSymbolId symbolId = ZR_SEMANTIC_ID_INVALID;
     TZrUInt32 resourceSlot = 0;
+    TZrUInt32 cleanupSourceSlot = ZR_PARSER_SLOT_NONE;
+    EZrOwnershipQualifier cleanupOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    EZrOwnershipBuiltinKind cleanupBuiltinKind = ZR_OWNERSHIP_BUILTIN_KIND_NONE;
 
     if (cs == ZR_NULL || node == ZR_NULL || cs->hasError) {
         return;
@@ -2202,6 +3209,31 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     stmt = &node->data.usingStatement;
+    if (stmt->guardKind == ZR_USING_GUARD_PLUGIN) {
+        compile_using_plugin_guard_statement(cs, node);
+        return;
+    }
+    if (stmt->guardKind == ZR_USING_GUARD_PATTERN) {
+        compile_using_pattern_guard_statement(cs, node);
+        return;
+    }
+
+    if (stmt->resource != ZR_NULL) {
+        SZrInferredType resourceType;
+        TZrBool hasResourceType;
+
+        ZrParser_InferredType_Init(cs->state, &resourceType, ZR_VALUE_TYPE_OBJECT);
+        hasResourceType = infer_using_resource_type(cs, stmt->resource, &resourceType);
+        if (cs->hasError) {
+            ZrParser_InferredType_Free(cs->state, &resourceType);
+            return;
+        }
+        if (hasResourceType) {
+            cleanupOwnershipQualifier = resourceType.ownershipQualifier;
+            cleanupBuiltinKind = using_cleanup_builtin_for_ownership(cleanupOwnershipQualifier);
+        }
+        ZrParser_InferredType_Free(cs->state, &resourceType);
+    }
 
     if (cs->semanticContext != ZR_NULL) {
         SZrDeterministicCleanupStep cleanupStep;
@@ -2214,6 +3246,8 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
         cleanupStep.ownerRegionId = regionId;
         cleanupStep.symbolId = symbolId;
         cleanupStep.declarationOrder = (TZrInt32)cs->semanticContext->cleanupPlan.length;
+        cleanupStep.ownershipQualifier = cleanupOwnershipQualifier;
+        cleanupStep.ownershipBuiltinKind = cleanupBuiltinKind;
         cleanupStep.callsClose = ZR_TRUE;
         cleanupStep.callsDestructor = ZR_TRUE;
         ZrParser_Semantic_AppendCleanupStep(cs->semanticContext, &cleanupStep);
@@ -2224,10 +3258,14 @@ static void compile_using_statement(SZrCompilerState *cs, SZrAstNode *node) {
     }
 
     if (stmt->resource != ZR_NULL) {
-        if (!compile_using_resource_slot(cs, stmt->resource, &resourceSlot)) {
+        cleanupSourceSlot = resolve_using_loan_source_slot(cs, stmt->resource, cleanupBuiltinKind);
+        if (cs->hasError) {
             return;
         }
-        register_using_cleanup_slot(cs, resourceSlot);
+        if (!compile_using_resource_slot(cs, stmt->resource, ZR_NULL, &resourceSlot)) {
+            return;
+        }
+        register_using_cleanup_slot(cs, resourceSlot, cleanupBuiltinKind, cleanupSourceSlot);
     }
 
     if (stmt->body != ZR_NULL) {
@@ -2255,7 +3293,11 @@ static void compile_if_statement(SZrCompilerState *cs, SZrAstNode *node) {
     
     // 编译条件表达式
     ZrParser_Expression_Compile(cs, ifExpr->condition);
-    TZrUInt32 condSlot = (TZrUInt32)(cs->stackSlotCount - 1);
+    TZrUInt32 condSlot = cs->lastExpressionSlot;
+    if (condSlot == ZR_PARSER_SLOT_NONE) {
+        ZrParser_Compiler_Error(cs, "Failed to compile if condition", node->location);
+        return;
+    }
     
     // 创建 else 标签
     TZrSize elseLabelId = create_label(cs);
@@ -2403,9 +3445,11 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
                 node->type == ZR_AST_CLASS_DECLARATION ||
                 node->type == ZR_AST_INTERFACE_DECLARATION ||
                 node->type == ZR_AST_ENUM_DECLARATION ||
+                node->type == ZR_AST_UNION_DECLARATION ||
                 node->type == ZR_AST_EXTERN_FUNCTION_DECLARATION ||
                 node->type == ZR_AST_EXTERN_DELEGATE_DECLARATION ||
                 node->type == ZR_AST_ENUM_MEMBER ||
+                node->type == ZR_AST_UNION_VARIANT ||
                 node->type == ZR_AST_MODULE_DECLARATION ||
                 node->type == ZR_AST_SCRIPT) {
                 // 这些是声明类型，不应该作为语句编译
@@ -2427,9 +3471,11 @@ ZR_PARSER_API void ZrParser_Statement_Compile(SZrCompilerState *cs, SZrAstNode *
                     case ZR_AST_CLASS_DECLARATION: typeName = "CLASS_DECLARATION"; break;
                     case ZR_AST_INTERFACE_DECLARATION: typeName = "INTERFACE_DECLARATION"; break;
                     case ZR_AST_ENUM_DECLARATION: typeName = "ENUM_DECLARATION"; break;
+                    case ZR_AST_UNION_DECLARATION: typeName = "UNION_DECLARATION"; break;
                     case ZR_AST_EXTERN_FUNCTION_DECLARATION: typeName = "EXTERN_FUNCTION_DECLARATION"; break;
                     case ZR_AST_EXTERN_DELEGATE_DECLARATION: typeName = "EXTERN_DELEGATE_DECLARATION"; break;
                     case ZR_AST_ENUM_MEMBER: typeName = "ENUM_MEMBER"; break;
+                    case ZR_AST_UNION_VARIANT: typeName = "UNION_VARIANT"; break;
                     case ZR_AST_MODULE_DECLARATION: typeName = "MODULE_DECLARATION"; break;
                     case ZR_AST_SCRIPT: typeName = "SCRIPT"; break;
                     default: break;

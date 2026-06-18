@@ -67,6 +67,8 @@ const TZrChar *backend_aot_exec_ir_semir_opcode_name(TZrUInt32 opcode) {
             return "OWN_UPGRADE";
         case ZR_SEMIR_OPCODE_OWN_RELEASE:
             return "OWN_RELEASE";
+        case ZR_SEMIR_OPCODE_OWN_RETURN_LOAN:
+            return "OWN_RETURN_LOAN";
         case ZR_SEMIR_OPCODE_TYPEOF:
             return "TYPEOF";
         case ZR_SEMIR_OPCODE_DYN_CALL:
@@ -136,6 +138,8 @@ static TZrUInt32 backend_aot_exec_ir_runtime_contracts_for_opcode(TZrUInt32 opco
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_UPGRADE;
         case ZR_SEMIR_OPCODE_OWN_RELEASE:
             return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE;
+        case ZR_SEMIR_OPCODE_OWN_RETURN_LOAN:
+            return ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN;
         case ZR_SEMIR_OPCODE_VALUE_ADDR:
         case ZR_SEMIR_OPCODE_FIELD_ADDR:
         case ZR_SEMIR_OPCODE_LOAD_VALUE:
@@ -175,6 +179,8 @@ const TZrChar *backend_aot_exec_ir_runtime_contract_name(TZrUInt32 contractBit) 
             return "ownership.upgrade";
         case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE:
             return "ownership.release";
+        case ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN:
+            return "ownership.return_loan";
         case ZR_AOT_RUNTIME_CONTRACT_NONE:
         default:
             return "none";
@@ -185,7 +191,7 @@ TZrUInt32 backend_aot_exec_ir_runtime_contract_count(TZrUInt32 runtimeContracts)
     TZrUInt32 contractBit;
     TZrUInt32 count = ZR_AOT_COUNT_NONE;
 
-    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RELEASE; contractBit <<= 1) {
+    for (contractBit = 1; contractBit <= ZR_AOT_RUNTIME_CONTRACT_OWNERSHIP_RETURN_LOAN; contractBit <<= 1) {
         if ((runtimeContracts & contractBit) != 0) {
             count++;
         }

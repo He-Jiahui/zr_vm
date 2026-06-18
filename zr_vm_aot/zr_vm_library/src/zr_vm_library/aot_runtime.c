@@ -3255,6 +3255,13 @@ TZrBool ZrLibrary_AotRuntime_OwnLoan(SZrState *state,
     return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_LoanValue);
 }
 
+TZrBool ZrLibrary_AotRuntime_OwnReturnLoan(SZrState *state,
+                                           ZrAotGeneratedFrame *frame,
+                                           TZrUInt32 destinationSlot,
+                                           TZrUInt32 sourceSlot) {
+    return aot_runtime_own_value(state, frame, destinationSlot, sourceSlot, ZrCore_Ownership_ReturnLoanValue);
+}
+
 TZrBool ZrLibrary_AotRuntime_OwnShare(SZrState *state,
                                       ZrAotGeneratedFrame *frame,
                                       TZrUInt32 destinationSlot,

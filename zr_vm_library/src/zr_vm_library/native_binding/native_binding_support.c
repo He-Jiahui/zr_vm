@@ -145,6 +145,81 @@ void native_registry_set_error(ZrLibrary_NativeRegistryState *registry,
     va_end(arguments);
 }
 
+static TZrChar native_registry_normalize_path_char(TZrChar value) {
+    if (value == '\\') {
+        value = '/';
+    }
+#if defined(ZR_PLATFORM_WIN)
+    value = (TZrChar)tolower((unsigned char)value);
+#endif
+    return value;
+}
+
+TZrBool native_registry_source_paths_equal(const TZrChar *left, const TZrChar *right) {
+    TZrSize index = 0;
+
+    if (left == ZR_NULL || right == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    while (left[index] != '\0' && right[index] != '\0') {
+        if (native_registry_normalize_path_char(left[index]) != native_registry_normalize_path_char(right[index])) {
+            return ZR_FALSE;
+        }
+        index++;
+    }
+
+    return left[index] == '\0' && right[index] == '\0';
+}
+
+const ZrLibRegisteredModuleRecord *native_registry_find_live_descriptor_plugin_record(
+        ZrLibrary_NativeRegistryState *registry) {
+    TZrSize index;
+
+    if (registry == ZR_NULL || !registry->moduleRecords.isValid) {
+        return ZR_NULL;
+    }
+
+    for (index = 0; index < registry->moduleRecords.length; index++) {
+        const ZrLibRegisteredModuleRecord *record =
+                (const ZrLibRegisteredModuleRecord *)ZrCore_Array_Get(&registry->moduleRecords, index);
+        if (record != ZR_NULL && record->isDescriptorPlugin && record->ownerRefCount > 0u) {
+            return record;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+const ZrLibRegisteredModuleRecord *native_registry_find_live_descriptor_plugin_record_for_module(
+        ZrLibrary_NativeRegistryState *registry,
+        const TZrChar *moduleName) {
+    const ZrLibRegisteredModuleRecord *record;
+
+    if (registry == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    record = native_registry_find_record(registry, moduleName);
+    if (record == ZR_NULL || !record->isDescriptorPlugin || record->ownerRefCount == 0u) {
+        return ZR_NULL;
+    }
+
+    return record;
+}
+
+void native_registry_set_descriptor_plugin_in_use_error(ZrLibrary_NativeRegistryState *registry,
+                                                        const ZrLibRegisteredModuleRecord *record,
+                                                        const TZrChar *operation) {
+    native_registry_set_error(registry,
+                              ZR_LIB_NATIVE_REGISTRY_ERROR_MODULE_IN_USE,
+                              "cannot %s descriptor plugin module '%s' from '%s' while ownerRefCount=%u",
+                              operation != ZR_NULL ? operation : "update",
+                              record != ZR_NULL && record->moduleName != ZR_NULL ? record->moduleName : "<unknown>",
+                              record != ZR_NULL && record->sourcePath != ZR_NULL ? record->sourcePath : "<unknown>",
+                              record != ZR_NULL ? record->ownerRefCount : 0u);
+}
+
 TZrChar *native_registry_duplicate_string(SZrGlobalState *global, const TZrChar *text) {
     TZrSize length;
     TZrChar *copy;

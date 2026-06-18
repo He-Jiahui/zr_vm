@@ -150,6 +150,7 @@ static ZR_FORCE_INLINE void object_stack_copy_value_no_profile(struct SZrState *
         return;
     }
 
+    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destinationValue);
     if (ZR_LIKELY(ZrCore_Value_TryCopyFastNoProfile(state, destinationValue, source))) {
         return;
     }

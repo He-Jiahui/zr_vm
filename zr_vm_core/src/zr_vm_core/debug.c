@@ -323,6 +323,8 @@ static const char *get_prototype_type_name(EZrObjectPrototypeType type) {
             return "interface";
         case ZR_OBJECT_PROTOTYPE_TYPE_ENUM:
             return "enum";
+        case ZR_OBJECT_PROTOTYPE_TYPE_UNION:
+            return "union";
         case ZR_OBJECT_PROTOTYPE_TYPE_MODULE:
             return "module";
         case ZR_OBJECT_PROTOTYPE_TYPE_NATIVE:
@@ -598,6 +600,8 @@ ZR_CORE_API void ZrCore_Debug_PrintPrototypesFromData(struct SZrState *state, st
             prototypeTypeName = "module";
         else if (type == ZR_OBJECT_PROTOTYPE_TYPE_ENUM)
             prototypeTypeName = "enum";
+        else if (type == ZR_OBJECT_PROTOTYPE_TYPE_UNION)
+            prototypeTypeName = "union";
         else if (type == ZR_OBJECT_PROTOTYPE_TYPE_NATIVE)
             prototypeTypeName = "native";
 

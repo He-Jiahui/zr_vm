@@ -178,6 +178,7 @@ static TZrBool backend_aot_c_instruction_supported(const TZrInstruction *instruc
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_FILL_INT4_CONST):
         case ZR_INSTRUCTION_ENUM(OWN_BORROW):
         case ZR_INSTRUCTION_ENUM(OWN_LOAN):
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
         case ZR_INSTRUCTION_ENUM(OWN_SHARE):
         case ZR_INSTRUCTION_ENUM(OWN_WEAK):
         case ZR_INSTRUCTION_ENUM(OWN_DETACH):

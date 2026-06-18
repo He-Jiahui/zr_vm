@@ -154,7 +154,6 @@ static void test_aot_c_source_lowers_quickened_dynamic_calls_to_direct_core_call
     };
     static const char *const forbiddenCallLoweringNeedles[] = {
             "ZrLibrary_AotRuntime_Call(state, &frame",
-            "ZrCore_Value_Copy(",
     };
     char *emitterHeaderText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_emitter.h");
@@ -214,7 +213,6 @@ static void test_aot_c_source_lowers_generic_function_calls_to_direct_core_calls
     };
     static const char *const forbiddenCallLoweringNeedles[] = {
             "ZrLibrary_AotRuntime_PrepareDirectCall",
-            "ZrCore_Value_Copy(",
     };
     char *callLoweringText = read_repo_text_file_owned(
             "zr_vm_aot/zr_vm_parser/src/zr_vm_parser/backend_aot/backend_aot_c_lowering_calls.c");
@@ -236,16 +234,18 @@ static void test_aot_c_source_lowers_static_direct_calls_to_direct_core_calls(vo
             "SZrCallInfo *zr_aot_call_info;",
             "SZrFunction *zr_aot_metadata_function;",
             "SZrTypeValue *zr_aot_callable_value;",
-            "zr_aot_call_base = frame.slotBase + %u;",
+            "zr_aot_call_base = ZrCore_Function_GetCallInfoFrameStorageTop(state, frame.callInfo);",
+            "zr_aot_call_base = ZrCore_Function_CheckStackAndGc(state, 1u + %u, zr_aot_call_base);",
             "zr_aot_destination_pointer = frame.slotBase + %u;",
             "zr_aot_metadata_function = ZrCore_Closure_GetMetadataFunctionFromValue(state, zr_aot_callable_value);",
+            "ZrCore_Value_Copy(state, ZrCore_Stack_GetValue(zr_aot_call_base), zr_aot_callable_value);",
             "state->stackTop.valuePointer = zr_aot_call_base + 1 + %u;",
-            "ZrCore_Function_PreCallPreparedResolvedVmFunction(state,",
+            "ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource(",
             "ZR_AOT_C_GUARD(zr_aot_fn_%u(state));",
             "ZrCore_Function_PostCall(state, zr_aot_call_info, 1);",
             "frame.callInfo = state->callInfoList;",
             "frame.slotBase = state->callInfoList->functionBase.valuePointer + 1;",
-            "state->stackTop.valuePointer = state->callInfoList->functionTop.valuePointer;",
+            "zr_aot_call_base = ZrCore_Function_GetCallInfoFrameStorageTop(state, frame.callInfo);",
             "generated AOT static direct call has invalid stack range",
             "generated AOT static direct call failed",
     };

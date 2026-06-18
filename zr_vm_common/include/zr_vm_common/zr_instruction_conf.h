@@ -247,7 +247,8 @@
     Z(RESET_STACK_NULL)                                                                                                \
     Z(RESET_STACK_NULL2)                                                                                               \
     Z(MUL_SIGNED_LOAD_STACK)                                                                                           \
-    Z(ADD_SIGNED_MOD_CONST)
+    Z(ADD_SIGNED_MOD_CONST)                                                                                            \
+    Z(OWN_RETURN_LOAN)
 
 
 #define ZR_INSTRUCTION_OPCODE(INSTRUCTION) (INSTRUCTION.instruction.operationCode)

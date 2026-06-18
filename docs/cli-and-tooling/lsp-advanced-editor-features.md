@@ -24,8 +24,10 @@ related_code:
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_diagnostics.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_class.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_extern.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_interface.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
 implementation_files:
   - zr_vm_language_server/src/zr_vm_language_server/interface/lsp_interface.c
@@ -50,8 +52,10 @@ implementation_files:
   - zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h
   - zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_diagnostics.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_class.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_declarations.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_extern.c
+  - zr_vm_parser/src/zr_vm_parser/parser/parser_interface.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c
 plan_sources:
   - user: 2026-04-24 Zr LSP 现代能力对齐计划
@@ -120,7 +124,9 @@ doc_type: module-detail
 - class field declaration terminator 同样保留结构化诊断：`class Entity { var id: int }` 会报告 `missing_statement_semicolon`、`Missing ';' after class field declaration statement` 和补 `;` 的 suggestion。
 - class getter/setter accessor terminator 同样保留结构化诊断：`class Sized { get length: int }` 和 `class Sized { set length(value: int) }` 会报告 `missing_statement_semicolon`、对应的 class getter/setter 问题文本和补 `;` 的 suggestion，而不是只暴露 block/expected-token 信息。
 - class method/meta function terminator 同样保留结构化诊断：`class Box { func read(value: int): int }` 和 `class Callable { @call(value: int): int }` 会报告 `missing_statement_semicolon`、对应的 class method/meta function 问题文本和补 `;` 的 suggestion，而不是只暴露 block/expected-token 信息。
+- class member parameter-list close 同样保留结构化诊断：`class Sized { set length(value: int { return value; } }` 和 `class Callable { @call(value: int: int { return value; } }` 会报告 `missing_parameter_list_close`、declaration parameter list 缺少 closing `)` 的问题文本和补 `)` 的 suggestion，而不是只暴露 expected-token 信息。
 - declaration body opener 同样保留结构化诊断：`class Box`、`interface Sized`、`func pick(): int`、`enum Tone`、`%extern("fixture")` 和 `%test("smoke")` 会报告 `missing_declaration_body_open`，分别给出 class/interface/function/enum/test declaration body 或 extern block body 的问题文本和补 `{` 的 suggestion，而不是只暴露 expected-token 信息。
+- declaration body close 同样保留结构化诊断：`class Box { var id: int;`、`interface Sized { get length: int;`、`enum Tone { warm,`、`%extern("fixture") { NativeAdd(value: int): int;`、`func pick(): int { return 1;` 和 `%test("smoke") { return 1;` 会报告 `missing_declaration_body_close`、分别给出 class/interface/enum/extern/function/test declaration body 缺少 closing `}` 的问题文本和补 `}` 的 suggestion，而不是只暴露 expected-token 信息或过宽的 generic block-close 语义。
 - extern spec close 同样保留结构化诊断：`%extern("fixture" { NativeAdd(value: int): int; }` 会报告 `missing_extern_spec_close`、`Missing closing ')' in extern block spec` 和在 extern block body 前补 `)` 的 suggestion，而不是只暴露 expected-token 信息。
 - statement body opener 同样保留结构化诊断：`if (ready)\nreturn 1;`、`while (ready)\nreturn 1;`、`for (;;)\nreturn 1;`、`for (var item in items)\nreturn item;`、`switch (choice)\nreturn 1;`、`switch (choice) { (1)\nreturn 1; }`、`switch (choice) { ()\nreturn 1; }`、`if (ready) { return 1; } else\nreturn 2;`、`try\nreturn 1;`、`try { throw 1; } catch (error)\nreturn 2;`、`try { return 1; } finally\nreturn 2;` 和 `%using (resource)\nreturn resource;` 会报告 `missing_statement_body_open`，分别给出 if/while/for/foreach/switch/switch-case/switch-default/else/try/catch/finally/using statement body 的问题文本和补 `{` 的 suggestion，而不是只暴露 expected-token 信息。
 - block close 同样保留结构化诊断：`if (ready) { return 1;` 会报告 `missing_block_close`、`Missing closing '}' for block` 和补 `}` 的 suggestion，而不是让通用 `parse_block` 只暴露 expected-token 信息。
@@ -584,6 +590,16 @@ wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build/codex-semantic-wsl-clan
 
 RED：新增 `class Box { func read(value: int: int { return value; } }` 的 focused parser-diagnostics 断言后，旧 WSL gcc 路径只失败该 method case，没有 `missing_parameter_list_close` code、具体问题文本和建议。GREEN：`parse_class_method` 在读完 method parameter list 后，如果没有看到 `)`，会通过既有 `missing_parameter_list_close` reporter 报告结构化诊断并停止进入 return-type/body 解析；function calls 仍保留 `missing_call_close`，grouped expressions 仍保留 `missing_group_close`。WSL gcc、WSL clang 和 Windows MSVC focused `zr_vm_language_server_parser_diagnostics_test` 均通过；MSVC 仍有当前 dirty tree 中既有 AOT runtime warning noise，本轮仍不声明全仓库绿色。
 
+2026-06-11 parser/LSP class setter/meta parameter-list close diagnostic 聚焦验证：
+
+```powershell
+wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake -S . -B build-wsl-gcc && cmake --build build-wsl-gcc --target zr_vm_language_server_class_member_parser_diagnostics_test -j 8 && ./build-wsl-gcc/bin/zr_vm_language_server_class_member_parser_diagnostics_test"
+wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build/codex-semantic-wsl-clang-debug --target zr_vm_language_server_class_member_parser_diagnostics_test -j 8 && ./build/codex-semantic-wsl-clang-debug/bin/zr_vm_language_server_class_member_parser_diagnostics_test"
+. "C:\Users\HeJiahui\.codex\skills\using-vsdevcmd\scripts\Import-VsDevCmdEnvironment.ps1"; where.exe cl; cmake --build build\codex-semantic-msvc-debug --config Debug --target zr_vm_language_server_class_member_parser_diagnostics_test --parallel 8; .\build\codex-semantic-msvc-debug\bin\Debug\zr_vm_language_server_class_member_parser_diagnostics_test.exe
+```
+
+RED：新增 focused target `zr_vm_language_server_class_member_parser_diagnostics_test` 后，第一次 WSL gcc 运行先证明新 target 需要刷新 `build-wsl-gcc` CMake graph；刷新后 `class Sized { set length(value: int { return value; } }` 旧路径只失败 class-setter parameter-list close case，没有 `missing_parameter_list_close` code、具体问题文本和建议。GREEN：`parse_property_set` 在读完 setter 参数后如果没有看到 `)`，复用既有 `missing_parameter_list_close` reporter 并停止进入 accessor body；随后同一 focused target 加入 `class Callable { @call(value: int: int { return value; } }`，RED 只失败 class-meta case，GREEN：`parse_class_meta_function` 在 primary parameter list 缺少 `)` 时复用同一 structured reporter 并释放已解析 params。新 target 避免继续扩大接近大文件阈值的 `test_lsp_parser_diagnostics.c`。WSL gcc focused target 已通过；完整 focused matrix 见 acceptance 记录。本轮仍不声明全仓库绿色，也不触碰 constructor receiver、SemIR、AOT/value-type、Debug 或 REPL 路径。
+
 2026-06-07 parser/LSP interface method parameter-list close diagnostic 聚焦验证：
 
 ```powershell
@@ -738,6 +754,12 @@ wsl bash -lc "cd /mnt/e/Git/zr_vm && cmake --build build/codex-semantic-wsl-clan
 ```
 
 RED：新增独立 focused target `zr_vm_language_server_declaration_parser_diagnostics_test` 和 `class Box` 断言后，旧 WSL gcc 路径只失败该 class declaration body-open case，没有 `missing_declaration_body_open` code、具体问题文本和建议；随后扩展 `interface Sized` 时，RED 只失败 interface declaration body-open case；再扩展 `func pick(): int` 时，RED 只失败 function declaration body-open case；继续扩展 `enum Tone` 时，RED 只失败 enum declaration body-open case；扩展 `%extern("fixture")` 时，RED 只失败 extern block body-open case；扩展 `%test("smoke")` 时，RED 只失败 test declaration body-open case。GREEN：新增 `ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyOpen` / `report_missing_declaration_body_open`，并让 `parse_class_declaration`、`parse_interface_declaration`、`parse_function_declaration`、`parse_enum_declaration`、`parse_extern_block` 和 `parse_test_declaration` 在 header 后未看到 `{` 时报告 `missing_declaration_body_open`，其中 extern block 仍保留 brace-less single extern member fallback，合法 `%test(...) { ... }` 仍走原 block parser；同时保留旧 `zr_vm_language_server_parser_diagnostics_test` 作为回归。WSL gcc、WSL clang 和 Windows MSVC focused declaration/parser diagnostics targets 均通过；本轮仍不声明全仓库绿色，也不触碰 constructor receiver、SemIR、AOT/value-type、Debug 或 REPL 路径。MSVC 输出包含既有 AOT/runtime 与 parser/LSP warning，本轮未新增失败。
+
+同日补充 class/interface declaration body-close RED 时，`class Box { var id: int;` 旧 WSL gcc 路径只失败 class declaration body-close case，没有 `missing_declaration_body_close` code、具体问题文本和建议；随后同一 focused test 扩展 `interface Sized { get length: int;`。GREEN：新增 `ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose` / `report_missing_declaration_body_close`，并让 `parse_class_declaration` 和 `parse_interface_declaration` 只在已看到 body-opening `{` 且输入结束前仍未看到 closing `}` 时报告 `missing_declaration_body_close`，避免 `class Box` / `interface Sized` opener 缺失场景被误报为 close 缺失。WSL gcc `build-wsl-gcc` focused declaration diagnostics target 先通过；随后 WSL gcc、WSL clang 和 Windows MSVC focused statement/declaration/parser diagnostics targets 均通过。本轮仍不声明全仓库绿色，也不触碰 constructor receiver、SemIR、AOT/value-type、Debug 或 REPL 路径。
+
+同日继续补充 enum/extern declaration body-close RED 时，`enum Tone { warm,` 旧 WSL gcc 路径只失败 enum declaration body-close case，没有 `missing_declaration_body_close` code、具体问题文本和建议；同一 focused test 也加入 `%extern("fixture") { NativeAdd(value: int): int;`。GREEN：`parse_enum_declaration` 和 `parse_extern_block` 记录真实 body-opening `{` 位置，并在输入结束前仍未看到 closing `}` 时复用 `report_missing_declaration_body_close`，同时保留 `enum Tone` / `%extern("fixture")` opener 缺失场景的 `missing_declaration_body_open`。`parser_extern.c` 已超过大文件阈值，本 slice 只替换既有局部 expected-token fallback，extern parser 责任拆分仍是后续 cleanup boundary。WSL gcc `build-wsl-gcc` focused declaration diagnostics target 先通过；随后 WSL gcc、WSL clang 和 Windows MSVC focused statement/declaration/parser diagnostics targets 均通过。本轮仍不声明全仓库绿色，也不触碰 constructor receiver、SemIR、AOT/value-type、Debug 或 REPL 路径。
+
+同日继续补充 function/test declaration body-close RED 时，`func pick(): int { return 1;` 旧 WSL gcc 路径只失败 function declaration body-close case，因为该路径只暴露 generic `missing_block_close`，没有 declaration-specific `missing_declaration_body_close` code、具体问题文本和建议；同一 focused test 也加入 `%test("smoke") { return 1;`。GREEN：`parse_block` 保持原 generic block-close 入口，同时抽出 `parse_declaration_body_block` 让 `parse_function_declaration` 和 `parse_test_declaration` 在输入结束前仍未看到 closing `}` 时复用 `report_missing_declaration_body_close`，普通 statement block、lambda block、method body 和 control-flow block 仍保留 `missing_block_close`。`parser_statements.c` 已 1446 行，本 slice 只抽出 declaration-aware block wrapper，statement parser 责任拆分仍是后续 cleanup boundary；`parser_extern.c` 仍保持最小 `%test` body 调用点改动。WSL gcc `build-wsl-gcc` focused declaration diagnostics target 先通过；随后 WSL gcc、WSL clang 和 Windows MSVC focused statement/declaration/parser diagnostics targets 均通过。本轮仍不声明全仓库绿色，也不触碰 constructor receiver、SemIR、AOT/value-type、Debug 或 REPL 路径。
 
 同日补充 `%extern("fixture" { NativeAdd(value: int): int; }` RED 时，旧路径只失败 extern spec close case；GREEN 新增 `ZrParser_DiagnosticBuilder_BuildMissingExternSpecClose` / `report_missing_extern_spec_close`，并让 `parse_extern_block` 在 extern spec 到达 extern block body 前仍未看到 `)` 时报告 `missing_extern_spec_close` 且释放已解析 library spec literal。WSL gcc、WSL clang 和 Windows MSVC focused statement/declaration/parser diagnostics targets 均通过；Clang/MSVC 仍只输出既有 warning。
 

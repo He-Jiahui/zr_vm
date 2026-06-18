@@ -220,6 +220,7 @@ static void optimizer_classify_instruction(const SZrFunction *function,
         case ZR_INSTRUCTION_ENUM(OWN_DETACH):
         case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
         case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
             if (opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER) ||
                 opcode == ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT) ||
                 opcode == ZR_INSTRUCTION_ENUM(META_GET) ||
@@ -714,6 +715,24 @@ static TZrBool optimizer_slot_is_local(const TZrUInt8 *localSlots, TZrSize slotC
     return localSlots != ZR_NULL && slot < slotCount && localSlots[slot] != 0;
 }
 
+static void optimizer_mark_exported_slots_from_list(const SZrArray *exports,
+                                                    TZrUInt8 *localSlots,
+                                                    TZrSize slotCount) {
+    TZrSize index;
+
+    if (exports == ZR_NULL || localSlots == ZR_NULL) {
+        return;
+    }
+
+    for (index = 0; index < exports->length; index++) {
+        const SZrExportedVariable *exported =
+                (const SZrExportedVariable *)ZrCore_Array_Get((SZrArray *)exports, index);
+        if (exported != ZR_NULL && exported->stackSlot < slotCount) {
+            localSlots[exported->stackSlot] = 1;
+        }
+    }
+}
+
 static TZrBool optimizer_slot_is_active_local_at_instruction(const SZrCompilerState *cs,
                                                              TZrUInt16 slot,
                                                              TZrSize instructionIndex) {
@@ -752,6 +771,17 @@ static void optimizer_mark_local_slots(const SZrCompilerState *cs, TZrUInt8 *loc
             localSlots[localVar->stackSlot] = 1;
         }
     }
+
+    for (index = cs->stackSlotTypeHintScopeStart; index < cs->stackSlotTypeHints.length; index++) {
+        const SZrCompilerStackSlotTypeHint *hint =
+                (const SZrCompilerStackSlotTypeHint *)ZrCore_Array_Get((SZrArray *)&cs->stackSlotTypeHints, index);
+        if (hint != ZR_NULL && hint->stackSlot < slotCount) {
+            localSlots[hint->stackSlot] = 1;
+        }
+    }
+
+    optimizer_mark_exported_slots_from_list(&cs->pubVariables, localSlots, slotCount);
+    optimizer_mark_exported_slots_from_list(&cs->proVariables, localSlots, slotCount);
 }
 
 static TZrBool optimizer_is_dead_null_clear(SZrCompilerState *cs,
@@ -795,7 +825,6 @@ static TZrBool optimizer_try_rewrite_dead_result_to_ret(TZrInstruction *instruct
     if (instruction == ZR_NULL || liveAfter == ZR_NULL) {
         return ZR_FALSE;
     }
-    ZR_UNUSED_PARAMETER(localSlots);
 
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
     if (opcode != ZR_INSTRUCTION_ENUM(SUPER_ARRAY_ADD_INT) &&
@@ -804,7 +833,7 @@ static TZrBool optimizer_try_rewrite_dead_result_to_ret(TZrInstruction *instruct
     }
 
     destSlot = instruction->instruction.operandExtra;
-    if (destSlot >= slotCount || liveAfter[destSlot]) {
+    if (destSlot >= slotCount || liveAfter[destSlot] || optimizer_slot_is_local(localSlots, slotCount, destSlot)) {
         return ZR_FALSE;
     }
 
@@ -825,10 +854,9 @@ static TZrBool optimizer_is_dead_pure_write(const TZrInstruction *instruction,
     }
 
     destSlot = info->writeSlots[0];
-    if (destSlot >= slotCount || liveAfter[destSlot]) {
+    if (destSlot >= slotCount || liveAfter[destSlot] || optimizer_slot_is_local(localSlots, slotCount, destSlot)) {
         return ZR_FALSE;
     }
-    ZR_UNUSED_PARAMETER(localSlots);
 
     opcode = (EZrInstructionCode)instruction->instruction.operationCode;
     switch (opcode) {
@@ -1058,6 +1086,7 @@ static TZrBool optimizer_opcode_supports_adjacent_get_stack_forwarding(EZrInstru
         case ZR_INSTRUCTION_ENUM(OWN_DETACH):
         case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
         case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
@@ -1583,13 +1612,7 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
         slotMap[slot] = (TZrUInt16)slot;
     }
 
-    for (slot = 0; slot < cs->localVars.length; slot++) {
-        SZrFunctionLocalVariable *localVar =
-                (SZrFunctionLocalVariable *)ZrCore_Array_Get(&cs->localVars, slot);
-        if (localVar != ZR_NULL && localVar->stackSlot < slotCount) {
-            isLocalSlot[localVar->stackSlot] = 1;
-        }
-    }
+    optimizer_mark_local_slots(cs, isLocalSlot, slotCount);
 
     for (slot = 0; slot < cs->localVars.length; slot++) {
         SZrFunctionLocalVariable *localVar =
@@ -1602,6 +1625,13 @@ static void optimizer_dense_compact_slots(SZrCompilerState *cs,
 
     for (slot = 0; slot < slotCount; slot++) {
         if (isLocalSlot[slot]) {
+            continue;
+        }
+        while (nextSlot < slotCount && isLocalSlot[nextSlot]) {
+            nextSlot++;
+        }
+        if (nextSlot >= slotCount) {
+            slotMap[slot] = (TZrUInt16)slot;
             continue;
         }
         slotMap[slot] = (TZrUInt16)nextSlot++;

@@ -23,6 +23,7 @@
 - `class` - 类声明
 - `interface` - 接口声明
 - `enum` - 枚举声明
+- `union` - 带字段的代数数据类型声明
 - `intermediate` - 中间代码声明
 
 #### 变量和函数
@@ -423,6 +424,29 @@ enum Status: int {
 - **成员可以显式赋值或使用默认值**: 默认从 0 开始递增
 - **成员分隔符**: 可以使用 `,` 或 `;`
 
+### 2.7.1 Union 类型 (union)
+
+`union` 是带字段的 variant 类型，适合表达 `Option<T>` / `Result<T,E>` 这类代数数据类型：
+
+```zr
+union Shape {
+    Empty;
+    Circle(radius: float);
+    Rect { width: float; height: float; }
+}
+
+union Option<T> {
+    None;
+    Some(value: T);
+}
+
+var s = Shape.Circle(2.0);
+var empty = Shape.Empty;
+var some = Option<int>.Some(42);
+```
+
+当前已实现声明解析、unit/tuple-style/struct-style 构造器、泛型 union 类型推断、carrier object lowering，以及 typed inline union 局部/字段的 tag/payload materialization 与读取。构造出的 carrier 值包含 `__zr_unionType`、`__zr_unionVariant` 和 `__zr_unionPayloadN` 字段；`switch` 已支持 variant tag 匹配、tuple-style payload 绑定、struct-style payload 绑定、无 default 时的基础穷尽性检查，以及重复 variant case 的不可达检查。typed union local、typed struct 字段和嵌套字段链可在已知声明类型时使用 inline tag/payload 路径。
+
 ### 2.8 对象字面量
 
 ```zr
@@ -502,6 +526,34 @@ switch (value) {
     }
 }
 ```
+
+union 值可以用 variant case 做基础 tag 匹配，并可对 tuple-style payload 做位置绑定：
+
+```zr
+switch (shape) {
+    (Shape.Empty) {
+        // unit variant
+    }
+    (Shape.Circle(r)) {
+        // Circle tag matched; r is bound from the first payload field
+    }
+    (Shape.Rect { width: w, height: h }) {
+        // Rect tag matched; w/h are bound from named payload fields
+    }
+}
+```
+
+当 `switch` 目标类型已知为 `Shape` 时，case 可省略类型前缀：
+
+```zr
+switch (shape) {
+    (Empty) { }
+    (Circle(r)) { }
+    (Rect { width: w, height: h }) { }
+}
+```
+
+当 `switch` 目标能推断为 union 类型且没有 `()` default case 时，编译器要求覆盖该 union 的所有 variants；缺失分支会报 `Non-exhaustive union switch; missing variant '<name>'`。重复匹配同一 variant 的第二个 case 会报 `Unreachable union switch case; variant '<name>' is already covered`。写 `()` default 可显式允许部分覆盖。`switch` / `using` 也可读取 typed inline union 字段链，例如 `holder.inner.choice`，前提是字段声明类型已知。
 
 #### while 循环
 
@@ -772,6 +824,13 @@ var name: [Type1, Type2];
 // 泛型类型
 var name: Generic<Type>;
 
+// 所有权泛型类型
+var owned: Unique<Resource>;
+var shared: Shared<Resource>;
+var weak: Weak<Resource>;
+var view: Borrow<Resource>;
+var slot: Loan<Resource>;
+
 // 嵌套类型
 var name: Outer<Inner<Type>>;
 
@@ -798,6 +857,7 @@ var callback: F = (x: int)->{
 **说明**:
 - 类型位统一按“前缀 `%` 保留字修饰 + 主类型 + 后缀修饰”解析。
 - `%func(...) -> ReturnType` 是正式函数类型写法；`=>` 仅作兼容输入。
+- `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>` 是内建所有权泛型；旧 `%unique T` / `%shared T` / `%weak T` / `%borrow T` / `%loan T` 过渡期作为等价语法糖保留。
 - 任意编译期可折叠且冻结的 `Type` 值都可进入类型位置，因此 `var F = %func(int)->int; var c: F = ...;` 合法。
 - `%type(...)` 同时接受 `TypeExpr` 与普通表达式；`%type(%func(int)->int)` 返回 callable reflection。
 
@@ -1020,6 +1080,7 @@ map<TIn, TOut>(source: Array<TIn>, f: %func(TIn)->TOut): Array<TOut> {
 - `class`
 - `struct`
 - `new()`
+- `owner`
 
 ```zr
 class Base<T> {
@@ -1030,9 +1091,56 @@ class Derived<T, const N: int> : Base<T>
 where T: class, new()
 {
 }
+
+func requireOwner<T>(): int
+where T: owner
+{
+    return 1;
+}
 ```
 
-继承与实现列表中的泛型实参同样支持转发、固定和 const 表达式，闭型实例化时会进行替换与约束校验。
+继承与实现列表中的泛型实参同样支持转发、固定和 const 表达式，闭型实例化时会进行替换与约束校验。`owner` 约束要求实参是所有权世界类型，例如 `Unique<T>` / `Shared<T>` / `Weak<T>` / `Borrow<T>` / `Loan<T>`；plain `T` 不满足该约束。
+
+#### 所有权泛型与 using 作用域
+
+`using` 是当前推荐的资源作用域关键字；`%using` 作为兼容写法保留。当前解析器支持两种形态：
+
+```zr
+var owned: Unique<Resource>;
+using owned;
+
+using (owned) {
+    owned.use();
+}
+
+using (var []: Shape.Empty = shape) {
+    fallbackForEmpty();
+} else {
+    fallback();
+}
+
+using (var [r]: Shape.Circle = shape) {
+    r.use();
+} else {
+    fallback();
+}
+
+using (var {w: width, height}: Shape.Rect = shape) {
+    w.use();
+    height.use();
+} else {
+    fallback();
+}
+
+using (var plugin = %import("render.vulkan")) {
+    plugin.init();
+} else {
+    fallback();
+}
+```
+
+语义层会根据资源类型中的所有权泛型记录 deterministic cleanup step，例如 `Unique<Resource>` 会归一为 inner type `Resource` 加 owner qualifier。`Unique<T>` / `Shared<T>` 的 using scope 退出会 lowering 到 release；`Borrow<T>` / `Loan<T>` 的完整 borrow-end / loan-return 和逃逸检查仍属于后续运行时收口工作。`using` 对已知 union resource 的单 variant 守卫采用“解构 pattern + variant 标注”形式：tuple payload 写 `using (var [x]: Union.Variant = value) { ... } else { ... }`，struct payload 写 `using (var {local: field}: Union.Variant = value) { ... } else { ... }`，也可以混合默认名和别名如 `{width, h: height}`。编译器会拒绝 tuple variant 的 `{...}` 字段解构和 struct variant 的 `[...]` 元组解构；该规则同样适用于唯一 `@` 默认 variant 的省略 variant 写法。当 `value` 是已知 typed union 局部或嵌套字段链（如 `holder.inner.choice`）时，guard 会从 inline frame tag/payload 读取。省略 variant 只允许在 union 有唯一 `@` 默认 variant 且 binder 是 `[x]` 或 `{field}` 解构时使用；`%import` 资源即使显式写 `DynamicModule<T>.Variant`，目标 variant 也必须是该 union 的 `@` 默认校验 variant。旧式 `using (var Variant(x) = value)` 会被编译器拒绝并提示迁移到新形态。
+`using (var p = %import(...)) { ... } else { ... }` 当前支持插件守卫：编译器会先求值 import，把 `p` 作为 block 内局部绑定，并按 import 结果决定进入 block 或走 else；module init analysis 会把 block 内的 `p.*` 记录为 canonical module effect，metadata token builder 会把可签名的 import member effect 写成函数级 `MEMBER_REF` + `SIGNATURE` 前置记录。`using (var [m]: PluginLoad.Available = %import(...)) { ... } else { ... }` 是内置 success-payload 形态，不要求脚本声明 `DynamicModule` union；它与 `DynamicModule<T>.@Available` 和无 annotation payload guard 共用 import guard helper、插件逃逸扫描、`.share()` 提升和 guard-scope 隐藏 owner release。未 `share()` 的 guard binder、payload binding 或别名不能经 return/throw/out、调用参数或构造实参、聚合字段、闭包捕获、generator 延迟输出或 assignment expression 副作用逃逸；例如 `new Sink(m)`、`if (alias = m)` 或 `var ok = (alias = m)` 都会让未提升的 guard-scoped plugin 值继续受 `plugin_type_escape` 约束。native registry 已可通过 owner refcount API 观察这些显式/隐藏 shared owner 的生命周期；descriptor safe unload/cache invalidation、descriptor-DLL 诊断透传和更完整跨 region/global/async 插件类型逃逸检查仍属于后续运行时收口工作。
 
 #### 方差与参数作用
 
@@ -1225,7 +1333,7 @@ var y: uint8 = -1;       // 编译错误：负数不能赋值给无符号类型
 
 ### B. 关键字列表
 
-**类型声明**: `module`, `struct`, `class`, `interface`, `enum`, `intermediate`
+**类型声明**: `module`, `struct`, `class`, `interface`, `enum`, `union`, `intermediate`
 
 **变量和函数**: `var`, `const`, `static`
 

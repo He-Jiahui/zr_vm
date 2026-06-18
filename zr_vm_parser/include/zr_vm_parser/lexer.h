@@ -113,6 +113,7 @@ enum EZrToken {
     ZR_TK_IDENTIFIER,
     // 特殊
     ZR_TK_EOS,           // End of stream
+    ZR_TK_UNION,         // union keyword (appended to avoid existing token id drift)
 };
 
 typedef enum EZrToken EZrToken;

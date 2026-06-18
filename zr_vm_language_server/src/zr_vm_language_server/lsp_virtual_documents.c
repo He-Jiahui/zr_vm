@@ -65,6 +65,8 @@ static const TZrChar *virtual_documents_type_keyword(EZrObjectPrototypeType prot
             return "interface";
         case ZR_OBJECT_PROTOTYPE_TYPE_ENUM:
             return "enum";
+        case ZR_OBJECT_PROTOTYPE_TYPE_UNION:
+            return "union";
         case ZR_OBJECT_PROTOTYPE_TYPE_CLASS:
         default:
             return "class";

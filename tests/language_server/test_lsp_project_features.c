@@ -2106,14 +2106,17 @@ static void test_lsp_import_diagnostics_report_missing_imported_member(SZrState 
 
     diagnostic = find_diagnostic_with_message(&diagnostics, "Import member 'greet.missing' could not be resolved");
     if (diagnostic == ZR_NULL ||
+        diagnostic->code == ZR_NULL ||
+        strcmp(test_string_ptr(diagnostic->code), "plugin_unknown_export") != 0 ||
         diagnostic->relatedInformation.length < 2 ||
         !diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(mainUri)) ||
         moduleUri == ZR_NULL ||
         !diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(moduleUri))) {
         snprintf(summary,
                  sizeof(summary),
-                 "Expected missing imported member diagnostic to include import trace locations"
-                 " (count=%zu main=%d module=%d)",
+                 "Expected missing imported member diagnostic to include code plugin_unknown_export and import trace locations"
+                 " (code=%s count=%zu main=%d module=%d)",
+                 diagnostic != ZR_NULL && diagnostic->code != ZR_NULL ? test_string_ptr(diagnostic->code) : "<none>",
                  diagnostic != ZR_NULL ? (size_t)diagnostic->relatedInformation.length : 0u,
                  diagnostic != ZR_NULL ? diagnostic_related_locations_contain_uri(diagnostic, test_string_ptr(mainUri)) : 0,
                  (diagnostic != ZR_NULL && moduleUri != ZR_NULL)

@@ -222,6 +222,9 @@ static void test_aot_c_generated_shared_library_executes_string_field_value_type
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_value_slot_load"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText,
+                                "ZrCore_Value_Copy(state, zr_aot_dense_destination, "
+                                "(const SZrTypeValue *)zr_aot_field);"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_value_exec_field_value_slot_store"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_TypeLayout_CopyInline(state,"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_TryCopyInlineFrameReturnValue"));

@@ -821,6 +821,7 @@ static const TZrChar *metadata_provider_module_member_kind_text(SZrSemanticAnaly
                 case ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE: return "interface";
                 case ZR_OBJECT_PROTOTYPE_TYPE_MODULE: return "module";
                 case ZR_OBJECT_PROTOTYPE_TYPE_ENUM: return "enum";
+                case ZR_OBJECT_PROTOTYPE_TYPE_UNION: return "union";
                 default:
                     break;
             }

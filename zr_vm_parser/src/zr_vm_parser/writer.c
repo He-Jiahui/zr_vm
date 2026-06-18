@@ -302,12 +302,20 @@ ZR_PARSER_API TZrUInt64 ZrParser_Writer_GetSerializableNativeHelperId(FZrNativeF
         return ZR_IO_NATIVE_HELPER_MODULE_IMPORT;
     }
 
+    if (function == ZrCore_Module_ImportGuardNativeEntry) {
+        return ZR_IO_NATIVE_HELPER_MODULE_IMPORT_GUARD;
+    }
+
     if (function == ZrCore_Ownership_NativeUnique) {
         return ZR_IO_NATIVE_HELPER_OWNERSHIP_UNIQUE;
     }
 
     if (function == ZrCore_Ownership_NativeShared) {
         return ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARED;
+    }
+
+    if (function == ZrCore_Ownership_NativeSharePlain) {
+        return ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN;
     }
 
     if (function == ZrCore_Ownership_NativeWeak) {
@@ -882,7 +890,136 @@ static void write_function_typed_export_symbols(FILE *file, SZrState *state, SZr
         fwrite(&symbol->columnInSourceStart, sizeof(TZrUInt32), 1, file);
         fwrite(&symbol->lineInSourceEnd, sizeof(TZrUInt32), 1, file);
         fwrite(&symbol->columnInSourceEnd, sizeof(TZrUInt32), 1, file);
+        fwrite(&symbol->metadataToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&symbol->signatureToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&symbol->signatureBlobOffset, sizeof(TZrUInt32), 1, file);
+        fwrite(&symbol->signatureBlobLength, sizeof(TZrUInt32), 1, file);
+        fwrite(&symbol->signatureHash, sizeof(TZrUInt64), 1, file);
     }
+}
+
+static void write_metadata_token_records(FILE *file,
+                                         SZrState *state,
+                                         const SZrMetadataTokenRecord *records,
+                                         TZrUInt64 recordCount) {
+    fwrite(&recordCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < recordCount; index++) {
+        const SZrMetadataTokenRecord *record = &records[index];
+
+        fwrite(&record->token, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&record->relatedToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&record->ownerToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&record->ownerIndex, sizeof(TZrUInt32), 1, file);
+        fwrite(&record->signatureBlobOffset, sizeof(TZrUInt32), 1, file);
+        fwrite(&record->signatureBlobLength, sizeof(TZrUInt32), 1, file);
+        fwrite(&record->signatureHash, sizeof(TZrUInt64), 1, file);
+        fwrite(&record->layoutVersion, sizeof(TZrUInt32), 1, file);
+        fwrite(&record->reserved0, sizeof(TZrUInt32), 1, file);
+        fwrite(&record->layoutHash, sizeof(TZrUInt64), 1, file);
+        fwrite(&record->targetMetadataToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&record->targetSignatureToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&record->targetSignatureHash, sizeof(TZrUInt64), 1, file);
+        fwrite(&record->targetModuleSignatureHash, sizeof(TZrUInt64), 1, file);
+        write_string_with_length(state, file, record->requestedModuleVersion);
+        write_string_with_length(state, file, record->minModuleVersionInclusive);
+        write_string_with_length(state, file, record->maxModuleVersionExclusive);
+    }
+}
+
+static void write_module_metadata_bindings(FILE *file,
+                                           const SZrMetadataTokenBinding *bindings,
+                                           TZrUInt64 bindingCount) {
+    fwrite(&bindingCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < bindingCount; index++) {
+        const SZrMetadataTokenBinding *binding = &bindings[index];
+
+        fwrite(&binding->refToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&binding->refSignatureToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&binding->refSignatureHash, sizeof(TZrUInt64), 1, file);
+        fwrite(&binding->expectedMetadataToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&binding->expectedSignatureToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&binding->expectedSignatureHash, sizeof(TZrUInt64), 1, file);
+        fwrite(&binding->expectedModuleSignatureHash, sizeof(TZrUInt64), 1, file);
+        fwrite(&binding->expectedLayoutVersion, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->reserved0, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->expectedLayoutHash, sizeof(TZrUInt64), 1, file);
+        fwrite(&binding->resolvedMetadataToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&binding->resolvedSignatureToken, sizeof(TZrMetadataToken), 1, file);
+        fwrite(&binding->resolvedSignatureHash, sizeof(TZrUInt64), 1, file);
+        fwrite(&binding->resolvedModuleSignatureHash, sizeof(TZrUInt64), 1, file);
+        fwrite(&binding->resolvedLayoutVersion, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->reserved1, sizeof(TZrUInt32), 1, file);
+        fwrite(&binding->resolvedLayoutHash, sizeof(TZrUInt64), 1, file);
+    }
+}
+
+static void write_metadata_string_heap(FILE *file,
+                                       SZrState *state,
+                                       const SZrMetadataStringHeapEntry *entries,
+                                       TZrUInt64 entryCount) {
+    fwrite(&entryCount, sizeof(TZrUInt64), 1, file);
+    for (TZrUInt64 index = 0; index < entryCount; index++) {
+        fwrite(&entries[index].stringIndex, sizeof(TZrUInt32), 1, file);
+        write_string_with_length(state, file, entries[index].value);
+    }
+}
+
+static void write_function_metadata_token_model(FILE *file, SZrState *state, const SZrFunction *function) {
+    TZrUInt64 recordCount = 0;
+    TZrUInt64 heapLength = 0;
+    TZrUInt64 stringHeapLength = 0;
+    TZrUInt64 moduleSignatureHash = 0;
+
+    if (function != ZR_NULL && function->metadataTokenRecords != ZR_NULL) {
+        recordCount = function->metadataTokenRecordLength;
+    }
+    if (function != ZR_NULL && function->signatureBlobHeap != ZR_NULL) {
+        heapLength = function->signatureBlobHeapLength;
+    }
+    if (function != ZR_NULL && function->metadataStringHeap != ZR_NULL) {
+        stringHeapLength = function->metadataStringHeapLength;
+    }
+    if (function != ZR_NULL) {
+        moduleSignatureHash = function->moduleSignatureHash;
+    }
+
+    write_metadata_token_records(file, state, function != ZR_NULL ? function->metadataTokenRecords : ZR_NULL, recordCount);
+    write_string_with_length(state, file, function != ZR_NULL ? function->moduleVersion : ZR_NULL);
+
+    fwrite(&heapLength, sizeof(TZrUInt64), 1, file);
+    if (heapLength > 0 && function->signatureBlobHeap != ZR_NULL) {
+        fwrite(function->signatureBlobHeap, sizeof(TZrByte), heapLength, file);
+    }
+    write_metadata_string_heap(file,
+                               state,
+                               function != ZR_NULL ? function->metadataStringHeap : ZR_NULL,
+                               stringHeapLength);
+    fwrite(&moduleSignatureHash, sizeof(TZrUInt64), 1, file);
+}
+
+static void write_function_module_metadata_ref_table(FILE *file, SZrState *state, const SZrFunction *function) {
+    TZrUInt64 recordCount = 0;
+
+    if (function != ZR_NULL && function->moduleMetadataTokenRecords != ZR_NULL) {
+        recordCount = function->moduleMetadataTokenRecordLength;
+    }
+
+    write_metadata_token_records(file,
+                                 state,
+                                 function != ZR_NULL ? function->moduleMetadataTokenRecords : ZR_NULL,
+                                 recordCount);
+}
+
+static void write_function_module_metadata_bindings(FILE *file, const SZrFunction *function) {
+    TZrUInt64 bindingCount = 0;
+
+    if (function != ZR_NULL && function->moduleMetadataBindings != ZR_NULL) {
+        bindingCount = function->moduleMetadataBindingLength;
+    }
+
+    write_module_metadata_bindings(file,
+                                   function != ZR_NULL ? function->moduleMetadataBindings : ZR_NULL,
+                                   bindingCount);
 }
 
 static void write_function_module_effect(FILE *file, SZrState *state, const SZrFunctionModuleEffect *effect) {
@@ -894,6 +1031,13 @@ static void write_function_module_effect(FILE *file, SZrState *state, const SZrF
     TZrUInt32 columnInSourceStart = 0;
     TZrUInt32 lineInSourceEnd = 0;
     TZrUInt32 columnInSourceEnd = 0;
+    TZrMetadataToken targetMetadataToken = 0;
+    TZrMetadataToken targetSignatureToken = 0;
+    TZrUInt64 targetSignatureHash = 0;
+    TZrUInt64 targetModuleSignatureHash = 0;
+    SZrString *requestedModuleVersion = ZR_NULL;
+    SZrString *minModuleVersionInclusive = ZR_NULL;
+    SZrString *maxModuleVersionExclusive = ZR_NULL;
 
     if (effect != ZR_NULL) {
         kind = effect->kind;
@@ -904,6 +1048,13 @@ static void write_function_module_effect(FILE *file, SZrState *state, const SZrF
         columnInSourceStart = effect->columnInSourceStart;
         lineInSourceEnd = effect->lineInSourceEnd;
         columnInSourceEnd = effect->columnInSourceEnd;
+        targetMetadataToken = effect->targetMetadataToken;
+        targetSignatureToken = effect->targetSignatureToken;
+        targetSignatureHash = effect->targetSignatureHash;
+        targetModuleSignatureHash = effect->targetModuleSignatureHash;
+        requestedModuleVersion = effect->requestedModuleVersion;
+        minModuleVersionInclusive = effect->minModuleVersionInclusive;
+        maxModuleVersionExclusive = effect->maxModuleVersionExclusive;
     }
 
     fwrite(&kind, sizeof(TZrUInt8), 1, file);
@@ -916,6 +1067,13 @@ static void write_function_module_effect(FILE *file, SZrState *state, const SZrF
     fwrite(&columnInSourceStart, sizeof(TZrUInt32), 1, file);
     fwrite(&lineInSourceEnd, sizeof(TZrUInt32), 1, file);
     fwrite(&columnInSourceEnd, sizeof(TZrUInt32), 1, file);
+    fwrite(&targetMetadataToken, sizeof(TZrMetadataToken), 1, file);
+    fwrite(&targetSignatureToken, sizeof(TZrMetadataToken), 1, file);
+    fwrite(&targetSignatureHash, sizeof(TZrUInt64), 1, file);
+    fwrite(&targetModuleSignatureHash, sizeof(TZrUInt64), 1, file);
+    write_string_with_length(state, file, requestedModuleVersion);
+    write_string_with_length(state, file, minModuleVersionInclusive);
+    write_string_with_length(state, file, maxModuleVersionExclusive);
 }
 
 static void write_function_static_imports(FILE *file, SZrState *state, SZrFunction *function) {
@@ -1404,6 +1562,9 @@ static TZrBool write_io_function_internal(SZrState *state,
 
     write_function_typed_local_bindings(file, state, function);
     write_function_typed_export_symbols(file, state, function);
+    write_function_metadata_token_model(file, state, function);
+    write_function_module_metadata_ref_table(file, state, function);
+    write_function_module_metadata_bindings(file, function);
     write_function_static_imports(file, state, function);
     write_function_module_entry_effects(file, state, function);
     write_function_exported_callable_summaries(file, state, function);

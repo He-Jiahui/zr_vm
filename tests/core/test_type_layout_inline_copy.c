@@ -1250,6 +1250,199 @@ static void test_function_inline_parameters_copy_by_frame_layout_copies_byte_pay
     ZrTests_Runtime_State_Destroy(state);
 }
 
+static void test_value_frame_parameter_copy_uses_dense_source_when_frame_value_slot_is_unmaterialized(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction callerFunction = {0};
+    SZrFunction calleeFunction = {0};
+    SZrFunctionFrameSlotLayout callerLayouts[1];
+    SZrFunctionFrameSlotLayout calleeLayouts[2];
+    TZrStackValuePointer callerFrameBase;
+    TZrStackValuePointer calleeFrameBase;
+    SZrStackFramePlace callerBytePlace;
+    SZrStackFramePlace calleeValuePlace;
+    SZrTypeValue *denseSource;
+    SZrTypeValue *denseDestination;
+    SZrTypeValue *callerByteSource;
+    SZrTypeValue *calleeByteDestination;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->stackBase.valuePointer);
+
+    memset(callerLayouts, 0, sizeof(callerLayouts));
+    memset(calleeLayouts, 0, sizeof(calleeLayouts));
+
+    callerLayouts[0].stackSlot = 6u;
+    callerLayouts[0].byteOffset = 16u * (TZrUInt32)sizeof(SZrTypeValueOnStack) + 32u;
+    callerLayouts[0].byteSize = sizeof(SZrTypeValue);
+    callerLayouts[0].byteAlign = ZR_ALIGN_SIZE;
+    callerLayouts[0].typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    callerLayouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    callerLayouts[0].isParameter = ZR_FALSE;
+
+    calleeLayouts[0].stackSlot = 0u;
+    calleeLayouts[0].byteOffset = 32u;
+    calleeLayouts[0].byteSize = 16u;
+    calleeLayouts[0].byteAlign = 8u;
+    calleeLayouts[0].typeLayoutId = 7u;
+    calleeLayouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
+    calleeLayouts[0].isParameter = ZR_TRUE;
+
+    calleeLayouts[1].stackSlot = 1u;
+    calleeLayouts[1].byteOffset = 4u * (TZrUInt32)sizeof(SZrTypeValueOnStack) + 32u;
+    calleeLayouts[1].byteSize = sizeof(SZrTypeValue);
+    calleeLayouts[1].byteAlign = ZR_ALIGN_SIZE;
+    calleeLayouts[1].typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    calleeLayouts[1].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    calleeLayouts[1].isParameter = ZR_TRUE;
+
+    callerFunction.stackSize = 16u;
+    callerFunction.frameSlotLayouts = callerLayouts;
+    callerFunction.frameSlotLayoutLength = ZR_ARRAY_COUNT(callerLayouts);
+    callerFunction.frameByteSize = callerLayouts[0].byteOffset + callerLayouts[0].byteSize;
+    callerFunction.frameByteAlign = ZR_ALIGN_SIZE;
+
+    calleeFunction.stackSize = 4u;
+    calleeFunction.parameterCount = 2u;
+    calleeFunction.frameSlotLayouts = calleeLayouts;
+    calleeFunction.frameSlotLayoutLength = ZR_ARRAY_COUNT(calleeLayouts);
+    calleeFunction.frameByteSize = calleeLayouts[1].byteOffset + calleeLayouts[1].byteSize;
+    calleeFunction.frameByteAlign = ZR_ALIGN_SIZE;
+
+    callerFrameBase = state->stackBase.valuePointer + 1;
+    calleeFrameBase = state->stackBase.valuePointer + 24;
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(
+            state,
+            &callerFunction,
+            callerFrameBase,
+            callerLayouts[0].stackSlot,
+            &callerBytePlace));
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(
+            state,
+            &calleeFunction,
+            calleeFrameBase,
+            calleeLayouts[1].stackSlot,
+            &calleeValuePlace));
+
+    denseSource = ZrCore_Stack_GetValue(callerFrameBase + callerLayouts[0].stackSlot);
+    denseDestination = ZrCore_Stack_GetValue(calleeFrameBase + calleeLayouts[1].stackSlot);
+    callerByteSource = (SZrTypeValue *)callerBytePlace.address;
+    calleeByteDestination = (SZrTypeValue *)calleeValuePlace.address;
+    ZrCore_Value_InitAsInt(state, denseSource, 42);
+    ZrCore_Value_ResetAsNull(callerByteSource);
+    ZrCore_Value_ResetAsNull(denseDestination);
+    ZrCore_Value_ResetAsNull(calleeByteDestination);
+
+    TEST_ASSERT_TRUE(ZrCore_Function_CopyValueFrameParametersFromFrame(
+            state,
+            &calleeFunction,
+            calleeFrameBase,
+            &callerFunction,
+            callerFrameBase,
+            5u,
+            2u));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, calleeByteDestination->type);
+    TEST_ASSERT_EQUAL_INT64(42, calleeByteDestination->value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, denseDestination->type);
+    TEST_ASSERT_EQUAL_INT64(42, denseDestination->value.nativeObject.nativeInt64);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_value_frame_parameter_copy_normalizes_reused_destination_slots(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction calleeFunction = {0};
+    SZrFunctionFrameSlotLayout calleeLayouts[1];
+    TZrStackValuePointer calleeFrameBase;
+    TZrStackValuePointer argumentBase;
+    SZrStackFramePlace calleeValuePlace;
+    SZrTypeValue *argumentValue;
+    SZrTypeValue *denseDestination;
+    SZrTypeValue *byteDestination;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(state->stackBase.valuePointer);
+
+    memset(calleeLayouts, 0, sizeof(calleeLayouts));
+
+    calleeLayouts[0].stackSlot = 2u;
+    calleeLayouts[0].byteOffset = 8u * (TZrUInt32)sizeof(SZrTypeValueOnStack) + 32u;
+    calleeLayouts[0].byteSize = sizeof(SZrTypeValue);
+    calleeLayouts[0].byteAlign = ZR_ALIGN_SIZE;
+    calleeLayouts[0].typeLayoutId = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    calleeLayouts[0].slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_VALUE;
+    calleeLayouts[0].isParameter = ZR_TRUE;
+
+    calleeFunction.stackSize = 8u;
+    calleeFunction.parameterCount = 1u;
+    calleeFunction.frameSlotLayouts = calleeLayouts;
+    calleeFunction.frameSlotLayoutLength = ZR_ARRAY_COUNT(calleeLayouts);
+    calleeFunction.frameByteSize = calleeLayouts[0].byteOffset + calleeLayouts[0].byteSize;
+    calleeFunction.frameByteAlign = ZR_ALIGN_SIZE;
+
+    argumentBase = state->stackBase.valuePointer + 1;
+    calleeFrameBase = state->stackBase.valuePointer + 16;
+    TEST_ASSERT_TRUE(ZrCore_Function_MakeFrameSlotPlace(
+            state,
+            &calleeFunction,
+            calleeFrameBase,
+            calleeLayouts[0].stackSlot,
+            &calleeValuePlace));
+
+    argumentValue = ZrCore_Stack_GetValue(argumentBase);
+    denseDestination = ZrCore_Stack_GetValue(calleeFrameBase + calleeLayouts[0].stackSlot);
+    byteDestination = (SZrTypeValue *)calleeValuePlace.address;
+
+    ZrCore_Value_InitAsInt(state, argumentValue, 77);
+    ZrCore_Value_ResetAsNull(denseDestination);
+    ZrCore_Value_ResetAsNull(byteDestination);
+    denseDestination->ownershipControl = (struct SZrOwnershipControl *)state;
+    denseDestination->ownershipWeakRef = (struct SZrOwnershipWeakRef *)state;
+    byteDestination->ownershipControl = (struct SZrOwnershipControl *)state;
+    byteDestination->ownershipWeakRef = (struct SZrOwnershipWeakRef *)state;
+
+    TEST_ASSERT_TRUE(ZrCore_Function_CopyValueFrameParameters(
+            state,
+            &calleeFunction,
+            calleeFrameBase,
+            argumentBase,
+            1u));
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, byteDestination->type);
+    TEST_ASSERT_EQUAL_INT64(77, byteDestination->value.nativeObject.nativeInt64);
+    TEST_ASSERT_NULL(byteDestination->ownershipControl);
+    TEST_ASSERT_NULL(byteDestination->ownershipWeakRef);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, byteDestination->ownershipKind);
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, denseDestination->type);
+    TEST_ASSERT_EQUAL_INT64(77, denseDestination->value.nativeObject.nativeInt64);
+    TEST_ASSERT_NULL(denseDestination->ownershipControl);
+    TEST_ASSERT_NULL(denseDestination->ownershipWeakRef);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, denseDestination->ownershipKind);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static void test_value_copy_normalizes_reused_no_ownership_destination(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrTypeValue destination;
+    SZrTypeValue source;
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    ZrCore_Value_ResetAsNull(&destination);
+    ZrCore_Value_InitAsInt(state, &source, 91);
+    destination.ownershipControl = (struct SZrOwnershipControl *)state;
+    destination.ownershipWeakRef = (struct SZrOwnershipWeakRef *)state;
+
+    ZrCore_Value_CopyNoProfile(state, &destination, &source);
+
+    TEST_ASSERT_EQUAL_INT(ZR_VALUE_TYPE_INT64, destination.type);
+    TEST_ASSERT_EQUAL_INT64(91, destination.value.nativeObject.nativeInt64);
+    TEST_ASSERT_EQUAL_INT(ZR_OWNERSHIP_VALUE_KIND_NONE, destination.ownershipKind);
+    TEST_ASSERT_NULL(destination.ownershipControl);
+    TEST_ASSERT_NULL(destination.ownershipWeakRef);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
 static void test_prepared_resolved_vm_precall_copies_inline_parameter_payload_from_caller_frame(void) {
     SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
     SZrFunction *callerFunction;
@@ -1727,6 +1920,9 @@ int main(void) {
     RUN_TEST(test_function_prototype_type_layout_resolver_fails_unknown_nonlocal_field_metadata);
     RUN_TEST(test_function_prototype_type_layout_resolver_fails_recursive_struct_metadata);
     RUN_TEST(test_function_inline_parameters_copy_by_frame_layout_copies_byte_payloads);
+    RUN_TEST(test_value_frame_parameter_copy_uses_dense_source_when_frame_value_slot_is_unmaterialized);
+    RUN_TEST(test_value_frame_parameter_copy_normalizes_reused_destination_slots);
+    RUN_TEST(test_value_copy_normalizes_reused_no_ownership_destination);
     RUN_TEST(test_prepared_resolved_vm_precall_copies_inline_parameter_payload_from_caller_frame);
     RUN_TEST(test_function_inline_frame_gc_and_drop_scan_inline_struct_payload);
     RUN_TEST(test_function_post_call_drops_inline_frame_values_with_prototype_resolver);

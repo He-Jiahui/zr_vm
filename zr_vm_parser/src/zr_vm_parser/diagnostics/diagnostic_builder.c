@@ -171,6 +171,39 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyOpen(SZrState *sta
             suggestion);
 }
 
+TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(SZrState *state,
+                                                                    SZrStructuredDiagnostic *out,
+                                                                    SZrFileRange location,
+                                                                    const TZrChar *declarationKind) {
+    const TZrChar *kind = declarationKind != ZR_NULL ? declarationKind : "declaration";
+    TZrChar message[160];
+    TZrChar cause[256];
+    TZrChar suggestion[192];
+
+    snprintf(message,
+             sizeof(message),
+             "Missing closing '}' for %s body",
+             kind);
+    snprintf(cause,
+             sizeof(cause),
+             "The %s body started with '{', but the parser reached the end of input before a closing '}' appeared.",
+             kind);
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Insert '}' to close the %s body before continuing.",
+             kind);
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "missing_declaration_body_close",
+            message,
+            cause,
+            suggestion);
+}
+
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(SZrState *state,
                                                                  SZrStructuredDiagnostic *out,
                                                                  SZrFileRange location,
@@ -244,6 +277,193 @@ TZrBool ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(SZrState *stat
             "Missing closing ')' in using resource",
             "The using statement started a resource expression with '(', but the parser reached the using body before a closing ')' appeared.",
             "Insert ')' after the using resource before the using body.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildUsingBinderInvalid(SZrState *state,
+                                                           SZrStructuredDiagnostic *out,
+                                                           SZrFileRange location) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "using_binder_invalid",
+            "using_binder_invalid: invalid using guard binder",
+            "A using guard binder must be an import binding name or a union destructuring pattern.",
+            "Use `using (var name = %import(...))` for plugin guards, `using (var [value]: Union.Variant = resource)` for tuple variants, or `using (var {local: field}: Union.Variant = resource)` for struct variants.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildImportPathNotConstant(SZrState *state,
+                                                              SZrStructuredDiagnostic *out,
+                                                              SZrFileRange location,
+                                                              const TZrChar *directiveName) {
+    TZrChar message[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    TZrChar cause[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    TZrChar suggestion[ZR_PARSER_ERROR_BUFFER_LENGTH];
+    const TZrChar *name = directiveName != ZR_NULL ? directiveName : "import";
+
+    snprintf(message,
+             sizeof(message),
+             "%%%s(...) requires a string literal module path",
+             name);
+    snprintf(cause,
+             sizeof(cause),
+             "The module path inside %%%s(...) must be known at parse time; variables and expressions cannot participate in module signature binding.",
+             name);
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Use `%%%s(\"zr.module\")`, `%%%s \"zr.module\"`, or `%%%s zr.module` with a compile-time module path.",
+             name,
+             name,
+             name);
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "import_path_not_constant",
+            message,
+            cause,
+            suggestion);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildPatternShapeMismatch(SZrState *state,
+                                                             SZrStructuredDiagnostic *out,
+                                                             SZrFileRange location,
+                                                             const TZrChar *message,
+                                                             const TZrChar *cause,
+                                                             const TZrChar *suggestion) {
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "pattern_shape_mismatch",
+            message != ZR_NULL ? message : "Union pattern destructuring shape does not match variant payload shape",
+            cause != ZR_NULL
+                ? cause
+                : "The pattern uses a destructuring shape that does not match the selected union variant payload.",
+            suggestion != ZR_NULL
+                ? suggestion
+                : "Use tuple destructuring for positional variants and object destructuring for named-field variants.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildPatternUnknownField(SZrState *state,
+                                                            SZrStructuredDiagnostic *out,
+                                                            SZrFileRange location,
+                                                            const TZrChar *fieldName,
+                                                            const TZrChar *availableFields) {
+    TZrChar message[256];
+    TZrChar cause[512];
+    TZrChar suggestion[512];
+
+    snprintf(message,
+             sizeof(message),
+             "Unknown union pattern field '%s'",
+             fieldName != ZR_NULL ? fieldName : "<unknown>");
+    snprintf(cause,
+             sizeof(cause),
+             "The selected union variant does not declare a payload field named '%s'.",
+             fieldName != ZR_NULL ? fieldName : "<unknown>");
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Use one of the declared payload fields: %s.",
+             availableFields != ZR_NULL && availableFields[0] != '\0' ? availableFields : "<none>");
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "pattern_unknown_field",
+            message,
+            cause,
+            suggestion);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildPatternArityMismatch(SZrState *state,
+                                                             SZrStructuredDiagnostic *out,
+                                                             SZrFileRange location,
+                                                             TZrSize expectedCount,
+                                                             TZrSize actualCount,
+                                                             const TZrChar *availableFields) {
+    TZrChar message[256];
+    TZrChar cause[256];
+    TZrChar suggestion[512];
+
+    snprintf(message,
+             sizeof(message),
+             "Union pattern arity mismatch: expects %u binding(s)",
+             (unsigned)expectedCount);
+    snprintf(cause,
+             sizeof(cause),
+             "The selected union variant expects %u payload binding(s), but got %u.",
+             (unsigned)expectedCount,
+             (unsigned)actualCount);
+    if (availableFields != ZR_NULL && availableFields[0] != '\0') {
+        snprintf(suggestion,
+                 sizeof(suggestion),
+                 "Use object destructuring and bind exactly the named payload fields: %s.",
+                 availableFields);
+    } else {
+        snprintf(suggestion,
+                 sizeof(suggestion),
+                 "Use tuple destructuring with exactly %u binding(s).",
+                 (unsigned)expectedCount);
+    }
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "pattern_arity_mismatch",
+            message,
+            cause,
+            suggestion);
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildPatternVariantMismatch(SZrState *state,
+                                                               SZrStructuredDiagnostic *out,
+                                                               SZrFileRange location,
+                                                               const TZrChar *annotationUnionName,
+                                                               const TZrChar *variantName,
+                                                               const TZrChar *resourceUnionName) {
+    TZrChar selectedVariant[256];
+    TZrChar message[384];
+    TZrChar cause[512];
+    TZrChar suggestion[512];
+
+    snprintf(selectedVariant,
+             sizeof(selectedVariant),
+             "%s.%s",
+             annotationUnionName != ZR_NULL ? annotationUnionName : "<unknown>",
+             variantName != ZR_NULL ? variantName : "<unknown>");
+    snprintf(message,
+             sizeof(message),
+             "Union pattern variant '%s' does not match the resource union type",
+             selectedVariant);
+    snprintf(cause,
+             sizeof(cause),
+             "The using resource has union type '%s', but the pattern annotation selects '%s'.",
+             resourceUnionName != ZR_NULL ? resourceUnionName : "<unknown>",
+             selectedVariant);
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Use a variant declared on '%s' or change the resource expression to match '%s'.",
+             resourceUnionName != ZR_NULL ? resourceUnionName : "<unknown>",
+             selectedVariant);
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_ERROR,
+            location,
+            "pattern_variant_mismatch",
+            message,
+            cause,
+            suggestion);
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildMissingForHeaderClose(SZrState *state,
@@ -641,6 +861,34 @@ TZrBool ZrParser_DiagnosticBuilder_BuildWeakUpgrade(SZrState *state,
             "Weak value must be upgraded before it can be borrowed",
             "A %weak value does not keep its owner alive, so it cannot satisfy a %borrowed use directly.",
             "Use %upgrade(...) and handle the nullable upgraded owner before borrowing it.");
+}
+
+TZrBool ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(SZrState *state,
+                                                                         SZrStructuredDiagnostic *out,
+                                                                         SZrFileRange location,
+                                                                         const TZrChar *legacyQualifier,
+                                                                         const TZrChar *wrapperName) {
+    TZrChar message[192];
+    TZrChar suggestion[192];
+
+    snprintf(message,
+             sizeof(message),
+             "Legacy ownership type syntax '%s T' is deprecated",
+             legacyQualifier != ZR_NULL ? legacyQualifier : "%ownership");
+    snprintf(suggestion,
+             sizeof(suggestion),
+             "Write %s<T> instead.",
+             wrapperName != ZR_NULL ? wrapperName : "Owner");
+
+    return ZrParser_DiagnosticBuilder_Build(
+            state,
+            out,
+            ZR_STRUCTURED_DIAGNOSTIC_WARNING,
+            location,
+            "legacy_ownership_type_syntax",
+            message,
+            "Ownership qualifiers are now intrinsic generic types; the legacy percent-prefixed type form is kept only as migration syntax.",
+            suggestion);
 }
 
 TZrBool ZrParser_DiagnosticBuilder_BuildBorrowEscape(SZrState *state,

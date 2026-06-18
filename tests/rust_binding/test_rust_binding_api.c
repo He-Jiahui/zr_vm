@@ -11,6 +11,20 @@ void setUp(void) {}
 
 void tearDown(void) {}
 
+static int should_run_test(const char *testName) {
+    const char *filter = getenv("ZR_RUST_BINDING_TEST_FILTER");
+
+    return filter == ZR_NULL || filter[0] == '\0' || strstr(testName, filter) != ZR_NULL;
+}
+
+#define RUN_FILTERED_TEST(TEST_FN)                              \
+    do {                                                        \
+        if (should_run_test(#TEST_FN)) {                        \
+            printf("[rust_binding_api] running %s\n", #TEST_FN); \
+            RUN_TEST(TEST_FN);                                  \
+        }                                                       \
+    } while (0)
+
 static TZrBool write_text_file(const TZrChar *path, const TZrChar *text) {
     FILE *file;
 
@@ -900,6 +914,66 @@ static void test_rust_binding_call_module_export_with_owned_arguments(void) {
     TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
 }
 
+static void test_rust_binding_project_session_calls_zero_arg_export_after_entry_run(void) {
+    static const TZrChar *projectName = "session_zero_arg_export_project";
+    static const TZrChar *mainSource =
+            "pub ping(): int {\n"
+            "    return 123;\n"
+            "}\n"
+            "return 0;\n";
+    TZrChar workspaceRoot[ZR_TESTS_PATH_MAX];
+    TZrChar mainPath[ZR_TESTS_PATH_MAX];
+    ZrRustBindingScaffoldOptions scaffoldOptions;
+    ZrRustBindingRuntimeOptions runtimeOptions;
+    ZrRustBindingRunOptions runOptions;
+    ZrRustBindingProjectWorkspace *workspace = ZR_NULL;
+    ZrRustBindingRuntime *runtime = ZR_NULL;
+    ZrRustBindingProjectSession *session = ZR_NULL;
+    ZrRustBindingValue *result = ZR_NULL;
+    TZrInt64 intValue = 0;
+
+    memset(&scaffoldOptions, 0, sizeof(scaffoldOptions));
+    memset(&runtimeOptions, 0, sizeof(runtimeOptions));
+    memset(&runOptions, 0, sizeof(runOptions));
+
+    build_workspace_root("session_zero_arg_export", workspaceRoot, sizeof(workspaceRoot));
+    clean_directory_tree(workspaceRoot);
+    snprintf(mainPath, sizeof(mainPath), "%s/src/main.zr", workspaceRoot);
+
+    scaffoldOptions.rootPath = workspaceRoot;
+    scaffoldOptions.projectName = projectName;
+    scaffoldOptions.overwriteExisting = ZR_TRUE;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Project_Scaffold(&scaffoldOptions, &workspace));
+    TEST_ASSERT_NOT_NULL(workspace);
+    TEST_ASSERT_TRUE(write_text_file(mainPath, mainSource));
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_Runtime_NewStandard(&runtimeOptions, &runtime));
+    TEST_ASSERT_NOT_NULL(runtime);
+
+    runOptions.executionMode = ZR_RUST_BINDING_EXECUTION_MODE_INTERP;
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_Start(runtime, workspace, &runOptions, &session));
+    TEST_ASSERT_NOT_NULL(session);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK,
+                          ZrRustBinding_ProjectSession_CallModuleExport(session,
+                                                                        "main",
+                                                                        "ping",
+                                                                        ZR_NULL,
+                                                                        0,
+                                                                        &result));
+    TEST_ASSERT_NOT_NULL(result);
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_ReadInt(result, &intValue));
+    TEST_ASSERT_EQUAL_INT64(123, intValue);
+
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Value_Free(result));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ProjectSession_Free(session));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_ProjectWorkspace_Free(workspace));
+    TEST_ASSERT_EQUAL_INT(ZR_RUST_BINDING_STATUS_OK, ZrRustBinding_Runtime_Free(runtime));
+}
+
 typedef struct NativeCallbackCapture {
     TZrSize callCount;
     TZrSize destroyCount;
@@ -1485,17 +1559,18 @@ static void test_rust_binding_native_builder_rejects_invalid_function_descriptor
 int main(void) {
     UNITY_BEGIN();
 
-    RUN_TEST(test_rust_binding_scaffold_compile_and_run_round_trip);
-    RUN_TEST(test_rust_binding_open_missing_project_reports_not_found_error_info);
-    RUN_TEST(test_rust_binding_bare_runtime_run_reports_unsupported_error_info);
-    RUN_TEST(test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_keeps_binary_run_stable);
-    RUN_TEST(test_rust_binding_run_named_module_preserves_module_name_and_program_args);
-    RUN_TEST(test_rust_binding_owned_value_array_and_object_accessors);
-    RUN_TEST(test_rust_binding_scalar_value_kind_and_ownership_metadata);
-    RUN_TEST(test_rust_binding_call_module_export_with_owned_arguments);
-    RUN_TEST(test_rust_binding_native_module_registration_roundtrip);
-    RUN_TEST(test_rust_binding_native_module_registration_release_allows_re_registration);
-    RUN_TEST(test_rust_binding_native_builder_rejects_invalid_function_descriptor);
+    RUN_FILTERED_TEST(test_rust_binding_scaffold_compile_and_run_round_trip);
+    RUN_FILTERED_TEST(test_rust_binding_open_missing_project_reports_not_found_error_info);
+    RUN_FILTERED_TEST(test_rust_binding_bare_runtime_run_reports_unsupported_error_info);
+    RUN_FILTERED_TEST(test_rust_binding_incremental_toggle_prunes_stale_intermediate_and_keeps_binary_run_stable);
+    RUN_FILTERED_TEST(test_rust_binding_run_named_module_preserves_module_name_and_program_args);
+    RUN_FILTERED_TEST(test_rust_binding_owned_value_array_and_object_accessors);
+    RUN_FILTERED_TEST(test_rust_binding_scalar_value_kind_and_ownership_metadata);
+    RUN_FILTERED_TEST(test_rust_binding_call_module_export_with_owned_arguments);
+    RUN_FILTERED_TEST(test_rust_binding_project_session_calls_zero_arg_export_after_entry_run);
+    RUN_FILTERED_TEST(test_rust_binding_native_module_registration_roundtrip);
+    RUN_FILTERED_TEST(test_rust_binding_native_module_registration_release_allows_re_registration);
+    RUN_FILTERED_TEST(test_rust_binding_native_builder_rejects_invalid_function_descriptor);
 
     return UNITY_END();
 }

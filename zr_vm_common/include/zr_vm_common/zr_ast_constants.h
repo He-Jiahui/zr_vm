@@ -28,6 +28,11 @@
 // ZR_AST_IMPORT_EXPRESSION=38
 #define ZR_AST_CONSTANT_IMPORT_EXPRESSION 38
 
+// Union 常量（追加节点，避免 parser 头泄漏到 core runtime）
+// ZR_AST_UNION_DECLARATION=89, ZR_AST_UNION_VARIANT=90
+#define ZR_AST_CONSTANT_UNION_DECLARATION 89
+#define ZR_AST_CONSTANT_UNION_VARIANT 90
+
 // 访问修饰符常量（用于序列化数据，避免依赖parser模块）
 // 这些值必须与zr_vm_parser/ast.h中的EZrAccessModifier枚举值保持一致
 #define ZR_ACCESS_CONSTANT_PUBLIC 0

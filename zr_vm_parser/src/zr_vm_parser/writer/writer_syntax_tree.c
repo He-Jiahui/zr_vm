@@ -76,6 +76,7 @@ static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
         case ZR_AST_CLASS_DECLARATION: return "CLASS_DECLARATION";
         case ZR_AST_INTERFACE_DECLARATION: return "INTERFACE_DECLARATION";
         case ZR_AST_ENUM_DECLARATION: return "ENUM_DECLARATION";
+        case ZR_AST_UNION_DECLARATION: return "UNION_DECLARATION";
         case ZR_AST_INTERMEDIATE_STATEMENT: return "INTERMEDIATE_STATEMENT";
         case ZR_AST_INTERMEDIATE_DECLARATION: return "INTERMEDIATE_DECLARATION";
         case ZR_AST_INTERMEDIATE_CONSTANT: return "INTERMEDIATE_CONSTANT";
@@ -93,6 +94,7 @@ static const TZrChar *get_ast_node_type_name(EZrAstNodeType type) {
         case ZR_AST_INTERFACE_PROPERTY_SIGNATURE: return "INTERFACE_PROPERTY_SIGNATURE";
         case ZR_AST_INTERFACE_META_SIGNATURE: return "INTERFACE_META_SIGNATURE";
         case ZR_AST_ENUM_MEMBER: return "ENUM_MEMBER";
+        case ZR_AST_UNION_VARIANT: return "UNION_VARIANT";
         case ZR_AST_META_IDENTIFIER: return "META_IDENTIFIER";
         case ZR_AST_ACCESS_MODIFIER: return "ACCESS_MODIFIER";
         case ZR_AST_PROPERTY_GET: return "PROPERTY_GET";

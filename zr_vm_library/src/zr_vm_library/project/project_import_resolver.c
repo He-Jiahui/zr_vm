@@ -505,6 +505,34 @@ static const SZrLibrary_ProjectDependencyReference *project_resolver_find_depend
     return ZR_NULL;
 }
 
+static const SZrLibrary_ProjectDependencyReference *project_resolver_find_dependency_ref_by_package_index(
+        const SZrLibrary_Project *project,
+        const SZrLibrary_ProjectDependencyPackage *ownerPackage,
+        TZrSize packageIndex) {
+    const SZrLibrary_ProjectDependencyReference *refs;
+    TZrSize refCount;
+
+    if (project == ZR_NULL || packageIndex >= project->dependencyPackageCount) {
+        return ZR_NULL;
+    }
+
+    if (ownerPackage != ZR_NULL) {
+        refs = ownerPackage->dependencyRefs;
+        refCount = ownerPackage->dependencyRefCount;
+    } else {
+        refs = project->dependencyRefs;
+        refCount = project->dependencyRefCount;
+    }
+
+    for (TZrSize index = 0; index < refCount; index++) {
+        if (refs[index].packageIndex == packageIndex) {
+            return &refs[index];
+        }
+    }
+
+    return ZR_NULL;
+}
+
 static TZrBool project_resolver_dependency_package_key(const SZrLibrary_ProjectDependencyPackage *package,
                                                        const TZrChar *modulePath,
                                                        TZrChar *buffer,
@@ -957,6 +985,63 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
         return ZR_FALSE;
     }
 
+    return ZR_TRUE;
+}
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
+        const SZrLibrary_Project *project,
+        const TZrChar *currentModuleKey,
+        const TZrChar *resolvedModuleKey,
+        SZrString **outRequestedVersion,
+        SZrString **outMinVersionInclusive,
+        SZrString **outMaxVersionExclusive) {
+    TZrChar targetName[ZR_LIBRARY_MAX_PATH_LENGTH];
+    TZrChar targetVersion[ZR_LIBRARY_MAX_PATH_LENGTH];
+    const SZrLibrary_ProjectDependencyPackage *ownerPackage;
+    const SZrLibrary_ProjectDependencyPackage *targetPackage;
+    const SZrLibrary_ProjectDependencyReference *dependencyRef;
+    TZrSize targetPackageIndex = 0;
+
+    if (outRequestedVersion != ZR_NULL) {
+        *outRequestedVersion = ZR_NULL;
+    }
+    if (outMinVersionInclusive != ZR_NULL) {
+        *outMinVersionInclusive = ZR_NULL;
+    }
+    if (outMaxVersionExclusive != ZR_NULL) {
+        *outMaxVersionExclusive = ZR_NULL;
+    }
+    if (project == ZR_NULL || resolvedModuleKey == ZR_NULL ||
+        outRequestedVersion == ZR_NULL || outMinVersionInclusive == ZR_NULL ||
+        outMaxVersionExclusive == ZR_NULL ||
+        !project_resolver_parse_dependency_module_key(resolvedModuleKey,
+                                                      targetName,
+                                                      sizeof(targetName),
+                                                      targetVersion,
+                                                      sizeof(targetVersion),
+                                                      ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    ownerPackage = project_resolver_current_dependency_package(project, currentModuleKey, ZR_NULL);
+    targetPackage = project_resolver_find_dependency_package(project,
+                                                             targetName,
+                                                             targetVersion,
+                                                             &targetPackageIndex);
+    if (targetPackage == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    dependencyRef = project_resolver_find_dependency_ref_by_package_index(project,
+                                                                         ownerPackage,
+                                                                         targetPackageIndex);
+    if (dependencyRef == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    *outRequestedVersion = targetPackage->version;
+    *outMinVersionInclusive = dependencyRef->minVersionInclusive;
+    *outMaxVersionExclusive = dependencyRef->maxVersionExclusive;
     return ZR_TRUE;
 }
 

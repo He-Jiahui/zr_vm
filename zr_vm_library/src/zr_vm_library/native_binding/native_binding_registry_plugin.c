@@ -403,6 +403,19 @@ const ZrLibModuleDescriptor *native_registry_load_plugin_descriptor(SZrState *st
         return ZR_NULL;
     }
 
+    {
+        const ZrLibRegisteredModuleRecord *liveRecord =
+                native_registry_find_live_descriptor_plugin_record_for_module(registry, requestedModuleName);
+        if (liveRecord != ZR_NULL) {
+            native_registry_set_descriptor_plugin_in_use_error(registry, liveRecord, "reload");
+            native_registry_close_library(handle);
+            if (loadedFromShadow) {
+                remove(loadPath);
+            }
+            return ZR_NULL;
+        }
+    }
+
     if (!native_registry_validate_descriptor_compatibility(registry, descriptor) ||
         !native_registry_register_module_record(state->global,
                                                descriptor,
@@ -945,6 +958,7 @@ SZrObjectModule *native_registry_materialize_module(SZrState *state,
 struct SZrObjectModule *native_registry_loader(SZrState *state, SZrString *moduleName, TZrPtr userData) {
     ZrLibrary_NativeRegistryState *registry = (ZrLibrary_NativeRegistryState *)userData;
     const TZrChar *nativeModuleName;
+    const TZrChar *lastError;
     const ZrLibModuleDescriptor *descriptor;
 
     if (state == ZR_NULL || moduleName == ZR_NULL || registry == ZR_NULL) {
@@ -962,6 +976,13 @@ struct SZrObjectModule *native_registry_loader(SZrState *state, SZrString *modul
 
     if (descriptor == ZR_NULL) {
         native_binding_trace_import(state, "[zr_native_import] loader miss module=%s\n", nativeModuleName);
+        lastError = registry->lastErrorMessage[0] != '\0' ? registry->lastErrorMessage : ZR_NULL;
+        if (lastError != ZR_NULL) {
+            ZrCore_GlobalState_SetModuleLoadDiagnostic(state->global,
+                                                       "loader=native-plugin result=descriptor-load-failed module='%s' error='%s'",
+                                                       nativeModuleName,
+                                                       lastError);
+        }
         return ZR_NULL;
     }
 
@@ -969,5 +990,18 @@ struct SZrObjectModule *native_registry_loader(SZrState *state, SZrString *modul
                                 "[zr_native_import] loader hit module=%s descriptor=%p\n",
                                 nativeModuleName,
                                 (const void *)descriptor);
-    return native_registry_materialize_module(state, registry, descriptor);
+    {
+        SZrObjectModule *loadedModule = native_registry_materialize_module(state, registry, descriptor);
+        if (loadedModule == ZR_NULL && ZrCore_GlobalState_GetModuleLoadDiagnostic(state->global) == ZR_NULL) {
+            lastError = registry->lastErrorMessage[0] != '\0' ? registry->lastErrorMessage : ZR_NULL;
+            ZrCore_GlobalState_SetModuleLoadDiagnostic(
+                    state->global,
+                    "loader=native-plugin result=materialize-failed module='%s'%s%s%s",
+                    nativeModuleName,
+                    lastError != ZR_NULL ? " error='" : "",
+                    lastError != ZR_NULL ? lastError : "",
+                    lastError != ZR_NULL ? "'" : "");
+        }
+        return loadedModule;
+    }
 }

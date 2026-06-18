@@ -312,8 +312,6 @@ SZrAstNode *parse_normalized_dotted_module_path(SZrParserState *ps, const TZrCha
 }
 
 SZrAstNode *parse_normalized_module_path(SZrParserState *ps, const TZrChar *directiveName) {
-    TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
-
     if (ps == ZR_NULL) {
         return ZR_NULL;
     }
@@ -321,8 +319,7 @@ SZrAstNode *parse_normalized_module_path(SZrParserState *ps, const TZrChar *dire
     if (ps->lexer->t.token == ZR_TK_LPAREN) {
         ZrParser_Lexer_Next(ps->lexer);
         if (ps->lexer->t.token != ZR_TK_STRING) {
-            snprintf(errorMsg, sizeof(errorMsg), "%%%s(...) only accepts a string literal module path", directiveName);
-            report_error(ps, errorMsg);
+            report_import_path_not_constant(ps, get_current_token_location(ps), directiveName);
             skip_balanced_after_open_paren(ps);
             return ZR_NULL;
         }
@@ -798,6 +795,30 @@ void report_structured_parser_error(SZrParserState *ps,
         ps->structuredErrorCallback(ps->errorUserData, diagnostic, token);
     }
 
+    if (diagnostic->severity != ZR_STRUCTURED_DIAGNOSTIC_ERROR) {
+        if (!ps->suppressErrorOutput && ps->lexer != ZR_NULL) {
+            const TZrChar *fileName = "<unknown>";
+            if (ps->lexer->sourceName != ZR_NULL) {
+                TZrNativeString nameStr = ZrCore_String_GetNativeString(ps->lexer->sourceName);
+                if (nameStr != ZR_NULL) {
+                    fileName = nameStr;
+                }
+            }
+
+            ZrCore_Log_Diagnosticf(ps->state,
+                                   diagnostic->severity == ZR_STRUCTURED_DIAGNOSTIC_WARNING
+                                           ? ZR_LOG_LEVEL_WARNING
+                                           : ZR_LOG_LEVEL_INFO,
+                                   ZR_OUTPUT_CHANNEL_STDERR,
+                                   "  [%s:%d:%d] %s\n",
+                                   fileName,
+                                   diagnostic->location.start.line,
+                                   diagnostic->location.start.column,
+                                   message);
+        }
+        return;
+    }
+
     if (cause != ZR_NULL || suggestion != ZR_NULL) {
         if (cause != ZR_NULL && suggestion != ZR_NULL) {
             snprintf(formattedMessage,
@@ -830,6 +851,28 @@ void report_missing_expression_after_assignment(SZrParserState *ps) {
             &diagnostic,
             get_current_token_location(ps))) {
         report_error_with_token(ps, "Missing expression after '='", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_legacy_ownership_type_syntax(SZrParserState *ps,
+                                         SZrFileRange location,
+                                         const TZrChar *legacyQualifier,
+                                         const TZrChar *wrapperName) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(ps->state,
+                                                                          &diagnostic,
+                                                                          location,
+                                                                          legacyQualifier,
+                                                                          wrapperName)) {
         return;
     }
 

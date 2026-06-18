@@ -3,8 +3,13 @@
 //
 
 #include "module/module_internal.h"
+#include "module/module_import_signature.h"
+#include "zr_vm_core/debug.h"
 #include "zr_vm_core/exception.h"
 #include "zr_vm_core/reflection.h"
+
+#include <stdio.h>
+#include <string.h>
 
 #define ZR_MODULE_RUNTIME_PENDING_ENTRY_EXPORTS ((TZrUInt8)1)
 
@@ -46,6 +51,45 @@ static ZR_FORCE_INLINE TZrStackValuePointer module_loader_resolve_scratch_base(T
     }
 
     return scratchBase;
+}
+
+static ZR_FORCE_INLINE TZrStackValuePointer module_loader_entry_stack_slot_pointer(SZrState *state,
+                                                                                   const SZrFunction *function,
+                                                                                   TZrStackValuePointer frameBase,
+                                                                                   TZrUInt32 stackSlot);
+
+static ZR_FORCE_INLINE TZrStackValuePointer module_loader_entry_stack_slot_pointer(SZrState *state,
+                                                                                   const SZrFunction *function,
+                                                                                   TZrStackValuePointer frameBase,
+                                                                                   TZrUInt32 stackSlot) {
+    const SZrFunctionFrameSlotLayout *slotLayout;
+    SZrStackFramePlace place;
+
+    if (frameBase == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (function == ZR_NULL || function->frameSlotLayouts == ZR_NULL || function->frameSlotLayoutLength == 0u) {
+        return frameBase + stackSlot;
+    }
+
+    slotLayout = ZrCore_Function_FindFrameSlotLayout(function, stackSlot);
+    if (slotLayout == ZR_NULL ||
+        slotLayout->slotKind != (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE ||
+        slotLayout->byteSize < (TZrUInt32)sizeof(SZrTypeValue) ||
+        !ZrCore_Function_MakeFrameSlotPlace(state, function, frameBase, stackSlot, &place)) {
+        return frameBase + stackSlot;
+    }
+
+    return ZR_CAST_STACK_VALUE(place.address);
+}
+
+static ZR_FORCE_INLINE SZrTypeValue *module_loader_entry_value_slot(SZrState *state,
+                                                                    const SZrFunction *function,
+                                                                    TZrStackValuePointer frameBase,
+                                                                    TZrUInt32 stackSlot) {
+    TZrStackValuePointer slotPointer =
+            module_loader_entry_stack_slot_pointer(state, function, frameBase, stackSlot);
+    return slotPointer != ZR_NULL ? ZrCore_Stack_GetValue(slotPointer) : ZR_NULL;
 }
 
 static TZrBool refill_io_chunk(SZrIo *io) {
@@ -284,6 +328,169 @@ static TZrBool module_loader_register_export_descriptors(SZrState *state,
     return ZR_TRUE;
 }
 
+static SZrFunction *module_loader_find_import_caller_function(SZrState *state) {
+    SZrCallInfo *callInfo;
+
+    if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    for (callInfo = state->callInfoList->previous; callInfo != ZR_NULL; callInfo = callInfo->previous) {
+        SZrFunction *function = ZrCore_Closure_GetMetadataFunctionFromCallInfo(state, callInfo);
+        if (function != ZR_NULL) {
+            return module_loader_refresh_forwarded_function(function);
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static const TZrChar *module_loader_string_text_or_unknown(SZrString *value) {
+    TZrNativeString text;
+
+    if (value == ZR_NULL) {
+        return "<unknown>";
+    }
+
+    text = ZrCore_String_GetNativeString(value);
+    return text != ZR_NULL ? text : "<unknown>";
+}
+
+static void module_loader_append_import_signature_token_details(
+        TZrChar *buffer,
+        TZrSize bufferLength,
+        const SZrModuleImportSignatureMismatch *mismatch) {
+    TZrSize used;
+
+    if (buffer == ZR_NULL || bufferLength == 0u || mismatch == ZR_NULL) {
+        return;
+    }
+
+    used = strlen(buffer);
+    if (used >= bufferLength) {
+        return;
+    }
+
+    if (mismatch->hasMetadataTokenMismatch) {
+        snprintf(buffer + used,
+                 bufferLength - used,
+                 " expectedMetadataToken=0x%x actualMetadataToken=0x%x",
+                 (unsigned)mismatch->expectedMetadataToken,
+                 (unsigned)mismatch->actualMetadataToken);
+        used = strlen(buffer);
+        if (used >= bufferLength) {
+            return;
+        }
+    }
+
+    if (mismatch->hasSignatureTokenMismatch) {
+        snprintf(buffer + used,
+                 bufferLength - used,
+                 " expectedSignatureToken=0x%x actualSignatureToken=0x%x",
+                 (unsigned)mismatch->expectedSignatureToken,
+                 (unsigned)mismatch->actualSignatureToken);
+    }
+}
+
+static const TZrChar *module_loader_version_text_or_unknown(SZrString *value) {
+    TZrNativeString text;
+
+    if (value == ZR_NULL) {
+        return "<unknown>";
+    }
+
+    text = ZrCore_String_GetNativeString(value);
+    return text != ZR_NULL ? text : "<unknown>";
+}
+
+static ZR_NO_RETURN void module_loader_raise_import_signature_mismatch(
+        SZrState *state,
+        const SZrModuleImportSignatureMismatch *mismatch,
+        SZrString *path,
+        SZrObjectModule *module) {
+    const SZrFunctionModuleEffect *effect;
+    SZrString *moduleName;
+    SZrString *symbolName;
+    TZrChar message[512];
+
+    effect = mismatch != ZR_NULL ? mismatch->effect : ZR_NULL;
+    moduleName = effect != ZR_NULL ? effect->moduleName : ZR_NULL;
+    if (moduleName == ZR_NULL && module != ZR_NULL) {
+        moduleName = module->moduleName;
+    }
+    if (moduleName == ZR_NULL) {
+        moduleName = path;
+    }
+    symbolName = effect != ZR_NULL ? effect->symbolName : ZR_NULL;
+
+    if (mismatch != ZR_NULL &&
+        mismatch->kind == ZR_MODULE_IMPORT_SIGNATURE_MISMATCH_ASSEMBLY_SIGNATURE) {
+        if (mismatch->hasActualHash) {
+            ZrCore_Debug_RunError(
+                    state,
+                    "assembly_signature_mismatch: module '%s' member '%s' expectedModuleHash=0x%llx actualModuleHash=0x%llx",
+                    module_loader_string_text_or_unknown(moduleName),
+                    module_loader_string_text_or_unknown(symbolName),
+                    (unsigned long long)mismatch->expectedHash,
+                    (unsigned long long)mismatch->actualHash);
+        }
+
+        ZrCore_Debug_RunError(state,
+                              "assembly_signature_mismatch: module '%s' member '%s' expectedModuleHash=0x%llx",
+                              module_loader_string_text_or_unknown(moduleName),
+                              module_loader_string_text_or_unknown(symbolName),
+                              (unsigned long long)mismatch->expectedHash);
+    }
+    if (mismatch != ZR_NULL &&
+        mismatch->kind == ZR_MODULE_IMPORT_SIGNATURE_MISMATCH_ASSEMBLY_VERSION) {
+        ZrCore_Debug_RunError(
+                state,
+                "assembly_version_mismatch: module '%s' member '%s' minVersionInclusive=%s maxVersionExclusive=%s actualVersion=%s",
+                module_loader_string_text_or_unknown(moduleName),
+                module_loader_string_text_or_unknown(symbolName),
+                module_loader_version_text_or_unknown(mismatch->expectedMinVersionInclusive),
+                module_loader_version_text_or_unknown(mismatch->expectedMaxVersionExclusive),
+                module_loader_version_text_or_unknown(mismatch->actualModuleVersion));
+    }
+
+    if (mismatch != ZR_NULL && mismatch->hasActualHash) {
+        snprintf(message,
+                 sizeof(message),
+                 "import signature mismatch: module '%s' member '%s' expectedHash=0x%llx actualHash=0x%llx",
+                 module_loader_string_text_or_unknown(moduleName),
+                 module_loader_string_text_or_unknown(symbolName),
+                 (unsigned long long)mismatch->expectedHash,
+                 (unsigned long long)mismatch->actualHash);
+        module_loader_append_import_signature_token_details(message, sizeof(message), mismatch);
+        ZrCore_Debug_RunError(state, "%s", message);
+    }
+
+    snprintf(message,
+             sizeof(message),
+             "import signature mismatch: module '%s' member '%s' expectedHash=0x%llx",
+             module_loader_string_text_or_unknown(moduleName),
+             module_loader_string_text_or_unknown(symbolName),
+             (unsigned long long)(mismatch != ZR_NULL ? mismatch->expectedHash : 0u));
+    module_loader_append_import_signature_token_details(message, sizeof(message), mismatch);
+    ZrCore_Debug_RunError(state, "%s", message);
+}
+
+static ZR_NO_RETURN void module_loader_raise_import_load_unavailable(SZrState *state, SZrString *path) {
+    const TZrChar *diagnostic =
+            state != ZR_NULL ? ZrCore_GlobalState_GetModuleLoadDiagnostic(state->global) : ZR_NULL;
+
+    if (diagnostic != ZR_NULL) {
+        ZrCore_Debug_RunError(state,
+                              "import_load_unavailable: module '%s' (%s)",
+                              module_loader_string_text_or_unknown(path),
+                              diagnostic);
+    }
+
+    ZrCore_Debug_RunError(state,
+                          "import_load_unavailable: module '%s'",
+                          module_loader_string_text_or_unknown(path));
+}
+
 static TZrBool module_loader_slot_matches_function(SZrState *state,
                                                    const SZrTypeValue *value,
                                                    SZrFunction *function) {
@@ -356,8 +563,8 @@ static TZrBool module_loader_bind_exported_function(SZrState *state,
         return ZR_TRUE;
     }
 
-    slotPointer = base + exported->stackSlot;
-    slotValue = ZrCore_Stack_GetValue(slotPointer);
+    slotPointer = module_loader_entry_stack_slot_pointer(state, function, base, exported->stackSlot);
+    slotValue = module_loader_entry_value_slot(state, function, base, exported->stackSlot);
     childFunction = &function->childFunctionList[exported->callableChildIndex];
     if (slotValue == ZR_NULL || childFunction == ZR_NULL) {
         return ZR_FALSE;
@@ -473,8 +680,8 @@ static TZrBool module_loader_preinstall_top_level_callables(SZrState *state,
             continue;
         }
 
-        slotPointer = base + binding->stackSlot;
-        slotValue = ZrCore_Stack_GetValue(slotPointer);
+        slotPointer = module_loader_entry_stack_slot_pointer(state, function, base, binding->stackSlot);
+        slotValue = module_loader_entry_value_slot(state, function, base, binding->stackSlot);
         childFunction = &function->childFunctionList[binding->callableChildIndex];
         if (slotValue == ZR_NULL || childFunction == ZR_NULL) {
             continue;
@@ -540,14 +747,12 @@ static void module_loader_backfill_entry_exports(SZrState *state,
                                                  SZrFunction *function,
                                                  TZrStackValuePointer callBase) {
     TZrUInt32 index;
-    TZrStackValuePointer exportedValuesTop;
 
     if (state == ZR_NULL || module == ZR_NULL || function == ZR_NULL || callBase == ZR_NULL ||
         function->exportedVariables == ZR_NULL || function->exportedVariableLength == 0) {
         return;
     }
 
-    exportedValuesTop = callBase + 1 + function->stackSize;
     for (index = 0; index < function->exportedVariableLength; ++index) {
         const SZrFunctionExportedVariable *exportVar = &function->exportedVariables[index];
         TZrStackValuePointer varPointer;
@@ -557,12 +762,16 @@ static void module_loader_backfill_entry_exports(SZrState *state,
             continue;
         }
 
-        varPointer = callBase + 1 + exportVar->stackSlot;
-        if (varPointer >= exportedValuesTop) {
+        if (exportVar->stackSlot >= function->stackSize) {
             continue;
         }
 
-        varValue = ZrCore_Stack_GetValue(varPointer);
+        varPointer = module_loader_entry_stack_slot_pointer(state, function, callBase + 1, exportVar->stackSlot);
+        if (varPointer == ZR_NULL) {
+            continue;
+        }
+
+        varValue = module_loader_entry_value_slot(state, function, callBase + 1, exportVar->stackSlot);
         if (varValue == ZR_NULL) {
             continue;
         }
@@ -571,7 +780,7 @@ static void module_loader_backfill_entry_exports(SZrState *state,
             SZrFunction *childFunction = module_loader_find_child_function_for_value(state, function, varValue);
             if (childFunction != ZR_NULL) {
                 ZrCore_Closure_PushToStack(state, childFunction, ZR_NULL, callBase + 1, varPointer);
-                varValue = ZrCore_Stack_GetValue(varPointer);
+                varValue = module_loader_entry_value_slot(state, function, callBase + 1, exportVar->stackSlot);
                 if (varValue == ZR_NULL) {
                     continue;
                 }
@@ -600,7 +809,7 @@ static void module_loader_execute_entry_body(SZrState *state, TZrPtr arguments) 
     request->resultBase = ZrCore_Function_CallAndRestoreAnchor(state, request->anchor, 0);
 }
 
-TZrInt64 ZrCore_Module_ImportNativeEntry(SZrState *state) {
+static TZrInt64 module_loader_import_native_entry(SZrState *state, TZrBool allowSignatureMismatchFallback) {
     TZrStackValuePointer functionBase;
     TZrStackValuePointer argBase;
     SZrFunctionStackAnchor functionBaseAnchor;
@@ -608,6 +817,8 @@ TZrInt64 ZrCore_Module_ImportNativeEntry(SZrState *state) {
     SZrTypeValue *pathValue;
     SZrString *path;
     struct SZrObjectModule *module;
+    SZrFunction *callerFunction = ZR_NULL;
+    SZrModuleImportSignatureMismatch signatureMismatch;
 
     if (state == ZR_NULL || state->callInfoList == ZR_NULL) {
         return 0;
@@ -636,7 +847,23 @@ TZrInt64 ZrCore_Module_ImportNativeEntry(SZrState *state) {
     }
 
     path = ZR_CAST_STRING(state, pathValue->value.object);
+    callerFunction = module_loader_find_import_caller_function(state);
     module = ZrCore_Module_ImportByPath(state, path);
+    ZrCore_Memory_RawSet(&signatureMismatch, 0, sizeof(signatureMismatch));
+    if (module == ZR_NULL && !allowSignatureMismatchFallback && state->threadStatus == ZR_THREAD_STATUS_FINE) {
+        functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
+        state->stackTop.valuePointer = functionBase + 1;
+        module_loader_raise_import_load_unavailable(state, path);
+    }
+    if (module != ZR_NULL &&
+        !zr_module_import_signature_verify(state, callerFunction, path, module, &signatureMismatch)) {
+        if (!allowSignatureMismatchFallback) {
+            functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
+            state->stackTop.valuePointer = functionBase + 1;
+            module_loader_raise_import_signature_mismatch(state, &signatureMismatch, path, module);
+        }
+        module = ZR_NULL;
+    }
 
     functionBase = ZrCore_Function_StackAnchorRestore(state, &functionBaseAnchor);
     result = ZrCore_Stack_GetValue(functionBase);
@@ -649,6 +876,14 @@ TZrInt64 ZrCore_Module_ImportNativeEntry(SZrState *state) {
 
     state->stackTop.valuePointer = functionBase + 1;
     return 1;
+}
+
+TZrInt64 ZrCore_Module_ImportNativeEntry(SZrState *state) {
+    return module_loader_import_native_entry(state, ZR_FALSE);
+}
+
+TZrInt64 ZrCore_Module_ImportGuardNativeEntry(SZrState *state) {
+    return module_loader_import_native_entry(state, ZR_TRUE);
 }
 
 struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *path) {
@@ -664,6 +899,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
     TZrStackValuePointer savedStackTop;
     TZrStackValuePointer scratchBase;
     TZrStackValuePointer callBase;
+    TZrSize frameStorageSlotCount;
     SZrFunctionStackAnchor callBaseAnchor;
     SZrFunctionStackAnchor savedStackTopAnchor;
     SZrFunctionStackAnchor scratchBaseAnchor;
@@ -682,6 +918,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
     }
 
     global = state->global;
+    ZrCore_GlobalState_ClearModuleLoadDiagnostic(global);
     if (global->aotModuleLoader != ZR_NULL) {
         struct SZrObjectModule *aotModule =
                 global->aotModuleLoader(state, path, global->aotModuleLoaderUserData);
@@ -698,6 +935,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
             return ZR_NULL;
         }
+
     }
 
     if (global->nativeModuleLoader != ZR_NULL) {
@@ -712,9 +950,17 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
             ZrCore_Module_AddToCache(state, path, nativeModule);
             return nativeModule;
         }
+
+        if (state->threadStatus != ZR_THREAD_STATUS_FINE) {
+            return ZR_NULL;
+        }
+
     }
 
     if (global->sourceLoader == ZR_NULL) {
+        if (ZrCore_GlobalState_GetModuleLoadDiagnostic(global) == ZR_NULL) {
+            ZrCore_GlobalState_SetModuleLoadDiagnostic(global, "loader=source result=unconfigured");
+        }
         return ZR_NULL;
     }
 
@@ -727,10 +973,14 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
     }
 
     if (pathStr == ZR_NULL || pathLen == 0) {
+        ZrCore_GlobalState_SetModuleLoadDiagnostic(global, "loader=source result=empty-path");
         return ZR_NULL;
     }
 
     if (!global->sourceLoader(state, pathStr, ZR_NULL, &io)) {
+        if (ZrCore_GlobalState_GetModuleLoadDiagnostic(global) == ZR_NULL) {
+            ZrCore_GlobalState_SetModuleLoadDiagnostic(global, "loader=source result=unavailable");
+        }
         return ZR_NULL;
     }
 
@@ -742,12 +992,16 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         }
 
         if (ioSource == ZR_NULL) {
+            ZrCore_GlobalState_SetModuleLoadDiagnostic(global, "loader=binary-reader result=read-failed");
             return ZR_NULL;
         }
 
         func = ZrCore_Io_LoadEntryFunctionToRuntime(state, ioSource);
         ZrCore_Io_ReadSourceFree(global, ioSource);
         if (func == ZR_NULL) {
+            if (ZrCore_GlobalState_GetModuleLoadDiagnostic(global) == ZR_NULL) {
+                ZrCore_GlobalState_SetModuleLoadDiagnostic(global, "loader=binary-runtime result=load-failed");
+            }
             return ZR_NULL;
         }
     } else {
@@ -757,6 +1011,7 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
             if (io.close != ZR_NULL) {
                 io.close(state, io.customData);
             }
+            ZrCore_GlobalState_SetModuleLoadDiagnostic(global, "loader=source-reader result=read-failed");
             return ZR_NULL;
         }
 
@@ -766,11 +1021,13 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
 
         if (sourceSize == 0) {
             ZrCore_Memory_RawFreeWithType(global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            ZrCore_GlobalState_SetModuleLoadDiagnostic(global, "loader=source-reader result=empty-source");
             return ZR_NULL;
         }
 
         if (global->compileSource == ZR_NULL) {
             ZrCore_Memory_RawFreeWithType(global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+            ZrCore_GlobalState_SetModuleLoadDiagnostic(global, "loader=source-compiler result=unconfigured");
             return ZR_NULL;
         }
 
@@ -781,6 +1038,9 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         ZrCore_Memory_RawFreeWithType(global, sourceBuffer, sourceSize + 1, ZR_MEMORY_NATIVE_TYPE_GLOBAL);
 
         if (func == ZR_NULL) {
+            if (ZrCore_GlobalState_GetModuleLoadDiagnostic(global) == ZR_NULL) {
+                ZrCore_GlobalState_SetModuleLoadDiagnostic(global, "loader=source-compiler result=compile-failed");
+            }
             return ZR_NULL;
         }
     }
@@ -818,7 +1078,8 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         ZrCore_Function_StackAnchorInit(state, savedCallInfo->functionTop.valuePointer, &savedCallInfoTopAnchor);
         hasSavedCallInfoAnchors = ZR_TRUE;
     }
-    callBase = ZrCore_Function_ReserveScratchSlots(state, func->stackSize + 1, scratchBase);
+    frameStorageSlotCount = ZrCore_Function_GetFrameStorageSlotCount(func);
+    callBase = ZrCore_Function_ReserveScratchSlots(state, frameStorageSlotCount + 1, scratchBase);
     savedStackTop = ZrCore_Function_StackAnchorRestore(state, &savedStackTopAnchor);
     callBase = ZrCore_Function_StackAnchorRestore(state, &scratchBaseAnchor);
     if (hasSavedCallInfoAnchors) {
@@ -832,12 +1093,14 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         state->stackTop.valuePointer = savedStackTop;
         return ZR_NULL;
     }
+    frameStorageSlotCount = ZrCore_Function_GetFrameStorageSlotCount(func);
     closure->function = func;
 
     ZrCore_Function_StackAnchorInit(state, callBase, &callBaseAnchor);
     ZrCore_Value_ResetAsNull(ZrCore_Stack_GetValue(callBase));
     ZrCore_Stack_SetRawObjectValue(state, callBase, ZR_CAST_RAW_OBJECT_AS_SUPER(closure));
-    state->stackTop.valuePointer = callBase + 1 + func->stackSize;
+    state->stackTop.valuePointer = callBase + 1 + frameStorageSlotCount;
+    ZrCore_Function_InitializeFrameLayoutStorage(state, callBase, func, 0u);
 
     if (!module_loader_preinstall_top_level_callables(state, module, func, callBase + 1)) {
         state->stackTop.valuePointer = savedStackTop;
@@ -870,8 +1133,8 @@ struct SZrObjectModule *ZrCore_Module_ImportByPath(SZrState *state, SZrString *p
         return ZR_NULL;
     }
     module_loader_backfill_entry_exports(state, module, func, callBase);
-    if (state->stackTop.valuePointer < callBase + 1 + func->stackSize) {
-        state->stackTop.valuePointer = callBase + 1 + func->stackSize;
+    if (state->stackTop.valuePointer < callBase + 1 + frameStorageSlotCount) {
+        state->stackTop.valuePointer = callBase + 1 + frameStorageSlotCount;
     }
     // Export refresh/backfill can synthesize new closures after the entry frame
     // has already returned. Close any remaining module-frame upvalues now so

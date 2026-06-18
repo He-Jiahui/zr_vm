@@ -53,7 +53,9 @@ SZrAstNode *parse_enum_member(SZrParserState *ps) {
 
 SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange bodyOpenLoc = startLoc;
     SZrAstNodeArray *decorators = parse_leading_decorators(ps);
+    TZrBool bodyOpened = ZR_FALSE;
 
     // 解析可见性修饰符（可选，默认 private）
     EZrAccessModifier accessModifier = parse_access_modifier(ps);
@@ -85,6 +87,8 @@ SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     if (ps->lexer->t.token != ZR_TK_LBRACE) {
         report_missing_declaration_body_open(ps, "enum declaration", get_current_token_location(ps));
     } else {
+        bodyOpenLoc = get_current_token_location(ps);
+        bodyOpened = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
 
@@ -115,7 +119,15 @@ SZrAstNode *parse_enum_declaration(SZrParserState *ps) {
     }
 
     // 期望右大括号
-    expect_token(ps, ZR_TK_RBRACE);
+    if (ps->lexer->t.token != ZR_TK_RBRACE) {
+        if (ps->lexer->t.token == ZR_TK_EOS) {
+            if (bodyOpened) {
+                report_missing_declaration_body_close(ps, "enum declaration", bodyOpenLoc);
+            }
+        } else {
+            expect_token(ps, ZR_TK_RBRACE);
+        }
+    }
     consume_token(ps, ZR_TK_RBRACE);
 
     SZrFileRange endLoc = get_current_location(ps);
@@ -337,6 +349,7 @@ SZrAstNode *parse_extern_member_declaration(SZrParserState *ps) {
 
 SZrAstNode *parse_extern_block(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange bodyOpenLoc = startLoc;
     SZrAstNode *libraryName = ZR_NULL;
     SZrAstNodeArray *declarations = ZR_NULL;
     SZrAstNode *node;
@@ -372,7 +385,9 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    if (consume_token(ps, ZR_TK_LBRACE)) {
+    if (ps->lexer->t.token == ZR_TK_LBRACE) {
+        bodyOpenLoc = get_current_token_location(ps);
+        consume_token(ps, ZR_TK_LBRACE);
         while (ps->lexer->t.token != ZR_TK_RBRACE && ps->lexer->t.token != ZR_TK_EOS) {
             SZrAstNode *declaration = parse_extern_member_declaration(ps);
             if (declaration == ZR_NULL) {
@@ -380,7 +395,13 @@ SZrAstNode *parse_extern_block(SZrParserState *ps) {
             }
             ZrParser_AstNodeArray_Add(ps->state, declarations, declaration);
         }
-        expect_token(ps, ZR_TK_RBRACE);
+        if (ps->lexer->t.token != ZR_TK_RBRACE) {
+            if (ps->lexer->t.token == ZR_TK_EOS) {
+                report_missing_declaration_body_close(ps, "extern block", bodyOpenLoc);
+            } else {
+                expect_token(ps, ZR_TK_RBRACE);
+            }
+        }
         consume_token(ps, ZR_TK_RBRACE);
     } else if (ps->lexer->t.token == ZR_TK_EOS || ps->lexer->t.token == ZR_TK_RBRACE) {
         report_missing_declaration_body_open(ps, "extern block", get_current_token_location(ps));
@@ -505,7 +526,7 @@ SZrAstNode *parse_test_declaration(SZrParserState *ps) {
         return ZR_NULL;
     }
 
-    SZrAstNode *body = parse_block(ps);
+    SZrAstNode *body = parse_declaration_body_block(ps, "test declaration");
     if (body == ZR_NULL) {
         return ZR_NULL;
     }

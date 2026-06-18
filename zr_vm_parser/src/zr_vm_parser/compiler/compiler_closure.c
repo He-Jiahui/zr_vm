@@ -4,6 +4,71 @@
 
 #include "compiler_internal.h"
 
+static TZrBool compiler_ownership_qualifier_is_borrow_escape(EZrOwnershipQualifier qualifier) {
+    return qualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+           qualifier == ZR_OWNERSHIP_QUALIFIER_LOANED;
+}
+
+static TZrBool compiler_inferred_type_contains_borrow_escape_ownership(const SZrInferredType *type) {
+    TZrSize index;
+
+    if (type == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (compiler_ownership_qualifier_is_borrow_escape(type->ownershipQualifier)) {
+        return ZR_TRUE;
+    }
+
+    for (index = 0; index < type->elementTypes.length; index++) {
+        SZrInferredType *elementType =
+                (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&type->elementTypes, index);
+
+        if (compiler_inferred_type_contains_borrow_escape_ownership(elementType)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool compiler_validate_closure_capture_ownership_escape(SZrCompilerState *cs,
+                                                                  SZrCompilerState *parentCompiler,
+                                                                  SZrString *name,
+                                                                  SZrFileRange location) {
+    SZrInferredType capturedType;
+    TZrBool hasType;
+
+    if (cs == ZR_NULL || parentCompiler == ZR_NULL || name == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (parentCompiler->typeEnv == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    ZrParser_InferredType_Init(cs->state, &capturedType, ZR_VALUE_TYPE_OBJECT);
+    hasType = ZrParser_TypeEnvironment_LookupVariable(cs->state,
+                                                      parentCompiler->typeEnv,
+                                                      name,
+                                                      &capturedType);
+    if (!hasType) {
+        ZrParser_InferredType_Free(cs->state, &capturedType);
+        return ZR_TRUE;
+    }
+
+    if (compiler_inferred_type_contains_borrow_escape_ownership(&capturedType)) {
+        ZrParser_InferredType_Free(cs->state, &capturedType);
+        ZrParser_Compiler_Error(cs,
+                                "Borrowed and loaned owners cannot escape through closure capture",
+                                location);
+        return ZR_FALSE;
+    }
+
+    ZrParser_InferredType_Free(cs->state, &capturedType);
+    return ZR_TRUE;
+}
+
 void record_external_var_reference(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || name == ZR_NULL || cs->hasError) {
         return;
@@ -226,6 +291,9 @@ void collect_identifiers_from_node(SZrCompilerState *cs, SZrAstNode *node, SZrAr
             if (usingStmt->body != ZR_NULL) {
                 collect_identifiers_from_node(cs, usingStmt->body, identifierNames);
             }
+            if (usingStmt->elseBody != ZR_NULL) {
+                collect_identifiers_from_node(cs, usingStmt->elseBody, identifierNames);
+            }
             break;
         }
         case ZR_AST_RETURN_STATEMENT: {
@@ -378,6 +446,12 @@ void ZrParser_ExternalVariables_Analyze(SZrCompilerState *cs, SZrAstNode *node, 
                 // 注意：index 必须指向父作用域中的真实槽位/上值索引，而不是当前闭包数组长度。
                 if (find_closure_var(cs, name) == ZR_PARSER_INDEX_NONE) {
                     SZrFunctionClosureVariable closureVar;
+                    if (!compiler_validate_closure_capture_ownership_escape(cs,
+                                                                            parentCompiler,
+                                                                            name,
+                                                                            node->location)) {
+                        break;
+                    }
                     closureVar.name = name;
                     closureVar.inStack = (parentLocalIndex != ZR_PARSER_SLOT_NONE) ? ZR_TRUE : ZR_FALSE;
                     closureVar.index = (parentLocalIndex != ZR_PARSER_SLOT_NONE) ? parentLocalIndex : parentClosureIndex;

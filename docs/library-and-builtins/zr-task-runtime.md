@@ -6,6 +6,8 @@ related_code:
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects_declarations.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects_internal.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
   - zr_vm_cli/src/zr_vm_cli/project/project.c
   - tests/task/test_task_runtime.c
@@ -15,6 +17,8 @@ implementation_files:
   - zr_vm_library/src/zr_vm_library/native_binding/native_binding_registry_plugin.c
   - zr_vm_parser/src/zr_vm_parser/parser/parser_reserved_task.c
   - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects_declarations.c
+  - zr_vm_parser/src/zr_vm_parser/compiler/compiler_task_effects_internal.h
   - zr_vm_parser/src/zr_vm_parser/parser/parser_types.c
   - zr_vm_cli/src/zr_vm_cli/project/project.c
 plan_sources:
@@ -102,9 +106,15 @@ doc_type: module-detail
 当前保持的约束：
 
 - `%await` 只能出现在 `%async` 上下文
-- borrowed binding 不能跨 `await` 使用
-- `zr.thread.Lock<T>` / `SharedLock<T>` 这类 affine guard 也不能跨 `await` 使用
-- borrowed 值在 `await` 前使用、`await` 后不再读，仍然允许
+- borrowed / loaned binding 不能跨 `await` 使用
+- `zr.thread.Lock<T>` / `SharedLock<T>` 这类 affine guard 不能跨 `await` 使用
+- `%import` using guard 的 binder、`DynamicModule<T>.@Available` payload，以及同一 guarded body 内由赋值、条件表达式、逻辑表达式、类型转换、`%type(...)` / prototype wrapper、array/object/key-value/unpack 容器字面量和普通 `=` 赋值表达式 initializer 传播出的 guard alias 不能跨 `await` 使用，会报告 `Plugin guard binding '<name>' cannot be used after an await boundary`
+- 父 `%async` body 已跨 `%await` 后声明 nested function/lambda 时，子体读取继承的 Borrow/Loan、affine guard 或 `%import` guard binding 会共享同一 await-boundary 诊断；子体新声明的 local/parameter 仍按子 context 自己的 await 状态处理
+- generator expression body 也参与同一 task-effect validation；`{{ ... %await task; out plugin; }}` 不能绕过 guard binding 的 await-boundary 检查
+- template string interpolation 也参与同一 task-effect validation；插值 expression 不能绕过 guard binding 的 await-boundary 检查
+- `%type(...)`、prototype reference wrapper、construct expression 和 decorator expression 也参与同一 task-effect validation；wrapper operand/target、constructor target/args 与 decorator body expression 不能绕过 guard binding 的 await-boundary 检查
+- class / struct declaration members 也参与同一 task-effect validation；普通 method / meta function / property getter/setter body 中的 `%await` 会按非 `%async` 上下文拒绝，字段 initializer 和 enum member value 也会被扫描
+- borrowed / guard 值在 `await` 前使用、`await` 后不再读，仍然允许
 
 ## Module Materialization Hook
 

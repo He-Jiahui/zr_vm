@@ -10,6 +10,7 @@
 #include "zr_vm_parser.h"
 #include "zr_vm_parser/compiler.h"
 #include "../../zr_vm_parser/src/zr_vm_parser/compiler/compiler_internal.h"
+#include "../../zr_vm_parser/src/zr_vm_parser/type_inference/type_inference_internal.h"
 
 static SZrState *create_thread_test_state(void) {
     SZrState *state = ZrTests_State_Create(ZR_NULL);
@@ -138,6 +139,25 @@ static void destroy_thread_test_compiler_state(SZrCompilerState *cs) {
 
     ZrParser_CompilerState_Free(cs);
     free(cs);
+}
+
+static void init_thread_generic_type(SZrState *state,
+                                     SZrInferredType *type,
+                                     const char *typeNameText,
+                                     SZrInferredType *argumentType) {
+    SZrString *typeName;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(type);
+    TEST_ASSERT_NOT_NULL(typeNameText);
+    TEST_ASSERT_NOT_NULL(argumentType);
+
+    typeName = ZrCore_String_Create(state, (TZrNativeString)typeNameText, strlen(typeNameText));
+    TEST_ASSERT_NOT_NULL(typeName);
+
+    ZrParser_InferredType_InitFull(state, type, ZR_VALUE_TYPE_OBJECT, ZR_FALSE, typeName);
+    ZrCore_Array_Init(state, &type->elementTypes, sizeof(SZrInferredType), 1);
+    ZrCore_Array_Push(state, &type->elementTypes, argumentType);
 }
 
 static void ensure_thread_test_root_scope(SZrCompilerState *cs) {
@@ -433,6 +453,61 @@ static void test_thread_markers_reject_isolate_alias_ownership_qualifiers(void) 
     ZrParser_InferredType_Free(state, &borrowedType);
     ZrParser_InferredType_Free(state, &uniqueType);
     ZrParser_InferredType_Free(state, &primitiveType);
+    destroy_thread_test_compiler_state(cs);
+    destroy_thread_test_state(state);
+}
+
+static void test_thread_markers_reject_nested_isolate_alias_generic_arguments(void) {
+    SZrState *state = create_thread_test_state();
+    SZrCompilerState *cs = create_thread_test_compiler_state(state);
+    SZrString *threadModuleName;
+    SZrString *sendName;
+    SZrString *syncName;
+    SZrInferredType primitiveElement;
+    SZrInferredType borrowedElement;
+    SZrInferredType loanedElement;
+    SZrInferredType transferPrimitiveType;
+    SZrInferredType sharedPrimitiveType;
+    SZrInferredType transferBorrowedType;
+    SZrInferredType sharedLoanedType;
+
+    TEST_ASSERT_NOT_NULL(state);
+    TEST_ASSERT_NOT_NULL(cs);
+
+    threadModuleName = ZrCore_String_Create(state, (TZrNativeString)"zr.thread", strlen("zr.thread"));
+    sendName = ZrCore_String_Create(state, (TZrNativeString)"zr.thread.Send", strlen("zr.thread.Send"));
+    syncName = ZrCore_String_Create(state, (TZrNativeString)"zr.thread.Sync", strlen("zr.thread.Sync"));
+    TEST_ASSERT_NOT_NULL(threadModuleName);
+    TEST_ASSERT_NOT_NULL(sendName);
+    TEST_ASSERT_NOT_NULL(syncName);
+    TEST_ASSERT_TRUE(ensure_native_module_compile_info(cs, threadModuleName));
+
+    ZrParser_InferredType_Init(state, &primitiveElement, ZR_VALUE_TYPE_INT64);
+    ZrParser_InferredType_Init(state, &borrowedElement, ZR_VALUE_TYPE_INT64);
+    ZrParser_InferredType_Init(state, &loanedElement, ZR_VALUE_TYPE_INT64);
+    borrowedElement.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
+    loanedElement.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
+
+    init_thread_generic_type(state, &transferPrimitiveType, "Transfer<int>", &primitiveElement);
+    init_thread_generic_type(state, &sharedPrimitiveType, "Shared<int>", &primitiveElement);
+    init_thread_generic_type(state, &transferBorrowedType, "Transfer<int>", &borrowedElement);
+    init_thread_generic_type(state, &sharedLoanedType, "Shared<int>", &loanedElement);
+
+    TEST_ASSERT_TRUE(ZrParser_InferredType_SatisfiesNamedConstraint(cs, &transferPrimitiveType, sendName));
+    TEST_ASSERT_TRUE(ZrParser_InferredType_SatisfiesNamedConstraint(cs, &sharedPrimitiveType, sendName));
+    TEST_ASSERT_TRUE(ZrParser_InferredType_SatisfiesNamedConstraint(cs, &sharedPrimitiveType, syncName));
+
+    TEST_ASSERT_FALSE(ZrParser_InferredType_SatisfiesNamedConstraint(cs, &transferBorrowedType, sendName));
+    TEST_ASSERT_FALSE(ZrParser_InferredType_SatisfiesNamedConstraint(cs, &sharedLoanedType, sendName));
+    TEST_ASSERT_FALSE(ZrParser_InferredType_SatisfiesNamedConstraint(cs, &sharedLoanedType, syncName));
+
+    ZrParser_InferredType_Free(state, &sharedLoanedType);
+    ZrParser_InferredType_Free(state, &transferBorrowedType);
+    ZrParser_InferredType_Free(state, &sharedPrimitiveType);
+    ZrParser_InferredType_Free(state, &transferPrimitiveType);
+    ZrParser_InferredType_Free(state, &loanedElement);
+    ZrParser_InferredType_Free(state, &borrowedElement);
+    ZrParser_InferredType_Free(state, &primitiveElement);
     destroy_thread_test_compiler_state(cs);
     destroy_thread_test_state(state);
 }
@@ -923,6 +998,7 @@ int main(void) {
     RUN_TEST(test_zr_thread_registers_public_shapes_without_legacy_mutex_or_atomic);
     RUN_TEST(test_zr_thread_descriptors_express_send_sync_contracts);
     RUN_TEST(test_thread_markers_reject_isolate_alias_ownership_qualifiers);
+    RUN_TEST(test_thread_markers_reject_nested_isolate_alias_generic_arguments);
     RUN_TEST(test_local_async_function_call_infers_task_runner_type);
     RUN_TEST(test_thread_start_infers_task_handle_for_local_async_runner_call);
     RUN_TEST(test_lock_guard_is_rejected_after_await_boundary);

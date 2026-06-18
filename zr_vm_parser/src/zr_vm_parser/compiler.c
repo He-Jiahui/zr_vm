@@ -418,6 +418,16 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
             compiledMember->parameterCount = 0;
             compiledMember->returnTypeNameStringIndex = 0;
         }
+
+        if (memberInfo->memberType == ZR_AST_UNION_VARIANT) {
+            compiledMember->fieldTypeNameStringIndex =
+                    compiler_add_serialized_string_constant(cs, memberInfo->fieldTypeName);
+            compiledMember->fieldOffset = memberInfo->fieldOffset;
+            compiledMember->fieldSize = memberInfo->fieldSize;
+            compiledMember->parameterCount = memberInfo->parameterCount;
+            compiledMember->returnTypeNameStringIndex =
+                    compiler_add_serialized_string_constant(cs, memberInfo->returnTypeName);
+        }
         
         // 方法特定信息
         if (memberInfo->memberType == ZR_AST_STRUCT_METHOD || 
@@ -440,7 +450,7 @@ TZrBool serialize_prototype_info_to_binary(SZrCompilerState *cs, SZrTypePrototyp
             compiledMember->fieldTypeNameStringIndex = 0;
             compiledMember->fieldOffset = 0;
             compiledMember->fieldSize = 0;
-        } else {
+        } else if (memberInfo->memberType != ZR_AST_UNION_VARIANT) {
             // 非方法成员，返回类型字段清零
             compiledMember->returnTypeNameStringIndex = 0;
         }
@@ -592,6 +602,7 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                     case ZR_AST_THROW_STATEMENT:
                     case ZR_AST_TRY_CATCH_FINALLY_STATEMENT:
                     case ZR_AST_IF_EXPRESSION:
+                    case ZR_AST_SWITCH_EXPRESSION:
                     case ZR_AST_WHILE_LOOP:
                     case ZR_AST_FOR_LOOP:
                     case ZR_AST_FOREACH_LOOP:
@@ -614,6 +625,9 @@ ZR_PARSER_API void compile_script(SZrCompilerState *cs, SZrAstNode *node) {
                         break;
                     case ZR_AST_ENUM_DECLARATION:
                         compile_enum_declaration(cs, stmt);
+                        break;
+                    case ZR_AST_UNION_DECLARATION:
+                        compile_union_declaration(cs, stmt);
                         break;
                     default:
                         // 其他顶层声明类型（intermediate等）
@@ -887,6 +901,13 @@ ZR_PARSER_API SZrFunction *ZrParser_Compiler_CompileWithCurrentModuleKey(SZrStat
     }
     zr_parser_compile_trace("quicken execbc ok func=%p", (void *)func);
 
+    if (!compiler_build_function_semir_metadata(state, func)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_NULL;
+    }
+    zr_parser_compile_trace("refresh semir metadata ok func=%p", (void *)func);
+
     if (!ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(&cs, ZR_NULL, func)) {
         zr_parser_compile_trace("finalize current source module failed func=%p", (void *)func);
         ZrCore_Function_Free(state, func);
@@ -1012,6 +1033,12 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
         return ZR_FALSE;
     }
 
+    if (!compiler_build_function_semir_metadata(state, func)) {
+        ZrCore_Function_Free(state, func);
+        ZrParser_CompilerState_Free(&cs);
+        return ZR_FALSE;
+    }
+
     if (!ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(&cs, ZR_NULL, func)) {
         ZrCore_Function_Free(state, func);
         ZrParser_CompilerState_Free(&cs);
@@ -1025,6 +1052,11 @@ TZrBool ZrParser_Compiler_CompileWithTests(SZrState *state, SZrAstNode *ast, SZr
             return ZR_FALSE;
         }
         if (!compiler_quicken_execbc_function_shallow(state, result->testFunctions[i])) {
+            ZrCore_Function_Free(state, func);
+            ZrParser_CompilerState_Free(&cs);
+            return ZR_FALSE;
+        }
+        if (!compiler_build_function_semir_metadata_shallow(state, result->testFunctions[i])) {
             ZrCore_Function_Free(state, func);
             ZrParser_CompilerState_Free(&cs);
             return ZR_FALSE;

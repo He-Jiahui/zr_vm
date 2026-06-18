@@ -487,6 +487,49 @@ static void test_known_vm_call_refreshes_forwarded_stateless_function_without_ma
 static SZrFunction *test_create_simple_caller_function(SZrState *state,
                                                        const TZrInstruction *instructions,
                                                        TZrUInt32 instructionCount,
+                                                       TZrUInt32 stackSize);
+
+static void test_known_vm_call_rejects_non_callable_native_value_without_object_refresh(void) {
+    SZrState *state = ZrTests_Runtime_State_Create(ZR_NULL);
+    SZrFunction *callerFunction;
+    SZrCallInfo *callInfo;
+    SZrTypeValue callerCallableValue;
+    SZrTypeValue *calleeSlotValue;
+    TZrInstruction callerInstructions[1];
+
+    TEST_ASSERT_NOT_NULL(state);
+
+    callerInstructions[0] = test_create_instruction_call_1(ZR_INSTRUCTION_ENUM(KNOWN_VM_CALL), 0u, 0u, 0u);
+    callerFunction = test_create_simple_caller_function(
+            state,
+            callerInstructions,
+            ZR_ARRAY_COUNT(callerInstructions),
+            1u);
+    TEST_ASSERT_NOT_NULL(callerFunction);
+
+    ZrCore_Value_ResetAsNull(&callerCallableValue);
+    ZrCore_Value_InitAsRawObject(state, &callerCallableValue, ZR_CAST_RAW_OBJECT_AS_SUPER(callerFunction));
+    callerCallableValue.type = ZR_VALUE_TYPE_FUNCTION;
+    callerCallableValue.isGarbageCollectable = ZR_TRUE;
+    callerCallableValue.isNative = ZR_FALSE;
+
+    callInfo = test_prepare_execute_call(state, &callerCallableValue, callerFunction);
+    TEST_ASSERT_NOT_NULL(callInfo);
+
+    calleeSlotValue = ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer + 1);
+    TEST_ASSERT_NOT_NULL(calleeSlotValue);
+    ZrCore_Value_InitAsFloat(state, calleeSlotValue, 0.5);
+
+    ZrCore_Execute(state, callInfo);
+
+    TEST_ASSERT_NOT_EQUAL(ZR_THREAD_STATUS_FINE, state->threadStatus);
+
+    ZrTests_Runtime_State_Destroy(state);
+}
+
+static SZrFunction *test_create_simple_caller_function(SZrState *state,
+                                                       const TZrInstruction *instructions,
+                                                       TZrUInt32 instructionCount,
                                                        TZrUInt32 stackSize) {
     SZrFunction *function = ZrCore_Function_New(state);
 
@@ -1367,6 +1410,7 @@ int main(void) {
     RUN_TEST(test_execute_refreshes_forwarded_function_base_value_object);
     RUN_TEST(test_execute_refreshes_forwarded_closure_base_value_object);
     RUN_TEST(test_known_vm_call_refreshes_forwarded_stateless_function_without_materializing_closure);
+    RUN_TEST(test_known_vm_call_rejects_non_callable_native_value_without_object_refresh);
     RUN_TEST(test_known_vm_call_direct_path_avoids_dispatch_bookkeeping_stack_get_value_helpers);
     RUN_TEST(test_function_call_direct_function_value_avoids_extra_stack_get_value_helpers);
     RUN_TEST(test_function_tail_call_direct_function_value_avoids_extra_stack_get_value_helpers);

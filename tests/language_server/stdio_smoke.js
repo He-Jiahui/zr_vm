@@ -1513,6 +1513,8 @@ async function main() {
         diagnostic.message.includes("Import member 'greet.missing' could not be resolved"));
     assert(missingImportDiagnostic,
         'import diagnostics fixture should publish the missing imported member diagnostic');
+    assert(missingImportDiagnostic.code === 'plugin_unknown_export',
+        `import diagnostics should use plugin_unknown_export code, got ${missingImportDiagnostic.code}`);
     assert(missingImportDiagnostic.data &&
         diagnosticRelatedUriMatches(importDiagnosticsFixture.mainUri, missingImportDiagnostic.data.uri) &&
         missingImportDiagnostic.data.range &&

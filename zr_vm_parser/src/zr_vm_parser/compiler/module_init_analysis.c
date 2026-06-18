@@ -4,11 +4,13 @@
 #include "zr_vm_core/io.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_library/file.h"
+#include "zr_vm_library/project.h"
 
 #include <stddef.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <string.h>
 
 typedef enum EZrParserInitBindingKind {
     ZR_PARSER_INIT_BINDING_LOCAL = 0,
@@ -118,6 +120,8 @@ static void module_init_binary_metadata_free_callable_summary_array_buffers(SZrG
                                                                            SZrArray *summaries);
 static void module_init_binary_metadata_release_synthetic_source(SZrGlobalState *global,
                                                                  SZrBinaryMetadataSyntheticSource *synthetic);
+static void module_init_assign_summary_version(SZrState *state,
+                                               SZrParserModuleInitSummary *summary);
 
 static TZrBool module_init_trace_enabled(void) {
     static TZrBool initialized = ZR_FALSE;
@@ -207,6 +211,8 @@ static EZrValueType module_init_base_type_from_name(SZrString *typeName) {
 
 static void module_init_fill_type_ref_from_type_node(SZrFunctionTypedTypeRef *outType, SZrType *typeNode) {
     SZrString *simpleTypeName = ZR_NULL;
+    TZrNativeString simpleTypeText = ZR_NULL;
+    EZrValueType primitiveType;
 
     if (outType == ZR_NULL) {
         return;
@@ -222,12 +228,20 @@ static void module_init_fill_type_ref_from_type_node(SZrFunctionTypedTypeRef *ou
 
     if (typeNode->name != ZR_NULL && typeNode->name->type == ZR_AST_IDENTIFIER_LITERAL) {
         simpleTypeName = typeNode->name->data.identifier.name;
+        simpleTypeText = simpleTypeName != ZR_NULL ? ZrCore_String_GetNativeString(simpleTypeName) : ZR_NULL;
     }
 
     outType->isNullable = ZR_FALSE;
     outType->ownershipQualifier = (TZrUInt32)typeNode->ownershipQualifier;
-    outType->typeName = simpleTypeName;
-    outType->baseType = module_init_base_type_from_name(simpleTypeName);
+    if (inferred_type_try_map_primitive_name(simpleTypeText,
+                                             simpleTypeText != ZR_NULL ? strlen(simpleTypeText) : 0u,
+                                             &primitiveType)) {
+        outType->baseType = primitiveType;
+        outType->typeName = ZR_NULL;
+    } else {
+        outType->typeName = simpleTypeName;
+        outType->baseType = module_init_base_type_from_name(simpleTypeName);
+    }
 
     if (typeNode->dimensions > 0) {
         outType->isArray = ZR_TRUE;
@@ -236,6 +250,47 @@ static void module_init_fill_type_ref_from_type_node(SZrFunctionTypedTypeRef *ou
         outType->baseType = ZR_VALUE_TYPE_ARRAY;
         outType->typeName = ZR_NULL;
     }
+}
+
+static void module_init_typed_type_ref_to_inferred(SZrCompilerState *cs,
+                                                   const SZrFunctionTypedTypeRef *typeRef,
+                                                   SZrInferredType *result) {
+    if (cs == ZR_NULL || result == ZR_NULL) {
+        return;
+    }
+
+    if (typeRef == ZR_NULL) {
+        ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_OBJECT);
+        return;
+    }
+
+    if (typeRef->isArray) {
+        SZrInferredType elementType;
+
+        ZrParser_InferredType_Init(cs->state, result, ZR_VALUE_TYPE_ARRAY);
+        result->ownershipQualifier = typeRef->ownershipQualifier;
+        result->isNullable = typeRef->isNullable;
+        ZrCore_Array_Init(cs->state, &result->elementTypes, sizeof(SZrInferredType), 1);
+        ZrParser_InferredType_InitFull(cs->state,
+                                       &elementType,
+                                       typeRef->elementBaseType,
+                                       ZR_FALSE,
+                                       typeRef->elementTypeName);
+        ZrCore_Array_Push(cs->state, &result->elementTypes, &elementType);
+        return;
+    }
+
+    if (typeRef->typeName != ZR_NULL) {
+        ZrParser_InferredType_InitFull(cs->state,
+                                       result,
+                                       typeRef->baseType,
+                                       typeRef->isNullable,
+                                       typeRef->typeName);
+    } else {
+        ZrParser_InferredType_Init(cs->state, result, typeRef->baseType);
+        result->isNullable = typeRef->isNullable;
+    }
+    result->ownershipQualifier = typeRef->ownershipQualifier;
 }
 
 static TZrSize module_init_binary_metadata_count_indent(const TZrChar *line) {
@@ -1545,6 +1600,9 @@ static void module_init_free_summary(SZrGlobalState *global, SZrParserModuleInit
     if (summary->bindings.isValid && summary->bindings.head != ZR_NULL && state != ZR_NULL) {
         ZrCore_Array_Free(state, &summary->bindings);
     }
+    if (summary->typeDefs.isValid && summary->typeDefs.head != ZR_NULL && state != ZR_NULL) {
+        ZrCore_Array_Free(state, &summary->typeDefs);
+    }
     if (summary->staticImports.isValid && summary->staticImports.head != ZR_NULL && state != ZR_NULL) {
         ZrCore_Array_Free(state, &summary->staticImports);
     }
@@ -1579,11 +1637,13 @@ static TZrBool module_init_reset_summary(SZrState *state,
     module_init_free_summary(state->global, summary);
     ZrCore_Memory_RawSet(summary, 0, sizeof(*summary));
     summary->moduleName = moduleName;
+    module_init_assign_summary_version(state, summary);
     summary->astIdentity = astIdentity;
     summary->state = ZR_PARSER_MODULE_INIT_SUMMARY_BUILDING;
     ZrCore_Array_Construct(&summary->staticImports);
     ZrCore_Array_Construct(&summary->exports);
     ZrCore_Array_Construct(&summary->bindings);
+    ZrCore_Array_Construct(&summary->typeDefs);
     ZrCore_Array_Construct(&summary->entryEffects);
     ZrCore_Array_Construct(&summary->exportedCallableSummaries);
     return ZR_TRUE;
@@ -1609,6 +1669,135 @@ static void module_init_summary_set_error(SZrParserModuleInitSummary *summary,
     }
 
     snprintf(summary->errorMessage, sizeof(summary->errorMessage), "%s", message);
+}
+
+static SZrString *module_init_project_version_for_module(SZrState *state, SZrString *moduleName) {
+    const SZrLibrary_Project *project;
+    const TZrChar *moduleText;
+    const TZrChar *versionStart;
+    const TZrChar *versionEnd;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || moduleName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    moduleText = ZrCore_String_GetNativeString(moduleName);
+    if (moduleText != ZR_NULL && moduleText[0] == '$') {
+        versionStart = strchr(moduleText, '@');
+        if (versionStart != ZR_NULL) {
+            versionStart++;
+            versionEnd = strchr(versionStart, '/');
+            if (versionEnd != ZR_NULL && versionEnd > versionStart) {
+                return ZrCore_String_Create(state, (TZrNativeString)versionStart, (TZrSize)(versionEnd - versionStart));
+            }
+        }
+    }
+
+    project = ZrLibrary_Project_GetFromGlobal(state->global);
+    return project != ZR_NULL ? project->version : ZR_NULL;
+}
+
+static TZrBool module_init_parse_semver_major(const TZrChar *text,
+                                              TZrUInt32 *outMajor) {
+    TZrUInt32 major = 0u;
+    TZrSize index = 0u;
+
+    if (outMajor != ZR_NULL) {
+        *outMajor = 0u;
+    }
+    if (text == ZR_NULL || text[0] < '0' || text[0] > '9') {
+        return ZR_FALSE;
+    }
+
+    while (text[index] >= '0' && text[index] <= '9') {
+        TZrUInt32 digit = (TZrUInt32)(text[index] - '0');
+        if (major > (((TZrUInt32)0xFFFFFFFFu) - digit) / 10u) {
+            return ZR_FALSE;
+        }
+        major = major * 10u + digit;
+        index++;
+    }
+    if (text[index] != '.') {
+        return ZR_FALSE;
+    }
+
+    if (outMajor != ZR_NULL) {
+        *outMajor = major;
+    }
+    return ZR_TRUE;
+}
+
+static SZrString *module_init_next_major_version_string(SZrState *state, SZrString *version) {
+    const TZrChar *versionText;
+    TZrUInt32 major;
+    TZrChar buffer[64];
+
+    if (state == ZR_NULL || version == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    versionText = ZrCore_String_GetNativeString(version);
+    if (!module_init_parse_semver_major(versionText, &major) || major == (TZrUInt32)0xFFFFFFFFu) {
+        return ZR_NULL;
+    }
+
+    snprintf(buffer, sizeof(buffer), "%u.0.0", (unsigned)(major + 1u));
+    return ZrCore_String_CreateFromNative(state, buffer);
+}
+
+static void module_init_apply_dependency_import_version_range(SZrParserInitAnalysisContext *context,
+                                                              SZrString *moduleName,
+                                                              SZrString **ioRequestedModuleVersion,
+                                                              SZrString **ioMinModuleVersionInclusive,
+                                                              SZrString **ioMaxModuleVersionExclusive) {
+    const SZrLibrary_Project *project;
+    SZrString *requestedVersion = ZR_NULL;
+    SZrString *minVersionInclusive = ZR_NULL;
+    SZrString *maxVersionExclusive = ZR_NULL;
+    const TZrChar *currentModuleKey;
+    const TZrChar *resolvedModuleKey;
+
+    if (context == ZR_NULL || context->cs == ZR_NULL || context->cs->state == ZR_NULL ||
+        context->cs->state->global == ZR_NULL || moduleName == ZR_NULL ||
+        ioRequestedModuleVersion == ZR_NULL || ioMinModuleVersionInclusive == ZR_NULL ||
+        ioMaxModuleVersionExclusive == ZR_NULL) {
+        return;
+    }
+
+    project = ZrLibrary_Project_GetFromGlobal(context->cs->state->global);
+    if (project == ZR_NULL || context->moduleName == ZR_NULL) {
+        return;
+    }
+
+    currentModuleKey = ZrCore_String_GetNativeString(context->moduleName);
+    resolvedModuleKey = ZrCore_String_GetNativeString(moduleName);
+    if (!ZrLibrary_Project_GetDependencyImportVersionRange(project,
+                                                           currentModuleKey,
+                                                           resolvedModuleKey,
+                                                           &requestedVersion,
+                                                           &minVersionInclusive,
+                                                           &maxVersionExclusive)) {
+        return;
+    }
+
+    if (requestedVersion != ZR_NULL) {
+        *ioRequestedModuleVersion = requestedVersion;
+    }
+    if (minVersionInclusive != ZR_NULL) {
+        *ioMinModuleVersionInclusive = minVersionInclusive;
+    }
+    if (maxVersionExclusive != ZR_NULL) {
+        *ioMaxModuleVersionExclusive = maxVersionExclusive;
+    }
+}
+
+static void module_init_assign_summary_version(SZrState *state,
+                                               SZrParserModuleInitSummary *summary) {
+    if (state == ZR_NULL || summary == ZR_NULL || summary->moduleVersion != ZR_NULL) {
+        return;
+    }
+
+    summary->moduleVersion = module_init_project_version_for_module(state, summary->moduleName);
 }
 
 static TZrBool module_init_array_contains_string(const SZrArray *array, SZrString *value) {
@@ -1668,6 +1857,143 @@ static TZrBool module_init_find_export(const SZrParserModuleInitSummary *summary
     }
 
     return ZR_FALSE;
+}
+
+static TZrBool module_init_call_arguments_to_types(SZrParserInitAnalysisContext *context,
+                                                   const SZrFunctionCall *call,
+                                                   SZrArray *outTypes) {
+    TZrSize argCount;
+
+    if (outTypes != ZR_NULL) {
+        ZrCore_Array_Construct(outTypes);
+    }
+    if (context == ZR_NULL || context->cs == ZR_NULL || call == ZR_NULL || outTypes == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    argCount = call->args != ZR_NULL ? call->args->count : 0;
+    if (argCount == 0) {
+        return ZR_TRUE;
+    }
+
+    ZrCore_Array_Init(context->cs->state, outTypes, sizeof(SZrInferredType), argCount);
+    for (TZrSize index = 0; index < argCount; index++) {
+        SZrAstNode *argument = call->args->nodes[index];
+        SZrInferredType argumentType;
+
+        if (argument == ZR_NULL) {
+            free_inferred_type_array(context->cs->state, outTypes);
+            ZrCore_Array_Construct(outTypes);
+            return ZR_FALSE;
+        }
+
+        ZrParser_InferredType_Init(context->cs->state, &argumentType, ZR_VALUE_TYPE_OBJECT);
+        if (!ZrParser_ExpressionType_Infer(context->cs, argument, &argumentType)) {
+            ZrParser_InferredType_Free(context->cs->state, &argumentType);
+            free_inferred_type_array(context->cs->state, outTypes);
+            ZrCore_Array_Construct(outTypes);
+            return ZR_FALSE;
+        }
+        ZrCore_Array_Push(context->cs->state, outTypes, &argumentType);
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrInt32 module_init_score_export_call_candidate(SZrParserInitAnalysisContext *context,
+                                                        const SZrModuleInitExportInfo *exportInfo,
+                                                        const SZrArray *argumentTypes) {
+    TZrInt32 score = 0;
+
+    if (context == ZR_NULL || exportInfo == ZR_NULL || argumentTypes == ZR_NULL ||
+        exportInfo->exportKind != ZR_MODULE_EXPORT_KIND_FUNCTION ||
+        exportInfo->parameterCount != argumentTypes->length) {
+        return -1;
+    }
+
+    for (TZrSize index = 0; index < argumentTypes->length; index++) {
+        SZrInferredType parameterType;
+        SZrInferredType *argumentType;
+
+        if (exportInfo->parameterTypes == ZR_NULL || index >= exportInfo->parameterCount) {
+            return -1;
+        }
+
+        argumentType = (SZrInferredType *)ZrCore_Array_Get((SZrArray *)argumentTypes, index);
+        if (argumentType == ZR_NULL) {
+            return -1;
+        }
+
+        module_init_typed_type_ref_to_inferred(context->cs, &exportInfo->parameterTypes[index], &parameterType);
+        if (ZrParser_InferredType_Equal(argumentType, &parameterType)) {
+            ZrParser_InferredType_Free(context->cs->state, &parameterType);
+            continue;
+        }
+        if (!ZrParser_InferredType_IsCompatible(argumentType, &parameterType)) {
+            ZrParser_InferredType_Free(context->cs->state, &parameterType);
+            return -1;
+        }
+
+        score++;
+        ZrParser_InferredType_Free(context->cs->state, &parameterType);
+    }
+
+    return score;
+}
+
+static const SZrModuleInitExportInfo *module_init_find_export_for_call(SZrParserInitAnalysisContext *context,
+                                                                       SZrString *moduleName,
+                                                                       SZrString *symbolName,
+                                                                       const SZrFunctionCall *call) {
+    const SZrParserModuleInitSummary *summary;
+    SZrArray argumentTypes;
+    const SZrModuleInitExportInfo *best = ZR_NULL;
+    TZrInt32 bestScore = -1;
+    TZrBool hasTie = ZR_FALSE;
+
+    if (context == ZR_NULL || context->cs == ZR_NULL || moduleName == ZR_NULL || symbolName == ZR_NULL ||
+        call == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (!module_init_call_arguments_to_types(context, call, &argumentTypes)) {
+        return ZR_NULL;
+    }
+
+    (void)module_init_ensure_summary_analyzed(context->cs, moduleName);
+    summary = ZrParser_ModuleInitAnalysis_FindSummary(context->cs->state->global, moduleName);
+    if (summary == ZR_NULL || !summary->exports.isValid) {
+        free_inferred_type_array(context->cs->state, &argumentTypes);
+        return ZR_NULL;
+    }
+
+    for (TZrSize index = 0; index < summary->exports.length; index++) {
+        const SZrModuleInitExportInfo *candidate =
+                (const SZrModuleInitExportInfo *)ZrCore_Array_Get((SZrArray *)&summary->exports, index);
+        TZrInt32 score;
+
+        if (candidate == ZR_NULL ||
+            candidate->name == ZR_NULL ||
+            !ZrCore_String_Equal(candidate->name, symbolName)) {
+            continue;
+        }
+
+        score = module_init_score_export_call_candidate(context, candidate, &argumentTypes);
+        if (score < 0) {
+            continue;
+        }
+
+        if (best == ZR_NULL || score < bestScore) {
+            best = candidate;
+            bestScore = score;
+            hasTie = ZR_FALSE;
+        } else if (score == bestScore) {
+            hasTie = ZR_TRUE;
+        }
+    }
+
+    free_inferred_type_array(context->cs->state, &argumentTypes);
+    return hasTie ? ZR_NULL : best;
 }
 
 static SZrModuleInitExportInfo *module_init_find_export_mutable(SZrParserModuleInitSummary *summary,
@@ -1788,7 +2114,8 @@ static TZrBool module_init_add_export_info(SZrState *state,
         ZrCore_Array_Init(state, &summary->exports, sizeof(SZrModuleInitExportInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     }
 
-    if (module_init_find_export(summary, info->name, ZR_NULL)) {
+    if (info->exportKind != ZR_MODULE_EXPORT_KIND_FUNCTION &&
+        module_init_find_export(summary, info->name, ZR_NULL)) {
         return ZR_TRUE;
     }
 
@@ -1866,6 +2193,13 @@ static void module_init_collect_static_imports(SZrState *state,
                 module_init_collect_static_imports(state, summary, node->data.block.body->nodes[index]);
             }
         }
+        return;
+    }
+
+    if (node->type == ZR_AST_USING_STATEMENT) {
+        module_init_collect_static_imports(state, summary, node->data.usingStatement.resource);
+        module_init_collect_static_imports(state, summary, node->data.usingStatement.body);
+        module_init_collect_static_imports(state, summary, node->data.usingStatement.elseBody);
         return;
     }
 
@@ -1997,6 +2331,9 @@ static TZrBool module_init_prescan_source_summary(SZrState *state,
     }
     if (!summary->bindings.isValid) {
         ZrCore_Array_Init(state, &summary->bindings, sizeof(SZrModuleInitBindingInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    }
+    if (!summary->typeDefs.isValid) {
+        ZrCore_Array_Init(state, &summary->typeDefs, sizeof(SZrModuleInitTypeDefInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     }
     if (!summary->entryEffects.isValid) {
         ZrCore_Array_Init(state, &summary->entryEffects, sizeof(SZrFunctionModuleEffect), ZR_PARSER_INITIAL_CAPACITY_SMALL);
@@ -2130,20 +2467,39 @@ static TZrBool module_init_prescan_source_summary(SZrState *state,
 
                 for (TZrSize keyIndex = 0; keys != ZR_NULL && keyIndex < keys->count; ++keyIndex) {
                     SZrAstNode *keyNode = keys->nodes[keyIndex];
-                    if (keyNode == ZR_NULL || keyNode->type != ZR_AST_IDENTIFIER_LITERAL ||
-                        keyNode->data.identifier.name == ZR_NULL) {
+                    SZrString *bindingName = ZR_NULL;
+                    SZrString *sourceName = ZR_NULL;
+
+                    if (keyNode != ZR_NULL && keyNode->type == ZR_AST_IDENTIFIER_LITERAL &&
+                        keyNode->data.identifier.name != ZR_NULL) {
+                        bindingName = keyNode->data.identifier.name;
+                        sourceName = keyNode->data.identifier.name;
+                    } else if (keyNode != ZR_NULL && keyNode->type == ZR_AST_KEY_VALUE_PAIR &&
+                               declaration->pattern->type == ZR_AST_DESTRUCTURING_OBJECT &&
+                               !keyNode->data.keyValuePair.keyIsComputed &&
+                               keyNode->data.keyValuePair.key != ZR_NULL &&
+                               keyNode->data.keyValuePair.key->type == ZR_AST_IDENTIFIER_LITERAL &&
+                               keyNode->data.keyValuePair.key->data.identifier.name != ZR_NULL &&
+                               keyNode->data.keyValuePair.value != ZR_NULL &&
+                               keyNode->data.keyValuePair.value->type == ZR_AST_IDENTIFIER_LITERAL &&
+                               keyNode->data.keyValuePair.value->data.identifier.name != ZR_NULL) {
+                        bindingName = keyNode->data.keyValuePair.key->data.identifier.name;
+                        sourceName = keyNode->data.keyValuePair.value->data.identifier.name;
+                    }
+
+                    if (bindingName == ZR_NULL || sourceName == ZR_NULL) {
                         continue;
                     }
 
                     module_init_upsert_binding_info(state,
                                                     summary,
-                                                    keyNode->data.identifier.name,
+                                                    bindingName,
                                                     bindingKind,
                                                     bindingKind == ZR_PARSER_INIT_BINDING_IMPORTED_SYMBOL
                                                             ? importModuleName
                                                             : summary->moduleName,
                                                     bindingKind == ZR_PARSER_INIT_BINDING_IMPORTED_SYMBOL
-                                                            ? keyNode->data.identifier.name
+                                                            ? sourceName
                                                             : ZR_NULL,
                                                     ZR_MODULE_EXPORT_KIND_VALUE,
                                                     ZR_MODULE_EXPORT_READY_ENTRY,
@@ -2226,6 +2582,13 @@ static void module_init_init_effect(SZrFunctionModuleEffect *effect,
                                     SZrString *symbolName,
                                     EZrModuleExportKind exportKind,
                                     EZrModuleExportReadiness readiness,
+                                    TZrMetadataToken targetMetadataToken,
+                                    TZrMetadataToken targetSignatureToken,
+                                    TZrUInt64 targetSignatureHash,
+                                    TZrUInt64 targetModuleSignatureHash,
+                                    SZrString *requestedModuleVersion,
+                                    SZrString *minModuleVersionInclusive,
+                                    SZrString *maxModuleVersionExclusive,
                                     const SZrFileRange *location) {
     if (effect == ZR_NULL) {
         return;
@@ -2237,6 +2600,13 @@ static void module_init_init_effect(SZrFunctionModuleEffect *effect,
     effect->readiness = (TZrUInt8)readiness;
     effect->moduleName = moduleName;
     effect->symbolName = symbolName;
+    effect->targetMetadataToken = targetMetadataToken;
+    effect->targetSignatureToken = targetSignatureToken;
+    effect->targetSignatureHash = targetSignatureHash;
+    effect->targetModuleSignatureHash = targetModuleSignatureHash;
+    effect->requestedModuleVersion = requestedModuleVersion;
+    effect->minModuleVersionInclusive = minModuleVersionInclusive;
+    effect->maxModuleVersionExclusive = maxModuleVersionExclusive;
     if (location != ZR_NULL) {
         effect->lineInSourceStart = (TZrUInt32)location->start.line;
         effect->columnInSourceStart = (TZrUInt32)location->start.column;
@@ -2264,6 +2634,13 @@ static TZrBool module_init_effects_contain(const SZrArray *effects, const SZrFun
             existing->readiness == candidate->readiness &&
             existing->moduleName == candidate->moduleName &&
             existing->symbolName == candidate->symbolName &&
+            existing->targetMetadataToken == candidate->targetMetadataToken &&
+            existing->targetSignatureToken == candidate->targetSignatureToken &&
+            existing->targetSignatureHash == candidate->targetSignatureHash &&
+            existing->targetModuleSignatureHash == candidate->targetModuleSignatureHash &&
+            existing->requestedModuleVersion == candidate->requestedModuleVersion &&
+            existing->minModuleVersionInclusive == candidate->minModuleVersionInclusive &&
+            existing->maxModuleVersionExclusive == candidate->maxModuleVersionExclusive &&
             existing->lineInSourceStart == candidate->lineInSourceStart &&
             existing->columnInSourceStart == candidate->columnInSourceStart &&
             existing->lineInSourceEnd == candidate->lineInSourceEnd &&
@@ -2569,15 +2946,32 @@ static TZrBool module_init_resolve_import_export_info(SZrCompilerState *cs,
                                                       SZrString *moduleName,
                                                       SZrString *symbolName,
                                                       EZrModuleExportKind *outKind,
-                                                      EZrModuleExportReadiness *outReadiness) {
+                                                      EZrModuleExportReadiness *outReadiness,
+                                                      TZrMetadataToken *outMetadataToken,
+                                                      TZrMetadataToken *outSignatureToken,
+                                                      TZrUInt64 *outSignatureHash,
+                                                      TZrUInt64 *outModuleSignatureHash) {
     const SZrParserModuleInitSummary *summary;
     const SZrModuleInitExportInfo *info = ZR_NULL;
+    SZrTypeMemberInfo *memberInfo = ZR_NULL;
 
     if (outKind != ZR_NULL) {
         *outKind = ZR_MODULE_EXPORT_KIND_VALUE;
     }
     if (outReadiness != ZR_NULL) {
         *outReadiness = ZR_MODULE_EXPORT_READY_ENTRY;
+    }
+    if (outMetadataToken != ZR_NULL) {
+        *outMetadataToken = 0;
+    }
+    if (outSignatureToken != ZR_NULL) {
+        *outSignatureToken = 0;
+    }
+    if (outSignatureHash != ZR_NULL) {
+        *outSignatureHash = 0;
+    }
+    if (outModuleSignatureHash != ZR_NULL) {
+        *outModuleSignatureHash = 0;
     }
 
     if (cs == ZR_NULL || moduleName == ZR_NULL || symbolName == ZR_NULL) {
@@ -2586,22 +2980,74 @@ static TZrBool module_init_resolve_import_export_info(SZrCompilerState *cs,
 
     summary = ZrParser_ModuleInitAnalysis_FindSummary(cs->state->global, moduleName);
     if (summary == ZR_NULL) {
-        if (!ZrParser_ModuleInitAnalysis_EnsureSummary(cs, moduleName)) {
-            return ZR_FALSE;
-        }
+        (void)ZrParser_ModuleInitAnalysis_EnsureSummary(cs, moduleName);
         summary = ZrParser_ModuleInitAnalysis_FindSummary(cs->state->global, moduleName);
     }
 
     if (summary == ZR_NULL || summary->state == ZR_PARSER_MODULE_INIT_SUMMARY_FAILED ||
         !module_init_find_export(summary, symbolName, &info) || info == ZR_NULL) {
+        if (ensure_native_module_compile_info(cs, moduleName)) {
+            memberInfo = find_compiler_type_member_inference(cs, moduleName, symbolName);
+        }
+        if (memberInfo != ZR_NULL &&
+            (memberInfo->metadataToken != 0 ||
+             memberInfo->signatureToken != 0 ||
+             memberInfo->signatureHash != 0)) {
+            if (outKind != ZR_NULL) {
+                *outKind = memberInfo->moduleExportKind != 0
+                                   ? memberInfo->moduleExportKind
+                                   : ZR_MODULE_EXPORT_KIND_VALUE;
+            }
+            if (outReadiness != ZR_NULL) {
+                *outReadiness = memberInfo->moduleExportReadiness != 0
+                                        ? memberInfo->moduleExportReadiness
+                                        : ZR_MODULE_EXPORT_READY_ENTRY;
+            }
+            if (outMetadataToken != ZR_NULL) {
+                *outMetadataToken = memberInfo->metadataToken;
+            }
+            if (outSignatureToken != ZR_NULL) {
+                *outSignatureToken = memberInfo->signatureToken;
+            }
+            if (outSignatureHash != ZR_NULL) {
+                *outSignatureHash = memberInfo->signatureHash;
+            }
+            return ZR_TRUE;
+        }
         return ZR_FALSE;
     }
 
+    (void)ensure_import_module_compile_info(cs, moduleName);
+    summary = ZrParser_ModuleInitAnalysis_FindSummary(cs->state->global, moduleName);
+    memberInfo = find_compiler_type_member_inference(cs, moduleName, symbolName);
+
     if (outKind != ZR_NULL) {
-        *outKind = (EZrModuleExportKind)info->exportKind;
+        *outKind = memberInfo != ZR_NULL && memberInfo->moduleExportKind != 0
+                           ? memberInfo->moduleExportKind
+                           : (EZrModuleExportKind)info->exportKind;
     }
     if (outReadiness != ZR_NULL) {
-        *outReadiness = (EZrModuleExportReadiness)info->readiness;
+        *outReadiness = memberInfo != ZR_NULL && memberInfo->moduleExportReadiness != 0
+                                ? memberInfo->moduleExportReadiness
+                                : (EZrModuleExportReadiness)info->readiness;
+    }
+    if (outMetadataToken != ZR_NULL) {
+        *outMetadataToken = memberInfo != ZR_NULL && memberInfo->metadataToken != 0
+                                    ? memberInfo->metadataToken
+                                    : info->metadataToken;
+    }
+    if (outSignatureToken != ZR_NULL) {
+        *outSignatureToken = memberInfo != ZR_NULL && memberInfo->signatureToken != 0
+                                     ? memberInfo->signatureToken
+                                     : info->signatureToken;
+    }
+    if (outSignatureHash != ZR_NULL) {
+        *outSignatureHash = memberInfo != ZR_NULL && memberInfo->signatureHash != 0
+                                    ? memberInfo->signatureHash
+                                    : info->signatureHash;
+    }
+    if (outModuleSignatureHash != ZR_NULL) {
+        *outModuleSignatureHash = summary != ZR_NULL ? summary->moduleSignatureHash : 0u;
     }
     return ZR_TRUE;
 }
@@ -2676,23 +3122,130 @@ static void module_init_record_import_symbol_effect(SZrParserInitAnalysisContext
                                                     const SZrFileRange *location) {
     EZrModuleExportKind exportKind = ZR_MODULE_EXPORT_KIND_VALUE;
     EZrModuleExportReadiness readiness = ZR_MODULE_EXPORT_READY_ENTRY;
+    TZrMetadataToken targetMetadataToken = 0;
+    TZrMetadataToken targetSignatureToken = 0;
+    TZrUInt64 targetSignatureHash = 0;
+    TZrUInt64 targetModuleSignatureHash = 0;
+    SZrString *requestedModuleVersion = ZR_NULL;
+    SZrString *minModuleVersionInclusive = ZR_NULL;
+    SZrString *maxModuleVersionExclusive = ZR_NULL;
     SZrFunctionModuleEffect effect;
 
     if (context == ZR_NULL || effects == ZR_NULL || moduleName == ZR_NULL || symbolName == ZR_NULL) {
         return;
     }
 
-    if (!module_init_resolve_import_export_info(context->cs, moduleName, symbolName, &exportKind, &readiness)) {
+    if (!module_init_resolve_import_export_info(context->cs,
+                                                moduleName,
+                                                symbolName,
+                                                &exportKind,
+                                                &readiness,
+                                                &targetMetadataToken,
+                                                &targetSignatureToken,
+                                                &targetSignatureHash,
+                                                &targetModuleSignatureHash)) {
         exportKind = ZR_MODULE_EXPORT_KIND_VALUE;
         readiness = ZR_MODULE_EXPORT_READY_ENTRY;
+        targetMetadataToken = 0;
+        targetSignatureToken = 0;
+        targetSignatureHash = 0;
+        targetModuleSignatureHash = 0;
     }
+    {
+        const SZrParserModuleInitSummary *summary =
+                ZrParser_ModuleInitAnalysis_FindSummary(context->cs->state->global, moduleName);
+        if (summary != ZR_NULL && summary->moduleVersion != ZR_NULL) {
+            requestedModuleVersion = summary->moduleVersion;
+            minModuleVersionInclusive = summary->moduleVersion;
+            maxModuleVersionExclusive = module_init_next_major_version_string(context->cs->state, summary->moduleVersion);
+        }
+    }
+    module_init_apply_dependency_import_version_range(context,
+                                                      moduleName,
+                                                      &requestedModuleVersion,
+                                                      &minModuleVersionInclusive,
+                                                      &maxModuleVersionExclusive);
 
     if (defaultKind == ZR_MODULE_ENTRY_EFFECT_IMPORT_REF &&
         !(exportKind == ZR_MODULE_EXPORT_KIND_FUNCTION || exportKind == ZR_MODULE_EXPORT_KIND_TYPE)) {
         defaultKind = ZR_MODULE_ENTRY_EFFECT_IMPORT_READ;
     }
 
-    module_init_init_effect(&effect, defaultKind, moduleName, symbolName, exportKind, readiness, location);
+    module_init_init_effect(&effect,
+                            defaultKind,
+                            moduleName,
+                            symbolName,
+                            exportKind,
+                            readiness,
+                            targetMetadataToken,
+                            targetSignatureToken,
+                            targetSignatureHash,
+                            targetModuleSignatureHash,
+                            requestedModuleVersion,
+                            minModuleVersionInclusive,
+                            maxModuleVersionExclusive,
+                            location);
+    module_init_append_effect(context->cs->state, effects, &effect);
+}
+
+static void module_init_record_import_call_effect(SZrParserInitAnalysisContext *context,
+                                                  SZrArray *effects,
+                                                  SZrString *moduleName,
+                                                  SZrString *symbolName,
+                                                  const SZrFunctionCall *call,
+                                                  const SZrFileRange *location) {
+    const SZrModuleInitExportInfo *targetExport;
+    const SZrParserModuleInitSummary *summary = ZR_NULL;
+    TZrUInt64 targetModuleSignatureHash = 0;
+    SZrString *requestedModuleVersion = ZR_NULL;
+    SZrString *minModuleVersionInclusive = ZR_NULL;
+    SZrString *maxModuleVersionExclusive = ZR_NULL;
+    SZrFunctionModuleEffect effect;
+
+    if (context == ZR_NULL || effects == ZR_NULL || moduleName == ZR_NULL || symbolName == ZR_NULL) {
+        return;
+    }
+
+    targetExport = module_init_find_export_for_call(context, moduleName, symbolName, call);
+    if (targetExport == ZR_NULL) {
+        module_init_record_import_symbol_effect(context,
+                                                effects,
+                                                moduleName,
+                                                symbolName,
+                                                ZR_MODULE_ENTRY_EFFECT_IMPORT_CALL,
+                                                location);
+        return;
+    }
+
+    {
+        summary = ZrParser_ModuleInitAnalysis_FindSummary(context->cs->state->global, moduleName);
+        targetModuleSignatureHash = summary != ZR_NULL ? summary->moduleSignatureHash : 0u;
+        if (summary != ZR_NULL && summary->moduleVersion != ZR_NULL) {
+            requestedModuleVersion = summary->moduleVersion;
+            minModuleVersionInclusive = summary->moduleVersion;
+            maxModuleVersionExclusive = module_init_next_major_version_string(context->cs->state, summary->moduleVersion);
+        }
+    }
+    module_init_apply_dependency_import_version_range(context,
+                                                      moduleName,
+                                                      &requestedModuleVersion,
+                                                      &minModuleVersionInclusive,
+                                                      &maxModuleVersionExclusive);
+
+    module_init_init_effect(&effect,
+                            ZR_MODULE_ENTRY_EFFECT_IMPORT_CALL,
+                            moduleName,
+                            symbolName,
+                            (EZrModuleExportKind)targetExport->exportKind,
+                            (EZrModuleExportReadiness)targetExport->readiness,
+                            targetExport->metadataToken,
+                            targetExport->signatureToken,
+                            targetExport->signatureHash,
+                            targetModuleSignatureHash,
+                            requestedModuleVersion,
+                            minModuleVersionInclusive,
+                            maxModuleVersionExclusive,
+                            location);
     module_init_append_effect(context->cs->state, effects, &effect);
 }
 
@@ -2711,6 +3264,13 @@ static void module_init_record_dynamic_unknown(SZrParserInitAnalysisContext *con
                             ZR_NULL,
                             ZR_MODULE_EXPORT_KIND_VALUE,
                             ZR_MODULE_EXPORT_READY_ENTRY,
+                            0,
+                            0,
+                            0,
+                            0,
+                            ZR_NULL,
+                            ZR_NULL,
+                            ZR_NULL,
                             location);
     module_init_append_effect(context->cs->state, effects, &effect);
 }
@@ -2736,6 +3296,13 @@ static void module_init_record_local_entry_binding_read(SZrParserInitAnalysisCon
                             name,
                             ZR_MODULE_EXPORT_KIND_VALUE,
                             ZR_MODULE_EXPORT_READY_ENTRY,
+                            0,
+                            0,
+                            0,
+                            0,
+                            ZR_NULL,
+                            ZR_NULL,
+                            ZR_NULL,
                             location);
     module_init_append_effect(context->cs->state, effects, &effect);
 }
@@ -2780,14 +3347,32 @@ static void module_init_register_import_binding_from_variable(SZrParserInitAnaly
         SZrString *moduleName = declaration->value->data.importExpression.modulePath->data.stringLiteral.value;
         for (index = 0; index < declaration->pattern->data.destructuringObject.keys->count; ++index) {
             SZrAstNode *keyNode = declaration->pattern->data.destructuringObject.keys->nodes[index];
+            SZrString *bindingName = ZR_NULL;
+            SZrString *sourceName = ZR_NULL;
+
             if (keyNode != ZR_NULL && keyNode->type == ZR_AST_IDENTIFIER_LITERAL &&
                 keyNode->data.identifier.name != ZR_NULL) {
+                bindingName = keyNode->data.identifier.name;
+                sourceName = keyNode->data.identifier.name;
+            } else if (keyNode != ZR_NULL && keyNode->type == ZR_AST_KEY_VALUE_PAIR &&
+                       !keyNode->data.keyValuePair.keyIsComputed &&
+                       keyNode->data.keyValuePair.key != ZR_NULL &&
+                       keyNode->data.keyValuePair.key->type == ZR_AST_IDENTIFIER_LITERAL &&
+                       keyNode->data.keyValuePair.key->data.identifier.name != ZR_NULL &&
+                       keyNode->data.keyValuePair.value != ZR_NULL &&
+                       keyNode->data.keyValuePair.value->type == ZR_AST_IDENTIFIER_LITERAL &&
+                       keyNode->data.keyValuePair.value->data.identifier.name != ZR_NULL) {
+                bindingName = keyNode->data.keyValuePair.key->data.identifier.name;
+                sourceName = keyNode->data.keyValuePair.value->data.identifier.name;
+            }
+
+            if (bindingName != ZR_NULL && sourceName != ZR_NULL) {
                 module_init_push_binding(context->cs->state,
                                          &context->bindings,
-                                         keyNode->data.identifier.name,
+                                         bindingName,
                                          ZR_PARSER_INIT_BINDING_IMPORTED_SYMBOL,
                                          moduleName,
-                                         keyNode->data.identifier.name,
+                                         sourceName,
                                          ZR_MODULE_EXPORT_KIND_VALUE,
                                          ZR_MODULE_EXPORT_READY_ENTRY,
                                          ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE);
@@ -2898,12 +3483,12 @@ static TZrBool module_init_analyze_primary_expression(SZrParserInitAnalysisConte
             if (current.kind == ZR_PARSER_INIT_SUBJECT_IMPORT_SYMBOL &&
                 current.moduleName != ZR_NULL &&
                 current.symbolName != ZR_NULL) {
-                module_init_record_import_symbol_effect(context,
-                                                        effects,
-                                                        current.moduleName,
-                                                        current.symbolName,
-                                                        ZR_MODULE_ENTRY_EFFECT_IMPORT_CALL,
-                                                        &node->location);
+                module_init_record_import_call_effect(context,
+                                                      effects,
+                                                      current.moduleName,
+                                                      current.symbolName,
+                                                      call,
+                                                      &node->location);
             } else if (current.kind == ZR_PARSER_INIT_SUBJECT_LOCAL_CALLABLE &&
                        current.callableIndex != ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE) {
                 if (!module_init_expand_callable_effects(context, current.callableIndex, effects)) {
@@ -3185,10 +3770,40 @@ static TZrBool module_init_analyze_statement(SZrParserInitAnalysisContext *conte
         case ZR_AST_THROW_STATEMENT:
             return module_init_analyze_expression(context, node->data.throwStatement.expr, effects, ZR_NULL);
         case ZR_AST_USING_STATEMENT:
-            if (!module_init_analyze_expression(context, node->data.usingStatement.resource, effects, ZR_NULL)) {
+        {
+            SZrUsingStatement *usingStatement = &node->data.usingStatement;
+            SZrParserInitSubject resourceSubject;
+            SZrAstNode *pattern = usingStatement->pattern;
+
+            module_init_subject_reset(&resourceSubject);
+            scopeBindingsLength = context->bindings.length;
+            if (!module_init_analyze_expression(context, usingStatement->resource, effects, &resourceSubject)) {
+                context->bindings.length = scopeBindingsLength;
                 return ZR_FALSE;
             }
-            return module_init_analyze_statement(context, node->data.usingStatement.body, effects);
+            if (usingStatement->guardKind == ZR_USING_GUARD_PLUGIN &&
+                resourceSubject.kind == ZR_PARSER_INIT_SUBJECT_IMPORT_MODULE &&
+                resourceSubject.moduleName != ZR_NULL &&
+                pattern != ZR_NULL &&
+                pattern->type == ZR_AST_IDENTIFIER_LITERAL &&
+                pattern->data.identifier.name != ZR_NULL) {
+                module_init_push_binding(context->cs->state,
+                                         &context->bindings,
+                                         pattern->data.identifier.name,
+                                         ZR_PARSER_INIT_BINDING_MODULE_ALIAS,
+                                         resourceSubject.moduleName,
+                                         ZR_NULL,
+                                         ZR_MODULE_EXPORT_KIND_VALUE,
+                                         ZR_MODULE_EXPORT_READY_ENTRY,
+                                         ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE);
+            }
+            if (!module_init_analyze_statement(context, usingStatement->body, effects)) {
+                context->bindings.length = scopeBindingsLength;
+                return ZR_FALSE;
+            }
+            context->bindings.length = scopeBindingsLength;
+            return module_init_analyze_statement(context, usingStatement->elseBody, effects);
+        }
         case ZR_AST_IF_EXPRESSION:
             if (!module_init_analyze_expression(context, node->data.ifExpression.condition, effects, ZR_NULL) ||
                 !module_init_analyze_statement(context, node->data.ifExpression.thenExpr, effects)) {
@@ -3401,7 +4016,8 @@ static TZrBool module_init_analyze_source_summary(SZrCompilerState *cs,
                 statement->type == ZR_AST_STRUCT_DECLARATION ||
                 statement->type == ZR_AST_CLASS_DECLARATION ||
                 statement->type == ZR_AST_INTERFACE_DECLARATION ||
-                statement->type == ZR_AST_ENUM_DECLARATION) {
+                statement->type == ZR_AST_ENUM_DECLARATION ||
+                statement->type == ZR_AST_UNION_DECLARATION) {
                 continue;
             }
 
@@ -3476,11 +4092,17 @@ static TZrBool module_init_analyze_binary_summary(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
+    summary->moduleSignatureHash = function->moduleSignatureHash;
+    summary->moduleVersion = function->moduleVersion;
+
     if (!summary->exports.isValid) {
         ZrCore_Array_Init(cs->state, &summary->exports, sizeof(SZrModuleInitExportInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     }
     if (!summary->bindings.isValid) {
         ZrCore_Array_Init(cs->state, &summary->bindings, sizeof(SZrModuleInitBindingInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    }
+    if (!summary->typeDefs.isValid) {
+        ZrCore_Array_Init(cs->state, &summary->typeDefs, sizeof(SZrModuleInitTypeDefInfo), ZR_PARSER_INITIAL_CAPACITY_SMALL);
     }
     if (!summary->staticImports.isValid) {
         ZrCore_Array_Init(cs->state, &summary->staticImports, sizeof(SZrString *), ZR_PARSER_INITIAL_CAPACITY_SMALL);
@@ -3526,6 +4148,9 @@ static TZrBool module_init_analyze_binary_summary(SZrCompilerState *cs,
         exportInfo.columnInSourceStart = symbol->columnInSourceStart;
         exportInfo.lineInSourceEnd = symbol->lineInSourceEnd;
         exportInfo.columnInSourceEnd = symbol->columnInSourceEnd;
+        exportInfo.metadataToken = symbol->metadataToken;
+        exportInfo.signatureToken = symbol->signatureToken;
+        exportInfo.signatureHash = symbol->signatureHash;
         if (symbol->parameterCount > 0 && symbol->parameterTypes != ZR_NULL) {
             TZrSize bytes = sizeof(SZrFunctionTypedTypeRef) * symbol->parameterCount;
             exportInfo.parameterTypes =
@@ -4191,6 +4816,7 @@ static TZrBool module_init_load_summary_from_source_loader(SZrCompilerState *cs,
         return ZR_FALSE;
     }
 
+    module_init_assign_summary_version(cs->state, summary);
     moduleNameText = ZrCore_String_GetNativeString(moduleName);
     if (moduleNameText == ZR_NULL) {
         return ZR_FALSE;
@@ -4326,11 +4952,13 @@ TZrBool ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(SZrState *state,
         SZrParserModuleInitSummary newSummary;
         ZrCore_Memory_RawSet(&newSummary, 0, sizeof(newSummary));
         newSummary.moduleName = moduleName;
+        module_init_assign_summary_version(state, &newSummary);
         newSummary.astIdentity = ast;
         newSummary.state = ZR_PARSER_MODULE_INIT_SUMMARY_BUILDING;
         ZrCore_Array_Construct(&newSummary.staticImports);
         ZrCore_Array_Construct(&newSummary.exports);
         ZrCore_Array_Construct(&newSummary.bindings);
+        ZrCore_Array_Construct(&newSummary.typeDefs);
         ZrCore_Array_Construct(&newSummary.entryEffects);
         ZrCore_Array_Construct(&newSummary.exportedCallableSummaries);
         ZrCore_Array_Push(state, &cache->summaries, &newSummary);
@@ -4349,6 +4977,7 @@ TZrBool ZrParser_ModuleInitAnalysis_PrepareCurrentSourceModule(SZrState *state,
     }
 
     summary->moduleName = moduleName;
+    module_init_assign_summary_version(state, summary);
     summary->astIdentity = ast;
     summary->ownsAst = ZR_FALSE;
     if (!summary->hasPrescan && !module_init_prescan_source_summary(state, summary, ast)) {
@@ -4412,10 +5041,12 @@ TZrBool ZrParser_ModuleInitAnalysis_EnsureSummary(SZrCompilerState *cs, SZrStrin
         SZrParserModuleInitSummary newSummary;
         ZrCore_Memory_RawSet(&newSummary, 0, sizeof(newSummary));
         newSummary.moduleName = moduleName;
+        module_init_assign_summary_version(cs->state, &newSummary);
         newSummary.state = ZR_PARSER_MODULE_INIT_SUMMARY_BUILDING;
         ZrCore_Array_Construct(&newSummary.staticImports);
         ZrCore_Array_Construct(&newSummary.exports);
         ZrCore_Array_Construct(&newSummary.bindings);
+        ZrCore_Array_Construct(&newSummary.typeDefs);
         ZrCore_Array_Construct(&newSummary.entryEffects);
         ZrCore_Array_Construct(&newSummary.exportedCallableSummaries);
         ZrCore_Array_Push(cs->state, &cache->summaries, &newSummary);
@@ -4524,6 +5155,238 @@ static TZrBool module_init_copy_summary_to_function(SZrCompilerState *cs,
     return ZR_TRUE;
 }
 
+static TZrBool module_init_copy_effects_to_child_function(SZrCompilerState *cs,
+                                                          SZrFunction *childFunction,
+                                                          const SZrFunctionModuleEffect *effects,
+                                                          TZrUInt32 effectCount) {
+    if (cs == ZR_NULL || childFunction == ZR_NULL || effects == ZR_NULL || effectCount == 0u ||
+        childFunction->moduleEntryEffects != ZR_NULL || childFunction->moduleEntryEffectLength > 0u) {
+        return ZR_TRUE;
+    }
+
+    childFunction->moduleEntryEffects =
+            (SZrFunctionModuleEffect *)ZrCore_Memory_RawMallocWithType(cs->state->global,
+                                                                       sizeof(SZrFunctionModuleEffect) * effectCount,
+                                                                       ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (childFunction->moduleEntryEffects == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawCopy(childFunction->moduleEntryEffects,
+                          (TZrPtr)effects,
+                          sizeof(SZrFunctionModuleEffect) * effectCount);
+    childFunction->moduleEntryEffectLength = effectCount;
+    return ZR_TRUE;
+}
+
+static TZrBool module_init_attach_callable_effects_to_child_functions(SZrCompilerState *cs,
+                                                                      SZrFunction *function) {
+    TZrUInt32 summaryIndex;
+
+    if (cs == ZR_NULL || function == ZR_NULL || function->exportedCallableSummaries == ZR_NULL ||
+        function->childFunctionList == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    for (summaryIndex = 0; summaryIndex < function->exportedCallableSummaryLength; summaryIndex++) {
+        const SZrFunctionCallableSummary *summary = &function->exportedCallableSummaries[summaryIndex];
+
+        if (summary->effects == ZR_NULL || summary->effectCount == 0u ||
+            summary->callableChildIndex == ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE ||
+            summary->callableChildIndex >= function->childFunctionLength) {
+            continue;
+        }
+
+        if (!module_init_copy_effects_to_child_function(cs,
+                                                        &function->childFunctionList[summary->callableChildIndex],
+                                                        summary->effects,
+                                                        summary->effectCount)) {
+            return ZR_FALSE;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool module_init_export_matches_typed_symbol(const SZrModuleInitExportInfo *info,
+                                                       const SZrFunctionTypedExportSymbol *symbol) {
+    if (info == ZR_NULL || symbol == ZR_NULL || info->name == ZR_NULL || symbol->name == ZR_NULL ||
+        !ZrCore_String_Equal(info->name, symbol->name) ||
+        info->symbolKind != symbol->symbolKind ||
+        info->exportKind != symbol->exportKind) {
+        return ZR_FALSE;
+    }
+
+    if (symbol->symbolKind == ZR_FUNCTION_TYPED_SYMBOL_FUNCTION &&
+        info->callableChildIndex != symbol->callableChildIndex) {
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool module_init_copy_symbol_parameter_types(SZrState *state,
+                                                       SZrModuleInitExportInfo *info,
+                                                       const SZrFunctionTypedExportSymbol *symbol) {
+    TZrSize bytes;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || info == ZR_NULL || symbol == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (info->parameterTypes != ZR_NULL && info->parameterCount > 0u) {
+        ZrCore_Memory_RawFreeWithType(state->global,
+                                      info->parameterTypes,
+                                      sizeof(SZrFunctionTypedTypeRef) * info->parameterCount,
+                                      ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+        info->parameterTypes = ZR_NULL;
+    }
+    info->parameterCount = symbol->parameterCount;
+    if (symbol->parameterCount == 0u || symbol->parameterTypes == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    bytes = sizeof(SZrFunctionTypedTypeRef) * symbol->parameterCount;
+    info->parameterTypes =
+            (SZrFunctionTypedTypeRef *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                                       bytes,
+                                                                       ZR_MEMORY_NATIVE_TYPE_GLOBAL);
+    if (info->parameterTypes == ZR_NULL) {
+        info->parameterCount = 0u;
+        return ZR_FALSE;
+    }
+
+    ZrCore_Memory_RawCopy(info->parameterTypes, symbol->parameterTypes, bytes);
+    return ZR_TRUE;
+}
+
+static TZrUInt32 module_init_read_u32_le(const TZrByte *buffer, TZrUInt32 offset) {
+    return ((TZrUInt32)buffer[offset]) |
+           ((TZrUInt32)buffer[offset + 1u] << 8) |
+           ((TZrUInt32)buffer[offset + 2u] << 16) |
+           ((TZrUInt32)buffer[offset + 3u] << 24);
+}
+
+static SZrString *module_init_metadata_string_heap_lookup(const SZrFunction *function, TZrUInt32 stringIndex) {
+    if (function == ZR_NULL || function->metadataStringHeap == ZR_NULL || stringIndex == 0u) {
+        return ZR_NULL;
+    }
+
+    for (TZrUInt32 index = 0; index < function->metadataStringHeapLength; index++) {
+        if (function->metadataStringHeap[index].stringIndex == stringIndex) {
+            return function->metadataStringHeap[index].value;
+        }
+    }
+
+    return ZR_NULL;
+}
+
+static SZrString *module_init_type_def_record_name(const SZrFunction *function,
+                                                   const SZrMetadataTokenRecord *record) {
+    const TZrByte *blob;
+    TZrUInt32 offset;
+    TZrUInt32 stringIndex;
+
+    if (function == ZR_NULL ||
+        record == ZR_NULL ||
+        function->signatureBlobHeap == ZR_NULL ||
+        record->signatureBlobLength < 1u + sizeof(TZrUInt32) ||
+        record->signatureBlobOffset >= function->signatureBlobHeapLength ||
+        record->signatureBlobLength > function->signatureBlobHeapLength - record->signatureBlobOffset) {
+        return ZR_NULL;
+    }
+
+    blob = function->signatureBlobHeap + record->signatureBlobOffset;
+    if (blob[0] != ZR_METADATA_SIGNATURE_NODE_TYPE_DEF) {
+        return ZR_NULL;
+    }
+
+    offset = 1u;
+    stringIndex = module_init_read_u32_le(blob, offset);
+    return module_init_metadata_string_heap_lookup(function, stringIndex);
+}
+
+static TZrBool module_init_refresh_summary_type_defs_from_function(SZrCompilerState *cs,
+                                                                   SZrParserModuleInitSummary *summary,
+                                                                   const SZrFunction *function) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || summary == ZR_NULL || function == ZR_NULL) {
+        return ZR_TRUE;
+    }
+
+    if (!summary->typeDefs.isValid) {
+        ZrCore_Array_Init(cs->state,
+                          &summary->typeDefs,
+                          sizeof(SZrModuleInitTypeDefInfo),
+                          ZR_PARSER_INITIAL_CAPACITY_SMALL);
+    }
+    summary->typeDefs.length = 0;
+
+    if (function->metadataTokenRecords == ZR_NULL || function->metadataTokenRecordLength == 0u) {
+        return ZR_TRUE;
+    }
+
+    for (TZrUInt32 index = 0; index < function->metadataTokenRecordLength; index++) {
+        const SZrMetadataTokenRecord *record = &function->metadataTokenRecords[index];
+        SZrModuleInitTypeDefInfo info;
+
+        if (ZR_METADATA_TOKEN_TABLE(record->token) != ZR_METADATA_TABLE_TYPE_DEF) {
+            continue;
+        }
+
+        ZrCore_Memory_RawSet(&info, 0, sizeof(info));
+        info.name = module_init_type_def_record_name(function, record);
+        if (info.name == ZR_NULL) {
+            continue;
+        }
+
+        info.metadataToken = record->token;
+        info.signatureToken = record->relatedToken;
+        info.signatureHash = record->signatureHash;
+        info.layoutVersion = record->layoutVersion;
+        info.layoutHash = record->layoutHash;
+        ZrCore_Array_Push(cs->state, &summary->typeDefs, &info);
+    }
+
+    return ZR_TRUE;
+}
+
+static TZrBool module_init_refresh_summary_export_tokens_from_function(SZrCompilerState *cs,
+                                                                       SZrParserModuleInitSummary *summary,
+                                                                       const SZrFunction *function) {
+    if (cs == ZR_NULL || cs->state == ZR_NULL || summary == ZR_NULL || function == ZR_NULL ||
+        function->typedExportedSymbols == ZR_NULL || function->typedExportedSymbolLength == 0u ||
+        !summary->exports.isValid) {
+        return ZR_TRUE;
+    }
+
+    for (TZrUInt32 symbolIndex = 0; symbolIndex < function->typedExportedSymbolLength; ++symbolIndex) {
+        const SZrFunctionTypedExportSymbol *symbol = &function->typedExportedSymbols[symbolIndex];
+
+        for (TZrSize exportIndex = 0; exportIndex < summary->exports.length; ++exportIndex) {
+            SZrModuleInitExportInfo *info =
+                    (SZrModuleInitExportInfo *)ZrCore_Array_Get(&summary->exports, exportIndex);
+
+            if (!module_init_export_matches_typed_symbol(info, symbol)) {
+                continue;
+            }
+
+            info->accessModifier = symbol->accessModifier;
+            info->readiness = symbol->readiness;
+            info->callableChildIndex = symbol->callableChildIndex;
+            info->valueType = symbol->valueType;
+            info->metadataToken = symbol->metadataToken;
+            info->signatureToken = symbol->signatureToken;
+            info->signatureHash = symbol->signatureHash;
+            if (!module_init_copy_symbol_parameter_types(cs->state, info, symbol)) {
+                return ZR_FALSE;
+            }
+            break;
+        }
+    }
+
+    return ZR_TRUE;
+}
+
 static TZrBool module_init_build_top_level_callable_bindings(SZrCompilerState *cs,
                                                              SZrFunction *function,
                                                              SZrAstNode *ast) {
@@ -4606,6 +5469,13 @@ static TZrBool module_init_build_top_level_callable_bindings(SZrCompilerState *c
             if (exported->name != ZR_NULL && ZrCore_String_Equal(exported->name, callableName)) {
                 function->topLevelCallableBindings[functionCount].accessModifier = exported->accessModifier;
                 exported->callableChildIndex = childIndex;
+                for (TZrUInt32 summaryIndex = 0; summaryIndex < function->exportedCallableSummaryLength; summaryIndex++) {
+                    SZrFunctionCallableSummary *summary = &function->exportedCallableSummaries[summaryIndex];
+                    if (summary->name != ZR_NULL && ZrCore_String_Equal(summary->name, callableName)) {
+                        summary->callableChildIndex = childIndex;
+                        break;
+                    }
+                }
                 break;
             }
         }
@@ -4657,11 +5527,24 @@ TZrBool ZrParser_ModuleInitAnalysis_FinalizeCurrentSourceModule(SZrCompilerState
         return ZR_FALSE;
     }
 
+    function->moduleVersion = summary->moduleVersion;
     if (!module_init_copy_summary_to_function(cs, function, summary) ||
-        !module_init_build_top_level_callable_bindings(cs, function, cs->currentAst)) {
+        !module_init_build_top_level_callable_bindings(cs, function, cs->currentAst) ||
+        !module_init_attach_callable_effects_to_child_functions(cs, function)) {
         ZrParser_Compiler_Error(cs, "failed to attach module init analysis metadata", cs->currentAst->location);
         return ZR_FALSE;
     }
+    if (!compiler_build_function_metadata_tokens(cs, function)) {
+        ZrParser_Compiler_Error(cs, "failed to refresh metadata tokens after module init analysis", cs->currentAst->location);
+        return ZR_FALSE;
+    }
+    if (!module_init_refresh_summary_export_tokens_from_function(cs, summary, function) ||
+        !module_init_refresh_summary_type_defs_from_function(cs, summary, function)) {
+        ZrParser_Compiler_Error(cs, "failed to refresh module summary metadata token identity", cs->currentAst->location);
+        return ZR_FALSE;
+    }
+    summary->moduleSignatureHash = function->moduleSignatureHash;
+    summary->moduleVersion = function->moduleVersion;
 
     return ZR_TRUE;
 }

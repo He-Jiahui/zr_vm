@@ -2,6 +2,7 @@
 
 #include "harness/path_support.h"
 #include "harness/runtime_support.h"
+#include "zr_vm_core/string.h"
 #include "zr_vm_library/file.h"
 #include "zr_vm_library/project.h"
 
@@ -26,6 +27,16 @@ extern TZrBool ZrLibrary_Project_DeriveCurrentModuleKey(const SZrLibrary_Project
 void setUp(void) {}
 
 void tearDown(void) {}
+
+static const TZrChar *test_string_text(SZrString *value) {
+    if (value == ZR_NULL) {
+        return ZR_NULL;
+    }
+    if (value->shortStringLength < ZR_VM_LONG_STRING_FLAG) {
+        return ZrCore_String_GetNativeStringShort(value);
+    }
+    return ZrCore_String_GetNativeString(value);
+}
 
 static SZrLibrary_Project *create_test_project(SZrState **outState) {
     static const TZrChar manifestText[] =
@@ -445,6 +456,94 @@ static void test_project_import_resolver_resolves_dependency_imports_and_scopes(
     destroy_test_project(state, project);
 }
 
+static void test_project_import_resolver_normalizes_assembly_references(void) {
+    SZrState *state;
+    SZrLibrary_Project *project;
+    TZrChar projectPath[ZR_TESTS_PATH_MAX];
+    TZrChar rootPath[ZR_TESTS_PATH_MAX];
+    TZrChar mathPath[ZR_TESTS_PATH_MAX];
+    TZrChar sourcePath[ZR_LIBRARY_MAX_PATH_LENGTH];
+    SZrString *requestedVersion = ZR_NULL;
+    SZrString *minVersionInclusive = ZR_NULL;
+    SZrString *maxVersionExclusive = ZR_NULL;
+    TZrChar *lastSeparator;
+    static const TZrChar *projectContent =
+            "{\n"
+            "  \"manifestVersion\": 1,\n"
+            "  \"assembly\": { \"name\": \"app.render\", \"version\": \"3.4.5\" },\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"main\",\n"
+            "  \"references\": {\n"
+            "    \"mathLocal\": {\n"
+            "      \"assembly\": \"zr.math\",\n"
+            "      \"version\": \"2.1.0\",\n"
+            "      \"path\": \"deps/math/math.zrp\",\n"
+            "      \"minVersionInclusive\": \"2.0.0\",\n"
+            "      \"maxVersionExclusive\": \"3.0.0\"\n"
+            "    }\n"
+            "  }\n"
+            "}\n";
+    static const TZrChar *mathContent =
+            "{\n"
+            "  \"manifestVersion\": 1,\n"
+            "  \"assembly\": { \"name\": \"zr.math\", \"version\": \"2.1.0\" },\n"
+            "  \"source\": \"src\",\n"
+            "  \"binary\": \"bin\",\n"
+            "  \"entry\": \"index\",\n"
+            "  \"pathAliases\": { \"@core\": \"core\" }\n"
+            "}\n";
+
+    TEST_ASSERT_TRUE(ZrTests_Path_GetGeneratedArtifact("library",
+                                                       "project_assembly_references",
+                                                       "root",
+                                                       ".zrp",
+                                                       projectPath,
+                                                       sizeof(projectPath)));
+    snprintf(rootPath, sizeof(rootPath), "%s", projectPath);
+    lastSeparator = strrchr(rootPath, '/');
+    if (lastSeparator == ZR_NULL) {
+        lastSeparator = strrchr(rootPath, '\\');
+    }
+    TEST_ASSERT_NOT_NULL(lastSeparator);
+    *lastSeparator = '\0';
+    ZrLibrary_File_PathJoin(rootPath, "deps/math/math.zrp", mathPath);
+
+    TEST_ASSERT_TRUE(write_text_file(projectPath, projectContent));
+    TEST_ASSERT_TRUE(write_text_file(mathPath, mathContent));
+
+    state = ZrTests_Runtime_State_Create(ZR_NULL);
+    TEST_ASSERT_NOT_NULL(state);
+    project = ZrLibrary_Project_New(state, projectContent, projectPath);
+    TEST_ASSERT_NOT_NULL(project);
+    TEST_ASSERT_EQUAL_STRING("app.render", test_string_text(project->name));
+    TEST_ASSERT_EQUAL_STRING("3.4.5", test_string_text(project->version));
+    TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)project->dependencyRefCount);
+    TEST_ASSERT_EQUAL_UINT32(1u, (TZrUInt32)project->dependencyPackageCount);
+
+    assert_import_resolves(project, "main", "&mathLocal.ops.sum", "$mathLocal@2.1.0/ops/sum");
+    assert_import_resolves(project, "main", "&mathLocal", "$mathLocal@2.1.0/index");
+    assert_import_resolves(project, "$mathLocal@2.1.0/feature/main", "@core.util", "$mathLocal@2.1.0/core/util");
+    TEST_ASSERT_TRUE(ZrLibrary_Project_ResolveSourcePath(project,
+                                                         "$mathLocal@2.1.0/ops/sum",
+                                                         sourcePath,
+                                                         sizeof(sourcePath)));
+    normalize_path_text(sourcePath);
+    TEST_ASSERT_TRUE(text_ends_with(sourcePath, "/deps/math/src/ops/sum.zr"));
+
+    TEST_ASSERT_TRUE(ZrLibrary_Project_GetDependencyImportVersionRange(project,
+                                                                       "main",
+                                                                       "$mathLocal@2.1.0/ops/sum",
+                                                                       &requestedVersion,
+                                                                       &minVersionInclusive,
+                                                                       &maxVersionExclusive));
+    TEST_ASSERT_EQUAL_STRING("2.1.0", test_string_text(requestedVersion));
+    TEST_ASSERT_EQUAL_STRING("2.0.0", test_string_text(minVersionInclusive));
+    TEST_ASSERT_EQUAL_STRING("3.0.0", test_string_text(maxVersionExclusive));
+
+    destroy_test_project(state, project);
+}
+
 static void test_project_dependency_manifest_validation_rejects_invalid_declarations(void) {
     assert_project_manifest_rejected("version_mismatch",
                                      "{\n"
@@ -559,6 +658,7 @@ int main(void) {
     RUN_TEST(test_project_import_resolver_rejects_invalid_relative_and_alias_forms);
     RUN_TEST(test_project_import_resolver_derives_current_module_key_from_source_root_and_detects_mismatch);
     RUN_TEST(test_project_import_resolver_resolves_dependency_imports_and_scopes);
+    RUN_TEST(test_project_import_resolver_normalizes_assembly_references);
     RUN_TEST(test_project_dependency_manifest_validation_rejects_invalid_declarations);
     RUN_TEST(test_project_dependency_parser_handles_manifest_cycles);
 

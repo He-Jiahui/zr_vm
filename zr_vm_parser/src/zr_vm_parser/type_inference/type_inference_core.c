@@ -824,6 +824,14 @@ static SZrAstNode *find_type_declaration_in_array_inference(SZrAstNodeArray *dec
                 }
                 break;
 
+            case ZR_AST_UNION_DECLARATION:
+                if (declaration->data.unionDeclaration.name != ZR_NULL &&
+                    declaration->data.unionDeclaration.name->name != ZR_NULL &&
+                    ZrCore_String_Equal(declaration->data.unionDeclaration.name->name, typeName)) {
+                    return declaration;
+                }
+                break;
+
             case ZR_AST_EXTERN_DELEGATE_DECLARATION:
                 if (declaration->data.externDelegateDeclaration.name != ZR_NULL &&
                     declaration->data.externDelegateDeclaration.name->name != ZR_NULL &&
@@ -1166,6 +1174,18 @@ ZR_PARSER_API TZrBool resolve_source_type_declaration_target_inference(SZrCompil
         case ZR_AST_ENUM_DECLARATION:
             if (outPrototypeType != ZR_NULL) {
                 *outPrototypeType = ZR_OBJECT_PROTOTYPE_TYPE_ENUM;
+            }
+            if (outAllowValueConstruction != ZR_NULL) {
+                *outAllowValueConstruction = ZR_TRUE;
+            }
+            if (outAllowBoxedConstruction != ZR_NULL) {
+                *outAllowBoxedConstruction = ZR_TRUE;
+            }
+            return ZR_TRUE;
+
+        case ZR_AST_UNION_DECLARATION:
+            if (outPrototypeType != ZR_NULL) {
+                *outPrototypeType = ZR_OBJECT_PROTOTYPE_TYPE_UNION;
             }
             if (outAllowValueConstruction != ZR_NULL) {
                 *outAllowValueConstruction = ZR_TRUE;
@@ -1569,6 +1589,28 @@ static TZrBool prototype_implements_protocol_recursive(SZrCompilerState *cs,
     return ZR_FALSE;
 }
 
+static TZrBool prototype_name_matches_thread_marker_alias(const SZrTypePrototypeInfo *prototype,
+                                                          SZrString *constraintTypeName) {
+    TZrNativeString candidateText;
+    TZrNativeString constraintText;
+
+    if (prototype == ZR_NULL || !prototype->isImportedNative ||
+        prototype->name == ZR_NULL || constraintTypeName == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    candidateText = ZrCore_String_GetNativeString(prototype->name);
+    constraintText = ZrCore_String_GetNativeString(constraintTypeName);
+    if (candidateText == ZR_NULL || constraintText == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    return ((strcmp(candidateText, "Send") == 0 || strcmp(candidateText, "zr.thread.Send") == 0) &&
+            (strcmp(constraintText, "Send") == 0 || strcmp(constraintText, "zr.thread.Send") == 0)) ||
+           ((strcmp(candidateText, "Sync") == 0 || strcmp(candidateText, "zr.thread.Sync") == 0) &&
+            (strcmp(constraintText, "Sync") == 0 || strcmp(constraintText, "zr.thread.Sync") == 0));
+}
+
 static TZrBool prototype_satisfies_named_constraint_recursive(SZrCompilerState *cs,
                                                               SZrTypePrototypeInfo *prototype,
                                                               SZrString *constraintTypeName,
@@ -1581,7 +1623,9 @@ static TZrBool prototype_satisfies_named_constraint_recursive(SZrCompilerState *
         return ZR_FALSE;
     }
 
-    if (prototype->name != ZR_NULL && ZrCore_String_Equal(prototype->name, constraintTypeName)) {
+    if (prototype->name != ZR_NULL &&
+        (ZrCore_String_Equal(prototype->name, constraintTypeName) ||
+         prototype_name_matches_thread_marker_alias(prototype, constraintTypeName))) {
         return ZR_TRUE;
     }
 
@@ -1675,14 +1719,28 @@ static TZrBool inferred_type_is_thread_marker_constraint(SZrString *constraintTy
 }
 
 static TZrBool inferred_type_has_thread_unsafe_ownership(const SZrInferredType *actualType) {
+    TZrSize index;
+
     if (actualType == ZR_NULL) {
         return ZR_FALSE;
     }
 
-    return actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
-           actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK ||
-           actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
-           actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED;
+    if (actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_SHARED ||
+        actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_WEAK ||
+        actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_BORROWED ||
+        actualType->ownershipQualifier == ZR_OWNERSHIP_QUALIFIER_LOANED) {
+        return ZR_TRUE;
+    }
+
+    for (index = 0; index < actualType->elementTypes.length; index++) {
+        SZrInferredType *elementType =
+                (SZrInferredType *)ZrCore_Array_Get((SZrArray *)&actualType->elementTypes, index);
+        if (inferred_type_has_thread_unsafe_ownership(elementType)) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
 }
 
 static TZrBool inferred_type_satisfies_thread_marker_primitive(const SZrInferredType *actualType,
@@ -1808,6 +1866,11 @@ static TZrBool inferred_type_satisfies_new_constraint(SZrCompilerState *cs,
     }
 
     return prototype_has_parameterless_constructor(actualPrototype);
+}
+
+static TZrBool inferred_type_satisfies_owner_constraint(const SZrInferredType *actualType) {
+    return actualType != ZR_NULL &&
+           actualType->ownershipQualifier != ZR_OWNERSHIP_QUALIFIER_NONE;
 }
 
 static TZrBool inferred_type_satisfies_constraint(SZrCompilerState *cs,
@@ -2325,6 +2388,17 @@ ZR_PARSER_API EZrGenericCallResolveStatus validate_generic_call_bindings_constra
             return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
         }
 
+        if (parameterInfo->requiresOwner && !inferred_type_satisfies_owner_constraint(&binding->inferredType)) {
+            format_generic_call_constraint_failure(diagnosticBuffer,
+                                                   diagnosticBufferSize,
+                                                   "generic argument '%s' does not satisfy owner constraint",
+                                                   argumentTypeName,
+                                                   ZR_NULL);
+            ZrCore_Array_Free(cs->state, &genericParametersSnapshot);
+            ZrCore_Array_Free(cs->state, &argumentTypeNames);
+            return ZR_GENERIC_CALL_RESOLVE_CONFLICT;
+        }
+
         for (TZrSize constraintIndex = 0; constraintIndex < parameterInfo->constraintTypeNames.length; constraintIndex++) {
             SZrString **constraintNamePtr =
                     (SZrString **)ZrCore_Array_Get((SZrArray *)&parameterInfo->constraintTypeNames, constraintIndex);
@@ -2458,6 +2532,19 @@ TZrBool ensure_generic_instance_type_prototype(SZrCompilerState *cs, SZrString *
             snprintf(errorMessage,
                      sizeof(errorMessage),
                      "Generic argument '%s' does not satisfy new() constraint",
+                     ZrCore_String_GetNativeString(argumentType->typeName != ZR_NULL ? argumentType->typeName : baseName));
+            memset(&errorLocation, 0, sizeof(errorLocation));
+            ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
+            free_inferred_type_array(cs->state, &argumentTypes);
+            ZrCore_Array_Free(cs->state, &argumentTypeNames);
+            return ZR_FALSE;
+        }
+        if (parameterInfo->requiresOwner && !inferred_type_satisfies_owner_constraint(argumentType)) {
+            static TZrChar errorMessage[ZR_PARSER_ERROR_BUFFER_LENGTH];
+            SZrFileRange errorLocation;
+            snprintf(errorMessage,
+                     sizeof(errorMessage),
+                     "Generic argument '%s' does not satisfy owner constraint",
                      ZrCore_String_GetNativeString(argumentType->typeName != ZR_NULL ? argumentType->typeName : baseName));
             memset(&errorLocation, 0, sizeof(errorLocation));
             ZrParser_Compiler_Error(cs, errorMessage, errorLocation);
@@ -3397,9 +3484,14 @@ error:
 static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
                                                   const SZrFunctionTypeInfo *funcType,
                                                   const SZrResolvedCallSignature *resolvedSignature,
-                                                  const SZrArray *argTypes) {
+                                                  const SZrArray *argTypes,
+                                                  const TZrChar **outOwnershipDiagnostic) {
     if (cs == ZR_NULL || resolvedSignature == ZR_NULL || argTypes == ZR_NULL) {
         return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
+    }
+
+    if (outOwnershipDiagnostic != ZR_NULL) {
+        *outOwnershipDiagnostic = ZR_NULL;
     }
 
     if (resolvedSignature->parameterTypes.length != argTypes->length) {
@@ -3424,6 +3516,9 @@ static TZrInt32 score_function_overload_candidate(SZrCompilerState *cs,
             if (!ZrParser_InferredType_IsCompatible(argType, paramType) &&
                 !inferred_type_can_use_named_constraint_fallback(cs, argType, paramType) &&
                 !ffi_function_call_argument_is_native_boundary_compatible(cs, funcType, i, argType, paramType)) {
+                if (outOwnershipDiagnostic != ZR_NULL && *outOwnershipDiagnostic == ZR_NULL) {
+                    *outOwnershipDiagnostic = type_inference_ownership_flow_diagnostic_message(paramType, argType);
+                }
                 return ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE;
             }
 
@@ -3449,6 +3544,7 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
     TZrBool sawGenericInferenceFailure = ZR_FALSE;
     TZrBool sawGenericKindMismatch = ZR_FALSE;
     TZrBool sawGenericConflict = ZR_FALSE;
+    const TZrChar *ownershipDiagnostic = ZR_NULL;
     TZrChar genericDiagnostic[ZR_PARSER_ERROR_BUFFER_LENGTH];
     TZrChar errorMsg[ZR_PARSER_ERROR_BUFFER_LENGTH];
 
@@ -3471,6 +3567,7 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
         SZrArray candidateArgTypes;
         SZrResolvedCallSignature candidateResolvedSignature;
         TZrBool mismatch = ZR_FALSE;
+        const TZrChar *candidateOwnershipDiagnostic = ZR_NULL;
         TZrInt32 score;
         EZrGenericCallResolveStatus genericStatus;
 
@@ -3511,6 +3608,11 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
                 if (genericDiagnostic[0] == '\0' && errorMsg[0] != '\0') {
                     snprintf(genericDiagnostic, sizeof(genericDiagnostic), "%s", errorMsg);
                 }
+            } else if (genericStatus == ZR_GENERIC_CALL_RESOLVE_CONFLICT) {
+                sawGenericConflict = ZR_TRUE;
+                if (genericDiagnostic[0] == '\0' && errorMsg[0] != '\0') {
+                    snprintf(genericDiagnostic, sizeof(genericDiagnostic), "%s", errorMsg);
+                }
             }
             free_resolved_call_signature(cs->state, &candidateResolvedSignature);
             continue;
@@ -3537,9 +3639,16 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
             continue;
         }
 
-        score = score_function_overload_candidate(cs, *candidatePtr, &candidateResolvedSignature, &candidateArgTypes);
+        score = score_function_overload_candidate(cs,
+                                                  *candidatePtr,
+                                                  &candidateResolvedSignature,
+                                                  &candidateArgTypes,
+                                                  &candidateOwnershipDiagnostic);
         free_inferred_type_array(cs->state, &candidateArgTypes);
         if (score == ZR_TYPE_INFERENCE_OVERLOAD_SCORE_INCOMPATIBLE) {
+            if (ownershipDiagnostic == ZR_NULL && candidateOwnershipDiagnostic != ZR_NULL) {
+                ownershipDiagnostic = candidateOwnershipDiagnostic;
+            }
             free_resolved_call_signature(cs->state, &candidateResolvedSignature);
             continue;
         }
@@ -3566,6 +3675,8 @@ TZrBool resolve_best_function_overload(SZrCompilerState *cs,
         if (genericDiagnostic[0] != '\0' &&
             (sawGenericArityMismatch || sawGenericInferenceFailure || sawGenericKindMismatch || sawGenericConflict)) {
             snprintf(errorMsg, sizeof(errorMsg), "%s", genericDiagnostic);
+        } else if (ownershipDiagnostic != ZR_NULL) {
+            snprintf(errorMsg, sizeof(errorMsg), "%s", ownershipDiagnostic);
         } else {
             snprintf(errorMsg,
                      sizeof(errorMsg),

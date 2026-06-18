@@ -616,7 +616,7 @@ static TZrBool project_diagnostic_append_missing_imported_member(SZrState *state
                                       result,
                                       location,
                                       message,
-                                      "import_member_unresolved",
+                                      "plugin_unknown_export",
                                       &diagnostic)) {
         return ZR_FALSE;
     }

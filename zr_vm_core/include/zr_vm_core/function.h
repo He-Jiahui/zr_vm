@@ -6,6 +6,7 @@
 #define ZR_VM_CORE_FUNCTION_H
 
 #include "zr_vm_core/conf.h"
+#include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/raw_object.h"
 #include "zr_vm_core/stack.h"
 #include "zr_vm_core/value.h"
@@ -188,6 +189,11 @@ typedef struct SZrFunctionTypedExportSymbol {
     TZrUInt32 columnInSourceStart;
     TZrUInt32 lineInSourceEnd;
     TZrUInt32 columnInSourceEnd;
+    TZrMetadataToken metadataToken;
+    TZrMetadataToken signatureToken;
+    TZrUInt32 signatureBlobOffset;
+    TZrUInt32 signatureBlobLength;
+    TZrUInt64 signatureHash;
 } SZrFunctionTypedExportSymbol;
 
 typedef struct SZrFunctionModuleEffect {
@@ -201,6 +207,13 @@ typedef struct SZrFunctionModuleEffect {
     TZrUInt32 columnInSourceStart;
     TZrUInt32 lineInSourceEnd;
     TZrUInt32 columnInSourceEnd;
+    TZrMetadataToken targetMetadataToken;
+    TZrMetadataToken targetSignatureToken;
+    TZrUInt64 targetSignatureHash;
+    TZrUInt64 targetModuleSignatureHash;
+    struct SZrString *requestedModuleVersion;
+    struct SZrString *minModuleVersionInclusive;
+    struct SZrString *maxModuleVersionExclusive;
 } SZrFunctionModuleEffect;
 
 typedef struct SZrFunctionCallableSummary {
@@ -315,7 +328,8 @@ typedef enum EZrSemIrOpcode {
     ZR_SEMIR_OPCODE_INIT_VALUE = 22,
     ZR_SEMIR_OPCODE_COPY_VALUE = 23,
     ZR_SEMIR_OPCODE_CALL_TYPED = 24,
-    ZR_SEMIR_OPCODE_RETURN_TYPED = 25
+    ZR_SEMIR_OPCODE_RETURN_TYPED = 25,
+    ZR_SEMIR_OPCODE_OWN_RETURN_LOAN = 26
 } EZrSemIrOpcode;
 
 typedef enum EZrSemIrEffectKind {
@@ -465,7 +479,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     struct SZrString *sourceCodeList;
     struct SZrString *sourceHash;
     SZrRawObject *gcList;
-    
+
     // module export info (for script-level functions only)
     // 导出变量信息（用于模块导出）
     SZrFunctionExportedVariable *exportedVariables;   // 导出变量数组
@@ -475,6 +489,16 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 typedLocalBindingLength;
     SZrFunctionTypedExportSymbol *typedExportedSymbols;
     TZrUInt32 typedExportedSymbolLength;
+    SZrMetadataTokenRecord *metadataTokenRecords;
+    TZrUInt32 metadataTokenRecordLength;
+    SZrMetadataTokenRecord *moduleMetadataTokenRecords;
+    TZrUInt32 moduleMetadataTokenRecordLength;
+    TZrByte *signatureBlobHeap;
+    TZrUInt32 signatureBlobHeapLength;
+    SZrMetadataStringHeapEntry *metadataStringHeap;
+    TZrUInt32 metadataStringHeapLength;
+    TZrUInt64 moduleSignatureHash;
+    struct SZrString *moduleVersion;
     struct SZrString **staticImports;
     TZrUInt32 staticImportLength;
     SZrFunctionModuleEffect *moduleEntryEffects;
@@ -503,7 +527,7 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 decoratorCount;
     SZrFunctionMemberEntry *memberEntries;
     TZrUInt32 memberEntryLength;
-    
+
     // prototype数据存储（从常量池迁移）
     TZrByte *prototypeData;                           // prototype 二进制数据（序列化后的 SZrCompiledPrototypeInfo 数组）
     TZrUInt32 prototypeDataLength;                    // prototype 数据长度（字节数）
@@ -541,6 +565,9 @@ struct ZR_STRUCT_ALIGN SZrFunction {
     TZrUInt32 prototypeFrameTypeLayoutFieldCount;
     TZrUInt32 prototypeFrameTypeLayoutFieldCapacity;
     struct SZrFunction *prototypeContextFunction;
+    SZrMetadataTokenBinding *moduleMetadataBindings;
+    TZrUInt32 moduleMetadataBindingLength;
+    TZrUInt32 moduleMetadataBindingCapacity;
 };
 
 typedef struct SZrFunction SZrFunction;
@@ -605,6 +632,36 @@ ZR_CORE_API TZrBool ZrCore_Function_ValidateCreateClosureTargetsInChildGraph(con
 ZR_CORE_API TZrUInt32 ZrCore_Function_GetGeneratedFrameSlotCount(const SZrFunction *function);
 ZR_CORE_API const SZrFunctionFrameSlotLayout *ZrCore_Function_FindFrameSlotLayout(const SZrFunction *function,
                                                                                   TZrUInt32 stackSlot);
+ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_Function_FindMetadataTokenRecord(const SZrFunction *function,
+                                                                                  TZrMetadataToken token);
+ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_Function_FindMetadataSignatureRecord(const SZrFunction *function,
+                                                                                      TZrMetadataToken entityToken);
+ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_Function_FindModuleMetadataTokenRecord(const SZrFunction *function,
+                                                                                        TZrMetadataToken token);
+ZR_CORE_API const SZrMetadataTokenRecord *ZrCore_Function_FindModuleMetadataSignatureRecord(
+        const SZrFunction *function,
+        TZrMetadataToken entityToken);
+ZR_CORE_API const SZrMetadataTokenBinding *ZrCore_Function_FindModuleMetadataBinding(const SZrFunction *function,
+                                                                                     TZrMetadataToken refToken);
+ZR_CORE_API SZrMetadataTokenBinding *ZrCore_Function_UpsertModuleMetadataBinding(struct SZrState *state,
+                                                                                  SZrFunction *function,
+                                                                                  TZrMetadataToken refToken);
+ZR_CORE_API TZrBool ZrCore_Function_BindMatchingTypeSpecMetadata(struct SZrState *state,
+                                                                  SZrFunction *callerFunction,
+                                                                  const SZrFunction *providerFunction);
+ZR_CORE_API TZrBool ZrCore_Function_BindMatchingTypeSpecMetadataWithStatus(
+        struct SZrState *state,
+        SZrFunction *callerFunction,
+        const SZrFunction *providerFunction,
+        SZrMetadataTypeSpecBindStatus *status);
+ZR_CORE_API TZrBool ZrCore_Function_BindMatchingTypeRefMetadata(struct SZrState *state,
+                                                                 SZrFunction *callerFunction,
+                                                                 const SZrFunction *providerFunction);
+ZR_CORE_API TZrBool ZrCore_Function_BindMatchingTypeRefMetadataWithStatus(
+        struct SZrState *state,
+        SZrFunction *callerFunction,
+        const SZrFunction *providerFunction,
+        SZrMetadataTypeRefBindStatus *status);
 ZR_CORE_API const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFunction *function,
                                                                                  TZrUInt32 typeLayoutId,
                                                                                  TZrPtr userData);
@@ -630,6 +687,10 @@ ZR_CORE_API TZrBool ZrCore_Function_MakeFrameSlotPlace(struct SZrState *state,
                                                        TZrStackValuePointer frameBase,
                                                        TZrUInt32 stackSlot,
                                                        SZrStackFramePlace *outPlace);
+ZR_CORE_API void ZrCore_Function_InitializeFrameLayoutStorage(struct SZrState *state,
+                                                              TZrStackValuePointer functionBase,
+                                                              const SZrFunction *function,
+                                                              TZrSize preservedArgumentCount);
 ZR_CORE_API TZrBool ZrCore_Function_FrameStackSlotIntersectsInlineStruct(const SZrFunction *function,
                                                                          TZrStackValuePointer frameBase,
                                                                          TZrStackValuePointer stackSlot);
@@ -681,6 +742,13 @@ ZR_CORE_API TZrBool ZrCore_Function_CopyValueFrameParameters(struct SZrState *st
                                                              TZrStackValuePointer calleeFrameBase,
                                                              TZrStackValuePointer argumentBase,
                                                              TZrSize argumentsCount);
+ZR_CORE_API TZrBool ZrCore_Function_CopyValueFrameParametersFromFrame(struct SZrState *state,
+                                                                      const SZrFunction *calleeFunction,
+                                                                      TZrStackValuePointer calleeFrameBase,
+                                                                      const SZrFunction *sourceFunction,
+                                                                      TZrStackValuePointer sourceFrameBase,
+                                                                      TZrUInt32 sourceArgumentStartSlot,
+                                                                      TZrSize argumentsCount);
 ZR_CORE_API TZrBool ZrCore_Function_TryCopyInlineFrameReturnValue(struct SZrState *state,
                                                                   const struct SZrCallInfo *callInfo,
                                                                   TZrStackValuePointer returnSource,

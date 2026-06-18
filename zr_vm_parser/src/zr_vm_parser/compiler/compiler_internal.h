@@ -509,6 +509,16 @@ ZR_PARSER_API void enter_scope(SZrCompilerState *cs) ;
 
 ZR_PARSER_API void exit_scope(SZrCompilerState *cs) ;
 
+TZrBool compiler_has_active_scope_ownership_cleanups(SZrCompilerState *cs) ;
+
+void compiler_emit_active_scope_ownership_cleanups(SZrCompilerState *cs) ;
+
+TZrBool compiler_has_scope_ownership_cleanups_above_depth(SZrCompilerState *cs,
+                                                          TZrSize targetScopeStackDepth) ;
+
+void compiler_emit_scope_ownership_cleanups_above_depth(SZrCompilerState *cs,
+                                                        TZrSize targetScopeStackDepth) ;
+
 void enter_type_scope(SZrCompilerState *cs) ;
 
 void exit_type_scope(SZrCompilerState *cs) ;
@@ -585,6 +595,8 @@ void extern_compiler_register_enum_prototype(SZrCompilerState *cs, SZrAstNode *d
 
 void compile_enum_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
 
+void compile_union_declaration(SZrCompilerState *cs, SZrAstNode *node) ;
+
 void compiler_register_extern_block_bindings(SZrCompilerState *cs, SZrExternBlock *externBlock) ;
 
 void ZrParser_Compiler_PredeclareExternBindings(SZrCompilerState *cs, SZrAstNodeArray *statements) ;
@@ -629,6 +641,7 @@ TZrBool compiler_build_callable_return_type_metadata(SZrCompilerState *cs,
                                                      TZrBool *outHasType);
 
 TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs);
+ZR_PARSER_API TZrBool compiler_build_function_metadata_tokens(SZrCompilerState *cs, SZrFunction *function);
 
 TZrBool compiler_build_function_semir_metadata(SZrState *state, SZrFunction *function);
 TZrBool compiler_build_function_semir_metadata_shallow(SZrState *state, SZrFunction *function);
@@ -651,6 +664,9 @@ void ZrParser_ToGlobalState_Register(struct SZrState *state) ;
 ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportModuleExpression(SZrCompilerState *cs,
                                                                      SZrString *moduleName,
                                                                      SZrFileRange location);
+ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitImportGuardModuleExpression(SZrCompilerState *cs,
+                                                                          SZrString *moduleName,
+                                                                          SZrFileRange location);
 ZR_PARSER_API TZrUInt32 ZrParser_Compiler_EmitTypeQueryExpression(SZrCompilerState *cs,
                                                                   SZrAstNode *operand,
                                                                   SZrFileRange location);

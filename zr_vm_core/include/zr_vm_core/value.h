@@ -97,6 +97,21 @@ static ZR_FORCE_INLINE void ZrCore_Value_ResetAsNullNoProfile(SZrTypeValue *valu
     value->ownershipWeakRef = ZR_NULL;
 }
 
+static ZR_FORCE_INLINE void ZrCore_Value_PrepareDestinationForOverwriteNoProfile(struct SZrState *state,
+                                                                                  SZrTypeValue *destination) {
+    ZR_ASSERT(destination != ZR_NULL);
+
+    if (ZR_UNLIKELY(destination->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE)) {
+        ZR_ASSERT(state != ZR_NULL);
+        ZrCore_Ownership_ReleaseValue(state, destination);
+        return;
+    }
+
+    if (ZR_UNLIKELY(destination->ownershipControl != ZR_NULL || destination->ownershipWeakRef != ZR_NULL)) {
+        ZrCore_Value_ResetAsNullNoProfile(destination);
+    }
+}
+
 static ZR_FORCE_INLINE void ZrCore_Value_CopyNoProfile(struct SZrState *state,
                                                        SZrTypeValue *destination,
                                                        const SZrTypeValue *source);
@@ -159,6 +174,10 @@ static ZR_FORCE_INLINE void ZrCore_Value_Copy(struct SZrState *state,
 static ZR_FORCE_INLINE void ZrCore_Value_CopyNoProfile(struct SZrState *state,
                                                        SZrTypeValue *destination,
                                                        const SZrTypeValue *source) {
+    if (destination != source) {
+        ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destination);
+    }
+
     if (ZR_LIKELY(ZrCore_Value_TryCopyFastNoProfile(state, destination, source))) {
         return;
     }
@@ -194,6 +213,8 @@ static ZR_FORCE_INLINE void ZrCore_Value_AssignMaterializedStackValueNoProfile(s
     if (destination == source) {
         return;
     }
+
+    ZrCore_Value_PrepareDestinationForOverwriteNoProfile(state, destination);
 
     if (ZR_LIKELY(source->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE)) {
         if (ZR_LIKELY(destination->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_NONE)) {

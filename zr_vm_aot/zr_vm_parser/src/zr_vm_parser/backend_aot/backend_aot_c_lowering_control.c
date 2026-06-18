@@ -486,9 +486,29 @@ void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
     fprintf(file,
             "    {\n"
             "        /* zr_aot_jump_if_bool_false */\n"
-            "        const SZrTypeValue *zr_aot_condition = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrFunctionFrameSlotLayout *zr_aot_condition_layout =\n"
+            "                ZrCore_Function_FindFrameSlotLayout(frame.function, %u);\n"
+            "        const SZrTypeValue *zr_aot_dense_condition = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_condition = zr_aot_dense_condition;\n"
+            "        SZrStackFramePlace zr_aot_condition_place;\n"
             "        TZrBool zr_aot_condition_bool;\n"
-            "        if (zr_aot_condition == ZR_NULL || !ZR_VALUE_IS_TYPE_BOOL(zr_aot_condition->type)) {\n"
+            "        if (frame.function == ZR_NULL || frame.slotBase == ZR_NULL || zr_aot_dense_condition == ZR_NULL) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (zr_aot_condition_layout != ZR_NULL &&\n"
+            "            zr_aot_condition_layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&\n"
+            "            zr_aot_condition_layout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {\n"
+            "            if (!ZrCore_Function_MakeFrameSlotPlace(\n"
+            "                    state, frame.function, frame.slotBase, %u, &zr_aot_condition_place)) {\n"
+            "                ZR_AOT_C_FAIL();\n"
+            "            }\n"
+            "            zr_aot_condition = (const SZrTypeValue *)zr_aot_condition_place.address;\n"
+            "            if (ZR_VALUE_IS_TYPE_NULL(zr_aot_condition->type) &&\n"
+            "                !ZR_VALUE_IS_TYPE_NULL(zr_aot_dense_condition->type)) {\n"
+            "                zr_aot_condition = zr_aot_dense_condition;\n"
+            "            }\n"
+            "        }\n"
+            "        if (!ZR_VALUE_IS_TYPE_BOOL(zr_aot_condition->type)) {\n"
             "            ZR_AOT_C_FAIL();\n"
             "        }\n"
             "        zr_aot_condition_bool = (TZrBool)(zr_aot_condition->value.nativeObject.nativeBool != 0u);\n"
@@ -496,6 +516,8 @@ void backend_aot_write_c_direct_jump_if_bool_false(FILE *file,
             "            goto zr_aot_fn_%u_ins_%u;\n"
             "        }\n"
             "    }\n",
+            (unsigned)conditionSlot,
+            (unsigned)conditionSlot,
             (unsigned)conditionSlot,
             (unsigned)functionIndex,
             (unsigned)targetInstructionIndex);
@@ -694,9 +716,12 @@ void backend_aot_write_c_direct_return(FILE *file, TZrUInt32 sourceSlot) {
             "                                    ZR_THREAD_STATUS_INVALID,\n"
             "                                    ZR_FALSE);\n"
             "        ZrCore_Function_TryCopyInlineConstructorReceiverBack(state, zr_aot_call_info);\n"
-            "        ZrCore_Value_Copy(state,\n"
-            "                          zr_aot_caller_result_value,\n"
-            "                          zr_aot_result_value);\n"
+            "        if (frame.function->functionName == ZR_NULL ||\n"
+            "            ZrCore_NativeString_Compare(ZrCore_String_GetNativeString(frame.function->functionName), \"constructor\") != 0) {\n"
+            "            ZrCore_Value_Copy(state,\n"
+            "                              zr_aot_caller_result_value,\n"
+            "                              zr_aot_result_value);\n"
+            "        }\n"
             "        state->stackTop.valuePointer = zr_aot_call_info->functionBase.valuePointer + 1;\n"
             "        ZR_AOT_C_RETURN(1);\n"
             "    }\n",

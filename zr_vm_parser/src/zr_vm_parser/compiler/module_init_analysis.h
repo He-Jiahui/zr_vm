@@ -25,7 +25,20 @@ typedef struct SZrModuleInitExportInfo {
     TZrUInt32 columnInSourceStart;
     TZrUInt32 lineInSourceEnd;
     TZrUInt32 columnInSourceEnd;
+    TZrMetadataToken metadataToken;
+    TZrMetadataToken signatureToken;
+    TZrUInt64 signatureHash;
 } SZrModuleInitExportInfo;
+
+typedef struct SZrModuleInitTypeDefInfo {
+    SZrString *name;
+    TZrMetadataToken metadataToken;
+    TZrMetadataToken signatureToken;
+    TZrUInt64 signatureHash;
+    TZrUInt32 layoutVersion;
+    TZrUInt32 reserved0;
+    TZrUInt64 layoutHash;
+} SZrModuleInitTypeDefInfo;
 
 typedef struct SZrModuleInitBindingInfo {
     SZrString *name;
@@ -47,7 +60,9 @@ typedef struct SZrModuleInitCallableSummary {
 
 typedef struct SZrParserModuleInitSummary {
     SZrString *moduleName;
+    SZrString *moduleVersion;
     const SZrAstNode *astIdentity;
+    TZrUInt64 moduleSignatureHash;
     TZrUInt8 state;
     TZrUInt8 isBinary;
     TZrUInt8 hasPrescan;
@@ -58,6 +73,7 @@ typedef struct SZrParserModuleInitSummary {
     SZrArray staticImports;
     SZrArray exports;
     SZrArray bindings;
+    SZrArray typeDefs;
     SZrArray entryEffects;
     SZrArray exportedCallableSummaries;
     SZrFileRange errorLocation;

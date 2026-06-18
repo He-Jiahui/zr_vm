@@ -83,6 +83,7 @@ typedef struct ZrLibRegisteredModuleRecord {
     TZrChar *sourcePath;
     EZrLibNativeModuleRegistrationKind registrationKind;
     TZrBool isDescriptorPlugin;
+    TZrUInt32 ownerRefCount;
 } ZrLibRegisteredModuleRecord;
 
 typedef struct ZrLibPluginHandleRecord {
@@ -536,6 +537,15 @@ void native_registry_set_error(ZrLibrary_NativeRegistryState *registry,
                                       EZrLibNativeRegistryErrorCode errorCode,
                                       const TZrChar *format,
                                       ...);
+TZrBool native_registry_source_paths_equal(const TZrChar *left, const TZrChar *right);
+const ZrLibRegisteredModuleRecord *native_registry_find_live_descriptor_plugin_record(
+        ZrLibrary_NativeRegistryState *registry);
+const ZrLibRegisteredModuleRecord *native_registry_find_live_descriptor_plugin_record_for_module(
+        ZrLibrary_NativeRegistryState *registry,
+        const TZrChar *moduleName);
+void native_registry_set_descriptor_plugin_in_use_error(ZrLibrary_NativeRegistryState *registry,
+                                                        const ZrLibRegisteredModuleRecord *record,
+                                                        const TZrChar *operation);
 TZrChar *native_registry_duplicate_string(SZrGlobalState *global, const TZrChar *text);
 const TZrChar *native_binding_value_type_name(SZrState *state, const SZrTypeValue *value);
 const TZrChar *native_binding_call_name(const ZrLibCallContext *context);

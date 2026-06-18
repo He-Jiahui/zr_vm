@@ -95,6 +95,8 @@ typedef struct SZrDeterministicCleanupStep {
     TZrLifetimeRegionId ownerRegionId;
     TZrSymbolId symbolId;
     TZrInt32 declarationOrder;
+    EZrOwnershipQualifier ownershipQualifier;
+    EZrOwnershipBuiltinKind ownershipBuiltinKind;
     TZrBool callsClose;
     TZrBool callsDestructor;
 } SZrDeterministicCleanupStep;

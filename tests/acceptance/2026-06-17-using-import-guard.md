@@ -1,0 +1,826 @@
+# Using Import Guard P2 Frontend Slice
+
+## Scope
+
+- Implement the first parser/compiler slice for `docs/plans/using/02-using-scopes-and-plugin-guards.md`.
+- Covered this round:
+  - `using (var p = %import("plugin")) { ... } else { ... }` parses as `ZR_USING_GUARD_PLUGIN`.
+  - The guard resource remains a normalized `ZR_AST_IMPORT_EXPRESSION`.
+  - The binder name is represented by the existing `pattern` slot and is bound as a block-local variable.
+  - Compilation evaluates `%import` once, branches on the import result, enters the guarded block on truthy result, and falls through to optional `else` on falsey result.
+  - Closure identifier collection now visits `using` else bodies.
+  - Follow-up parser diagnostic slice:
+    - Drop-style `using (resource) { ... } else { ... }` reports `using_else_without_guard`.
+    - The parser consumes the invalid `else` body for recovery while keeping guard-style plugin/union `else` valid.
+  - Follow-up parser/LSP diagnostic slice:
+    - Guard-style `using (var <binder> = resource)` reports `using_binder_invalid` when the binder is not a plain identifier or union variant pattern shape.
+    - LSP statement parser diagnostics preserve the structured diagnostic code, problem text, and suggestion.
+  - Follow-up metadata token hash slice:
+    - Function-level `MEMBER_DEF` / `MEMBER_REF` records and paired `SIGNATURE` records carry a stable `signatureHash`.
+    - `signatureHash` is computed over `zr.md.sig.v1\0` plus the already-normalized signature blob using stable `XXH3_64bits`.
+    - `.zro` patch 21 writes and reads typed export hash and metadata token record hash; patch 20 token records remain readable with hash set to 0.
+    - Runtime loading from `.zro` preserves typed export and metadata token record hashes.
+  - Follow-up import ref owner-chain slice:
+    - Guarded import member effects now generate function-level `ASSEMBLY_REF`, `TYPE_REF`, and `MEMBER_REF` records.
+    - Each ref record has a paired `SIGNATURE` record, signature blob, and `signatureHash`.
+    - `ownerToken` expresses `AssemblyRef <- TypeRef <- MemberRef`, and paired signature records point back to the signed entity.
+    - `.zro` patch 22 writes and reads metadata token record `ownerToken`; patch 20/21 token records remain readable with owner set to 0.
+  - Follow-up runtime target-hash guard slice:
+    - Guard-style `%import` lowers to `ZrCore_Module_ImportGuardNativeEntry`; ordinary `%import` keeps using `ZrCore_Module_ImportNativeEntry`.
+    - Runtime guard import compares guarded effects' `targetSignatureHash` against provider typed export `signatureHash`.
+    - A mismatch returns `null`, so the compiled `using` guard takes the `else` fallback.
+  - Follow-up unavailable and nested-caller guard slice:
+    - If the provider disappears after compile, guard import returns `null` and the compiled `using` guard takes `else`.
+    - Exported callable summary effects are copied to the matching child function's `moduleEntryEffects`.
+    - A target hash mismatch inside `pub func run(){ using (...) ... }` is checked through the actual caller function and takes `else`.
+  - Follow-up parser/LSP import-path diagnostic slice:
+    - `%import(pluginName)` now reports structured `import_path_not_constant`.
+    - The diagnostic explains that `%import(...)` requires a string literal module path for compile-time module signature binding.
+    - The same normalized module path parser path is used by `%module(...)`.
+  - Follow-up LSP unknown-export diagnostic slice:
+    - Missing imported members now publish stable diagnostic code `plugin_unknown_export`.
+    - The existing missing-member message and cross-file relatedInformation import trace are preserved.
+    - stdio diagnostics serialize the same code into the top-level diagnostic and diagnostic data.
+
+## Evidence
+
+- Timestamp: 2026-06-17 16:26:11 +08:00.
+- Build directory: `build/codex-using-exhaustive-wsl-gcc-debug`.
+- Parser/compiler suite:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_parser_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `71 Tests 0 Failures 0 Ignored OK`
+- Union regression suite:
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `12 Tests 0 Failures 0 Ignored OK`
+- Tooling build:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_language_server_shared -j2`
+  - Result: linked `libzr_vm_language_server.so`
+- Follow-up timestamp: 2026-06-17 16:42:05 +08:00.
+- Parser diagnostic suite:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_parser_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `72 Tests 0 Failures 0 Ignored OK`
+- Follow-up union/tooling regression:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_union_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `13 Tests 0 Failures 0 Ignored OK`
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_language_server_shared -j2`
+  - Result: linked `libzr_vm_language_server.so`
+- Follow-up timestamp: 2026-06-17 17:11:55 +08:00.
+- Parser/LSP diagnostic suite:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_parser_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `73 Tests 0 Failures 0 Ignored OK`
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_language_server_statement_parser_diagnostics_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_language_server_statement_parser_diagnostics_test`
+  - Result: all statement parser diagnostic tests completed, including `LSP Using Binder Invalid Parser Diagnostic`.
+- Follow-up union/tooling regression:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_union_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `14 Tests 0 Failures 0 Ignored OK`
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_language_server_shared -j2`
+  - Result: target `zr_vm_language_server_shared` built successfully.
+  - `git diff --check -- tests/parser/test_parser.c tests/language_server/test_lsp_statement_parser_diagnostics.c zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h zr_vm_parser/src/zr_vm_parser/parser/parser_diagnostics.c zr_vm_parser/src/zr_vm_parser/parser/parser_statements.c`
+  - Result: exit code 0 with existing LF/CRLF normalization warnings only.
+- Follow-up timestamp: 2026-06-17 17:38:02 +08:00.
+- Guard dependency tracking slice:
+  - `using (var helper = %import(".helper.math")) { return helper.answer; } else { return 0; }` records a callable module effect for canonical `feature/app/helper/math`.
+  - The same test asserts the raw relative path `.helper.math` is not stored in the callable summary's `moduleEntryEffects`.
+  - Implementation scans the `else` body after restoring the guard alias scope.
+- Project import canonicalization suite:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_project_import_canonicalization_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_project_import_canonicalization_test`
+  - Result: `5 Tests 0 Failures 0 Ignored OK`
+- Parser / union / LSP regression:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_parser_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `73 Tests 0 Failures 0 Ignored OK`
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_union_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `15 Tests 0 Failures 0 Ignored OK`
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_language_server_statement_parser_diagnostics_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_language_server_statement_parser_diagnostics_test`
+  - Result: all statement parser diagnostic tests completed, including `LSP Using Binder Invalid Parser Diagnostic`.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_language_server_shared -j2`
+  - Result: target `zr_vm_language_server_shared` built successfully.
+  - `git diff --check -- tests/parser/test_project_import_canonicalization.c zr_vm_parser/src/zr_vm_parser/compiler/module_init_analysis.c`
+  - Result: exit code 0 with existing LF/CRLF normalization warnings only.
+- Follow-up timestamp: 2026-06-17 18:37:08 +08:00.
+- Guard MemberRef token precursor slice:
+  - Guarded `helper.answer` import member effects generate a function-level `MEMBER_REF` token.
+  - The paired signature blob starts with `ZR_METADATA_SIGNATURE_NODE_MEMBER_REF`.
+  - Token construction filters to import ref/read/call effects with canonical module and symbol names, avoiding local/dynamic module-init effects.
+- Project import canonicalization and token suites:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_project_import_canonicalization_test zr_vm_metadata_token_model_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_project_import_canonicalization_test`
+  - Result: `5 Tests 0 Failures 0 Ignored OK`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_metadata_token_model_test`
+  - Result: `2 Tests 0 Failures 0 Ignored OK`
+- Parser / union / LSP regression:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_parser_test zr_vm_union_test zr_vm_language_server_statement_parser_diagnostics_test zr_vm_language_server_shared -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `73 Tests 0 Failures 0 Ignored OK`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `17 Tests 0 Failures 0 Ignored OK`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_language_server_statement_parser_diagnostics_test`
+  - Result: all statement parser diagnostic tests completed.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_language_server_shared -j2`
+  - Result: target `zr_vm_language_server_shared` built successfully.
+- Follow-up timestamp: 2026-06-17 19:07:30 +08:00.
+- Metadata token signature hash slice:
+  - `SZrFunctionTypedExportSymbol`, `SZrIoFunctionTypedExportSymbol`, and `SZrMetadataTokenRecord` now carry `signatureHash`.
+  - The writer emits hash fields under `.zro` patch 21; the reader preserves patch 20 compatibility by leaving hash as 0 when the field is absent.
+  - The runtime loader copies typed export symbol hash and metadata token record hash.
+- TDD red check:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_metadata_token_model_test -j2`
+  - Result before implementation: compile failed because `SZrFunctionTypedExportSymbol`, `SZrIoFunctionTypedExportSymbol`, and `SZrMetadataTokenRecord` had no `signatureHash` member.
+- Focused metadata/project validation:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_metadata_token_model_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_metadata_token_model_test`
+  - Result: `3 Tests 0 Failures 0 Ignored OK`
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_project_import_canonicalization_test -j2`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_project_import_canonicalization_test`
+  - Result: `5 Tests 0 Failures 0 Ignored OK`
+- Adjacent regression validation:
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_parser_test`
+  - Result: `74 Tests 0 Failures 0 Ignored OK`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_language_server_statement_parser_diagnostics_test`
+  - Result: all statement parser diagnostic tests completed.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_language_server_shared -j2`
+  - Result: target `zr_vm_language_server_shared` built successfully.
+- Known adjacent failure:
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `19 Tests 1 Failures 0 Ignored`; failing case is `test_union_switch_reads_inline_tag_and_payload_from_typed_local` with runtime `GET_MEMBER: receiver must be an object, array, or string`.
+  - Assessment: this is the active P3 inline union `switch` load/store path recorded in the union session as remaining work. The failing test executes source-level inline union switch and does not exercise metadata token hashing or `.zro` IO/runtime copy.
+- Follow-up timestamp: 2026-06-17 19:46:37 +08:00.
+- Import ref owner-chain / AssemblyRef / TypeRef precursor slice:
+  - `using (var helper = %import(".helper.math")) { helper.answer; }` now produces one `ASSEMBLY_REF`, one `TYPE_REF`, and one `MEMBER_REF` for the canonical import dependency.
+  - The project import test asserts four total `SIGNATURE` records for the export plus three ref records.
+  - The same test asserts the `ASSEMBLY_REF` and `TYPE_REF` signature blob node kinds.
+  - Metadata token model test covers the explicit owner chain and paired signature ownership.
+- Focused validation:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_project_import_canonicalization_test -j1`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_project_import_canonicalization_test`
+  - Result: `5 Tests 0 Failures 0 Ignored OK`
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_metadata_token_model_test`
+  - Result: `4 Tests 0 Failures 0 Ignored OK`
+- Follow-up timestamp: 2026-06-17 21:13:22 +08:00.
+- Runtime target-hash guard slice:
+  - `using (var helper = %import(".helper.math")) { return helper.answer; } else { return 77; }` is compiled through the import-guard native helper.
+  - The test corrupts the compiled caller's `targetSignatureHash` for `feature/app/helper/math.answer`.
+  - Runtime import guard rejects the provider hash mismatch and returns `null`, so execution returns the `else` value `77`.
+- Focused validation:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_project_import_canonicalization_test -j1`
+  - Result: built `zr_vm_project_import_canonicalization_test`.
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_project_import_canonicalization_test`
+  - Result: `7 Tests 0 Failures 0 Ignored OK`.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_metadata_token_model_test -j1 && ./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_metadata_token_model_test`
+  - Result: `5 Tests 0 Failures 0 Ignored OK`.
+- Follow-up timestamp: 2026-06-17 21:55:34 +08:00.
+- Runtime unavailable and nested-caller guard slice:
+  - `test_using_import_guard_runtime_unavailable_provider_falls_back_to_else` removes the provider after compile and expects the `else` value `77`.
+  - `test_using_import_guard_runtime_checks_nested_caller_signature_hash` corrupts the child function's `targetSignatureHash` for `feature/app/helper/math.answer` and expects the `else` value `77`.
+  - The implementation attaches exported callable summary effects to the matching child function; `module_loader.c` still validates the actual caller function, skipping the native helper frame.
+- Focused validation:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_project_import_canonicalization_test -j1 && ./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_project_import_canonicalization_test`
+  - Result: `9 Tests 0 Failures 0 Ignored OK`.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_metadata_token_model_test -j1`
+  - Result: built `zr_vm_metadata_token_model_test`.
+  - `./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_metadata_token_model_test`
+  - Result: `5 Tests 0 Failures 0 Ignored OK`.
+  - `ctest --test-dir build/codex-using-exhaustive-wsl-gcc-debug -R metadata_token_model --output-on-failure`
+  - Result: `1/1 tests passed`.
+  - `git diff --check -- tests/parser/test_project_import_canonicalization.c zr_vm_core/src/zr_vm_core/module/module_loader.c zr_vm_parser/src/zr_vm_parser/compiler/module_init_analysis.c docs/plans/using docs/module-system/typed-module-metadata.md tests/acceptance/2026-06-17-using-import-guard.md .codex/sessions/20260617-1932-metadata-p0-assemblyref.md`
+  - Result: exit code 0, with existing LF/CRLF normalization warnings only.
+- Follow-up timestamp: 2026-06-17 22:38:56 +08:00.
+- Runtime signature-confirmed guard and native target identity slice:
+  - `test_using_import_guard_runtime_rejects_signature_blob_mismatch_with_matching_hash` corrupts the caller `MEMBER_REF` target `METHOD_SIG` bytes while leaving `targetSignatureHash` intact; the guard now compares the target sub-blob with the provider typed export signature blob and falls back to `else`.
+  - `test_using_import_guard_records_native_target_signature_hash` registers `zr.math`, compiles `using (var math = %import("zr.math")) { math.abs(...) }`, and asserts the native guarded module effect carries a nonzero target signature hash.
+  - `module_init_analysis.c` uses a native-only compile info fallback when no source/binary summary exists, avoiding source loader side effects while preserving native target identity.
+- Focused validation:
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_project_import_canonicalization_test -j1 && ./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_project_import_canonicalization_test`
+  - Result: `11 Tests 0 Failures 0 Ignored OK`.
+  - `cmake --build build/codex-using-exhaustive-wsl-gcc-debug --target zr_vm_metadata_token_model_test -j1 && ./build/codex-using-exhaustive-wsl-gcc-debug/bin/zr_vm_metadata_token_model_test`
+  - Result: `5 Tests 0 Failures 0 Ignored OK`.
+  - `ctest --test-dir build/codex-using-exhaustive-wsl-gcc-debug -R metadata_token_model --output-on-failure`
+  - Result: `1/1 tests passed`.
+- Follow-up timestamp: 2026-06-18 02:12:41 +08:00.
+- Typed/untyped `DynamicModule<T>.@Available` payload escape reuse:
+  - `using (var [m]: DynamicModule<Plugins> = %import("zr.plugins")) { return m; }` is rejected with `plugin_type_escape ... through return`.
+  - `using (var [m] = %import("zr.plugins")) { return m; }` now follows the no-annotation default-variant path and is rejected by the same payload-binding scanner.
+  - No-annotation payload negatives also cover closure capture, call argument, object field, and array element escapes.
+  - Positive typed, explicit-variant, and no-annotation import guard lowering remain covered by `zr_vm_union_test`.
+- Focused validation:
+  - `cmake --build build-wsl-gcc --target zr_vm_compiler_integration_test -j2`
+  - Result: target built successfully.
+  - `./build-wsl-gcc/bin/zr_vm_compiler_integration_test`
+  - Result: `Ownership Builtin Compile Rejects Invalid Operands` passed and emitted `plugin_type_escape` diagnostics for both typed and untyped payload return escape; the full binary later aborted at the existing `execution_dispatch.c:5711` runtime assertion.
+- Follow-up timestamp: 2026-06-18 03:38:06 +08:00.
+- Guard-scoped module `.share()` promotion slice:
+  - `ZrCore_Ownership_SharePlainValue` and `ZrCore_Ownership_NativeSharePlain` promote a plain GC module object into a `Shared` owner without consuming or clearing the guard-local source.
+  - `math.share()` / `m.share()` on a module prototype receiver lowers to `ZR_IO_NATIVE_HELPER_OWNERSHIP_SHARE_PLAIN`; the result can be released with `%release(handle)`.
+  - The positive compiler/runtime smoke uses the current default variant syntax: `using (var [math] = %import("zr.math")) { var handle = math.share(); var released = %release(handle); return 1; }`.
+- Focused validation:
+  - `cmake --build build/codex-union-inline-wsl-gcc-debug --target zr_vm_gc_test -j4`
+  - `./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_gc_test`
+  - Result: `66 Tests 0 Failures 0 Ignored OK`.
+  - `cmake --build build/codex-union-inline-wsl-gcc-debug --target zr_vm_compiler_integration_test -j4`
+  - Result: target built successfully.
+  - `./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_compiler_integration_test`
+  - Result: `Ownership Builtin Compile Rejects Invalid Operands` and `Plugin Guard Share Promotes Module Handle To Shared Owner` both passed; the full binary later hit existing frame-layout failures, ownership runtime failures, and `execution_dispatch.c:5711`.
+  - `./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_union_test`
+  - Result: `37 Tests 0 Failures 0 Ignored OK`.
+  - `./build/codex-union-inline-wsl-gcc-debug/bin/zr_vm_project_import_canonicalization_test`
+  - Result: `15 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check` over touched implementation, test, plan, acceptance, session, and module docs
+  - Result: exit code 0, with existing LF/CRLF normalization warnings only.
+- Follow-up timestamp: 2026-06-18 04:25:07 +08:00.
+- Task-effect plugin guard await-boundary slice:
+  - `using (var plugin = %import("zr.plugins")) { ... %await task; return plugin; }` is now rejected before compilation with `Plugin guard binding 'plugin' cannot be used after an await boundary`.
+  - `using (var [m] = %import("zr.plugins")) { ... %await task; return m; }` follows the no-annotation `DynamicModule<T>.@Available(m: Module)` default tuple payload path and is rejected with the same diagnostic family.
+  - `alias = plugin` inside the same guarded body propagates the plugin guard binding kind, so `%await` followed by `return alias` reports `Plugin guard binding 'alias' cannot be used after an await boundary`.
+  - The binding is registered only around the guarded body; `else` and statements after the using are not treated as if they owned the guard binding.
+- Focused validation:
+  - `ninja zr_vm_task_runtime_test` in `/mnt/e/Git/zr_vm/build/codex-p1-async-wsl-gcc-debug`
+  - Result: target built successfully.
+  - `./bin/zr_vm_task_runtime_test` in `/mnt/e/Git/zr_vm/build/codex-p1-async-wsl-gcc-debug`
+  - Result: `test_plugin_guard_binding_cannot_cross_await_boundary`, `test_dynamic_module_payload_binding_cannot_cross_await_boundary`, and `test_plugin_guard_alias_assignment_cannot_cross_await_boundary` all PASS; full task runtime remains `25 Tests 5 Failures 0 Ignored` because of existing task runner / scheduler failures.
+  - `ninja zr_vm_union_test && ./bin/zr_vm_union_test` in `/mnt/e/Git/zr_vm/build/codex-p1-thread-wsl-gcc-debug`
+  - Result: `44 Tests 0 Failures 0 Ignored OK`.
+  - `ninja zr_vm_project_import_canonicalization_test && ./bin/zr_vm_project_import_canonicalization_test` in `/mnt/e/Git/zr_vm/build/codex-metadata-token-wsl-gcc-debug`
+  - Result: `19 Tests 0 Failures 0 Ignored OK`.
+  - `ninja zr_vm_gc_test && ./bin/zr_vm_gc_test` in `/mnt/e/Git/zr_vm/build/codex-p1-async-wsl-gcc-debug`
+  - Result: `66 Tests 0 Failures 0 Ignored OK`.
+  - `ninja zr_vm_compiler_integration_test && ./bin/zr_vm_compiler_integration_test` in `/mnt/e/Git/zr_vm/build/codex-p1-async-wsl-gcc-debug`
+  - Result: focused `Ownership Builtin Compile Rejects Invalid Operands` and `Plugin Guard Share Promotes Module Handle To Shared Owner` both PASS before existing frame-layout and ownership runtime failures.
+- Follow-up timestamp: 2026-06-18 04:45:35 +08:00.
+- DynamicModule union `where` and using alias rule review:
+  - `union DynamicModule<T> where T: zr.Module { Unavailable; @Available(m: Module); }` is now accepted by the union declaration parser via the existing generic where-clause parser.
+  - `using(var [m]:DynamicModule<Plugins>.Available = %import("zr.plugins")){...}` remains a tuple payload guard and binds local `m`.
+  - Struct payload using alias coverage now asserts `{w: width, h: height}` binds only locals `w` and `h`; field names `width` and `height` are not leaked as local bindings.
+- TDD / focused validation:
+  - RED: `zr_vm_union_test` failed because old parser treated `where` as a token before the union body and produced three script statements.
+  - GREEN: `wsl cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_union_test -j2`
+  - GREEN: `wsl /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_union_test`
+  - Result: `48 Tests 0 Failures 0 Ignored OK`.
+- Follow-up timestamp: 2026-06-18 04:47:16 +08:00.
+- Plugin guard try/catch/finally escape scan slice:
+  - `compiler_using_plugin_guard_escape.c` now scans `ZR_AST_TRY_CATCH_FINALLY_STATEMENT` and `ZR_AST_CATCH_CLAUSE`.
+  - Guard-scoped plugin handles, default `DynamicModule<T>.@Available` payload bindings, aliases, and callable member references are checked inside try/catch/finally blocks for the same return/call/aggregate/capture escapes as ordinary blocks.
+  - Catch clauses restore nested local/plugin alias state after scanning so catch-local names do not leak outward.
+- Focused validation:
+  - RED: `plugin-guard-try-return-escape` failed inside `Ownership Builtin Compile Rejects Invalid Operands` because `try { return math; }` was accepted.
+  - GREEN: after scanner traversal of try/catch/finally, the focused invalid-operands block passed and the new case reports `plugin_type_escape ... through return`.
+  - Full `zr_vm_compiler_integration_test` still reaches existing frame-layout and ownership runtime failures after the focused block.
+  - `ninja zr_vm_union_test && ./bin/zr_vm_union_test` in `/mnt/e/Git/zr_vm/build/codex-p1-thread-wsl-gcc-debug`: `48 Tests 0 Failures 0 Ignored OK`.
+  - `ninja zr_vm_gc_test && ./bin/zr_vm_gc_test` in `/mnt/e/Git/zr_vm/build/codex-p1-async-wsl-gcc-debug`: `66 Tests 0 Failures 0 Ignored OK`.
+  - `ninja zr_vm_project_import_canonicalization_test && ./bin/zr_vm_project_import_canonicalization_test`: 04:47 result was `20 Tests 1 Failures 0 Ignored`; failure was adjacent metadata/import signature mismatch for `feature/app/helper/math.pick`; later refresh at 2026-06-18 05:02:12 +08:00 is `20 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check -- zr_vm_parser/src/zr_vm_parser/compiler/compiler_using_plugin_guard_escape.c tests/parser/test_compiler_features.c`: exit code 0, with existing LF/CRLF normalization warnings only.
+- Follow-up timestamp: 2026-06-18 05:01:38 +08:00.
+- Parser/LSP import path diagnostic slice:
+  - `%import(pluginName)` is rejected with structured diagnostic code `import_path_not_constant`.
+  - The problem text is `%import(...) requires a string literal module path`.
+  - The suggestion includes `Use `%import("zr.module")`` and keeps the legal compile-time module path forms explicit.
+- TDD / focused validation:
+  - RED: `zr_vm_language_server_statement_parser_diagnostics_test` failed because the old parser diagnostic for `%import(pluginName)` did not carry the expected structured code/problem/suggestion.
+  - GREEN: `wsl cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_language_server_statement_parser_diagnostics_test -j2`
+  - GREEN: `wsl /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_language_server_statement_parser_diagnostics_test`
+  - Result: all statement parser diagnostic tests completed, including `LSP Import Path Not Constant Parser Diagnostic`.
+  - Parser regression: `wsl cmake --build /mnt/e/Git/zr_vm/build-wsl-gcc --target zr_vm_parser_test -j2` and `wsl /mnt/e/Git/zr_vm/build-wsl-gcc/bin/zr_vm_parser_test`.
+  - Result: `74 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check -- zr_vm_parser/include/zr_vm_parser/diagnostic_builder.h zr_vm_parser/src/zr_vm_parser/diagnostics/diagnostic_builder.c zr_vm_parser/src/zr_vm_parser/parser/parser_internal.h zr_vm_parser/src/zr_vm_parser/parser/parser_diagnostics.c zr_vm_parser/src/zr_vm_parser/parser/parser_state.c tests/language_server/test_lsp_statement_parser_diagnostics.c`: exit code 0, with existing LF/CRLF normalization warnings only.
+- Follow-up timestamp: 2026-06-18 05:02:12 +08:00.
+- Plugin guard throw escape scan slice:
+  - `compiler_using_plugin_guard_escape.c` now scans `ZR_AST_THROW_STATEMENT`.
+  - Guard-scoped plugin handles, default `DynamicModule<T>.@Available` payload bindings, aliases, and callable member references cannot escape through `throw`.
+  - Throw expression call arguments keep using the `call argument` escape diagnostic, so `throw sink(math)` is not reported as a plain throw escape first.
+- Focused validation:
+  - RED: `plugin-guard-throw-escape` failed inside `Ownership Builtin Compile Rejects Invalid Operands` because `throw math;` was accepted.
+  - GREEN: after scanner traversal of throw statements, the focused invalid-operands block passed and the new case reports `plugin_type_escape ... through throw`.
+  - Full `zr_vm_compiler_integration_test` still reaches existing frame-layout and ownership runtime failures after the focused block.
+  - `ninja zr_vm_union_test && ./bin/zr_vm_union_test` in `/mnt/e/Git/zr_vm/build/codex-p1-thread-wsl-gcc-debug`: `50 Tests 0 Failures 0 Ignored OK`.
+  - `ninja zr_vm_gc_test && ./bin/zr_vm_gc_test` in `/mnt/e/Git/zr_vm/build/codex-p1-async-wsl-gcc-debug`: `66 Tests 0 Failures 0 Ignored OK`.
+  - `ninja zr_vm_project_import_canonicalization_test && ./bin/zr_vm_project_import_canonicalization_test`: `20 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check -- zr_vm_parser/src/zr_vm_parser/compiler/compiler_using_plugin_guard_escape.c tests/parser/test_compiler_features.c`: exit code 0, with existing LF/CRLF normalization warnings only.
+- Follow-up timestamp: 2026-06-18 05:26:54 +08:00.
+- Plugin guard generator/out escape scan slice:
+  - RED: `plugin-guard-generator-out-escape` failed inside `Ownership Builtin Compile Rejects Invalid Operands` because `var gen = {{ out math; }};` was accepted.
+  - GREEN: the scanner traverses `ZR_AST_GENERATOR_EXPRESSION`, `ZR_AST_OUT_STATEMENT`, and expression-bearing break/continue nodes; the new case reports `plugin_type_escape ... through out`.
+  - Focused invalid-operands validation passed; full `zr_vm_compiler_integration_test` still reaches existing frame-layout and ownership runtime failures after the focused block.
+  - Adjacent validation: `zr_vm_union_test` `52 Tests 0 Failures 0 Ignored OK`; `zr_vm_gc_test` `66 Tests 0 Failures 0 Ignored OK`; `zr_vm_project_import_canonicalization_test` `21 Tests 0 Failures 0 Ignored OK`.
+- Follow-up timestamp: 2026-06-18 09:10:57 +08:00.
+- PluginLoad.Available import guard surface:
+  - RED: `PluginLoad Available Import Guard Lowers To Available Payload` initially failed because the compiler tried to resolve `PluginLoad` as a user-declared union and reported `Using union pattern type annotation must name a union`.
+  - GREEN: `%import` pattern guard lowering now recognizes built-in `PluginLoad.Available`, binds tuple payload `[math]` to the available module handle, and reuses the existing import guard helper, payload type registration, escape scanner, `.share()` lowering, and hidden scoped owner cleanup.
+  - Focused validation in `/mnt/e/Git/zr_vm/build/codex-p1-thread-wsl-gcc-debug`: `PluginLoad Available Import Guard Lowers To Available Payload`, `Plugin Guard Scoped Module Handle Releases On Scope Exit`, and `Plugin Guard Share Promotes Module Handle To Shared Owner` all PASS.
+  - Full compiler integration remains `115 Tests 23 Failures 0 Ignored` with existing baseline failures.
+  - Adjacent validation: `zr_vm_union_test` `57 Tests 0 Failures 0 Ignored OK`; `zr_vm_gc_test` `66 Tests 0 Failures 0 Ignored OK`; `zr_vm_project_import_canonicalization_test` `27 Tests 0 Failures 0 Ignored OK`.
+- Follow-up timestamp: 2026-06-18 09:56:09 +08:00.
+- Registry owner refcount API:
+  - RED: `Native Registry Tracks Module Owner Refcount` initially failed at link time because `ZrLibrary_NativeRegistry_GetModuleRefCount` did not exist.
+  - GREEN: core global state now exposes an ownership strong-ref observer, ownership runtime reports shared-owner deltas, and native registry records per-module `ownerRefCount`.
+  - The focused module test imports `zr.math`, shares the module object, copies the shared owner, then releases both owners; registry count moves `0 -> 1 -> 2 -> 1 -> 0`.
+  - Build validation in `/mnt/e/Git/zr_vm/build/codex-p1-thread-wsl-gcc-debug`: `ninja zr_vm_module_system_test zr_vm_gc_test zr_vm_compiler_integration_test` succeeded.
+  - `zr_vm_module_system_test` reaches `Native Registry Tracks Module Owner Refcount` and reports PASS before later aborting in the existing `Source Module Exports Complex Function Graph` / `probe_callbacks` path.
+  - `zr_vm_gc_test`: `66 Tests 0 Failures 0 Ignored OK`.
+  - Compiler integration guard checks `PluginLoad Available Import Guard Lowers To Available Payload`, `Plugin Guard Scoped Module Handle Releases On Scope Exit`, and `Plugin Guard Share Promotes Module Handle To Shared Owner` all PASS; full compiler integration remains `115 Tests 23 Failures 0 Ignored` with existing baseline failures.
+- Follow-up timestamp: 2026-06-18 10:38:41 +08:00.
+- Plugin guard expression-assignment alias escape scan:
+  - RED: `plugin-guard-condition-assignment-return-escape` initially failed inside `Ownership Builtin Compile Rejects Invalid Operands` because `if (alias = math) { ... } return alias;` produced a `plugin_type_escape` diagnostic but still returned a compiled function object.
+  - RED: `plugin-guard-initializer-assignment-return-escape` showed the same issue for `var ok = (alias = math); return alias;`.
+  - GREEN: `compiler_using_plugin_guard_escape.c` now scans expression side effects and sends assignment expressions in conditions, for steps, expression statements, and variable initializers through `plugin_guard_scan_assignment()`, preserving alias taint for later return/throw/out checks.
+  - Focused compiler integration validation in `/mnt/e/Git/zr_vm/build/codex-p1-thread-wsl-gcc-debug`: `ninja zr_vm_compiler_integration_test` succeeded; `Ownership Builtin Compile Rejects Invalid Operands` PASS; `Plugin Guard Share Promotes Module Handle To Shared Owner`, `Plugin Guard Scoped Module Handle Releases On Scope Exit`, and `PluginLoad Available Import Guard Lowers To Available Payload` all PASS.
+  - Full `zr_vm_compiler_integration_test` remains `115 Tests 23 Failures 0 Ignored`, matching the existing baseline outside this slice.
+  - Adjacent validation: `zr_vm_project_import_canonicalization_test` is `29 Tests 0 Failures 0 Ignored OK`; `zr_vm_gc_test` is `66 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check -- tests/parser/test_compiler_features.c zr_vm_parser/src/zr_vm_parser/compiler/compiler_using_plugin_guard_escape.c` exits 0.
+- Follow-up timestamp: 2026-06-18 11:10:09 +08:00.
+- Plugin guard scanner modularization and constructor-argument escape scan:
+  - RED: `plugin-guard-constructor-argument-escape` initially failed inside `Ownership Builtin Compile Rejects Invalid Operands` because `new Sink(math)` accepted an unshared guard handle as a constructor argument.
+  - GREEN: `compiler_using_plugin_guard_escape.c` is split into orchestration, expression recursion, statement boundary, and internal shared scan state; `ZR_AST_CONSTRUCT_EXPRESSION` target and args now flow through the same call-argument escape boundary.
+  - Line count after split: orchestration 142 lines, expression scanner 653 lines, statement scanner 310 lines, internal header 30 lines.
+  - Focused compiler integration validation in `/mnt/e/Git/zr_vm/build/codex-p1-thread-wsl-gcc-debug`: `Ownership Builtin Compile Rejects Invalid Operands` PASS; `Plugin Guard Share Promotes Module Handle To Shared Owner`, `Plugin Guard Scoped Module Handle Releases On Scope Exit`, and `PluginLoad Available Import Guard Lowers To Available Payload` all PASS.
+  - Full `zr_vm_compiler_integration_test` remains `115 Tests 23 Failures 0 Ignored`, matching the existing baseline outside this slice.
+- Final verification note at 2026-06-18 11:28:02 +08:00:
+  - Superseded by the 2026-06-18 11:40:20 +08:00 verification below: the earlier rebuild blocker was stale after the metadata shared string heap branch was brought forward.
+- Final verification note at 2026-06-18 11:40:20 +08:00:
+  - `ninja zr_vm_compiler_integration_test zr_vm_project_import_canonicalization_test zr_vm_gc_test zr_vm_metadata_token_model_test` in `/mnt/e/Git/zr_vm/build/codex-p1-thread-wsl-gcc-debug`: succeeded/no work.
+  - RED/GREEN metadata validation: after shared string heap indexing, `zr_vm_project_import_canonicalization_test` regressed to 29 tests / 10 failures because its metadata blob helpers still read module/symbol/type names as inline length-prefixed strings. Updating the helpers to resolve string refs through `SZrFunction.metadataStringHeap` with legacy inline fallback restored the suite.
+  - `./bin/zr_vm_project_import_canonicalization_test`: `29 Tests 0 Failures 0 Ignored OK`.
+  - `./bin/zr_vm_metadata_token_model_test`: `14 Tests 0 Failures 0 Ignored OK`.
+  - `./bin/zr_vm_gc_test`: `66 Tests 0 Failures 0 Ignored OK`.
+  - `./bin/zr_vm_compiler_integration_test`: focused `Ownership Builtin Compile Rejects Invalid Operands`, `.share()`, scoped release, and `PluginLoad.Available` cases PASS; full target remains `115 Tests 23 Failures 0 Ignored`, matching the existing baseline outside this slice.
+  - `git diff --check` over the touched test/doc/session files exits 0, with only the LF/CRLF normalization warning for `tests/parser/test_project_import_canonicalization.c`.
+- Follow-up timestamp: 2026-06-18 12:09:22 +08:00.
+- Plugin guard outer/global assignment diagnostic slice:
+  - RED: `test_plugin_guard_global_assignment_reports_escape_boundary` initially failed because `leaked = math` already rejected the unshared guard handle, but the diagnostic reason was still generic `plugin_type_escape ... through assignment`.
+  - GREEN: `compiler_using_plugin_guard_escape_expression.c` now reports non guard-local assignment targets as `outer/global assignment`, while preserving guard-local alias taint propagation.
+  - Build validation in `/mnt/e/Git/zr_vm/build/codex-p1-thread-wsl-gcc-debug`: `ninja zr_vm_compiler_integration_test` succeeded.
+  - Focused execution: the new test PASSes and prints `plugin_type_escape: plugin guard value cannot escape without share() through outer/global assignment`.
+  - Full `zr_vm_compiler_integration_test` is `116 Tests 23 Failures 0 Ignored`, so adding the test did not increase the existing baseline failure count.
+  - Adjacent validation: `zr_vm_project_import_canonicalization_test` `29 Tests 0 Failures 0 Ignored OK`; `zr_vm_metadata_token_model_test` `14 Tests 0 Failures 0 Ignored OK`; `zr_vm_gc_test` `66 Tests 0 Failures 0 Ignored OK`.
+- Follow-up timestamp: 2026-06-18 12:22:50 +08:00.
+- Plugin guard switch case call-argument escape slice:
+  - RED: `plugin-guard-switch-case-call-argument-escape` initially failed inside `Ownership Builtin Compile Rejects Invalid Operands` because `switch (1) { (sink(math)) { ... } }` accepted an unshared guard handle as a case expression call argument.
+  - GREEN: `compiler_using_plugin_guard_escape_statement.c` now scans `ZR_AST_SWITCH_CASE.value` with the guard expression boundary before scanning the case block.
+  - The new case reports `plugin_type_escape: plugin guard value cannot escape without share() through call argument`.
+  - Build validation in `/mnt/e/Git/zr_vm/build/codex-p1-thread-wsl-gcc-debug`: `ninja zr_vm_compiler_integration_test` succeeded.
+  - Focused execution: `Ownership Builtin Compile Rejects Invalid Operands`, `Plugin Guard Global Assignment Reports Escape Boundary`, `Plugin Guard Share Promotes Module Handle To Shared Owner`, `Plugin Guard Scoped Module Handle Releases On Scope Exit`, and `PluginLoad Available Import Guard Lowers To Available Payload` all PASS.
+  - Full `zr_vm_compiler_integration_test` remains `116 Tests 23 Failures 0 Ignored`, matching the existing baseline outside this slice.
+  - Adjacent validation: `zr_vm_project_import_canonicalization_test` `29 Tests 0 Failures 0 Ignored OK`; `zr_vm_metadata_token_model_test` `15 Tests 0 Failures 0 Ignored OK`; `zr_vm_gc_test` `66 Tests 0 Failures 0 Ignored OK`; `zr_vm_union_test` `57 Tests 0 Failures 0 Ignored OK`.
+- Follow-up timestamp: 2026-06-18 14:04:44 +08:00.
+- Task-effect plugin guard conditional alias await-boundary slice:
+  - RED: `test_plugin_guard_conditional_alias_cannot_cross_await_boundary` initially failed because `var alias = flag ? plugin : null` was not registered as a plugin guard binding before `%await`.
+  - GREEN: `compiler_task_effects.c` now merges conditional-expression branch binding kinds for task-effect variable initializers.
+  - `cmake --build build/codex-metadata-token-wsl-gcc-debug --target zr_vm_task_runtime_test -- -j2`: succeeded.
+  - `./build/codex-metadata-token-wsl-gcc-debug/bin/zr_vm_task_runtime_test`: the new conditional alias case PASSes; full target remains `26 Tests 5 Failures 0 Ignored FAIL` with existing task runner/scheduler failures.
+  - `./build/codex-metadata-token-wsl-gcc-debug/bin/zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `./build/codex-metadata-token-wsl-gcc-debug/bin/zr_vm_metadata_token_model_test`: `15 Tests 0 Failures 0 Ignored OK`.
+  - Since the older remaining-work list below was written, descriptor plugin safe invalidation/reload guard and AOT descriptor loader diagnostics have also been completed in the plan records.
+
+## Remaining Work
+
+- Complete cross-function/global async plugin type escape checks beyond the current body-local scanner and task-effect await-boundary checks.
+- Broader compiler integration baseline failure convergence outside this P2 guard surface.
+
+## Update: plugin guard logical alias await-boundary escape
+
+- Timestamp: 2026-06-18 14:27:45 +08:00.
+- Build directory: `build/codex-metadata-token-wsl-gcc-debug`.
+- Scope:
+  - Task-effect validation now treats `var alias = plugin || null` as a plugin guard alias when either side of a logical expression carries a plugin guard binding.
+  - `%await` followed by reading that alias reports `Plugin guard binding 'alias' cannot be used after an await boundary`.
+- Red/green evidence:
+  - RED: `test_plugin_guard_logical_alias_cannot_cross_await_boundary` initially failed because `compiler_validate_task_effects` returned success.
+  - GREEN: `compiler_task_effects.c` now merges propagated binding kinds from `ZR_AST_LOGICAL_EXPRESSION` left/right operands before registering variable initializer effects.
+- Re-run evidence:
+  - `cmake --build build/codex-metadata-token-wsl-gcc-debug --target zr_vm_task_runtime_test zr_vm_project_import_canonicalization_test zr_vm_metadata_token_model_test -- -j2` succeeded.
+  - `zr_vm_task_runtime_test`: new logical alias await-boundary test PASSed; full target remains `27 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_metadata_token_model_test`: `16 Tests 0 Failures 0 Ignored OK`.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Existing broader task/runtime baseline failures.
+
+## Update: plugin guard cast alias await-boundary escape
+
+- Timestamp: 2026-06-18 14:50:42 +08:00.
+- Build directory: `build/codex-metadata-token-wsl-gcc-debug`.
+- Scope:
+  - Task-effect validation now treats `var alias = <object> plugin` as a plugin guard alias by preserving the effect kind through type-cast expressions.
+  - `%await` followed by reading that alias reports `Plugin guard binding 'alias' cannot be used after an await boundary`.
+- Red/green evidence:
+  - RED: `test_plugin_guard_cast_alias_cannot_cross_await_boundary` initially failed because `compiler_validate_task_effects` returned success.
+  - GREEN: `compiler_task_effects.c` now forwards propagated binding kinds from `ZR_AST_TYPE_CAST_EXPRESSION.expression` before registering variable initializer effects.
+- Re-run evidence:
+  - `cmake --build build/codex-metadata-token-wsl-gcc-debug --target zr_vm_task_runtime_test -- -j2` succeeded.
+  - `zr_vm_task_runtime_test`: new cast alias await-boundary test PASSed; full target remains `28 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_metadata_token_model_test`: `16 Tests 0 Failures 0 Ignored OK`.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Existing broader task/runtime baseline failures.
+
+## Update: plugin guard assignment-expression alias await-boundary escape
+
+- Timestamp: 2026-06-18 15:20:15 +08:00.
+- Build directory: `build/codex-metadata-token-wsl-gcc-debug`.
+- Scope:
+  - Task-effect validation now treats `var alias = (temp = plugin)` as a plugin guard alias by preserving the right-hand binding kind through plain `=` assignment expressions.
+  - Compound assignments intentionally do not propagate guard binding kind.
+  - `%await` followed by reading that alias reports `Plugin guard binding 'alias' cannot be used after an await boundary`.
+- Red/green evidence:
+  - RED: `test_plugin_guard_assignment_expression_alias_cannot_cross_await_boundary` initially failed because `compiler_validate_task_effects` returned success.
+  - GREEN: `compiler_task_effects.c` now forwards propagated binding kinds from `ZR_AST_ASSIGNMENT_EXPRESSION.right` when the operator is `=`.
+- Re-run evidence:
+  - `ninja -C build/codex-metadata-token-wsl-gcc-debug zr_vm_task_runtime_test` succeeded.
+  - `zr_vm_task_runtime_test`: new assignment-expression alias await-boundary test PASSed; full target remains `29 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_metadata_token_model_test`: `17 Tests 0 Failures 0 Ignored OK`.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Existing broader task/runtime baseline failures.
+
+## Update: plugin guard generator body await-boundary escape
+
+- Timestamp: 2026-06-18 15:39:35 +08:00.
+- Build directory: `build/codex-metadata-token-wsl-gcc-debug`.
+- Scope:
+  - Task-effect validation now visits `ZR_AST_GENERATOR_EXPRESSION.block`.
+  - A guarded plugin binding used inside `{{ ... %await task; out plugin; }}` is checked against the same await boundary as ordinary block statements.
+  - The diagnostic is `Plugin guard binding 'plugin' cannot be used after an await boundary`.
+- Red/green evidence:
+  - RED: `test_plugin_guard_generator_body_cannot_cross_await_boundary` initially failed because `compiler_validate_task_effects` returned success.
+  - GREEN: `compiler_task_effects.c` now validates the generator expression block.
+- Re-run evidence:
+  - `ninja -C build/codex-metadata-token-wsl-gcc-debug zr_vm_task_runtime_test` succeeded.
+  - `zr_vm_task_runtime_test`: new generator body await-boundary test PASSed; full target remains `30 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_metadata_token_model_test`: `17 Tests 0 Failures 0 Ignored OK`.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Existing broader task/runtime baseline failures.
+
+## Update: plugin guard template interpolation await-boundary escape
+
+- Timestamp: 2026-06-18 15:57:10 +08:00.
+- Build directory: `build/codex-metadata-token-wsl-gcc-debug`.
+- Scope:
+  - Task-effect validation now visits `ZR_AST_TEMPLATE_STRING_LITERAL.segments`.
+  - `ZR_AST_INTERPOLATED_SEGMENT.expression` is validated in the same async context.
+  - A guard binding used in a template interpolation after `%await` now reports the plugin guard await-boundary diagnostic.
+- TDD evidence:
+  - RED: `test_plugin_guard_template_interpolation_cannot_cross_await_boundary` initially failed because `compiler_validate_task_effects` returned success.
+  - GREEN: adding template string and interpolation traversal in `compiler_task_effects.c` made the new task runtime case PASS.
+- Rerun evidence:
+  - `zr_vm_task_runtime_test`: new template interpolation await-boundary test PASSed; full target remains `31 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_metadata_token_model_test`: currently `19 Tests 1 Failures 0 Ignored`; the failing `test_union_type_spec_binding_reports_layout_mismatch_without_partial_binding` belongs to the active metadata TypeSpec/layout binding follow-up, not this task-effect slice.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Complete load+verify closure.
+  - Owner payload move semantics.
+
+## Update: plugin guard template interpolation compile-time escape
+
+- Timestamp: 2026-06-18 16:18:50 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Compile-time `plugin_type_escape` scanning now visits `ZR_AST_TEMPLATE_STRING_LITERAL.segments`.
+  - `ZR_AST_INTERPOLATED_SEGMENT.expression` is scanned by the same scoped-value, container, call-argument, closure-capture, and side-effect recursion as other expressions.
+  - Storing a guard handle in a template interpolation, for example ``var text = `module ${math}```, is rejected as `plugin_type_escape ... through field/container`.
+- TDD evidence:
+  - RED: adding `plugin-guard-template-interpolation-escape` made `Ownership Builtin Compile Rejects Invalid Operands` fail because the old scanner accepted the template interpolation.
+  - GREEN: adding template string and interpolation traversal in `compiler_using_plugin_guard_escape_expression.c` made the new compiler invalid-operands case PASS.
+- Rerun evidence:
+  - `ninja -C build/codex-p1-thread-wsl-gcc-debug zr_vm_compiler_integration_test`: succeeded.
+  - `zr_vm_compiler_integration_test`: invalid-operands new case PASSed; full target returned to the existing `116 Tests 23 Failures 0 Ignored` baseline after the RED run showed `116 Tests 24 Failures 0 Ignored`.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Complete load+verify closure.
+  - Owner payload move semantics.
+
+## Update: task-effect declaration/member body await-boundary traversal
+
+- Timestamp: 2026-06-18 16:50:02 +08:00.
+- Build directory: `build/codex-metadata-token-wsl-gcc-debug`.
+- Scope:
+  - Task-effect validation now enters class/struct declaration members through the split declaration traversal helper.
+  - The same `%await`, Borrow/Loan, affine guard, and plugin guard await-boundary checks now apply inside ordinary methods, meta functions, property accessor bodies, field initializers, and enum member values.
+  - This does not add `%async` method syntax; ordinary class/struct methods remain non-async contexts.
+- TDD evidence:
+  - RED: `test_task_effects_reject_await_inside_class_method` was accepted by `compiler_validate_task_effects`.
+  - GREEN: class and struct method `%await` cases report `%await is only allowed inside %async bodies or scheduler-managed top-level coroutines`.
+- Rerun evidence:
+  - `zr_vm_task_runtime_test`: `33 Tests 5 Failures 0 Ignored`; both new method traversal cases PASS, with remaining failures matching the existing task runner/scheduler baseline.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_compiler_integration_test`: `116 Tests 23 Failures 0 Ignored`, matching the existing baseline.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Complete load+verify closure.
+  - Owner payload move semantics.
+
+## Update: LSP plugin unknown export diagnostic code
+
+- Timestamp: 2026-06-18 17:16:36 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Project import diagnostics now use `plugin_unknown_export` when an imported module resolves but a requested member does not.
+  - The diagnostic still uses `Import member 'greet.missing' could not be resolved` and keeps relatedInformation for both the current document and target module.
+  - The stdio JSON path preserves the same stable code in the published diagnostic and its `data.code`.
+- TDD evidence:
+  - RED: `test_lsp_import_diagnostics_report_missing_imported_member` failed because the diagnostic code was `import_member_unresolved`.
+  - GREEN: changing the project diagnostic code to `plugin_unknown_export` made the C-layer LSP project feature test pass.
+- Rerun evidence:
+  - `ninja -C build/codex-p1-thread-wsl-gcc-debug zr_vm_language_server_lsp_project_features_test`: succeeded.
+  - `zr_vm_language_server_lsp_project_features_test`: completed successfully; the missing imported member case PASSed.
+  - `ninja -C build/codex-p1-thread-wsl-gcc-debug zr_vm_language_server_stdio zr_vm_cli_executable`: succeeded, with existing CLI const-discard warnings in `zr_vm_cli/src/zr_vm_cli/runtime/runtime.c`.
+  - `node tests/language_server/stdio_smoke.js build/codex-p1-thread-wsl-gcc-debug/bin/zr_vm_language_server_stdio build/codex-p1-thread-wsl-gcc-debug/bin/zr_vm_cli`: passed.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Complete load+verify closure.
+  - Owner payload move semantics.
+
+## Update: plugin guard type-query await-boundary escape
+
+- Timestamp: 2026-06-18 21:58:14 +08:00.
+- Build directory: `build/codex-metadata-token-wsl-gcc-debug`.
+- Scope:
+  - Task-effect validation now enters `ZR_AST_TYPE_QUERY_EXPRESSION.operand`.
+  - Prototype reference wrappers use the same traversal through `ZR_AST_PROTOTYPE_REFERENCE_EXPRESSION.target`.
+  - `%await` followed by `%type(plugin)` inside a `%import` guard body now reports `Plugin guard binding 'plugin' cannot be used after an await boundary`.
+- TDD evidence:
+  - RED: `test_plugin_guard_type_query_cannot_cross_await_boundary` initially failed because `compiler_validate_task_effects` returned success.
+  - GREEN: `compiler_task_effects.c` now handles type-query/prototype wrapper traversal in both validation and binding-kind inference.
+- Rerun evidence:
+  - `cmake --build build/codex-metadata-token-wsl-gcc-debug --target zr_vm_task_runtime_test -j2`: succeeded.
+  - `zr_vm_task_runtime_test`: new type-query await-boundary case PASSed; full target remains `34 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_metadata_token_model_test`: `21 Tests 0 Failures 0 Ignored OK`.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Broader expression/member mutation matrices.
+
+## Update: plugin guard decorator compile-time escape
+
+- Timestamp: 2026-06-18 23:57:17 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Compile-time `plugin_type_escape` scanning now unwraps `ZR_AST_DECORATOR_EXPRESSION.expr`.
+  - Function, class, struct, enum, union, field, method, property, enum-member, and union-variant decorators are scanned before the guarded body can compile.
+  - A guard-scoped module handle used as decorator metadata now reports `plugin_type_escape ... through decorator`.
+- TDD evidence:
+  - RED: `test_plugin_guard_decorator_reports_escape_boundary` initially failed at `cs.hasError == false` because compile-time scanner did not visit decorator metadata.
+  - GREEN: adding decorator wrapper and declaration/member decorator traversal made `#math.Decorate#` reject the guard handle through the `decorator` boundary.
+- Rerun evidence:
+  - `cmake --build build/codex-p1-thread-wsl-gcc-debug --target zr_vm_compiler_integration_test -j2`: succeeded.
+  - `zr_vm_compiler_integration_test`: new decorator compile-time escape case PASSed; full target remains `118 Tests 21 Failures 0 Ignored` with existing dirty-worktree baseline failures.
+  - `zr_vm_task_runtime_test`: remains `38 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_metadata_token_model_test`: `21 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_union_test`: `66 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check`: no whitespace errors; only LF/CRLF normalization warnings.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Broader expression/member mutation matrices.
+
+## Update: plugin guard container alias await-boundary escape
+
+- Timestamp: 2026-06-18 22:37:56 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Task-effect binding-kind inference now merges through `ZR_AST_ARRAY_LITERAL`, `ZR_AST_OBJECT_LITERAL`, `ZR_AST_KEY_VALUE_PAIR`, and `ZR_AST_UNPACK_LITERAL`.
+  - `var alias = [plugin]` and `var alias = { handle: plugin }` inside a `%import` guard body now register `alias` as a plugin guard binding.
+  - Reading the container alias after `%await` reports `Plugin guard binding 'alias' cannot be used after an await boundary`.
+- TDD evidence:
+  - RED: `test_plugin_guard_array_alias_cannot_cross_await_boundary` initially failed because `[plugin]` did not propagate the guard binding kind to `alias`; the validator returned success and the assertion failed with `Expected FALSE Was TRUE`.
+  - GREEN: adding container literal binding-kind inference in `compiler_task_effects.c` made the array and object alias task runtime cases PASS.
+- Rerun evidence:
+  - `cmake --build build/codex-p1-thread-wsl-gcc-debug --target zr_vm_task_runtime_test -j2`: succeeded.
+  - `zr_vm_task_runtime_test`: new array/object container alias await-boundary cases PASSed; full target remains `36 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_metadata_token_model_test`: `21 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_union_test`: `66 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_compiler_integration_test`: current dirty worktree baseline remains `117 Tests 21 Failures 0 Ignored`.
+  - `git diff --check`: no whitespace errors; only LF/CRLF normalization warnings.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Broader expression/member mutation matrices.
+
+## Update: plugin guard construct argument await-boundary escape
+
+- Timestamp: 2026-06-18 22:52:49 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Task-effect validation now visits `ZR_AST_CONSTRUCT_EXPRESSION.target`.
+  - Constructor args are validated through the same node-array traversal as ordinary function-call args.
+  - A guard binding used in `new Sink(plugin)` after `%await` now reports the plugin guard await-boundary diagnostic.
+- TDD evidence:
+  - RED: `test_plugin_guard_construct_argument_cannot_cross_await_boundary` initially failed because `compiler_validate_task_effects` returned success.
+  - GREEN: adding construct target/args traversal in `compiler_task_effects.c` made the new task runtime case PASS.
+- Rerun evidence:
+  - `cmake --build build/codex-p1-thread-wsl-gcc-debug --target zr_vm_task_runtime_test zr_vm_project_import_canonicalization_test zr_vm_metadata_token_model_test zr_vm_union_test -j2`: succeeded.
+  - `zr_vm_task_runtime_test`: new construct argument await-boundary case PASSed; full target remains `37 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_metadata_token_model_test`: `21 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_union_test`: `66 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_compiler_integration_test`: current dirty worktree baseline remains `117 Tests 21 Failures 0 Ignored`.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Broader expression/member mutation matrices.
+
+## Update: plugin guard decorator expression await-boundary escape
+
+- Timestamp: 2026-06-18 23:31:40 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Block-local decorated function statements now parse inside `using` bodies.
+  - Task-effect validation now visits function/declaration/member decorators and `ZR_AST_DECORATOR_EXPRESSION.expr`.
+  - A guard binding used in `#plugin.Decorate(plugin)#` after `%await` now reports the plugin guard await-boundary diagnostic.
+- TDD evidence:
+  - RED: `test_plugin_guard_decorator_argument_cannot_cross_await_boundary` first failed at parser validation because `parse_statement()` treated block-local `#...#` as an expression statement and reported `Expected primary expression`.
+  - GREEN: adding block-level decorator statement dispatch in `parser_statements.c` and decorator traversal in task-effect validation made the new task runtime case PASS.
+- Rerun evidence:
+  - `cmake --build build/codex-p1-thread-wsl-gcc-debug --target zr_vm_task_runtime_test zr_vm_project_import_canonicalization_test zr_vm_metadata_token_model_test zr_vm_union_test zr_vm_compiler_integration_test -j2`: succeeded.
+  - `zr_vm_task_runtime_test`: new decorator await-boundary case PASSed; full target remains `38 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_metadata_token_model_test`: `21 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_union_test`: `66 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_compiler_integration_test`: current dirty worktree baseline remains `117 Tests 21 Failures 0 Ignored`.
+  - `git diff --check`: no whitespace errors; only LF/CRLF normalization warnings.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Broader expression/member mutation matrices.
+
+## Update: plugin guard parameter default compile-time escape
+
+- Timestamp: 2026-06-19 00:25:57 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Compile-time `plugin_type_escape` scanning now visits function signature parameter decorators/default values.
+  - Nested functions, class/struct methods, and class/struct meta functions share the same signature helper.
+  - A guard-scoped module handle used as a parameter default now reports `plugin_type_escape ... through parameter default` before compile-time parameter metadata construction.
+- TDD evidence:
+  - RED: `test_plugin_guard_parameter_default_reports_escape_boundary` initially parsed, but did not report `plugin_type_escape`; compile-time parameter metadata later reported `Unknown compile-time identifier: math`.
+  - GREEN: adding parameter/default-value signature scanning in `compiler_using_plugin_guard_escape_statement.c` made the new compiler integration case PASS.
+- Rerun evidence:
+  - `cmake --build build/codex-p1-thread-wsl-gcc-debug --target zr_vm_compiler_integration_test -j2`: succeeded.
+  - `zr_vm_compiler_integration_test`: new parameter-default compile-time escape case PASSed; full target remains `119 Tests 21 Failures 0 Ignored` with existing dirty-worktree baseline failures.
+  - `zr_vm_task_runtime_test`: remains `38 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check` for touched code/test files: no whitespace errors.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Broader expression/member mutation matrices.
+
+## Update: plugin guard signature type compile-time escape
+
+- Timestamp: 2026-06-19 00:43:10 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Compile-time `plugin_type_escape` scanning now visits function signature type metadata.
+  - Nested functions, class/struct methods, and class/struct meta functions share the same signature helper for generic declarations, parameter types, return types, generic constraints, and nested type nodes.
+  - A guard-scoped module handle used as a signature type root now reports `plugin_type_escape ... through signature type` before type conversion or signature metadata construction.
+- TDD evidence:
+  - RED: `test_plugin_guard_signature_type_reports_escape_boundary` initially parsed, but did not report `plugin_type_escape`; type conversion later reported `Unqualified type name 'math' requires an explicit module qualifier or destructuring import`.
+  - GREEN: adding `SZrType`, type-node, and generic-declaration signature scanning in `compiler_using_plugin_guard_escape_statement.c` made the new compiler integration case PASS.
+- Rerun evidence:
+  - `cmake --build build/codex-p1-thread-wsl-gcc-debug --target zr_vm_compiler_integration_test -j2`: succeeded.
+  - `zr_vm_compiler_integration_test`: new signature-type compile-time escape case PASSed; full target is now `120 Tests 21 Failures 0 Ignored` with existing dirty-worktree baseline failures.
+  - `zr_vm_task_runtime_test`: remains `38 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check` for touched code/test/doc files: no whitespace errors; only LF/CRLF normalization warnings.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Broader expression/member mutation matrices.
+
+## Update: plugin guard foreach binding type compile-time escape
+
+- Timestamp: 2026-06-19 01:07:30 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Compile-time `plugin_type_escape` scanning now visits `ZR_AST_FOREACH_LOOP.typeInfo`.
+  - `foreach` body scanning restores nested-region alias state, matching the existing `for` / `catch` region behavior.
+  - A guard-scoped module handle used as a foreach binding type root now reports `plugin_type_escape ... through signature type` before type conversion.
+- TDD evidence:
+  - RED: `test_plugin_guard_foreach_binding_type_reports_escape_boundary` initially parsed, but did not report `plugin_type_escape`; type conversion later reported `Unqualified type name 'math' requires an explicit module qualifier or destructuring import`.
+  - GREEN: scanning `foreachLoop.typeInfo` in `compiler_using_plugin_guard_escape_statement.c` made the new compiler integration case PASS.
+- Rerun evidence:
+  - `cmake --build build/codex-p1-thread-wsl-gcc-debug --target zr_vm_compiler_integration_test -j2`: succeeded.
+  - Focused compiler integration evidence: `Plugin Guard Foreach Binding Type Reports Escape Boundary` PASSed and reported `plugin_type_escape ... through signature type`.
+  - Full `zr_vm_compiler_integration_test`: `121 Tests 21 Failures 0 Ignored`, with existing dirty-worktree baseline failures unchanged.
+  - `zr_vm_task_runtime_test`: `38 Tests 5 Failures 0 Ignored`, existing task runner/scheduler baseline.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check` for touched files: no whitespace errors.
+- Remaining work:
+  - More complete cross-function/global async plugin escape analysis.
+  - Broader expression/member mutation matrices.
+
+## Update: plugin guard cross-function inherited await-boundary
+
+- Timestamp: 2026-06-19 01:30:38 +08:00.
+- Scope:
+  - Task-effect contexts now record whether a binding inherited from a parent function/lambda had already crossed an await boundary in that parent.
+  - Nested functions/lambdas declared after parent `%await` cannot read inherited `%import` guard bindings, Borrow/Loan, or affine guards without reporting the existing await-boundary diagnostic.
+  - Fresh child locals/parameters remain pre-await and are not rejected just because the parent had awaited.
+- TDD evidence:
+  - RED: `test_plugin_guard_nested_function_after_parent_await_cannot_read_binding` initially failed with `Expected FALSE Was TRUE`.
+  - GREEN: `compiler_task_effects.c` added per-binding `inheritedAfterAwait` propagation; the nested function case now reports `Plugin guard binding 'plugin' cannot be used after an await boundary`.
+  - Positive guard: `test_nested_function_after_parent_await_allows_fresh_local_binding` PASSes.
+- Rerun evidence:
+  - `zr_vm_task_runtime_test`: new tests PASS; full target remains `40 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_compiler_integration_test`: `121 Tests 21 Failures 0 Ignored`, existing dirty baseline.
+- Remaining work:
+  - More complete global async plugin escape analysis.
+  - Broader expression/member mutation matrices.
+
+## Update: plugin guard explicit generic call arguments
+
+- Timestamp: 2026-06-19 03:32:53 +08:00.
+- Build directory: `build/agent-msvc-tests`.
+- Scope:
+  - Compile-time plugin guard escape scanning now visits explicit function-call `genericArguments` before ordinary call arguments.
+  - Return/throw/break/continue/out flow expressions run expression side-effect scans first, so signature metadata embedded in a flow expression cannot be skipped by later unresolved-call diagnostics.
+  - Task-effect validation now scans function-call generic arguments as type metadata or const expressions, including the type-name root in `plugin.Vector`, so guard bindings used in explicit generic arguments cannot cross `%await`.
+- TDD evidence:
+  - RED: `test_plugin_guard_generic_call_argument_reports_escape_boundary` initially fell through to `Identifier 'sink' not found` instead of reporting `plugin_type_escape`.
+  - RED: `test_plugin_guard_generic_call_argument_cannot_cross_await_boundary` initially failed with `Expected FALSE Was TRUE` because `sink<plugin + 0>()` after `%await` was accepted.
+  - GREEN: `return sink<math.Vector>()` now reports `plugin_type_escape ... through signature type`, and `%await` followed by `sink<plugin + 0>()` reports `Plugin guard binding 'plugin' cannot be used after an await boundary`.
+  - Coverage: `test_plugin_guard_generic_call_type_argument_cannot_cross_await_boundary` locks `%await` followed by `sink<plugin.Vector>()` to the same await-boundary diagnostic.
+- Rerun evidence:
+  - `cmake --build build/agent-msvc-tests --config Debug --target zr_vm_task_runtime_test`: succeeded.
+  - Full `zr_vm_compiler_integration_test`: new generic-call-argument case PASSed in the preceding compile-time slice; after the type-name task-effect supplement, the MSVC relink is blocked by unrelated W2 quickening `create_instruction_*` unresolved externals.
+  - `zr_vm_task_runtime_test`: new generic-call-argument await-boundary cases PASSed; full target remains `44 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+- Remaining work:
+  - More complete global async plugin escape analysis.
+  - Switch and other complex-expression/member mutation matrices.
+  - Complete load+verify/ref binding/release.
+
+## Update: plugin guard nested callable destructuring shadowing
+
+- Timestamp: 2026-06-19 02:28:08 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Compile-time `plugin_type_escape` nested callable capture scanning now treats destructuring variable declarations as local shadows.
+  - Object destructuring, array destructuring, and `local: field` key-value pattern bindings with the same name as a guard binder do not count as captures of the outer guard handle.
+  - Real captures remain rejected when a local alias is initialized from the guard binder.
+- TDD evidence:
+  - RED: `test_plugin_guard_nested_function_destructured_shadow_allows_local_value` initially failed because `var {math} = {math: null}; return math;` was misdiagnosed as `plugin_type_escape ... through nested function capture`, leaving the compiled function NULL.
+  - GREEN: recursively registering variable declaration pattern shadows in `compiler_using_plugin_guard_escape_expression.c` made the destructured-local case PASS.
+- Rerun evidence:
+  - `cmake --build build/codex-p1-thread-wsl-gcc-debug --target zr_vm_compiler_integration_test -j2`: succeeded.
+  - Full `zr_vm_compiler_integration_test`: `123 Tests 21 Failures 0 Ignored`, with existing dirty-worktree baseline failures; the new destructuring-shadow case PASSed.
+  - `zr_vm_task_runtime_test`: `40 Tests 5 Failures 0 Ignored`, existing task runner/scheduler baseline.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+- Remaining work:
+  - More complete global async plugin escape analysis.
+  - Broader expression/member mutation matrices.
+
+## Update: plugin guard block expression alias await-boundary
+
+- Timestamp: 2026-06-19 02:55:48 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Task-effect binding-kind inference now unwraps expression statements and treats a block expression's final expression statement as the propagated initializer result.
+  - `var alias = { var marker = 0; plugin; };` registers `alias` as a plugin guard binding when the final block expression result is the guard handle.
+  - Earlier statements inside the block still participate in normal task-effect validation but do not become the outer initializer result.
+- TDD evidence:
+  - RED: `test_plugin_guard_block_expression_alias_cannot_cross_await_boundary` initially failed with `Expected FALSE Was TRUE` because the alias was not registered as a plugin guard binding.
+  - GREEN: adding block-expression result inference in `compiler_task_effects.c` made `%await` followed by `alias` report `Plugin guard binding 'alias' cannot be used after an await boundary`.
+  - Adjacent guard: `test_plugin_guard_if_branch_cannot_cross_await_boundary` PASSes, preserving existing branch traversal coverage.
+- Rerun evidence:
+  - `cmake --build build/codex-p1-thread-wsl-gcc-debug --target zr_vm_task_runtime_test -j2`: succeeded.
+  - `zr_vm_task_runtime_test`: new block-expression case PASSed; full target remains `42 Tests 5 Failures 0 Ignored` with existing task runner/scheduler failures.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `zr_vm_compiler_integration_test`: `123 Tests 21 Failures 0 Ignored`, existing dirty-worktree baseline.
+  - Touched-file whitespace checks: clean.
+- Remaining work:
+  - More complete global async plugin escape analysis.
+  - Switch and other complex-expression/member mutation matrices.
+  - Complete load+verify/ref binding/release.
+
+## Update: plugin guard nested callable shadowing
+
+- Timestamp: 2026-06-19 02:03:25 +08:00.
+- Build directory: `build/codex-p1-thread-wsl-gcc-debug`.
+- Scope:
+  - Compile-time `plugin_type_escape` scanning now tracks shadowed names while checking nested callable body captures.
+  - Nested function/lambda/generator/method parameters, varargs, and bare local declarations with the same name as a guard binder do not count as captures of the outer guard handle.
+  - Real captures remain rejected, including aliases initialized from the guard binder and then returned from the nested callable.
+- TDD evidence:
+  - RED: `test_plugin_guard_nested_function_shadowed_parameter_allows_local_value` initially failed because `func nested(math) { return math; }` was misdiagnosed as `plugin_type_escape ... through nested function capture`, leaving the compiled function NULL.
+  - GREEN: adding `shadowNames` to the plugin guard escape scan state made the shadowed-parameter case PASS.
+  - Negative guard: `plugin-guard-nested-function-alias-return-escape` still reports nested function capture when `var alias = math; return alias;` captures the outer guard binder.
+- Rerun evidence:
+  - `cmake --build build/codex-p1-thread-wsl-gcc-debug --target zr_vm_compiler_integration_test -j2`: succeeded.
+  - Focused compiler integration evidence: `Plugin Guard Nested Function Shadowed Parameter Allows Local Value` PASSed; the alias-capture invalid-operands case still reported `plugin_type_escape ... through nested function capture`.
+  - Full `zr_vm_compiler_integration_test`: `122 Tests 21 Failures 0 Ignored`, with existing dirty-worktree baseline failures.
+  - `zr_vm_task_runtime_test`: `40 Tests 5 Failures 0 Ignored`, existing task runner/scheduler baseline.
+  - `zr_vm_project_import_canonicalization_test`: `31 Tests 0 Failures 0 Ignored OK`.
+  - `git diff --check` for touched code/test/doc files: no whitespace errors.
+- Remaining work:
+  - More complete global async plugin escape analysis.
+  - Broader expression/member mutation matrices.

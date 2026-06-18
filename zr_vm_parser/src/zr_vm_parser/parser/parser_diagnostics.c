@@ -81,6 +81,27 @@ void report_missing_declaration_body_open(SZrParserState *ps,
     ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
 }
 
+void report_missing_declaration_body_close(SZrParserState *ps,
+                                           const TZrChar *declarationKind,
+                                           SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(ps->state,
+                                                                     &diagnostic,
+                                                                     location,
+                                                                     declarationKind)) {
+        report_error_with_token(ps, "Missing closing '}' for declaration body", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
 void report_missing_statement_body_open(SZrParserState *ps,
                                         const TZrChar *statementKind,
                                         SZrFileRange location) {
@@ -143,6 +164,43 @@ void report_missing_using_resource_close(SZrParserState *ps, SZrFileRange locati
 
     if (!ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(ps->state, &diagnostic, location)) {
         report_error_with_token(ps, "Missing closing ')' in using resource", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_using_binder_invalid(SZrParserState *ps, SZrFileRange location) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildUsingBinderInvalid(ps->state, &diagnostic, location)) {
+        report_error_with_token(ps, "using_binder_invalid: invalid using guard binder", ps->lexer->t.token);
+        return;
+    }
+
+    report_structured_parser_error(ps, &diagnostic, ps->lexer->t.token);
+    ZrParser_StructuredDiagnostic_Free(ps->state, &diagnostic);
+}
+
+void report_import_path_not_constant(SZrParserState *ps,
+                                     SZrFileRange location,
+                                     const TZrChar *directiveName) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (ps == ZR_NULL || ps->state == ZR_NULL || ps->lexer == ZR_NULL) {
+        return;
+    }
+
+    if (!ZrParser_DiagnosticBuilder_BuildImportPathNotConstant(ps->state,
+                                                               &diagnostic,
+                                                               location,
+                                                               directiveName)) {
+        report_error_with_token(ps, "%import(...) requires a string literal module path", ps->lexer->t.token);
         return;
     }
 

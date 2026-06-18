@@ -35,6 +35,7 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->localVarCount = 0;
     cs->stackSlotCount = 0;
     cs->maxStackSlotCount = 0;
+    cs->lastExpressionSlot = ZR_PARSER_SLOT_NONE;
     ZrCore_Array_Init(state,
                       &cs->stackSlotTypeHints,
                       sizeof(SZrCompilerStackSlotTypeHint),
@@ -105,6 +106,8 @@ void ZrParser_CompilerState_Init(SZrCompilerState *cs, SZrState *state) {
     cs->errorLocation.start.column = 0;
     cs->errorLocation.end.line = 0;
     cs->errorLocation.end.column = 0;
+    cs->hasStructuredError = ZR_FALSE;
+    ZrParser_StructuredDiagnostic_Init(&cs->structuredError);
 
     // 初始化测试模式
     cs->isTestMode = ZR_FALSE;
@@ -237,6 +240,12 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
     // 释放作用域栈
     if (cs->scopeStack.isValid && cs->scopeStack.head != ZR_NULL && cs->scopeStack.capacity > 0 &&
         cs->scopeStack.elementSize > 0) {
+        for (TZrSize index = 0; index < cs->scopeStack.length; index++) {
+            SZrScope *scope = (SZrScope *)ZrCore_Array_Get(&cs->scopeStack, index);
+            if (scope != ZR_NULL) {
+                ZrCore_Array_Free(state, &scope->cleanupRegistrations);
+            }
+        }
         ZrCore_Array_Free(state, &cs->scopeStack);
     }
 
@@ -699,6 +708,11 @@ void ZrParser_CompilerState_Free(SZrCompilerState *cs) {
         cs->errorMessageStorage = ZR_NULL;
         cs->errorMessageStorageCapacity = 0;
         cs->errorMessage = ZR_NULL;
+    }
+
+    if (cs->hasStructuredError) {
+        ZrParser_StructuredDiagnostic_Free(state, &cs->structuredError);
+        cs->hasStructuredError = ZR_FALSE;
     }
 }
 

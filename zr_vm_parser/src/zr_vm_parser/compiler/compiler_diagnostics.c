@@ -6,6 +6,11 @@
 
 #include <stdarg.h>
 
+static void compiler_report_error(SZrCompilerState *cs,
+                                  const TZrChar *msg,
+                                  SZrFileRange location,
+                                  TZrBool clearStructuredError);
+
 static void compiler_store_error_message(SZrCompilerState *cs, const TZrChar *message) {
     TZrSize requiredSize = 0;
     TZrChar *newBuffer = ZR_NULL;
@@ -37,6 +42,139 @@ static void compiler_store_error_message(SZrCompilerState *cs, const TZrChar *me
 
     memcpy(cs->errorMessageStorage, message, requiredSize);
     cs->errorMessage = cs->errorMessageStorage;
+}
+
+void ZrParser_Compiler_ClearStructuredError(SZrCompilerState *cs) {
+    if (cs == ZR_NULL) {
+        return;
+    }
+
+    if (cs->hasStructuredError) {
+        ZrParser_StructuredDiagnostic_Free(cs->state, &cs->structuredError);
+        ZrParser_StructuredDiagnostic_Init(&cs->structuredError);
+        cs->hasStructuredError = ZR_FALSE;
+    }
+}
+
+void ZrParser_Compiler_StructuredError(SZrCompilerState *cs, const SZrStructuredDiagnostic *diagnostic) {
+    const TZrChar *messageText;
+
+    if (cs == ZR_NULL || diagnostic == ZR_NULL || diagnostic->message == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_Compiler_ClearStructuredError(cs);
+    cs->structuredError = *diagnostic;
+    cs->hasStructuredError = ZR_TRUE;
+
+    messageText = ZrCore_String_GetNativeString(diagnostic->message);
+    if (messageText == ZR_NULL) {
+        messageText = "Compiler diagnostic";
+    }
+    compiler_report_error(cs, messageText, diagnostic->location, ZR_FALSE);
+    cs->hasStructuredError = ZR_TRUE;
+}
+
+void ZrParser_Compiler_PatternShapeMismatch(SZrCompilerState *cs,
+                                            SZrFileRange location,
+                                            const TZrChar *message,
+                                            const TZrChar *cause,
+                                            const TZrChar *suggestion) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (!ZrParser_DiagnosticBuilder_BuildPatternShapeMismatch(cs->state,
+                                                              &diagnostic,
+                                                              location,
+                                                              message,
+                                                              cause,
+                                                              suggestion)) {
+        ZrParser_Compiler_Error(cs,
+                                message != ZR_NULL
+                                    ? message
+                                    : "Union pattern destructuring shape does not match variant payload shape",
+                                location);
+        return;
+    }
+
+    ZrParser_Compiler_StructuredError(cs, &diagnostic);
+}
+
+void ZrParser_Compiler_PatternUnknownField(SZrCompilerState *cs,
+                                           SZrFileRange location,
+                                           const TZrChar *fieldName,
+                                           const TZrChar *availableFields) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (!ZrParser_DiagnosticBuilder_BuildPatternUnknownField(cs->state,
+                                                             &diagnostic,
+                                                             location,
+                                                             fieldName,
+                                                             availableFields)) {
+        ZrParser_Compiler_Error(cs, "Unknown union pattern field", location);
+        return;
+    }
+
+    ZrParser_Compiler_StructuredError(cs, &diagnostic);
+}
+
+void ZrParser_Compiler_PatternArityMismatch(SZrCompilerState *cs,
+                                            SZrFileRange location,
+                                            TZrSize expectedCount,
+                                            TZrSize actualCount,
+                                            const TZrChar *availableFields) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (!ZrParser_DiagnosticBuilder_BuildPatternArityMismatch(cs->state,
+                                                              &diagnostic,
+                                                              location,
+                                                              expectedCount,
+                                                              actualCount,
+                                                              availableFields)) {
+        ZrParser_Compiler_Error(cs, "Union pattern arity mismatch", location);
+        return;
+    }
+
+    ZrParser_Compiler_StructuredError(cs, &diagnostic);
+}
+
+void ZrParser_Compiler_PatternVariantMismatch(SZrCompilerState *cs,
+                                              SZrFileRange location,
+                                              const TZrChar *annotationUnionName,
+                                              const TZrChar *variantName,
+                                              const TZrChar *resourceUnionName) {
+    SZrStructuredDiagnostic diagnostic;
+
+    if (cs == ZR_NULL || cs->state == ZR_NULL) {
+        return;
+    }
+
+    ZrParser_StructuredDiagnostic_Init(&diagnostic);
+    if (!ZrParser_DiagnosticBuilder_BuildPatternVariantMismatch(cs->state,
+                                                                &diagnostic,
+                                                                location,
+                                                                annotationUnionName,
+                                                                variantName,
+                                                                resourceUnionName)) {
+        ZrParser_Compiler_Error(cs, "Using union pattern annotation does not match the resource union type", location);
+        return;
+    }
+
+    ZrParser_Compiler_StructuredError(cs, &diagnostic);
 }
 
 static void compiler_buffer_appendf(TZrChar *buffer,
@@ -272,11 +410,17 @@ void ZrParser_CompileTime_Error(SZrCompilerState *cs, EZrCompileTimeErrorLevel l
     }
 }
 
-void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRange location) {
+static void compiler_report_error(SZrCompilerState *cs,
+                                  const TZrChar *msg,
+                                  SZrFileRange location,
+                                  TZrBool clearStructuredError) {
     if (cs == ZR_NULL) {
         return;
     }
 
+    if (clearStructuredError) {
+        ZrParser_Compiler_ClearStructuredError(cs);
+    }
     cs->hasError = ZR_TRUE;
     cs->hadRecoverableError = ZR_TRUE;
     compiler_store_error_message(cs, msg);
@@ -327,6 +471,10 @@ void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRa
                                "%s",
                                messageBuffer);
     }
+}
+
+void ZrParser_Compiler_Error(SZrCompilerState *cs, const TZrChar *msg, SZrFileRange location) {
+    compiler_report_error(cs, msg, location, ZR_TRUE);
 }
 
 // 创建指令（辅助函数）

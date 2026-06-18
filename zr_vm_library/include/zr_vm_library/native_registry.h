@@ -19,7 +19,8 @@ typedef enum EZrLibNativeRegistryErrorCode {
     ZR_LIB_NATIVE_REGISTRY_ERROR_ABI_MISMATCH = 3,
     ZR_LIB_NATIVE_REGISTRY_ERROR_VERSION_MISMATCH = 4,
     ZR_LIB_NATIVE_REGISTRY_ERROR_CAPABILITY_MISMATCH = 5,
-    ZR_LIB_NATIVE_REGISTRY_ERROR_MODULE_NAME_MISMATCH = 6
+    ZR_LIB_NATIVE_REGISTRY_ERROR_MODULE_NAME_MISMATCH = 6,
+    ZR_LIB_NATIVE_REGISTRY_ERROR_MODULE_IN_USE = 7
 } EZrLibNativeRegistryErrorCode;
 
 typedef struct ZrLibRegisteredModuleInfo {
@@ -28,6 +29,7 @@ typedef struct ZrLibRegisteredModuleInfo {
     const TZrChar *sourcePath;
     EZrLibNativeModuleRegistrationKind registrationKind;
     TZrBool isDescriptorPlugin;
+    TZrUInt32 ownerRefCount;
 } ZrLibRegisteredModuleInfo;
 
 ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_Attach(SZrGlobalState *global);
@@ -40,6 +42,8 @@ ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetModuleInfo(SZrGlobalState *gl
                                                               const TZrChar *moduleName,
                                                               ZrLibRegisteredModuleInfo *outInfo);
 ZR_LIBRARY_API TZrSize ZrLibrary_NativeRegistry_GetModuleCount(SZrGlobalState *global);
+ZR_LIBRARY_API TZrUInt32 ZrLibrary_NativeRegistry_GetModuleRefCount(SZrGlobalState *global,
+                                                                    const TZrChar *moduleName);
 ZR_LIBRARY_API TZrBool ZrLibrary_NativeRegistry_GetModuleInfoAt(SZrGlobalState *global,
                                                                 TZrSize index,
                                                                 ZrLibRegisteredModuleInfo *outInfo);

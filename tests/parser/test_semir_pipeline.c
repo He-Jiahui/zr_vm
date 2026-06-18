@@ -641,6 +641,7 @@ static void test_struct_value_type_constructor_semir_emits_inline_field_store(vo
         SZrFunction *func;
         SZrFunction *constructorFunction;
         TZrUInt32 textMemberEntryIndex = 0u;
+        TZrUInt32 memberStoreSourceSlot = ZR_INSTRUCTION_USE_RET_FLAG;
         TZrUInt32 index;
 
         TEST_ASSERT_NOT_NULL(state);
@@ -652,6 +653,16 @@ static void test_struct_value_type_constructor_semir_emits_inline_field_store(vo
         constructorFunction = find_single_function_constant_with_opcode(state, func, ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT));
         TEST_ASSERT_NOT_NULL(constructorFunction);
         TEST_ASSERT_TRUE(function_find_member_entry_index(constructorFunction, "text", &textMemberEntryIndex));
+        for (index = 0; index < constructorFunction->instructionsLength; index++) {
+            const TZrInstruction *instruction = &constructorFunction->instructionsList[index];
+
+            if ((EZrInstructionCode)instruction->instruction.operationCode == ZR_INSTRUCTION_ENUM(SET_MEMBER_SLOT)) {
+                memberStoreSourceSlot = instruction->instruction.operandExtra;
+                break;
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(memberStoreSourceSlot != ZR_INSTRUCTION_USE_RET_FLAG,
+                                 "Expected constructor member store source slot");
         TEST_ASSERT_GREATER_THAN_UINT32(0u,
                                         function_count_semir_opcode(constructorFunction, ZR_SEMIR_OPCODE_FIELD_ADDR));
         TEST_ASSERT_GREATER_THAN_UINT32(0u,
@@ -666,6 +677,12 @@ static void test_struct_value_type_constructor_semir_emits_inline_field_store(vo
             }
 
             TEST_ASSERT_EQUAL_UINT32(textMemberEntryIndex, instruction->operand1);
+            if ((EZrSemIrOpcode)instruction->opcode == ZR_SEMIR_OPCODE_STORE_VALUE) {
+                TEST_ASSERT_EQUAL_UINT32_MESSAGE(
+                        memberStoreSourceSlot,
+                        instruction->operand0,
+                        "Constructor STORE_VALUE must use the final SET_MEMBER_SLOT source slot");
+            }
         }
 
         ZrCore_Function_Free(state, func);

@@ -60,7 +60,7 @@ static ZR_FORCE_INLINE SZrClosureValue **closure_refresh_parent_closure_values_f
         return ZR_NULL;
     }
 
-    ownerValue = ZrCore_Stack_GetValue(base - 1);
+    ownerValue = ZrCore_Stack_GetValueNoProfile(base - 1);
     if (ownerValue == ZR_NULL ||
         ownerValue->type != ZR_VALUE_TYPE_CLOSURE ||
         ownerValue->isNative ||
@@ -79,7 +79,7 @@ static ZR_FORCE_INLINE SZrFunction *closure_metadata_function_from_frame_base(SZ
     }
 
     return closure_refresh_forwarded_function(
-            ZrCore_Closure_GetMetadataFunctionFromValue(state, ZrCore_Stack_GetValue(base - 1)));
+            ZrCore_Closure_GetMetadataFunctionFromValue(state, ZrCore_Stack_GetValueNoProfile(base - 1)));
 }
 
 static TZrStackValuePointer closure_value_pointer_for_frame_slot(SZrState *state,
@@ -481,16 +481,36 @@ TZrSize ZrCore_Closure_CloseRegisteredValues(struct SZrState *state,
 
 void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *function, SZrClosureValue **closureValueList,
                            TZrStackValuePointer base, TZrStackValuePointer closurePointer) {
+    SZrFunctionStackAnchor baseAnchor;
+    TZrMemoryOffset closurePointerOffset;
+    TZrBool hasBaseAnchor = ZR_FALSE;
+
+    if (state == ZR_NULL || closurePointer == ZR_NULL) {
+        return;
+    }
+
     function = closure_refresh_forwarded_function(function);
     if (function == ZR_NULL) {
         return;
     }
 
+    if (base != ZR_NULL) {
+        ZrCore_Function_StackAnchorInit(state, base, &baseAnchor);
+        hasBaseAnchor = ZR_TRUE;
+    }
+    closurePointerOffset = ZrCore_Stack_SaveByteAddressAsOffset(state, closurePointer);
+
     TZrSize closureSize = function->closureValueLength;
     SZrFunction *parentFunction = closure_metadata_function_from_frame_base(state, base);
     SZrClosure *closure = ZrCore_Closure_New(state, closureSize);
+
+    if (hasBaseAnchor) {
+        base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+    }
+    closurePointer = ZR_CAST_STACK_VALUE(ZrCore_Stack_LoadByteOffsetToAddress(state, closurePointerOffset));
     closure = closure_refresh_forwarded_closure(closure);
     function = closure_refresh_forwarded_function(function);
+    parentFunction = closure_refresh_forwarded_function(parentFunction);
     if (function == ZR_NULL || closure == ZR_NULL) {
         return;
     }
@@ -502,34 +522,40 @@ void ZrCore_Closure_PushToStack(struct SZrState *state, struct SZrFunction *func
         closureValueList = closure_refresh_parent_closure_values_from_base(state, base);
     }
     for (TZrSize i = 0; i < closureSize; i++) {
-        SZrFunctionClosureVariable *closureValue = &closureVariables[i];
+        SZrFunctionClosureVariable closureValue = closureVariables[i];
         SZrClosureValue *capturedValue;
 
-        if (closureValue->inStack) {
+        if (closureValue.inStack) {
             TZrStackValuePointer capturePointer =
-                    closure_value_pointer_for_frame_slot(state, parentFunction, base, closureValue->index);
+                    closure_value_pointer_for_frame_slot(state, parentFunction, base, closureValue.index);
             capturedValue = capturePointer != ZR_NULL
                                     ? ZrCore_Closure_FindOrCreateValue(state, capturePointer)
                                     : ZR_NULL;
+            if (hasBaseAnchor) {
+                base = ZrCore_Function_StackAnchorRestore(state, &baseAnchor);
+            }
             closure = closure_refresh_forwarded_closure(closure);
+            function = closure_refresh_forwarded_function(function);
+            parentFunction = closure_refresh_forwarded_function(parentFunction);
+            closureVariables = function != ZR_NULL ? function->closureValueList : ZR_NULL;
             if (closureValueList != ZR_NULL) {
                 closureValueList = closure_refresh_parent_closure_values_from_base(state, base);
             }
         } else {
-            capturedValue = closureValueList != ZR_NULL ? closureValueList[closureValue->index] : ZR_NULL;
+            capturedValue = closureValueList != ZR_NULL ? closureValueList[closureValue.index] : ZR_NULL;
             capturedValue = closure_refresh_forwarded_closure_value(capturedValue);
         }
-        if (closure == ZR_NULL) {
+        if (closure == ZR_NULL || function == ZR_NULL || closureVariables == ZR_NULL) {
             return;
         }
         closure->closureValuesExtend[i] = capturedValue;
         if (closure->closureValuesExtend[i] != ZR_NULL) {
             ZrCore_ClosureValue_SetCaptureMetadata(closure->closureValuesExtend[i],
-                                                  closureValue->scopeDepth,
-                                                  closureValue->escapeFlags);
+                                                  closureValue.scopeDepth,
+                                                  closureValue.escapeFlags);
         }
         ZrCore_RawObject_Barrier(state, ZR_CAST_RAW_OBJECT_AS_SUPER(closure),
-                           ZR_CAST_RAW_OBJECT_AS_SUPER(closure->closureValuesExtend[i]));
+                            ZR_CAST_RAW_OBJECT_AS_SUPER(closure->closureValuesExtend[i]));
     }
 }
 
@@ -577,7 +603,8 @@ SZrFunction *ZrCore_Closure_GetMetadataFunctionFromCallInfo(struct SZrState *sta
     }
 
     return ZrCore_Closure_GetMetadataFunctionFromValue(state,
-                                                       ZrCore_Stack_GetValue(callInfo->functionBase.valuePointer));
+                                                       ZrCore_Stack_GetValueNoProfile(
+                                                               callInfo->functionBase.valuePointer));
 }
 
 

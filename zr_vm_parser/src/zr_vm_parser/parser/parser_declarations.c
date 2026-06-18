@@ -257,7 +257,7 @@ SZrAstNode *parse_function_declaration(SZrParserState *ps) {
     }
 
     // 解析函数体
-    SZrAstNode *body = parse_block(ps);
+    SZrAstNode *body = parse_declaration_body_block(ps, "function declaration");
     if (body == ZR_NULL) {
         if (params != ZR_NULL) {
             ZrParser_AstNodeArray_Free(ps->state, params);

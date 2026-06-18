@@ -53,6 +53,10 @@ static SZrString *semantic_type_prototypes_owner_name(SZrAstNode *ownerTypeNode)
             return ownerTypeNode->data.enumDeclaration.name != ZR_NULL
                        ? ownerTypeNode->data.enumDeclaration.name->name
                        : ZR_NULL;
+        case ZR_AST_UNION_DECLARATION:
+            return ownerTypeNode->data.unionDeclaration.name != ZR_NULL
+                       ? ownerTypeNode->data.unionDeclaration.name->name
+                       : ZR_NULL;
         default:
             return ZR_NULL;
     }
@@ -1387,6 +1391,10 @@ static TZrBool semantic_type_prototypes_register_shell(SZrState *state,
             prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_ENUM;
             accessModifier = node->data.enumDeclaration.accessModifier;
             break;
+        case ZR_AST_UNION_DECLARATION:
+            prototypeType = ZR_OBJECT_PROTOTYPE_TYPE_UNION;
+            accessModifier = node->data.unionDeclaration.accessModifier;
+            break;
         default:
             return ZR_TRUE;
     }
@@ -1411,6 +1419,11 @@ static TZrBool semantic_type_prototypes_register_shell(SZrState *state,
             prototypeInfo.modifierFlags = ZR_DECLARATION_MODIFIER_ABSTRACT;
             prototypeInfo.allowValueConstruction = ZR_FALSE;
             prototypeInfo.allowBoxedConstruction = ZR_FALSE;
+            break;
+        case ZR_AST_UNION_DECLARATION:
+            semantic_type_prototypes_collect_generic_parameters(analyzer,
+                                                                &prototypeInfo.genericParameters,
+                                                                node->data.unionDeclaration.generic);
             break;
         default:
             break;
@@ -1458,6 +1471,7 @@ static TZrBool semantic_type_prototypes_walk_shells(SZrState *state,
         case ZR_AST_STRUCT_DECLARATION:
         case ZR_AST_INTERFACE_DECLARATION:
         case ZR_AST_ENUM_DECLARATION:
+        case ZR_AST_UNION_DECLARATION:
             return semantic_type_prototypes_register_shell(state, analyzer, node);
         default:
             return ZR_TRUE;
@@ -1504,6 +1518,7 @@ static TZrBool semantic_type_prototypes_walk_details(SZrState *state,
         case ZR_AST_STRUCT_DECLARATION:
         case ZR_AST_INTERFACE_DECLARATION:
         case ZR_AST_ENUM_DECLARATION:
+        case ZR_AST_UNION_DECLARATION:
             prototype = semantic_type_prototypes_find_exact(analyzer->compilerState,
                                                             semantic_type_prototypes_owner_name(node));
             if (prototype == ZR_NULL || prototype->members.length > 0 || prototype->inherits.length > 0 ||
@@ -1523,6 +1538,8 @@ static TZrBool semantic_type_prototypes_walk_details(SZrState *state,
                     break;
                 case ZR_AST_ENUM_DECLARATION:
                     semantic_type_prototypes_populate_enum(analyzer, node, prototype);
+                    break;
+                case ZR_AST_UNION_DECLARATION:
                     break;
                 default:
                     break;

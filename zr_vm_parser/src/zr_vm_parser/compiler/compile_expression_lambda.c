@@ -25,6 +25,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     TZrSize oldInstructionCount = cs->instructionCount;
     TZrSize oldStackSlotCount = cs->stackSlotCount;
     TZrSize oldMaxStackSlotCount = cs->maxStackSlotCount;
+    TZrUInt32 oldLastExpressionSlot = cs->lastExpressionSlot;
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
@@ -203,6 +204,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     cs->instructionCount = 0;
     cs->stackSlotCount = 0;
     cs->maxStackSlotCount = 0;
+    cs->lastExpressionSlot = ZR_PARSER_SLOT_NONE;
     cs->localVarCount = 0;
     cs->constantCount = 0;
     cs->closureVarCount = 0;
@@ -272,6 +274,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         parentCompilerSnapshot.closureVars.length = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.capacity = oldClosureVarLength;
         parentCompilerSnapshot.closureVars.isValid = ZR_TRUE;
+        parentCompilerSnapshot.typeEnv = cs->typeEnv;
         ZrParser_ExternalVariables_Analyze(cs, lambda->block, &parentCompilerSnapshot);
     }
     
@@ -370,6 +373,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
         cs->instructionCount = oldInstructionCount;
         cs->stackSlotCount = oldStackSlotCount;
         cs->maxStackSlotCount = oldMaxStackSlotCount;
+        cs->lastExpressionSlot = oldLastExpressionSlot;
         cs->localVarCount = oldLocalVarCount;
         cs->constantCount = oldConstantCount;
         cs->closureVarCount = oldClosureVarCount;
@@ -522,6 +526,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
     cs->instructionCount = oldInstructionCount;
     cs->stackSlotCount = oldStackSlotCount;
     cs->maxStackSlotCount = oldMaxStackSlotCount;
+    cs->lastExpressionSlot = oldLastExpressionSlot;
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;
@@ -568,6 +573,7 @@ void compile_lambda_expression(SZrCompilerState *cs, SZrAstNode *node) {
             (TZrUInt16)funcConstantIndex,
             (TZrUInt16)closureVarCount);
     emit_instruction(cs, createClosureInst);
+    collapse_stack_to_slot(cs, destSlot);
 }
 
 // 辅助函数：编译块并提取最后一个表达式的值（用于if表达式等场景）

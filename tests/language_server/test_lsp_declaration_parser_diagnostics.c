@@ -272,6 +272,93 @@ static void test_lsp_missing_test_name_close_parser_diagnostic(SZrState *state) 
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_missing_declaration_body_close_parser_diagnostics(SZrState *state) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP Missing Declaration Body Close Parser Diagnostics";
+
+    TEST_START(summary);
+
+    if (!run_declaration_diagnostic_case(state,
+                                         &timer,
+                                         summary,
+                                         "file:///parser_missing_class_body_close.zr",
+                                         "class Box {\n"
+                                         "    var id: int;\n",
+                                         "missing_declaration_body_close",
+                                         "Missing closing '}' for class declaration body",
+                                         "Insert '}' to close the class declaration body",
+                                         "expected class declaration missing-body-close diagnostic to carry code, problem text, and suggestion")) {
+        return;
+    }
+
+    if (!run_declaration_diagnostic_case(state,
+                                         &timer,
+                                         summary,
+                                         "file:///parser_missing_interface_body_close.zr",
+                                         "interface Sized {\n"
+                                         "    get length: int;\n",
+                                         "missing_declaration_body_close",
+                                         "Missing closing '}' for interface declaration body",
+                                         "Insert '}' to close the interface declaration body",
+                                         "expected interface declaration missing-body-close diagnostic to carry code, problem text, and suggestion")) {
+        return;
+    }
+
+    if (!run_declaration_diagnostic_case(state,
+                                         &timer,
+                                         summary,
+                                         "file:///parser_missing_enum_body_close.zr",
+                                         "enum Tone {\n"
+                                         "    warm,\n",
+                                         "missing_declaration_body_close",
+                                         "Missing closing '}' for enum declaration body",
+                                         "Insert '}' to close the enum declaration body",
+                                         "expected enum declaration missing-body-close diagnostic to carry code, problem text, and suggestion")) {
+        return;
+    }
+
+    if (!run_declaration_diagnostic_case(state,
+                                         &timer,
+                                         summary,
+                                         "file:///parser_missing_extern_block_body_close.zr",
+                                         "%extern(\"fixture\") {\n"
+                                         "    NativeAdd(value: int): int;\n",
+                                         "missing_declaration_body_close",
+                                         "Missing closing '}' for extern block body",
+                                         "Insert '}' to close the extern block body",
+                                         "expected extern block missing-body-close diagnostic to carry code, problem text, and suggestion")) {
+        return;
+    }
+
+    if (!run_declaration_diagnostic_case(state,
+                                         &timer,
+                                         summary,
+                                         "file:///parser_missing_function_body_close.zr",
+                                         "func pick(): int {\n"
+                                         "    return 1;\n",
+                                         "missing_declaration_body_close",
+                                         "Missing closing '}' for function declaration body",
+                                         "Insert '}' to close the function declaration body",
+                                         "expected function declaration missing-body-close diagnostic to carry code, problem text, and suggestion")) {
+        return;
+    }
+
+    if (!run_declaration_diagnostic_case(state,
+                                         &timer,
+                                         summary,
+                                         "file:///parser_missing_test_declaration_body_close.zr",
+                                         "%test(\"smoke\") {\n"
+                                         "    return 1;\n",
+                                         "missing_declaration_body_close",
+                                         "Missing closing '}' for test declaration body",
+                                         "Insert '}' to close the test declaration body",
+                                         "expected test declaration missing-body-close diagnostic to carry code, problem text, and suggestion")) {
+        return;
+    }
+
+    TEST_PASS(timer, summary);
+}
+
 int main(void) {
     SZrCallbackGlobal callbacks = {0};
     SZrGlobalState *global;
@@ -291,6 +378,7 @@ int main(void) {
     test_lsp_missing_declaration_body_open_parser_diagnostics(state);
     test_lsp_missing_extern_spec_close_parser_diagnostic(state);
     test_lsp_missing_test_name_close_parser_diagnostic(state);
+    test_lsp_missing_declaration_body_close_parser_diagnostics(state);
 
     ZrCore_GlobalState_Free(global);
 

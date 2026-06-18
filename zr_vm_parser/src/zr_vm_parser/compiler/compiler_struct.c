@@ -574,9 +574,16 @@ SZrString *extract_type_name_string(SZrCompilerState *cs, SZrType *type) {
     SZrString *baseName;
     char buffer[ZR_PARSER_DECLARATION_BUFFER_LENGTH];
     TZrSize offset = 0;
+    EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    const SZrType *ownershipInnerType = ZR_NULL;
 
     if (cs == ZR_NULL || type == ZR_NULL || type->name == ZR_NULL) {
         return ZR_NULL;
+    }
+
+    if (ZrParser_AstType_TryUnwrapOwnershipGeneric(type, &ownershipQualifier, &ownershipInnerType)) {
+        ZR_UNUSED_PARAMETER(ownershipQualifier);
+        return extract_type_name_string(cs, (SZrType *)ownershipInnerType);
     }
 
     baseName = compiler_extract_type_name_node_string(cs, type->name);
@@ -643,6 +650,7 @@ void compiler_collect_generic_parameter_info(SZrCompilerState *cs,
         genericInfo.requiresClass = parameter->genericRequiresClass;
         genericInfo.requiresStruct = parameter->genericRequiresStruct;
         genericInfo.requiresNew = parameter->genericRequiresNew;
+        genericInfo.requiresOwner = parameter->genericRequiresOwner;
         ZrCore_Array_Init(cs->state,
                           &genericInfo.constraintTypeNames,
                           sizeof(SZrString *),
@@ -724,8 +732,16 @@ static TZrUInt32 compiler_inferred_type_field_size(EZrValueType baseType) {
 }
 
 TZrUInt32 calculate_type_size(SZrCompilerState *cs, SZrType *type) {
+    EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    const SZrType *ownershipInnerType = ZR_NULL;
+
     if (cs == ZR_NULL || type == ZR_NULL || type->name == ZR_NULL) {
         return 0;
+    }
+
+    if (ZrParser_AstType_TryUnwrapOwnershipGeneric(type, &ownershipQualifier, &ownershipInnerType)) {
+        ZR_UNUSED_PARAMETER(ownershipQualifier);
+        return calculate_type_size(cs, (SZrType *)ownershipInnerType);
     }
     
     // 处理数组类型
@@ -973,9 +989,17 @@ void compile_struct_declaration(SZrCompilerState *cs, SZrAstNode *node) {
                     
                     // 处理字段类型信息
                     if (field->typeInfo != ZR_NULL) {
+                        EZrOwnershipQualifier intrinsicOwnershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+                        const SZrType *intrinsicInnerType = ZR_NULL;
                         memberInfo.fieldType = field->typeInfo;
                         memberInfo.fieldTypeName = extract_type_name_string(cs, field->typeInfo);
                         memberInfo.ownershipQualifier = field->typeInfo->ownershipQualifier;
+                        if (ZrParser_AstType_TryUnwrapOwnershipGeneric(field->typeInfo,
+                                                                       &intrinsicOwnershipQualifier,
+                                                                       &intrinsicInnerType)) {
+                            ZR_UNUSED_PARAMETER(intrinsicInnerType);
+                            memberInfo.ownershipQualifier = intrinsicOwnershipQualifier;
+                        }
                         // 计算字段大小（用于偏移量计算）
                         memberInfo.fieldSize = calculate_type_size(cs, field->typeInfo);
                     } else if (field->init != ZR_NULL) {

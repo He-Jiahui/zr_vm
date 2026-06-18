@@ -153,6 +153,59 @@ static SZrOwnershipControl *ownership_get_or_create_control(struct SZrState *sta
     return ownership_create_control(state, object);
 }
 
+static void ownership_notify_strong_ref_delta(SZrState *state,
+                                              SZrOwnershipControl *control,
+                                              TZrInt32 delta) {
+    if (state == ZR_NULL ||
+        state->global == ZR_NULL ||
+        control == ZR_NULL ||
+        control->object == ZR_NULL ||
+        state->global->ownershipStrongRefObserver == ZR_NULL ||
+        delta == 0) {
+        return;
+    }
+
+    state->global->ownershipStrongRefObserver(state,
+                                              control->object,
+                                              delta,
+                                              state->global->ownershipStrongRefObserverUserData);
+}
+
+static void ownership_add_strong_ref(SZrState *state, SZrOwnershipControl *control) {
+    if (control == ZR_NULL) {
+        return;
+    }
+
+    control->strongRefCount++;
+    ownership_notify_strong_ref_delta(state, control, 1);
+}
+
+static void ownership_set_initial_strong_ref(SZrState *state, SZrOwnershipControl *control) {
+    TZrUInt32 previousCount;
+
+    if (control == ZR_NULL) {
+        return;
+    }
+
+    previousCount = control->strongRefCount;
+    control->strongRefCount = 1;
+    if (previousCount == 0) {
+        ownership_notify_strong_ref_delta(state, control, 1);
+    } else if (previousCount > 1) {
+        ownership_notify_strong_ref_delta(state, control, -((TZrInt32)(previousCount - 1)));
+    }
+}
+
+static TZrBool ownership_release_strong_ref(SZrState *state, SZrOwnershipControl *control) {
+    if (control == ZR_NULL || control->strongRefCount == 0) {
+        return ZR_FALSE;
+    }
+
+    control->strongRefCount--;
+    ownership_notify_strong_ref_delta(state, control, -1);
+    return control->strongRefCount == 0;
+}
+
 static void ownership_detach_weak_ref(struct SZrState *state, SZrTypeValue *value) {
     SZrOwnershipWeakRef *weakRef;
     SZrOwnershipControl *control;
@@ -192,7 +245,9 @@ static void ownership_expire_weak_refs(struct SZrState *state, SZrOwnershipContr
     while (weakRef != ZR_NULL) {
         SZrOwnershipWeakRef *next = weakRef->next;
         SZrTypeValue *slot = ownership_resolve_weak_ref_slot(state, weakRef);
-        if (slot != ZR_NULL) {
+        if (slot != ZR_NULL &&
+            slot->ownershipKind == ZR_OWNERSHIP_VALUE_KIND_WEAK &&
+            slot->ownershipWeakRef == weakRef) {
             ownership_reset_value_storage(slot);
         }
         ownership_free_weak_ref(state, weakRef);
@@ -342,7 +397,7 @@ TZrBool ZrCore_Ownership_InitUniqueValue(struct SZrState *state,
         return ZR_FALSE;
     }
 
-    control->strongRefCount = 1;
+    ownership_set_initial_strong_ref(state, control);
     ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_UNIQUE, control);
     ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
     return ZR_TRUE;
@@ -437,6 +492,44 @@ TZrBool ZrCore_Ownership_LoanValue(struct SZrState *state,
     return ZR_TRUE;
 }
 
+TZrBool ZrCore_Ownership_ReturnLoanValue(struct SZrState *state,
+                                         SZrTypeValue *destination,
+                                         SZrTypeValue *source) {
+    SZrOwnershipControl *control;
+    SZrRawObject *object;
+
+    if (state == ZR_NULL || destination == ZR_NULL || source == ZR_NULL ||
+        destination == source) {
+        return ZR_FALSE;
+    }
+
+    if (!ownership_prepare_destination(state, destination)) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_NULL(source->type)) {
+        return ZR_TRUE;
+    }
+
+    if (!ownership_value_has_object(source) ||
+        source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_LOANED) {
+        ownership_reset_value_storage(destination);
+        return ZR_FALSE;
+    }
+
+    control = source->ownershipControl;
+    object = source->value.object;
+    if (control == ZR_NULL || object == ZR_NULL) {
+        ownership_reset_value_storage(destination);
+        return ZR_FALSE;
+    }
+
+    ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_UNIQUE, control);
+    ownership_reset_value_storage(source);
+    ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
+    return ZR_TRUE;
+}
+
 TZrBool ZrCore_Ownership_ShareValue(struct SZrState *state,
                                     SZrTypeValue *destination,
                                     SZrTypeValue *source) {
@@ -472,6 +565,48 @@ TZrBool ZrCore_Ownership_ShareValue(struct SZrState *state,
 
     ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_SHARED, control);
     ownership_reset_value_storage(source);
+    ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
+    return ZR_TRUE;
+}
+
+TZrBool ZrCore_Ownership_SharePlainValue(struct SZrState *state,
+                                         SZrTypeValue *destination,
+                                         SZrTypeValue *source) {
+    SZrOwnershipControl *control;
+    SZrRawObject *object;
+
+    if (state == ZR_NULL || destination == ZR_NULL || source == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    if (!ownership_prepare_destination(state, destination)) {
+        return ZR_FALSE;
+    }
+
+    if (ZR_VALUE_IS_TYPE_NULL(source->type)) {
+        return ZR_TRUE;
+    }
+
+    if (!ownership_value_has_object(source) ||
+        source->ownershipKind != ZR_OWNERSHIP_VALUE_KIND_NONE) {
+        ownership_reset_value_storage(destination);
+        return ZR_FALSE;
+    }
+
+    object = source->value.object;
+    control = ownership_get_or_create_control(state, object);
+    if (control == ZR_NULL) {
+        ownership_reset_value_storage(destination);
+        return ZR_FALSE;
+    }
+
+    if (!ownership_ignore_object_if_needed(state, control)) {
+        ownership_reset_value_storage(destination);
+        return ZR_FALSE;
+    }
+
+    ownership_add_strong_ref(state, control);
+    ownership_set_value_from_object(destination, object, ZR_OWNERSHIP_VALUE_KIND_SHARED, control);
     ZrCore_Gc_ValueStaticAssertIsAlive(state, destination);
     return ZR_TRUE;
 }
@@ -542,7 +677,7 @@ TZrBool ZrCore_Ownership_UpgradeValue(struct SZrState *state,
         return ZR_TRUE;
     }
 
-    control->strongRefCount++;
+    ownership_add_strong_ref(state, control);
     ownership_set_value_from_object(destination,
                                     control->object,
                                     ZR_OWNERSHIP_VALUE_KIND_SHARED,
@@ -595,9 +730,7 @@ TZrBool ZrCore_Ownership_ReturnToGcValue(struct SZrState *state,
     }
 
     ownership_return_control_to_gc(state, control);
-    if (control->strongRefCount > 0) {
-        control->strongRefCount--;
-    }
+    ownership_release_strong_ref(state, control);
 
     ZrCore_Value_InitAsRawObject(state, destination, object);
     source->ownershipControl = ZR_NULL;
@@ -639,8 +772,7 @@ void ZrCore_Ownership_ReleaseValue(struct SZrState *state, SZrTypeValue *value) 
          kind == ZR_OWNERSHIP_VALUE_KIND_UNIQUE ||
          kind == ZR_OWNERSHIP_VALUE_KIND_LOANED) &&
         control->strongRefCount > 0) {
-        control->strongRefCount--;
-        if (control->strongRefCount == 0) {
+        if (ownership_release_strong_ref(state, control)) {
             ownership_return_control_to_gc(state, control);
             ownership_expire_weak_refs(state, control);
         }
@@ -707,7 +839,7 @@ void ZrCore_Ownership_AssignValue(struct SZrState *state,
         case ZR_OWNERSHIP_VALUE_KIND_SHARED:
             control = source->ownershipControl;
             if (control != ZR_NULL) {
-                control->strongRefCount++;
+                ownership_add_strong_ref(state, control);
             }
             ownership_set_value_from_object(destination, source->value.object,
                                             ZR_OWNERSHIP_VALUE_KIND_SHARED, control);
@@ -730,7 +862,7 @@ void ZrCore_Ownership_AssignValue(struct SZrState *state,
         case ZR_OWNERSHIP_VALUE_KIND_LOANED:
             control = source->ownershipControl;
             if (control != ZR_NULL) {
-                control->strongRefCount++;
+                ownership_add_strong_ref(state, control);
             }
             ownership_set_value_from_object(destination,
                                             source->value.object,
@@ -811,6 +943,22 @@ TZrInt64 ZrCore_Ownership_NativeShared(struct SZrState *state) {
 
     ownership_prepare_destination(state, result);
     if (!ZrCore_Ownership_ShareValue(state, result, arg)) {
+        ownership_reset_value_storage(result);
+    }
+    state->stackTop.valuePointer = state->callInfoList->functionBase.valuePointer + 1;
+    return 1;
+}
+
+TZrInt64 ZrCore_Ownership_NativeSharePlain(struct SZrState *state) {
+    SZrTypeValue *result;
+    SZrTypeValue *arg;
+
+    if (!ownership_native_get_argument(state, &result, &arg)) {
+        return 0;
+    }
+
+    ownership_prepare_destination(state, result);
+    if (!ZrCore_Ownership_SharePlainValue(state, result, arg)) {
         ownership_reset_value_storage(result);
     }
     state->stackTop.valuePointer = state->callInfoList->functionBase.valuePointer + 1;

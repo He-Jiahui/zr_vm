@@ -23,6 +23,7 @@ struct SZrStringTable;
 // from object.h
 struct SZrObjectPrototype;
 struct SZrObjectModule;
+struct SZrRawObject;
 
 // from state.h
 struct SZrState;
@@ -49,6 +50,10 @@ typedef struct SZrObjectModule *(*FZrAotModuleLoader)(struct SZrState *state,
                                                       TZrPtr userData);
 
 typedef void (*FZrGlobalOpaqueStateCleanup)(struct SZrGlobalState *global, TZrPtr state);
+typedef void (*FZrOwnershipStrongRefObserver)(struct SZrState *state,
+                                              struct SZrRawObject *object,
+                                              TZrInt32 delta,
+                                              TZrPtr userData);
 
 struct ZR_STRUCT_ALIGN SZrGlobalState {
     // Memory
@@ -98,6 +103,9 @@ struct ZR_STRUCT_ALIGN SZrGlobalState {
     TZrPtr aotModuleLoaderUserData;
     FZrNativeModuleLoader nativeModuleLoader;
     TZrPtr nativeModuleLoaderUserData;
+    TZrChar moduleLoadDiagnostic[ZR_RUNTIME_ERROR_BUFFER_LENGTH];
+    FZrOwnershipStrongRefObserver ownershipStrongRefObserver;
+    TZrPtr ownershipStrongRefObserverUserData;
     
     // Parser and Compiler (injected, can be NULL)
     // 如果为NULL，则只支持加载.zro二进制文件
@@ -147,6 +155,16 @@ ZR_CORE_API void ZrCore_GlobalState_SetNativeModuleLoader(SZrGlobalState *global
 ZR_CORE_API void ZrCore_GlobalState_SetAotModuleLoader(SZrGlobalState *global,
                                                        FZrAotModuleLoader loader,
                                                        TZrPtr userData);
+
+ZR_CORE_API void ZrCore_GlobalState_SetOwnershipStrongRefObserver(SZrGlobalState *global,
+                                                                  FZrOwnershipStrongRefObserver observer,
+                                                                  TZrPtr userData);
+
+ZR_CORE_API void ZrCore_GlobalState_ClearModuleLoadDiagnostic(SZrGlobalState *global);
+ZR_CORE_API void ZrCore_GlobalState_SetModuleLoadDiagnostic(SZrGlobalState *global,
+                                                            const TZrChar *format,
+                                                            ...);
+ZR_CORE_API const TZrChar *ZrCore_GlobalState_GetModuleLoadDiagnostic(const SZrGlobalState *global);
 
 ZR_CORE_API void ZrCore_GlobalState_Free(SZrGlobalState *global);
 

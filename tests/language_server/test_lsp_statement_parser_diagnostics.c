@@ -365,6 +365,48 @@ static void test_lsp_missing_using_resource_close_parser_diagnostic(SZrState *st
     TEST_PASS(timer, summary);
 }
 
+static void test_lsp_using_binder_invalid_parser_diagnostic(SZrState *state) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP Using Binder Invalid Parser Diagnostic";
+
+    TEST_START(summary);
+
+    if (!run_statement_diagnostic_case(state,
+                                       &timer,
+                                       summary,
+                                       "file:///parser_using_binder_invalid.zr",
+                                       "var resource = \"x\";\nusing (var 1 = resource) { var inner = 1; }\n",
+                                       "using_binder_invalid",
+                                       "invalid using guard binder",
+                                       "Use `using (var name = %import(...))`",
+                                       "expected using-binder-invalid diagnostic to carry code, problem text, and suggestion")) {
+        return;
+    }
+
+    TEST_PASS(timer, summary);
+}
+
+static void test_lsp_import_path_not_constant_parser_diagnostic(SZrState *state) {
+    SZrTestTimer timer;
+    const TZrChar *summary = "LSP Import Path Not Constant Parser Diagnostic";
+
+    TEST_START(summary);
+
+    if (!run_statement_diagnostic_case(state,
+                                       &timer,
+                                       summary,
+                                       "file:///parser_import_path_not_constant.zr",
+                                       "var pluginName = \"zr.math\";\nusing (var plugin = %import(pluginName)) { var ok = 1; }\n",
+                                       "import_path_not_constant",
+                                       "%import(...) requires a string literal module path",
+                                       "Use `%import(\"zr.module\")`",
+                                       "expected import-path-not-constant diagnostic to carry code, problem text, and suggestion")) {
+        return;
+    }
+
+    TEST_PASS(timer, summary);
+}
+
 static void test_lsp_missing_for_header_close_parser_diagnostic(SZrState *state) {
     SZrTestTimer timer;
     const TZrChar *summary = "LSP Missing For Header Close Parser Diagnostic";
@@ -535,6 +577,8 @@ int main(void) {
     test_lsp_missing_block_close_parser_diagnostic(state);
     test_lsp_missing_catch_pattern_close_parser_diagnostic(state);
     test_lsp_missing_using_resource_close_parser_diagnostic(state);
+    test_lsp_using_binder_invalid_parser_diagnostic(state);
+    test_lsp_import_path_not_constant_parser_diagnostic(state);
     test_lsp_missing_for_header_close_parser_diagnostic(state);
     test_lsp_missing_for_header_separator_parser_diagnostic(state);
     test_lsp_missing_foreach_header_close_parser_diagnostic(state);

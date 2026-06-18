@@ -94,6 +94,10 @@ TZrBool emit_member_slot_set(SZrCompilerState *cs,
                              TZrUInt32 receiverSlot,
                              TZrUInt32 memberEntryIndex,
                              SZrFileRange location);
+TZrBool emit_member_slot_set_null(SZrCompilerState *cs,
+                                  TZrUInt32 receiverSlot,
+                                  TZrUInt32 memberEntryIndex,
+                                  SZrFileRange location);
 TZrBool resolve_declared_field_member_access(SZrCompilerState *cs,
                                              SZrString *ownerTypeName,
                                              SZrString *memberName,
@@ -144,15 +148,24 @@ SZrString *create_hidden_property_accessor_name(SZrCompilerState *cs,
                                                 SZrString *propertyName,
                                                 TZrBool isSetter);
 void collapse_stack_to_slot(SZrCompilerState *cs, TZrUInt32 slot);
+TZrUInt32 allocate_fresh_stack_slot_after(SZrCompilerState *cs, TZrUInt32 lowerBoundSlot);
 TZrUInt32 normalize_top_result_to_slot(SZrCompilerState *cs, TZrUInt32 targetSlot);
 void compile_expression_non_tail(SZrCompilerState *cs, SZrAstNode *node);
 TZrUInt32 emit_string_constant(SZrCompilerState *cs, SZrString *value);
 TZrUInt32 compile_expression_into_slot(SZrCompilerState *cs, SZrAstNode *node, TZrUInt32 targetSlot);
+TZrBool compile_expression_try_get_inline_union_identifier_slot_for_type(SZrCompilerState *cs,
+                                                                         SZrAstNode *node,
+                                                                         const SZrInferredType *expectedType,
+                                                                         TZrUInt32 *outSlot);
 TZrBool emit_property_getter_call(SZrCompilerState *cs,
                                   TZrUInt32 currentSlot,
                                   SZrString *propertyName,
                                   TZrBool isStatic,
                                   SZrFileRange location);
+TZrBool emit_module_plain_share_helper_call(SZrCompilerState *cs,
+                                            TZrUInt32 sourceSlot,
+                                            TZrUInt32 resultSlot,
+                                            SZrFileRange location);
 TZrUInt32 emit_property_setter_call(SZrCompilerState *cs,
                                     TZrUInt32 objectSlot,
                                     SZrString *propertyName,
@@ -165,6 +178,49 @@ TZrUInt32 compile_member_key_into_slot(SZrCompilerState *cs,
 SZrString *resolve_member_expression_symbol(SZrCompilerState *cs,
                                             SZrMemberExpression *memberExpr);
 TZrBool expression_uses_dynamic_object_access(SZrAstNode *node);
+TZrBool try_compile_union_variant_constructor_expression(SZrCompilerState *cs,
+                                                         SZrAstNode *node,
+                                                         TZrUInt32 *outSlot);
+TZrBool try_resolve_union_variant_reference_expression(SZrCompilerState *cs,
+                                                       SZrAstNode *node,
+                                                       SZrString **outVariantName);
+TZrBool try_resolve_union_variant_pattern_expression(SZrCompilerState *cs,
+                                                     SZrAstNode *node,
+                                                     SZrString **outVariantName,
+                                                     SZrAstNodeArray **outBindings,
+                                                     SZrAstNode **outVariant);
+TZrBool try_resolve_union_variant_pattern_for_type(SZrCompilerState *cs,
+                                                   SZrAstNode *node,
+                                                   SZrString *typeName,
+                                                   SZrString **outVariantName,
+                                                   SZrAstNodeArray **outBindings,
+                                                   SZrAstNode **outVariant);
+TZrBool try_resolve_union_variant_pattern_with_type_annotation(SZrCompilerState *cs,
+                                                               SZrAstNode *pattern,
+                                                               SZrType *variantTypeInfo,
+                                                               SZrString *resourceTypeName,
+                                                               SZrString **outVariantName,
+                                                               SZrAstNodeArray **outBindings,
+                                                               SZrAstNode **outVariant);
+TZrBool try_resolve_union_variant_pattern_annotation(SZrCompilerState *cs,
+                                                     SZrAstNode *pattern,
+                                                     SZrType *variantTypeInfo,
+                                                     SZrString **outUnionTypeName,
+                                                     SZrString **outVariantName,
+                                                     SZrAstNodeArray **outBindings,
+                                                     SZrAstNode **outVariant);
+void register_union_variant_payload_binding_type(SZrCompilerState *cs,
+                                                 SZrAstNode *variant,
+                                                 TZrSize payloadIndex,
+                                                 SZrString *bindingName,
+                                                 TZrBool moveBinding);
+EZrOwnershipQualifier union_variant_payload_default_binding_qualifier(SZrAstNode *variant,
+                                                                      TZrSize payloadIndex,
+                                                                      TZrBool moveBinding);
+TZrBool union_variant_payload_binding_defaults_to_borrow(SZrAstNode *variant,
+                                                         TZrSize payloadIndex,
+                                                         TZrBool moveBinding);
+SZrAstNode *try_find_union_declaration_for_type_name(SZrCompilerState *cs, SZrString *typeName);
 
 SZrAstNode *find_type_declaration(SZrCompilerState *cs, SZrString *typeName);
 TZrBool find_type_member_is_const(SZrCompilerState *cs, SZrString *typeName, SZrString *memberName);

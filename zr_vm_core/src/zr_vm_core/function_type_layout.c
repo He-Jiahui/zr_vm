@@ -11,6 +11,7 @@
 #include "zr_vm_core/constant_reference.h"
 #include "zr_vm_core/memory.h"
 #include "zr_vm_core/module.h"
+#include "zr_vm_core/object.h"
 #include "zr_vm_core/state.h"
 #include "zr_vm_core/string.h"
 #include "zr_vm_core/type_layout.h"
@@ -451,7 +452,117 @@ static SZrString *function_type_layout_constant_string(SZrState *state,
     return ZR_CAST_STRING(state, constant->value.object);
 }
 
-static TZrBool function_type_layout_find_local_struct_prototype_index(SZrState *state,
+static SZrObject *function_type_layout_constant_object(SZrState *state,
+                                                       const SZrFunction *function,
+                                                       TZrUInt32 constantIndex) {
+    const SZrTypeValue *constant;
+
+    if (state == ZR_NULL || function == ZR_NULL ||
+        function->constantValueList == ZR_NULL ||
+        constantIndex >= function->constantValueLength) {
+        return ZR_NULL;
+    }
+
+    constant = &function->constantValueList[constantIndex];
+    if ((constant->type != ZR_VALUE_TYPE_OBJECT && constant->type != ZR_VALUE_TYPE_ARRAY) ||
+        constant->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_OBJECT(state, constant->value.object);
+}
+
+static const SZrTypeValue *function_type_layout_object_member_value(SZrState *state,
+                                                                    SZrObject *object,
+                                                                    const TZrChar *name) {
+    SZrString *memberName;
+    SZrTypeValue key;
+
+    if (state == ZR_NULL || object == ZR_NULL || name == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    memberName = ZrCore_String_CreateFromNative(state, (TZrNativeString)name);
+    if (memberName == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsRawObject(state, &key, ZR_CAST_RAW_OBJECT_AS_SUPER(memberName));
+    key.type = ZR_VALUE_TYPE_STRING;
+    return ZrCore_Object_GetValue(state, object, &key);
+}
+
+static TZrBool function_type_layout_object_int_field(SZrState *state,
+                                                     SZrObject *object,
+                                                     const TZrChar *name,
+                                                     TZrUInt32 *outValue) {
+    const SZrTypeValue *value;
+
+    if (outValue != ZR_NULL) {
+        *outValue = 0u;
+    }
+    if (state == ZR_NULL || object == ZR_NULL || name == ZR_NULL || outValue == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    value = function_type_layout_object_member_value(state, object, name);
+    if (value == ZR_NULL || !ZR_VALUE_IS_TYPE_INT(value->type)) {
+        return ZR_FALSE;
+    }
+
+    *outValue = ZR_VALUE_IS_TYPE_SIGNED_INT(value->type)
+                        ? (TZrUInt32)value->value.nativeObject.nativeInt64
+                        : (TZrUInt32)value->value.nativeObject.nativeUInt64;
+    return ZR_TRUE;
+}
+
+static TZrUInt32 function_type_layout_optional_object_int_field(SZrState *state,
+                                                                SZrObject *object,
+                                                                const TZrChar *name) {
+    TZrUInt32 value = 0u;
+
+    (void)function_type_layout_object_int_field(state, object, name, &value);
+    return value;
+}
+
+static SZrObject *function_type_layout_object_array_field(SZrState *state,
+                                                          SZrObject *object,
+                                                          const TZrChar *name) {
+    const SZrTypeValue *value = function_type_layout_object_member_value(state, object, name);
+
+    if (state == ZR_NULL || value == ZR_NULL || value->type != ZR_VALUE_TYPE_ARRAY || value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_OBJECT(state, value->value.object);
+}
+
+static SZrObject *function_type_layout_array_object_at(SZrState *state, SZrObject *arrayObject, TZrUInt32 index) {
+    SZrTypeValue key;
+    const SZrTypeValue *value;
+
+    if (state == ZR_NULL || arrayObject == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    ZrCore_Value_InitAsInt(state, &key, (TZrInt64)index);
+    value = ZrCore_Object_GetValue(state, arrayObject, &key);
+    if (value == ZR_NULL || value->type != ZR_VALUE_TYPE_OBJECT || value->value.object == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    return ZR_CAST_OBJECT(state, value->value.object);
+}
+
+static TZrBool function_type_layout_prototype_is_inline_layout(const SZrCompiledPrototypeInfo *prototype) {
+    return (TZrBool)(prototype != ZR_NULL &&
+                     (prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+                      prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) &&
+                     prototype->layoutByteSize > 0u &&
+                     prototype->layoutByteAlign > 0u);
+}
+
+static TZrBool function_type_layout_find_local_inline_prototype_index(SZrState *state,
                                                                       const SZrFunction *function,
                                                                       SZrString *typeName,
                                                                       TZrUInt32 *outPrototypeIndex) {
@@ -468,7 +579,7 @@ static TZrBool function_type_layout_find_local_struct_prototype_index(SZrState *
 
         if (!function_type_layout_find_prototype_record(function, index, &record, ZR_NULL) ||
             record.prototype == ZR_NULL ||
-            record.prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+            !function_type_layout_prototype_is_inline_layout(record.prototype)) {
             continue;
         }
 
@@ -517,7 +628,7 @@ static TZrBool function_type_layout_resolve_non_lifecycle_field(
         return ZR_FALSE;
     }
 
-    if (!function_type_layout_find_local_struct_prototype_index(state,
+    if (!function_type_layout_find_local_inline_prototype_index(state,
                                                                 function,
                                                                 fieldTypeName,
                                                                 &nestedPrototypeIndex)) {
@@ -609,9 +720,68 @@ void ZrCore_Function_FreePrototypeFrameTypeLayoutCache(struct SZrState *state, S
     function->prototypeFrameTypeLayoutFieldCapacity = 0u;
 }
 
+static TZrBool function_type_layout_count_union_payload_field_capacity(SZrState *state,
+                                                                       SZrFunction *function,
+                                                                       TZrUInt32 *outCapacity) {
+    TZrUInt32 capacity = 0u;
+
+    if (outCapacity != ZR_NULL) {
+        *outCapacity = 0u;
+    }
+    if (state == ZR_NULL || function == ZR_NULL || outCapacity == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 prototypeIndex = 0u; prototypeIndex < function->prototypeCount; prototypeIndex++) {
+        SZrFunctionPrototypeRecord record;
+
+        if (!function_type_layout_find_prototype_record(function, prototypeIndex, &record, ZR_NULL)) {
+            return ZR_FALSE;
+        }
+        if (record.prototype == ZR_NULL ||
+            record.prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_UNION ||
+            record.prototype->membersCount == 0u) {
+            continue;
+        }
+        if (record.members == ZR_NULL) {
+            return ZR_FALSE;
+        }
+
+        for (TZrUInt32 memberIndex = 0u; memberIndex < record.prototype->membersCount; memberIndex++) {
+            const SZrCompiledMemberInfo *member = &record.members[memberIndex];
+            SZrObject *metadata;
+            SZrObject *payloadFields;
+            TZrSize payloadFieldCount;
+
+            if (member->memberType != ZR_AST_CONSTANT_UNION_VARIANT ||
+                member->hasDecoratorMetadata == 0u) {
+                continue;
+            }
+
+            metadata = function_type_layout_constant_object(state,
+                                                            function,
+                                                            member->decoratorMetadataConstantIndex);
+            payloadFields = function_type_layout_object_array_field(state, metadata, "payloadFields");
+            if (payloadFields == ZR_NULL) {
+                continue;
+            }
+
+            payloadFieldCount = payloadFields->nodeMap.elementCount;
+            if (payloadFieldCount > (TZrSize)(UINT32_MAX - capacity)) {
+                return ZR_FALSE;
+            }
+            capacity += (TZrUInt32)payloadFieldCount;
+        }
+    }
+
+    *outCapacity = capacity;
+    return ZR_TRUE;
+}
+
 static TZrBool function_type_layout_ensure_cache(SZrState *state, SZrFunction *function) {
     SZrFunctionPrototypeRecord record;
     TZrUInt32 totalMemberCapacity = 0u;
+    TZrUInt32 unionPayloadFieldCapacity = 0u;
     TZrUInt32 totalFieldCapacity = 0u;
 
     if (state == ZR_NULL || state->global == ZR_NULL || function == ZR_NULL || function->prototypeCount == 0u) {
@@ -628,10 +798,21 @@ static TZrBool function_type_layout_ensure_cache(SZrState *state, SZrFunction *f
     if (!function_type_layout_find_prototype_record(function, 0u, &record, &totalMemberCapacity)) {
         return ZR_FALSE;
     }
+    if (!function_type_layout_count_union_payload_field_capacity(state,
+                                                                 function,
+                                                                 &unionPayloadFieldCapacity)) {
+        return ZR_FALSE;
+    }
 
     if (totalMemberCapacity > 0u &&
         !function_type_layout_checked_mul_u32(totalMemberCapacity,
                                               function->prototypeCount,
+                                              &totalFieldCapacity)) {
+        return ZR_FALSE;
+    }
+    if (unionPayloadFieldCapacity > 0u &&
+        !function_type_layout_checked_add_u32(totalFieldCapacity,
+                                              unionPayloadFieldCapacity,
                                               &totalFieldCapacity)) {
         return ZR_FALSE;
     }
@@ -673,6 +854,187 @@ static TZrBool function_type_layout_ensure_cache(SZrState *state, SZrFunction *f
     return ZR_TRUE;
 }
 
+static TZrBool function_type_layout_union_payload_value_field_is_safe(const SZrCompiledPrototypeInfo *prototype,
+                                                                      TZrUInt32 byteOffset,
+                                                                      TZrUInt32 byteSize) {
+    TZrUInt32 fieldEnd;
+    TZrUInt32 valueEnd;
+
+    return (TZrBool)(prototype != ZR_NULL &&
+                     byteSize >= (TZrUInt32)sizeof(SZrTypeValue) &&
+                     function_type_layout_checked_add_u32(byteOffset, byteSize, &fieldEnd) &&
+                     function_type_layout_checked_add_u32(byteOffset,
+                                                          (TZrUInt32)sizeof(SZrTypeValue),
+                                                          &valueEnd) &&
+                     fieldEnd <= prototype->layoutByteSize &&
+                     valueEnd <= prototype->layoutByteSize);
+}
+
+static TZrBool function_type_layout_union_payload_field_layout(SZrState *state,
+                                                               const SZrCompiledPrototypeInfo *prototype,
+                                                               SZrObject *fieldMetadata,
+                                                               TZrUInt32 activeTag,
+                                                               SZrTypeLayoutField *outField,
+                                                               TZrBool *outIsManaged) {
+    TZrUInt32 byteOffset;
+    TZrUInt32 byteSize;
+    TZrUInt32 ownershipQualifier;
+
+    if (outIsManaged != ZR_NULL) {
+        *outIsManaged = ZR_FALSE;
+    }
+    if (outField != ZR_NULL) {
+        memset(outField, 0, sizeof(*outField));
+        outField->typeLayoutIndex = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+    }
+    if (state == ZR_NULL ||
+        prototype == ZR_NULL ||
+        fieldMetadata == ZR_NULL ||
+        !function_type_layout_object_int_field(state, fieldMetadata, "byteOffset", &byteOffset) ||
+        !function_type_layout_object_int_field(state, fieldMetadata, "byteSize", &byteSize)) {
+        return ZR_FALSE;
+    }
+
+    if (byteSize < (TZrUInt32)sizeof(SZrTypeValue)) {
+        return ZR_TRUE;
+    }
+    if (!function_type_layout_union_payload_value_field_is_safe(prototype, byteOffset, byteSize)) {
+        return ZR_FALSE;
+    }
+
+    ownershipQualifier = function_type_layout_optional_object_int_field(state, fieldMetadata, "ownershipQualifier");
+    if (outIsManaged != ZR_NULL) {
+        *outIsManaged = ZR_TRUE;
+    }
+    if (outField != ZR_NULL) {
+        outField->byteOffset = byteOffset;
+        outField->byteSize = (TZrUInt32)sizeof(SZrTypeValue);
+        outField->typeLayoutIndex = ZR_FUNCTION_FRAME_TYPE_LAYOUT_ID_NONE;
+        outField->flags = ZR_TYPE_LAYOUT_FIELD_FLAG_VALUE_SLOT |
+                          ZR_TYPE_LAYOUT_FIELD_FLAG_GC_VALUE;
+        if (ownershipQualifier != 0u) {
+            outField->flags |= ZR_TYPE_LAYOUT_FIELD_FLAG_OWNERSHIP_VALUE;
+        }
+        outField->activeTag = activeTag;
+    }
+    return ZR_TRUE;
+}
+
+static SZrObject *function_type_layout_union_variant_payload_fields(SZrState *state,
+                                                                    SZrFunction *function,
+                                                                    const SZrCompiledMemberInfo *member) {
+    SZrObject *metadata;
+
+    if (state == ZR_NULL ||
+        function == ZR_NULL ||
+        member == ZR_NULL ||
+        member->memberType != ZR_AST_CONSTANT_UNION_VARIANT ||
+        member->hasDecoratorMetadata == 0u) {
+        return ZR_NULL;
+    }
+
+    metadata = function_type_layout_constant_object(state, function, member->decoratorMetadataConstantIndex);
+    return function_type_layout_object_array_field(state, metadata, "payloadFields");
+}
+
+static TZrBool function_type_layout_build_union_managed_fields(SZrState *state,
+                                                               SZrFunction *function,
+                                                               const SZrCompiledPrototypeInfo *prototype,
+                                                               const SZrCompiledMemberInfo *members,
+                                                               SZrTypeLayoutField **outFields,
+                                                               TZrUInt32 *outFieldCount) {
+    TZrUInt32 managedFieldCount = 0u;
+    SZrTypeLayoutField *fields;
+    TZrUInt32 fieldCursor = 0u;
+
+    if (outFields != ZR_NULL) {
+        *outFields = ZR_NULL;
+    }
+    if (outFieldCount != ZR_NULL) {
+        *outFieldCount = 0u;
+    }
+    if (state == ZR_NULL ||
+        function == ZR_NULL ||
+        prototype == ZR_NULL ||
+        prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_UNION ||
+        (prototype->membersCount > 0u && members == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 memberIndex = 0u; memberIndex < prototype->membersCount; memberIndex++) {
+        const SZrCompiledMemberInfo *member = &members[memberIndex];
+        SZrObject *payloadFields = function_type_layout_union_variant_payload_fields(state, function, member);
+
+        if (payloadFields == ZR_NULL) {
+            continue;
+        }
+        for (TZrUInt32 fieldIndex = 0u; fieldIndex < (TZrUInt32)payloadFields->nodeMap.elementCount; fieldIndex++) {
+            SZrObject *fieldMetadata = function_type_layout_array_object_at(state, payloadFields, fieldIndex);
+            TZrBool isManaged = ZR_FALSE;
+
+            if (!function_type_layout_union_payload_field_layout(state,
+                                                                 prototype,
+                                                                 fieldMetadata,
+                                                                 member->fieldOffset,
+                                                                 ZR_NULL,
+                                                                 &isManaged)) {
+                return ZR_FALSE;
+            }
+            if (isManaged &&
+                !function_type_layout_checked_add_u32(managedFieldCount, 1u, &managedFieldCount)) {
+                return ZR_FALSE;
+            }
+        }
+    }
+
+    if (managedFieldCount == 0u) {
+        return ZR_TRUE;
+    }
+    if (function->prototypeFrameTypeLayoutFields == ZR_NULL ||
+        function->prototypeFrameTypeLayoutFieldCount > function->prototypeFrameTypeLayoutFieldCapacity ||
+        managedFieldCount > function->prototypeFrameTypeLayoutFieldCapacity - function->prototypeFrameTypeLayoutFieldCount) {
+        return ZR_FALSE;
+    }
+
+    fields = function->prototypeFrameTypeLayoutFields + function->prototypeFrameTypeLayoutFieldCount;
+    for (TZrUInt32 memberIndex = 0u; memberIndex < prototype->membersCount; memberIndex++) {
+        const SZrCompiledMemberInfo *member = &members[memberIndex];
+        SZrObject *payloadFields = function_type_layout_union_variant_payload_fields(state, function, member);
+
+        if (payloadFields == ZR_NULL) {
+            continue;
+        }
+        for (TZrUInt32 fieldIndex = 0u; fieldIndex < (TZrUInt32)payloadFields->nodeMap.elementCount; fieldIndex++) {
+            SZrObject *fieldMetadata = function_type_layout_array_object_at(state, payloadFields, fieldIndex);
+            TZrBool isManaged = ZR_FALSE;
+            SZrTypeLayoutField field;
+
+            if (!function_type_layout_union_payload_field_layout(state,
+                                                                 prototype,
+                                                                 fieldMetadata,
+                                                                 member->fieldOffset,
+                                                                 &field,
+                                                                 &isManaged)) {
+                return ZR_FALSE;
+            }
+            if (!isManaged) {
+                continue;
+            }
+
+            fields[fieldCursor++] = field;
+        }
+    }
+
+    function->prototypeFrameTypeLayoutFieldCount += managedFieldCount;
+    if (outFields != ZR_NULL) {
+        *outFields = fields;
+    }
+    if (outFieldCount != ZR_NULL) {
+        *outFieldCount = managedFieldCount;
+    }
+    return ZR_TRUE;
+}
+
 static TZrBool function_type_layout_build_managed_fields(SZrState *state,
                                                          SZrFunction *function,
                                                          const SZrCompiledPrototypeInfo *prototype,
@@ -692,6 +1054,14 @@ static TZrBool function_type_layout_build_managed_fields(SZrState *state,
     if (state == ZR_NULL || function == ZR_NULL || prototype == ZR_NULL ||
         (prototype->membersCount > 0u && members == ZR_NULL)) {
         return ZR_FALSE;
+    }
+    if (prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) {
+        return function_type_layout_build_union_managed_fields(state,
+                                                               function,
+                                                               prototype,
+                                                               members,
+                                                               outFields,
+                                                               outFieldCount);
     }
 
     for (TZrUInt32 index = 0u; index < prototype->membersCount; index++) {
@@ -841,8 +1211,12 @@ TZrBool ZrCore_Function_ResolvePrototypeFrameFieldLayout(SZrState *state,
         typeLayoutId >= entryFunction->prototypeCount ||
         !function_type_layout_find_prototype_record(entryFunction, typeLayoutId, &record, ZR_NULL) ||
         record.prototype == ZR_NULL ||
-        record.prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+        (record.prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
+         record.prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_UNION)) {
         return ZR_FALSE;
+    }
+    if (record.prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) {
+        return ZR_TRUE;
     }
 
     for (TZrUInt32 index = 0u; index < record.prototype->membersCount; index++) {
@@ -888,7 +1262,7 @@ TZrBool ZrCore_Function_ResolvePrototypeFrameFieldLayout(SZrState *state,
                 outFieldLayout->valueType = valueType;
                 outFieldLayout->isPrimitivePod = ZR_TRUE;
             } else if (fieldTypeName != ZR_NULL &&
-                       function_type_layout_find_local_struct_prototype_index(state,
+                       function_type_layout_find_local_inline_prototype_index(state,
                                                                               entryFunction,
                                                                               fieldTypeName,
                                                                               &nestedPrototypeIndex)) {
@@ -948,6 +1322,52 @@ TZrBool ZrCore_Function_VisitPrototypeFrameFieldLayouts(
     return ZR_TRUE;
 }
 
+static TZrBool function_type_layout_union_tag_size(SZrState *state,
+                                                   SZrFunction *function,
+                                                   const SZrCompiledPrototypeInfo *prototype,
+                                                   const SZrCompiledMemberInfo *members,
+                                                   TZrUInt32 *outTagSize) {
+    if (outTagSize != ZR_NULL) {
+        *outTagSize = 0u;
+    }
+    if (state == ZR_NULL ||
+        function == ZR_NULL ||
+        prototype == ZR_NULL ||
+        prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_UNION ||
+        outTagSize == ZR_NULL ||
+        (prototype->membersCount > 0u && members == ZR_NULL)) {
+        return ZR_FALSE;
+    }
+
+    for (TZrUInt32 index = 0u; index < prototype->membersCount; index++) {
+        const SZrCompiledMemberInfo *member = &members[index];
+        SZrObject *metadata;
+        TZrUInt32 tagSize;
+
+        if (member->memberType != ZR_AST_CONSTANT_UNION_VARIANT ||
+            member->hasDecoratorMetadata == 0u) {
+            continue;
+        }
+
+        metadata = function_type_layout_constant_object(state, function, member->decoratorMetadataConstantIndex);
+        if (metadata == ZR_NULL) {
+            continue;
+        }
+        if (!function_type_layout_object_int_field(state, metadata, "tagSize", &tagSize)) {
+            return ZR_FALSE;
+        }
+        if (tagSize == 0u || tagSize > prototype->layoutByteSize) {
+            return ZR_FALSE;
+        }
+
+        *outTagSize = tagSize;
+        return ZR_TRUE;
+    }
+
+    *outTagSize = prototype->layoutByteSize > 0u ? 1u : 0u;
+    return (TZrBool)(*outTagSize != 0u);
+}
+
 const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFunction *function,
                                                                      TZrUInt32 typeLayoutId,
                                                                      TZrPtr userData) {
@@ -957,6 +1377,7 @@ const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFu
     SZrFunctionPrototypeRecord record;
     SZrTypeLayoutField *fields = ZR_NULL;
     TZrUInt32 fieldCount = 0u;
+    TZrUInt32 unionTagSize = 0u;
     TZrUInt8 stateFlag;
 
     if (entryFunction == ZR_NULL ||
@@ -984,28 +1405,65 @@ const SZrTypeLayout *ZrCore_Function_ResolvePrototypeFrameTypeLayout(const SZrFu
     entryFunction->prototypeFrameTypeLayoutStates[typeLayoutId] = ZR_FUNCTION_TYPE_LAYOUT_CACHE_RESOLVING;
     if (!function_type_layout_find_prototype_record(entryFunction, typeLayoutId, &record, ZR_NULL) ||
         record.prototype == ZR_NULL ||
-        record.prototype->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+        !function_type_layout_prototype_is_inline_layout(record.prototype) ||
         record.prototype->layoutByteSize == 0u ||
-        record.prototype->layoutByteAlign == 0u ||
-        !function_type_layout_build_managed_fields(state,
-                                                   entryFunction,
-                                                   record.prototype,
-                                                   record.members,
-                                                   &fields,
-                                                   &fieldCount)) {
+        record.prototype->layoutByteAlign == 0u) {
         entryFunction->prototypeFrameTypeLayoutStates[typeLayoutId] = ZR_FUNCTION_TYPE_LAYOUT_CACHE_FAILED;
         return ZR_NULL;
     }
 
-    ZrCore_TypeLayout_InitStruct(&entryFunction->prototypeFrameTypeLayouts[typeLayoutId],
-                                 record.prototype->layoutByteSize,
-                                 record.prototype->layoutByteAlign,
-                                 fieldCount > 0u ? ZR_TYPE_LAYOUT_COPY_KIND_FIELD_COPY
-                                                 : ZR_TYPE_LAYOUT_COPY_KIND_POD,
-                                 fieldCount > 0u ? ZR_TYPE_LAYOUT_DROP_KIND_FIELD_DROP
-                                                 : ZR_TYPE_LAYOUT_DROP_KIND_NONE,
-                                 fields,
-                                 fieldCount);
+    if (record.prototype->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) {
+        if (!function_type_layout_build_union_managed_fields(state,
+                                                             entryFunction,
+                                                             record.prototype,
+                                                             record.members,
+                                                             &fields,
+                                                             &fieldCount)) {
+            entryFunction->prototypeFrameTypeLayoutStates[typeLayoutId] = ZR_FUNCTION_TYPE_LAYOUT_CACHE_FAILED;
+            return ZR_NULL;
+        }
+
+        if (!function_type_layout_union_tag_size(state,
+                                                 entryFunction,
+                                                 record.prototype,
+                                                 record.members,
+                                                 &unionTagSize)) {
+            entryFunction->prototypeFrameTypeLayoutStates[typeLayoutId] = ZR_FUNCTION_TYPE_LAYOUT_CACHE_FAILED;
+            return ZR_NULL;
+        }
+
+        ZrCore_TypeLayout_InitUnion(&entryFunction->prototypeFrameTypeLayouts[typeLayoutId],
+                                    record.prototype->layoutByteSize,
+                                    record.prototype->layoutByteAlign,
+                                    0u,
+                                    unionTagSize,
+                                    fieldCount > 0u ? ZR_TYPE_LAYOUT_COPY_KIND_FIELD_COPY
+                                                    : ZR_TYPE_LAYOUT_COPY_KIND_POD,
+                                    fieldCount > 0u ? ZR_TYPE_LAYOUT_DROP_KIND_FIELD_DROP
+                                                    : ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+                                    fields,
+                                    fieldCount);
+    } else {
+        if (!function_type_layout_build_managed_fields(state,
+                                                       entryFunction,
+                                                       record.prototype,
+                                                       record.members,
+                                                       &fields,
+                                                       &fieldCount)) {
+            entryFunction->prototypeFrameTypeLayoutStates[typeLayoutId] = ZR_FUNCTION_TYPE_LAYOUT_CACHE_FAILED;
+            return ZR_NULL;
+        }
+
+        ZrCore_TypeLayout_InitStruct(&entryFunction->prototypeFrameTypeLayouts[typeLayoutId],
+                                     record.prototype->layoutByteSize,
+                                     record.prototype->layoutByteAlign,
+                                     fieldCount > 0u ? ZR_TYPE_LAYOUT_COPY_KIND_FIELD_COPY
+                                                     : ZR_TYPE_LAYOUT_COPY_KIND_POD,
+                                     fieldCount > 0u ? ZR_TYPE_LAYOUT_DROP_KIND_FIELD_DROP
+                                                     : ZR_TYPE_LAYOUT_DROP_KIND_NONE,
+                                     fields,
+                                     fieldCount);
+    }
     entryFunction->prototypeFrameTypeLayoutStates[typeLayoutId] = ZR_FUNCTION_TYPE_LAYOUT_CACHE_READY;
     return &entryFunction->prototypeFrameTypeLayouts[typeLayoutId];
 }

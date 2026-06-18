@@ -5599,6 +5599,7 @@ static TZrBool compiler_quickening_instruction_may_read_slot(const TZrInstructio
         case ZR_INSTRUCTION_ENUM(GETUPVAL):
         case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
         case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
+        case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
         case ZR_INSTRUCTION_ENUM(CREATE_OBJECT):
         case ZR_INSTRUCTION_ENUM(CREATE_ARRAY):
         case ZR_INSTRUCTION_ENUM(JUMP):
@@ -5866,6 +5867,7 @@ static TZrBool compiler_quickening_instruction_writes_slot(const TZrInstruction 
         case ZR_INSTRUCTION_ENUM(SETUPVAL):
         case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
         case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
+        case ZR_INSTRUCTION_ENUM(CREATE_CLOSURE):
         case ZR_INSTRUCTION_ENUM(GET_MEMBER):
         case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):

@@ -1,4 +1,5 @@
 #include "parser_internal.h"
+#include "zr_vm_parser/type_system.h"
 
 TZrBool try_get_ownership_qualifier(SZrString *name, EZrOwnershipQualifier *qualifier) {
     if (qualifier == ZR_NULL) {
@@ -26,7 +27,15 @@ TZrBool try_get_ownership_qualifier(SZrString *name, EZrOwnershipQualifier *qual
         *qualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
         return ZR_TRUE;
     }
+    if (zr_string_equals_literal(name, "borrow")) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_BORROWED;
+        return ZR_TRUE;
+    }
     if (zr_string_equals_literal(name, "loaned")) {
+        *qualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
+        return ZR_TRUE;
+    }
+    if (zr_string_equals_literal(name, "loan")) {
         *qualifier = ZR_OWNERSHIP_QUALIFIER_LOANED;
         return ZR_TRUE;
     }
@@ -48,6 +57,25 @@ static EZrOwnershipBuiltinKind ownership_builtin_kind_from_flags(EZrOwnershipQua
         case ZR_OWNERSHIP_QUALIFIER_NONE:
         case ZR_OWNERSHIP_QUALIFIER_BORROWED:
         case ZR_OWNERSHIP_QUALIFIER_LOANED:
+        default:
+            return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
+    }
+}
+
+static EZrOwnershipBuiltinKind ownership_generic_builtin_kind_from_qualifier(
+        EZrOwnershipQualifier ownershipQualifier) {
+    switch (ownershipQualifier) {
+        case ZR_OWNERSHIP_QUALIFIER_UNIQUE:
+            return ZR_OWNERSHIP_BUILTIN_KIND_UNIQUE;
+        case ZR_OWNERSHIP_QUALIFIER_SHARED:
+            return ZR_OWNERSHIP_BUILTIN_KIND_SHARED;
+        case ZR_OWNERSHIP_QUALIFIER_WEAK:
+            return ZR_OWNERSHIP_BUILTIN_KIND_WEAK;
+        case ZR_OWNERSHIP_QUALIFIER_BORROWED:
+            return ZR_OWNERSHIP_BUILTIN_KIND_BORROW;
+        case ZR_OWNERSHIP_QUALIFIER_LOANED:
+            return ZR_OWNERSHIP_BUILTIN_KIND_LOAN;
+        case ZR_OWNERSHIP_QUALIFIER_NONE:
         default:
             return ZR_OWNERSHIP_BUILTIN_KIND_NONE;
     }
@@ -408,33 +436,183 @@ SZrAstNode *create_construct_expression_node(SZrParserState *ps, SZrAstNode *tar
     return node;
 }
 
+static void free_argument_name_array(SZrParserState *ps, SZrArray *argNames) {
+    if (ps == ZR_NULL || argNames == ZR_NULL) {
+        return;
+    }
+
+    ZrCore_Array_Free(ps->state, argNames);
+    ZrCore_Memory_RawFreeWithType(ps->state->global,
+                                  argNames,
+                                  sizeof(SZrArray),
+                                  ZR_MEMORY_NATIVE_TYPE_ARRAY);
+}
+
+static TZrBool argument_names_have_named_entry(SZrArray *argNames) {
+    if (argNames == ZR_NULL) {
+        return ZR_FALSE;
+    }
+
+    for (TZrSize index = 0; index < argNames->length; index++) {
+        SZrString **namePtr = (SZrString **) ZrCore_Array_Get(argNames, index);
+        if (namePtr != ZR_NULL && *namePtr != ZR_NULL) {
+            return ZR_TRUE;
+        }
+    }
+
+    return ZR_FALSE;
+}
+
+static TZrBool try_rewrite_intrinsic_ownership_generic_call(SZrParserState *ps,
+                                                            SZrAstNode *base,
+                                                            SZrAstNodeArray *genericArguments,
+                                                            SZrAstNodeArray *args,
+                                                            SZrArray *argNames,
+                                                            SZrFileRange startLoc,
+                                                            SZrAstNode **outNode) {
+    EZrOwnershipQualifier ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_NONE;
+    EZrOwnershipBuiltinKind builtinKind;
+    SZrAstNodeArray *emptyArgs;
+    SZrAstNode *target;
+    SZrAstNode *constructNode;
+    SZrFileRange fullLoc;
+
+    if (outNode != ZR_NULL) {
+        *outNode = ZR_NULL;
+    }
+
+    if (ps == ZR_NULL || base == ZR_NULL || base->type != ZR_AST_IDENTIFIER_LITERAL ||
+        !ZrParser_OwnershipGenericNameToQualifier(base->data.identifier.name, &ownershipQualifier)) {
+        return ZR_FALSE;
+    }
+
+    if (genericArguments == ZR_NULL || genericArguments->count != 1) {
+        report_error(ps, "Ownership generic constructor requires exactly one type argument");
+        goto error;
+    }
+    if (genericArguments->nodes[0] == ZR_NULL ||
+        genericArguments->nodes[0]->type != ZR_AST_TYPE) {
+        report_error(ps, "Ownership generic constructor type argument must be a type");
+        goto error;
+    }
+
+    if (args == ZR_NULL || args->count != 1 || argument_names_have_named_entry(argNames)) {
+        report_error(ps, "Ownership generic constructor requires exactly one positional argument");
+        goto error;
+    }
+
+    target = args->nodes[0];
+    args->nodes[0] = ZR_NULL;
+    ZrParser_AstNodeArray_Free(ps->state, args);
+    free_argument_name_array(ps, argNames);
+    free_ast_node_array_with_elements(ps->state, genericArguments);
+    ZrParser_Ast_Free(ps->state, base);
+
+    emptyArgs = create_empty_argument_list(ps);
+    builtinKind = ownership_generic_builtin_kind_from_qualifier(ownershipQualifier);
+    fullLoc = ZrParser_FileRange_Merge(startLoc, get_current_location(ps));
+    constructNode = create_construct_expression_node(ps,
+                                                     target,
+                                                     emptyArgs,
+                                                     ownershipQualifier,
+                                                     ZR_FALSE,
+                                                     ZR_FALSE,
+                                                     builtinKind,
+                                                     fullLoc);
+    if (constructNode == ZR_NULL) {
+        if (emptyArgs != ZR_NULL) {
+            ZrParser_AstNodeArray_Free(ps->state, emptyArgs);
+        }
+        ZrParser_Ast_Free(ps->state, target);
+        return ZR_TRUE;
+    }
+
+    if (outNode != ZR_NULL) {
+        *outNode = constructNode;
+    }
+    return ZR_TRUE;
+
+error:
+    if (args != ZR_NULL) {
+        free_ast_node_array_with_elements(ps->state, args);
+    }
+    free_argument_name_array(ps, argNames);
+    if (genericArguments != ZR_NULL) {
+        free_ast_node_array_with_elements(ps->state, genericArguments);
+    }
+    ZrParser_Ast_Free(ps->state, base);
+    return ZR_TRUE;
+}
+
 static SZrAstNode *parse_generic_construct_target(SZrParserState *ps) {
-    SZrType *parsedType;
+    SZrAstNode *genericNode;
     SZrAstNode *typeNode;
-    SZrFileRange typeLoc;
+    SZrFileRange startLoc;
 
     if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER || peek_token(ps) != ZR_TK_LESS_THAN) {
         return ZR_NULL;
     }
 
-    parsedType = parse_type(ps);
-    if (parsedType == ZR_NULL) {
+    startLoc = get_current_location(ps);
+    genericNode = parse_generic_type(ps);
+    if (genericNode == ZR_NULL) {
         return ZR_NULL;
     }
 
-    typeLoc = get_current_location(ps);
-    typeNode = create_ast_node(ps, ZR_AST_TYPE, typeLoc);
+    typeNode = create_ast_node(ps, ZR_AST_TYPE, ZrParser_FileRange_Merge(startLoc, get_current_location(ps)));
     if (typeNode == ZR_NULL) {
-        ZrCore_Memory_RawFreeWithType(ps->state->global,
-                                      parsedType,
-                                      sizeof(SZrType),
-                                      ZR_MEMORY_NATIVE_TYPE_ARRAY);
+        ZrParser_Ast_Free(ps->state, genericNode);
         return ZR_NULL;
     }
 
-    typeNode->data.type = *parsedType;
-    ZrCore_Memory_RawFreeWithType(ps->state->global, parsedType, sizeof(SZrType), ZR_MEMORY_NATIVE_TYPE_ARRAY);
+    typeNode->data.type.name = genericNode;
     return typeNode;
+}
+
+static SZrAstNode *try_parse_generic_type_member_root(SZrParserState *ps) {
+    SZrParserCursor cursor;
+    TZrBool savedSuppressErrorOutput;
+    TZrParserErrorCallback savedErrorCallback;
+    TZrParserStructuredErrorCallback savedStructuredErrorCallback;
+    TZrPtr savedErrorUserData;
+    SZrAstNode *target;
+
+    if (ps == ZR_NULL || ps->lexer->t.token != ZR_TK_IDENTIFIER || peek_token(ps) != ZR_TK_LESS_THAN) {
+        return ZR_NULL;
+    }
+
+    save_parser_cursor(ps, &cursor);
+    savedSuppressErrorOutput = ps->suppressErrorOutput;
+    savedErrorCallback = ps->errorCallback;
+    savedStructuredErrorCallback = ps->structuredErrorCallback;
+    savedErrorUserData = ps->errorUserData;
+    ps->suppressErrorOutput = ZR_TRUE;
+    ps->errorCallback = ZR_NULL;
+    ps->structuredErrorCallback = ZR_NULL;
+    ps->errorUserData = ZR_NULL;
+    ps->hasError = ZR_FALSE;
+    ps->errorMessage = ZR_NULL;
+
+    target = parse_generic_construct_target(ps);
+    if (target != ZR_NULL && ps->lexer->t.token == ZR_TK_DOT) {
+        ps->suppressErrorOutput = savedSuppressErrorOutput;
+        ps->errorCallback = savedErrorCallback;
+        ps->structuredErrorCallback = savedStructuredErrorCallback;
+        ps->errorUserData = savedErrorUserData;
+        ps->hasError = cursor.hasError;
+        ps->errorMessage = cursor.errorMessage;
+        return target;
+    }
+
+    if (target != ZR_NULL) {
+        ZrParser_Ast_Free(ps->state, target);
+    }
+    restore_parser_cursor(ps, &cursor);
+    ps->suppressErrorOutput = savedSuppressErrorOutput;
+    ps->errorCallback = savedErrorCallback;
+    ps->structuredErrorCallback = savedStructuredErrorCallback;
+    ps->errorUserData = savedErrorUserData;
+    return ZR_NULL;
 }
 
 SZrAstNode *parse_prototype_path_expression(SZrParserState *ps) {
@@ -861,7 +1039,7 @@ static TZrBool type_literal_probe_is_reserved_type_query_target(const SZrType *t
 
 static TZrBool type_literal_probe_is_terminator(EZrToken token) {
     return token == ZR_TK_SEMICOLON || token == ZR_TK_COMMA || token == ZR_TK_RPAREN ||
-           token == ZR_TK_RBRACE || token == ZR_TK_RBRACKET || token == ZR_TK_EOS;
+           token == ZR_TK_RBRACE || token == ZR_TK_RBRACKET || token == ZR_TK_DOT || token == ZR_TK_EOS;
 }
 
 static SZrAstNode *try_parse_unambiguous_type_literal_expression(SZrParserState *ps) {
@@ -1051,6 +1229,7 @@ SZrAstNode *parse_owned_class_declaration(SZrParserState *ps) {
 
 static TZrBool is_member_name_token(EZrToken token) {
     return token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST ||
+           token == ZR_TK_UNION ||
            (token >= ZR_TK_MODULE && token <= ZR_TK_NAN);
 }
 
@@ -1230,6 +1409,20 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             }
             consume_token(ps, ZR_TK_RPAREN);
 
+            if (try_rewrite_intrinsic_ownership_generic_call(ps,
+                                                             base,
+                                                             genericArguments,
+                                                             args,
+                                                             argNames,
+                                                             startLoc,
+                                                             &callNode)) {
+                if (callNode == ZR_NULL) {
+                    return ZR_NULL;
+                }
+                base = callNode;
+                continue;
+            }
+
             callNode = create_ast_node(ps, ZR_AST_FUNCTION_CALL, startLoc);
             if (callNode == ZR_NULL) {
                 if (args != ZR_NULL) {
@@ -1347,6 +1540,17 @@ SZrAstNode *parse_member_access(SZrParserState *ps, SZrAstNode *base) {
             }
 
             base = append_primary_member(ps, base, callNode, startLoc);
+        } else if (ps->lexer->t.token == ZR_TK_LBRACE) {
+            TZrBool handled = ZR_FALSE;
+            SZrAstNode *bracedMember = try_parse_braced_primary_member(ps, base, startLoc, &handled);
+
+            if (!handled) {
+                break;
+            }
+            if (bracedMember == ZR_NULL) {
+                return ZR_NULL;
+            }
+            base = bracedMember;
         } else {
             break;
         }
@@ -1363,6 +1567,11 @@ SZrAstNode *parse_primary_expression(SZrParserState *ps) {
     SZrAstNode *base = ZR_NULL;
 
     if (token == ZR_TK_IDENTIFIER || token == ZR_TK_TEST) {
+        base = try_parse_generic_type_member_root(ps);
+        if (base != ZR_NULL) {
+            return parse_member_access(ps, base);
+        }
+
         base = try_parse_unambiguous_type_literal_expression(ps);
         if (base != ZR_NULL) {
             return parse_member_access(ps, base);

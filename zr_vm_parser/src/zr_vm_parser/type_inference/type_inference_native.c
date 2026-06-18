@@ -9,7 +9,9 @@
 #include "zr_vm_parser/ast.h"
 
 #include "zr_vm_core/array.h"
+#include "zr_vm_core/hash.h"
 #include "zr_vm_core/memory.h"
+#include "zr_vm_core/metadata_token.h"
 #include "zr_vm_core/module.h"
 #include "zr_vm_core/object.h"
 #include "zr_vm_core/string.h"
@@ -24,6 +26,35 @@
 #include <limits.h>
 
 #define ZR_MEMBER_PARAMETER_COUNT_UNKNOWN ((TZrUInt32)-1)
+
+static const TZrByte CZrNativeMetadataSignatureHashV1Prefix[] = {
+        'z',
+        'r',
+        '.',
+        'm',
+        'd',
+        '.',
+        'n',
+        'a',
+        't',
+        'i',
+        'v',
+        'e',
+        '.',
+        's',
+        'i',
+        'g',
+        '.',
+        'v',
+        '1',
+        '\0',
+};
+
+typedef struct SZrNativeModuleMemberIdentity {
+    TZrMetadataToken metadataToken;
+    TZrMetadataToken signatureToken;
+    TZrUInt64 signatureHash;
+} SZrNativeModuleMemberIdentity;
 
 typedef struct ZrLibRegisteredModuleRecord ZrLibRegisteredModuleRecord;
 
@@ -146,6 +177,198 @@ static SZrString *native_module_info_array_get_string(SZrState *state, SZrObject
     return ZR_CAST_STRING(state, value->value.object);
 }
 
+static TZrNativeString native_module_info_string_text(SZrString *value) {
+    return value != ZR_NULL ? ZrCore_String_GetNativeString(value) : ZR_NULL;
+}
+
+static TZrSize native_module_info_string_length(SZrString *value) {
+    TZrNativeString text = native_module_info_string_text(value);
+    return text != ZR_NULL ? strlen(text) : 0;
+}
+
+static void native_module_info_write_u32(TZrByte *buffer, TZrSize *offset, TZrUInt32 value) {
+    buffer[*offset + 0] = (TZrByte)(value & 0xFFu);
+    buffer[*offset + 1] = (TZrByte)((value >> 8) & 0xFFu);
+    buffer[*offset + 2] = (TZrByte)((value >> 16) & 0xFFu);
+    buffer[*offset + 3] = (TZrByte)((value >> 24) & 0xFFu);
+    *offset += 4;
+}
+
+static void native_module_info_write_string(TZrByte *buffer, TZrSize *offset, SZrString *value) {
+    TZrNativeString text = native_module_info_string_text(value);
+    TZrSize length = text != ZR_NULL ? strlen(text) : 0;
+
+    native_module_info_write_u32(buffer, offset, (TZrUInt32)length);
+    if (length == 0) {
+        return;
+    }
+
+    ZrCore_Memory_RawCopy(buffer + *offset, (TZrPtr)text, length);
+    *offset += length;
+}
+
+static TZrSize native_module_info_parameter_type_signature_size(SZrState *state, SZrObject *parametersArray) {
+    TZrSize size = sizeof(TZrUInt32);
+
+    if (state == ZR_NULL) {
+        return size;
+    }
+
+    for (TZrSize index = 0; index < native_module_info_array_length(parametersArray); index++) {
+        SZrObject *parameterEntry = native_module_info_array_get_object(state, parametersArray, index);
+        SZrString *typeName = native_module_info_get_string_field(state, parameterEntry, "typeName");
+        size += sizeof(TZrUInt32) + native_module_info_string_length(typeName);
+    }
+
+    return size;
+}
+
+static void native_module_info_write_parameter_type_signature(SZrState *state,
+                                                              TZrByte *buffer,
+                                                              TZrSize *offset,
+                                                              SZrObject *parametersArray) {
+    TZrUInt32 parameterLength = (TZrUInt32)native_module_info_array_length(parametersArray);
+
+    native_module_info_write_u32(buffer, offset, parameterLength);
+    if (state == ZR_NULL) {
+        return;
+    }
+
+    for (TZrSize index = 0; index < parameterLength; index++) {
+        SZrObject *parameterEntry = native_module_info_array_get_object(state, parametersArray, index);
+        SZrString *typeName = native_module_info_get_string_field(state, parameterEntry, "typeName");
+        native_module_info_write_string(buffer, offset, typeName);
+    }
+}
+
+static TZrSize native_module_info_member_signature_size(SZrState *state,
+                                                        EZrMetadataSignatureNode signatureNode,
+                                                        EZrAstNodeType memberType,
+                                                        SZrString *ownerName,
+                                                        SZrString *memberName,
+                                                        SZrString *valueTypeName,
+                                                        TZrUInt32 parameterCount,
+                                                        TZrUInt32 minArgumentCount,
+                                                        SZrObject *parametersArray) {
+    TZrSize size = 0;
+
+    size += sizeof(TZrUInt32);
+    size += sizeof(TZrUInt32);
+    size += sizeof(TZrUInt32) + native_module_info_string_length(ownerName);
+    size += sizeof(TZrUInt32) + native_module_info_string_length(memberName);
+    size += sizeof(TZrUInt32) + native_module_info_string_length(valueTypeName);
+    if (signatureNode == ZR_METADATA_SIGNATURE_NODE_METHOD_SIG) {
+        size += sizeof(TZrUInt32);
+        size += sizeof(TZrUInt32);
+        size += native_module_info_parameter_type_signature_size(state, parametersArray);
+    }
+
+    return size;
+}
+
+static TZrUInt64 native_module_info_member_signature_hash(SZrState *state,
+                                                          EZrMetadataSignatureNode signatureNode,
+                                                          EZrAstNodeType memberType,
+                                                          SZrString *ownerName,
+                                                          SZrString *memberName,
+                                                          SZrString *valueTypeName,
+                                                          TZrUInt32 parameterCount,
+                                                          TZrUInt32 minArgumentCount,
+                                                          SZrObject *parametersArray) {
+    TZrSize signatureSize;
+    TZrByte *signatureBlob;
+    TZrSize offset = 0;
+    TZrUInt64 signatureHash;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || memberName == ZR_NULL) {
+        return 0;
+    }
+
+    signatureSize = native_module_info_member_signature_size(state,
+                                                             signatureNode,
+                                                             memberType,
+                                                             ownerName,
+                                                             memberName,
+                                                             valueTypeName,
+                                                             parameterCount,
+                                                             minArgumentCount,
+                                                             parametersArray);
+    if (signatureSize == 0) {
+        return 0;
+    }
+
+    signatureBlob = (TZrByte *)ZrCore_Memory_RawMallocWithType(state->global,
+                                                              signatureSize,
+                                                              ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+    if (signatureBlob == ZR_NULL) {
+        return 0;
+    }
+
+    native_module_info_write_u32(signatureBlob, &offset, (TZrUInt32)signatureNode);
+    native_module_info_write_u32(signatureBlob, &offset, (TZrUInt32)memberType);
+    native_module_info_write_string(signatureBlob, &offset, ownerName);
+    native_module_info_write_string(signatureBlob, &offset, memberName);
+    native_module_info_write_string(signatureBlob, &offset, valueTypeName);
+    if (signatureNode == ZR_METADATA_SIGNATURE_NODE_METHOD_SIG) {
+        native_module_info_write_u32(signatureBlob, &offset, parameterCount);
+        native_module_info_write_u32(signatureBlob, &offset, minArgumentCount);
+        native_module_info_write_parameter_type_signature(state, signatureBlob, &offset, parametersArray);
+    }
+
+    signatureHash = ZrCore_Hash_CreateStable64WithPrefix(CZrNativeMetadataSignatureHashV1Prefix,
+                                                         sizeof(CZrNativeMetadataSignatureHashV1Prefix),
+                                                         signatureBlob,
+                                                         offset);
+    ZrCore_Memory_RawFreeWithType(state->global,
+                                  signatureBlob,
+                                  signatureSize,
+                                  ZR_MEMORY_NATIVE_TYPE_FUNCTION);
+
+    return signatureHash;
+}
+
+static void native_module_info_next_member_identity(SZrState *state,
+                                                    EZrMetadataSignatureNode signatureNode,
+                                                    EZrAstNodeType memberType,
+                                                    SZrString *ownerName,
+                                                    SZrString *memberName,
+                                                    SZrString *valueTypeName,
+                                                    TZrUInt32 parameterCount,
+                                                    TZrUInt32 minArgumentCount,
+                                                    SZrObject *parametersArray,
+                                                    TZrUInt32 *memberRidCursor,
+                                                    TZrUInt32 *signatureRidCursor,
+                                                    SZrNativeModuleMemberIdentity *outIdentity) {
+    TZrUInt64 signatureHash;
+
+    if (outIdentity == ZR_NULL) {
+        return;
+    }
+
+    memset(outIdentity, 0, sizeof(*outIdentity));
+    if (state == ZR_NULL || memberName == ZR_NULL ||
+        memberRidCursor == ZR_NULL || signatureRidCursor == ZR_NULL) {
+        return;
+    }
+
+    signatureHash = native_module_info_member_signature_hash(state,
+                                                             signatureNode,
+                                                             memberType,
+                                                             ownerName,
+                                                             memberName,
+                                                             valueTypeName,
+                                                             parameterCount,
+                                                             minArgumentCount,
+                                                             parametersArray);
+    if (signatureHash == 0) {
+        return;
+    }
+
+    outIdentity->metadataToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_MEMBER_DEF, (*memberRidCursor)++);
+    outIdentity->signatureToken = ZR_METADATA_TOKEN_MAKE(ZR_METADATA_TABLE_SIGNATURE, (*signatureRidCursor)++);
+    outIdentity->signatureHash = signatureHash;
+}
+
 static void native_module_info_add_field_member(SZrState *state,
                                                 SZrTypePrototypeInfo *info,
                                                 EZrAstNodeType memberType,
@@ -153,6 +376,14 @@ static void native_module_info_add_field_member(SZrState *state,
                                                 SZrString *fieldTypeName,
                                                 TZrBool isStatic,
                                                 TZrUInt32 contractRole);
+static void native_module_info_add_field_member_with_identity(SZrState *state,
+                                                              SZrTypePrototypeInfo *info,
+                                                              EZrAstNodeType memberType,
+                                                              SZrString *memberName,
+                                                              SZrString *fieldTypeName,
+                                                              TZrBool isStatic,
+                                                              TZrUInt32 contractRole,
+                                                              const SZrNativeModuleMemberIdentity *identity);
 static void native_module_info_add_inherit(SZrState *state,
                                            SZrTypePrototypeInfo *info,
                                            SZrString *typeName);
@@ -702,6 +933,24 @@ static void native_module_info_add_field_member(SZrState *state,
                                                 SZrString *fieldTypeName,
                                                 TZrBool isStatic,
                                                 TZrUInt32 contractRole) {
+    native_module_info_add_field_member_with_identity(state,
+                                                      info,
+                                                      memberType,
+                                                      memberName,
+                                                      fieldTypeName,
+                                                      isStatic,
+                                                      contractRole,
+                                                      ZR_NULL);
+}
+
+static void native_module_info_add_field_member_with_identity(SZrState *state,
+                                                              SZrTypePrototypeInfo *info,
+                                                              EZrAstNodeType memberType,
+                                                              SZrString *memberName,
+                                                              SZrString *fieldTypeName,
+                                                              TZrBool isStatic,
+                                                              TZrUInt32 contractRole,
+                                                              const SZrNativeModuleMemberIdentity *identity) {
     SZrTypeMemberInfo memberInfo;
 
     if (state == ZR_NULL || info == ZR_NULL || memberName == ZR_NULL || native_module_info_has_member(info, memberName)) {
@@ -724,6 +973,11 @@ static void native_module_info_add_field_member(SZrState *state,
     memberInfo.propertyIdentity = (TZrUInt32)-1;
     if (info->type == ZR_OBJECT_PROTOTYPE_TYPE_INTERFACE && !isStatic) {
         memberInfo.modifierFlags = ZR_DECLARATION_MODIFIER_ABSTRACT | ZR_DECLARATION_MODIFIER_VIRTUAL;
+    }
+    if (identity != ZR_NULL) {
+        memberInfo.metadataToken = identity->metadataToken;
+        memberInfo.signatureToken = identity->signatureToken;
+        memberInfo.signatureHash = identity->signatureHash;
     }
     ZrCore_Array_Push(state, &info->members, &memberInfo);
 }
@@ -867,6 +1121,19 @@ static TZrUInt32 native_module_info_exact_parameter_count(SZrState *state, SZrOb
     return ZR_MEMBER_PARAMETER_COUNT_UNKNOWN;
 }
 
+static void native_module_info_add_method_member_with_identity(SZrCompilerState *cs,
+                                                               SZrTypePrototypeInfo *info,
+                                                               EZrAstNodeType memberType,
+                                                               SZrString *memberName,
+                                                               SZrString *returnTypeName,
+                                                               TZrBool isStatic,
+                                                               TZrUInt32 parameterCount,
+                                                               TZrUInt32 minArgumentCount,
+                                                               SZrObject *parametersArray,
+                                                               SZrObject *genericParametersArray,
+                                                               TZrUInt32 contractRole,
+                                                               const SZrNativeModuleMemberIdentity *identity);
+
 static void native_module_info_add_method_member(SZrCompilerState *cs,
                                                  SZrTypePrototypeInfo *info,
                                                  EZrAstNodeType memberType,
@@ -878,6 +1145,32 @@ static void native_module_info_add_method_member(SZrCompilerState *cs,
                                                  SZrObject *parametersArray,
                                                  SZrObject *genericParametersArray,
                                                  TZrUInt32 contractRole) {
+    native_module_info_add_method_member_with_identity(cs,
+                                                       info,
+                                                       memberType,
+                                                       memberName,
+                                                       returnTypeName,
+                                                       isStatic,
+                                                       parameterCount,
+                                                       minArgumentCount,
+                                                       parametersArray,
+                                                       genericParametersArray,
+                                                       contractRole,
+                                                       ZR_NULL);
+}
+
+static void native_module_info_add_method_member_with_identity(SZrCompilerState *cs,
+                                                               SZrTypePrototypeInfo *info,
+                                                               EZrAstNodeType memberType,
+                                                               SZrString *memberName,
+                                                               SZrString *returnTypeName,
+                                                               TZrBool isStatic,
+                                                               TZrUInt32 parameterCount,
+                                                               TZrUInt32 minArgumentCount,
+                                                               SZrObject *parametersArray,
+                                                               SZrObject *genericParametersArray,
+                                                               TZrUInt32 contractRole,
+                                                               const SZrNativeModuleMemberIdentity *identity) {
     SZrTypeMemberInfo memberInfo;
 
     if (cs == ZR_NULL || info == ZR_NULL || memberName == ZR_NULL || native_module_info_has_member(info, memberName)) {
@@ -904,6 +1197,11 @@ static void native_module_info_add_method_member(SZrCompilerState *cs,
         memberInfo.modifierFlags = ZR_DECLARATION_MODIFIER_ABSTRACT | ZR_DECLARATION_MODIFIER_VIRTUAL;
         memberInfo.virtualSlotIndex = info->nextVirtualSlotIndex++;
         memberInfo.interfaceContractSlot = memberInfo.virtualSlotIndex;
+    }
+    if (identity != ZR_NULL) {
+        memberInfo.metadataToken = identity->metadataToken;
+        memberInfo.signatureToken = identity->signatureToken;
+        memberInfo.signatureHash = identity->signatureHash;
     }
     native_module_info_copy_method_generic_parameters(cs->state, &memberInfo, genericParametersArray);
     native_module_info_copy_parameter_types(cs, &memberInfo, parametersArray);
@@ -1890,6 +2188,8 @@ TZrBool ensure_native_module_compile_info(SZrCompilerState *cs, SZrString *modul
     SZrObject *typeHintsArray;
     SZrTypePrototypeInfo modulePrototype;
     TZrUInt64 pathHash;
+    TZrUInt32 nativeMemberRidCursor = 1;
+    TZrUInt32 nativeSignatureRidCursor = 1;
     TZrBool pushedImportStack = ZR_FALSE;
     TZrBool result = ZR_FALSE;
     const TZrChar *moduleNameText;
@@ -2030,17 +2330,32 @@ translate_module_info:
         SZrObject *parametersArray = native_module_info_get_array_field(cs->state, entry, "parameters");
         SZrObject *genericParametersArray = native_module_info_get_array_field(cs->state, entry, "genericParameters");
         if (name != ZR_NULL) {
-            native_module_info_add_method_member(cs,
-                                                 &modulePrototype,
-                                                 ZR_AST_CLASS_METHOD,
-                                                 name,
-                                                 returnTypeName,
-                                                 ZR_TRUE,
-                                                 parameterCount,
-                                                 minArgumentCount,
-                                                 parametersArray,
-                                                 genericParametersArray,
-                                                 contractRole);
+            SZrNativeModuleMemberIdentity identity;
+
+            native_module_info_next_member_identity(cs->state,
+                                                    ZR_METADATA_SIGNATURE_NODE_METHOD_SIG,
+                                                    ZR_AST_CLASS_METHOD,
+                                                    moduleName,
+                                                    name,
+                                                    returnTypeName,
+                                                    parameterCount,
+                                                    minArgumentCount,
+                                                    parametersArray,
+                                                    &nativeMemberRidCursor,
+                                                    &nativeSignatureRidCursor,
+                                                    &identity);
+            native_module_info_add_method_member_with_identity(cs,
+                                                               &modulePrototype,
+                                                               ZR_AST_CLASS_METHOD,
+                                                               name,
+                                                               returnTypeName,
+                                                               ZR_TRUE,
+                                                               parameterCount,
+                                                               minArgumentCount,
+                                                               parametersArray,
+                                                               genericParametersArray,
+                                                               contractRole,
+                                                               &identity);
         }
     }
 
@@ -2050,13 +2365,28 @@ translate_module_info:
         SZrString *name = native_module_info_get_string_field(cs->state, entry, "name");
         SZrString *typeName = native_module_info_get_string_field(cs->state, entry, "typeName");
         if (name != ZR_NULL) {
-            native_module_info_add_field_member(cs->state,
-                                                &modulePrototype,
-                                                ZR_AST_CLASS_FIELD,
-                                                name,
-                                                typeName,
-                                                ZR_TRUE,
-                                                ZR_MEMBER_CONTRACT_ROLE_NONE);
+            SZrNativeModuleMemberIdentity identity;
+
+            native_module_info_next_member_identity(cs->state,
+                                                    ZR_METADATA_SIGNATURE_NODE_FIELD_SIG,
+                                                    ZR_AST_CLASS_FIELD,
+                                                    moduleName,
+                                                    name,
+                                                    typeName,
+                                                    ZR_MEMBER_PARAMETER_COUNT_UNKNOWN,
+                                                    ZR_MEMBER_PARAMETER_COUNT_UNKNOWN,
+                                                    ZR_NULL,
+                                                    &nativeMemberRidCursor,
+                                                    &nativeSignatureRidCursor,
+                                                    &identity);
+            native_module_info_add_field_member_with_identity(cs->state,
+                                                              &modulePrototype,
+                                                              ZR_AST_CLASS_FIELD,
+                                                              name,
+                                                              typeName,
+                                                              ZR_TRUE,
+                                                              ZR_MEMBER_CONTRACT_ROLE_NONE,
+                                                              &identity);
         }
     }
 
@@ -2071,13 +2401,30 @@ translate_module_info:
         }
 
         ensure_native_module_compile_info(cs, linkedModuleName);
-        native_module_info_add_field_member(cs->state,
-                                            &modulePrototype,
-                                            ZR_AST_CLASS_FIELD,
-                                            name,
-                                            linkedModuleName,
-                                            ZR_TRUE,
-                                            ZR_MEMBER_CONTRACT_ROLE_NONE);
+        {
+            SZrNativeModuleMemberIdentity identity;
+
+            native_module_info_next_member_identity(cs->state,
+                                                    ZR_METADATA_SIGNATURE_NODE_FIELD_SIG,
+                                                    ZR_AST_CLASS_FIELD,
+                                                    moduleName,
+                                                    name,
+                                                    linkedModuleName,
+                                                    ZR_MEMBER_PARAMETER_COUNT_UNKNOWN,
+                                                    ZR_MEMBER_PARAMETER_COUNT_UNKNOWN,
+                                                    ZR_NULL,
+                                                    &nativeMemberRidCursor,
+                                                    &nativeSignatureRidCursor,
+                                                    &identity);
+            native_module_info_add_field_member_with_identity(cs->state,
+                                                              &modulePrototype,
+                                                              ZR_AST_CLASS_FIELD,
+                                                              name,
+                                                              linkedModuleName,
+                                                              ZR_TRUE,
+                                                              ZR_MEMBER_CONTRACT_ROLE_NONE,
+                                                              &identity);
+        }
     }
 
     typeHintsArray = native_module_info_get_array_field(cs->state, moduleInfo, "typeHints");
@@ -2119,13 +2466,30 @@ translate_module_info:
             continue;
         }
 
-        native_module_info_add_field_member(cs->state,
-                                            &modulePrototype,
-                                            ZR_AST_CLASS_FIELD,
-                                            name,
-                                            name,
-                                            ZR_TRUE,
-                                            ZR_MEMBER_CONTRACT_ROLE_NONE);
+        {
+            SZrNativeModuleMemberIdentity identity;
+
+            native_module_info_next_member_identity(cs->state,
+                                                    ZR_METADATA_SIGNATURE_NODE_FIELD_SIG,
+                                                    ZR_AST_CLASS_FIELD,
+                                                    moduleName,
+                                                    name,
+                                                    name,
+                                                    ZR_MEMBER_PARAMETER_COUNT_UNKNOWN,
+                                                    ZR_MEMBER_PARAMETER_COUNT_UNKNOWN,
+                                                    ZR_NULL,
+                                                    &nativeMemberRidCursor,
+                                                    &nativeSignatureRidCursor,
+                                                    &identity);
+            native_module_info_add_field_member_with_identity(cs->state,
+                                                              &modulePrototype,
+                                                              ZR_AST_CLASS_FIELD,
+                                                              name,
+                                                              name,
+                                                              ZR_TRUE,
+                                                              ZR_MEMBER_CONTRACT_ROLE_NONE,
+                                                              &identity);
+        }
 
         if (find_compiler_type_prototype_inference(cs, name) != ZR_NULL) {
             continue;
@@ -2347,6 +2711,21 @@ static void type_inference_normalize_array_type_from_name(SZrCompilerState *cs, 
     ZrParser_InferredType_Free(cs->state, &normalizedType);
 }
 
+static TZrBool type_inference_function_call_has_no_arguments(SZrAstNode *node) {
+    SZrFunctionCall *call;
+
+    if (node == ZR_NULL || node->type != ZR_AST_FUNCTION_CALL) {
+        return ZR_FALSE;
+    }
+
+    call = &node->data.functionCall;
+    return (TZrBool)(call->args == ZR_NULL || call->args->count == 0u);
+}
+
+static TZrBool type_inference_member_name_is_plain_share(SZrString *memberName) {
+    return zr_string_equals_cstr(memberName, "share");
+}
+
 TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                         const SZrInferredType *baseType,
                                         SZrAstNodeArray *members,
@@ -2474,7 +2853,43 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                     continue;
                 }
 
-                memberInfo = find_compiler_type_member_inference(cs, currentType.typeName, memberLookupName);
+                if (nextIsFunctionCall &&
+                    !currentIsPrototypeReference &&
+                    currentType.typeName != ZR_NULL &&
+                    type_inference_member_name_is_plain_share(memberLookupName) &&
+                    type_inference_function_call_has_no_arguments(members->nodes[i + 1])) {
+                    if (!type_name_is_module_prototype_inference(cs, currentType.typeName)) {
+                        type_inference_ensure_imported_module_runtime_metadata(cs, currentType.typeName);
+                    }
+                    if (!type_name_is_module_prototype_inference(cs, currentType.typeName)) {
+                        goto infer_regular_member_access;
+                    }
+                    ZrParser_InferredType_Init(cs->state, &nextType, ZR_VALUE_TYPE_OBJECT);
+                    ZrParser_InferredType_Copy(cs->state, &nextType, &currentType);
+                    nextType.ownershipQualifier = ZR_OWNERSHIP_QUALIFIER_SHARED;
+                    ZrParser_InferredType_Free(cs->state, &currentType);
+                    ZrParser_InferredType_Init(cs->state, &currentType, ZR_VALUE_TYPE_OBJECT);
+                    ZrParser_InferredType_Copy(cs->state, &currentType, &nextType);
+                    ZrParser_InferredType_Free(cs->state, &nextType);
+                    currentIsPrototypeReference = ZR_FALSE;
+                    i++;
+                    continue;
+                }
+
+infer_regular_member_access:
+                if (nextIsFunctionCall) {
+                    if (!find_compiler_type_member_call_inference(cs,
+                                                                  currentType.typeName,
+                                                                  memberLookupName,
+                                                                  &members->nodes[i + 1]->data.functionCall,
+                                                                  members->nodes[i + 1]->location,
+                                                                  &memberInfo)) {
+                        ZrParser_InferredType_Free(cs->state, &currentType);
+                        return ZR_FALSE;
+                    }
+                } else {
+                    memberInfo = find_compiler_type_member_inference(cs, currentType.typeName, memberLookupName);
+                }
                 if (memberInfo == ZR_NULL) {
                     if (currentType.typeName != ZR_NULL &&
                         getenv("ZR_VM_TRACE_PROJECT_STARTUP") != ZR_NULL &&
@@ -2486,7 +2901,19 @@ TZrBool infer_primary_member_chain_type(SZrCompilerState *cs,
                                 memberLookupName != ZR_NULL ? ZrCore_String_GetNativeString(memberLookupName) : "<null>");
                     }
                     type_inference_ensure_imported_module_runtime_metadata(cs, currentType.typeName);
-                    memberInfo = find_compiler_type_member_inference(cs, currentType.typeName, memberLookupName);
+                    if (nextIsFunctionCall) {
+                        if (!find_compiler_type_member_call_inference(cs,
+                                                                      currentType.typeName,
+                                                                      memberLookupName,
+                                                                      &members->nodes[i + 1]->data.functionCall,
+                                                                      members->nodes[i + 1]->location,
+                                                                      &memberInfo)) {
+                            ZrParser_InferredType_Free(cs->state, &currentType);
+                            return ZR_FALSE;
+                        }
+                    } else {
+                        memberInfo = find_compiler_type_member_inference(cs, currentType.typeName, memberLookupName);
+                    }
                 }
                 if (memberInfo == ZR_NULL) {
                     ZrParser_InferredType_Free(cs->state, &currentType);

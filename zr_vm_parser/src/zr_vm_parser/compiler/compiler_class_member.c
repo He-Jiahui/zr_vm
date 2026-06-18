@@ -339,6 +339,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     TZrSize oldInstructionCount = cs->instructionCount;
     TZrSize oldStackSlotCount = cs->stackSlotCount;
     TZrSize oldMaxStackSlotCount = cs->maxStackSlotCount;
+    TZrUInt32 oldLastExpressionSlot = cs->lastExpressionSlot;
     TZrSize oldLocalVarCount = cs->localVarCount;
     TZrSize oldConstantCount = cs->constantCount;
     TZrSize oldClosureVarCount = cs->closureVarCount;
@@ -454,6 +455,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     cs->instructionCount = 0;
     cs->stackSlotCount = 0;
     cs->maxStackSlotCount = 0;
+    cs->lastExpressionSlot = ZR_PARSER_SLOT_NONE;
     cs->localVarCount = 0;
     cs->constantCount = 0;
     cs->closureVarCount = 0;
@@ -651,6 +653,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
         cs->instructionCount = oldInstructionCount;
         cs->stackSlotCount = oldStackSlotCount;
         cs->maxStackSlotCount = oldMaxStackSlotCount;
+        cs->lastExpressionSlot = oldLastExpressionSlot;
         cs->localVarCount = oldLocalVarCount;
         cs->constantCount = oldConstantCount;
         cs->closureVarCount = oldClosureVarCount;
@@ -786,6 +789,7 @@ SZrFunction *compile_class_member_function(SZrCompilerState *cs, SZrAstNode *nod
     cs->instructionCount = oldInstructionCount;
     cs->stackSlotCount = oldStackSlotCount;
     cs->maxStackSlotCount = oldMaxStackSlotCount;
+    cs->lastExpressionSlot = oldLastExpressionSlot;
     cs->localVarCount = oldLocalVarCount;
     cs->constantCount = oldConstantCount;
     cs->closureVarCount = oldClosureVarCount;

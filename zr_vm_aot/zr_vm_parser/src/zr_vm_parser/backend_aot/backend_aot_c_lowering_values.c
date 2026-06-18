@@ -59,6 +59,14 @@ void backend_aot_write_c_direct_own_loan(FILE *file, TZrUInt32 destinationSlot, 
             sourceSlot);
 }
 
+void backend_aot_write_c_direct_own_return_loan(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
+    backend_aot_write_c_direct_ownership_core_call(
+            file,
+            "ZrCore_Ownership_ReturnLoanValue(state, zr_aot_destination, zr_aot_source)",
+            destinationSlot,
+            sourceSlot);
+}
+
 void backend_aot_write_c_direct_own_share(FILE *file, TZrUInt32 destinationSlot, TZrUInt32 sourceSlot) {
     backend_aot_write_c_direct_ownership_core_call(
             file,
@@ -387,11 +395,34 @@ void backend_aot_write_c_direct_constant_copy(FILE *file, TZrUInt32 destinationS
     }
 
     fprintf(file,
-            "    ZrCore_Value_Copy(state,\n"
-            "                      ZrCore_Stack_GetValue(frame.slotBase + %u),\n"
-            "                      &frame.function->constantValueList[%u]);\n",
+            "    do {\n"
+            "        /* zr_aot_value_exec_constant_copy */\n"
+            "        const SZrFunctionFrameSlotLayout *zr_aot_destination_layout =\n"
+            "                ZrCore_Function_FindFrameSlotLayout(frame.function, %u);\n"
+            "        const SZrTypeValue *zr_aot_source = &frame.function->constantValueList[%u];\n"
+            "        SZrTypeValue *zr_aot_dense_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        SZrStackFramePlace zr_aot_destination_place;\n"
+            "        if (frame.function == ZR_NULL || frame.slotBase == ZR_NULL ||\n"
+            "            zr_aot_dense_destination == ZR_NULL) {\n"
+            "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (zr_aot_destination_layout != ZR_NULL &&\n"
+            "            zr_aot_destination_layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&\n"
+            "            zr_aot_destination_layout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {\n"
+            "            if (!ZrCore_Function_MakeFrameSlotPlace(\n"
+            "                    state, frame.function, frame.slotBase, %u, &zr_aot_destination_place)) {\n"
+            "                ZR_AOT_C_FAIL();\n"
+            "            }\n"
+            "            ZrCore_Value_Copy(state, (SZrTypeValue *)zr_aot_destination_place.address, zr_aot_source);\n"
+            "            ZrCore_Value_Copy(state, zr_aot_dense_destination, zr_aot_source);\n"
+            "        } else {\n"
+            "            ZrCore_Value_Copy(state, zr_aot_dense_destination, zr_aot_source);\n"
+            "        }\n"
+            "    } while (0);\n",
             (unsigned)destinationSlot,
-            (unsigned)constantIndex);
+            (unsigned)constantIndex,
+            (unsigned)destinationSlot,
+            (unsigned)destinationSlot);
 }
 
 void backend_aot_write_c_direct_callable_constant(FILE *file,
@@ -566,22 +597,51 @@ void backend_aot_write_c_direct_stack_copy(FILE *file, TZrUInt32 destinationSlot
             "        /* zr_aot_direct_stack_copy */\n"
             "        const SZrFunctionFrameSlotLayout *zr_aot_destination_layout =\n"
             "                ZrCore_Function_FindFrameSlotLayout(frame.function, %u);\n"
-            "        SZrTypeValue *zr_aot_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "        if (frame.function == ZR_NULL || frame.slotBase == ZR_NULL || zr_aot_source == ZR_NULL) {\n"
+            "        const SZrFunctionFrameSlotLayout *zr_aot_source_layout =\n"
+            "                ZrCore_Function_FindFrameSlotLayout(frame.function, %u);\n"
+            "        const SZrTypeValue *zr_aot_dense_source = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        const SZrTypeValue *zr_aot_source = zr_aot_dense_source;\n"
+            "        SZrTypeValue *zr_aot_dense_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
+            "        SZrStackFramePlace zr_aot_source_place;\n"
+            "        SZrStackFramePlace zr_aot_destination_place;\n"
+            "        if (frame.function == ZR_NULL || frame.slotBase == ZR_NULL ||\n"
+            "            zr_aot_dense_source == ZR_NULL || zr_aot_dense_destination == ZR_NULL) {\n"
             "            ZR_AOT_C_FAIL();\n"
+            "        }\n"
+            "        if (zr_aot_source_layout != ZR_NULL &&\n"
+            "            zr_aot_source_layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&\n"
+            "            zr_aot_source_layout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {\n"
+            "            if (!ZrCore_Function_MakeFrameSlotPlace(\n"
+            "                    state, frame.function, frame.slotBase, %u, &zr_aot_source_place)) {\n"
+            "                ZR_AOT_C_FAIL();\n"
+            "            }\n"
+            "            zr_aot_source = (const SZrTypeValue *)zr_aot_source_place.address;\n"
+            "            if (ZR_VALUE_IS_TYPE_NULL(zr_aot_source->type) &&\n"
+            "                !ZR_VALUE_IS_TYPE_NULL(zr_aot_dense_source->type)) {\n"
+            "                zr_aot_source = zr_aot_dense_source;\n"
+            "            }\n"
             "        }\n"
             "        if (zr_aot_destination_layout != ZR_NULL &&\n"
             "            zr_aot_destination_layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT) {\n"
             "            ZR_AOT_C_GUARD(ZrCore_Function_CopyObjectValueToFrameSlotInline(\n"
             "                    state, frame.function, frame.slotBase, %u, zr_aot_source));\n"
-            "        } else {\n"
-            "            SZrTypeValue *zr_aot_destination = ZrCore_Stack_GetValue(frame.slotBase + %u);\n"
-            "            if (zr_aot_destination == ZR_NULL) {\n"
+            "        } else if (zr_aot_destination_layout != ZR_NULL &&\n"
+            "                   zr_aot_destination_layout->slotKind == (TZrUInt8)ZR_FUNCTION_FRAME_SLOT_KIND_VALUE &&\n"
+            "                   zr_aot_destination_layout->byteSize >= (TZrUInt32)sizeof(SZrTypeValue)) {\n"
+            "            if (!ZrCore_Function_MakeFrameSlotPlace(\n"
+            "                    state, frame.function, frame.slotBase, %u, &zr_aot_destination_place)) {\n"
             "                ZR_AOT_C_FAIL();\n"
             "            }\n"
-            "            ZrCore_Value_AssignMaterializedStackValue(state, zr_aot_destination, zr_aot_source);\n"
+            "            ZrCore_Value_Copy(state, (SZrTypeValue *)zr_aot_destination_place.address, zr_aot_source);\n"
+            "            ZrCore_Value_Copy(state, zr_aot_dense_destination, zr_aot_source);\n"
+            "        } else {\n"
+            "            ZrCore_Value_AssignMaterializedStackValue(\n"
+            "                    state, zr_aot_dense_destination, (SZrTypeValue *)zr_aot_source);\n"
             "        }\n"
             "    } while (0);\n",
+            (unsigned)destinationSlot,
+            (unsigned)sourceSlot,
+            (unsigned)sourceSlot,
             (unsigned)destinationSlot,
             (unsigned)sourceSlot,
             (unsigned)destinationSlot,

@@ -26,5 +26,11 @@ ZR_CORE_API TZrUInt64 ZrCore_HashSeed_Create(struct SZrGlobalState *global, TZrU
 
 ZR_CORE_API TZrUInt64 ZrCore_Hash_Create(struct SZrGlobalState *global, TZrNativeString string, TZrSize length);
 
+ZR_CORE_API TZrUInt64 ZrCore_Hash_CreateStable64(const TZrByte *data, TZrSize length);
+
+ZR_CORE_API TZrUInt64 ZrCore_Hash_CreateStable64WithPrefix(const TZrByte *prefix,
+                                                           TZrSize prefixLength,
+                                                           const TZrByte *data,
+                                                           TZrSize length);
 
 #endif // ZR_VM_CORE_HASH_H

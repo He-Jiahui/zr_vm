@@ -231,6 +231,19 @@ fn to_sys_run_options(options: &RunOptions) -> Result<RunOptionsOwned, Error> {
     })
 }
 
+fn module_export_argument_ptrs<'a>(
+    arg_ptrs: &'a [*mut sys::ZrRustBindingValue],
+    empty_arg_ptrs: &'a [*mut sys::ZrRustBindingValue; 1],
+) -> *const *mut sys::ZrRustBindingValue {
+    // The native export call validates the argument pointer before observing
+    // the zero argument count, so empty Rust slices still need a valid base.
+    if arg_ptrs.is_empty() {
+        empty_arg_ptrs.as_ptr()
+    } else {
+        arg_ptrs.as_ptr()
+    }
+}
+
 pub struct RuntimeBuilder {
     options: RuntimeOptions,
     standard: bool,
@@ -516,6 +529,8 @@ impl ProjectWorkspace {
         let module_name = string_to_cstring(module_name)?;
         let export_name = string_to_cstring(export_name)?;
         let arg_ptrs = arguments.iter().map(|value| value.raw).collect::<Vec<_>>();
+        let empty_arg_ptrs = [ptr::null_mut()];
+        let argument_ptrs = module_export_argument_ptrs(&arg_ptrs, &empty_arg_ptrs);
         let mut raw = ptr::null_mut();
         check_status(unsafe {
             sys::ZrRustBinding_Project_CallModuleExport(
@@ -524,11 +539,7 @@ impl ProjectWorkspace {
                 &owned.sys_options,
                 module_name.as_ptr(),
                 export_name.as_ptr(),
-                if arg_ptrs.is_empty() {
-                    ptr::null()
-                } else {
-                    arg_ptrs.as_ptr()
-                },
+                argument_ptrs,
                 arg_ptrs.len(),
                 &mut raw,
             )
@@ -580,17 +591,15 @@ impl ProjectSession {
         let module_name = string_to_cstring(module_name)?;
         let export_name = string_to_cstring(export_name)?;
         let arg_ptrs = arguments.iter().map(|value| value.raw).collect::<Vec<_>>();
+        let empty_arg_ptrs = [ptr::null_mut()];
+        let argument_ptrs = module_export_argument_ptrs(&arg_ptrs, &empty_arg_ptrs);
         let mut raw = ptr::null_mut();
         check_status(unsafe {
             sys::ZrRustBinding_ProjectSession_CallModuleExport(
                 self.raw,
                 module_name.as_ptr(),
                 export_name.as_ptr(),
-                if arg_ptrs.is_empty() {
-                    ptr::null()
-                } else {
-                    arg_ptrs.as_ptr()
-                },
+                argument_ptrs,
                 arg_ptrs.len(),
                 &mut raw,
             )
@@ -1283,6 +1292,38 @@ mod tests {
         assert_eq!(result.kind(), ValueKind::Float);
         assert_eq!(result.ownership_kind(), OwnershipKind::None);
         assert!((result.as_float()? - 3.0).abs() < 1e-9);
+        Ok(())
+    }
+
+    #[test]
+    fn call_module_export_accepts_empty_argument_slice() -> Result<(), Box<dyn std::error::Error>> {
+        let _guard = acquire_test_lock();
+        let temp = tempfile::tempdir()?;
+        let root = temp.path().join("empty_export_args_project");
+        let workspace = ProjectWorkspace::scaffold(&root, "empty_export_args_project")?;
+        fs::write(
+            workspace.project_root()?.join("src").join("main.zr"),
+            concat!(
+                "pub emptyArgs(): string {\n",
+                "    return \"empty-args\";\n",
+                "}\n",
+                "\n",
+                "return 0;\n",
+            ),
+        )?;
+
+        let mut runtime = RuntimeBuilder::standard().build()?;
+        workspace.compile(&mut runtime, &CompileOptions::default())?;
+        let result = workspace.call_module_export(
+            &mut runtime,
+            &RunOptions::default(),
+            "main",
+            "emptyArgs",
+            &[],
+        )?;
+
+        assert_eq!(result.kind(), ValueKind::String);
+        assert_eq!(result.as_string()?, "empty-args");
         Ok(())
     }
 

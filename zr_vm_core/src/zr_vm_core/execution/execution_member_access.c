@@ -186,7 +186,7 @@ static ZR_FORCE_INLINE SZrTypeValue *execution_member_restore_anchored_result(SZ
         return result;
     }
 
-    return ZrCore_Stack_GetValue(restoredSlot);
+    return ZrCore_Stack_GetValueNoProfile(restoredSlot);
 }
 
 static ZR_FORCE_INLINE TZrBool execution_member_value_points_into_stack(const SZrState *state,
@@ -2198,12 +2198,16 @@ TZrBool execution_member_get_by_name(SZrState *state,
                                      SZrString *memberName,
                                      SZrTypeValue *result) {
     SZrTypeValue memberKey;
+    SZrTypeValue aliasedReceiver;
+    SZrTypeValue aliasedResult;
     SZrTypeValue stableReceiver;
     SZrTypeValue stableResult;
     SZrFunctionStackAnchor resultAnchor;
+    SZrTypeValue *originalResult = result;
     TZrBool fastHandled = ZR_FALSE;
     TZrBool hasResultAnchor = ZR_FALSE;
     TZrBool allowGlobalPrototypeRetry = ZR_FALSE;
+    TZrBool receiverResultAliased;
     TZrBool shouldTrySlowPath = ZR_TRUE;
     TZrBool resolved = ZR_FALSE;
 
@@ -2214,6 +2218,15 @@ TZrBool execution_member_get_by_name(SZrState *state,
         receiver->type != ZR_VALUE_TYPE_ARRAY &&
         receiver->type != ZR_VALUE_TYPE_STRING) {
         return ZR_FALSE;
+    }
+
+    receiverResultAliased = (TZrBool)(receiver == result);
+    if (receiverResultAliased) {
+        aliasedReceiver = *receiver;
+        execution_member_refresh_forwarded_value_copy(&aliasedReceiver);
+        ZrCore_Value_ResetAsNullNoProfile(&aliasedResult);
+        receiver = &aliasedReceiver;
+        result = &aliasedResult;
     }
 
     if (!execution_member_value_points_into_stack(state, receiver)) {
@@ -2262,6 +2275,10 @@ TZrBool execution_member_get_by_name(SZrState *state,
             result = execution_member_restore_anchored_result(state, result, &resultAnchor);
             ZrCore_Value_Copy(state, result, &stableResult);
         }
+    }
+
+    if (resolved && receiverResultAliased) {
+        ZrCore_Value_Copy(state, originalResult, result);
     }
 
     return resolved;
@@ -2332,8 +2349,12 @@ static ZR_FORCE_INLINE TZrBool execution_member_get_cached_impl(SZrState *state,
     SZrFunctionCallSiteCacheEntry *entry;
     SZrString *memberName;
     SZrTypeValue stableReceiver;
+    SZrTypeValue stableResult;
+    SZrTypeValue *effectiveReceiver = receiver;
+    SZrTypeValue *effectiveResult = result;
     SZrTypeValue *refreshReceiver = receiver;
     TZrBool receiverInStack;
+    TZrBool receiverResultAliased;
 
     ZR_ASSERT(state != ZR_NULL);
     ZR_ASSERT(function != ZR_NULL);
@@ -2349,16 +2370,34 @@ static ZR_FORCE_INLINE TZrBool execution_member_get_cached_impl(SZrState *state,
     }
     execution_member_sanitize_cache_entry_if_needed(function, cacheIndex, entry);
 
-    if (execution_member_try_single_slot_exact_receiver_pair_get_hot_fast(state, entry, receiver, result)) {
+    receiverResultAliased = (TZrBool)(receiver == result);
+    if (receiverResultAliased) {
+        stableReceiver = *receiver;
+        execution_member_refresh_forwarded_value_copy(&stableReceiver);
+        ZrCore_Value_ResetAsNullNoProfile(&stableResult);
+        effectiveReceiver = &stableReceiver;
+        effectiveResult = &stableResult;
+        refreshReceiver = &stableReceiver;
+    }
+
+    if (execution_member_try_single_slot_exact_receiver_pair_get_hot_fast(state, entry, effectiveReceiver, effectiveResult)) {
+        if (receiverResultAliased) {
+            ZrCore_Value_Copy(state, result, effectiveResult);
+        }
         return ZR_TRUE;
     }
 
-    receiverInStack = receiverInStackKnown || execution_member_value_points_into_stack(state, receiver);
+    receiverInStack =
+            (!receiverResultAliased && receiverInStackKnown) ||
+            execution_member_value_points_into_stack(state, effectiveReceiver);
     if (!receiverInStack) {
-        execution_member_refresh_forwarded_value_copy(receiver);
+        execution_member_refresh_forwarded_value_copy(effectiveReceiver);
     }
 
-    if (execution_member_try_cached_get(state, function, cacheIndex, entry, receiver, result)) {
+    if (execution_member_try_cached_get(state, function, cacheIndex, entry, effectiveReceiver, effectiveResult)) {
+        if (receiverResultAliased) {
+            ZrCore_Value_Copy(state, result, effectiveResult);
+        }
         return ZR_TRUE;
     }
 
@@ -2367,14 +2406,12 @@ static ZR_FORCE_INLINE TZrBool execution_member_get_cached_impl(SZrState *state,
         return ZR_FALSE;
     }
 
-    if (receiver == result) {
-        stableReceiver = *receiver;
-        refreshReceiver = &stableReceiver;
-    }
-
     entry->runtimeMissCount++;
-    if (!execution_member_get_by_name(state, programCounter, receiver, memberName, result)) {
+    if (!execution_member_get_by_name(state, programCounter, effectiveReceiver, memberName, effectiveResult)) {
         return ZR_FALSE;
+    }
+    if (receiverResultAliased) {
+        ZrCore_Value_Copy(state, result, effectiveResult);
     }
 
     execution_member_refresh_cache(state, function, cacheIndex, entry, refreshReceiver, memberName);

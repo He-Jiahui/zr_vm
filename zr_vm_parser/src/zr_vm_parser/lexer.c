@@ -17,7 +17,7 @@ typedef struct {
     EZrToken token;
 } SZrTokenInfo;
 
-// Token 信息表（按枚举顺序排列，确保 token == index + ZR_FIRST_RESERVED）
+// Token 信息表（TokenToString 按 token 字段查找，不依赖数组顺序）
 static const SZrTokenInfo zr_token_info[] = {
     // 关键字
     {"module", ZR_TK_MODULE},
@@ -30,6 +30,7 @@ static const SZrTokenInfo zr_token_info[] = {
     {"shadow", ZR_TK_SHADOW},
     {"interface", ZR_TK_INTERFACE},
     {"enum", ZR_TK_ENUM},
+    {"union", ZR_TK_UNION},
     {"test", ZR_TK_TEST},
     {"intermediate", ZR_TK_INTERMEDIATE},
     {"var", ZR_TK_VAR},
@@ -130,6 +131,7 @@ static const struct {
                    {"shadow", ZR_TK_SHADOW},
                    {"interface", ZR_TK_INTERFACE},
                    {"enum", ZR_TK_ENUM},
+                   {"union", ZR_TK_UNION},
                    {"test", ZR_TK_TEST},
                    {"intermediate", ZR_TK_INTERMEDIATE},
                    {"var", ZR_TK_VAR},

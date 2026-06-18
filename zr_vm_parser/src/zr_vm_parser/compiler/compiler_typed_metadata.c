@@ -350,6 +350,63 @@ static SZrAstNode *find_script_function_declaration_by_name(SZrCompilerState *cs
     return ZR_NULL;
 }
 
+static SZrAstNode *find_script_function_declaration_for_export(SZrCompilerState *cs,
+                                                               const SZrExportedVariable *exportedVar) {
+    if (cs == ZR_NULL || exportedVar == ZR_NULL) {
+        return ZR_NULL;
+    }
+
+    if (exportedVar->callableChildIndex != ZR_FUNCTION_CALLABLE_CHILD_INDEX_NONE &&
+        exportedVar->callableChildIndex < cs->childFunctions.length) {
+        SZrFunction **childFunctionPtr =
+                (SZrFunction **)ZrCore_Array_Get(&cs->childFunctions, exportedVar->callableChildIndex);
+        if (childFunctionPtr != ZR_NULL &&
+            *childFunctionPtr != ZR_NULL &&
+            (*childFunctionPtr)->functionName != ZR_NULL) {
+            SZrAstNode *candidate = ZR_NULL;
+            TZrUInt32 childLineStart = (*childFunctionPtr)->lineInSourceStart;
+            TZrUInt32 childLineEnd = (*childFunctionPtr)->lineInSourceEnd;
+
+            for (TZrSize index = 0;
+                 cs->scriptAst != ZR_NULL &&
+                 cs->scriptAst->type == ZR_AST_SCRIPT &&
+                 cs->scriptAst->data.script.statements != ZR_NULL &&
+                 index < cs->scriptAst->data.script.statements->count;
+                 index++) {
+                SZrAstNode *statement = cs->scriptAst->data.script.statements->nodes[index];
+                SZrFunctionDeclaration *declaration;
+
+                if (statement == ZR_NULL || statement->type != ZR_AST_FUNCTION_DECLARATION) {
+                    continue;
+                }
+
+                declaration = &statement->data.functionDeclaration;
+                if (declaration->name == ZR_NULL ||
+                    declaration->name->name == ZR_NULL ||
+                    !ZrCore_String_Equal(declaration->name->name, (*childFunctionPtr)->functionName)) {
+                    continue;
+                }
+
+                if ((childLineStart == 0 ||
+                     (TZrUInt32)statement->location.start.line == childLineStart) &&
+                    (childLineEnd == 0 ||
+                     (TZrUInt32)statement->location.end.line == childLineEnd)) {
+                    return statement;
+                }
+                if (candidate == ZR_NULL) {
+                    candidate = statement;
+                }
+            }
+
+            if (candidate != ZR_NULL) {
+                return candidate;
+            }
+        }
+    }
+
+    return find_script_function_declaration_by_name(cs, exportedVar->name);
+}
+
 static SZrAstNode *find_script_variable_declaration_by_name(SZrCompilerState *cs, SZrString *name) {
     if (cs == ZR_NULL || cs->scriptAst == ZR_NULL || name == ZR_NULL || cs->scriptAst->type != ZR_AST_SCRIPT ||
         cs->scriptAst->data.script.statements == ZR_NULL) {
@@ -1313,12 +1370,46 @@ static void compiler_finalize_current_struct_inline_layout(SZrCompilerState *cs,
     prototypeInfo->layoutByteSize = maxAlign > 0u ? align_offset(currentOffset, maxAlign) : 0u;
 }
 
-static TZrBool compiler_find_inline_struct_layout(SZrCompilerState *cs,
-                                                  const SZrFunctionTypedTypeRef *typeRef,
-                                                  TZrUInt32 *outLayoutId,
-                                                  TZrUInt32 *outSize,
-                                                  TZrUInt32 *outAlign) {
+static TZrBool compiler_prototype_has_inline_frame_layout(const SZrTypePrototypeInfo *prototypeInfo) {
+    return (TZrBool)(prototypeInfo != ZR_NULL &&
+                     (prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
+                      prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_UNION) &&
+                     prototypeInfo->layoutByteSize > 0u &&
+                     prototypeInfo->layoutByteAlign > 0u);
+}
+
+static TZrBool compiler_type_prototype_serializes_to_runtime(const SZrTypePrototypeInfo *prototypeInfo) {
+    return (TZrBool)(prototypeInfo != ZR_NULL &&
+                     prototypeInfo->name != ZR_NULL &&
+                     !prototypeInfo->isImportedNative);
+}
+
+static TZrUInt32 compiler_serialized_type_prototype_count(SZrCompilerState *cs) {
+    TZrUInt32 serializedCount = 0u;
+
+    if (cs == ZR_NULL) {
+        return 0u;
+    }
+
+    for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
+        SZrTypePrototypeInfo *prototypeInfo =
+                (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
+
+        if (compiler_type_prototype_serializes_to_runtime(prototypeInfo)) {
+            serializedCount++;
+        }
+    }
+
+    return serializedCount;
+}
+
+static TZrBool compiler_find_inline_type_layout(SZrCompilerState *cs,
+                                                const SZrFunctionTypedTypeRef *typeRef,
+                                                TZrUInt32 *outLayoutId,
+                                                TZrUInt32 *outSize,
+                                                TZrUInt32 *outAlign) {
     SZrTypePrototypeInfo *currentPrototypeInfo;
+    TZrUInt32 serializedIndex = 0u;
 
     if (cs == ZR_NULL || typeRef == ZR_NULL || typeRef->typeName == ZR_NULL) {
         return ZR_FALSE;
@@ -1327,14 +1418,18 @@ static TZrBool compiler_find_inline_struct_layout(SZrCompilerState *cs,
     currentPrototypeInfo = cs->currentTypePrototypeInfo;
     if (currentPrototypeInfo != ZR_NULL &&
         currentPrototypeInfo->name != ZR_NULL &&
-        currentPrototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT &&
         ZrCore_String_Equal(currentPrototypeInfo->name, typeRef->typeName)) {
-        compiler_finalize_current_struct_inline_layout(cs, currentPrototypeInfo);
-        if (currentPrototypeInfo->layoutByteAlign == 0) {
+        if (currentPrototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+            compiler_finalize_current_struct_inline_layout(cs, currentPrototypeInfo);
+        }
+        if (!compiler_prototype_has_inline_frame_layout(currentPrototypeInfo)) {
             return ZR_FALSE;
         }
         if (outLayoutId != ZR_NULL) {
-            *outLayoutId = (TZrUInt32)cs->typePrototypes.length;
+            if (!compiler_type_prototype_serializes_to_runtime(currentPrototypeInfo)) {
+                return ZR_FALSE;
+            }
+            *outLayoutId = compiler_serialized_type_prototype_count(cs);
         }
         if (outSize != ZR_NULL) {
             *outSize = currentPrototypeInfo->layoutByteSize;
@@ -1348,16 +1443,26 @@ static TZrBool compiler_find_inline_struct_layout(SZrCompilerState *cs,
     for (TZrSize index = 0; index < cs->typePrototypes.length; index++) {
         SZrTypePrototypeInfo *prototypeInfo =
                 (SZrTypePrototypeInfo *)ZrCore_Array_Get(&cs->typePrototypes, index);
+        if (!compiler_type_prototype_serializes_to_runtime(prototypeInfo)) {
+            continue;
+        }
         if (prototypeInfo == ZR_NULL ||
             prototypeInfo->name == ZR_NULL ||
-            prototypeInfo->type != ZR_OBJECT_PROTOTYPE_TYPE_STRUCT ||
-            prototypeInfo->layoutByteAlign == 0 ||
             !ZrCore_String_Equal(prototypeInfo->name, typeRef->typeName)) {
+            serializedIndex++;
+            continue;
+        }
+
+        if (prototypeInfo->type == ZR_OBJECT_PROTOTYPE_TYPE_STRUCT) {
+            compiler_finalize_current_struct_inline_layout(cs, prototypeInfo);
+        }
+        if (!compiler_prototype_has_inline_frame_layout(prototypeInfo)) {
+            serializedIndex++;
             continue;
         }
 
         if (outLayoutId != ZR_NULL) {
-            *outLayoutId = (TZrUInt32)index;
+            *outLayoutId = serializedIndex;
         }
         if (outSize != ZR_NULL) {
             *outSize = prototypeInfo->layoutByteSize;
@@ -1381,8 +1486,15 @@ TZrBool compiler_register_stack_slot_type_hint(SZrCompilerState *cs,
     }
 
     typed_type_ref_from_inferred(&typeRef, type);
-    if (!compiler_find_inline_struct_layout(cs, &typeRef, ZR_NULL, ZR_NULL, ZR_NULL)) {
+    if (!compiler_find_inline_type_layout(cs, &typeRef, ZR_NULL, ZR_NULL, ZR_NULL)) {
         return ZR_TRUE;
+    }
+
+    if (cs->stackSlotCount <= (TZrSize)stackSlot) {
+        cs->stackSlotCount = (TZrSize)stackSlot + 1u;
+    }
+    if (cs->maxStackSlotCount < cs->stackSlotCount) {
+        cs->maxStackSlotCount = cs->stackSlotCount;
     }
 
     for (TZrSize index = cs->stackSlotTypeHintScopeStart; index < cs->stackSlotTypeHints.length; index++) {
@@ -1449,7 +1561,6 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(GET_GLOBAL):
         case ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION):
         case ZR_INSTRUCTION_ENUM(GET_MEMBER):
-        case ZR_INSTRUCTION_ENUM(GET_MEMBER_SLOT):
         case ZR_INSTRUCTION_ENUM(GET_BY_INDEX):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_BIND_ITEMS):
         case ZR_INSTRUCTION_ENUM(SUPER_ARRAY_GET_INT):
@@ -1496,6 +1607,7 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(OWN_DETACH):
         case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
         case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
             return compiler_instruction_extra_matches_slot(instruction, slot) ||
                    compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(ADD):
@@ -1595,7 +1707,6 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST):
         case ZR_INSTRUCTION_ENUM(MOD_UNSIGNED_CONST_PLAIN_DEST):
         case ZR_INSTRUCTION_ENUM(LOGICAL_EQUAL_SIGNED_CONST):
-        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
             return compiler_instruction_extra_matches_slot(instruction, slot) ||
                    compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(ADD_SIGNED_LOAD_CONST):
@@ -1618,10 +1729,12 @@ static TZrBool compiler_instruction_requires_plain_value_slot(const TZrInstructi
                    compiler_instruction_operand0_triple_matches_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(JUMP_IF):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_BOOL_FALSE):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED_CONST):
+        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
+            return compiler_instruction_extra_matches_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(JUMP_IF_GREATER_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_LESS_EQUAL_SIGNED):
         case ZR_INSTRUCTION_ENUM(JUMP_IF_NOT_EQUAL_SIGNED):
-        case ZR_INSTRUCTION_ENUM(JUMP_IF_NULL):
             return compiler_instruction_extra_matches_slot(instruction, slot) ||
                    compiler_instruction_const_binary_operand_matches_slot(instruction, slot);
         case ZR_INSTRUCTION_ENUM(FUNCTION_RETURN):
@@ -1700,10 +1813,10 @@ TZrBool compiler_build_function_frame_layout_metadata(SZrCompilerState *cs, SZrF
             slotTypeRef = &hintTypeRef;
         }
 
-        if (compiler_find_inline_struct_layout(cs, slotTypeRef,
-                                               &typeLayoutId,
-                                               &byteSize,
-                                               &byteAlign)) {
+        if (compiler_find_inline_type_layout(cs, slotTypeRef,
+                                             &typeLayoutId,
+                                             &byteSize,
+                                             &byteAlign)) {
             slotKind = ZR_FUNCTION_FRAME_SLOT_KIND_INLINE_STRUCT;
         }
 
@@ -1774,7 +1887,7 @@ static TZrBool build_typed_export_symbols(SZrCompilerState *cs,
             continue;
         }
 
-        functionDeclNode = find_script_function_declaration_by_name(cs, exportedVar->name);
+        functionDeclNode = find_script_function_declaration_for_export(cs, exportedVar);
         if (functionDeclNode != ZR_NULL && functionDeclNode->type == ZR_AST_FUNCTION_DECLARATION) {
             if (!build_function_export_symbol(cs,
                                               exportedVar,
@@ -1943,5 +2056,5 @@ TZrBool compiler_build_script_typed_metadata(SZrCompilerState *cs) {
     cs->currentFunction->compileTimeFunctionInfoLength = compileTimeFunctionInfoCount;
     cs->currentFunction->testInfos = testInfos;
     cs->currentFunction->testInfoLength = testInfoCount;
-    return ZR_TRUE;
+    return compiler_build_function_metadata_tokens(cs, cs->currentFunction);
 }

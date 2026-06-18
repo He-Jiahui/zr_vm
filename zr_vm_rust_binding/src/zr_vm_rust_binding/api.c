@@ -84,6 +84,19 @@ static void zr_rust_binding_copy_current_exception_message(SZrState *state,
     }
 }
 
+static void zr_rust_binding_reset_host_export_thread(SZrState *state) {
+    if (state == ZR_NULL) {
+        return;
+    }
+
+    /*
+     * Project entry execution leaves the main thread in the entry result frame.
+     * Host-driven export calls need a clean native-call base frame while keeping
+     * loaded module/global state alive.
+     */
+    (void)ZrCore_State_ResetThread(state, ZR_THREAD_STATUS_FINE);
+}
+
 static void zr_rust_binding_init_project_command(SZrCliCommand *command,
                                                  const ZrRustBindingProjectWorkspace *workspace,
                                                  const ZrRustBindingRunOptions *options) {
@@ -131,6 +144,7 @@ static ZrRustBindingStatus zr_rust_binding_call_module_export_with_owner(
                                          moduleName,
                                          exportName);
     }
+    zr_rust_binding_reset_host_export_thread(state);
 
     if (argumentCount > 0U) {
         argumentRoots = (ZrLibTempValueRoot *)calloc(argumentCount, sizeof(*argumentRoots));
@@ -945,6 +959,7 @@ ZrRustBindingStatus ZrRustBinding_Project_CallModuleExport(ZrRustBindingRuntime 
                                          moduleName,
                                          exportName);
     }
+    zr_rust_binding_reset_host_export_thread(state);
 
     if (argumentCount > 0U) {
         argumentRoots = (ZrLibTempValueRoot *)calloc(argumentCount, sizeof(*argumentRoots));
@@ -1080,6 +1095,8 @@ ZrRustBindingStatus ZrRustBinding_ProjectSession_Start(ZrRustBindingRuntime *run
         return zr_rust_binding_set_error(ZR_RUST_BINDING_STATUS_INTERNAL_ERROR,
                                          "failed to retain project session owner");
     }
+
+    zr_rust_binding_reset_host_export_thread(capture.global->mainThreadState);
 
     capture.global = ZR_NULL;
     session = (ZrRustBindingProjectSession *)calloc(1, sizeof(*session));

@@ -18,14 +18,22 @@ typedef struct SZrLibrary_ProjectPathAlias {
 
 typedef struct SZrLibrary_ProjectDependencyReference {
     SZrString *name;
+    SZrString *assemblyName;
     TZrSize packageIndex;
+    SZrString *minVersionInclusive;
+    SZrString *maxVersionExclusive;
+    TZrBool useAliasForModuleKey;
 } SZrLibrary_ProjectDependencyReference;
 
 typedef struct SZrLibrary_ProjectDependencyPackage {
     SZrString *name;
+    SZrString *assemblyName;
     SZrString *version;
     SZrString *file;
     SZrString *directory;
+    SZrString *culture;
+    SZrString *publicKeyToken;
+    SZrString *kind;
     SZrString *source;
     SZrString *binary;
     SZrString *entry;
@@ -41,7 +49,11 @@ struct ZR_STRUCT_ALIGN SZrLibrary_Project {
     SZrString *file;
     SZrString *directory;
     SZrString *name;
+    SZrString *assemblyName;
     SZrString *version;
+    SZrString *assemblyCulture;
+    SZrString *assemblyPublicKeyToken;
+    SZrString *assemblyKind;
     SZrString *description;
     SZrString *author;
     SZrString *email;
@@ -92,6 +104,14 @@ ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveImportModuleKey(const SZrLibrary
                                                                 TZrSize bufferSize,
                                                                 TZrChar *errorBuffer,
                                                                 TZrSize errorBufferSize);
+
+ZR_LIBRARY_API TZrBool ZrLibrary_Project_GetDependencyImportVersionRange(
+        const SZrLibrary_Project *project,
+        const TZrChar *currentModuleKey,
+        const TZrChar *resolvedModuleKey,
+        SZrString **outRequestedVersion,
+        SZrString **outMinVersionInclusive,
+        SZrString **outMaxVersionExclusive);
 
 ZR_LIBRARY_API TZrBool ZrLibrary_Project_ResolveSourcePath(const SZrLibrary_Project *project,
                                                            const TZrChar *moduleName,

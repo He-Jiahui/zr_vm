@@ -123,6 +123,11 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyOpen
     SZrStructuredDiagnostic *out,
     SZrFileRange location,
     const TZrChar *declarationKind);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingDeclarationBodyClose(
+    SZrState *state,
+    SZrStructuredDiagnostic *out,
+    SZrFileRange location,
+    const TZrChar *declarationKind);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingStatementBodyOpen(
     SZrState *state,
     SZrStructuredDiagnostic *out,
@@ -140,6 +145,42 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingUsingResourceClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,
     SZrFileRange location);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildUsingBinderInvalid(
+    SZrState *state,
+    SZrStructuredDiagnostic *out,
+    SZrFileRange location);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildImportPathNotConstant(
+    SZrState *state,
+    SZrStructuredDiagnostic *out,
+    SZrFileRange location,
+    const TZrChar *directiveName);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildPatternShapeMismatch(
+    SZrState *state,
+    SZrStructuredDiagnostic *out,
+    SZrFileRange location,
+    const TZrChar *message,
+    const TZrChar *cause,
+    const TZrChar *suggestion);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildPatternUnknownField(
+    SZrState *state,
+    SZrStructuredDiagnostic *out,
+    SZrFileRange location,
+    const TZrChar *fieldName,
+    const TZrChar *availableFields);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildPatternArityMismatch(
+    SZrState *state,
+    SZrStructuredDiagnostic *out,
+    SZrFileRange location,
+    TZrSize expectedCount,
+    TZrSize actualCount,
+    const TZrChar *availableFields);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildPatternVariantMismatch(
+    SZrState *state,
+    SZrStructuredDiagnostic *out,
+    SZrFileRange location,
+    const TZrChar *annotationUnionName,
+    const TZrChar *variantName,
+    const TZrChar *resourceUnionName);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingForHeaderClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,
@@ -172,6 +213,12 @@ ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildMissingTestNameClose(
     SZrState *state,
     SZrStructuredDiagnostic *out,
     SZrFileRange location);
+ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildLegacyOwnershipTypeSyntaxWarning(
+    SZrState *state,
+    SZrStructuredDiagnostic *out,
+    SZrFileRange location,
+    const TZrChar *legacyQualifier,
+    const TZrChar *wrapperName);
 ZR_PARSER_API TZrBool ZrParser_DiagnosticBuilder_BuildWeakUpgrade(SZrState *state,
                                                                   SZrStructuredDiagnostic *out,
                                                                   SZrFileRange location);

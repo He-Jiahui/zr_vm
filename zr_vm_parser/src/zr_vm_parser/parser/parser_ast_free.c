@@ -140,6 +140,21 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             free_ast_node_array_with_elements(state, decl->decorators);
             break;
         }
+        case ZR_AST_UNION_DECLARATION: {
+            SZrUnionDeclaration *decl = &node->data.unionDeclaration;
+            free_identifier_node_from_ptr(state, decl->name);
+            free_generic_declaration(state, decl->generic);
+            free_ast_node_array_with_elements(state, decl->variants);
+            free_ast_node_array_with_elements(state, decl->decorators);
+            break;
+        }
+        case ZR_AST_UNION_VARIANT: {
+            SZrUnionVariant *variant = &node->data.unionVariant;
+            free_identifier_node_from_ptr(state, variant->name);
+            free_ast_node_array_with_elements(state, variant->fields);
+            free_ast_node_array_with_elements(state, variant->decorators);
+            break;
+        }
         case ZR_AST_STRUCT_FIELD: {
             SZrStructField *field = &node->data.structField;
             free_identifier_node_from_ptr(state, field->name);
@@ -331,6 +346,15 @@ void ZrParser_Ast_Free(SZrState *state, SZrAstNode *node) {
             }
             if (usingStmt->body != ZR_NULL) {
                 ZrParser_Ast_Free(state, usingStmt->body);
+            }
+            if (usingStmt->pattern != ZR_NULL) {
+                ZrParser_Ast_Free(state, usingStmt->pattern);
+            }
+            if (usingStmt->guardTypeInfo != ZR_NULL) {
+                free_owned_type(state, usingStmt->guardTypeInfo);
+            }
+            if (usingStmt->elseBody != ZR_NULL) {
+                ZrParser_Ast_Free(state, usingStmt->elseBody);
             }
             break;
         }

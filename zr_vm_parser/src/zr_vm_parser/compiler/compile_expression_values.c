@@ -427,6 +427,9 @@ void compile_literal(SZrCompilerState *cs, SZrAstNode *node) {
             ZrParser_Compiler_Error(cs, "Unexpected literal type", node->location);
             break;
     }
+    if (!cs->hasError) {
+        cs->lastExpressionSlot = destSlot;
+    }
 }
 
 // 编译标识符
@@ -462,6 +465,7 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         if (!compile_identifier_note_result_slot_type(cs, node, destSlot)) {
             ZrParser_Compiler_Error(cs, "Failed to record identifier result slot type", node->location);
         }
+        cs->lastExpressionSlot = destSlot;
         return;
     }
     
@@ -485,6 +489,7 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
             TZrInstruction inst = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_CLOSURE), (TZrUInt16)destSlot, (TZrUInt16)closureVarIndex, 0);
             emit_instruction(cs, inst);
         }
+        cs->lastExpressionSlot = destSlot;
         return;
     }
 
@@ -493,6 +498,7 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         if (ZrParser_Compiler_TryGetCompileTimeValue(cs, name, &compileTimeValue)) {
             TZrUInt32 destSlot = allocate_stack_slot(cs);
             emit_constant_to_slot_local(cs, destSlot, &compileTimeValue, node->location);
+            cs->lastExpressionSlot = destSlot;
             return;
         }
     }
@@ -517,6 +523,7 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         // GET_GLOBAL 格式: operandExtra = destSlot, operand1[0] = 0, operand1[1] = 0
         TZrInstruction inst = create_instruction_1(ZR_INSTRUCTION_ENUM(GET_GLOBAL), (TZrUInt16)destSlot, 0);
         emit_instruction(cs, inst);
+        cs->lastExpressionSlot = destSlot;
         return;
     }
     
@@ -530,6 +537,7 @@ void compile_identifier(SZrCompilerState *cs, SZrAstNode *node) {
         TZrUInt32 destSlot = allocate_stack_slot(cs);
         TZrInstruction getSubFuncInst = create_instruction_2(ZR_INSTRUCTION_ENUM(GET_SUB_FUNCTION), (TZrUInt16)destSlot, (TZrUInt16)childFunctionIndex, 0);
         emit_instruction(cs, getSubFuncInst);
+        cs->lastExpressionSlot = destSlot;
         return;
     }
 
@@ -656,7 +664,11 @@ void compile_object_literal(SZrCompilerState *cs, SZrAstNode *node) {
                         
                         // 编译值
                         ZrParser_Expression_Compile(cs, kv->value);
-                        TZrUInt32 valueSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+                        TZrUInt32 valueSlot = cs->lastExpressionSlot;
+                        if (cs->hasError || valueSlot == ZR_PARSER_SLOT_NONE) {
+                            ZrParser_Compiler_Error(cs, "Object literal property did not produce a value", kvNode->location);
+                            return;
+                        }
                         
                         TZrUInt32 memberId = compiler_get_or_add_member_entry(cs, keyName);
                         TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_MEMBER),
@@ -671,11 +683,19 @@ void compile_object_literal(SZrCompilerState *cs, SZrAstNode *node) {
                 } else {
                     // 键是表达式（字符串字面量或计算键）
                     ZrParser_Expression_Compile(cs, kv->key);
-                    TZrUInt32 keySlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+                    TZrUInt32 keySlot = cs->lastExpressionSlot;
+                    if (cs->hasError || keySlot == ZR_PARSER_SLOT_NONE) {
+                        ZrParser_Compiler_Error(cs, "Object literal key did not produce a value", kvNode->location);
+                        return;
+                    }
                     
                     // 编译值
                     ZrParser_Expression_Compile(cs, kv->value);
-                    TZrUInt32 valueSlot = ZR_COMPILE_SLOT_U32(cs->stackSlotCount - 1);
+                    TZrUInt32 valueSlot = cs->lastExpressionSlot;
+                    if (cs->hasError || valueSlot == ZR_PARSER_SLOT_NONE) {
+                        ZrParser_Compiler_Error(cs, "Object literal property did not produce a value", kvNode->location);
+                        return;
+                    }
                     
                     TZrInstruction setTableInst = create_instruction_2(ZR_INSTRUCTION_ENUM(SET_BY_INDEX),
                                                                        (TZrUInt16)valueSlot,

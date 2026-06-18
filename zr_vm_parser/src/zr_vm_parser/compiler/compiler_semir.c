@@ -490,6 +490,12 @@ static TZrBool semir_map_exec_instruction(const TZrInstruction *instruction, SZr
             outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_SHARED;
             outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_PLAIN_GC;
             return ZR_TRUE;
+        case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
+            outMapped->opcode = ZR_SEMIR_OPCODE_OWN_RETURN_LOAN;
+            outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_OWNERSHIP_TRANSITION;
+            outMapped->ownershipInput = ZR_SEMIR_OWNERSHIP_STATE_BORROW_MUT;
+            outMapped->ownershipOutput = ZR_SEMIR_OWNERSHIP_STATE_UNIQUE;
+            return ZR_TRUE;
         case ZR_INSTRUCTION_ENUM(TYPEOF):
             outMapped->opcode = ZR_SEMIR_OPCODE_TYPEOF;
             outMapped->effectKind = ZR_SEMIR_EFFECT_KIND_DYNAMIC_RUNTIME;

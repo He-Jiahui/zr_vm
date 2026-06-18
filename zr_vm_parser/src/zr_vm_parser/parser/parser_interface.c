@@ -303,6 +303,8 @@ SZrAstNode *parse_interface_meta_signature(SZrParserState *ps) {
 
 SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     SZrFileRange startLoc = get_current_location(ps);
+    SZrFileRange bodyOpenLoc = startLoc;
+    TZrBool bodyOpened = ZR_FALSE;
 
     // 解析可见性修饰符（可选，默认 private）
     EZrAccessModifier accessModifier = parse_access_modifier(ps);
@@ -369,6 +371,8 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     if (ps->lexer->t.token != ZR_TK_LBRACE) {
         report_missing_declaration_body_open(ps, "interface declaration", get_current_token_location(ps));
     } else {
+        bodyOpenLoc = get_current_token_location(ps);
+        bodyOpened = ZR_TRUE;
         ZrParser_Lexer_Next(ps->lexer);
     }
 
@@ -483,7 +487,15 @@ SZrAstNode *parse_interface_declaration(SZrParserState *ps) {
     }
 
     // 期望右大括号
-    expect_token(ps, ZR_TK_RBRACE);
+    if (ps->lexer->t.token != ZR_TK_RBRACE) {
+        if (ps->lexer->t.token == ZR_TK_EOS) {
+            if (bodyOpened) {
+                report_missing_declaration_body_close(ps, "interface declaration", bodyOpenLoc);
+            }
+        } else {
+            expect_token(ps, ZR_TK_RBRACE);
+        }
+    }
     consume_token(ps, ZR_TK_RBRACE);
 
     SZrFileRange endLoc = get_current_location(ps);

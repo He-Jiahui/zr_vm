@@ -231,6 +231,11 @@ ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnLoan(struct SZrState *state,
                                                     TZrUInt32 destinationSlot,
                                                     TZrUInt32 sourceSlot);
 
+ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnReturnLoan(struct SZrState *state,
+                                                          ZrAotGeneratedFrame *frame,
+                                                          TZrUInt32 destinationSlot,
+                                                          TZrUInt32 sourceSlot);
+
 ZR_LIBRARY_API TZrBool ZrLibrary_AotRuntime_OwnShare(struct SZrState *state,
                                                      ZrAotGeneratedFrame *frame,
                                                      TZrUInt32 destinationSlot,

@@ -108,7 +108,11 @@ static TZrBool aot_runtime_resolve_library_path(const SZrLibrary_Project *projec
                                                 const TZrChar *moduleName,
                                                 TZrChar *buffer,
                                                 TZrSize bufferSize);
-static TZrBool aot_runtime_descriptor_has_true_aot_payload(const ZrAotCompiledModule *descriptor);
+static TZrBool aot_runtime_validate_descriptor(SZrState *state,
+                                               SZrLibraryAotRuntimeState *runtimeState,
+                                               const ZrAotCompiledModule *descriptor,
+                                               EZrAotBackendKind backendKind,
+                                               const TZrChar *normalizedModule);
 static TZrBool aot_runtime_hash_file(const TZrChar *path, TZrChar *buffer, TZrSize bufferSize);
 static void *aot_runtime_open_library(const TZrChar *path);
 static void aot_runtime_close_library(void *handle);
@@ -199,6 +203,12 @@ static TZrBool aot_runtime_call_record_direct(SZrState *state,
                                               TZrBool captureResult,
                                               SZrTypeValue *result);
 static EZrLibraryExecutedVia aot_runtime_backend_to_executed_via(EZrAotBackendKind backendKind);
+static const TZrChar *aot_runtime_backend_diagnostic_name(EZrAotBackendKind backendKind);
+static void aot_runtime_report_module_load_failure(SZrState *state,
+                                                   const SZrLibraryAotRuntimeState *runtimeState,
+                                                   EZrAotBackendKind backendKind,
+                                                   SZrString *moduleName,
+                                                   const TZrChar *result);
 static TZrBool aot_runtime_prepare_record(SZrState *state,
                                           SZrLibraryAotRuntimeState *runtimeState,
                                           EZrAotBackendKind backendKind,
@@ -451,20 +461,98 @@ static const TZrChar *aot_runtime_dynamic_library_extension(void) {
 #endif
 }
 
-static TZrBool aot_runtime_descriptor_has_true_aot_payload(const ZrAotCompiledModule *descriptor) {
+static TZrBool aot_runtime_validate_descriptor(SZrState *state,
+                                               SZrLibraryAotRuntimeState *runtimeState,
+                                               const ZrAotCompiledModule *descriptor,
+                                               EZrAotBackendKind backendKind,
+                                               const TZrChar *normalizedModule) {
     if (descriptor == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': descriptor=null",
+                         normalizedModule != ZR_NULL ? normalizedModule : "<unknown>");
         return ZR_FALSE;
     }
 
-    if (descriptor->embeddedModuleBlob == ZR_NULL || descriptor->embeddedModuleBlobLength == 0) {
+    if (descriptor->abiVersion != ZR_VM_AOT_ABI_VERSION) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': abiVersion expected=%u actual=%u",
+                         normalizedModule,
+                         (unsigned)ZR_VM_AOT_ABI_VERSION,
+                         (unsigned)descriptor->abiVersion);
         return ZR_FALSE;
     }
 
-    if (descriptor->functionThunks == ZR_NULL || descriptor->functionThunkCount == 0) {
+    if ((EZrAotBackendKind)descriptor->backendKind != backendKind) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': backendKind expected=%u actual=%u",
+                         normalizedModule,
+                         (unsigned)backendKind,
+                         (unsigned)descriptor->backendKind);
         return ZR_FALSE;
     }
 
-    return descriptor->entryThunk != ZR_NULL;
+    if (descriptor->moduleName == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': moduleName=null",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (strcmp(descriptor->moduleName, normalizedModule) != 0) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': moduleName expected='%s' actual='%s'",
+                         normalizedModule,
+                         normalizedModule,
+                         descriptor->moduleName);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->entryThunk == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': entryThunk=null",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->embeddedModuleBlob == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': embeddedModuleBlob=null",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->embeddedModuleBlobLength == 0) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': embeddedModuleBlobLength=0",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->functionThunks == ZR_NULL) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': functionThunks=null",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    if (descriptor->functionThunkCount == 0) {
+        aot_runtime_fail(state,
+                         runtimeState,
+                         "AOT descriptor validation failed for module '%s': functionThunkCount=0",
+                         normalizedModule);
+        return ZR_FALSE;
+    }
+
+    return ZR_TRUE;
 }
 
 static TZrBool aot_runtime_resolve_library_path(const SZrLibrary_Project *project,
@@ -1988,6 +2076,42 @@ static EZrLibraryExecutedVia aot_runtime_backend_to_executed_via(EZrAotBackendKi
     }
 }
 
+static const TZrChar *aot_runtime_backend_diagnostic_name(EZrAotBackendKind backendKind) {
+    switch (backendKind) {
+        case ZR_AOT_BACKEND_KIND_C:
+            return "aot-c";
+        case ZR_AOT_BACKEND_KIND_LLVM:
+            return "aot-llvm";
+        case ZR_AOT_BACKEND_KIND_NONE:
+        default:
+            return "aot";
+    }
+}
+
+static void aot_runtime_report_module_load_failure(SZrState *state,
+                                                   const SZrLibraryAotRuntimeState *runtimeState,
+                                                   EZrAotBackendKind backendKind,
+                                                   SZrString *moduleName,
+                                                   const TZrChar *result) {
+    const TZrChar *detail;
+    const TZrChar *moduleNameText;
+
+    if (state == ZR_NULL || state->global == ZR_NULL || runtimeState == ZR_NULL ||
+        runtimeState->lastError[0] == '\0' ||
+        ZrCore_GlobalState_GetModuleLoadDiagnostic(state->global) != ZR_NULL) {
+        return;
+    }
+
+    detail = runtimeState->lastError;
+    moduleNameText = moduleName != ZR_NULL ? ZrCore_String_GetNativeString(moduleName) : ZR_NULL;
+    ZrCore_GlobalState_SetModuleLoadDiagnostic(state->global,
+                                               "loader=aot-runtime backend=%s result=%s module='%s' detail=%s",
+                                               aot_runtime_backend_diagnostic_name(backendKind),
+                                               result != ZR_NULL ? result : "load-failed",
+                                               moduleNameText != ZR_NULL ? moduleNameText : "<unknown>",
+                                               detail);
+}
+
 static TZrBool aot_runtime_prepare_record(SZrState *state,
                                           SZrLibraryAotRuntimeState *runtimeState,
                                           EZrAotBackendKind backendKind,
@@ -2076,17 +2200,8 @@ static TZrBool aot_runtime_prepare_record(SZrState *state,
     }
 
     descriptor = descriptorSymbol();
-    if (descriptor == ZR_NULL || descriptor->abiVersion != ZR_VM_AOT_ABI_VERSION ||
-        (EZrAotBackendKind)descriptor->backendKind != backendKind || descriptor->moduleName == ZR_NULL ||
-        strcmp(descriptor->moduleName, normalizedModule) != 0 || descriptor->entryThunk == ZR_NULL) {
+    if (!aot_runtime_validate_descriptor(state, runtimeState, descriptor, backendKind, normalizedModule)) {
         aot_runtime_close_library(handle);
-        aot_runtime_fail(state, runtimeState, "AOT descriptor validation failed for module '%s'", normalizedModule);
-        return ZR_FALSE;
-    }
-
-    if (!aot_runtime_descriptor_has_true_aot_payload(descriptor)) {
-        aot_runtime_close_library(handle);
-        aot_runtime_fail(state, runtimeState, "AOT descriptor validation failed for module '%s'", normalizedModule);
         return ZR_FALSE;
     }
 
@@ -2338,11 +2453,21 @@ SZrObjectModule *ZrLibrary_AotRuntime_ModuleLoader(SZrState *state, SZrString *m
                                     ZrCore_String_GetNativeString(moduleName),
                                     &record) ||
         record == ZR_NULL) {
+        aot_runtime_report_module_load_failure(state,
+                                               runtimeState,
+                                               backendKind,
+                                               moduleName,
+                                               "descriptor-load-failed");
         return ZR_NULL;
     }
 
     if (!record->moduleExecuted &&
         !aot_runtime_call_record_direct(state, runtimeState, record, ZR_FALSE, ZR_NULL)) {
+        aot_runtime_report_module_load_failure(state,
+                                               runtimeState,
+                                               backendKind,
+                                               moduleName,
+                                               "module-execute-failed");
         return ZR_NULL;
     }
 

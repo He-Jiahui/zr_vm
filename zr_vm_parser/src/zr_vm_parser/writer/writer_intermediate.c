@@ -410,6 +410,8 @@ static const TZrChar *writer_intermediate_semir_opcode_name(TZrUInt32 opcode) {
             return "OWN_UPGRADE";
         case ZR_SEMIR_OPCODE_OWN_RELEASE:
             return "OWN_RELEASE";
+        case ZR_SEMIR_OPCODE_OWN_RETURN_LOAN:
+            return "OWN_RETURN_LOAN";
         case ZR_SEMIR_OPCODE_TYPEOF:
             return "TYPEOF";
         case ZR_SEMIR_OPCODE_DYN_CALL:
@@ -905,6 +907,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(OWN_DETACH): fprintf(file, "OWN_DETACH"); break;
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE): fprintf(file, "OWN_UPGRADE"); break;
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE): fprintf(file, "OWN_RELEASE"); break;
+            case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN): fprintf(file, "OWN_RETURN_LOAN"); break;
             case ZR_INSTRUCTION_ENUM(TYPEOF): fprintf(file, "TYPEOF"); break;
             case ZR_INSTRUCTION_ENUM(DYN_CALL): fprintf(file, "DYN_CALL"); break;
             case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL): fprintf(file, "DYN_TAIL_CALL"); break;
@@ -1207,6 +1210,7 @@ static void writer_intermediate_write_nested_function(FILE *file,
             case ZR_INSTRUCTION_ENUM(OWN_DETACH):
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
+            case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
             case ZR_INSTRUCTION_ENUM(TYPEOF):
             case ZR_INSTRUCTION_ENUM(DYN_CALL):
             case ZR_INSTRUCTION_ENUM(DYN_TAIL_CALL):
@@ -2040,6 +2044,9 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
                 fprintf(file, "OWN_RELEASE");
                 break;
+            case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
+                fprintf(file, "OWN_RETURN_LOAN");
+                break;
             case ZR_INSTRUCTION_ENUM(TYPEOF):
                 fprintf(file, "TYPEOF");
                 break;
@@ -2171,6 +2178,7 @@ ZR_PARSER_API TZrBool ZrParser_Writer_WriteIntermediateFile(SZrState *state, SZr
             case ZR_INSTRUCTION_ENUM(OWN_DETACH):
             case ZR_INSTRUCTION_ENUM(OWN_UPGRADE):
             case ZR_INSTRUCTION_ENUM(OWN_RELEASE):
+            case ZR_INSTRUCTION_ENUM(OWN_RETURN_LOAN):
                 fprintf(file, ", operand1=%u", inst->instruction.operand.operand1[0]);
                 break;
 

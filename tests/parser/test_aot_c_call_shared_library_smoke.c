@@ -267,8 +267,8 @@ static void test_aot_c_generated_shared_library_executes_quickened_dynamic_call_
 
     generatedCText = read_text_file_owned_or_fail(generatedCPath);
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_static_function_call"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_PreCallPreparedResolvedVmFunction(state,"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "zr_aot_direct_dynamic_function_call"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_GetCallInfoFrameStorageTop(state, frame.callInfo)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource("));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_CallAndRestoreAnchor(state, &zr_aot_call_anchor, 1)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_StackAnchorRestore(state, &zr_aot_destination_anchor)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrLibrary_AotRuntime_PrepareStaticDirectCall"));
@@ -423,7 +423,8 @@ static void test_aot_c_generated_shared_library_compiles_value_typed_call_direct
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "SZrFunction *zr_aot_metadata_function;"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText,
                                 "ZrCore_Closure_GetMetadataFunctionFromValue(state, zr_aot_callable_value)"));
-    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_PreCallPreparedResolvedVmFunction(state,"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_GetCallInfoFrameStorageTop(state, frame.callInfo)"));
+    TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_PreCallPreparedResolvedVmFunctionWithArgumentSource("));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_PostCall(state, zr_aot_call_info, 1)"));
     TEST_ASSERT_NOT_NULL(strstr(generatedCText, "ZrCore_Function_TryCopyInlineFrameReturnValue(state, ...)"));
     TEST_ASSERT_NULL(strstr(generatedCText, "ZrAotGeneratedDirectCall zr_aot_direct_call"));
